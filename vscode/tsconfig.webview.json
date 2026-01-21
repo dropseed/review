@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"module": "ESNext",
+		"target": "ES2022",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"outDir": "out",
+		"sourceMap": true,
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"declaration": false,
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"allowSyntheticDefaultImports": true
+	},
+	"include": [
+		"src/webview/**/*.ts",
+		"src/webview/**/*.tsx",
+		"src/types/**/*.ts"
+	],
+	"exclude": ["node_modules"]
+}

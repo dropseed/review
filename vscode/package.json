@@ -1,0 +1,298 @@
+{
+	"name": "pullapprove-review",
+	"displayName": "PullApprove Review",
+	"description": "Code review helper for comparing branches and tracking reviewed files",
+	"version": "0.1.0",
+	"license": "MIT",
+	"publisher": "pullapprove",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/dropseed/pullapprove"
+	},
+	"engines": {
+		"vscode": "^1.85.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [],
+	"main": "./out/extension.js",
+	"extensionDependencies": [
+		"vscode.git"
+	],
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "pullapprove-review",
+					"title": "PullApprove Review",
+					"icon": "media/icon.svg"
+				}
+			]
+		},
+		"views": {
+			"pullapprove-review": [
+				{
+					"id": "pullapprove-review.files",
+					"name": "Files"
+				},
+				{
+					"type": "webview",
+					"id": "pullapprove-review.review",
+					"name": "Review",
+					"icon": "$(note)"
+				}
+			]
+		},
+		"commands": [
+			{
+				"command": "pullapprove-review.openFile",
+				"title": "Open File",
+				"icon": "$(go-to-file)"
+			},
+			{
+				"command": "pullapprove-review.openDiff",
+				"title": "Open Diff",
+				"icon": "$(diff)"
+			},
+			{
+				"command": "pullapprove-review.addFileToNotes",
+				"title": "Add to Notes",
+				"icon": "$(link)"
+			},
+			{
+				"command": "pullapprove-review.markReviewed",
+				"title": "Mark Reviewed",
+				"icon": "$(add)"
+			},
+			{
+				"command": "pullapprove-review.unmarkReviewed",
+				"title": "Unmark Reviewed",
+				"icon": "$(remove)"
+			},
+			{
+				"command": "pullapprove-review.addLineReference",
+				"title": "Add Line to Review Notes",
+				"category": "PullApprove"
+			},
+			{
+				"command": "pullapprove-review.addSelectionReference",
+				"title": "Add Selection to Review Notes",
+				"category": "PullApprove"
+			},
+			{
+				"command": "pullapprove-review.refresh",
+				"title": "Refresh",
+				"category": "PullApprove",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "pullapprove-review.revealInExplorer",
+				"title": "Reveal in Explorer"
+			},
+			{
+				"command": "pullapprove-review.markCurrentHunkReviewed",
+				"title": "Mark Hunk as Reviewed",
+				"category": "PullApprove"
+			},
+			{
+				"command": "pullapprove-review.unmarkCurrentHunkReviewed",
+				"title": "Unmark Hunk as Reviewed",
+				"category": "PullApprove"
+			},
+			{
+				"command": "pullapprove-review.markSelectedRangesReviewed",
+				"title": "Mark Selected Ranges as Reviewed",
+				"category": "PullApprove"
+			},
+			{
+				"command": "pullapprove-review.unmarkSelectedRangesReviewed",
+				"title": "Unmark Selected Ranges as Reviewed",
+				"category": "PullApprove"
+			},
+			{
+				"command": "pullapprove-review.markAllReviewed",
+				"title": "Mark All Reviewed",
+				"icon": "$(add)"
+			},
+			{
+				"command": "pullapprove-review.clearAllReviewed",
+				"title": "Clear All Reviewed",
+				"icon": "$(remove)"
+			},
+			{
+				"command": "pullapprove-review.toggleEditorDecorations",
+				"title": "Toggle Editor Decorations",
+				"category": "PullApprove",
+				"icon": "$(eye)"
+			},
+			{
+				"command": "pullapprove-review.enableEditorDecorations",
+				"title": "Show Editor Decorations",
+				"category": "PullApprove",
+				"icon": "$(eye-closed)"
+			},
+			{
+				"command": "pullapprove-review.disableEditorDecorations",
+				"title": "Hide Editor Decorations",
+				"category": "PullApprove",
+				"icon": "$(eye)"
+			}
+		],
+		"menus": {
+			"editor/context": [
+				{
+					"when": "editorTextFocus && editorHasSelection",
+					"command": "pullapprove-review.addSelectionReference",
+					"group": "pullapprove-review@1"
+				},
+				{
+					"when": "editorTextFocus && !editorHasSelection",
+					"command": "pullapprove-review.addLineReference",
+					"group": "pullapprove-review@2"
+				},
+				{
+					"when": "(isInDiffEditor || resourceScheme == git) && !editorHasSelection",
+					"command": "pullapprove-review.markCurrentHunkReviewed",
+					"group": "pullapprove-review@3"
+				},
+				{
+					"when": "(isInDiffEditor || resourceScheme == git) && !editorHasSelection",
+					"command": "pullapprove-review.unmarkCurrentHunkReviewed",
+					"group": "pullapprove-review@4"
+				},
+				{
+					"when": "(isInDiffEditor || resourceScheme == git) && editorHasSelection",
+					"command": "pullapprove-review.markSelectedRangesReviewed",
+					"group": "pullapprove-review@3"
+				},
+				{
+					"when": "(isInDiffEditor || resourceScheme == git) && editorHasSelection",
+					"command": "pullapprove-review.unmarkSelectedRangesReviewed",
+					"group": "pullapprove-review@4"
+				}
+			],
+			"view/title": [
+				{
+					"command": "pullapprove-review.disableEditorDecorations",
+					"when": "view == pullapprove-review.files && config.pullapprove-review.showEditorDecorations",
+					"group": "navigation@1"
+				},
+				{
+					"command": "pullapprove-review.enableEditorDecorations",
+					"when": "view == pullapprove-review.files && !config.pullapprove-review.showEditorDecorations",
+					"group": "navigation@1"
+				},
+				{
+					"command": "pullapprove-review.refresh",
+					"when": "view == pullapprove-review.files",
+					"group": "navigation@2"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "pullapprove-review.markAllReviewed",
+					"when": "view == pullapprove-review.files && viewItem == toReviewSection",
+					"group": "inline@1"
+				},
+				{
+					"command": "pullapprove-review.clearAllReviewed",
+					"when": "view == pullapprove-review.files && viewItem == reviewedSection",
+					"group": "inline@1"
+				},
+				{
+					"command": "pullapprove-review.addFileToNotes",
+					"when": "view == pullapprove-review.files && viewItem == unreviewedFile",
+					"group": "inline@1"
+				},
+				{
+					"command": "pullapprove-review.markReviewed",
+					"when": "view == pullapprove-review.files && viewItem == unreviewedFile",
+					"group": "inline@2"
+				},
+				{
+					"command": "pullapprove-review.addFileToNotes",
+					"when": "view == pullapprove-review.files && viewItem == reviewedFile",
+					"group": "inline@1"
+				},
+				{
+					"command": "pullapprove-review.unmarkReviewed",
+					"when": "view == pullapprove-review.files && viewItem == reviewedFile",
+					"group": "inline@2"
+				},
+				{
+					"command": "pullapprove-review.addFileToNotes",
+					"when": "view == pullapprove-review.files && viewItem == unreviewedFolder",
+					"group": "inline@0"
+				},
+				{
+					"command": "pullapprove-review.markReviewed",
+					"when": "view == pullapprove-review.files && viewItem == unreviewedFolder",
+					"group": "inline@1"
+				},
+				{
+					"command": "pullapprove-review.addFileToNotes",
+					"when": "view == pullapprove-review.files && viewItem == reviewedFolder",
+					"group": "inline@0"
+				},
+				{
+					"command": "pullapprove-review.unmarkReviewed",
+					"when": "view == pullapprove-review.files && viewItem == reviewedFolder",
+					"group": "inline@1"
+				},
+				{
+					"command": "pullapprove-review.openFile",
+					"when": "view == pullapprove-review.files && viewItem =~ /File$/",
+					"group": "navigation@1"
+				},
+				{
+					"command": "pullapprove-review.openDiff",
+					"when": "view == pullapprove-review.files && viewItem =~ /File$/",
+					"group": "navigation@2"
+				},
+				{
+					"command": "pullapprove-review.revealInExplorer",
+					"when": "view == pullapprove-review.files && viewItem =~ /File$/",
+					"group": "navigation@3"
+				}
+			]
+		},
+		"keybindings": [
+			{
+				"command": "pullapprove-review.addLineReference",
+				"key": "ctrl+shift+r",
+				"mac": "cmd+shift+r",
+				"when": "editorTextFocus"
+			}
+		],
+		"configuration": {
+			"title": "PullApprove Review",
+			"properties": {
+				"pullapprove-review.showEditorDecorations": {
+					"type": "boolean",
+					"default": true,
+					"description": "Show review status decorations in the editor (gutter indicators and dimming)"
+				}
+			}
+		},
+		"viewsWelcome": [
+			{
+				"view": "pullapprove-review.files",
+				"contents": "Select branches to compare in the Review panel below."
+			}
+		]
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run build",
+		"build": "node esbuild.js --production",
+		"watch": "node esbuild.js --watch"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.8",
+		"@types/node": "^20.10.0",
+		"@types/vscode": "^1.85.0",
+		"@vscode/vsce": "^3.7.1",
+		"esbuild": "^0.19.0",
+		"typescript": "^5.3.0"
+	}
+}

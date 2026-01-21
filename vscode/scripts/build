@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "Building extension for production..."
+npm run build
+echo "Done! Output in ./out/"

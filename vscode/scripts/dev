@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "Starting development build in watch mode..."
+echo "Press F5 in VS Code to launch the Extension Development Host"
+echo ""
+
+npm run watch

@@ -1,0 +1,42 @@
+[project]
+name = "pullapprove-review"
+version = "0.1.0"
+description = "CLI for hunk-level code review tracking"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Dropseed", email = "python@dropseed.dev" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = [
+    "click>=8",
+    "pydantic>=2",
+]
+
+[project.urls]
+Homepage = "https://www.pullapprove.com?ref=pypi"
+Documentation = "https://5.pullapprove.com/docs/?ref=pypi"
+
+[project.scripts]
+pullapprove-review = "pullapprove_review.cli:cli"
+git-review = "pullapprove_review.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-v"

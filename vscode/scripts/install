@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+# Package the extension
+./scripts/package
+
+# Find the vsix file
+VSIX=$(ls -t dist/*.vsix | head -1)
+
+if [ -z "$VSIX" ]; then
+    echo "No .vsix file found in dist/"
+    exit 1
+fi
+
+echo "Installing $VSIX..."
+code --install-extension "$VSIX" --force
+
+echo "Done! Reload VS Code window to use (Cmd+Shift+P > Reload Window)"
