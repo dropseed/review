@@ -1,4 +1,4 @@
-# PullApprove for VS Code
+# Human Review for VS Code
 
 A code review helper for comparing branches and tracking reviewed files.
 
@@ -11,7 +11,7 @@ A code review helper for comparing branches and tracking reviewed files.
 
 ## Usage
 
-1. Click the PullApprove icon in the Activity Bar
+1. Click the Human Review icon in the Activity Bar
 2. Select the "old" branch (e.g., `main`) and "new" branch (e.g., `HEAD` or a feature branch)
 3. Review files by clicking to open diffs
 4. Check off files as you review them

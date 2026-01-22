@@ -1,43 +1,54 @@
-# pullapprove-review
+# human-review
 
-CLI for hunk-level code review tracking. Works with the PullApprove Review VSCode extension.
+A Claude Code skill that helps humans review diffs more efficiently. It classifies hunks, lets you trust categories of changes, and focuses your attention on what actually needs careful human review.
 
-## Installation
+This is **not** an AI code review tool that replaces human judgment—it separates the signal from the noise so you can spend your review time on the hunks that actually need your brain.
 
-```bash
-pip install pullapprove-review
-```
-
-## Usage
+## Install
 
 ```bash
-# Start a review (compare working tree to main)
-git review compare main
-
-# Show review progress
-git review status
-
-# Show diff with hunk hashes and review markers
-git review diff [path]
-
-# Mark hunks as reviewed
-git review mark <path>           # All hunks in file
-git review mark <path>:<hash>    # Specific hunk
-git review mark <path>:<h1>,<h2> # Multiple hunks
-
-# Unmark hunks
-git review unmark <path>[:<hash>]
-
-# Manage notes
-git review notes                 # Print notes
-git review notes --edit          # Open in $EDITOR
-git review notes --add "text"    # Append to notes
-
-# Other commands
-git review clear                 # Reset review state
-git review export                # Full JSON export
+curl -fsSL https://www.pullapprove.com/human-review/install.sh | bash
 ```
 
-## Data Location
+Or install directly with uv:
 
-Review state is stored in `.pullapprove/reviews/` which is shared with the VSCode extension.
+```bash
+uv tool install human-review
+human-review install-skill
+```
+
+Then use `/human-review` in Claude Code to start an assisted review.
+
+## What it does
+
+- **Classifies hunks** with reasons explaining what each change is
+- **Trusts reasons** to bulk-approve categories of changes
+- **Narrows focus** to the hunks that actually need careful human consideration
+
+The goal: help humans spend their review time where it counts.
+
+## Optional: Auto-approve CLI commands
+
+For the best experience, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(human-review:*)"]
+  }
+}
+```
+
+This allows the skill to run `human-review` commands without requiring approval for each one.
+
+## How it works
+
+The workflow has two distinct steps:
+
+1. **Classify** — AI examines each hunk and assigns a reason explaining what the change is. Hunks with the same reason are grouped together.
+
+2. **Trust/Approve** — You approve hunks by trusting entire reasons (bulk approval) or approving individually. This is the actual review moment.
+
+Classification is a _proposal_. Trust/approval is _your decision_. The AI doesn't review your code—it helps you decide where to spend your attention.
+
+Review state is stored in `.git/human-review/reviews/` in the git common directory (shared across worktrees). The skill uses a CLI under the hood—run `human-review --help` for all commands.

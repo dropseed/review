@@ -34,6 +34,16 @@ def git_root(cwd: Path | None = None) -> Path:
     return Path(output.strip())
 
 
+def git_common_dir(cwd: Path | None = None) -> Path:
+    """Get the git common dir (shared across worktrees).
+
+    Returns the .git directory (or the main repo's .git for worktrees).
+    State stored here is automatically ignored by git and shared across worktrees.
+    """
+    output = run_git("rev-parse", "--git-common-dir", cwd=cwd)
+    return Path(output.strip())
+
+
 def git_current_branch(cwd: Path | None = None) -> str | None:
     """Get the current branch name, or None if detached HEAD."""
     try:

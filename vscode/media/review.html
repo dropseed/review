@@ -1,370 +1,406 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
     default-src 'none';
     style-src 'unsafe-inline';
     script-src 'nonce-{{nonce}}';
-  ">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { box-sizing: border-box; }
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-    body {
-      font-family: var(--vscode-font-family), sans-serif;
-      font-size: var(--vscode-font-size);
-      color: var(--vscode-foreground);
-      background: var(--vscode-sideBar-background);
-      padding: 8px;
-    }
-    .container {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .selector {
-      display: flex;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-    .select-group {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .select-group label {
-      font-size: 11px;
-      color: var(--vscode-descriptionForeground);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .select-group select {
-      width: 100%;
-      padding: 4px 8px;
-      font-family: var(--vscode-font-family), sans-serif;
-      font-size: var(--vscode-font-size);
-      color: var(--vscode-dropdown-foreground);
-      background: var(--vscode-dropdown-background);
-      border: 1px solid var(--vscode-dropdown-border, transparent);
-      border-radius: 2px;
-      cursor: pointer;
-    }
-    .select-group select:focus {
-      outline: none;
-      border-color: var(--vscode-focusBorder);
-    }
-    textarea {
-      flex: 1;
-      width: 100%;
-      padding: 8px;
-      font-family: var(--vscode-font-family), sans-serif;
-      font-size: var(--vscode-font-size);
-      color: var(--vscode-input-foreground);
-      background: var(--vscode-input-background);
-      border: 1px solid var(--vscode-input-border, transparent);
-      border-radius: 2px;
-      resize: none;
-      outline: none;
-    }
-    textarea:focus {
-      border-color: var(--vscode-focusBorder);
-    }
-    textarea::placeholder {
-      color: var(--vscode-input-placeholderForeground);
-    }
-    .buttons {
-      display: flex;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-    button {
-      flex: 1;
-      padding: 6px 12px;
-      font-family: var(--vscode-font-family), sans-serif;
-      font-size: var(--vscode-font-size);
-      border: none;
-      border-radius: 2px;
-      cursor: pointer;
-    }
-    .copy-btn {
-      color: var(--vscode-button-foreground);
-      background: var(--vscode-button-background);
-    }
-    .copy-btn:hover {
-      background: var(--vscode-button-hoverBackground);
-    }
-    .clear-btn {
-      color: var(--vscode-button-secondaryForeground);
-      background: var(--vscode-button-secondaryBackground);
-    }
-    .clear-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground);
-    }
-    .empty-state {
-      color: var(--vscode-descriptionForeground);
-      font-size: 12px;
-    }
-  </style>
-</head>
-<body>
-  <div id="root" class="container"></div>
-  <script nonce="{{nonce}}">
-    const vscode = acquireVsCodeApi();
-    let repositories = [];
-    let selectedRepo = '';
-    let branches = [];
-    let currentBranch = '';
-    let oldBranch = '';
-    let newBranch = '';
-    let notes = '';
-
-    function render() {
-      const root = document.getElementById('root');
-
-      if (branches.length === 0) {
-        root.innerHTML = '<div class="empty-state">Loading...</div>';
-        return;
+  "
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
       }
-
-      // Split branches into local and remote
-      const localBranches = branches.filter(b => !b.includes('/'));
-      const remoteBranches = branches.filter(b => b.includes('/'));
-
-      function branchOption(b, selected) {
-        return '<option value="' + b + '"' + (b === selected ? ' selected' : '') + '>' +
-          b + (b === currentBranch ? ' (current)' : '') + '</option>';
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
       }
+      body {
+        font-family: var(--vscode-font-family), sans-serif;
+        font-size: var(--vscode-font-size);
+        color: var(--vscode-foreground);
+        background: var(--vscode-sideBar-background);
+        padding: 8px;
+      }
+      .container {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .selector {
+        display: flex;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .select-group {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .select-group label {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .select-group select {
+        width: 100%;
+        padding: 4px 8px;
+        font-family: var(--vscode-font-family), sans-serif;
+        font-size: var(--vscode-font-size);
+        color: var(--vscode-dropdown-foreground);
+        background: var(--vscode-dropdown-background);
+        border: 1px solid var(--vscode-dropdown-border, transparent);
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .select-group select:focus {
+        outline: none;
+        border-color: var(--vscode-focusBorder);
+      }
+      textarea {
+        flex: 1;
+        width: 100%;
+        padding: 8px;
+        font-family: var(--vscode-font-family), sans-serif;
+        font-size: var(--vscode-font-size);
+        color: var(--vscode-input-foreground);
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-input-border, transparent);
+        border-radius: 2px;
+        resize: none;
+        outline: none;
+      }
+      textarea:focus {
+        border-color: var(--vscode-focusBorder);
+      }
+      textarea::placeholder {
+        color: var(--vscode-input-placeholderForeground);
+      }
+      .buttons {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      button {
+        flex: 1;
+        padding: 6px 12px;
+        font-family: var(--vscode-font-family), sans-serif;
+        font-size: var(--vscode-font-size);
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .copy-btn {
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+      }
+      .copy-btn:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+      .clear-btn {
+        color: var(--vscode-button-secondaryForeground);
+        background: var(--vscode-button-secondaryBackground);
+      }
+      .clear-btn:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .empty-state {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" class="container"></div>
+    <script nonce="{{nonce}}">
+      const vscode = acquireVsCodeApi();
+      let repositories = [];
+      let selectedRepo = "";
+      let branches = [];
+      let currentBranch = "";
+      let oldBranch = "";
+      let newBranch = "";
+      let notes = "";
 
-      let oldOptions = '';
-      if (localBranches.length > 0) {
-        oldOptions += '<optgroup label="Local">' +
-          localBranches.map(b => branchOption(b, oldBranch)).join('') +
-          '</optgroup>';
-      }
-      if (remoteBranches.length > 0) {
-        oldOptions += '<optgroup label="Remote">' +
-          remoteBranches.map(b => branchOption(b, oldBranch)).join('') +
-          '</optgroup>';
-      }
+      function render() {
+        const root = document.getElementById("root");
 
-      let newOptions = '<optgroup label="Current">' +
-        '<option value="__working_tree__"' + (newBranch === '__working_tree__' ? ' selected' : '') + '>Working Tree</option>' +
-        '<option value="__head__"' + (newBranch === '__head__' ? ' selected' : '') + '>HEAD</option>' +
-        '</optgroup>';
-      if (localBranches.length > 0) {
-        newOptions += '<optgroup label="Local">' +
-          localBranches.map(b => branchOption(b, newBranch)).join('') +
-          '</optgroup>';
-      }
-      if (remoteBranches.length > 0) {
-        newOptions += '<optgroup label="Remote">' +
-          remoteBranches.map(b => branchOption(b, newBranch)).join('') +
-          '</optgroup>';
-      }
+        if (branches.length === 0) {
+          root.innerHTML = '<div class="empty-state">Loading...</div>';
+          return;
+        }
 
-      // Build repo selector (only shown when multiple repos)
-      let repoSelectorHtml = '';
-      if (repositories.length > 1) {
-        const repoOptions = repositories.map(r =>
-          `<option value="${r.path}"${r.path === selectedRepo ? ' selected' : ''}>${r.name}</option>`
-        ).join('');
-        repoSelectorHtml =
-          '<div class="select-group" style="flex: none;">' +
-            '<label>Repository</label>' +
-            '<select id="repo">' + repoOptions + '</select>' +
-          '</div>';
-      }
+        // Split branches into local and remote
+        const localBranches = branches.filter((b) => !b.includes("/"));
+        const remoteBranches = branches.filter((b) => b.includes("/"));
 
-      root.innerHTML =
-        repoSelectorHtml +
-        '<div class="selector">' +
+        function branchOption(b, selected) {
+          return (
+            '<option value="' +
+            b +
+            '"' +
+            (b === selected ? " selected" : "") +
+            ">" +
+            b +
+            (b === currentBranch ? " (current)" : "") +
+            "</option>"
+          );
+        }
+
+        let oldOptions = "";
+        if (localBranches.length > 0) {
+          oldOptions +=
+            '<optgroup label="Local">' +
+            localBranches.map((b) => branchOption(b, oldBranch)).join("") +
+            "</optgroup>";
+        }
+        if (remoteBranches.length > 0) {
+          oldOptions +=
+            '<optgroup label="Remote">' +
+            remoteBranches.map((b) => branchOption(b, oldBranch)).join("") +
+            "</optgroup>";
+        }
+
+        let newOptions =
+          '<optgroup label="Current">' +
+          '<option value="__working_tree__"' +
+          (newBranch === "__working_tree__" ? " selected" : "") +
+          ">Working Tree</option>" +
+          '<option value="__head__"' +
+          (newBranch === "__head__" ? " selected" : "") +
+          ">HEAD</option>" +
+          "</optgroup>";
+        if (localBranches.length > 0) {
+          newOptions +=
+            '<optgroup label="Local">' +
+            localBranches.map((b) => branchOption(b, newBranch)).join("") +
+            "</optgroup>";
+        }
+        if (remoteBranches.length > 0) {
+          newOptions +=
+            '<optgroup label="Remote">' +
+            remoteBranches.map((b) => branchOption(b, newBranch)).join("") +
+            "</optgroup>";
+        }
+
+        // Build repo selector (only shown when multiple repos)
+        let repoSelectorHtml = "";
+        if (repositories.length > 1) {
+          const repoOptions = repositories
+            .map(
+              (r) =>
+                `<option value="${r.path}"${r.path === selectedRepo ? " selected" : ""}>${r.name}</option>`,
+            )
+            .join("");
+          repoSelectorHtml =
+            '<div class="select-group" style="flex: none;">' +
+            "<label>Repository</label>" +
+            '<select id="repo">' +
+            repoOptions +
+            "</select>" +
+            "</div>";
+        }
+
+        root.innerHTML =
+          repoSelectorHtml +
+          '<div class="selector">' +
           '<div class="select-group">' +
-            '<label>Old</label>' +
-            '<select id="old">' + oldOptions + '</select>' +
-          '</div>' +
+          "<label>Old</label>" +
+          '<select id="old">' +
+          oldOptions +
+          "</select>" +
+          "</div>" +
           '<div class="select-group">' +
-            '<label>New</label>' +
-            '<select id="new">' + newOptions + '</select>' +
-          '</div>' +
-        '</div>' +
-        '<textarea id="notes" placeholder="Review notes...\n\nCmd+Shift+R adds line references from the editor."></textarea>' +
-        '<div class="buttons">' +
+          "<label>New</label>" +
+          '<select id="new">' +
+          newOptions +
+          "</select>" +
+          "</div>" +
+          "</div>" +
+          '<textarea id="notes" placeholder="Review notes...\n\nCmd+Shift+R adds line references from the editor."></textarea>' +
+          '<div class="buttons">' +
           '<button class="copy-btn" id="copy">Copy</button>' +
           '<button class="clear-btn" id="clear">Clear</button>' +
-        '</div>';
+          "</div>";
 
-      document.getElementById('notes').value = notes;
+        document.getElementById("notes").value = notes;
 
-      document.getElementById('old').onchange = (e) => {
-        oldBranch = e.target.value;
-        saveState();
-        sendComparison();
-      };
-
-      document.getElementById('new').onchange = (e) => {
-        newBranch = e.target.value;
-        saveState();
-        sendComparison();
-      };
-
-      let notesTimeout;
-      document.getElementById('notes').oninput = (e) => {
-        notes = e.target.value;
-        saveState();
-        // Debounce the file save to avoid excessive writes
-        clearTimeout(notesTimeout);
-        notesTimeout = setTimeout(() => {
-          vscode.postMessage({ type: 'updateNotes', notes });
-        }, 500);
-      };
-
-      document.getElementById('notes').onkeydown = (e) => {
-        if (e.key !== 'Enter') return;
-
-        const textarea = e.target;
-        const pos = textarea.selectionStart;
-        const text = textarea.value;
-
-        // Find the start of the current line
-        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-        const line = text.slice(lineStart, pos);
-
-        // Check if line starts with whitespace + dash + space
-        const match = line.match(/^(\s*-\s)/);
-        if (match) {
-          e.preventDefault();
-          const prefix = match[1];
-          const before = text.slice(0, pos);
-          const after = text.slice(pos);
-          textarea.value = `${before}\n${prefix}${after}`;
-          const newPos = pos + 1 + prefix.length;
-          textarea.setSelectionRange(newPos, newPos);
-          notes = textarea.value;
+        document.getElementById("old").onchange = (e) => {
+          oldBranch = e.target.value;
           saveState();
-          vscode.postMessage({ type: 'updateNotes', notes });
-        }
-      };
-
-      document.getElementById('copy').onclick = () => {
-        vscode.postMessage({ type: 'copy' });
-      };
-
-      document.getElementById('clear').onclick = () => {
-        vscode.postMessage({ type: 'clear' });
-      };
-
-      // Attach repo selector handler if present
-      const repoSelect = document.getElementById('repo');
-      if (repoSelect) {
-        repoSelect.onchange = (e) => {
-          selectedRepo = e.target.value;
-          // Reset branch selections when switching repos
-          oldBranch = '';
-          newBranch = '';
-          saveState();
-          vscode.postMessage({ type: 'selectRepository', repoPath: selectedRepo });
-        };
-      }
-    }
-
-    function saveState() {
-      vscode.setState({ selectedRepo, oldBranch, newBranch, notes });
-    }
-
-    function sendComparison() {
-      if (!oldBranch || !newBranch) return;
-
-      let spec;
-      if (newBranch === '__working_tree__') {
-        spec = { type: 'working_tree', base: oldBranch };
-      } else {
-        const compare = newBranch === '__head__' ? 'HEAD' : newBranch;
-        spec = { type: 'branch', base: oldBranch, compare };
-      }
-      vscode.postMessage({ type: 'selectComparison', spec });
-    }
-
-    window.addEventListener('message', (e) => {
-      const msg = e.data;
-      if (msg.type === 'repositoriesLoaded') {
-        repositories = msg.repositories || [];
-        if (!selectedRepo && msg.selectedRepo) {
-          selectedRepo = msg.selectedRepo;
-        }
-        // Only re-render if textarea doesn't have focus
-        const textarea = document.getElementById('notes');
-        if (!textarea || document.activeElement !== textarea) {
-          render();
-        }
-      } else if (msg.type === 'branchesLoaded') {
-        branches = msg.branches || [];
-        currentBranch = msg.currentBranch || '';
-        if (!oldBranch && branches.length > 0) {
-          oldBranch = branches.find(b =>
-            b === 'main' || b === 'master' || b === 'origin/main' || b === 'origin/master'
-          ) || branches[0];
-        }
-        if (!newBranch) {
-          newBranch = '__working_tree__';
-        }
-        // Only re-render if textarea doesn't have focus
-        const textareaEl = document.getElementById('notes');
-        if (!textareaEl || document.activeElement !== textareaEl) {
-          render();
           sendComparison();
-        }
-      } else if (msg.type === 'noRepository') {
-        document.getElementById('root').innerHTML =
-          '<div class="empty-state">No Git repository</div>';
-      } else if (msg.type === 'notesLoaded') {
-        notes = msg.notes || '';
-        const textarea = document.getElementById('notes');
-        if (textarea) textarea.value = notes;
-        saveState();
-      } else if (msg.type === 'copied') {
-        const btn = document.getElementById('copy');
-        if (btn) {
-          const original = btn.textContent;
-          btn.textContent = 'Copied!';
-          setTimeout(() => { btn.textContent = original; }, 1500);
-        }
-      } else if (msg.type === 'referenceAdded') {
-        let ref = `${msg.reference} `;
-        if (notes.length > 0) {
-          const lastChar = notes[notes.length - 1];
-          if (lastChar !== '\n' && lastChar !== ' ') {
-            ref = ` ${ref}`;
+        };
+
+        document.getElementById("new").onchange = (e) => {
+          newBranch = e.target.value;
+          saveState();
+          sendComparison();
+        };
+
+        let notesTimeout;
+        document.getElementById("notes").oninput = (e) => {
+          notes = e.target.value;
+          saveState();
+          // Debounce the file save to avoid excessive writes
+          clearTimeout(notesTimeout);
+          notesTimeout = setTimeout(() => {
+            vscode.postMessage({ type: "updateNotes", notes });
+          }, 500);
+        };
+
+        document.getElementById("notes").onkeydown = (e) => {
+          if (e.key !== "Enter") return;
+
+          const textarea = e.target;
+          const pos = textarea.selectionStart;
+          const text = textarea.value;
+
+          // Find the start of the current line
+          const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+          const line = text.slice(lineStart, pos);
+
+          // Check if line starts with whitespace + dash + space
+          const match = line.match(/^(\s*-\s)/);
+          if (match) {
+            e.preventDefault();
+            const prefix = match[1];
+            const before = text.slice(0, pos);
+            const after = text.slice(pos);
+            textarea.value = `${before}\n${prefix}${after}`;
+            const newPos = pos + 1 + prefix.length;
+            textarea.setSelectionRange(newPos, newPos);
+            notes = textarea.value;
+            saveState();
+            vscode.postMessage({ type: "updateNotes", notes });
           }
+        };
+
+        document.getElementById("copy").onclick = () => {
+          vscode.postMessage({ type: "copy" });
+        };
+
+        document.getElementById("clear").onclick = () => {
+          vscode.postMessage({ type: "clear" });
+        };
+
+        // Attach repo selector handler if present
+        const repoSelect = document.getElementById("repo");
+        if (repoSelect) {
+          repoSelect.onchange = (e) => {
+            selectedRepo = e.target.value;
+            // Reset branch selections when switching repos
+            oldBranch = "";
+            newBranch = "";
+            saveState();
+            vscode.postMessage({ type: "selectRepository", repoPath: selectedRepo });
+          };
         }
-        notes = notes + ref;
-        const textarea = document.getElementById('notes');
-        if (textarea) {
-          textarea.value = notes;
-          textarea.focus();
-          textarea.setSelectionRange(notes.length, notes.length);
-        }
-        saveState();
-        vscode.postMessage({ type: 'updateNotes', notes });
       }
-    });
 
-    // Restore state
-    const saved = vscode.getState();
-    if (saved) {
-      selectedRepo = saved.selectedRepo || '';
-      oldBranch = saved.oldBranch || '';
-      newBranch = saved.newBranch || '';
-      notes = saved.notes || '';
-    }
+      function saveState() {
+        vscode.setState({ selectedRepo, oldBranch, newBranch, notes });
+      }
 
-    vscode.postMessage({ type: 'ready' });
-  </script>
-</body>
+      function sendComparison() {
+        if (!oldBranch || !newBranch) return;
+
+        let spec;
+        if (newBranch === "__working_tree__") {
+          spec = { type: "working_tree", base: oldBranch };
+        } else {
+          const compare = newBranch === "__head__" ? "HEAD" : newBranch;
+          spec = { type: "branch", base: oldBranch, compare };
+        }
+        vscode.postMessage({ type: "selectComparison", spec });
+      }
+
+      window.addEventListener("message", (e) => {
+        const msg = e.data;
+        if (msg.type === "repositoriesLoaded") {
+          repositories = msg.repositories || [];
+          if (!selectedRepo && msg.selectedRepo) {
+            selectedRepo = msg.selectedRepo;
+          }
+          // Only re-render if textarea doesn't have focus
+          const textarea = document.getElementById("notes");
+          if (!textarea || document.activeElement !== textarea) {
+            render();
+          }
+        } else if (msg.type === "branchesLoaded") {
+          branches = msg.branches || [];
+          currentBranch = msg.currentBranch || "";
+          if (!oldBranch && branches.length > 0) {
+            oldBranch =
+              branches.find(
+                (b) =>
+                  b === "main" || b === "master" || b === "origin/main" || b === "origin/master",
+              ) || branches[0];
+          }
+          if (!newBranch) {
+            newBranch = "__working_tree__";
+          }
+          // Only re-render if textarea doesn't have focus
+          const textareaEl = document.getElementById("notes");
+          if (!textareaEl || document.activeElement !== textareaEl) {
+            render();
+            sendComparison();
+          }
+        } else if (msg.type === "noRepository") {
+          document.getElementById("root").innerHTML =
+            '<div class="empty-state">No Git repository</div>';
+        } else if (msg.type === "notesLoaded") {
+          notes = msg.notes || "";
+          const textarea = document.getElementById("notes");
+          if (textarea) textarea.value = notes;
+          saveState();
+        } else if (msg.type === "copied") {
+          const btn = document.getElementById("copy");
+          if (btn) {
+            const original = btn.textContent;
+            btn.textContent = "Copied!";
+            setTimeout(() => {
+              btn.textContent = original;
+            }, 1500);
+          }
+        } else if (msg.type === "referenceAdded") {
+          let ref = `${msg.reference} `;
+          if (notes.length > 0) {
+            const lastChar = notes[notes.length - 1];
+            if (lastChar !== "\n" && lastChar !== " ") {
+              ref = ` ${ref}`;
+            }
+          }
+          notes = notes + ref;
+          const textarea = document.getElementById("notes");
+          if (textarea) {
+            textarea.value = notes;
+            textarea.focus();
+            textarea.setSelectionRange(notes.length, notes.length);
+          }
+          saveState();
+          vscode.postMessage({ type: "updateNotes", notes });
+        }
+      });
+
+      // Restore state
+      const saved = vscode.getState();
+      if (saved) {
+        selectedRepo = saved.selectedRepo || "";
+        oldBranch = saved.oldBranch || "";
+        newBranch = saved.newBranch || "";
+        notes = saved.notes || "";
+      }
+
+      vscode.postMessage({ type: "ready" });
+    </script>
+  </body>
 </html>

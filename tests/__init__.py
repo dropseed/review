@@ -1,1 +1,1 @@
-"""Tests for pullapprove-review."""
+"""Tests for human-review."""

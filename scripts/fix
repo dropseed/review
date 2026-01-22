@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+uv run ruff check --fix .
+uv run ruff format .
+
+npx prettier --write "**/*.md"
+
+cd vscode
+npx oxfmt --write src media *.js
+npx oxlint --fix src media *.js

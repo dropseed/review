@@ -6,6 +6,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# Type alias for file status in diffs
+FileStatus = Literal["added", "modified", "deleted", "renamed", "untracked"]
+
 
 class DiffHunk(BaseModel):
     """A single hunk from a diff."""
@@ -22,7 +25,7 @@ class ChangedFile(BaseModel):
     """A file with its hunks."""
 
     path: str
-    status: Literal["added", "modified", "deleted", "renamed", "untracked"]
+    status: FileStatus
     old_path: str | None = None  # For renames
     hunks: list[DiffHunk] = []
 
@@ -45,9 +48,7 @@ def parse_hunk_key(hunk_key: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def map_status_code(
-    code: str,
-) -> Literal["added", "modified", "deleted", "renamed", "untracked"]:
+def map_status_code(code: str) -> FileStatus:
     """Map git status code to our status type."""
     code = code[0] if code else "M"
     if code == "A":
@@ -61,20 +62,12 @@ def map_status_code(
 
 def parse_name_status(
     output: str,
-) -> dict[
-    str,
-    tuple[Literal["added", "modified", "deleted", "renamed", "untracked"], str | None],
-]:
+) -> dict[str, tuple[FileStatus, str | None]]:
     """Parse git diff --name-status output.
 
     Returns dict mapping file path to (status, old_path).
     """
-    result: dict[
-        str,
-        tuple[
-            Literal["added", "modified", "deleted", "renamed", "untracked"], str | None
-        ],
-    ] = {}
+    result: dict[str, tuple[FileStatus, str | None]] = {}
 
     for line in output.strip().split("\n"):
         if not line:
@@ -95,7 +88,8 @@ def parse_name_status(
 
 
 def parse_diff_to_hunks(
-    diff_output: str, file_status_map: dict[str, tuple[str, str | None]] | None = None
+    diff_output: str,
+    file_status_map: dict[str, tuple[FileStatus, str | None]] | None = None,
 ) -> list[ChangedFile]:
     """Parse unified diff output into ChangedFile objects with hunks.
 
@@ -124,9 +118,7 @@ def parse_diff_to_hunks(
         hunks = _parse_hunks_from_content(b_path, content)
 
         # Get status from map or default to modified
-        status: Literal["added", "modified", "deleted", "renamed", "untracked"] = (
-            "modified"
-        )
+        status: FileStatus = "modified"
         old_path = None
         if file_status_map and b_path in file_status_map:
             status, old_path = file_status_map[b_path]
@@ -173,7 +165,8 @@ def _parse_hunks_from_content(file_path: str, diff_content: str) -> list[DiffHun
         )
         content = diff_content[start["index"] : end_index].strip()
 
-        # Hash only the diff lines (excluding header) so line number changes don't invalidate reviews
+        # Hash only the diff lines (excluding header) so line number changes don't invalidate reviews.
+        # Identical content gets the same hash - this is intentional for duplicate hunks.
         header_end = start["index"] + len(start["header"])
         diff_lines = diff_content[header_end:end_index].strip()
         hunk_hash = hash_content(diff_lines)

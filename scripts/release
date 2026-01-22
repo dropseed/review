@@ -1,0 +1,7 @@
+#!/bin/sh -e
+uv version --bump "$1"
+VERSION=$(uv version --short)
+git add pyproject.toml uv.lock
+git commit -m "Release human-review $VERSION"
+git tag "v$VERSION"
+git push origin master "v$VERSION"

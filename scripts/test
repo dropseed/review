@@ -1,4 +1,9 @@
 #!/bin/bash
 set -e
 cd "$(dirname "$0")/.."
+
+# Make sure the cli actually loads
+uv run human-review --help
+
+# Run tests
 uv run pytest "$@"

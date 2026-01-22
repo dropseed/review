@@ -1,4 +1,4 @@
-# PullApprove Review
+# Human Review
 
 A VS Code extension for code review workflows. Compare branches, track reviewed files, and export review notes as markdown.
 
@@ -19,7 +19,7 @@ A VS Code extension for code review workflows. Compare branches, track reviewed 
 ### Setup
 
 ```bash
-cd pullapprove-review
+cd vscode
 npm install
 ```
 
@@ -44,18 +44,19 @@ Use the scripts in the `scripts/` folder:
 ### Manual Development
 
 1. Start the build in watch mode:
+
    ```bash
    npm run watch
    ```
 
 2. Press `F5` in VS Code to launch the Extension Development Host
 
-3. In the new VS Code window, click the PullApprove icon in the Activity Bar (sidebar)
+3. In the new VS Code window, click the Human Review icon in the Activity Bar (sidebar)
 
 ### Project Structure
 
 ```
-pullapprove-review/
+vscode/
 ├── src/
 │   ├── extension.ts              # Extension entry point
 │   ├── providers/
@@ -106,27 +107,28 @@ The extension has two main parts:
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `src/extension.ts` | Activates extension, registers providers and commands |
-| `src/providers/GitProvider.ts` | Wraps `vscode.git` API for branch listing and diffs |
-| `src/providers/ReviewViewProvider.ts` | Creates sidebar webview, handles messaging |
-| `src/services/ReviewStateService.ts` | Persists review state to `.vscode/pullapprove-reviews/` |
-| `src/webview/hooks/useVSCodeApi.ts` | React hook for VS Code messaging |
-| `package.json` | Defines commands, menus, views, keybindings |
+| File                                  | Purpose                                               |
+| ------------------------------------- | ----------------------------------------------------- |
+| `src/extension.ts`                    | Activates extension, registers providers and commands |
+| `src/providers/GitProvider.ts`        | Wraps `vscode.git` API for branch listing and diffs   |
+| `src/providers/ReviewViewProvider.ts` | Creates sidebar webview, handles messaging            |
+| `src/services/ReviewStateService.ts`  | Persists review state to `.human-review/reviews/`     |
+| `src/webview/hooks/useVSCodeApi.ts`   | React hook for VS Code messaging                      |
+| `package.json`                        | Defines commands, menus, views, keybindings           |
 
 ### State Persistence
 
-Review state is stored per-comparison in `.vscode/pullapprove-reviews/`:
+Review state is stored per-comparison in `.human-review/reviews/`:
 
 ```
-.vscode/pullapprove-reviews/
+.human-review/reviews/
 ├── master__feature-branch.json
 ├── staged.json
 └── uncommitted.json
 ```
 
 Each file contains:
+
 - `reviewedFiles` - List of file paths marked as reviewed
 - `notes` - Review notes text
 - `lineReferences` - File:line references added from editor
@@ -134,13 +136,13 @@ Each file contains:
 
 ### Commands
 
-| Command | Keybinding | Description |
-|---------|------------|-------------|
-| `pullapproveReview.addLineReference` | `Cmd+Shift+R` | Add current line to review notes |
-| `pullapproveReview.addSelectionReference` | (context menu) | Add selection to review notes |
-| `pullapproveReview.copyAsMarkdown` | (toolbar) | Copy review as markdown |
-| `pullapproveReview.clearReview` | (toolbar menu) | Clear current review |
-| `pullapproveReview.refresh` | (toolbar) | Refresh file list |
+| Command                             | Keybinding     | Description                      |
+| ----------------------------------- | -------------- | -------------------------------- |
+| `humanReview.addLineReference`      | `Cmd+Shift+R`  | Add current line to review notes |
+| `humanReview.addSelectionReference` | (context menu) | Add selection to review notes    |
+| `humanReview.copyAsMarkdown`        | (toolbar)      | Copy review as markdown          |
+| `humanReview.clearReview`           | (toolbar menu) | Clear current review             |
+| `humanReview.refresh`               | (toolbar)      | Refresh file list                |
 
 ### Debugging
 
@@ -149,6 +151,7 @@ Each file contains:
 3. Use the Debug Console to see `console.log` output
 
 For webview debugging:
+
 1. In the Extension Development Host, open Command Palette
 2. Run "Developer: Open Webview Developer Tools"
 
@@ -158,10 +161,11 @@ For webview debugging:
 # Package the extension
 ./scripts/package
 
-# This creates pullapprove-review-0.1.0.vsix
+# This creates human-review-0.1.0.vsix
 ```
 
 To install the `.vsix` file:
+
 ```bash
-code --install-extension pullapprove-review-0.1.0.vsix
+code --install-extension human-review-0.1.0.vsix
 ```

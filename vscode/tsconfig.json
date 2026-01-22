@@ -1,18 +1,18 @@
 {
-	"compilerOptions": {
-		"module": "Node16",
-		"target": "ES2022",
-		"lib": ["ES2022"],
-		"outDir": "out",
-		"rootDir": "src",
-		"sourceMap": true,
-		"strict": true,
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"resolveJsonModule": true,
-		"declaration": false,
-		"moduleResolution": "Node16"
-	},
-	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules", "src/webview/**/*"]
+  "compilerOptions": {
+    "module": "Node16",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "out",
+    "rootDir": "src",
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "moduleResolution": "Node16"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "src/webview/**/*"]
 }
