@@ -25,15 +25,18 @@ Once all hunks are labeled, move to Phase 2.
 ### Patterned & Mechanical vs Reasoned Changes
 
 **Patterned changes (trust):**
+
 - **Identical hunks across files** — Same import added to 12 files, same parameter removed from 8 constructors
 - **File-level operations** — Deleted files, renamed files (where content didn't change)
-- Test: can you look at one hunk and know *exactly* what all the others look like?
+- Test: can you look at one hunk and know _exactly_ what all the others look like?
 
 **Mechanical changes (trust):**
+
 - **Generated/automated** — Lock files, version bumps, formatting-only changes
 - **Rote operations** — No human judgment needed, even if just 1 hunk
 
 **Reasoned changes (walkthrough):**
+
 - **New implementations** — New classes, new functions, new logic
 - **Behavior changes** — Modified logic, changed conditionals, updated algorithms
 - **Small-hunk-count labels** — 1-2 hunks is usually a unique change, not a pattern
@@ -42,12 +45,12 @@ Once all hunks are labeled, move to Phase 2.
 
 **Examples:**
 
-| Label | Hunks | Type | Why |
-|-------|-------|------|-----|
-| "Add ChoicesFieldMixin import" | 12 | Patterned | All identical: `+from .mixins import ...` |
-| "Update package-lock.json" | 1 | Mechanical | Generated, no judgment needed |
-| "Update forms.py to check dynamically" | 2 | Reasoned | Different hunks, logic change |
-| "Add ChoicesFieldMixin class" | 1 | Reasoned | New implementation, needs review |
+| Label                                  | Hunks | Type       | Why                                       |
+| -------------------------------------- | ----- | ---------- | ----------------------------------------- |
+| "Add ChoicesFieldMixin import"         | 12    | Patterned  | All identical: `+from .mixins import ...` |
+| "Update package-lock.json"             | 1     | Mechanical | Generated, no judgment needed             |
+| "Update forms.py to check dynamically" | 2     | Reasoned   | Different hunks, logic change             |
+| "Add ChoicesFieldMixin class"          | 1     | Reasoned   | New implementation, needs review          |
 
 ### Ordering Patterned Changes
 
@@ -466,3 +469,4 @@ AGENT: Your progress is saved. After you've looked into that dict() question:
 ```
 
 ```
+````

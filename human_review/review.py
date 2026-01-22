@@ -17,6 +17,52 @@ from .hunks import (
     parse_name_status,
 )
 from .state import HunkState, ReviewState, ReviewStateService
+from .patterns import patterns_match_trust_list
+
+
+def get_hunk_display_label(hunk_state: HunkState | None) -> str | None:
+    """Get the display label for a hunk (reasoning text)."""
+    if not hunk_state:
+        return None
+    return hunk_state.reasoning
+
+
+# -----------------------------------------------------------------------------
+# Trust resolution (declarative model)
+# -----------------------------------------------------------------------------
+
+
+def is_hunk_trusted(hunk: HunkState, effective_trust: list[str]) -> bool:
+    """Check if hunk's labels are all trusted.
+
+    Args:
+        hunk: The hunk state
+        effective_trust: Combined trust from config + review-level
+
+    Returns:
+        True if all labels in hunk match the effective trust list.
+        Returns False if hunk has no labels (needs review).
+    """
+    if not hunk.label:
+        return False  # No labels = needs review
+
+    all_trusted, _ = patterns_match_trust_list(hunk.label, effective_trust)
+    return all_trusted
+
+
+def is_hunk_approved(hunk: HunkState, effective_trust: list[str]) -> bool:
+    """Check if a hunk is approved (via review or trust).
+
+    Args:
+        hunk: The hunk state
+        effective_trust: Combined trust from config + review-level
+
+    Returns:
+        True if hunk is manually reviewed OR all labels are trusted.
+    """
+    if hunk.approved_via == "review":
+        return True
+    return is_hunk_trusted(hunk, effective_trust)
 
 
 # -----------------------------------------------------------------------------
@@ -151,16 +197,30 @@ class ReviewStatus:
 
 
 def compute_review_status(
-    files: list[ChangedFile], state: ReviewState, comparison_key: str
+    files: list[ChangedFile],
+    state: ReviewState,
+    comparison_key: str,
+    effective_trust: list[str] | None = None,
 ) -> ReviewStatus:
-    """Compute review status from files and state."""
+    """Compute review status from files and state.
+
+    Args:
+        files: List of changed files with hunks
+        state: Review state
+        comparison_key: The comparison key
+        effective_trust: Combined trust list (config + review-level).
+                         If None, uses state.trust_label only.
+    """
+    if effective_trust is None:
+        effective_trust = list(state.trust_label)
+
     total_hunks = 0
     approved_hunks = 0
     unlabeled_total = 0
 
-    # Unreviewed hunks grouped by label (classified but not approved)
+    # Labeled but not trusted (has labels but not all trusted)
     unreviewed_by_label: dict[str, int] = {}
-    # Trusted hunks grouped by label (approved_via == "trust")
+    # Trusted hunks grouped by label (computed: all labels in trust list)
     trusted_by_label: dict[str, int] = {}
     # Reviewed hunks grouped by label (approved_via == "review")
     reviewed_by_label: dict[str, int] = {}
@@ -181,18 +241,24 @@ def compute_review_status(
             hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
             hunk_state = state.hunks.get(hunk_key)
 
-            if hunk_state and hunk_state.approved_via is not None:
+            if hunk_state and hunk_state.approved_via == "review":
+                # Manually reviewed
                 approved_hunks += 1
-                label = hunk_state.label or "(no label)"
-                if hunk_state.approved_via == "trust":
-                    trusted_by_label[label] = trusted_by_label.get(label, 0) + 1
-                else:  # "review"
-                    reviewed_by_label[label] = reviewed_by_label.get(label, 0) + 1
-            elif hunk_state and hunk_state.label is not None:
-                unreviewed_by_label[hunk_state.label] = (
-                    unreviewed_by_label.get(hunk_state.label, 0) + 1
+                reasoning = hunk_state.reasoning or "(no reasoning)"
+                reviewed_by_label[reasoning] = reviewed_by_label.get(reasoning, 0) + 1
+            elif hunk_state and is_hunk_trusted(hunk_state, effective_trust):
+                # Trusted (computed dynamically)
+                approved_hunks += 1
+                reasoning = hunk_state.reasoning or "(no reasoning)"
+                trusted_by_label[reasoning] = trusted_by_label.get(reasoning, 0) + 1
+            elif hunk_state and (hunk_state.label or hunk_state.reasoning is not None):
+                # Has labels or reasoning but not trusted
+                reasoning = hunk_state.reasoning or "(no reasoning)"
+                unreviewed_by_label[reasoning] = (
+                    unreviewed_by_label.get(reasoning, 0) + 1
                 )
             else:
+                # No labels or reasoning
                 unlabeled_total += 1
 
     # Sort by count descending
@@ -241,11 +307,11 @@ def hunk_passes_filter(
         if hunk_state and hunk_state.approved_via is not None:
             return False
     if filters.unlabeled:
-        if hunk_state and hunk_state.label is not None:
+        if hunk_state and hunk_state.reasoning is not None:
             return False
     if filters.label:
-        hunk_label = hunk_state.label if hunk_state else None
-        if hunk_label != filters.label:
+        hunk_reasoning = hunk_state.reasoning if hunk_state else None
+        if hunk_reasoning != filters.label:
             return False
     return True
 
@@ -305,34 +371,6 @@ def build_patch_for_approved_hunks(
                     patch_parts.append(hunk.content)
 
     return "\n".join(patch_parts), hunk_count
-
-
-def check_hunk_count_warnings(
-    files: list[ChangedFile],
-    service: ReviewStateService,
-    comparison_key: str,
-) -> list[str]:
-    """Check for hunks where count has increased since approval.
-
-    Returns list of warning messages.
-    """
-    # Count current hunks by key
-    current_counts: Counter[str] = Counter()
-    for f in files:
-        for hunk in f.hunks:
-            hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
-            current_counts[hunk_key] += 1
-
-    warnings = []
-    for hunk_key, actual_count in current_counts.items():
-        is_ok, expected = service.check_hunk_count(
-            comparison_key, hunk_key, actual_count
-        )
-        if not is_ok and expected is not None:
-            warnings.append(
-                f"{hunk_key}: {actual_count} hunks now vs {expected} when reviewed"
-            )
-    return warnings
 
 
 # -----------------------------------------------------------------------------

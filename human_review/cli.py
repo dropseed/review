@@ -28,13 +28,14 @@ from .hunks import (
 from .review import (
     DiffFilters,
     build_patch_for_approved_hunks,
-    check_hunk_count_warnings,
     compute_review_status,
     count_hunks_by_key,
     get_changed_files,
     get_valid_hunk_keys,
     hunk_passes_filter,
     is_bare_hash,
+    is_hunk_approved,
+    is_hunk_trusted,
     parse_hunk_spec,
     resolve_bare_hash,
 )
@@ -48,6 +49,7 @@ from .output import (
     success,
     warning,
 )
+from .config import ConfigService, get_default_trust_list
 from .state import Comparison, ReviewState, ReviewStateService
 
 # Exit codes following common conventions:
@@ -85,8 +87,6 @@ def get_current_comparison(
 
     Exits with error if no review is in progress.
     """
-    from .state import Comparison
-
     repo_root = service.repo_root
 
     if base_override:
@@ -94,7 +94,7 @@ def get_current_comparison(
         if not git_ref_exists(base_override, cwd=repo_root):
             click.echo(f"{error('Error:')} ref '{base_override}' not found", err=True)
             sys.exit(EXIT_USER_ERROR)
-        current_branch = git_current_branch(cwd=repo_root)
+        current_branch = git_current_branch(cwd=repo_root) or "HEAD"
         return service.make_comparison(base_override, current_branch, working_tree=True)
 
     # Load from saved current comparison
@@ -411,9 +411,11 @@ def start(old: str, new_ref: str | None, working_tree: bool, quiet: bool) -> Non
     """
     service = get_state_service()
     repo_root = service.repo_root
-    current_branch = git_current_branch(cwd=repo_root)
+    current_branch = git_current_branch(cwd=repo_root) or "HEAD"
 
-    # Resolve --new to current branch if not specified (or if HEAD)
+    # Resolve HEAD to current branch for readability
+    if old.upper() == "HEAD":
+        old = current_branch
     if new_ref is None or new_ref.upper() == "HEAD":
         new_ref = current_branch
 
@@ -432,7 +434,11 @@ def start(old: str, new_ref: str | None, working_tree: bool, quiet: bool) -> Non
 
     # Build description
     if working_tree:
-        review_desc = f"working tree vs {old}" if new_ref == current_branch else f"{new_ref} + uncommitted vs {old}"
+        review_desc = (
+            f"working tree vs {old}"
+            if new_ref == current_branch
+            else f"{new_ref} + uncommitted vs {old}"
+        )
     else:
         review_desc = f"commits on {new_ref} vs {old}"
 
@@ -492,7 +498,12 @@ def status(base: str | None, as_json: bool, show_files: bool, short_mode: bool) 
     Shows diff scope (files by type) and review progress (hunks by label).
     """
     ctx = get_review_context(base)
-    rs = compute_review_status(ctx.files, ctx.state, ctx.comparison_key)
+    # Build effective trust list: config trust + review-level trust
+    config_service = ConfigService(repo_root=ctx.service.repo_root)
+    effective_trust = config_service.get_trust_list() + list(ctx.state.trust_label)
+    rs = compute_review_status(
+        ctx.files, ctx.state, ctx.comparison_key, effective_trust
+    )
 
     if as_json:
         output = {
@@ -538,9 +549,15 @@ def status(base: str | None, as_json: bool, show_files: bool, short_mode: bool) 
 
     click.echo()
 
+    # Show comparison being reviewed
+    click.echo(f"{bold('Reviewing:')} {info(ctx.comparison_key)}")
+
     if rs.total_hunks == 0:
+        click.echo()
         click.echo(dim("No changes to review."))
         return
+
+    click.echo()
 
     # Scope: files by git status
     click.echo(
@@ -737,8 +754,8 @@ def diff_cmd(
                 if hunk_state and hunk_state.approved_via is not None:
                     reviewed_count += 1
 
-                if hunk_state and hunk_state.label is not None:
-                    file_labels.add(hunk_state.label)
+                if hunk_state and hunk_state.reasoning is not None:
+                    file_labels.add(hunk_state.reasoning)
 
                 if hunk_passes_filter(hunk, hunk_state, filters):
                     has_matching_hunk = True
@@ -855,10 +872,28 @@ def diff_cmd(
 
                 hunks_included += 1
 
+                # Compute trust status
+                config_service = ConfigService(repo_root=ctx.service.repo_root)
+                effective_trust = config_service.get_trust_list() + list(
+                    ctx.state.trust_label
+                )
                 hunk_data = {
                     "hash": hunk.hash,
-                    "approved_via": hunk_state.approved_via if hunk_state else None,
-                    "label": hunk_state.label if hunk_state else None,
+                    "label": hunk_state.label if hunk_state else [],
+                    "reasoning": hunk_state.reasoning if hunk_state else None,
+                    "is_trusted": (
+                        is_hunk_trusted(hunk_state, effective_trust)
+                        if hunk_state
+                        else False
+                    ),
+                    "is_reviewed": (
+                        hunk_state.approved_via == "review" if hunk_state else False
+                    ),
+                    "is_approved": (
+                        is_hunk_approved(hunk_state, effective_trust)
+                        if hunk_state
+                        else False
+                    ),
                     "header": hunk.header,
                     "content": hunk.content,
                     "start_line": hunk.start_line,
@@ -968,20 +1003,21 @@ def _is_glob_pattern(s: str) -> bool:
 
 
 @cli.command()
-@click.argument("label", required=True)
+@click.argument("pattern", required=True)
 @click.option("--base", help="Override base ref for this command")
-@click.option("--preview", is_flag=True, help="Preview hunks before trusting")
+@click.option("--preview", is_flag=True, help="Preview hunks that would become trusted")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-essential output")
-def trust(label: str, base: str | None, preview: bool, quiet: bool) -> None:
-    """Trust a classification label, approving all its hunks.
+def trust(pattern: str, base: str | None, preview: bool, quiet: bool) -> None:
+    """Add a pattern to the review-level trust list.
 
-    Supports glob patterns (*, ?, []) to match multiple labels at once.
+    PATTERN is a trust pattern like "imports:added" or a glob like "imports:*".
+    Hunks with labels matching trusted patterns are dynamically approved.
 
     \b
     Examples:
-      human-review trust "renamed src/old to src/new"
-      human-review trust "renamed:*"        # matches all "renamed:" prefixed labels
-      human-review trust "whitespace only" --preview
+      human-review trust imports:added
+      human-review trust "imports:*"        # matches all import patterns
+      human-review trust "formatting:*" --preview
     """
     ctx = get_review_context(base)
 
@@ -989,147 +1025,159 @@ def trust(label: str, base: str | None, preview: bool, quiet: bool) -> None:
     hunk_key_counts = count_hunks_by_key(ctx.files)
     valid_keys = get_valid_hunk_keys(ctx.files)
 
-    is_pattern = _is_glob_pattern(label)
+    is_glob = _is_glob_pattern(pattern)
 
-    # Find hunks with matching label that are not yet approved
+    # Build current effective trust (before adding this pattern)
+    config_service = ConfigService(repo_root=ctx.service.repo_root)
+    current_trust = config_service.get_trust_list() + list(ctx.state.trust_label)
+
+    # Find hunks that would become trusted by adding this pattern
+    new_trust = current_trust + [pattern]
     matching_keys = []
-    matched_labels: set[str] = set()
+    matched_patterns: set[str] = set()
     for hunk_key, hunk_state in ctx.state.hunks.items():
-        if hunk_state.label is None or hunk_key not in valid_keys:
+        if not hunk_state.label or hunk_key not in valid_keys:
             continue
-        if hunk_state.approved_via is not None:
-            continue
+        if hunk_state.approved_via == "review":
+            continue  # Already manually reviewed
+        if is_hunk_trusted(hunk_state, current_trust):
+            continue  # Already trusted
 
-        # Check if label matches (exact or glob)
-        if is_pattern:
-            if fnmatch.fnmatch(hunk_state.label, label):
-                matching_keys.append(hunk_key)
-                matched_labels.add(hunk_state.label)
-        else:
-            if hunk_state.label == label:
-                matching_keys.append(hunk_key)
-                matched_labels.add(hunk_state.label)
+        # Check if this pattern would make the hunk trusted
+        if is_hunk_trusted(hunk_state, new_trust):
+            matching_keys.append(hunk_key)
+            # Track which label patterns matched the new trust pattern
+            for label_pattern in hunk_state.label:
+                if is_glob:
+                    if fnmatch.fnmatch(label_pattern, pattern):
+                        matched_patterns.add(label_pattern)
+                else:
+                    if label_pattern == pattern:
+                        matched_patterns.add(label_pattern)
 
-    if not matching_keys:
-        if is_pattern:
-            click.echo(dim(f"No unapproved hunks with labels matching '{label}'."))
-        else:
-            click.echo(dim(f"No unapproved hunks with label '{label}'."))
-        return
-
-    # Preview mode: show matched labels and sample hunks
-    total_count = sum(hunk_key_counts[k] for k in matching_keys)
+    # Preview mode: show what would be trusted
+    total_count = sum(hunk_key_counts.get(k, 1) for k in matching_keys)
     if preview:
-        if is_pattern:
-            click.echo(f"{bold('Pattern:')} {info(label)}")
-            click.echo(f"{bold('Matched labels:')} {len(matched_labels)}")
-            for r in sorted(matched_labels):
-                label_keys = [k for k in matching_keys if ctx.state.hunks[k].label == r]
-                label_count = sum(hunk_key_counts[k] for k in label_keys)
-                click.echo(f"  → {r} {dim(f'({label_count} hunks)')}")
+        if is_glob:
+            click.echo(f"{bold('Glob:')} {info(pattern)}")
+            if matched_patterns:
+                click.echo(f"{bold('Matched label patterns:')} {len(matched_patterns)}")
+                for p in sorted(matched_patterns):
+                    pattern_keys = [
+                        k for k in matching_keys if p in ctx.state.hunks[k].label
+                    ]
+                    pattern_count = sum(hunk_key_counts.get(k, 1) for k in pattern_keys)
+                    click.echo(f"  → {p} {dim(f'({pattern_count} hunks)')}")
         else:
-            click.echo(f"{bold('Label:')} {info(label)}")
-        click.echo(f"{bold('Total hunks:')} {total_count}")
+            click.echo(f"{bold('Pattern:')} {info(pattern)}")
+        click.echo(f"{bold('Hunks that would become trusted:')} {total_count}")
         click.echo()
 
-        # Show up to 5 sample hunks
-        sample_keys = matching_keys[:5]
-        for hunk_key in sample_keys:
-            path, hash_val = parse_hunk_key(hunk_key)
-            click.echo(f"  · {file_path_style(path)}{dim(':')}{info(hash_val)}")
+        if matching_keys:
+            # Show up to 5 sample hunks with reasoning
+            sample_keys = matching_keys[:5]
+            for hunk_key in sample_keys:
+                path, hash_val = parse_hunk_key(hunk_key)
+                hunk_state = ctx.state.hunks.get(hunk_key)
+                reasoning = hunk_state.reasoning if hunk_state else ""
+                click.echo(f"  · {file_path_style(path)}{dim(':')}{info(hash_val)}")
+                if reasoning:
+                    click.echo(f"    {dim(reasoning[:60])}")
 
-        if len(matching_keys) > 5:
-            click.echo(f"  {dim(f'... and {len(matching_keys) - 5} more')}")
+            if len(matching_keys) > 5:
+                click.echo(f"  {dim(f'... and {len(matching_keys) - 5} more')}")
+            click.echo()
 
-        click.echo()
-        click.echo(
-            dim(f"Run without --preview to trust and approve all {total_count} hunks.")
-        )
+        click.echo(dim(f"Run without --preview to add '{pattern}' to trust list."))
         return
 
-    # Trust all matching hunks
-    if is_pattern:
-        # For patterns, we need to approve each matching hunk
-        for hunk_key in matching_keys:
-            ctx.service.approve_hunk(
-                ctx.comparison_key, hunk_key, "trust", count=hunk_key_counts[hunk_key]
-            )
-        total_count = sum(hunk_key_counts[k] for k in matching_keys)
-        if not quiet:
+    # Check if pattern is already trusted
+    if pattern in ctx.state.trust_label:
+        click.echo(dim(f"Pattern '{pattern}' is already in the trust list."))
+        return
+
+    # Add pattern to review-level trust list
+    ctx.service.add_trust_label(ctx.comparison_key, pattern)
+
+    if not quiet:
+        if total_count > 0:
+            if is_glob:
+                click.echo(
+                    f"{success('✓')} Added '{info(pattern)}' to trust list — {bold(str(total_count))} hunk(s) now trusted."
+                )
+            else:
+                click.echo(
+                    f"{success('✓')} Added '{info(pattern)}' to trust list — {bold(str(total_count))} hunk(s) now trusted."
+                )
+        else:
             click.echo(
-                f"{success('✓')} Trusted '{info(label)}' — approved {bold(str(total_count))} hunk(s) matching {bold(str(len(matched_labels)))} label(s)."
+                f"{success('✓')} Added '{info(pattern)}' to trust list (no matching hunks currently)."
             )
-            click.echo(dim("→ Run 'human-review status' to see progress"))
-    else:
-        # For exact match, use the existing trust_label method with counts
-        approved_keys = ctx.service.trust_label(
-            ctx.comparison_key, label, counts=dict(hunk_key_counts)
-        )
-        total_count = sum(hunk_key_counts[k] for k in approved_keys)
-        if not quiet:
-            click.echo(
-                f"{success('✓')} Trusted '{info(label)}' — approved {bold(str(total_count))} hunk(s)."
-            )
-            click.echo(dim("→ Run 'human-review status' to see progress"))
+        click.echo(dim("→ Run 'human-review status' to see progress"))
 
 
 @cli.command()
-@click.argument("label", required=True)
+@click.argument("pattern", required=True)
 @click.option("--base", help="Override base ref for this command")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-essential output")
-def untrust(label: str, base: str | None, quiet: bool) -> None:
-    """Remove trust from a label, unapproving its hunks.
+def untrust(pattern: str, base: str | None, quiet: bool) -> None:
+    """Remove a pattern from the review-level trust list.
 
-    Supports glob patterns (*, ?, []) to match multiple labels at once.
-    Only affects hunks that were approved via trust (not individual review).
+    PATTERN is a trust pattern like "imports:added" or a glob like "imports:*".
+    Hunks with labels matching this pattern will no longer be automatically trusted.
     """
     ctx = get_review_context(base)
-    is_pattern = _is_glob_pattern(label)
 
-    if is_pattern:
-        # For patterns, find all matching labels and untrust each
-        matched_labels: set[str] = set()
-        for hunk_state in ctx.state.hunks.values():
-            if (
-                hunk_state.label
-                and hunk_state.approved_via == "trust"
-                and fnmatch.fnmatch(hunk_state.label, label)
-            ):
-                matched_labels.add(hunk_state.label)
+    # Build current effective trust
+    config_service = ConfigService(repo_root=ctx.service.repo_root)
+    valid_keys = get_valid_hunk_keys(ctx.files)
+    hunk_key_counts = count_hunks_by_key(ctx.files)
+    current_trust = config_service.get_trust_list() + list(ctx.state.trust_label)
 
-        if not matched_labels:
-            if not quiet:
-                click.echo(dim(f"No trusted hunks with labels matching '{label}'."))
-            return
-
-        total_unapproved = 0
-        for r in matched_labels:
-            unapproved_keys = ctx.service.untrust_label(ctx.comparison_key, r)
-            total_unapproved += len(unapproved_keys)
-
+    # Check if pattern is in review-level trust list
+    if pattern not in ctx.state.trust_label:
         if not quiet:
-            click.echo(
-                f"{success('✓')} Untrusted '{info(label)}' — unapproved {bold(str(total_unapproved))} hunk(s) matching {bold(str(len(matched_labels)))} label(s)."
-            )
-    else:
-        unapproved_keys = ctx.service.untrust_label(ctx.comparison_key, label)
+            click.echo(dim(f"Pattern '{pattern}' is not in the review trust list."))
+            # Check if it's in config trust
+            if pattern in config_service.get_trust_list():
+                click.echo(
+                    dim(
+                        f"Note: '{pattern}' is in your config trust list. Use 'config trust remove' to remove it."
+                    )
+                )
+        return
 
-        if not unapproved_keys:
-            if not quiet:
-                click.echo(dim(f"No trusted hunks with label '{label}'."))
-            return
+    # Calculate how many hunks will become untrusted
+    new_trust = [p for p in current_trust if p != pattern]
+    affected_count = 0
+    for hunk_key, hunk_state in ctx.state.hunks.items():
+        if hunk_key not in valid_keys:
+            continue
+        if hunk_state.approved_via == "review":
+            continue  # Manually reviewed, not affected
+        # Check if this hunk is currently trusted but won't be after removal
+        if is_hunk_trusted(hunk_state, current_trust) and not is_hunk_trusted(
+            hunk_state, new_trust
+        ):
+            affected_count += hunk_key_counts.get(hunk_key, 1)
 
-        if not quiet:
+    # Remove pattern from review-level trust list
+    ctx.service.remove_trust_label(ctx.comparison_key, pattern)
+
+    if not quiet:
+        if affected_count > 0:
             click.echo(
-                f"{success('✓')} Untrusted '{info(label)}' — unapproved {bold(str(len(unapproved_keys)))} hunk(s)."
+                f"{success('✓')} Removed '{info(pattern)}' from trust list — {bold(str(affected_count))} hunk(s) now need review."
             )
+        else:
+            click.echo(f"{success('✓')} Removed '{info(pattern)}' from trust list.")
 
 
 @cli.command()
-@click.argument("spec", required=True)
+@click.argument("specs", nargs=-1, required=True)
 @click.option("--base", help="Override base ref for this command")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-essential output")
-def approve(spec: str, base: str | None, quiet: bool) -> None:
+def approve(specs: tuple[str, ...], base: str | None, quiet: bool) -> None:
     """Approve hunks after review.
 
     \b
@@ -1137,85 +1185,83 @@ def approve(spec: str, base: str | None, quiet: bool) -> None:
       - A file path (approves all hunks in file)
       - path:hash (approves specific hunk)
       - path:h1,h2 (approves multiple hunks)
+      - Multiple SPECs can be provided
 
     \b
     Examples:
       human-review approve src/auth.py
       human-review approve src/auth.py:abc123
       human-review approve abc123  # bare hash lookup
+      human-review approve abc123 def456  # multiple hashes
     """
     ctx = get_review_context(base)
-
-    # Handle bare hash (e.g., "08ce166c" or "08ce")
-    if is_bare_hash(spec):
-        matches, err = resolve_bare_hash(spec, ctx.files)
-        if err:
-            click.echo(f"{error('Error:')} {err}", err=True)
-            sys.exit(EXIT_USER_ERROR)
-
-        # Count occurrences of each (filepath, hash) pair
-        match_counts = Counter(matches)
-
-        for (filepath, full_hash), count in match_counts.items():
-            hunk_key = get_hunk_key(filepath, full_hash)
-            ctx.service.approve_hunk(
-                ctx.comparison_key, hunk_key, "review", count=count
-            )
-            if not quiet:
-                click.echo(
-                    f"{success('✓')} {file_path_style(filepath)}{dim(':')}{info(full_hash)}"
-                )
-                if count > 1:
-                    click.echo(dim(f"    ({count} hunks with identical content)"))
-        return
-
-    path, hashes = parse_hunk_spec(spec)
-
-    # Find matching file(s)
-    matching_files = [
-        f for f in ctx.files if f.path == path or f.path.startswith(path + "/")
-    ]
-    if not matching_files:
-        click.echo(f"{error('Error:')} no changes found for '{path}'", err=True)
-        sys.exit(EXIT_USER_ERROR)
-
-    # Build count of how many hunks share each key across all files
     hunk_key_counts = count_hunks_by_key(ctx.files)
 
-    approved_count = 0
-    for f in matching_files:
-        for hunk in f.hunks:
-            if hashes is None or hunk.hash in hashes:
-                hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
-                ctx.service.approve_hunk(
-                    ctx.comparison_key,
-                    hunk_key,
-                    "review",
-                    count=hunk_key_counts[hunk_key],
-                )
-                approved_count += 1
-                if hashes and not quiet:
-                    click.echo(
-                        f"  {success('✓')} {file_path_style(f.path)}{dim(':')}{info(hunk.hash)}"
-                    )
+    for spec in specs:
+        # Handle bare hash (e.g., "08ce166c" or "08ce")
+        if is_bare_hash(spec):
+            matches, err = resolve_bare_hash(spec, ctx.files)
+            if err:
+                click.echo(f"{error('Error:')} {err}", err=True)
+                sys.exit(EXIT_USER_ERROR)
 
-    if hashes:
-        not_found = set(hashes) - {h.hash for f in matching_files for h in f.hunks}
-        for h in not_found:
+            # Count occurrences of each (filepath, hash) pair
+            match_counts = Counter(matches)
+
+            for (filepath, full_hash), count in match_counts.items():
+                hunk_key = get_hunk_key(filepath, full_hash)
+                ctx.service.approve_hunk(ctx.comparison_key, hunk_key, count=count)
+                if not quiet:
+                    click.echo(
+                        f"{success('✓')} {file_path_style(filepath)}{dim(':')}{info(full_hash)}"
+                    )
+                    if count > 1:
+                        click.echo(dim(f"    ({count} hunks with identical content)"))
+            continue
+
+        path, hashes = parse_hunk_spec(spec)
+
+        # Find matching file(s)
+        matching_files = [
+            f for f in ctx.files if f.path == path or f.path.startswith(path + "/")
+        ]
+        if not matching_files:
+            click.echo(f"{error('Error:')} no changes found for '{path}'", err=True)
+            sys.exit(EXIT_USER_ERROR)
+
+        approved_count = 0
+        for f in matching_files:
+            for hunk in f.hunks:
+                if hashes is None or hunk.hash in hashes:
+                    hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
+                    ctx.service.approve_hunk(
+                        ctx.comparison_key,
+                        hunk_key,
+                        count=hunk_key_counts[hunk_key],
+                    )
+                    approved_count += 1
+                    if hashes and not quiet:
+                        click.echo(
+                            f"  {success('✓')} {file_path_style(f.path)}{dim(':')}{info(hunk.hash)}"
+                        )
+
+        if hashes:
+            not_found = set(hashes) - {h.hash for f in matching_files for h in f.hunks}
+            for h in not_found:
+                click.echo(
+                    f"{warning('Warning:')} hash '{h}' not found in {path}", err=True
+                )
+        elif not quiet:
             click.echo(
-                f"{warning('Warning:')} hash '{h}' not found in {path}", err=True
+                f"{success('✓')} Approved {bold(str(approved_count))} hunk(s) in {file_path_style(path)}"
             )
-    elif not quiet:
-        click.echo(
-            f"{success('✓')} Approved {bold(str(approved_count))} hunk(s) in {file_path_style(path)}"
-        )
 
 
 @cli.command()
-@click.argument("spec", required=True)
+@click.argument("specs", nargs=-1, required=True)
 @click.option("--base", help="Override base ref for this command")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-essential output")
-def unapprove(spec: str, base: str | None, quiet: bool) -> None:
+def unapprove(specs: tuple[str, ...], base: str | None, quiet: bool) -> None:
     """Remove approval from hunks.
 
     \b
@@ -1223,66 +1269,68 @@ def unapprove(spec: str, base: str | None, quiet: bool) -> None:
       - A file path (unapproves all hunks in file)
       - path:hash (unapproves specific hunk)
       - path:h1,h2 (unapproves multiple hunks)
+      - Multiple SPECs can be provided
 
     \b
     To unapprove all hunks with a specific label, use 'untrust' instead.
     """
     ctx = get_review_context(base)
 
-    # Handle bare hash (e.g., "08ce166c" or "08ce")
-    if is_bare_hash(spec):
-        matches, err = resolve_bare_hash(spec, ctx.files)
-        if err:
-            click.echo(f"{error('Error:')} {err}", err=True)
+    for spec in specs:
+        # Handle bare hash (e.g., "08ce166c" or "08ce")
+        if is_bare_hash(spec):
+            matches, err = resolve_bare_hash(spec, ctx.files)
+            if err:
+                click.echo(f"{error('Error:')} {err}", err=True)
+                sys.exit(EXIT_USER_ERROR)
+
+            # Get unique (filepath, hash) pairs
+            unique_matches = set(matches)
+
+            for filepath, full_hash in unique_matches:
+                hunk_key = get_hunk_key(filepath, full_hash)
+                ctx.service.unapprove_hunk(ctx.comparison_key, hunk_key)
+                if not quiet:
+                    count = sum(1 for m in matches if m == (filepath, full_hash))
+                    click.echo(
+                        f"{dim('○')} {file_path_style(filepath)}{dim(':')}{info(full_hash)}"
+                    )
+                    if count > 1:
+                        click.echo(dim(f"    ({count} hunks with identical content)"))
+            continue
+
+        path, hashes = parse_hunk_spec(spec)
+
+        # Find matching file(s)
+        matching_files = [
+            f for f in ctx.files if f.path == path or f.path.startswith(path + "/")
+        ]
+        if not matching_files:
+            click.echo(f"{error('Error:')} no changes found for '{path}'", err=True)
             sys.exit(EXIT_USER_ERROR)
 
-        # Get unique (filepath, hash) pairs
-        unique_matches = set(matches)
+        unapproved_count = 0
+        for f in matching_files:
+            for hunk in f.hunks:
+                if hashes is None or hunk.hash in hashes:
+                    hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
+                    ctx.service.unapprove_hunk(ctx.comparison_key, hunk_key)
+                    unapproved_count += 1
+                    if hashes and not quiet:
+                        click.echo(
+                            f"  {dim('○')} {file_path_style(f.path)}{dim(':')}{info(hunk.hash)}"
+                        )
 
-        for filepath, full_hash in unique_matches:
-            hunk_key = get_hunk_key(filepath, full_hash)
-            ctx.service.unapprove_hunk(ctx.comparison_key, hunk_key)
-            if not quiet:
-                count = sum(1 for m in matches if m == (filepath, full_hash))
+        if hashes:
+            not_found = set(hashes) - {h.hash for f in matching_files for h in f.hunks}
+            for h in not_found:
                 click.echo(
-                    f"{dim('○')} {file_path_style(filepath)}{dim(':')}{info(full_hash)}"
+                    f"{warning('Warning:')} hash '{h}' not found in {path}", err=True
                 )
-                if count > 1:
-                    click.echo(dim(f"    ({count} hunks with identical content)"))
-        return
-
-    path, hashes = parse_hunk_spec(spec)
-
-    # Find matching file(s)
-    matching_files = [
-        f for f in ctx.files if f.path == path or f.path.startswith(path + "/")
-    ]
-    if not matching_files:
-        click.echo(f"{error('Error:')} no changes found for '{path}'", err=True)
-        sys.exit(EXIT_USER_ERROR)
-
-    unapproved_count = 0
-    for f in matching_files:
-        for hunk in f.hunks:
-            if hashes is None or hunk.hash in hashes:
-                hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
-                ctx.service.unapprove_hunk(ctx.comparison_key, hunk_key)
-                unapproved_count += 1
-                if hashes and not quiet:
-                    click.echo(
-                        f"  {dim('○')} {file_path_style(f.path)}{dim(':')}{info(hunk.hash)}"
-                    )
-
-    if hashes:
-        not_found = set(hashes) - {h.hash for f in matching_files for h in f.hunks}
-        for h in not_found:
+        elif not quiet:
             click.echo(
-                f"{warning('Warning:')} hash '{h}' not found in {path}", err=True
+                f"{dim('○')} Unapproved {bold(str(unapproved_count))} hunk(s) in {file_path_style(path)}"
             )
-    elif not quiet:
-        click.echo(
-            f"{dim('○')} Unapproved {bold(str(unapproved_count))} hunk(s) in {file_path_style(path)}"
-        )
 
 
 @cli.command()
@@ -1318,6 +1366,127 @@ def notes(base: str | None, edit: bool, add_text: str | None) -> None:
         click.echo(ctx.state.notes)
     else:
         click.echo(dim("(no notes)"))
+
+
+# -----------------------------------------------------------------------------
+# Config command group
+# -----------------------------------------------------------------------------
+
+
+@cli.group()
+def config() -> None:
+    """Manage human-review configuration."""
+    pass
+
+
+@config.command("trust")
+@click.argument("action", type=click.Choice(["list", "add", "remove"]))
+@click.argument("pattern", required=False)
+@click.option(
+    "--project",
+    is_flag=True,
+    help="Apply to project config instead of user config",
+)
+@click.option("--init", is_flag=True, help="Initialize with default trust patterns")
+def config_trust(action: str, pattern: str | None, project: bool, init: bool) -> None:
+    """Manage trusted patterns in configuration.
+
+    \b
+    Actions:
+      list              Show currently trusted patterns
+      add <pattern>     Add a pattern to trust list (e.g., "imports:*")
+      remove <pattern>  Remove a pattern from trust list
+
+    \b
+    Examples:
+      human-review config trust list
+      human-review config trust add "imports:*"
+      human-review config trust add "formatting:*" --project
+      human-review config trust remove "imports:added"
+      human-review config trust list --init  # initialize with defaults
+    """
+    service = get_state_service()
+    config_service = ConfigService(repo_root=service.repo_root)
+
+    if action == "list":
+        if init:
+            # Initialize with defaults
+            defaults = get_default_trust_list()
+            if project:
+                proj_config = config_service.load_project_config()
+                proj_config.trust = defaults
+                config_service.save_project_config(proj_config)
+                click.echo(f"{success('✓')} Initialized project config with defaults:")
+            else:
+                user_config = config_service.load_user_config()
+                user_config.trust = defaults
+                config_service.save_user_config(user_config)
+                click.echo(f"{success('✓')} Initialized user config with defaults:")
+            for p in defaults:
+                click.echo(f"  · {info(p)}")
+            return
+
+        # Show trust list
+        merged = config_service.get_config()
+        user = config_service.load_user_config()
+        proj = config_service.load_project_config()
+
+        click.echo(
+            f"{bold('User config:')} {dim(str(config_service.user_config_path))}"
+        )
+        if user.trust:
+            for p in user.trust:
+                click.echo(f"  · {info(p)}")
+        else:
+            click.echo(dim("  (none)"))
+
+        if config_service.project_config_path:
+            click.echo()
+            click.echo(
+                f"{bold('Project config:')} {dim(str(config_service.project_config_path))}"
+            )
+            if proj.trust:
+                for p in proj.trust:
+                    click.echo(f"  · {info(p)}")
+            else:
+                click.echo(dim("  (none)"))
+
+        click.echo()
+        click.echo(f"{bold('Effective (merged):')}")
+        if merged.trust:
+            for p in merged.trust:
+                click.echo(f"  · {info(p)}")
+        else:
+            click.echo(dim("  (none)"))
+
+    elif action == "add":
+        if pattern is None:
+            click.echo(f"{error('Error:')} pattern required for 'add'", err=True)
+            sys.exit(EXIT_USER_ERROR)
+        assert pattern is not None  # for type checker
+
+        config_service.add_trust_pattern(pattern, project_level=project)
+        location = "project" if project else "user"
+        click.echo(
+            f"{success('✓')} Added '{info(pattern)}' to {location} trust config."
+        )
+
+    elif action == "remove":
+        if pattern is None:
+            click.echo(f"{error('Error:')} pattern required for 'remove'", err=True)
+            sys.exit(EXIT_USER_ERROR)
+        assert pattern is not None  # for type checker
+
+        removed = config_service.remove_trust_pattern(pattern, project_level=project)
+        location = "project" if project else "user"
+        if removed:
+            click.echo(
+                f"{success('✓')} Removed '{info(pattern)}' from {location} trust config."
+            )
+        else:
+            click.echo(
+                f"{warning('Pattern not found:')} '{pattern}' not in {location} trust config."
+            )
 
 
 @cli.command()
@@ -1371,11 +1540,8 @@ def delete(comparison: str | None, quiet: bool, yes: bool) -> None:
 @click.option(
     "-n", "--dry-run", is_flag=True, help="Show what would be staged without staging"
 )
-@click.option(
-    "-f", "--force", is_flag=True, help="Stage even if hunk counts have increased"
-)
 @click.option("-q", "--quiet", is_flag=True, help="Suppress non-essential output")
-def stage(base: str | None, dry_run: bool, force: bool, quiet: bool) -> None:
+def stage(base: str | None, dry_run: bool, quiet: bool) -> None:
     """Stage all approved hunks.
 
     Uses git apply --cached to stage only the hunks that have been
@@ -1401,16 +1567,6 @@ def stage(base: str | None, dry_run: bool, force: bool, quiet: bool) -> None:
         if not quiet:
             click.echo("No approved hunks to stage.")
         return
-
-    # Check for count mismatches (new hunks appeared)
-    warnings = check_hunk_count_warnings(ctx.files, ctx.service, ctx.comparison_key)
-    if warnings and not force:
-        click.echo(f"{warning('Warning:')} Some approved hunks have new instances:")
-        for w in warnings:
-            click.echo(f"  {w}")
-        click.echo()
-        click.echo("Run with --force to stage anyway, or re-approve to acknowledge.")
-        sys.exit(EXIT_OPERATIONAL_ERROR)
 
     if dry_run:
         click.echo(f"Would stage {count} hunk(s):")
@@ -1517,38 +1673,43 @@ def label_cmd(
         hunk_key_counts = count_hunks_by_key(ctx.files)
         valid_keys = set(hunk_key_counts.keys())
 
-        # Get hunks grouped by label (only for hunks that exist in current diff)
+        # Get hunks grouped by reasoning (only for hunks that exist in current diff)
         # Track both unique keys and total count (accounting for duplicates)
-        hunks_by_label: dict[str, list[str]] = {}
-        counts_by_label: dict[str, int] = {}
+        hunks_by_reasoning: dict[str, list[str]] = {}
+        counts_by_reasoning: dict[str, int] = {}
         for hunk_key, h in ctx.state.hunks.items():
-            if h.label and hunk_key in valid_keys:
-                if h.label not in hunks_by_label:
-                    hunks_by_label[h.label] = []
-                    counts_by_label[h.label] = 0
-                hunks_by_label[h.label].append(hunk_key)
-                counts_by_label[h.label] += hunk_key_counts[hunk_key]
+            if h.reasoning and hunk_key in valid_keys:
+                if h.reasoning not in hunks_by_reasoning:
+                    hunks_by_reasoning[h.reasoning] = []
+                    counts_by_reasoning[h.reasoning] = 0
+                hunks_by_reasoning[h.reasoning].append(hunk_key)
+                counts_by_reasoning[h.reasoning] += hunk_key_counts[hunk_key]
 
         if as_json:
             output = {
-                hunk_key: h.label
+                hunk_key: {
+                    "label": h.label,
+                    "reasoning": h.reasoning,
+                }
                 for hunk_key, h in ctx.state.hunks.items()
-                if h.label and hunk_key in valid_keys
+                if h.reasoning and hunk_key in valid_keys
             }
             click.echo(json.dumps(output, indent=2))
             return
 
-        if not hunks_by_label:
+        if not hunks_by_reasoning:
             click.echo(dim("No labeled hunks."))
             return
 
-        total_hunks = sum(counts_by_label.values())
+        total_hunks = sum(counts_by_reasoning.values())
         click.echo(
-            f"{bold('Labeled:')} {info(str(total_hunks))} hunks in {info(str(len(hunks_by_label)))} label(s)"
+            f"{bold('Labeled:')} {info(str(total_hunks))} hunks in {info(str(len(hunks_by_reasoning)))} label(s)"
         )
         click.echo()
-        for label_text, count in sorted(counts_by_label.items(), key=lambda x: -x[1]):
-            click.echo(f"  · {info(label_text)} {dim(f'({count} hunks)')}")
+        for reasoning_text, count in sorted(
+            counts_by_reasoning.items(), key=lambda x: -x[1]
+        ):
+            click.echo(f"  · {info(reasoning_text)} {dim(f'({count} hunks)')}")
         return
 
     # Handle --stdin (batch mode)
@@ -1563,20 +1724,29 @@ def label_cmd(
             click.echo(f"{error('Error:')} expected JSON object", err=True)
             sys.exit(EXIT_USER_ERROR)
 
-        # Convert to labels dict (handle both old format with nested dict and new format with strings)
-        labels: dict[str, str] = {}
+        # Handle both formats:
+        # New: {"hunk_key": {"label": [...], "reasoning": "..."}}
+        # Old: {"hunk_key": "reasoning_string"}
+        classifications: dict[str, dict[str, list[str] | str]] = {}
         for hunk_key, value in data.items():
             if isinstance(value, str):
-                labels[hunk_key] = value
+                # Simple string = just reasoning, no label patterns
+                classifications[hunk_key] = {"label": [], "reasoning": value}
             elif isinstance(value, dict):
-                # Support old "reason" key for backwards compatibility
-                labels[hunk_key] = value.get("label", value.get("reason", ""))
+                label = value.get("label", [])
+                reasoning = value.get("reasoning", value.get("reason", ""))
+                classifications[hunk_key] = {
+                    "label": label if isinstance(label, list) else [],
+                    "reasoning": reasoning if isinstance(reasoning, str) else "",
+                }
             else:
-                labels[hunk_key] = str(value)
+                classifications[hunk_key] = {"label": [], "reasoning": str(value)}
 
-        ctx.service.set_labels(ctx.comparison_key, labels)
+        ctx.service.set_hunk_classifications(ctx.comparison_key, classifications)
         if not quiet:
-            click.echo(f"{success('✓')} Labeled {bold(str(len(labels)))} hunk(s).")
+            click.echo(
+                f"{success('✓')} Labeled {bold(str(len(classifications)))} hunk(s)."
+            )
             click.echo(dim("→ Run 'human-review trust <label>' to approve"))
         return
 
@@ -1619,7 +1789,7 @@ def label_cmd(
                 # Skip hunks that already have a label if --unlabeled is set
                 if unlabeled:
                     existing_state = ctx.state.hunks.get(hunk_key)
-                    if existing_state and existing_state.label:
+                    if existing_state and existing_state.reasoning:
                         skipped_hunks += 1
                         continue
                 total_hunks += 1
@@ -1686,7 +1856,7 @@ def label_cmd(
                 # Skip hunks that already have a label if --unlabeled is set
                 if unlabeled:
                     existing_state = ctx.state.hunks.get(hunk_key)
-                    if existing_state and existing_state.label:
+                    if existing_state and existing_state.reasoning:
                         count = sum(1 for m in matches if m == (filepath, full_hash))
                         total_skipped += count
                         continue
@@ -1732,7 +1902,7 @@ def label_cmd(
             # Skip hunks that already have a label if --unlabeled is set
             if unlabeled:
                 existing_state = ctx.state.hunks.get(hunk_key)
-                if existing_state and existing_state.label:
+                if existing_state and existing_state.reasoning:
                     total_skipped += count
                     continue
             ctx.service.set_label(ctx.comparison_key, hunk_key, label_text)
@@ -1760,7 +1930,7 @@ def label_cmd(
                     # Skip hunks that already have a label if --unlabeled is set
                     if unlabeled:
                         existing_state = ctx.state.hunks.get(hunk_key)
-                        if existing_state and existing_state.label:
+                        if existing_state and existing_state.reasoning:
                             total_skipped += 1
                             continue
                     if hunk_key not in labeled_keys:

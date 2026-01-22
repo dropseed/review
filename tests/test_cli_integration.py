@@ -105,9 +105,7 @@ class TestStart:
 
     def test_start_working_tree(self, runner: CliRunner, temp_git_repo: Path) -> None:
         """Test starting a working tree review."""
-        result = runner.invoke(
-            cli, ["start", "--old", "master", "--working-tree"]
-        )
+        result = runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
         assert result.exit_code == 0, result.output
         assert "Review started" in result.output
         assert "master" in result.output
@@ -125,9 +123,7 @@ class TestStart:
         self, runner: CliRunner, temp_git_repo: Path
     ) -> None:
         """Test starting with an invalid --old ref."""
-        result = runner.invoke(
-            cli, ["start", "--old", "nonexistent", "--working-tree"]
-        )
+        result = runner.invoke(cli, ["start", "--old", "nonexistent", "--working-tree"])
         assert result.exit_code != 0
         assert "not found" in result.output
 
@@ -146,15 +142,11 @@ class TestStart:
     ) -> None:
         """Test that start errors if review already exists."""
         # Start first review
-        result = runner.invoke(
-            cli, ["start", "--old", "master", "--working-tree"]
-        )
+        result = runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
         assert result.exit_code == 0, result.output
 
         # Try to start again - should error
-        result = runner.invoke(
-            cli, ["start", "--old", "master", "--working-tree"]
-        )
+        result = runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
         assert result.exit_code != 0
         assert "already exists" in result.output
         assert "switch" in result.output  # Should suggest switch
@@ -168,9 +160,7 @@ class TestSwitch:
     ) -> None:
         """Test switching between existing reviews."""
         # Start working tree review
-        result = runner.invoke(
-            cli, ["start", "--old", "master", "--working-tree"]
-        )
+        result = runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
         assert result.exit_code == 0, result.output
 
         # Get the working tree review key
@@ -277,7 +267,7 @@ class TestLabelTrustApprove:
     """Tests for label, trust, and approve workflow."""
 
     def test_label_and_trust(self, runner: CliRunner, temp_git_repo: Path) -> None:
-        """Test labeling hunks and trusting the label."""
+        """Test labeling hunks with label patterns and trusting the pattern."""
         runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
 
         # Get hunks via JSON diff
@@ -292,21 +282,27 @@ class TestLabelTrustApprove:
         file_path = first_file["path"]
         hunk_key = f"{file_path}:{hunk_hash}"
 
-        # Label the hunk
-        result = runner.invoke(cli, ["label", hunk_key, "--as", "test label"])
+        # Label the hunk with label pattern via --stdin
+        label_data = json.dumps(
+            {hunk_key: {"label": ["imports:added"], "reasoning": "test label"}}
+        )
+        result = runner.invoke(cli, ["label", "--stdin"], input=label_data)
         assert result.exit_code == 0, result.output
 
-        # Check label shows in list
-        result = runner.invoke(cli, ["label", "--list"])
+        # Check label shows in list (JSON format shows label patterns)
+        result = runner.invoke(cli, ["label", "--list", "--json"])
         assert result.exit_code == 0, result.output
-        assert "test label" in result.output
+        list_data = json.loads(result.output)
+        assert hunk_key in list_data
+        assert list_data[hunk_key]["label"] == ["imports:added"]
+        assert list_data[hunk_key]["reasoning"] == "test label"
 
-        # Trust the label
-        result = runner.invoke(cli, ["trust", "test label"])
+        # Trust the pattern (adds to review-level trust list)
+        result = runner.invoke(cli, ["trust", "imports:added"])
         assert result.exit_code == 0, result.output
-        assert "Trusted" in result.output
+        assert "Added" in result.output
 
-        # Check status shows progress
+        # Check status shows progress (hunk is now trusted)
         result = runner.invoke(cli, ["status", "--json"])
         data = json.loads(result.output)
         assert data["approved_hunks"] > 0
@@ -363,28 +359,37 @@ class TestLabelTrustApprove:
         assert data["approved_hunks"] < initial_approved
 
     def test_untrust(self, runner: CliRunner, temp_git_repo: Path) -> None:
-        """Test untrusting a label."""
+        """Test untrusting a pattern."""
         runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
 
-        # Get and label a hunk
+        # Get and label a hunk with label pattern
         result = runner.invoke(cli, ["diff", "--json"])
         data = json.loads(result.output)
         first_file = data["files"][0]
         first_hunk = first_file["hunks"][0]
         hunk_key = f"{first_file['path']}:{first_hunk['hash']}"
 
-        runner.invoke(cli, ["label", hunk_key, "--as", "untrust-test"])
-        runner.invoke(cli, ["trust", "untrust-test"])
+        # Label with label pattern via --stdin
+        label_data = json.dumps(
+            {
+                hunk_key: {
+                    "label": ["formatting:whitespace"],
+                    "reasoning": "untrust-test",
+                }
+            }
+        )
+        runner.invoke(cli, ["label", "--stdin"], input=label_data)
+        runner.invoke(cli, ["trust", "formatting:whitespace"])
 
-        # Check it's approved
+        # Check it's approved (trusted)
         result = runner.invoke(cli, ["status", "--json"])
         data = json.loads(result.output)
         initial_approved = data["approved_hunks"]
 
-        # Untrust
-        result = runner.invoke(cli, ["untrust", "untrust-test"])
+        # Untrust (removes from review-level trust list)
+        result = runner.invoke(cli, ["untrust", "formatting:whitespace"])
         assert result.exit_code == 0, result.output
-        assert "Untrusted" in result.output
+        assert "Removed" in result.output
 
         # Check it's no longer approved
         result = runner.invoke(cli, ["status", "--json"])
@@ -453,9 +458,7 @@ class TestDelete:
         assert result.exit_code == 0
 
         # Starting the same review again should work (not error about existing)
-        result = runner.invoke(
-            cli, ["start", "--old", "master", "--working-tree"]
-        )
+        result = runner.invoke(cli, ["start", "--old", "master", "--working-tree"])
         assert result.exit_code == 0, result.output
 
     def test_delete_specific_review(
@@ -536,7 +539,8 @@ class TestFilters:
         # All hunks should be unlabeled initially
         for f in data["files"]:
             for h in f["hunks"]:
-                assert h["label"] is None
+                assert h["reasoning"] is None
+                assert h["label"] == []
 
     def test_diff_unreviewed(self, runner: CliRunner, temp_git_repo: Path) -> None:
         """Test filtering to unreviewed hunks."""

@@ -93,6 +93,7 @@ Present changes in an order that builds understanding:
 - **Moved code** — Deletion + addition elsewhere = show together
 - **New abstraction + usage** — New class + where it's used
 - **Interface change + call sites** — Changed signature + updated callers
+
 4. **Finishing touches** — Tests, documentation
 
 ### Presenting Each Change
