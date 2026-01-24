@@ -77,7 +77,15 @@ export interface SerializedReviewState {
 // CLI output types (from `human-review diff --json`)
 export interface CliDiffOutput {
   comparison: string;
+  trust_list: string[]; // Currently trusted patterns
   files: CliFile[];
+  pagination?: {
+    offset: number;
+    limit: number | null;
+    returned: number;
+    total_matching: number;
+    has_more: boolean;
+  };
 }
 
 export interface CliFile {
@@ -89,9 +97,32 @@ export interface CliFile {
 
 export interface CliHunk {
   hash: string;
-  reviewed_by: "human" | "agent" | null;
+  labels: string[]; // Trust patterns recognized in this hunk
+  reasoning: string | null; // AI explanation of what changed
+  trusted: boolean; // Whether all labels are in trust list
+  reviewed: boolean; // Whether manually marked as reviewed
+  approved: boolean; // trusted OR reviewed
   header: string;
   content: string;
   start_line: number;
   end_line: number;
+}
+
+// CLI status output (from `human-review status --json`)
+export interface CliStatusOutput {
+  comparison: string;
+  total_files: number;
+  total_hunks: number;
+  approved_hunks: number;
+  progress_percent: number;
+  by_file_status: Record<string, { files: number; hunks: number }>;
+  unreviewed: Array<{ label: string; count: number }>;
+  trusted: Array<{ label: string; count: number }>;
+  reviewed: Array<{ label: string; count: number }>;
+  unlabeled: number;
+}
+
+// Trust list output (from `human-review trust --list --json` - if we add it)
+export interface TrustListOutput {
+  patterns: string[];
 }

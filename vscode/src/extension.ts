@@ -385,23 +385,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const comparison = fileTreeProvider.getCurrentComparison();
 
         // Parse comparison to get base and compare refs
+        // Format: "base..compare" or "base..compare+working-tree"
         let baseRef: string | undefined;
         let compareRef: string | undefined;
         let isWorkingTree = false;
 
         if (comparison) {
-          if (comparison.includes("..")) {
-            const parts = comparison.split("..");
+          // Check for working tree suffix
+          let comparisonToParse = comparison;
+          if (comparison.endsWith("+working-tree")) {
+            isWorkingTree = true;
+            comparisonToParse = comparison.slice(0, -13); // Remove "+working-tree"
+          }
+
+          if (comparisonToParse.includes("..")) {
+            const parts = comparisonToParse.split("..");
             baseRef = parts[0];
-            const rest = parts[1];
-            if (rest.endsWith("+")) {
-              // Working tree comparison
-              isWorkingTree = true;
-            } else {
-              compareRef = rest;
+            if (!isWorkingTree) {
+              compareRef = parts[1];
             }
           } else {
-            baseRef = comparison;
+            baseRef = comparisonToParse;
             isWorkingTree = true;
           }
         }
@@ -531,6 +535,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const end = selection.end.line + 1;
 
       reviewViewProvider.addLineReference(editor.document.uri.fsPath, undefined, { start, end });
+    }),
+
+    vscode.commands.registerCommand("human-review.trustLabel", async (label: string) => {
+      if (label) {
+        await fileTreeProvider.trustLabel(label);
+        await decorationProvider.refresh();
+      }
+    }),
+
+    vscode.commands.registerCommand("human-review.untrustLabel", async (label: string) => {
+      if (label) {
+        await fileTreeProvider.untrustLabel(label);
+        await decorationProvider.refresh();
+      }
+    }),
+
+    vscode.commands.registerCommand("human-review.classify", async () => {
+      try {
+        cliProvider.classify();
+        fileTreeProvider.refresh();
+        await decorationProvider.refresh();
+        vscode.window.showInformationMessage("Classification complete");
+      } catch {
+        vscode.window.showErrorMessage("Classification failed. Make sure Claude CLI is installed.");
+      }
     }),
 
     treeView,

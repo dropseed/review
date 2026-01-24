@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from .git import git_diff, git_diff_name_status, git_untracked_files
+from .git import git_diff, git_diff_file, git_diff_name_status, git_untracked_files
 from .hunks import (
     ChangedFile,
     DiffHunk,
@@ -17,6 +17,8 @@ from .hunks import (
     parse_name_status,
 )
 from .state import HunkState, ReviewState, ReviewStateService
+
+# Import pattern matching directly from patterns module
 from .patterns import patterns_match_trust_list
 
 
@@ -347,6 +349,9 @@ def build_patch_for_approved_hunks(
 
     Returns (patch_content, hunk_count).
     """
+    # Parse base ref from comparison_key (e.g., "master..master+working-tree" -> "master")
+    base_ref = comparison_key.split("..")[0] if ".." in comparison_key else comparison_key
+
     patch_parts = []
     hunk_count = 0
 
@@ -360,12 +365,12 @@ def build_patch_for_approved_hunks(
                 hunk_count += 1
 
         if file_hunks_to_stage:
-            # Get file header from full diff
-            file_diff = git_diff(changed_file.path, cwd=service.repo_root)
-            # Extract header (everything before first @@)
+            # Get file header from full diff against base ref
+            file_diff = git_diff_file(changed_file.path, base=base_ref, cwd=service.repo_root)
+            # Extract header (everything before first @@, not including the newline)
             header_end = file_diff.find("\n@@")
             if header_end > 0:
-                file_header = file_diff[: header_end + 1]
+                file_header = file_diff[:header_end]
                 patch_parts.append(file_header)
                 for hunk in file_hunks_to_stage:
                     patch_parts.append(hunk.content)

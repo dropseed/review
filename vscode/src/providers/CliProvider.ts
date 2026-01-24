@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
-import { logError } from "../logger";
-import type { CliDiffOutput } from "../types";
+import { log, logError } from "../logger";
+import type { CliDiffOutput, CliStatusOutput } from "../types";
 
 export class CliProvider {
   constructor(private workspaceRoot: string) {}
@@ -71,37 +71,103 @@ export class CliProvider {
   }
 
   /**
-   * Mark a hunk as reviewed
+   * Get review status
    */
-  markHunk(path: string, hash: string): void {
-    this.execVoid(["mark", `${path}:${hash}`]);
+  getStatus(): CliStatusOutput {
+    return this.exec<CliStatusOutput>(["status", "--json"]);
   }
 
   /**
-   * Unmark a hunk (mark as unreviewed)
+   * Approve a hunk (mark as reviewed)
    */
-  unmarkHunk(path: string, hash: string): void {
-    this.execVoid(["unmark", `${path}:${hash}`]);
+  approveHunk(path: string, hash: string): void {
+    this.execVoid(["approve", `${path}:${hash}`, "-q"]);
   }
 
   /**
-   * Mark all hunks in a file as reviewed
+   * Unapprove a hunk (mark as unreviewed)
    */
-  markFile(path: string): void {
-    this.execVoid(["mark", path]);
+  unapproveHunk(path: string, hash: string): void {
+    this.execVoid(["unapprove", `${path}:${hash}`, "-q"]);
   }
 
   /**
-   * Unmark all hunks in a file
+   * Approve all hunks in a file
    */
-  unmarkFile(path: string): void {
-    this.execVoid(["unmark", path]);
+  approveFile(path: string): void {
+    this.execVoid(["approve", path, "-q"]);
   }
 
   /**
-   * Set the current comparison
+   * Unapprove all hunks in a file
+   */
+  unapproveFile(path: string): void {
+    this.execVoid(["unapprove", path, "-q"]);
+  }
+
+  /**
+   * Add a pattern to the trust list
+   */
+  addTrust(pattern: string): void {
+    this.execVoid(["trust", pattern, "-q"]);
+  }
+
+  /**
+   * Remove a pattern from the trust list
+   */
+  removeTrust(pattern: string): void {
+    this.execVoid(["untrust", pattern, "-q"]);
+  }
+
+  /**
+   * Set the current comparison (start or switch to a review)
    */
   setComparison(comparison: string): void {
-    this.execVoid(["compare", comparison]);
+    // Parse comparison to determine if working tree
+    let args: string[];
+    let switchKey: string;
+
+    if (comparison.includes("..")) {
+      const [base, compare] = comparison.split("..");
+      if (compare === "__working_tree__" || compare.endsWith("+")) {
+        args = ["start", "--old", base, "--working-tree", "-q"];
+        switchKey = `${base}..${base}+working-tree`;
+      } else {
+        args = ["start", "--old", base, "--new", compare, "-q"];
+        switchKey = `${base}..${compare}`;
+      }
+    } else {
+      // Just a base ref = working tree comparison
+      args = ["start", "--old", comparison, "--working-tree", "-q"];
+      switchKey = `${comparison}..${comparison}+working-tree`;
+    }
+
+    try {
+      this.execVoid(args);
+    } catch (err: unknown) {
+      const error = err as { stderr?: string };
+      // If review already exists, switch to it instead
+      if (error.stderr?.includes("review already exists")) {
+        this.execVoid(["switch", switchKey, "-q"]);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Switch to an existing review
+   */
+  switchComparison(comparison: string): void {
+    this.execVoid(["switch", comparison, "-q"]);
+  }
+
+  /**
+   * Run classification on unlabeled hunks
+   */
+  classify(): void {
+    log("Running classify command");
+    this.execVoid(["classify", "-q"]);
+    log("Classify command completed");
   }
 }

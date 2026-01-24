@@ -6,13 +6,20 @@ import type { GitProvider } from "./GitProvider";
 
 // Extended hunk type that includes review status from CLI
 interface HunkWithStatus extends DiffHunk {
-  reviewed: boolean;
+  trusted: boolean; // Approved via trust list
+  reviewed: boolean; // Manually approved
+  approved: boolean; // trusted OR reviewed
 }
 
 export class DiffDecorationProvider {
   // Separate decorations for first line (icon) vs continuation (bar)
+  // Reviewed (manually approved) - green checkmark
   private reviewedIconType: vscode.TextEditorDecorationType;
   private reviewedBarType: vscode.TextEditorDecorationType;
+  // Trusted (approved via label matching) - blue shield
+  private trustedIconType: vscode.TextEditorDecorationType;
+  private trustedBarType: vscode.TextEditorDecorationType;
+  // Unreviewed - yellow eye
   private unreviewedIconType: vscode.TextEditorDecorationType;
   private unreviewedBarType: vscode.TextEditorDecorationType;
   private disposables: vscode.Disposable[] = [];
@@ -22,13 +29,23 @@ export class DiffDecorationProvider {
     private gitProvider: GitProvider,
     private fileTreeProvider: FileTreeProvider,
   ) {
-    // Reviewed hunks: checkmark icon for first line, bar for rest
+    // Reviewed hunks (manually approved): checkmark icon for first line, bar for rest
     this.reviewedIconType = vscode.window.createTextEditorDecorationType({
       gutterIconPath: vscode.Uri.joinPath(extensionUri, "media", "reviewed-icon.svg"),
       gutterIconSize: "contain",
     });
     this.reviewedBarType = vscode.window.createTextEditorDecorationType({
       gutterIconPath: vscode.Uri.joinPath(extensionUri, "media", "reviewed-bar.svg"),
+      gutterIconSize: "contain",
+    });
+
+    // Trusted hunks (approved via trust list): shield icon for first line, bar for rest
+    this.trustedIconType = vscode.window.createTextEditorDecorationType({
+      gutterIconPath: vscode.Uri.joinPath(extensionUri, "media", "trusted-icon.svg"),
+      gutterIconSize: "contain",
+    });
+    this.trustedBarType = vscode.window.createTextEditorDecorationType({
+      gutterIconPath: vscode.Uri.joinPath(extensionUri, "media", "trusted-bar.svg"),
       gutterIconSize: "contain",
     });
 
@@ -115,6 +132,8 @@ export class DiffDecorationProvider {
 
     const reviewedIconRanges: vscode.Range[] = [];
     const reviewedBarRanges: vscode.Range[] = [];
+    const trustedIconRanges: vscode.Range[] = [];
+    const trustedBarRanges: vscode.Range[] = [];
     const unreviewedIconRanges: vscode.Range[] = [];
     const unreviewedBarRanges: vscode.Range[] = [];
 
@@ -122,18 +141,23 @@ export class DiffDecorationProvider {
     const isOldSide = this.isOldSideOfDiff(editor.document.uri);
 
     for (const hunk of file.hunks as HunkWithStatus[]) {
-      const isReviewed = hunk.reviewed;
-
       // Get appropriate line ranges based on which side of diff we're viewing
       const changedLineRanges = isOldSide
         ? this.getDeletedLineRanges(hunk)
         : this.getAddedLineRanges(hunk);
 
       if (changedLineRanges.length > 0) {
-        if (isReviewed) {
+        // Priority: reviewed (manual) > trusted > unreviewed
+        if (hunk.reviewed) {
+          // Manually approved - green checkmark
           reviewedIconRanges.push(changedLineRanges[0]);
           reviewedBarRanges.push(...changedLineRanges.slice(1));
+        } else if (hunk.trusted) {
+          // Approved via trust list - blue shield
+          trustedIconRanges.push(changedLineRanges[0]);
+          trustedBarRanges.push(...changedLineRanges.slice(1));
         } else {
+          // Not approved - yellow eye
           unreviewedIconRanges.push(changedLineRanges[0]);
           unreviewedBarRanges.push(...changedLineRanges.slice(1));
         }
@@ -142,6 +166,8 @@ export class DiffDecorationProvider {
 
     editor.setDecorations(this.reviewedIconType, reviewedIconRanges);
     editor.setDecorations(this.reviewedBarType, reviewedBarRanges);
+    editor.setDecorations(this.trustedIconType, trustedIconRanges);
+    editor.setDecorations(this.trustedBarType, trustedBarRanges);
     editor.setDecorations(this.unreviewedIconType, unreviewedIconRanges);
     editor.setDecorations(this.unreviewedBarType, unreviewedBarRanges);
   }
@@ -149,6 +175,8 @@ export class DiffDecorationProvider {
   private clearDecorations(editor: vscode.TextEditor): void {
     editor.setDecorations(this.reviewedIconType, []);
     editor.setDecorations(this.reviewedBarType, []);
+    editor.setDecorations(this.trustedIconType, []);
+    editor.setDecorations(this.trustedBarType, []);
     editor.setDecorations(this.unreviewedIconType, []);
     editor.setDecorations(this.unreviewedBarType, []);
   }
@@ -234,6 +262,8 @@ export class DiffDecorationProvider {
   dispose(): void {
     this.reviewedIconType.dispose();
     this.reviewedBarType.dispose();
+    this.trustedIconType.dispose();
+    this.trustedBarType.dispose();
     this.unreviewedIconType.dispose();
     this.unreviewedBarType.dispose();
     for (const d of this.disposables) {

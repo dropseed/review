@@ -49,7 +49,6 @@ from .output import (
     success,
     warning,
 )
-from .config import ConfigService, get_default_trust_list
 from .state import Comparison, ReviewState, ReviewStateService
 
 # Exit codes following common conventions:
@@ -169,7 +168,7 @@ def get_review_context(base_override: str | None = None) -> ReviewContext:
 
 # Command groupings for help display
 COMMAND_GROUPS: list[tuple[str, list[str]]] = [
-    ("Review Session", ["start", "switch", "status", "diff", "agent"]),
+    ("Review Session", ["start", "switch", "status", "diff", "classify"]),
     ("Trust", ["label", "trust", "untrust"]),
     ("Approval", ["approve", "unapprove"]),
     ("Utilities", ["info", "list", "notes", "delete", "stage"]),
@@ -498,9 +497,8 @@ def status(base: str | None, as_json: bool, show_files: bool, short_mode: bool) 
     Shows diff scope (files by type) and review progress (hunks by label).
     """
     ctx = get_review_context(base)
-    # Build effective trust list: config trust + review-level trust
-    config_service = ConfigService(repo_root=ctx.service.repo_root)
-    effective_trust = config_service.get_trust_list() + list(ctx.state.trust_label)
+    # Use only review-level trust list
+    effective_trust = list(ctx.state.trust_label)
     rs = compute_review_status(
         ctx.files, ctx.state, ctx.comparison_key, effective_trust
     )
@@ -872,24 +870,21 @@ def diff_cmd(
 
                 hunks_included += 1
 
-                # Compute trust status
-                config_service = ConfigService(repo_root=ctx.service.repo_root)
-                effective_trust = config_service.get_trust_list() + list(
-                    ctx.state.trust_label
-                )
+                # Compute trust status using review-level trust only
+                effective_trust = list(ctx.state.trust_label)
                 hunk_data = {
                     "hash": hunk.hash,
-                    "label": hunk_state.label if hunk_state else [],
+                    "labels": hunk_state.label if hunk_state else [],
                     "reasoning": hunk_state.reasoning if hunk_state else None,
-                    "is_trusted": (
+                    "trusted": (
                         is_hunk_trusted(hunk_state, effective_trust)
                         if hunk_state
                         else False
                     ),
-                    "is_reviewed": (
+                    "reviewed": (
                         hunk_state.approved_via == "review" if hunk_state else False
                     ),
-                    "is_approved": (
+                    "approved": (
                         is_hunk_approved(hunk_state, effective_trust)
                         if hunk_state
                         else False
@@ -905,9 +900,10 @@ def diff_cmd(
             if file_hunks:
                 output_files.append(file_data)
 
-        # Add pagination metadata
+        # Add pagination metadata and trust list
         output = {
             "comparison": ctx.comparison_key,
+            "trust_list": list(ctx.state.trust_label),
             "files": output_files,
             "pagination": {
                 "offset": offset,
@@ -1028,8 +1024,7 @@ def trust(pattern: str, base: str | None, preview: bool, quiet: bool) -> None:
     is_glob = _is_glob_pattern(pattern)
 
     # Build current effective trust (before adding this pattern)
-    config_service = ConfigService(repo_root=ctx.service.repo_root)
-    current_trust = config_service.get_trust_list() + list(ctx.state.trust_label)
+    current_trust = list(ctx.state.trust_label)
 
     # Find hunks that would become trusted by adding this pattern
     new_trust = current_trust + [pattern]
@@ -1129,22 +1124,14 @@ def untrust(pattern: str, base: str | None, quiet: bool) -> None:
     ctx = get_review_context(base)
 
     # Build current effective trust
-    config_service = ConfigService(repo_root=ctx.service.repo_root)
     valid_keys = get_valid_hunk_keys(ctx.files)
     hunk_key_counts = count_hunks_by_key(ctx.files)
-    current_trust = config_service.get_trust_list() + list(ctx.state.trust_label)
+    current_trust = list(ctx.state.trust_label)
 
     # Check if pattern is in review-level trust list
     if pattern not in ctx.state.trust_label:
         if not quiet:
-            click.echo(dim(f"Pattern '{pattern}' is not in the review trust list."))
-            # Check if it's in config trust
-            if pattern in config_service.get_trust_list():
-                click.echo(
-                    dim(
-                        f"Note: '{pattern}' is in your config trust list. Use 'config trust remove' to remove it."
-                    )
-                )
+            click.echo(dim(f"Pattern '{pattern}' is not in the trust list."))
         return
 
     # Calculate how many hunks will become untrusted
@@ -1366,127 +1353,6 @@ def notes(base: str | None, edit: bool, add_text: str | None) -> None:
         click.echo(ctx.state.notes)
     else:
         click.echo(dim("(no notes)"))
-
-
-# -----------------------------------------------------------------------------
-# Config command group
-# -----------------------------------------------------------------------------
-
-
-@cli.group()
-def config() -> None:
-    """Manage human-review configuration."""
-    pass
-
-
-@config.command("trust")
-@click.argument("action", type=click.Choice(["list", "add", "remove"]))
-@click.argument("pattern", required=False)
-@click.option(
-    "--project",
-    is_flag=True,
-    help="Apply to project config instead of user config",
-)
-@click.option("--init", is_flag=True, help="Initialize with default trust patterns")
-def config_trust(action: str, pattern: str | None, project: bool, init: bool) -> None:
-    """Manage trusted patterns in configuration.
-
-    \b
-    Actions:
-      list              Show currently trusted patterns
-      add <pattern>     Add a pattern to trust list (e.g., "imports:*")
-      remove <pattern>  Remove a pattern from trust list
-
-    \b
-    Examples:
-      human-review config trust list
-      human-review config trust add "imports:*"
-      human-review config trust add "formatting:*" --project
-      human-review config trust remove "imports:added"
-      human-review config trust list --init  # initialize with defaults
-    """
-    service = get_state_service()
-    config_service = ConfigService(repo_root=service.repo_root)
-
-    if action == "list":
-        if init:
-            # Initialize with defaults
-            defaults = get_default_trust_list()
-            if project:
-                proj_config = config_service.load_project_config()
-                proj_config.trust = defaults
-                config_service.save_project_config(proj_config)
-                click.echo(f"{success('✓')} Initialized project config with defaults:")
-            else:
-                user_config = config_service.load_user_config()
-                user_config.trust = defaults
-                config_service.save_user_config(user_config)
-                click.echo(f"{success('✓')} Initialized user config with defaults:")
-            for p in defaults:
-                click.echo(f"  · {info(p)}")
-            return
-
-        # Show trust list
-        merged = config_service.get_config()
-        user = config_service.load_user_config()
-        proj = config_service.load_project_config()
-
-        click.echo(
-            f"{bold('User config:')} {dim(str(config_service.user_config_path))}"
-        )
-        if user.trust:
-            for p in user.trust:
-                click.echo(f"  · {info(p)}")
-        else:
-            click.echo(dim("  (none)"))
-
-        if config_service.project_config_path:
-            click.echo()
-            click.echo(
-                f"{bold('Project config:')} {dim(str(config_service.project_config_path))}"
-            )
-            if proj.trust:
-                for p in proj.trust:
-                    click.echo(f"  · {info(p)}")
-            else:
-                click.echo(dim("  (none)"))
-
-        click.echo()
-        click.echo(f"{bold('Effective (merged):')}")
-        if merged.trust:
-            for p in merged.trust:
-                click.echo(f"  · {info(p)}")
-        else:
-            click.echo(dim("  (none)"))
-
-    elif action == "add":
-        if pattern is None:
-            click.echo(f"{error('Error:')} pattern required for 'add'", err=True)
-            sys.exit(EXIT_USER_ERROR)
-        assert pattern is not None  # for type checker
-
-        config_service.add_trust_pattern(pattern, project_level=project)
-        location = "project" if project else "user"
-        click.echo(
-            f"{success('✓')} Added '{info(pattern)}' to {location} trust config."
-        )
-
-    elif action == "remove":
-        if pattern is None:
-            click.echo(f"{error('Error:')} pattern required for 'remove'", err=True)
-            sys.exit(EXIT_USER_ERROR)
-        assert pattern is not None  # for type checker
-
-        removed = config_service.remove_trust_pattern(pattern, project_level=project)
-        location = "project" if project else "user"
-        if removed:
-            click.echo(
-                f"{success('✓')} Removed '{info(pattern)}' from {location} trust config."
-            )
-        else:
-            click.echo(
-                f"{warning('Pattern not found:')} '{pattern}' not in {location} trust config."
-            )
 
 
 @cli.command()
@@ -1952,26 +1818,41 @@ def label_cmd(
         click.echo(dim(f"→ Run 'human-review trust \"{label_text}\"' to approve"))
 
 
-@cli.command("agent")
-@click.argument("comparison", required=False)
+@cli.command("classify")
+@click.option("--base", help="Override base ref for this command")
 @click.option(
-    "--install-skill",
-    "do_install_skill",
-    is_flag=True,
-    help="Install/update the Claude skill and exit",
+    "--model",
+    default=None,
+    help="Claude model to use (default: claude-sonnet-4-20250514)",
 )
-def agent(comparison: str | None, do_install_skill: bool) -> None:
-    """Launch Claude with the /human-review skill.
+@click.option("-q", "--quiet", is_flag=True, help="Suppress non-essential output")
+def classify(base: str | None, model: str | None, quiet: bool) -> None:
+    """Classify hunks using Claude.
 
-    Use --install-skill after updating human-review to refresh the skill.
+    Sends the diff to Claude for one-shot classification. Each hunk
+    receives label patterns and reasoning explaining what changed.
+
+    \b
+    Examples:
+      human-review classify
+      human-review classify --model claude-sonnet-4-20250514
     """
     import shutil
 
-    if do_install_skill:
-        from .skill import install_skill
+    ctx = get_review_context(base)
 
-        install_skill()
-        click.echo(f"{success('✓')} Skill installed to ~/.claude/skills/human-review")
+    # Check for unlabeled hunks
+    unlabeled_hunks = []
+    for f in ctx.files:
+        for hunk in f.hunks:
+            hunk_key = get_hunk_key(hunk.file_path, hunk.hash)
+            hunk_state = ctx.state.hunks.get(hunk_key)
+            if not hunk_state or hunk_state.reasoning is None:
+                unlabeled_hunks.append((f, hunk, hunk_key))
+
+    if not unlabeled_hunks:
+        if not quiet:
+            click.echo(dim("All hunks are already classified."))
         return
 
     # Find claude executable
@@ -1981,13 +1862,150 @@ def agent(comparison: str | None, do_install_skill: bool) -> None:
             "Claude CLI not found. Install it from https://claude.ai/code"
         )
 
-    # Build command
-    cmd = ["claude", "/human-review"]
-    if comparison:
-        cmd.append(comparison)
+    # Build the diff content for classification
+    diff_content = []
+    for f, hunk, hunk_key in unlabeled_hunks:
+        diff_content.append(f"=== {hunk_key} ===")
+        diff_content.append(f"File: {f.path} ({f.status})")
+        diff_content.append(hunk.header)
+        diff_content.append(hunk.content)
+        diff_content.append("")
 
-    # Replace process (doesn't return)
-    os.execvp(claude_path, cmd)
+    # Build the prompt
+    prompt = _build_classify_prompt(diff_content)
+
+    if not quiet:
+        click.echo(
+            f"Classifying {bold(str(len(unlabeled_hunks)))} unlabeled hunk(s)..."
+        )
+
+    # Build command
+    cmd = [claude_path, "--print", "-p", prompt]
+    if model:
+        cmd.extend(["--model", model])
+
+    # Run claude and capture output
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=ctx.service.repo_root,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
+        )
+        if result.returncode != 0:
+            click.echo(f"{error('Error:')} Claude failed", err=True)
+            if result.stderr:
+                click.echo(result.stderr, err=True)
+            sys.exit(EXIT_USER_ERROR)
+
+        # Parse the JSON response
+        output = result.stdout.strip()
+
+        # Extract JSON from the response (may have markdown code blocks)
+        if "```json" in output:
+            start = output.index("```json") + 7
+            end = output.index("```", start)
+            output = output[start:end].strip()
+        elif "```" in output:
+            start = output.index("```") + 3
+            end = output.index("```", start)
+            output = output[start:end].strip()
+
+        try:
+            classifications = json.loads(output)
+        except json.JSONDecodeError as e:
+            click.echo(
+                f"{error('Error:')} Failed to parse Claude response: {e}", err=True
+            )
+            click.echo(dim("Response:"), err=True)
+            click.echo(result.stdout[:500], err=True)
+            sys.exit(EXIT_USER_ERROR)
+
+        # Store the classifications
+        if not isinstance(classifications, dict):
+            click.echo(f"{error('Error:')} Expected JSON object from Claude", err=True)
+            sys.exit(EXIT_USER_ERROR)
+
+        # Convert to the expected format
+        formatted_classifications: dict[str, dict[str, list[str] | str]] = {}
+        for hunk_key, data in classifications.items():
+            if isinstance(data, dict):
+                label = data.get("label", [])
+                reasoning = data.get("reasoning", "")
+                formatted_classifications[hunk_key] = {
+                    "label": label if isinstance(label, list) else [],
+                    "reasoning": reasoning
+                    if isinstance(reasoning, str)
+                    else str(reasoning),
+                }
+            elif isinstance(data, str):
+                formatted_classifications[hunk_key] = {"label": [], "reasoning": data}
+
+        ctx.service.set_hunk_classifications(
+            ctx.comparison_key, formatted_classifications
+        )
+
+        if not quiet:
+            click.echo(
+                f"{success('✓')} Classified {bold(str(len(formatted_classifications)))} hunk(s)"
+            )
+            click.echo(dim("→ Run 'human-review status' to see results"))
+            click.echo(
+                dim("→ Run 'human-review trust <pattern>' to approve matching hunks")
+            )
+
+    except subprocess.TimeoutExpired:
+        click.echo(f"{error('Error:')} Claude timed out", err=True)
+        sys.exit(EXIT_USER_ERROR)
+
+
+def _build_classify_prompt(diff_content: list[str]) -> str:
+    """Build the prompt for Claude classification."""
+    from .patterns import TRUST_PATTERNS
+
+    # Build pattern list
+    pattern_list = "\n".join(
+        f"- `{p.id}` — {p.description}" for p in TRUST_PATTERNS.values()
+    )
+
+    diff_text = "\n".join(diff_content)
+
+    return f"""Classify each hunk in this diff. For each hunk, provide:
+1. **label**: Array of trust patterns from the taxonomy (can be empty if no patterns apply)
+2. **reasoning**: Brief explanation of what the change does
+
+## Trust Patterns Taxonomy
+
+Only use patterns from this list. Leave label empty if no patterns apply.
+
+{pattern_list}
+
+## Rules
+
+- Apply patterns ONLY when they FULLY describe the change
+- If a hunk has mixed changes (e.g., imports + logic), leave label empty
+- Multiple patterns are allowed if the hunk combines trustable changes
+- Reasoning should be specific and clear (e.g., "Added import for ChoicesFieldMixin")
+
+## Output Format
+
+Return a JSON object mapping hunk_key to classification:
+
+```json
+{{
+  "filepath:hash": {{
+    "label": ["pattern:id"],
+    "reasoning": "Brief explanation"
+  }}
+}}
+```
+
+## Diff to Classify
+
+{diff_text}
+
+Return ONLY the JSON object, no other text."""
 
 
 if __name__ == "__main__":

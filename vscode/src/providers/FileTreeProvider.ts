@@ -4,7 +4,16 @@ import type { CliFile, CliHunk, DiffHunk } from "../types";
 import type { CliProvider } from "./CliProvider";
 import type { GitProvider } from "./GitProvider";
 
-type SectionType = "reviewed" | "toReview";
+type SectionType = "reviewed" | "needsReview";
+
+// Extended hunk type with all status fields from CLI
+interface HunkWithStatus extends DiffHunk {
+  labels: string[];
+  reasoning: string | null;
+  trusted: boolean;
+  reviewed: boolean;
+  approved: boolean;
+}
 
 // Internal file representation with hunks that include review status
 interface ChangedFileWithStatus {
@@ -13,7 +22,7 @@ interface ChangedFileWithStatus {
   relativePath: string;
   oldPath?: string;
   status: string;
-  hunks: Array<DiffHunk & { reviewed: boolean }>;
+  hunks: HunkWithStatus[];
 }
 
 interface TreeNode {
@@ -30,8 +39,9 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   private currentComparison: string | null = null;
   private lastSetComparison: string | null = null; // Track what we set (to prevent feedback loops)
   private files: ChangedFileWithStatus[] = [];
+  private trustList: string[] = []; // Currently trusted patterns
   private reviewedTree: TreeNode | null = null;
-  private toReviewTree: TreeNode | null = null;
+  private needsReviewTree: TreeNode | null = null;
 
   constructor(
     private gitProvider: GitProvider,
@@ -66,6 +76,7 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
 
       const cliOutput = this.cliProvider.getChangedFiles();
       this.currentComparison = cliOutput.comparison;
+      this.trustList = cliOutput.trust_list || [];
 
       // Convert CLI output to internal format
       this.files = cliOutput.files.map((f: CliFile) => ({
@@ -81,7 +92,11 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
           endLine: h.end_line,
           header: h.header,
           content: h.content,
-          reviewed: h.reviewed,
+          labels: h.labels || [],
+          reasoning: h.reasoning,
+          trusted: h.trusted || false,
+          reviewed: h.reviewed || false,
+          approved: h.approved || false,
         })),
       }));
 
@@ -96,12 +111,24 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   }
 
   private rebuildTrees(): void {
-    // Files can appear in both sections based on hunk state
-    const reviewedFiles = this.files.filter((f) => this.hasAnyReviewedHunk(f));
-    const toReviewFiles = this.files.filter((f) => this.hasAnyUnreviewedHunk(f));
+    // Files can appear in both sections based on hunk state:
+    // - Reviewed: has ANY approved hunk (trusted OR manually reviewed)
+    // - Needs Review: has ANY unapproved hunk
+
+    const reviewedFiles = this.files.filter((f) => this.hasAnyApprovedHunk(f));
+    const needsReviewFiles = this.files.filter((f) => this.hasAnyUnapprovedHunk(f));
 
     this.reviewedTree = this.buildTree(reviewedFiles);
-    this.toReviewTree = this.buildTree(toReviewFiles);
+    this.needsReviewTree = this.buildTree(needsReviewFiles);
+  }
+
+  private hasAnyApprovedHunk(file: ChangedFileWithStatus): boolean {
+    return file.hunks.some((h) => h.approved);
+  }
+
+  private hasAnyUnapprovedHunk(file: ChangedFileWithStatus): boolean {
+    if (file.hunks.length === 0) return true;
+    return file.hunks.some((h) => !h.approved);
   }
 
   getCurrentComparison(): string | null {
@@ -120,9 +147,9 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     if (!this.currentComparison) return;
 
     if (isReviewed) {
-      this.cliProvider.markHunk(filePath, hunkHash);
+      this.cliProvider.approveHunk(filePath, hunkHash);
     } else {
-      this.cliProvider.unmarkHunk(filePath, hunkHash);
+      this.cliProvider.unapproveHunk(filePath, hunkHash);
     }
 
     await this.refreshFromCli();
@@ -131,16 +158,11 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   async setFileReviewed(relativePath: string, isReviewed: boolean): Promise<void> {
     if (!this.currentComparison) return;
 
-    const file = this.files.find((f) => f.relativePath === relativePath);
-    if (!file) return;
-
-    // Mark/unmark all hunks in the file
-    for (const hunk of file.hunks) {
-      if (isReviewed) {
-        this.cliProvider.markHunk(relativePath, hunk.hash);
-      } else {
-        this.cliProvider.unmarkHunk(relativePath, hunk.hash);
-      }
+    // Approve/unapprove the entire file at once
+    if (isReviewed) {
+      this.cliProvider.approveFile(relativePath);
+    } else {
+      this.cliProvider.unapproveFile(relativePath);
     }
 
     await this.refreshFromCli();
@@ -155,12 +177,10 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     );
 
     for (const file of filesInFolder) {
-      for (const hunk of file.hunks) {
-        if (isReviewed) {
-          this.cliProvider.markHunk(file.relativePath, hunk.hash);
-        } else {
-          this.cliProvider.unmarkHunk(file.relativePath, hunk.hash);
-        }
+      if (isReviewed) {
+        this.cliProvider.approveFile(file.relativePath);
+      } else {
+        this.cliProvider.unapproveFile(file.relativePath);
       }
     }
 
@@ -170,11 +190,11 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   async clearAllReviewed(): Promise<void> {
     if (!this.currentComparison) return;
 
-    // Unmark all hunks in all files
+    // Unapprove all hunks in all files
     for (const file of this.files) {
       for (const hunk of file.hunks) {
-        if (hunk.reviewed) {
-          this.cliProvider.unmarkHunk(file.relativePath, hunk.hash);
+        if (hunk.approved) {
+          this.cliProvider.unapproveHunk(file.relativePath, hunk.hash);
         }
       }
     }
@@ -185,16 +205,103 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   async markAllReviewed(): Promise<void> {
     if (!this.currentComparison) return;
 
-    // Mark all hunks in all files
+    // Approve all hunks in all files
     for (const file of this.files) {
       for (const hunk of file.hunks) {
-        if (!hunk.reviewed) {
-          this.cliProvider.markHunk(file.relativePath, hunk.hash);
+        if (!hunk.approved) {
+          this.cliProvider.approveHunk(file.relativePath, hunk.hash);
         }
       }
     }
 
     await this.refreshFromCli();
+  }
+
+  async trustLabel(label: string): Promise<void> {
+    if (!this.currentComparison) return;
+    this.cliProvider.addTrust(label);
+    await this.refreshFromCli();
+  }
+
+  async untrustLabel(label: string): Promise<void> {
+    if (!this.currentComparison) return;
+    this.cliProvider.removeTrust(label);
+    await this.refreshFromCli();
+  }
+
+  /**
+   * Get all unique labels from the current diff with their counts
+   */
+  getLabelsWithCounts(): Map<string, { count: number; trusted: boolean }> {
+    const labelCounts = new Map<string, { count: number; trusted: boolean }>();
+
+    for (const file of this.files) {
+      for (const hunk of file.hunks) {
+        for (const label of hunk.labels) {
+          const existing = labelCounts.get(label);
+          if (existing) {
+            existing.count++;
+          } else {
+            // Check if this specific label is in the trust list
+            const isTrusted = this.isLabelTrusted(label);
+            labelCounts.set(label, { count: 1, trusted: isTrusted });
+          }
+        }
+      }
+    }
+
+    return labelCounts;
+  }
+
+  /**
+   * Count hunks that have no labels (not yet classified)
+   */
+  getUnclassifiedCount(): number {
+    let count = 0;
+    for (const file of this.files) {
+      for (const hunk of file.hunks) {
+        if (hunk.labels.length === 0) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Run classification on unlabeled hunks
+   */
+  async classify(): Promise<void> {
+    if (!this.currentComparison) {
+      throw new Error("No comparison selected");
+    }
+    this.cliProvider.classify();
+    await this.refreshFromCli();
+  }
+
+  /**
+   * Check if a label matches any pattern in the trust list
+   */
+  private isLabelTrusted(label: string): boolean {
+    for (const pattern of this.trustList) {
+      if (this.labelMatchesPattern(label, pattern)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Check if a label matches a trust pattern (supports glob with *)
+   */
+  private labelMatchesPattern(label: string, pattern: string): boolean {
+    if (pattern === label) return true;
+    if (pattern.includes("*")) {
+      // Convert glob pattern to regex
+      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+      return regex.test(label);
+    }
+    return false;
   }
 
   private buildTree(files: ChangedFileWithStatus[]): TreeNode {
@@ -288,14 +395,16 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     if (!element) {
       const sections: FileTreeItem[] = [];
 
+      // Reviewed (approved via trust OR manual review)
       if (this.reviewedTree && this.reviewedTree.children.size > 0) {
         const count = this.countFiles(this.reviewedTree);
         sections.push(FileTreeItem.createSection("reviewed", count));
       }
 
-      if (this.toReviewTree && this.toReviewTree.children.size > 0) {
-        const count = this.countFiles(this.toReviewTree);
-        sections.push(FileTreeItem.createSection("toReview", count));
+      // Needs Review (not yet approved)
+      if (this.needsReviewTree && this.needsReviewTree.children.size > 0) {
+        const count = this.countFiles(this.needsReviewTree);
+        sections.push(FileTreeItem.createSection("needsReview", count));
       }
 
       return sections;
@@ -303,27 +412,27 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
 
     // Section level: return the tree root's children
     if (element.section) {
-      const tree = element.section === "reviewed" ? this.reviewedTree : this.toReviewTree;
+      const tree = element.section === "reviewed" ? this.reviewedTree : this.needsReviewTree;
       if (!tree) return [];
 
-      return this.getNodeChildren(tree, element.section === "reviewed");
+      return this.getNodeChildren(tree, element.section);
     }
 
     // Folder level: return folder's children
     if (element.nodePath && !element.file) {
-      const tree = element.isReviewed === true ? this.reviewedTree : this.toReviewTree;
+      const tree = element.sectionType === "reviewed" ? this.reviewedTree : this.needsReviewTree;
       if (!tree) return [];
 
       const node = this.findNode(tree, element.nodePath);
       if (!node) return [];
 
-      return this.getNodeChildren(node, element.isReviewed === true);
+      return this.getNodeChildren(node, element.sectionType || "needsReview");
     }
 
     return [];
   }
 
-  private getNodeChildren(node: TreeNode, isReviewedSection: boolean): FileTreeItem[] {
+  private getNodeChildren(node: TreeNode, sectionType: SectionType): FileTreeItem[] {
     const items: FileTreeItem[] = [];
 
     // Sort: folders first, then alphabetically
@@ -338,10 +447,10 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     for (const child of sorted) {
       if (child.file) {
         // Add file - use node name as label (includes path if compacted)
-        items.push(FileTreeItem.createFile(child.file, isReviewedSection, child.name));
+        items.push(FileTreeItem.createFile(child.file, sectionType, child.name));
       } else {
         // Add folder
-        items.push(FileTreeItem.createFolder(child.name, child.path, isReviewedSection));
+        items.push(FileTreeItem.createFolder(child.name, child.path, sectionType));
       }
     }
 
@@ -369,20 +478,11 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     }
     return count;
   }
-
-  private hasAnyReviewedHunk(file: ChangedFileWithStatus): boolean {
-    if (file.hunks.length === 0) return false;
-    return file.hunks.some((h) => h.reviewed);
-  }
-
-  private hasAnyUnreviewedHunk(file: ChangedFileWithStatus): boolean {
-    if (file.hunks.length === 0) return true; // No hunks = unreviewed
-    return file.hunks.some((h) => !h.reviewed);
-  }
 }
 
 export class FileTreeItem extends vscode.TreeItem {
   public readonly section?: SectionType;
+  public readonly sectionType?: SectionType;
   public readonly file?: ChangedFileWithStatus;
   public readonly isReviewed?: boolean;
   public readonly nodePath?: string;
@@ -392,36 +492,52 @@ export class FileTreeItem extends vscode.TreeItem {
   }
 
   static createSection(section: SectionType, count: number): FileTreeItem {
-    // Use just the section name as label, count as description (like VS Code's native views)
-    const item = new FileTreeItem(
-      section === "toReview" ? "To Review" : "Reviewed",
-      vscode.TreeItemCollapsibleState.Expanded,
-    );
+    const sectionLabels: Record<SectionType, string> = {
+      reviewed: "Reviewed",
+      needsReview: "Needs Review",
+    };
+    const item = new FileTreeItem(sectionLabels[section], vscode.TreeItemCollapsibleState.Expanded);
     (item as { section: SectionType }).section = section;
     item.id = `section:${section}`;
-    item.contextValue = section === "toReview" ? "toReviewSection" : "reviewedSection";
+
+    // Set context values for commands
+    const contextValues: Record<SectionType, string> = {
+      reviewed: "reviewedSection",
+      needsReview: "needsReviewSection",
+    };
+    item.contextValue = contextValues[section];
     item.description = `${count}`;
-    item.iconPath = new vscode.ThemeIcon(
-      section === "toReview" ? "eye" : "pass-filled",
-      new vscode.ThemeColor(
-        section === "toReview" ? "list.warningForeground" : "testing.iconPassed",
-      ),
-    );
+
+    // Set icons based on section type
+    const iconConfig: Record<SectionType, { icon: string; color: string }> = {
+      reviewed: { icon: "pass-filled", color: "testing.iconPassed" },
+      needsReview: { icon: "eye", color: "list.warningForeground" },
+    };
+    const { icon, color } = iconConfig[section];
+    item.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color));
+
     return item;
   }
 
-  static createFolder(name: string, nodePath: string, isReviewed: boolean): FileTreeItem {
+  static createFolder(name: string, nodePath: string, sectionType: SectionType): FileTreeItem {
     const item = new FileTreeItem(name, vscode.TreeItemCollapsibleState.Expanded);
     (item as { nodePath: string }).nodePath = nodePath;
-    (item as { isReviewed: boolean }).isReviewed = isReviewed;
-    item.id = `folder:${isReviewed ? "reviewed" : "toReview"}:${nodePath}`;
-    item.contextValue = isReviewed ? "reviewedFolder" : "unreviewedFolder";
+    (item as { sectionType: SectionType }).sectionType = sectionType;
+    (item as { isReviewed: boolean }).isReviewed = sectionType === "reviewed";
+    item.id = `folder:${sectionType}:${nodePath}`;
+
+    const folderContextValues: Record<SectionType, string> = {
+      reviewed: "reviewedFolder",
+      needsReview: "unreviewedFolder",
+    };
+    item.contextValue = folderContextValues[sectionType];
+
     return item;
   }
 
   static createFile(
     file: ChangedFileWithStatus,
-    isReviewed: boolean,
+    sectionType: SectionType,
     displayName?: string,
   ): FileTreeItem {
     // Use displayName if provided (for compacted paths), otherwise just the filename
@@ -429,10 +545,16 @@ export class FileTreeItem extends vscode.TreeItem {
     const item = new FileTreeItem(label, vscode.TreeItemCollapsibleState.None);
 
     (item as { file: ChangedFileWithStatus }).file = file;
-    (item as { isReviewed: boolean }).isReviewed = isReviewed;
+    (item as { sectionType: SectionType }).sectionType = sectionType;
+    (item as { isReviewed: boolean }).isReviewed = sectionType === "reviewed";
 
-    item.id = `file:${isReviewed ? "reviewed" : "toReview"}:${file.relativePath}`;
-    item.contextValue = isReviewed ? "reviewedFile" : "unreviewedFile";
+    item.id = `file:${sectionType}:${file.relativePath}`;
+
+    const fileContextValues: Record<SectionType, string> = {
+      reviewed: "reviewedFile",
+      needsReview: "unreviewedFile",
+    };
+    item.contextValue = fileContextValues[sectionType];
 
     const statusIcons: Record<string, string> = {
       added: "A",

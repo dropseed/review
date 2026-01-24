@@ -13,10 +13,21 @@ interface ComparisonSpec {
 }
 
 interface ReviewWebviewMessage {
-  type: "ready" | "selectComparison" | "updateNotes" | "copy" | "clear" | "selectRepository";
+  type:
+    | "ready"
+    | "selectComparison"
+    | "updateNotes"
+    | "copy"
+    | "clear"
+    | "selectRepository"
+    | "trustLabel"
+    | "untrustLabel"
+    | "classify"
+    | "stageReviewed";
   spec?: ComparisonSpec; // From webview dropdown selection
   notes?: string;
   repoPath?: string;
+  label?: string; // For trust/untrust operations
 }
 
 export class ReviewViewProvider implements vscode.WebviewViewProvider {
@@ -61,6 +72,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
         this.loadRepositories();
         await this.loadBranches();
         await this.refreshNotes();
+        await this.refreshLabels();
         break;
 
       case "selectRepository":
@@ -86,6 +98,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
           // FileTreeProvider.selectComparison calls CLI to set comparison and get files
           await this.fileTreeProvider.selectComparison(comparison);
           await this.refreshNotes();
+          await this.refreshLabels();
           await this.decorationProvider?.refresh();
         }
         break;
@@ -104,6 +117,36 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
       case "clear":
         await this.clearReview();
+        break;
+
+      case "trustLabel":
+        if (message.label) {
+          await this.fileTreeProvider.trustLabel(message.label);
+          await this.refreshLabels();
+        }
+        break;
+
+      case "untrustLabel":
+        if (message.label) {
+          await this.fileTreeProvider.untrustLabel(message.label);
+          await this.refreshLabels();
+        }
+        break;
+
+      case "classify":
+        this.postMessage({ type: "classifyStarted" });
+        try {
+          await this.fileTreeProvider.classify();
+          await this.refreshLabels();
+          await this.decorationProvider?.refresh();
+          this.postMessage({ type: "classifyComplete" });
+        } catch (err) {
+          this.postMessage({ type: "classifyFailed" });
+        }
+        break;
+
+      case "stageReviewed":
+        await this.stageReviewedFiles();
         break;
     }
   }
@@ -150,6 +193,25 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
     this.postMessage({
       type: "notesLoaded",
       notes: notes,
+    });
+  }
+
+  public async refreshLabels(): Promise<void> {
+    const labelsMap = this.fileTreeProvider.getLabelsWithCounts();
+    const labels = Array.from(labelsMap.entries())
+      .map(([name, data]) => ({
+        name,
+        count: data.count,
+        trusted: data.trusted,
+      }))
+      .sort((a, b) => b.count - a.count); // Sort by count descending
+
+    const unclassifiedCount = this.fileTreeProvider.getUnclassifiedCount();
+
+    this.postMessage({
+      type: "labelsLoaded",
+      labels,
+      unclassifiedCount,
     });
   }
 
@@ -200,6 +262,36 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
     // Only clear notes, not checkboxes
     this.stateService.updateNotes(comparison, "");
     await this.refreshNotes();
+  }
+
+  private async stageReviewedFiles(): Promise<void> {
+    const workspaceRoot = this.gitProvider.getWorkspaceRoot();
+    if (!workspaceRoot) return;
+
+    const { execSync } = require("node:child_process");
+    try {
+      const output = execSync("human-review stage", {
+        cwd: workspaceRoot,
+        encoding: "utf-8",
+      });
+      // Parse output to show user-friendly message
+      const match = output.match(/Staged (\d+) approved hunk/);
+      if (match) {
+        vscode.window.showInformationMessage(`Staged ${match[1]} approved hunk(s)`);
+      } else if (output.includes("No approved hunks")) {
+        vscode.window.showInformationMessage("No approved hunks to stage");
+      } else {
+        vscode.window.showInformationMessage("Staging complete");
+      }
+    } catch (err) {
+      const error = err as { stderr?: string; stdout?: string; message?: string };
+      if (error.stderr?.includes("only works for working tree")) {
+        vscode.window.showWarningMessage("Stage only works for working tree reviews");
+      } else {
+        const detail = error.stderr || error.stdout || error.message || "Unknown error";
+        vscode.window.showErrorMessage(`Failed to stage hunks: ${detail.slice(0, 200)}`);
+      }
+    }
   }
 
   private postMessage(message: unknown): void {

@@ -99,12 +99,19 @@
         border-radius: 2px;
         cursor: pointer;
       }
-      .copy-btn {
+      .stage-btn {
         color: var(--vscode-button-foreground);
         background: var(--vscode-button-background);
       }
-      .copy-btn:hover {
+      .stage-btn:hover {
         background: var(--vscode-button-hoverBackground);
+      }
+      .copy-btn {
+        color: var(--vscode-button-secondaryForeground);
+        background: var(--vscode-button-secondaryBackground);
+      }
+      .copy-btn:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
       }
       .clear-btn {
         color: var(--vscode-button-secondaryForeground);
@@ -116,6 +123,70 @@
       .empty-state {
         color: var(--vscode-descriptionForeground);
         font-size: 12px;
+      }
+      .labels-section {
+        flex-shrink: 0;
+        border: 1px solid var(--vscode-panel-border, var(--vscode-input-border, transparent));
+        border-radius: 4px;
+        padding: 8px;
+        max-height: 150px;
+        overflow-y: auto;
+      }
+      .labels-header {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .label-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 0;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .label-item:hover {
+        background: var(--vscode-list-hoverBackground);
+      }
+      .label-checkbox {
+        cursor: pointer;
+      }
+      .label-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .label-count {
+        color: var(--vscode-descriptionForeground);
+        font-size: 11px;
+      }
+      .no-labels {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+        font-style: italic;
+      }
+      .classify-btn {
+        padding: 2px 8px;
+        font-size: 11px;
+        font-family: var(--vscode-font-family), sans-serif;
+        color: var(--vscode-button-secondaryForeground);
+        background: var(--vscode-button-secondaryBackground);
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .classify-btn:hover:not(:disabled) {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .classify-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
     </style>
   </head>
@@ -130,6 +201,9 @@
       let oldBranch = "";
       let newBranch = "";
       let notes = "";
+      let labels = []; // Array of {name, count, trusted}
+      let unclassifiedCount = 0;
+      let isClassifying = false;
 
       function render() {
         const root = document.getElementById("root");
@@ -210,6 +284,34 @@
             "</div>";
         }
 
+        // Build trust/labels section (always shown)
+        let labelsContent = "";
+        if (labels.length > 0) {
+          labelsContent = labels
+            .map(
+              (l) =>
+                `<label class="label-item">
+                  <input type="checkbox" class="label-checkbox" data-label="${l.name}" ${l.trusted ? "checked" : ""}>
+                  <span class="label-name" title="${l.name}">${l.name}</span>
+                  <span class="label-count">${l.count}</span>
+                </label>`,
+            )
+            .join("");
+        } else {
+          labelsContent = '<div class="no-labels">No labels yet</div>';
+        }
+        const classifyDisabled = unclassifiedCount === 0 || isClassifying;
+        const classifyBtnText = isClassifying ? "Classifying..." : (unclassifiedCount > 0 ? `Classify (${unclassifiedCount})` : "Classify");
+        const labelsHtml =
+          '<div class="labels-section">' +
+          '<div class="labels-header"><span>Trust</span><button id="classify" class="classify-btn"' +
+          (classifyDisabled ? " disabled" : "") +
+          ">" +
+          classifyBtnText +
+          "</button></div>" +
+          labelsContent +
+          "</div>";
+
         root.innerHTML =
           repoSelectorHtml +
           '<div class="selector">' +
@@ -226,7 +328,11 @@
           "</select>" +
           "</div>" +
           "</div>" +
+          labelsHtml +
           '<textarea id="notes" placeholder="Review notes...\n\nCmd+Shift+R adds line references from the editor."></textarea>' +
+          '<div class="buttons">' +
+          '<button class="stage-btn" id="stage">Stage Reviewed</button>' +
+          "</div>" +
           '<div class="buttons">' +
           '<button class="copy-btn" id="copy">Copy</button>' +
           '<button class="clear-btn" id="clear">Clear</button>' +
@@ -291,6 +397,31 @@
         document.getElementById("clear").onclick = () => {
           vscode.postMessage({ type: "clear" });
         };
+
+        document.getElementById("stage").onclick = () => {
+          vscode.postMessage({ type: "stageReviewed" });
+        };
+
+        // Attach classify button handler
+        const classifyBtn = document.getElementById("classify");
+        if (classifyBtn) {
+          classifyBtn.onclick = () => {
+            vscode.postMessage({ type: "classify" });
+          };
+        }
+
+        // Attach label checkbox handlers
+        const labelCheckboxes = document.querySelectorAll(".label-checkbox");
+        labelCheckboxes.forEach((checkbox) => {
+          checkbox.onchange = (e) => {
+            const labelName = e.target.dataset.label;
+            const isTrusted = e.target.checked;
+            vscode.postMessage({
+              type: isTrusted ? "trustLabel" : "untrustLabel",
+              label: labelName,
+            });
+          };
+        });
 
         // Attach repo selector handler if present
         const repoSelect = document.getElementById("repo");
@@ -388,6 +519,20 @@
           }
           saveState();
           vscode.postMessage({ type: "updateNotes", notes });
+        } else if (msg.type === "labelsLoaded") {
+          labels = msg.labels || [];
+          unclassifiedCount = msg.unclassifiedCount || 0;
+          // Re-render if textarea doesn't have focus
+          const textareaEl = document.getElementById("notes");
+          if (!textareaEl || document.activeElement !== textareaEl) {
+            render();
+          }
+        } else if (msg.type === "classifyStarted") {
+          isClassifying = true;
+          render();
+        } else if (msg.type === "classifyComplete" || msg.type === "classifyFailed") {
+          isClassifying = false;
+          render();
         }
       });
 

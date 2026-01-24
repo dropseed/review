@@ -116,3 +116,21 @@ def git_ref_exists(ref: str, cwd: Path | None = None) -> bool:
         return True
     except GitError:
         return False
+
+
+def git_diff_file(file_path: str, base: str | None = None, cwd: Path | None = None) -> str:
+    """Get diff output for a specific file against working tree.
+
+    If base is provided, diffs against that ref. Otherwise diffs staged vs working tree.
+    Uses -U0 for zero context lines. Forces a/ and b/ prefixes for git apply compatibility.
+    """
+    if base is not None:
+        return run_git(
+            "diff", "-p", "-U0", "--src-prefix=a/", "--dst-prefix=b/",
+            base, "--", file_path, cwd=cwd
+        )
+    else:
+        return run_git(
+            "diff", "-p", "-U0", "--src-prefix=a/", "--dst-prefix=b/",
+            "--", file_path, cwd=cwd
+        )

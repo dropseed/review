@@ -540,7 +540,7 @@ class TestFilters:
         for f in data["files"]:
             for h in f["hunks"]:
                 assert h["reasoning"] is None
-                assert h["label"] == []
+                assert h["labels"] == []
 
     def test_diff_unreviewed(self, runner: CliRunner, temp_git_repo: Path) -> None:
         """Test filtering to unreviewed hunks."""
