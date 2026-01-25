@@ -1,18 +1,12 @@
 import * as vscode from "vscode";
 import { initLogger, logError } from "./logger";
-import { CliProvider } from "./providers/CliProvider";
 import { DiffDecorationProvider } from "./providers/DiffDecorationProvider";
 import { type FileTreeItem, FileTreeProvider } from "./providers/FileTreeProvider";
 import { GitProvider } from "./providers/GitProvider";
-import { ReviewStateService } from "./providers/ReviewStateService";
 import { ReviewViewProvider } from "./providers/ReviewViewProvider";
-import type { DiffHunk } from "./types";
+import { StateService } from "./state/StateService";
+import type { HunkWithStatus } from "./types";
 import { getRelativePath } from "./utils";
-
-// Extended hunk type that includes review status from CLI
-interface HunkWithStatus extends DiffHunk {
-  reviewed: boolean;
-}
 
 // Helper to find the hunk at the current cursor position in a diff view
 function getCurrentHunkInfo(
@@ -28,16 +22,12 @@ function getCurrentHunkInfo(
   const relativePath = getRelativePath(editor.document.uri, workspaceRoot);
   if (!relativePath) return null;
 
-  // Find the file
   const file = fileTreeProvider.getFiles().find((f) => f.relativePath === relativePath);
   if (!file) return null;
 
-  // Find the hunk that contains the current cursor position
   const line = editor.selection.active.line + 1;
   const hunk = file.hunks.find((h) => line >= h.startLine && line <= h.endLine);
 
-  // If no hunk found by line range, and there's only one hunk, use it
-  // (handles delete-only hunks where cursor might be on left side)
   if (!hunk && file.hunks.length === 1) {
     return { relativePath, hunk: file.hunks[0] };
   }
@@ -61,15 +51,12 @@ function getSelectedHunksInfo(
   const relativePath = getRelativePath(editor.document.uri, workspaceRoot);
   if (!relativePath) return null;
 
-  // Find the file
   const file = fileTreeProvider.getFiles().find((f) => f.relativePath === relativePath);
   if (!file) return null;
 
-  // Get selection range (1-indexed to match hunk lines)
   const startLine = editor.selection.start.line + 1;
   const endLine = editor.selection.end.line + 1;
 
-  // Find all hunks that overlap with the selection
   const hunks = file.hunks.filter((h) => h.startLine <= endLine && h.endLine >= startLine);
 
   if (hunks.length === 0) return null;
@@ -80,7 +67,6 @@ function getSelectedHunksInfo(
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   initLogger();
 
-  // Get workspace folder first (independent of git)
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
     return;
@@ -89,48 +75,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Initialize services
   const gitProvider = new GitProvider();
-  const stateService = new ReviewStateService();
-  const cliProvider = new CliProvider(workspaceRoot);
-
-  // Create providers (don't wait for git - CLI will handle git operations)
-  const fileTreeProvider = new FileTreeProvider(gitProvider, cliProvider);
+  const fileTreeProvider = new FileTreeProvider(gitProvider);
 
   await gitProvider.initialize();
 
-  const reviewViewProvider = new ReviewViewProvider(
-    context.extensionUri,
-    gitProvider,
-    stateService,
-    fileTreeProvider,
-  );
+  // Initialize FileTreeProvider after GitProvider is ready
+  fileTreeProvider.initialize();
 
-  // Create decoration provider for visual hunk status in diffs
-  const decorationProvider = new DiffDecorationProvider(
-    context.extensionUri,
-    gitProvider,
-    fileTreeProvider,
-  );
+  // Create state service for ReviewViewProvider
+  const stateService = StateService.create(workspaceRoot);
 
-  // Wire up decoration provider to review view for refresh on comparison change
+  const reviewViewProvider = new ReviewViewProvider(context.extensionUri, gitProvider, fileTreeProvider);
+
+  if (stateService) {
+    reviewViewProvider.setStateService(stateService);
+  }
+
+  const decorationProvider = new DiffDecorationProvider(context.extensionUri, gitProvider, fileTreeProvider);
+
   reviewViewProvider.setDecorationProvider(decorationProvider);
 
-  // Initial load - try to refresh from CLI (in case there's an existing comparison)
   fileTreeProvider.refresh();
 
-  // Listen for repository becoming available
   gitProvider.onRepositoryChange(() => {
     reviewViewProvider.onRepositoryReady();
     fileTreeProvider.refresh();
   });
 
-  // Register tree view
   const treeView = vscode.window.createTreeView("human-review.files", {
     treeDataProvider: fileTreeProvider,
     showCollapseAll: true,
     canSelectMany: true,
   });
 
-  // Auto-open diff when single file is selected (preserves single-click behavior)
   treeView.onDidChangeSelection((e) => {
     if (e.selection.length === 1) {
       const item = e.selection[0];
@@ -139,28 +116,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           "human-review.openDiff",
           item.file.relativePath,
           item.file.status,
-          undefined, // lineNumber
-          item.file.oldPath,
+          undefined,
+          item.file.old_path,
         );
       }
     }
   });
 
-  // Watch for git repository changes and refresh tree + branches (debounced)
-  // Uses VS Code's git extension events instead of file watchers for efficiency
   let refreshTimeout: ReturnType<typeof setTimeout> | undefined;
   const debouncedRefresh = () => {
     if (refreshTimeout) clearTimeout(refreshTimeout);
     refreshTimeout = setTimeout(() => {
       fileTreeProvider.refresh();
-      reviewViewProvider.onRepositoryReady(); // Reload branches when state changes
+      reviewViewProvider.onRepositoryReady();
     }, 500);
   };
 
   gitProvider.onRepositoryStateChange(debouncedRefresh);
 
-  // Watch for file system changes (supplements git extension events which may not fire for all changes)
-  // Exclude directories that would cause noise or feedback loops
   const watcher = vscode.workspace.createFileSystemWatcher("**/*", false, false, false);
   const shouldIgnore = (uri: vscode.Uri) => {
     const path = uri.fsPath;
@@ -176,16 +149,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher.onDidDelete((uri) => !shouldIgnore(uri) && debouncedRefresh());
   context.subscriptions.push(watcher);
 
-  // Watch for changes to .human-review/current file (for CLI sync)
-  // When the CLI changes the current comparison, refresh VSCode's view
-  const currentFileWatcher = vscode.workspace.createFileSystemWatcher(
-    "**/.human-review/current",
-    false,
-    false,
-    false,
-  );
+  const currentFileWatcher = vscode.workspace.createFileSystemWatcher("**/.human-review/current", false, false, false);
   const handleCurrentFileChange = () => {
-    // Reload branches which will pick up the new current comparison
     reviewViewProvider.onRepositoryReady();
     fileTreeProvider.refresh();
     decorationProvider.refresh();
@@ -195,8 +160,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   currentFileWatcher.onDidDelete(handleCurrentFileChange);
   context.subscriptions.push(currentFileWatcher);
 
-  // Watch for changes to review state files (for CLI sync)
-  // When the CLI marks hunks or edits notes, refresh the UI
   const reviewStateWatcher = vscode.workspace.createFileSystemWatcher(
     "**/.human-review/reviews/*.json",
     false,
@@ -205,7 +168,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   let reviewStateRefreshTimeout: ReturnType<typeof setTimeout> | undefined;
   const handleReviewStateChange = () => {
-    // Debounce to avoid multiple rapid refreshes
     if (reviewStateRefreshTimeout) clearTimeout(reviewStateRefreshTimeout);
     reviewStateRefreshTimeout = setTimeout(async () => {
       fileTreeProvider.refresh();
@@ -218,24 +180,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   reviewStateWatcher.onDidDelete(handleReviewStateChange);
   context.subscriptions.push(reviewStateWatcher);
 
-  // Register webview provider
   try {
-    const disposable = vscode.window.registerWebviewViewProvider(
-      ReviewViewProvider.viewType,
-      reviewViewProvider,
-      { webviewOptions: { retainContextWhenHidden: true } },
-    );
+    const disposable = vscode.window.registerWebviewViewProvider(ReviewViewProvider.viewType, reviewViewProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    });
     context.subscriptions.push(disposable);
   } catch (err: unknown) {
-    // Ignore "already registered" error - this can happen during reload
-    // when VSCode doesn't fully unload the previous extension instance
     const message = (err as Error)?.message || "";
     if (!message.includes("already registered")) {
       logError("Failed to register webview provider", err);
     }
   }
 
-  // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand("human-review.refresh", async () => {
       fileTreeProvider.refresh();
@@ -262,7 +218,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await decorationProvider.refresh();
     }),
 
-    // Context menu commands to mark/unmark current hunk based on cursor position
     vscode.commands.registerCommand("human-review.markCurrentHunkReviewed", async () => {
       const hunkInfo = getCurrentHunkInfo(gitProvider, fileTreeProvider);
       if (hunkInfo) {
@@ -279,7 +234,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
-    // Commands to mark/unmark all hunks within the current selection
     vscode.commands.registerCommand("human-review.markSelectedRangesReviewed", async () => {
       const info = getSelectedHunksInfo(gitProvider, fileTreeProvider);
       if (info) {
@@ -301,7 +255,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand("human-review.markReviewed", async (item: FileTreeItem) => {
-      // Support multi-select: use selection if multiple items, otherwise just the clicked item
       const items = treeView.selection.length > 1 ? treeView.selection : item ? [item] : [];
       for (const selectedItem of items) {
         if (selectedItem.file) {
@@ -314,7 +267,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand("human-review.unmarkReviewed", async (item: FileTreeItem) => {
-      // Support multi-select: use selection if multiple items, otherwise just the clicked item
       const items = treeView.selection.length > 1 ? treeView.selection : item ? [item] : [];
       for (const selectedItem of items) {
         if (selectedItem.file) {
@@ -354,16 +306,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand(
       "human-review.openDiff",
-      async (
-        arg: string | FileTreeItem,
-        status?: string,
-        lineNumber?: number,
-        oldPathArg?: string,
-      ) => {
+      async (arg: string | FileTreeItem, status?: string, lineNumber?: number, oldPathArg?: string) => {
         const wsRoot = gitProvider.getWorkspaceRoot();
         if (!wsRoot) return;
 
-        // Handle both string (from click) and TreeItem (from context menu)
         let relativePath: string;
         let fileStatus: string | undefined;
         let oldPath: string | undefined;
@@ -377,25 +323,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (!arg.file) return;
           relativePath = arg.file.relativePath;
           fileStatus = arg.file.status;
-          oldPath = arg.file.oldPath;
+          oldPath = arg.file.old_path;
         }
 
         const filePath = `${wsRoot}/${relativePath}`;
         const filename = relativePath.split("/").pop() || relativePath;
         const comparison = fileTreeProvider.getCurrentComparison();
 
-        // Parse comparison to get base and compare refs
-        // Format: "base..compare" or "base..compare+working-tree"
         let baseRef: string | undefined;
         let compareRef: string | undefined;
         let isWorkingTree = false;
 
         if (comparison) {
-          // Check for working tree suffix
           let comparisonToParse = comparison;
           if (comparison.endsWith("+working-tree")) {
             isWorkingTree = true;
-            comparisonToParse = comparison.slice(0, -13); // Remove "+working-tree"
+            comparisonToParse = comparison.slice(0, -13);
           }
 
           if (comparisonToParse.includes("..")) {
@@ -410,23 +353,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
         }
 
-        // For added/untracked files, just open the file
         if (fileStatus === "added" || fileStatus === "untracked") {
           await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
           return;
         }
 
-        // For deleted files, show the old version from git
         if (fileStatus === "deleted" && baseRef) {
-          const baseUri = vscode.Uri.parse(
-            `git:${filePath}?${JSON.stringify({ path: filePath, ref: baseRef })}`,
-          );
+          const baseUri = vscode.Uri.parse(`git:${filePath}?${JSON.stringify({ path: filePath, ref: baseRef })}`);
           await vscode.commands.executeCommand("vscode.open", baseUri);
           return;
         }
 
         try {
-          // For renamed files, use the old path for the base URI
           const baseFilePath = oldPath ? `${wsRoot}/${oldPath}` : filePath;
 
           if (isWorkingTree && baseRef) {
@@ -445,9 +383,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const baseUri = vscode.Uri.parse(
               `git:${baseFilePath}?${JSON.stringify({ path: baseFilePath, ref: baseRef })}`,
             );
-            const compareUri = vscode.Uri.parse(
-              `git:${filePath}?${JSON.stringify({ path: filePath, ref: compareRef })}`,
-            );
+            const compareUri = vscode.Uri.parse(`git:${filePath}?${JSON.stringify({ path: filePath, ref: compareRef })}`);
 
             await vscode.commands.executeCommand(
               "vscode.diff",
@@ -461,26 +397,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               `git:${baseFilePath}?${JSON.stringify({ path: baseFilePath, ref: "HEAD" })}`,
             );
 
-            await vscode.commands.executeCommand(
-              "vscode.diff",
-              headUri,
-              uri,
-              `${filename} (HEAD ↔ Working Tree)`,
-            );
+            await vscode.commands.executeCommand("vscode.diff", headUri, uri, `${filename} (HEAD ↔ Working Tree)`);
           }
 
-          // Scroll to specific line if provided
-          // Delay needed to allow diff editor to fully render before scrolling
           if (scrollToLine !== undefined) {
             setTimeout(() => {
               const editor = vscode.window.activeTextEditor;
               if (editor) {
                 const position = new vscode.Position(scrollToLine - 1, 0);
                 editor.selection = new vscode.Selection(position, position);
-                editor.revealRange(
-                  new vscode.Range(position, position),
-                  vscode.TextEditorRevealType.InCenter,
-                );
+                editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
               }
             }, 100);
           }
@@ -492,7 +418,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
 
     vscode.commands.registerCommand("human-review.addFileToNotes", (item: FileTreeItem) => {
-      // Support multi-select: use selection if multiple items, otherwise just the clicked item
       const items = treeView.selection.length > 1 ? treeView.selection : [item];
       for (const selectedItem of items) {
         if (selectedItem?.file) {
@@ -511,12 +436,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       const selection = editor.selection;
       if (!selection.isEmpty) {
-        // Use range if there's a selection
         const start = selection.start.line + 1;
         const end = selection.end.line + 1;
         reviewViewProvider.addLineReference(editor.document.uri.fsPath, undefined, { start, end });
       } else {
-        // Single line
         const ln = selection.active.line + 1;
         reviewViewProvider.addLineReference(editor.document.uri.fsPath, ln);
       }
@@ -553,8 +476,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("human-review.classify", async () => {
       try {
-        cliProvider.classify();
-        fileTreeProvider.refresh();
+        await fileTreeProvider.classify();
         await decorationProvider.refresh();
         vscode.window.showInformationMessage("Classification complete");
       } catch {

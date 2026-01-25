@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/../vscode"
+
+npm run build
+npx vsce package --out human-review.vsix
+
+echo ""
+echo "Built: vscode/human-review.vsix"
+echo "Install with: code --install-extension vscode/human-review.vsix"

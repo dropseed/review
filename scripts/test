@@ -2,8 +2,9 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# Make sure the cli actually loads
-uv run human-review --help
+cd vscode
+npm run build
+echo "Build successful!"
 
-# Run tests
-uv run pytest "$@"
+npm test
+echo "Tests passed!"

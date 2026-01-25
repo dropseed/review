@@ -1,29 +1,16 @@
 import * as vscode from "vscode";
 import { logError } from "../logger";
-import type { CliFile, CliHunk, DiffHunk } from "../types";
-import type { CliProvider } from "./CliProvider";
+import type { ChangedFile, ChangedFileWithStatus, DiffHunk, HunkWithStatus, ReviewState } from "../state/types";
+import { StateService } from "../state/StateService";
+import { parseDiffToHunks, parseNameStatus, createUntrackedHunk } from "../diff/parser";
+import { gitDiff, gitDiffNameStatus, gitUntrackedFiles, gitMergeBase } from "../git/operations";
+import { isLabelTrusted } from "../trust/matching";
+import { getHunkKey } from "../utils/hash";
+import { buildDiffContent, buildClassifyPrompt, getUnlabeledHunks } from "../classify/prompt";
+import { runClassification } from "../classify/claude";
 import type { GitProvider } from "./GitProvider";
 
 type SectionType = "reviewed" | "needsReview";
-
-// Extended hunk type with all status fields from CLI
-interface HunkWithStatus extends DiffHunk {
-  labels: string[];
-  reasoning: string | null;
-  trusted: boolean;
-  reviewed: boolean;
-  approved: boolean;
-}
-
-// Internal file representation with hunks that include review status
-interface ChangedFileWithStatus {
-  path: string;
-  absolutePath: string;
-  relativePath: string;
-  oldPath?: string;
-  status: string;
-  hunks: HunkWithStatus[];
-}
 
 interface TreeNode {
   name: string;
@@ -37,34 +24,58 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private currentComparison: string | null = null;
-  private lastSetComparison: string | null = null; // Track what we set (to prevent feedback loops)
+  private lastSetComparison: string | null = null;
   private files: ChangedFileWithStatus[] = [];
-  private trustList: string[] = []; // Currently trusted patterns
+  private state: ReviewState | null = null;
+  private stateService: StateService | null = null;
   private reviewedTree: TreeNode | null = null;
   private needsReviewTree: TreeNode | null = null;
 
-  constructor(
-    private gitProvider: GitProvider,
-    private cliProvider: CliProvider,
-  ) {}
+  constructor(private gitProvider: GitProvider) {}
+
+  /**
+   * Initialize the state service. Called after GitProvider is ready.
+   */
+  initialize(): void {
+    const workspaceRoot = this.gitProvider.getWorkspaceRoot();
+    if (workspaceRoot) {
+      this.stateService = StateService.create(workspaceRoot);
+      // Load current comparison if it exists
+      if (this.stateService) {
+        const current = this.stateService.getCurrentComparison();
+        if (current) {
+          this.currentComparison = current;
+          this.lastSetComparison = current;
+          this.state = this.stateService.load(current);
+        }
+      }
+    }
+  }
 
   async selectComparison(comparison: string): Promise<void> {
-    // Skip if comparison hasn't changed (prevents feedback loop with file watcher)
-    // Compare against what we last set, not what CLI returned (format may differ)
     if (comparison === this.lastSetComparison) {
       return;
     }
 
     this.lastSetComparison = comparison;
+    this.currentComparison = comparison;
 
-    // Set the comparison via CLI
-    this.cliProvider.setComparison(comparison);
+    const workspaceRoot = this.gitProvider.getWorkspaceRoot();
+    if (!workspaceRoot || !this.stateService) {
+      return;
+    }
 
-    // Refresh data from CLI
-    await this.refreshFromCli();
+    // Save the current comparison
+    this.stateService.setCurrentComparison(comparison);
+
+    // Load or create state for this comparison
+    this.state = this.stateService.load(comparison);
+
+    // Refresh files from git
+    await this.refreshFromGit();
   }
 
-  async refreshFromCli(): Promise<void> {
+  async refreshFromGit(): Promise<void> {
     try {
       const workspaceRoot = this.gitProvider.getWorkspaceRoot();
       if (!workspaceRoot) {
@@ -74,47 +85,131 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
         return;
       }
 
-      const cliOutput = this.cliProvider.getChangedFiles();
-      this.currentComparison = cliOutput.comparison;
-      this.trustList = cliOutput.trust_list || [];
+      // Initialize state service if not already done
+      if (!this.stateService) {
+        this.stateService = StateService.create(workspaceRoot);
+      }
 
-      // Convert CLI output to internal format
-      this.files = cliOutput.files.map((f: CliFile) => ({
+      // Load current comparison if not set
+      if (!this.currentComparison && this.stateService) {
+        this.currentComparison = this.stateService.getCurrentComparison();
+        this.lastSetComparison = this.currentComparison;
+        if (this.currentComparison) {
+          this.state = this.stateService.load(this.currentComparison);
+        }
+      }
+
+      if (!this.currentComparison || !this.state) {
+        this.files = [];
+        this._onDidChangeTreeData.fire(undefined);
+        return;
+      }
+
+      // Parse comparison key
+      let baseRef: string;
+      let compareRef: string | null = null;
+      let isWorkingTree = false;
+
+      if (this.currentComparison.endsWith("+working-tree")) {
+        isWorkingTree = true;
+        const withoutSuffix = this.currentComparison.slice(0, -13);
+        if (withoutSuffix.includes("..")) {
+          const parts = withoutSuffix.split("..");
+          baseRef = parts[0];
+          compareRef = parts[1];
+        } else {
+          baseRef = withoutSuffix;
+        }
+      } else if (this.currentComparison.includes("..")) {
+        const parts = this.currentComparison.split("..");
+        baseRef = parts[0];
+        compareRef = parts[1];
+      } else {
+        baseRef = this.currentComparison;
+        isWorkingTree = true;
+      }
+
+      // Get the merge base for the diff
+      let effectiveBase = baseRef;
+      if (compareRef) {
+        try {
+          effectiveBase = gitMergeBase(baseRef, compareRef, workspaceRoot);
+        } catch {
+          // Fall back to baseRef if merge-base fails
+        }
+      }
+
+      // Get diff and name-status
+      const compare = isWorkingTree ? null : compareRef;
+      const diffOutput = gitDiff(effectiveBase, compare, workspaceRoot);
+      const nameStatusOutput = gitDiffNameStatus(effectiveBase, compare, workspaceRoot);
+      const statusMap = parseNameStatus(nameStatusOutput);
+
+      // Parse diff into files
+      const parsedFiles = parseDiffToHunks(diffOutput, statusMap);
+
+      // Add untracked files if working tree comparison
+      if (isWorkingTree) {
+        const untracked = gitUntrackedFiles(workspaceRoot);
+        for (const filePath of untracked) {
+          const existing = parsedFiles.find((f) => f.path === filePath);
+          if (!existing) {
+            parsedFiles.push({
+              path: filePath,
+              status: "untracked",
+              old_path: null,
+              hunks: [createUntrackedHunk(filePath, "")],
+            });
+          }
+        }
+      }
+
+      // Get trust list
+      const trustList = this.state.trust_label || [];
+
+      // Convert to ChangedFileWithStatus
+      this.files = parsedFiles.map((f) => ({
         path: `${workspaceRoot}/${f.path}`,
         absolutePath: `${workspaceRoot}/${f.path}`,
         relativePath: f.path,
-        oldPath: f.old_path,
+        old_path: f.old_path ?? undefined,
         status: f.status,
-        hunks: f.hunks.map((h: CliHunk) => ({
-          filePath: f.path,
-          hash: h.hash,
-          startLine: h.start_line,
-          endLine: h.end_line,
-          header: h.header,
-          content: h.content,
-          labels: h.labels || [],
-          reasoning: h.reasoning,
-          trusted: h.trusted || false,
-          reviewed: h.reviewed || false,
-          approved: h.approved || false,
-        })),
+        hunks: f.hunks.map((h) => this.enrichHunk(h, trustList)),
       }));
 
       this.rebuildTrees();
       this._onDidChangeTreeData.fire(undefined);
     } catch (err) {
-      logError("Failed to get files from CLI", err);
+      logError("Failed to get files from git", err);
       this.files = [];
       this.currentComparison = null;
       this._onDidChangeTreeData.fire(undefined);
     }
   }
 
-  private rebuildTrees(): void {
-    // Files can appear in both sections based on hunk state:
-    // - Reviewed: has ANY approved hunk (trusted OR manually reviewed)
-    // - Needs Review: has ANY unapproved hunk
+  private enrichHunk(hunk: DiffHunk, trustList: string[]): HunkWithStatus {
+    const hunkKey = getHunkKey(hunk.filePath, hunk.hash);
+    const hunkState = this.state?.hunks[hunkKey];
 
+    const labels = hunkState?.label || [];
+    const reasoning = hunkState?.reasoning || null;
+    const reviewed = hunkState?.approved_via === "review";
+
+    // Check if all labels are trusted
+    const trusted = labels.length > 0 && labels.every((label) => isLabelTrusted(label, trustList));
+    const approved = reviewed || trusted;
+
+    return {
+      ...hunk,
+      labels,
+      reasoning,
+      trusted,
+      reviewed,
+      approved,
+    };
+  }
+
+  private rebuildTrees(): void {
     const reviewedFiles = this.files.filter((f) => this.hasAnyApprovedHunk(f));
     const needsReviewFiles = this.files.filter((f) => this.hasAnyUnapprovedHunk(f));
 
@@ -140,100 +235,114 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   }
 
   refresh(): void {
-    this.refreshFromCli();
+    this.refreshFromGit();
   }
 
   async setHunkReviewed(filePath: string, hunkHash: string, isReviewed: boolean): Promise<void> {
-    if (!this.currentComparison) return;
+    if (!this.currentComparison || !this.stateService) return;
 
+    const hunkKey = getHunkKey(filePath, hunkHash);
     if (isReviewed) {
-      this.cliProvider.approveHunk(filePath, hunkHash);
+      this.stateService.approveHunk(this.currentComparison, hunkKey);
     } else {
-      this.cliProvider.unapproveHunk(filePath, hunkHash);
+      this.stateService.unapproveHunk(this.currentComparison, hunkKey);
     }
 
-    await this.refreshFromCli();
+    // Reload state
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   async setFileReviewed(relativePath: string, isReviewed: boolean): Promise<void> {
-    if (!this.currentComparison) return;
+    if (!this.currentComparison || !this.stateService) return;
 
-    // Approve/unapprove the entire file at once
-    if (isReviewed) {
-      this.cliProvider.approveFile(relativePath);
-    } else {
-      this.cliProvider.unapproveFile(relativePath);
+    const file = this.files.find((f) => f.relativePath === relativePath);
+    if (!file) return;
+
+    for (const hunk of file.hunks) {
+      const hunkKey = getHunkKey(hunk.filePath, hunk.hash);
+      if (isReviewed) {
+        this.stateService.approveHunk(this.currentComparison, hunkKey);
+      } else {
+        this.stateService.unapproveHunk(this.currentComparison, hunkKey);
+      }
     }
 
-    await this.refreshFromCli();
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   async setFolderReviewed(folderPath: string, isReviewed: boolean): Promise<void> {
-    if (!this.currentComparison) return;
+    if (!this.currentComparison || !this.stateService) return;
 
-    // Find all files under this folder path
     const filesInFolder = this.files.filter(
       (f) => f.relativePath === folderPath || f.relativePath.startsWith(`${folderPath}/`),
     );
 
     for (const file of filesInFolder) {
-      if (isReviewed) {
-        this.cliProvider.approveFile(file.relativePath);
-      } else {
-        this.cliProvider.unapproveFile(file.relativePath);
+      for (const hunk of file.hunks) {
+        const hunkKey = getHunkKey(hunk.filePath, hunk.hash);
+        if (isReviewed) {
+          this.stateService.approveHunk(this.currentComparison, hunkKey);
+        } else {
+          this.stateService.unapproveHunk(this.currentComparison, hunkKey);
+        }
       }
     }
 
-    await this.refreshFromCli();
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   async clearAllReviewed(): Promise<void> {
-    if (!this.currentComparison) return;
+    if (!this.currentComparison || !this.stateService) return;
 
-    // Unapprove all hunks in all files
     for (const file of this.files) {
       for (const hunk of file.hunks) {
         if (hunk.approved) {
-          this.cliProvider.unapproveHunk(file.relativePath, hunk.hash);
+          const hunkKey = getHunkKey(hunk.filePath, hunk.hash);
+          this.stateService.unapproveHunk(this.currentComparison, hunkKey);
         }
       }
     }
 
-    await this.refreshFromCli();
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   async markAllReviewed(): Promise<void> {
-    if (!this.currentComparison) return;
+    if (!this.currentComparison || !this.stateService) return;
 
-    // Approve all hunks in all files
     for (const file of this.files) {
       for (const hunk of file.hunks) {
         if (!hunk.approved) {
-          this.cliProvider.approveHunk(file.relativePath, hunk.hash);
+          const hunkKey = getHunkKey(hunk.filePath, hunk.hash);
+          this.stateService.approveHunk(this.currentComparison, hunkKey);
         }
       }
     }
 
-    await this.refreshFromCli();
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   async trustLabel(label: string): Promise<void> {
-    if (!this.currentComparison) return;
-    this.cliProvider.addTrust(label);
-    await this.refreshFromCli();
+    if (!this.currentComparison || !this.stateService) return;
+    this.stateService.addTrustLabel(this.currentComparison, label);
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   async untrustLabel(label: string): Promise<void> {
-    if (!this.currentComparison) return;
-    this.cliProvider.removeTrust(label);
-    await this.refreshFromCli();
+    if (!this.currentComparison || !this.stateService) return;
+    this.stateService.removeTrustLabel(this.currentComparison, label);
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
-  /**
-   * Get all unique labels from the current diff with their counts
-   */
   getLabelsWithCounts(): Map<string, { count: number; trusted: boolean }> {
     const labelCounts = new Map<string, { count: number; trusted: boolean }>();
+    const trustList = this.state?.trust_label || [];
 
     for (const file of this.files) {
       for (const hunk of file.hunks) {
@@ -242,9 +351,10 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
           if (existing) {
             existing.count++;
           } else {
-            // Check if this specific label is in the trust list
-            const isTrusted = this.isLabelTrusted(label);
-            labelCounts.set(label, { count: 1, trusted: isTrusted });
+            labelCounts.set(label, {
+              count: 1,
+              trusted: isLabelTrusted(label, trustList),
+            });
           }
         }
       }
@@ -253,14 +363,11 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     return labelCounts;
   }
 
-  /**
-   * Count hunks that have no labels (not yet classified)
-   */
   getUnclassifiedCount(): number {
     let count = 0;
     for (const file of this.files) {
       for (const hunk of file.hunks) {
-        if (hunk.labels.length === 0) {
+        if (hunk.labels.length === 0 && hunk.reasoning === null) {
           count++;
         }
       }
@@ -268,40 +375,50 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     return count;
   }
 
-  /**
-   * Run classification on unlabeled hunks
-   */
   async classify(): Promise<void> {
-    if (!this.currentComparison) {
+    if (!this.currentComparison || !this.stateService || !this.state) {
       throw new Error("No comparison selected");
     }
-    this.cliProvider.classify();
-    await this.refreshFromCli();
-  }
 
-  /**
-   * Check if a label matches any pattern in the trust list
-   */
-  private isLabelTrusted(label: string): boolean {
-    for (const pattern of this.trustList) {
-      if (this.labelMatchesPattern(label, pattern)) {
-        return true;
-      }
+    const workspaceRoot = this.gitProvider.getWorkspaceRoot();
+    if (!workspaceRoot) {
+      throw new Error("No workspace root");
     }
-    return false;
-  }
 
-  /**
-   * Check if a label matches a trust pattern (supports glob with *)
-   */
-  private labelMatchesPattern(label: string, pattern: string): boolean {
-    if (pattern === label) return true;
-    if (pattern.includes("*")) {
-      // Convert glob pattern to regex
-      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
-      return regex.test(label);
+    // Convert files to ChangedFile format for getUnlabeledHunks
+    const changedFiles: ChangedFile[] = this.files.map((f) => ({
+      path: f.relativePath,
+      status: f.status,
+      old_path: f.old_path ?? null,
+      hunks: f.hunks.map((h) => ({
+        filePath: h.filePath,
+        hash: h.hash,
+        header: h.header,
+        content: h.content,
+        startLine: h.startLine,
+        endLine: h.endLine,
+      })),
+    }));
+
+    const unlabeled = getUnlabeledHunks(changedFiles, this.state.hunks);
+    if (unlabeled.length === 0) {
+      return;
     }
-    return false;
+
+    const diffContent = buildDiffContent(unlabeled);
+    const prompt = buildClassifyPrompt(diffContent);
+
+    const result = await runClassification(prompt, workspaceRoot);
+    if (!result.success) {
+      throw new Error(result.error);
+    }
+
+    if (result.classifications) {
+      this.stateService.setHunkClassifications(this.currentComparison, result.classifications);
+    }
+
+    this.state = this.stateService.load(this.currentComparison);
+    await this.refreshFromGit();
   }
 
   private buildTree(files: ChangedFileWithStatus[]): TreeNode {
@@ -334,9 +451,7 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
       }
     }
 
-    // Compact single-child folders
     this.compactTree(root);
-
     return root;
   }
 
@@ -354,18 +469,10 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
 
         while (!collapsed.file && collapsed.children.size === 1) {
           const next = Array.from(collapsed.children.values())[0];
-
-          // Don't collapse into a file - files should stay inside folders
-          if (next.file) {
-            break;
-          }
-
+          if (next.file) break;
           collapsedName += `/${next.name}`;
           collapsed = next;
-
-          if (next.children.size !== 1) {
-            break;
-          }
+          if (next.children.size !== 1) break;
         }
 
         newChildren.set(collapsedName, {
@@ -391,17 +498,14 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
       return [];
     }
 
-    // Root level: show two sections
     if (!element) {
       const sections: FileTreeItem[] = [];
 
-      // Reviewed (approved via trust OR manual review)
       if (this.reviewedTree && this.reviewedTree.children.size > 0) {
         const count = this.countFiles(this.reviewedTree);
         sections.push(FileTreeItem.createSection("reviewed", count));
       }
 
-      // Needs Review (not yet approved)
       if (this.needsReviewTree && this.needsReviewTree.children.size > 0) {
         const count = this.countFiles(this.needsReviewTree);
         sections.push(FileTreeItem.createSection("needsReview", count));
@@ -410,22 +514,17 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
       return sections;
     }
 
-    // Section level: return the tree root's children
     if (element.section) {
       const tree = element.section === "reviewed" ? this.reviewedTree : this.needsReviewTree;
       if (!tree) return [];
-
       return this.getNodeChildren(tree, element.section);
     }
 
-    // Folder level: return folder's children
     if (element.nodePath && !element.file) {
       const tree = element.sectionType === "reviewed" ? this.reviewedTree : this.needsReviewTree;
       if (!tree) return [];
-
       const node = this.findNode(tree, element.nodePath);
       if (!node) return [];
-
       return this.getNodeChildren(node, element.sectionType || "needsReview");
     }
 
@@ -435,7 +534,6 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   private getNodeChildren(node: TreeNode, sectionType: SectionType): FileTreeItem[] {
     const items: FileTreeItem[] = [];
 
-    // Sort: folders first, then alphabetically
     const sorted = Array.from(node.children.values()).sort((a, b) => {
       const aIsFolder = !a.file && a.children.size > 0;
       const bIsFolder = !b.file && b.children.size > 0;
@@ -446,10 +544,8 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
 
     for (const child of sorted) {
       if (child.file) {
-        // Add file - use node name as label (includes path if compacted)
         items.push(FileTreeItem.createFile(child.file, sectionType, child.name));
       } else {
-        // Add folder
         items.push(FileTreeItem.createFolder(child.name, child.path, sectionType));
       }
     }
@@ -458,15 +554,11 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
   }
 
   private findNode(root: TreeNode, nodePath: string): TreeNode | null {
-    if (root.path === nodePath) {
-      return root;
-    }
-
+    if (root.path === nodePath) return root;
     for (const child of root.children.values()) {
       const found = this.findNode(child, nodePath);
       if (found) return found;
     }
-
     return null;
   }
 
@@ -500,7 +592,6 @@ export class FileTreeItem extends vscode.TreeItem {
     (item as { section: SectionType }).section = section;
     item.id = `section:${section}`;
 
-    // Set context values for commands
     const contextValues: Record<SectionType, string> = {
       reviewed: "reviewedSection",
       needsReview: "needsReviewSection",
@@ -508,7 +599,6 @@ export class FileTreeItem extends vscode.TreeItem {
     item.contextValue = contextValues[section];
     item.description = `${count}`;
 
-    // Set icons based on section type
     const iconConfig: Record<SectionType, { icon: string; color: string }> = {
       reviewed: { icon: "pass-filled", color: "testing.iconPassed" },
       needsReview: { icon: "eye", color: "list.warningForeground" },
@@ -535,12 +625,7 @@ export class FileTreeItem extends vscode.TreeItem {
     return item;
   }
 
-  static createFile(
-    file: ChangedFileWithStatus,
-    sectionType: SectionType,
-    displayName?: string,
-  ): FileTreeItem {
-    // Use displayName if provided (for compacted paths), otherwise just the filename
+  static createFile(file: ChangedFileWithStatus, sectionType: SectionType, displayName?: string): FileTreeItem {
     const label = displayName || file.relativePath.split("/").pop() || file.relativePath;
     const item = new FileTreeItem(label, vscode.TreeItemCollapsibleState.None);
 
@@ -570,7 +655,7 @@ export class FileTreeItem extends vscode.TreeItem {
     item.command = {
       command: "human-review.openDiff",
       title: "Open Diff",
-      arguments: [file.relativePath, file.status, undefined, file.oldPath],
+      arguments: [file.relativePath, file.status, undefined, file.old_path],
     };
 
     return item;

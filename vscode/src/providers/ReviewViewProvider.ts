@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { StateService } from "../state/StateService";
 import type { DiffDecorationProvider } from "./DiffDecorationProvider";
 import type { FileTreeProvider } from "./FileTreeProvider";
 import type { GitProvider } from "./GitProvider";
-import type { ReviewStateService } from "./ReviewStateService";
 
 interface ComparisonSpec {
   type: "branch" | "working_tree";
@@ -24,10 +24,10 @@ interface ReviewWebviewMessage {
     | "untrustLabel"
     | "classify"
     | "stageReviewed";
-  spec?: ComparisonSpec; // From webview dropdown selection
+  spec?: ComparisonSpec;
   notes?: string;
   repoPath?: string;
-  label?: string; // For trust/untrust operations
+  label?: string;
 }
 
 export class ReviewViewProvider implements vscode.WebviewViewProvider {
@@ -35,16 +35,20 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
   private view?: vscode.WebviewView;
   private decorationProvider?: DiffDecorationProvider;
+  private stateService: StateService | null = null;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly gitProvider: GitProvider,
-    private readonly stateService: ReviewStateService,
     private readonly fileTreeProvider: FileTreeProvider,
   ) {}
 
   setDecorationProvider(provider: DiffDecorationProvider): void {
     this.decorationProvider = provider;
+  }
+
+  setStateService(service: StateService): void {
+    this.stateService = service;
   }
 
   public resolveWebviewView(
@@ -61,9 +65,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this.getHtmlForWebview();
 
-    webviewView.webview.onDidReceiveMessage((message: ReviewWebviewMessage) =>
-      this.handleMessage(message),
-    );
+    webviewView.webview.onDidReceiveMessage((message: ReviewWebviewMessage) => this.handleMessage(message));
   }
 
   private async handleMessage(message: ReviewWebviewMessage): Promise<void> {
@@ -84,18 +86,16 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
       case "selectComparison":
         if (message.spec) {
-          // Convert spec to CLI comparison string
           let comparison: string;
           if (message.spec.type === "working_tree" && message.spec.base) {
-            // Working tree comparison: just the base branch
-            comparison = message.spec.base;
+            // Working tree comparison: base..HEAD+working-tree
+            comparison = `${message.spec.base}..HEAD+working-tree`;
           } else if (message.spec.type === "branch" && message.spec.base && message.spec.compare) {
             // Branch comparison: base..compare
             comparison = `${message.spec.base}..${message.spec.compare}`;
           } else {
             break;
           }
-          // FileTreeProvider.selectComparison calls CLI to set comparison and get files
           await this.fileTreeProvider.selectComparison(comparison);
           await this.refreshNotes();
           await this.refreshLabels();
@@ -105,7 +105,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
       case "updateNotes": {
         const comparison = this.fileTreeProvider.getCurrentComparison();
-        if (comparison && message.notes !== undefined) {
+        if (comparison && message.notes !== undefined && this.stateService) {
           this.stateService.updateNotes(comparison, message.notes);
         }
         break;
@@ -140,7 +140,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
           await this.refreshLabels();
           await this.decorationProvider?.refresh();
           this.postMessage({ type: "classifyComplete" });
-        } catch (err) {
+        } catch {
           this.postMessage({ type: "classifyFailed" });
         }
         break;
@@ -184,7 +184,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
   public async refreshNotes(): Promise<void> {
     const comparison = this.fileTreeProvider.getCurrentComparison();
-    if (!comparison) {
+    if (!comparison || !this.stateService) {
       this.postMessage({ type: "notesLoaded", notes: "" });
       return;
     }
@@ -204,7 +204,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
         count: data.count,
         trusted: data.trusted,
       }))
-      .sort((a, b) => b.count - a.count); // Sort by count descending
+      .sort((a, b) => b.count - a.count);
 
     const unclassifiedCount = this.fileTreeProvider.getUnclassifiedCount();
 
@@ -215,11 +215,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  public addLineReference(
-    filePath: string,
-    lineNumber?: number,
-    lineRange?: { start: number; end: number },
-  ): void {
+  public addLineReference(filePath: string, lineNumber?: number, lineRange?: { start: number; end: number }): void {
     const workspaceRoot = this.gitProvider.getWorkspaceRoot();
     const relativePath = workspaceRoot ? filePath.replace(`${workspaceRoot}/`, "") : filePath;
 
@@ -245,53 +241,27 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
   private async copyAsMarkdown(): Promise<void> {
     const comparison = this.fileTreeProvider.getCurrentComparison();
-    if (!comparison) return;
+    if (!comparison || !this.stateService) return;
 
     const notes = this.stateService.getNotes(comparison);
     const markdown = `# Review Notes\n\n${notes.trim() || "(No notes)"}`;
     await vscode.env.clipboard.writeText(markdown);
 
-    // Notify webview that copy succeeded
     this.postMessage({ type: "copied" });
   }
 
   private async clearReview(): Promise<void> {
     const comparison = this.fileTreeProvider.getCurrentComparison();
-    if (!comparison) return;
+    if (!comparison || !this.stateService) return;
 
-    // Only clear notes, not checkboxes
     this.stateService.updateNotes(comparison, "");
     await this.refreshNotes();
   }
 
   private async stageReviewedFiles(): Promise<void> {
-    const workspaceRoot = this.gitProvider.getWorkspaceRoot();
-    if (!workspaceRoot) return;
-
-    const { execSync } = require("node:child_process");
-    try {
-      const output = execSync("human-review stage", {
-        cwd: workspaceRoot,
-        encoding: "utf-8",
-      });
-      // Parse output to show user-friendly message
-      const match = output.match(/Staged (\d+) approved hunk/);
-      if (match) {
-        vscode.window.showInformationMessage(`Staged ${match[1]} approved hunk(s)`);
-      } else if (output.includes("No approved hunks")) {
-        vscode.window.showInformationMessage("No approved hunks to stage");
-      } else {
-        vscode.window.showInformationMessage("Staging complete");
-      }
-    } catch (err) {
-      const error = err as { stderr?: string; stdout?: string; message?: string };
-      if (error.stderr?.includes("only works for working tree")) {
-        vscode.window.showWarningMessage("Stage only works for working tree reviews");
-      } else {
-        const detail = error.stderr || error.stdout || error.message || "Unknown error";
-        vscode.window.showErrorMessage(`Failed to stage hunks: ${detail.slice(0, 200)}`);
-      }
-    }
+    // Staging is not implemented in the native version
+    // The user should use VS Code's built-in git staging
+    vscode.window.showInformationMessage("Use VS Code's Source Control view to stage changes");
   }
 
   private postMessage(message: unknown): void {

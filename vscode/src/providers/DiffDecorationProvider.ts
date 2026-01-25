@@ -1,15 +1,8 @@
 import * as vscode from "vscode";
-import type { DiffHunk } from "../types";
+import type { DiffHunk, HunkWithStatus } from "../types";
 import { getRelativePath } from "../utils";
 import type { FileTreeProvider } from "./FileTreeProvider";
 import type { GitProvider } from "./GitProvider";
-
-// Extended hunk type that includes review status from CLI
-interface HunkWithStatus extends DiffHunk {
-  trusted: boolean; // Approved via trust list
-  reviewed: boolean; // Manually approved
-  approved: boolean; // trusted OR reviewed
-}
 
 export class DiffDecorationProvider {
   // Separate decorations for first line (icon) vs continuation (bar)
@@ -123,7 +116,7 @@ export class DiffDecorationProvider {
       return;
     }
 
-    // Find the file in our tracked files (review status comes from CLI)
+    // Find the file in our tracked files
     const file = this.fileTreeProvider.getFiles().find((f) => f.relativePath === relativePath);
     if (!file || file.hunks.length === 0) {
       this.clearDecorations(editor);
