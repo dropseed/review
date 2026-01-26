@@ -352,7 +352,10 @@ pub fn get_file_content(
             // Working tree: old from HEAD, new from filesystem
             let old = match source.get_file_bytes(&file_path, "HEAD") {
                 Ok(bytes) => {
-                    eprintln!("[get_file_content] got old content from HEAD: {} bytes", bytes.len());
+                    eprintln!(
+                        "[get_file_content] got old content from HEAD: {} bytes",
+                        bytes.len()
+                    );
                     String::from_utf8(bytes).ok()
                 }
                 Err(e) => {
@@ -365,21 +368,35 @@ pub fn get_file_content(
             // Branch comparison: both from git refs
             let old = match source.get_file_bytes(&file_path, &comparison.old) {
                 Ok(bytes) => {
-                    eprintln!("[get_file_content] got old content from {}: {} bytes", comparison.old, bytes.len());
+                    eprintln!(
+                        "[get_file_content] got old content from {}: {} bytes",
+                        comparison.old,
+                        bytes.len()
+                    );
                     String::from_utf8(bytes).ok()
                 }
                 Err(e) => {
-                    eprintln!("[get_file_content] no old version at {}: {}", comparison.old, e);
+                    eprintln!(
+                        "[get_file_content] no old version at {}: {}",
+                        comparison.old, e
+                    );
                     None
                 }
             };
             let new = match source.get_file_bytes(&file_path, &comparison.new) {
                 Ok(bytes) => {
-                    eprintln!("[get_file_content] got new content from {}: {} bytes", comparison.new, bytes.len());
+                    eprintln!(
+                        "[get_file_content] got new content from {}: {} bytes",
+                        comparison.new,
+                        bytes.len()
+                    );
                     String::from_utf8(bytes).ok()
                 }
                 Err(e) => {
-                    eprintln!("[get_file_content] no new version at {}: {}", comparison.new, e);
+                    eprintln!(
+                        "[get_file_content] no new version at {}: {}",
+                        comparison.new, e
+                    );
                     None
                 }
             };

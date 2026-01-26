@@ -100,7 +100,11 @@ impl LocalGitSource {
         remote.dedup();
         // Stashes are already in order (most recent first)
 
-        Ok(super::traits::BranchList { local, remote, stashes })
+        Ok(super::traits::BranchList {
+            local,
+            remote,
+            stashes,
+        })
     }
 
     /// Get structured git status (staged, unstaged, untracked)
