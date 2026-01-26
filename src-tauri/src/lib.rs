@@ -1,6 +1,7 @@
 mod classify;
 mod commands;
 mod diff;
+pub mod error;
 mod review;
 mod sources;
 mod trust;
@@ -301,6 +302,9 @@ pub fn run() {
             append_to_file,
             start_file_watcher,
             stop_file_watcher,
+            match_trust_pattern,
+            get_trust_taxonomy,
+            get_trust_taxonomy_with_custom,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

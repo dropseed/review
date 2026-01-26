@@ -42,7 +42,21 @@ scripts/build            # Build production app (outputs to src-tauri/target/rel
 
 ## State Storage
 
-Review state persists in `.git/compare/reviews/<comparison>.json`. Storing inside `.git/` means state is automatically ignored by git and shared across worktrees. State includes:
+Compare uses two storage mechanisms:
+
+**UI Preferences** (global, via Tauri Store):
+
+- Font size, sidebar width, theme
+- Persists across all repositories
+- Stored in Tauri's app data directory
+
+**Review State** (per-repo, in `.git/compare/`):
+
+- `reviews/<comparison>.json` - Hunk labels, approvals, notes
+- `current-comparison.json` - Last active comparison
+- `custom-patterns.json` - Optional user-defined trust patterns
+
+Storing review state inside `.git/` means it's automatically ignored by git and shared across worktrees. Review state includes:
 
 - `hunks`: Dict mapping `filepath:hash` to `{label, reasoning, approved_via}`
 - `trust_labels`: List of trusted patterns
@@ -70,4 +84,6 @@ When working on frontend code, use these skills:
 
 ## Trust Patterns Taxonomy
 
-Located in `src-tauri/src/trust/patterns.rs`. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
+The taxonomy is defined in `src-tauri/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
+
+Users can extend the taxonomy by creating `.git/compare/custom-patterns.json` with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.

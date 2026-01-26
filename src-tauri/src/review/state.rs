@@ -1,4 +1,5 @@
 use crate::sources::traits::Comparison;
+use crate::trust::matches_pattern;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -89,7 +90,7 @@ impl ReviewState {
                 if !h.label.is_empty() {
                     for label in &h.label {
                         for pattern in &self.trust_list {
-                            if label_matches_pattern(label, pattern) {
+                            if matches_pattern(label, pattern) {
                                 return true;
                             }
                         }
@@ -107,18 +108,6 @@ impl ReviewState {
             completed_at: self.completed_at.clone(),
         }
     }
-}
-
-/// Check if a label matches a pattern (supports wildcards)
-fn label_matches_pattern(label: &str, pattern: &str) -> bool {
-    if pattern == label {
-        return true;
-    }
-    // Handle wildcard patterns like "imports:*"
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        return label.starts_with(prefix);
-    }
-    false
 }
 
 fn chrono_now() -> String {
@@ -189,4 +178,130 @@ pub struct ReviewSummary {
     pub updated_at: String,
     #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Pattern matching tests are now in crate::trust::matching::tests
+    // These tests verify ReviewState integration with pattern matching
+
+    #[test]
+    fn test_review_state_new() {
+        let comparison = Comparison {
+            old: "main".to_string(),
+            new: "HEAD".to_string(),
+            working_tree: true,
+            staged_only: false,
+            key: "main..HEAD+working-tree".to_string(),
+        };
+        let state = ReviewState::new(comparison.clone());
+
+        assert_eq!(state.comparison.key, "main..HEAD+working-tree");
+        assert!(state.hunks.is_empty());
+        assert!(state.trust_list.is_empty());
+        assert!(state.notes.is_empty());
+        assert!(state.annotations.is_empty());
+        assert!(state.completed_at.is_none());
+    }
+
+    #[test]
+    fn test_review_state_to_summary_empty() {
+        let comparison = Comparison {
+            old: "main".to_string(),
+            new: "HEAD".to_string(),
+            working_tree: false,
+            staged_only: false,
+            key: "main..HEAD".to_string(),
+        };
+        let state = ReviewState::new(comparison);
+        let summary = state.to_summary();
+
+        assert_eq!(summary.total_hunks, 0);
+        assert_eq!(summary.reviewed_hunks, 0);
+    }
+
+    #[test]
+    fn test_review_state_to_summary_with_approved_hunks() {
+        let comparison = Comparison {
+            old: "main".to_string(),
+            new: "HEAD".to_string(),
+            working_tree: false,
+            staged_only: false,
+            key: "main..HEAD".to_string(),
+        };
+        let mut state = ReviewState::new(comparison);
+
+        // Add an approved hunk
+        state.hunks.insert(
+            "file.rs:abc123".to_string(),
+            HunkState {
+                label: vec![],
+                reasoning: None,
+                status: Some(HunkStatus::Approved),
+            },
+        );
+
+        // Add a pending hunk
+        state.hunks.insert(
+            "file.rs:def456".to_string(),
+            HunkState {
+                label: vec![],
+                reasoning: None,
+                status: None,
+            },
+        );
+
+        let summary = state.to_summary();
+        assert_eq!(summary.total_hunks, 2);
+        assert_eq!(summary.reviewed_hunks, 1);
+    }
+
+    #[test]
+    fn test_review_state_to_summary_with_trusted_labels() {
+        let comparison = Comparison {
+            old: "main".to_string(),
+            new: "HEAD".to_string(),
+            working_tree: false,
+            staged_only: false,
+            key: "main..HEAD".to_string(),
+        };
+        let mut state = ReviewState::new(comparison);
+        state.trust_list = vec!["imports:*".to_string()];
+
+        // Add a hunk with trusted label (should count as reviewed)
+        state.hunks.insert(
+            "file.rs:abc123".to_string(),
+            HunkState {
+                label: vec!["imports:added".to_string()],
+                reasoning: None,
+                status: None,
+            },
+        );
+
+        // Add a hunk with non-trusted label
+        state.hunks.insert(
+            "file.rs:def456".to_string(),
+            HunkState {
+                label: vec!["code:logic".to_string()],
+                reasoning: None,
+                status: None,
+            },
+        );
+
+        let summary = state.to_summary();
+        assert_eq!(summary.total_hunks, 2);
+        assert_eq!(summary.reviewed_hunks, 1);
+    }
+
+    #[test]
+    fn test_chrono_now_format() {
+        let timestamp = chrono_now();
+        // Should be ISO 8601 format: YYYY-MM-DDTHH:MM:SS.mmmZ
+        assert!(timestamp.contains('T'));
+        assert!(timestamp.ends_with('Z'));
+        // Check rough format with regex pattern
+        assert!(timestamp.len() >= 24); // "2024-01-01T00:00:00.000Z"
+    }
 }

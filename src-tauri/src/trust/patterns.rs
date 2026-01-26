@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustPattern {
     pub id: String,
+    #[serde(default)]
     pub category: String,
     pub name: String,
     pub description: String,
@@ -16,8 +18,124 @@ pub struct TrustCategory {
     pub patterns: Vec<TrustPattern>,
 }
 
-/// The full taxonomy of trust patterns
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaxonomyFile {
+    categories: Vec<TrustCategory>,
+}
+
+/// Load the trust taxonomy from JSON.
+/// First tries to load from bundled resources, then falls back to hardcoded.
+pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
+    // Try to load from bundled resource
+    let json_str = include_str!("../../resources/taxonomy.json");
+    match serde_json::from_str::<TaxonomyFile>(json_str) {
+        Ok(taxonomy) => {
+            // Fill in category field for each pattern
+            taxonomy
+                .categories
+                .into_iter()
+                .map(|mut cat| {
+                    for pattern in &mut cat.patterns {
+                        if pattern.category.is_empty() {
+                            pattern.category = cat.id.clone();
+                        }
+                    }
+                    cat
+                })
+                .collect()
+        }
+        Err(e) => {
+            eprintln!(
+                "[load_taxonomy_from_json] Failed to parse bundled taxonomy: {}",
+                e
+            );
+            get_default_taxonomy()
+        }
+    }
+}
+
+/// Load custom patterns from a repository's .git/compare/custom-patterns.json
+/// Returns an empty vec if the file doesn't exist or can't be parsed.
+pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
+    let custom_path = repo_path
+        .join(".git")
+        .join("compare")
+        .join("custom-patterns.json");
+
+    if !custom_path.exists() {
+        return vec![];
+    }
+
+    match std::fs::read_to_string(&custom_path) {
+        Ok(content) => match serde_json::from_str::<TaxonomyFile>(&content) {
+            Ok(taxonomy) => {
+                eprintln!(
+                    "[load_custom_patterns] Loaded {} custom categories from {:?}",
+                    taxonomy.categories.len(),
+                    custom_path
+                );
+                taxonomy
+                    .categories
+                    .into_iter()
+                    .map(|mut cat| {
+                        for pattern in &mut cat.patterns {
+                            if pattern.category.is_empty() {
+                                pattern.category = cat.id.clone();
+                            }
+                        }
+                        cat
+                    })
+                    .collect()
+            }
+            Err(e) => {
+                eprintln!(
+                    "[load_custom_patterns] Failed to parse custom patterns at {:?}: {}",
+                    custom_path, e
+                );
+                vec![]
+            }
+        },
+        Err(e) => {
+            eprintln!(
+                "[load_custom_patterns] Failed to read custom patterns at {:?}: {}",
+                custom_path, e
+            );
+            vec![]
+        }
+    }
+}
+
+/// Get the full trust taxonomy, merging bundled patterns with custom patterns.
+/// Custom patterns are appended to the bundled taxonomy.
+pub fn get_trust_taxonomy_with_custom(repo_path: &PathBuf) -> Vec<TrustCategory> {
+    let mut taxonomy = load_taxonomy_from_json();
+    let custom = load_custom_patterns(repo_path);
+
+    // Merge custom categories - add new ones or extend existing
+    for custom_cat in custom {
+        if let Some(existing) = taxonomy.iter_mut().find(|c| c.id == custom_cat.id) {
+            // Extend existing category with new patterns
+            for pattern in custom_cat.patterns {
+                if !existing.patterns.iter().any(|p| p.id == pattern.id) {
+                    existing.patterns.push(pattern);
+                }
+            }
+        } else {
+            // Add new category
+            taxonomy.push(custom_cat);
+        }
+    }
+
+    taxonomy
+}
+
+/// The full taxonomy of trust patterns (bundled)
 pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
+    load_taxonomy_from_json()
+}
+
+/// Fallback hardcoded taxonomy in case JSON loading fails
+fn get_default_taxonomy() -> Vec<TrustCategory> {
     vec![
         TrustCategory {
             id: "imports".to_string(),
@@ -94,147 +212,51 @@ pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
                 },
             ],
         },
-        TrustCategory {
-            id: "types".to_string(),
-            name: "Types".to_string(),
-            description: "Type annotation changes".to_string(),
-            patterns: vec![
-                TrustPattern {
-                    id: "types:added".to_string(),
-                    category: "types".to_string(),
-                    name: "Added".to_string(),
-                    description: "Type annotations added".to_string(),
-                },
-                TrustPattern {
-                    id: "types:modified".to_string(),
-                    category: "types".to_string(),
-                    name: "Modified".to_string(),
-                    description: "Type annotations changed".to_string(),
-                },
-                TrustPattern {
-                    id: "types:removed".to_string(),
-                    category: "types".to_string(),
-                    name: "Removed".to_string(),
-                    description: "Type annotations removed".to_string(),
-                },
-            ],
-        },
-        TrustCategory {
-            id: "file".to_string(),
-            name: "File".to_string(),
-            description: "File-level operations".to_string(),
-            patterns: vec![
-                TrustPattern {
-                    id: "file:deleted".to_string(),
-                    category: "file".to_string(),
-                    name: "Deleted".to_string(),
-                    description: "Entire file deleted".to_string(),
-                },
-                TrustPattern {
-                    id: "file:renamed".to_string(),
-                    category: "file".to_string(),
-                    name: "Renamed".to_string(),
-                    description: "File renamed".to_string(),
-                },
-                TrustPattern {
-                    id: "file:moved".to_string(),
-                    category: "file".to_string(),
-                    name: "Moved".to_string(),
-                    description: "File moved to different directory".to_string(),
-                },
-            ],
-        },
-        TrustCategory {
-            id: "generated".to_string(),
-            name: "Generated".to_string(),
-            description: "Auto-generated content".to_string(),
-            patterns: vec![
-                TrustPattern {
-                    id: "generated:lockfile".to_string(),
-                    category: "generated".to_string(),
-                    name: "Lock file".to_string(),
-                    description: "Package lock files (package-lock.json, yarn.lock, etc.)"
-                        .to_string(),
-                },
-                TrustPattern {
-                    id: "generated:build".to_string(),
-                    category: "generated".to_string(),
-                    name: "Build output".to_string(),
-                    description: "Build artifacts and generated code".to_string(),
-                },
-                TrustPattern {
-                    id: "generated:schema".to_string(),
-                    category: "generated".to_string(),
-                    name: "Schema".to_string(),
-                    description: "Generated schema files".to_string(),
-                },
-            ],
-        },
-        TrustCategory {
-            id: "rename".to_string(),
-            name: "Rename".to_string(),
-            description: "Identifier renaming".to_string(),
-            patterns: vec![
-                TrustPattern {
-                    id: "rename:variable".to_string(),
-                    category: "rename".to_string(),
-                    name: "Variable".to_string(),
-                    description: "Variable renamed".to_string(),
-                },
-                TrustPattern {
-                    id: "rename:function".to_string(),
-                    category: "rename".to_string(),
-                    name: "Function".to_string(),
-                    description: "Function or method renamed".to_string(),
-                },
-                TrustPattern {
-                    id: "rename:class".to_string(),
-                    category: "rename".to_string(),
-                    name: "Class".to_string(),
-                    description: "Class or type renamed".to_string(),
-                },
-            ],
-        },
-        TrustCategory {
-            id: "code".to_string(),
-            name: "Code".to_string(),
-            description: "Code movement and structure".to_string(),
-            patterns: vec![TrustPattern {
-                id: "code:extracted".to_string(),
-                category: "code".to_string(),
-                name: "Extracted".to_string(),
-                description: "Code extracted to separate function/module".to_string(),
-            }],
-        },
-        TrustCategory {
-            id: "version".to_string(),
-            name: "Version".to_string(),
-            description: "Version number changes".to_string(),
-            patterns: vec![TrustPattern {
-                id: "version:bumped".to_string(),
-                category: "version".to_string(),
-                name: "Bumped".to_string(),
-                description: "Version number incremented".to_string(),
-            }],
-        },
-        TrustCategory {
-            id: "remove".to_string(),
-            name: "Remove".to_string(),
-            description: "Code removal".to_string(),
-            patterns: vec![
-                TrustPattern {
-                    id: "remove:deprecated".to_string(),
-                    category: "remove".to_string(),
-                    name: "Deprecated".to_string(),
-                    description: "Deprecated code removed".to_string(),
-                },
-                TrustPattern {
-                    id: "remove:dead-code".to_string(),
-                    category: "remove".to_string(),
-                    name: "Dead code".to_string(),
-                    description: "Unreachable or unused code removed".to_string(),
-                },
-            ],
-        },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_taxonomy_from_json() {
+        let taxonomy = load_taxonomy_from_json();
+        assert!(!taxonomy.is_empty());
+
+        // Check that we have the expected categories
+        let category_ids: Vec<&str> = taxonomy.iter().map(|c| c.id.as_str()).collect();
+        assert!(category_ids.contains(&"imports"));
+        assert!(category_ids.contains(&"formatting"));
+        assert!(category_ids.contains(&"comments"));
+    }
+
+    #[test]
+    fn test_patterns_have_category_filled() {
+        let taxonomy = load_taxonomy_from_json();
+        for category in &taxonomy {
+            for pattern in &category.patterns {
+                assert!(!pattern.category.is_empty());
+                assert_eq!(pattern.category, category.id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pattern_id_format() {
+        let taxonomy = load_taxonomy_from_json();
+        for category in &taxonomy {
+            for pattern in &category.patterns {
+                // Pattern ID should be in format "category:name"
+                assert!(pattern.id.starts_with(&format!("{}:", category.id)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_custom_patterns_nonexistent_path() {
+        let fake_path = PathBuf::from("/nonexistent/path");
+        let custom = load_custom_patterns(&fake_path);
+        assert!(custom.is_empty());
+    }
 }

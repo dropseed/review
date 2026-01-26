@@ -164,3 +164,178 @@ pub fn delete_review(repo_path: &PathBuf, comparison: &Comparison) -> Result<(),
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::review::state::HunkState;
+    use tempfile::TempDir;
+
+    fn create_test_comparison() -> Comparison {
+        Comparison {
+            old: "main".to_string(),
+            new: "HEAD".to_string(),
+            working_tree: true,
+            staged_only: false,
+            key: "main..HEAD+working-tree".to_string(),
+        }
+    }
+
+    fn create_test_repo() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        // Create .git directory to simulate a git repo
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
+        temp_dir
+    }
+
+    #[test]
+    fn test_sanitize_key() {
+        assert_eq!(sanitize_key("main..HEAD"), "main..HEAD");
+        assert_eq!(sanitize_key("origin/main..HEAD"), "origin_main..HEAD");
+        assert_eq!(
+            sanitize_key("main..HEAD+working-tree"),
+            "main..HEAD+working-tree"
+        );
+        assert_eq!(sanitize_key("a:b*c?d"), "a_b_c_d");
+    }
+
+    #[test]
+    fn test_comparison_filename() {
+        let comparison = create_test_comparison();
+        let filename = comparison_filename(&comparison);
+        assert_eq!(filename, "main..HEAD+working-tree.json");
+    }
+
+    #[test]
+    fn test_load_review_state_creates_new_if_not_exists() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        let state = load_review_state(&repo_path, &comparison).unwrap();
+
+        assert_eq!(state.comparison.key, comparison.key);
+        assert!(state.hunks.is_empty());
+    }
+
+    #[test]
+    fn test_save_and_load_review_state_roundtrip() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        // Create a state with some data
+        let mut state = ReviewState::new(comparison.clone());
+        state.notes = "Test notes".to_string();
+        state.trust_list = vec!["imports:*".to_string(), "formatting:*".to_string()];
+        state.hunks.insert(
+            "file.rs:abc123".to_string(),
+            HunkState {
+                label: vec!["imports:added".to_string()],
+                reasoning: Some("Added import".to_string()),
+                status: None,
+            },
+        );
+
+        // Save the state
+        save_review_state(&repo_path, &state).unwrap();
+
+        // Load it back
+        let loaded_state = load_review_state(&repo_path, &comparison).unwrap();
+
+        assert_eq!(loaded_state.notes, "Test notes");
+        assert_eq!(loaded_state.trust_list.len(), 2);
+        assert!(loaded_state.hunks.contains_key("file.rs:abc123"));
+        let hunk = loaded_state.hunks.get("file.rs:abc123").unwrap();
+        assert_eq!(hunk.label, vec!["imports:added".to_string()]);
+        assert_eq!(hunk.reasoning, Some("Added import".to_string()));
+    }
+
+    #[test]
+    fn test_list_saved_reviews_empty() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+
+        let reviews = list_saved_reviews(&repo_path).unwrap();
+        assert!(reviews.is_empty());
+    }
+
+    #[test]
+    fn test_list_saved_reviews_with_reviews() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // Create and save two reviews
+        let comparison1 = Comparison {
+            old: "main".to_string(),
+            new: "feature-1".to_string(),
+            working_tree: false,
+            staged_only: false,
+            key: "main..feature-1".to_string(),
+        };
+        let comparison2 = Comparison {
+            old: "main".to_string(),
+            new: "feature-2".to_string(),
+            working_tree: false,
+            staged_only: false,
+            key: "main..feature-2".to_string(),
+        };
+
+        save_review_state(&repo_path, &ReviewState::new(comparison1)).unwrap();
+        save_review_state(&repo_path, &ReviewState::new(comparison2)).unwrap();
+
+        let reviews = list_saved_reviews(&repo_path).unwrap();
+        assert_eq!(reviews.len(), 2);
+    }
+
+    #[test]
+    fn test_delete_review() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        // Save a review
+        save_review_state(&repo_path, &ReviewState::new(comparison.clone())).unwrap();
+
+        // Verify it exists
+        let reviews = list_saved_reviews(&repo_path).unwrap();
+        assert_eq!(reviews.len(), 1);
+
+        // Delete it
+        delete_review(&repo_path, &comparison).unwrap();
+
+        // Verify it's gone
+        let reviews = list_saved_reviews(&repo_path).unwrap();
+        assert!(reviews.is_empty());
+    }
+
+    #[test]
+    fn test_delete_review_nonexistent() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        // Should not error when deleting non-existent review
+        let result = delete_review(&repo_path, &comparison);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_current_comparison_roundtrip() {
+        let temp_dir = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        // Initially no current comparison
+        let current = get_current_comparison(&repo_path).unwrap();
+        assert!(current.is_none());
+
+        // Set current comparison
+        set_current_comparison(&repo_path, &comparison).unwrap();
+
+        // Get it back
+        let current = get_current_comparison(&repo_path).unwrap();
+        assert!(current.is_some());
+        assert_eq!(current.unwrap().key, comparison.key);
+    }
+}

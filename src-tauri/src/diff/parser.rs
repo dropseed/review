@@ -340,6 +340,21 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_hunk_header_single_line() {
+        // Single line changes: count defaults to 1
+        assert_eq!(parse_hunk_header("@@ -5 +5 @@"), Some((5, 1, 5, 1)));
+        assert_eq!(parse_hunk_header("@@ -1 +1,3 @@"), Some((1, 1, 1, 3)));
+        assert_eq!(parse_hunk_header("@@ -1,3 +1 @@"), Some((1, 3, 1, 1)));
+    }
+
+    #[test]
+    fn test_parse_hunk_header_zero_lines() {
+        // Deletion or insertion with 0 lines
+        assert_eq!(parse_hunk_header("@@ -1,0 +1,5 @@"), Some((1, 0, 1, 5)));
+        assert_eq!(parse_hunk_header("@@ -1,5 +1,0 @@"), Some((1, 5, 1, 0)));
+    }
+
+    #[test]
     fn test_create_untracked_hunk() {
         let hunk = create_untracked_hunk("src/new_file.rs");
         assert_eq!(hunk.file_path, "src/new_file.rs");
@@ -350,6 +365,107 @@ mod tests {
         assert_eq!(hunk.new_count, 1);
         assert_eq!(hunk.lines.len(), 1);
         assert!(hunk.move_pair_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_diff_empty() {
+        let hunks = parse_diff("", "test.rs");
+        assert!(hunks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_diff_simple_addition() {
+        let diff = "@@ -1,3 +1,4 @@\n context\n+added line\n context2\n context3";
+        let hunks = parse_diff(diff, "test.rs");
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].old_start, 1);
+        assert_eq!(hunks[0].old_count, 3);
+        assert_eq!(hunks[0].new_start, 1);
+        assert_eq!(hunks[0].new_count, 4);
+        assert_eq!(hunks[0].lines.len(), 4);
+
+        // Check line types
+        assert!(matches!(hunks[0].lines[0].line_type, LineType::Context));
+        assert!(matches!(hunks[0].lines[1].line_type, LineType::Added));
+        assert!(matches!(hunks[0].lines[2].line_type, LineType::Context));
+    }
+
+    #[test]
+    fn test_parse_diff_simple_removal() {
+        let diff = "@@ -1,4 +1,3 @@\n context\n-removed line\n context2\n context3";
+        let hunks = parse_diff(diff, "test.rs");
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].lines.len(), 4);
+        assert!(matches!(hunks[0].lines[1].line_type, LineType::Removed));
+    }
+
+    #[test]
+    fn test_parse_diff_multiple_hunks() {
+        let diff = "@@ -1,2 +1,2 @@\n old1\n+new1\n@@ -10,2 +10,2 @@\n old2\n+new2";
+        let hunks = parse_diff(diff, "test.rs");
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(hunks[0].old_start, 1);
+        assert_eq!(hunks[1].old_start, 10);
+    }
+
+    #[test]
+    fn test_parse_diff_line_numbers() {
+        let diff = "@@ -5,3 +5,4 @@\n context\n+added\n context2\n context3";
+        let hunks = parse_diff(diff, "test.rs");
+        let lines = &hunks[0].lines;
+
+        // Context line at position 5 (both old and new)
+        assert_eq!(lines[0].old_line_number, Some(5));
+        assert_eq!(lines[0].new_line_number, Some(5));
+
+        // Added line - only has new line number
+        assert_eq!(lines[1].old_line_number, None);
+        assert_eq!(lines[1].new_line_number, Some(6));
+
+        // Next context line
+        assert_eq!(lines[2].old_line_number, Some(6));
+        assert_eq!(lines[2].new_line_number, Some(7));
+    }
+
+    #[test]
+    fn test_parse_diff_no_newline_at_eof_marker() {
+        // Git shows "\ No newline at end of file" which we should handle gracefully
+        let diff = "@@ -1,2 +1,2 @@\n old\n-line1\n+line2\n\\ No newline at end of file";
+        let hunks = parse_diff(diff, "test.rs");
+        // The backslash line should be ignored (doesn't start with +, -, or space)
+        assert_eq!(hunks.len(), 1);
+        // Only 3 lines: context, removed, added (backslash line ignored)
+        assert_eq!(hunks[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_diff_ignores_file_headers() {
+        // Git diff includes --- and +++ headers which should be ignored
+        let diff = "--- a/test.rs\n+++ b/test.rs\n@@ -1,1 +1,1 @@\n-old\n+new";
+        let hunks = parse_diff(diff, "test.rs");
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn test_hunk_id_is_deterministic() {
+        // Same content should produce same hash
+        let diff = "@@ -1,1 +1,1 @@\n-old\n+new";
+        let hunks1 = parse_diff(diff, "test.rs");
+        let hunks2 = parse_diff(diff, "test.rs");
+        assert_eq!(hunks1[0].id, hunks2[0].id);
+        assert_eq!(hunks1[0].content_hash, hunks2[0].content_hash);
+    }
+
+    #[test]
+    fn test_hunk_id_differs_by_filepath() {
+        // Same content but different filepath should have different id
+        let diff = "@@ -1,1 +1,1 @@\n-old\n+new";
+        let hunks1 = parse_diff(diff, "test1.rs");
+        let hunks2 = parse_diff(diff, "test2.rs");
+        assert_ne!(hunks1[0].id, hunks2[0].id);
+        // But content_hash should be the same
+        assert_eq!(hunks1[0].content_hash, hunks2[0].content_hash);
     }
 
     #[test]

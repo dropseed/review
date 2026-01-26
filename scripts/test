@@ -2,11 +2,20 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# TypeScript type checking
+echo "=== TypeScript Type Check ==="
 npx tsc --noEmit
-echo "TypeScript check passed!"
+echo "TypeScript type check passed!"
 
-# Rust tests
+echo ""
+echo "=== TypeScript Tests ==="
+npm test
+echo "TypeScript tests passed!"
+
+echo ""
+echo "=== Rust Tests ==="
 cd src-tauri
 cargo test
 echo "Rust tests passed!"
+
+echo ""
+echo "=== All tests passed! ==="

@@ -4,6 +4,7 @@ use crate::review::state::{ReviewState, ReviewSummary};
 use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::{Comparison, DiffSource, FileEntry, GitStatusSummary};
+use crate::trust::patterns::TrustCategory;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -645,4 +646,25 @@ pub fn get_expanded_context(
         start_line,
         end_line,
     })
+}
+
+/// Check if a label matches a trust pattern.
+/// This provides the same matching logic available in the frontend.
+#[tauri::command]
+pub fn match_trust_pattern(label: String, pattern: String) -> bool {
+    crate::trust::matches_pattern(&label, &pattern)
+}
+
+/// Get the bundled trust pattern taxonomy.
+/// Returns the built-in categories and patterns without any custom extensions.
+#[tauri::command]
+pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
+    crate::trust::patterns::get_trust_taxonomy()
+}
+
+/// Get the trust taxonomy merged with any custom patterns from the repository.
+/// Custom patterns are loaded from `.git/compare/custom-patterns.json`.
+#[tauri::command]
+pub fn get_trust_taxonomy_with_custom(repo_path: String) -> Vec<TrustCategory> {
+    crate::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
 }
