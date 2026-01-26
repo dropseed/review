@@ -85,13 +85,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Create state service for ReviewViewProvider
   const stateService = StateService.create(workspaceRoot);
 
-  const reviewViewProvider = new ReviewViewProvider(context.extensionUri, gitProvider, fileTreeProvider);
+  const reviewViewProvider = new ReviewViewProvider(
+    context.extensionUri,
+    gitProvider,
+    fileTreeProvider,
+  );
 
   if (stateService) {
     reviewViewProvider.setStateService(stateService);
   }
 
-  const decorationProvider = new DiffDecorationProvider(context.extensionUri, gitProvider, fileTreeProvider);
+  const decorationProvider = new DiffDecorationProvider(
+    context.extensionUri,
+    gitProvider,
+    fileTreeProvider,
+  );
 
   reviewViewProvider.setDecorationProvider(decorationProvider);
 
@@ -149,7 +157,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher.onDidDelete((uri) => !shouldIgnore(uri) && debouncedRefresh());
   context.subscriptions.push(watcher);
 
-  const currentFileWatcher = vscode.workspace.createFileSystemWatcher("**/.human-review/current", false, false, false);
+  const currentFileWatcher = vscode.workspace.createFileSystemWatcher(
+    "**/.human-review/current",
+    false,
+    false,
+    false,
+  );
   const handleCurrentFileChange = () => {
     reviewViewProvider.onRepositoryReady();
     fileTreeProvider.refresh();
@@ -181,9 +194,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(reviewStateWatcher);
 
   try {
-    const disposable = vscode.window.registerWebviewViewProvider(ReviewViewProvider.viewType, reviewViewProvider, {
-      webviewOptions: { retainContextWhenHidden: true },
-    });
+    const disposable = vscode.window.registerWebviewViewProvider(
+      ReviewViewProvider.viewType,
+      reviewViewProvider,
+      {
+        webviewOptions: { retainContextWhenHidden: true },
+      },
+    );
     context.subscriptions.push(disposable);
   } catch (err: unknown) {
     const message = (err as Error)?.message || "";
@@ -306,7 +323,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand(
       "human-review.openDiff",
-      async (arg: string | FileTreeItem, status?: string, lineNumber?: number, oldPathArg?: string) => {
+      async (
+        arg: string | FileTreeItem,
+        status?: string,
+        lineNumber?: number,
+        oldPathArg?: string,
+      ) => {
         const wsRoot = gitProvider.getWorkspaceRoot();
         if (!wsRoot) return;
 
@@ -359,7 +381,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         if (fileStatus === "deleted" && baseRef) {
-          const baseUri = vscode.Uri.parse(`git:${filePath}?${JSON.stringify({ path: filePath, ref: baseRef })}`);
+          const baseUri = vscode.Uri.parse(
+            `git:${filePath}?${JSON.stringify({ path: filePath, ref: baseRef })}`,
+          );
           await vscode.commands.executeCommand("vscode.open", baseUri);
           return;
         }
@@ -383,7 +407,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const baseUri = vscode.Uri.parse(
               `git:${baseFilePath}?${JSON.stringify({ path: baseFilePath, ref: baseRef })}`,
             );
-            const compareUri = vscode.Uri.parse(`git:${filePath}?${JSON.stringify({ path: filePath, ref: compareRef })}`);
+            const compareUri = vscode.Uri.parse(
+              `git:${filePath}?${JSON.stringify({ path: filePath, ref: compareRef })}`,
+            );
 
             await vscode.commands.executeCommand(
               "vscode.diff",
@@ -397,7 +423,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               `git:${baseFilePath}?${JSON.stringify({ path: baseFilePath, ref: "HEAD" })}`,
             );
 
-            await vscode.commands.executeCommand("vscode.diff", headUri, uri, `${filename} (HEAD ↔ Working Tree)`);
+            await vscode.commands.executeCommand(
+              "vscode.diff",
+              headUri,
+              uri,
+              `${filename} (HEAD ↔ Working Tree)`,
+            );
           }
 
           if (scrollToLine !== undefined) {
@@ -406,7 +437,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               if (editor) {
                 const position = new vscode.Position(scrollToLine - 1, 0);
                 editor.selection = new vscode.Selection(position, position);
-                editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+                editor.revealRange(
+                  new vscode.Range(position, position),
+                  vscode.TextEditorRevealType.InCenter,
+                );
               }
             }, 100);
           }

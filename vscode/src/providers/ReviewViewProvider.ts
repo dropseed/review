@@ -65,7 +65,9 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this.getHtmlForWebview();
 
-    webviewView.webview.onDidReceiveMessage((message: ReviewWebviewMessage) => this.handleMessage(message));
+    webviewView.webview.onDidReceiveMessage((message: ReviewWebviewMessage) =>
+      this.handleMessage(message),
+    );
   }
 
   private async handleMessage(message: ReviewWebviewMessage): Promise<void> {
@@ -213,9 +215,37 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
       labels,
       unclassifiedCount,
     });
+
+    // Also send progress update
+    this.refreshProgress();
   }
 
-  public addLineReference(filePath: string, lineNumber?: number, lineRange?: { start: number; end: number }): void {
+  public refreshProgress(): void {
+    const files = this.fileTreeProvider.getFiles();
+    let total = 0;
+    let reviewed = 0;
+
+    for (const file of files) {
+      for (const hunk of file.hunks) {
+        total++;
+        if (hunk.approved) {
+          reviewed++;
+        }
+      }
+    }
+
+    this.postMessage({
+      type: "progressUpdate",
+      total,
+      reviewed,
+    });
+  }
+
+  public addLineReference(
+    filePath: string,
+    lineNumber?: number,
+    lineRange?: { start: number; end: number },
+  ): void {
     const workspaceRoot = this.gitProvider.getWorkspaceRoot();
     const relativePath = workspaceRoot ? filePath.replace(`${workspaceRoot}/`, "") : filePath;
 

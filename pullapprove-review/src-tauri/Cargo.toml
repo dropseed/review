@@ -1,0 +1,39 @@
+[package]
+name = "pullapprove-review"
+version = "0.0.1"
+description = "A code review app for humans"
+authors = ["PullApprove"]
+edition = "2021"
+
+[lib]
+name = "pullapprove_review_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-store = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-log = "2"
+tauri-plugin-os = "2"
+tauri-plugin-global-shortcut = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
+glob = "0.3"
+urlencoding = "2"
+tokio = { version = "1", features = ["time", "sync", "rt"] }
+futures = "0.3"
+notify = "6.0"
+notify-debouncer-mini = "0.4"

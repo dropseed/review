@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")/.."
+# Resolve symlinks to get the actual script location (macOS compatible)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+cd "$(dirname "$SOURCE")/.."
 
 npx prettier --check "*.md" "vscode/*.md"
 

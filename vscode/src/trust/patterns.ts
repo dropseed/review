@@ -33,8 +33,14 @@ export const TRUST_PATTERNS: Record<string, TrustPattern> = {
     id: "formatting:whitespace",
     description: "Whitespace changes (spaces, tabs, blank lines)",
   },
-  "formatting:line-length": { id: "formatting:line-length", description: "Line wrapping/length changes" },
-  "formatting:style": { id: "formatting:style", description: "Code style (quotes, trailing commas, etc.)" },
+  "formatting:line-length": {
+    id: "formatting:line-length",
+    description: "Line wrapping/length changes",
+  },
+  "formatting:style": {
+    id: "formatting:style",
+    description: "Code style (quotes, trailing commas, etc.)",
+  },
 
   // Comments
   "comments:added": { id: "comments:added", description: "Comments added" },

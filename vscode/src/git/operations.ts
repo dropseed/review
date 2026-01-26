@@ -137,7 +137,10 @@ export function gitRefExists(ref: string, cwd: string): boolean {
  */
 export function gitDiffFile(filePath: string, base: string | null, cwd: string): string {
   if (base !== null) {
-    return runGit(["diff", "-p", "-U0", "--src-prefix=a/", "--dst-prefix=b/", base, "--", filePath], cwd);
+    return runGit(
+      ["diff", "-p", "-U0", "--src-prefix=a/", "--dst-prefix=b/", base, "--", filePath],
+      cwd,
+    );
   } else {
     return runGit(["diff", "-p", "-U0", "--src-prefix=a/", "--dst-prefix=b/", "--", filePath], cwd);
   }

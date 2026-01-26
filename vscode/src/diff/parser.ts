@@ -21,7 +21,9 @@ function mapStatusCode(code: string): FileStatus {
  * Parse git diff --name-status output.
  * Returns a map of file path to (status, old_path).
  */
-export function parseNameStatus(output: string): Map<string, { status: FileStatus; oldPath: string | null }> {
+export function parseNameStatus(
+  output: string,
+): Map<string, { status: FileStatus; oldPath: string | null }> {
   const result = new Map<string, { status: FileStatus; oldPath: string | null }>();
 
   for (const line of output.trim().split("\n")) {

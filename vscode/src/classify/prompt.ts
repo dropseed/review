@@ -10,7 +10,9 @@ import { getHunkKey } from "../utils/hash";
 /**
  * Build the diff content for classification.
  */
-export function buildDiffContent(hunksToClassify: Array<{ file: ChangedFile; hunk: DiffHunk; hunkKey: string }>): string {
+export function buildDiffContent(
+  hunksToClassify: Array<{ file: ChangedFile; hunk: DiffHunk; hunkKey: string }>,
+): string {
   const lines: string[] = [];
 
   for (const { file, hunk, hunkKey } of hunksToClassify) {

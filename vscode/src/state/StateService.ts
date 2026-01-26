@@ -50,7 +50,11 @@ export class StateService {
   }
 
   private get currentFile(): string {
-    return path.join(this.gitCommonDir, StateService.STATE_DIR_NAME, StateService.CURRENT_FILE_NAME);
+    return path.join(
+      this.gitCommonDir,
+      StateService.STATE_DIR_NAME,
+      StateService.CURRENT_FILE_NAME,
+    );
   }
 
   private ensureDirectory(): void {
@@ -452,7 +456,10 @@ export class StateService {
   /**
    * Get hunk classification.
    */
-  getHunkClassification(comparisonKey: string, hunkKey: string): { label: string[]; reasoning: string | null } | null {
+  getHunkClassification(
+    comparisonKey: string,
+    hunkKey: string,
+  ): { label: string[]; reasoning: string | null } | null {
     const state = this.load(comparisonKey);
     const hunk = state.hunks[hunkKey];
     if (!hunk) return null;

@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import { logError } from "../logger";
-import type { ChangedFile, ChangedFileWithStatus, DiffHunk, HunkWithStatus, ReviewState } from "../state/types";
+import type {
+  ChangedFile,
+  ChangedFileWithStatus,
+  DiffHunk,
+  HunkWithStatus,
+  ReviewState,
+} from "../state/types";
 import { StateService } from "../state/StateService";
 import { parseDiffToHunks, parseNameStatus, createUntrackedHunk } from "../diff/parser";
 import { gitDiff, gitDiffNameStatus, gitUntrackedFiles, gitMergeBase } from "../git/operations";
@@ -502,12 +508,12 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
       const sections: FileTreeItem[] = [];
 
       if (this.reviewedTree && this.reviewedTree.children.size > 0) {
-        const count = this.countFiles(this.reviewedTree);
+        const count = this.countHunks(this.reviewedTree, true);
         sections.push(FileTreeItem.createSection("reviewed", count));
       }
 
       if (this.needsReviewTree && this.needsReviewTree.children.size > 0) {
-        const count = this.countFiles(this.needsReviewTree);
+        const count = this.countHunks(this.needsReviewTree, false);
         sections.push(FileTreeItem.createSection("needsReview", count));
       }
 
@@ -570,6 +576,17 @@ export class FileTreeProvider implements vscode.TreeDataProvider<FileTreeItem> {
     }
     return count;
   }
+
+  private countHunks(node: TreeNode, approved: boolean): number {
+    let count = 0;
+    if (node.file) {
+      count = node.file.hunks.filter((h) => h.approved === approved).length;
+    }
+    for (const child of node.children.values()) {
+      count += this.countHunks(child, approved);
+    }
+    return count;
+  }
 }
 
 export class FileTreeItem extends vscode.TreeItem {
@@ -600,8 +617,8 @@ export class FileTreeItem extends vscode.TreeItem {
     item.description = `${count}`;
 
     const iconConfig: Record<SectionType, { icon: string; color: string }> = {
-      reviewed: { icon: "pass-filled", color: "testing.iconPassed" },
-      needsReview: { icon: "eye", color: "list.warningForeground" },
+      reviewed: { icon: "check-all", color: "testing.iconPassed" },
+      needsReview: { icon: "circle-large-outline", color: "list.warningForeground" },
     };
     const { icon, color } = iconConfig[section];
     item.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color));
@@ -625,7 +642,11 @@ export class FileTreeItem extends vscode.TreeItem {
     return item;
   }
 
-  static createFile(file: ChangedFileWithStatus, sectionType: SectionType, displayName?: string): FileTreeItem {
+  static createFile(
+    file: ChangedFileWithStatus,
+    sectionType: SectionType,
+    displayName?: string,
+  ): FileTreeItem {
     const label = displayName || file.relativePath.split("/").pop() || file.relativePath;
     const item = new FileTreeItem(label, vscode.TreeItemCollapsibleState.None);
 

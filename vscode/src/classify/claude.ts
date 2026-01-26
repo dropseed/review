@@ -134,7 +134,8 @@ export async function runClassification(
           if (typeof data === "object" && data !== null) {
             const d = data as Record<string, unknown>;
             const label = Array.isArray(d.label) ? d.label : [];
-            const reasoning = typeof d.reasoning === "string" ? d.reasoning : String(d.reasoning || "");
+            const reasoning =
+              typeof d.reasoning === "string" ? d.reasoning : String(d.reasoning || "");
             classifications[hunkKey] = { label, reasoning };
           } else if (typeof data === "string") {
             classifications[hunkKey] = { label: [], reasoning: data };
@@ -161,7 +162,11 @@ export async function runClassification(
 /**
  * Synchronous version of runClassification for simpler use.
  */
-export function runClassificationSync(prompt: string, cwd: string, model?: string): ClassificationResponse {
+export function runClassificationSync(
+  prompt: string,
+  cwd: string,
+  model?: string,
+): ClassificationResponse {
   const claudePath = findClaudeExecutable();
   if (!claudePath) {
     return {

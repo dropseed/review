@@ -4,3 +4,6 @@ __pycache__/
 node_modules/
 out/
 dist/
+test
+/.agents
+/.claude/skills
