@@ -17,8 +17,8 @@ pub struct FileContent {
 
 #[tauri::command]
 pub fn get_current_repo() -> Result<String, String> {
-    // Check for PULLAPPROVE_REPO environment variable first
-    if let Ok(repo_path) = std::env::var("PULLAPPROVE_REPO") {
+    // Check for COMPARE_REPO environment variable first
+    if let Ok(repo_path) = std::env::var("COMPARE_REPO") {
         let path = PathBuf::from(&repo_path);
         if path.join(".git").exists() {
             return Ok(repo_path);
@@ -51,7 +51,7 @@ pub fn get_current_repo() -> Result<String, String> {
         }
     }
 
-    Err("Not a git repository. Set PULLAPPROVE_REPO environment variable.".to_string())
+    Err("Not a git repository. Set COMPARE_REPO environment variable.".to_string())
 }
 
 #[tauri::command]

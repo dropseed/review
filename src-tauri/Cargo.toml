@@ -1,12 +1,11 @@
 [package]
-name = "pullapprove-review"
+name = "compare"
 version = "0.0.1"
-description = "A code review app for humans"
-authors = ["PullApprove"]
+description = "A diff review app"
 edition = "2021"
 
 [lib]
-name = "pullapprove_review_lib"
+name = "compare_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

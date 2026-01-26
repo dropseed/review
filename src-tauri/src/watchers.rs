@@ -28,11 +28,7 @@ fn should_ignore_path(path_str: &str) -> bool {
     if path_str.contains("/.git/") || path_str.contains("\\.git\\") {
         // Allow these specific .git paths
         let dominated_git_paths = [
-            "human-review",
-            "/refs/",
-            "\\refs\\",
-            "/HEAD",
-            "\\HEAD",
+            "compare", "/refs/", "\\refs\\", "/HEAD", "\\HEAD",
             "/index", // git index changes on staging
         ];
         return !dominated_git_paths.iter().any(|p| path_str.contains(p));
@@ -78,7 +74,7 @@ fn categorize_change(path_str: &str) -> ChangeKind {
     }
 
     // Review state files
-    if path_str.contains("human-review") {
+    if path_str.contains("compare") {
         return ChangeKind::ReviewState;
     }
 
@@ -91,7 +87,7 @@ fn categorize_change(path_str: &str) -> ChangeKind {
 /// Watches the entire repository recursively for:
 /// - Working tree changes (file creates, edits, deletes)
 /// - Git state changes (commits, branch switches, staging)
-/// - Review state changes (.git/human-review/)
+/// - Review state changes (.git/compare/)
 pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     init_watchers();
 
@@ -103,8 +99,8 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         return Err(format!("Not a git repository: {}", repo_path));
     }
 
-    // Create human-review directory if it doesn't exist (so we can watch it)
-    let human_review_dir = git_dir.join("human-review");
+    // Create compare directory if it doesn't exist (so we can watch it)
+    let human_review_dir = git_dir.join("compare");
     if !human_review_dir.exists() {
         std::fs::create_dir_all(&human_review_dir).ok();
     }

@@ -1,4 +1,4 @@
-# PullApprove Review
+# Compare
 
 A desktop app for reviewing code diffs with trust patterns and annotation support.
 
@@ -13,7 +13,6 @@ A desktop app for reviewing code diffs with trust patterns and annotation suppor
 ### Setup
 
 ```bash
-cd pullapprove-review
 npm install
 ```
 
@@ -55,7 +54,7 @@ npm run tauri build
 - **Comparison** - What you're reviewing (working changes, staged, branch diff)
 - **Hunk** - A block of changes, identified by `filepath:hash`
 - **Trust Pattern** - A label like `imports:added` that can auto-approve hunks
-- **Review State** - Persisted in `.git/pullapprove-review/reviews/`
+- **Review State** - Persisted in `.git/compare/reviews/`
 
 ## Extending
 

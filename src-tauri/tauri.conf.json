@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PullApprove Review",
+  "productName": "Compare",
   "version": "0.0.1",
-  "identifier": "com.pullapprove.review",
+  "identifier": "com.dropseed.compare",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "PullApprove Review",
+        "title": "Compare",
         "width": 1100,
         "height": 750,
         "resizable": true,

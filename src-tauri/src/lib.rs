@@ -42,7 +42,7 @@ async fn open_repo_window(app: tauri::AppHandle, repo_path: String) -> Result<()
         WebviewUrl::App(format!("index.html?repo={}", urlencoding::encode(&repo_path)).into());
 
     WebviewWindowBuilder::new(&app, label, url)
-        .title(format!("{} - PullApprove Review", repo_name))
+        .title(format!("{} - Compare", repo_name))
         .inner_size(1100.0, 750.0)
         .min_inner_size(800.0, 600.0)
         .build()

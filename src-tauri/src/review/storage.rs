@@ -15,12 +15,12 @@ pub enum StorageError {
 
 /// Get the storage directory for review state
 fn get_storage_dir(repo_path: &PathBuf) -> PathBuf {
-    repo_path.join(".git").join("human-review").join("reviews")
+    repo_path.join(".git").join("compare").join("reviews")
 }
 
 /// Get the file path for storing the current comparison
 fn get_current_comparison_path(repo_path: &PathBuf) -> PathBuf {
-    repo_path.join(".git").join("human-review").join("current")
+    repo_path.join(".git").join("compare").join("current")
 }
 
 /// Sanitize a comparison key for use as a filename

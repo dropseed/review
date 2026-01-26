@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-human-review is a desktop app (built with Tauri) that helps humans review diffs more efficiently. It classifies hunks (individual change blocks), enables bulk-approval of trivial changes, and focuses attention on what needs careful human review. It is **not** an AI code reviewer—it assists the review process.
+Compare is a desktop app (built with Tauri) that helps humans review diffs more efficiently. It classifies hunks (individual change blocks), enables bulk-approval of trivial changes, and focuses attention on what needs careful human review. It is **not** an AI code reviewer—it assists the review process.
 
 ## Development Commands
 
@@ -70,7 +70,7 @@ scripts/build            # Build production app (outputs to src-tauri/target/rel
 
 ## State Storage
 
-Review state persists in `.git/human-review/reviews/<comparison>.json`. Storing inside `.git/` means state is automatically ignored by git and shared across worktrees. State includes:
+Review state persists in `.git/compare/reviews/<comparison>.json`. Storing inside `.git/` means state is automatically ignored by git and shared across worktrees. State includes:
 
 - `hunks`: Dict mapping `filepath:hash` to `{label, reasoning, approved_via}`
 - `trust_labels`: List of trusted patterns
