@@ -10,10 +10,10 @@ Compare is a desktop app (built with Tauri) that helps humans review diffs more 
 
 ```bash
 # Setup
-scripts/install          # Install dependencies (npm install + pre-commit hook)
+scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
 
 # Development
-npm run tauri dev        # Run in development mode with hot reload
+scripts/dev              # Run in development mode with hot reload
 
 # Testing
 scripts/test             # TypeScript type check + Rust tests

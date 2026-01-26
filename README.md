@@ -8,24 +8,21 @@ A desktop app for reviewing code diffs with trust patterns and annotation suppor
 
 - Node.js 18+
 - Rust (latest stable)
-- Tauri CLI: `cargo install tauri-cli`
 
 ### Setup
 
 ```bash
-npm install
+scripts/install
 ```
 
-### Run in development
+### Commands
 
 ```bash
-npm run tauri dev
-```
-
-### Build for production
-
-```bash
-npm run tauri build
+scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
+scripts/dev              # Run in development mode with hot reload
+scripts/test             # TypeScript type check + Rust tests
+scripts/fix              # Auto-fix: prettier + cargo fmt
+scripts/build            # Build production app
 ```
 
 ## Architecture
@@ -33,10 +30,11 @@ npm run tauri build
 ### Frontend (React + TypeScript)
 
 - `src/components/` - React components
-  - `FileTree` - Full repository file browser with change indicators
-  - `CodeViewer` - Code display with diff highlighting
-  - `ComparisonSelector` - Pick what to compare (working/staged/branch)
-  - `ReviewPanel` - Trust patterns, notes, progress
+  - `FileTree.tsx` - Full repository file browser with change indicators
+  - `CodeViewer.tsx` - Code display with diff highlighting
+  - `ComparisonSelector.tsx` - Pick what to compare (working/staged/branch)
+  - `ReviewFilePanel.tsx` - Review panel for individual files
+  - `TrustPatternsPanel.tsx` - Trust patterns management
 - `src/stores/` - Zustand state management
 - `src/types/` - TypeScript type definitions
 
@@ -48,6 +46,7 @@ npm run tauri build
 - `src-tauri/src/diff/` - Diff parsing
 - `src-tauri/src/review/` - Review state management
 - `src-tauri/src/trust/` - Trust pattern taxonomy and matching
+- `src-tauri/src/classify/` - Claude classification integration
 
 ## Key Concepts
 

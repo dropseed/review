@@ -187,13 +187,3 @@ pub fn stop_watching(repo_path: &str) {
         }
     }
 }
-
-/// Stop all watchers (for cleanup on app exit)
-pub fn stop_all() {
-    let mut watchers = WATCHERS.lock().unwrap();
-    if let Some(ref mut map) = *watchers {
-        let count = map.len();
-        map.clear();
-        log::info!("Stopped {} file watcher(s)", count);
-    }
-}

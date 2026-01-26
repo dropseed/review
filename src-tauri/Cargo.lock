@@ -597,6 +597,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "compare"
+version = "0.0.1"
+dependencies = [
+ "futures",
+ "glob",
+ "hex",
+ "log",
+ "notify",
+ "notify-debouncer-mini",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tauri-plugin-shell",
+ "tauri-plugin-store",
+ "tauri-plugin-window-state",
+ "thiserror 2.0.18",
+ "tokio",
+ "urlencoding",
+ "walkdir",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3248,37 +3279,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "pullapprove-review"
-version = "0.0.1"
-dependencies = [
- "futures",
- "glob",
- "hex",
- "log",
- "notify",
- "notify-debouncer-mini",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-log",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-os",
- "tauri-plugin-shell",
- "tauri-plugin-store",
- "tauri-plugin-window-state",
- "thiserror 2.0.18",
- "tokio",
- "urlencoding",
- "walkdir",
 ]
 
 [[package]]

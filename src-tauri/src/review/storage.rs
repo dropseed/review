@@ -75,31 +75,6 @@ pub fn save_review_state(repo_path: &PathBuf, state: &ReviewState) -> Result<(),
     Ok(())
 }
 
-/// List all saved review states
-pub fn list_review_states(repo_path: &PathBuf) -> Result<Vec<ReviewState>, StorageError> {
-    let storage_dir = get_storage_dir(repo_path);
-
-    if !storage_dir.exists() {
-        return Ok(vec![]);
-    }
-
-    let mut states = Vec::new();
-
-    for entry in fs::read_dir(&storage_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().map(|e| e == "json").unwrap_or(false) {
-            let content = fs::read_to_string(&path)?;
-            if let Ok(state) = serde_json::from_str::<ReviewState>(&content) {
-                states.push(state);
-            }
-        }
-    }
-
-    Ok(states)
-}
-
 /// Get the current comparison (persisted across sessions)
 pub fn get_current_comparison(repo_path: &PathBuf) -> Result<Option<Comparison>, StorageError> {
     let path = get_current_comparison_path(repo_path);

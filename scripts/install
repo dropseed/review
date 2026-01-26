@@ -2,6 +2,24 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# Check prerequisites
+if ! command -v node &> /dev/null; then
+    echo "Error: Node.js is not installed"
+    exit 1
+fi
+
+if ! command -v cargo &> /dev/null; then
+    echo "Error: Rust/Cargo is not installed"
+    echo "Install from https://rustup.rs"
+    exit 1
+fi
+
+# Set up pre-commit hook
 ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 
+# Install npm dependencies
 npm install
+
+# Build Rust dependencies
+cd src-tauri
+cargo build

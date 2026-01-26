@@ -495,8 +495,4 @@ impl DiffSource for LocalGitSource {
 
         Ok(all_diffs)
     }
-
-    fn get_file_content(&self, ref_name: &str, file_path: &str) -> Result<String, Self::Error> {
-        self.run_git(&["show", &format!("{}:{}", ref_name, file_path)])
-    }
 }
