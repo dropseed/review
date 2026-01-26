@@ -2,8 +2,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-npx prettier --write "*.md" "vscode/*.md"
+npx prettier --write "*.md" "src/**/*.{ts,tsx}" "*.{js,json}"
 
-cd vscode
-npx oxfmt --write src media *.js
-npx oxlint --fix src media *.js
+cd src-tauri
+cargo fmt

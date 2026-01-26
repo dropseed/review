@@ -9,8 +9,7 @@ while [ -L "$SOURCE" ]; do
 done
 cd "$(dirname "$SOURCE")/.."
 
-npx prettier --check "*.md" "vscode/*.md"
+npx prettier --check "*.md" "src/**/*.{ts,tsx}" "*.{js,json}"
 
-cd vscode
-npx oxfmt --check src media *.js
-npx oxlint src media *.js
+cd src-tauri
+cargo fmt --check

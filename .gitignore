@@ -1,9 +1,30 @@
-.venv/
-.pytest_cache/
-__pycache__/
+# Dependencies
 node_modules/
-out/
+
+# Build outputs
 dist/
-test
+src-tauri/target/
+src-tauri/gen/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tauri
+src-tauri/WixTools/
+
+# Claude Code
 /.agents
 /.claude/skills

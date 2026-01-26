@@ -2,9 +2,11 @@
 set -e
 cd "$(dirname "$0")/.."
 
-cd vscode
-npm run build
-echo "Build successful!"
+# TypeScript type checking
+npx tsc --noEmit
+echo "TypeScript check passed!"
 
-npm test
-echo "Tests passed!"
+# Rust tests
+cd src-tauri
+cargo test
+echo "Rust tests passed!"

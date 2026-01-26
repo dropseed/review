@@ -1,10 +1,8 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")/../vscode"
+cd "$(dirname "$0")/.."
 
-npm run build
-npx vsce package --out human-review.vsix
+npm run tauri build
 
 echo ""
-echo "Built: vscode/human-review.vsix"
-echo "Install with: code --install-extension vscode/human-review.vsix"
+echo "Build complete. App is in src-tauri/target/release/"
