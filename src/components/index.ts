@@ -1,7 +1,10 @@
-export { FileTree } from "./FileTree";
-export { CodeViewer } from "./CodeViewer";
+export { CodeViewer } from "./CodeViewer/index";
 export { ComparisonSelector } from "./ComparisonSelector";
-export { ReviewFilePanel } from "./ReviewFilePanel";
+export { FilesPanel } from "./FilesPanel/index";
 export { Breadcrumbs } from "./Breadcrumbs";
 export { DebugModal } from "./DebugModal";
-export { TrustPatternsPanel } from "./TrustPatternsPanel";
+export { TrustModal } from "./TrustModal";
+export { SettingsModal } from "./SettingsModal";
+export { GitStatusIndicator } from "./GitStatusIndicator";
+export { GitStatusModal } from "./GitStatusModal";
+export { StartScreen } from "./StartScreen";

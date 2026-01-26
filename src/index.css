@@ -31,7 +31,7 @@
   --text-primary: #fafaf9;
   --text-secondary: #a8a29e;
   --text-muted: #78716c;
-  --text-faint: #57534e;
+  --text-faint: #6b6560;
 
   --border-subtle: rgba(168, 162, 158, 0.1);
   --border-default: rgba(168, 162, 158, 0.2);
@@ -39,7 +39,6 @@
 
   /* Typography - system sans-serif */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -54,18 +53,29 @@ body {
   color: var(--text-primary);
 }
 
+/* Code font size - set dynamically via JS */
+:root {
+  --code-font-size: 0.867rem;
+  --ui-scale: 1;
+}
+
 /* Code font class */
 .font-mono {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--code-font-size);
   line-height: 1.5;
   letter-spacing: -0.01em;
 }
 
+/* Scale the entire UI when font size changes (for presentations) */
+html {
+  font-size: calc(15px * var(--ui-scale));
+}
+
 /* Custom scrollbar */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 0.4rem;
+  height: 0.4rem;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
@@ -74,7 +84,7 @@ body {
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--stone-700);
-  border-radius: 3px;
+  border-radius: 0.2rem;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
@@ -120,7 +130,7 @@ body {
 @keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(0.267rem);
   }
   to {
     opacity: 1;
@@ -131,7 +141,7 @@ body {
 @keyframes slide-in {
   from {
     opacity: 0;
-    transform: translateX(-8px);
+    transform: translateX(-0.533rem);
   }
   to {
     opacity: 1;
@@ -165,22 +175,22 @@ body {
 .input:focus {
   outline: none;
   border-color: var(--accent-amber);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+  box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.1);
 }
 
 /* Progress bar */
 .progress-bar {
   position: relative;
-  height: 4px;
+  height: 0.25rem;
   background: var(--stone-800);
-  border-radius: 2px;
+  border-radius: 0.125rem;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
   background: var(--accent-lime);
-  border-radius: 2px;
+  border-radius: 0.125rem;
   transition: width 0.3s ease;
 }
 
@@ -188,7 +198,7 @@ body {
   position: absolute;
   height: 100%;
   background: var(--accent-sky);
-  border-radius: 2px 0 0 2px;
+  border-radius: 0.125rem 0 0 0.125rem;
   transition: width 0.3s ease;
 }
 
@@ -196,7 +206,7 @@ body {
   position: absolute;
   height: 100%;
   background: var(--accent-lime);
-  border-radius: 0 2px 2px 0;
+  border-radius: 0 0.125rem 0.125rem 0;
   transition: width 0.3s ease, left 0.3s ease;
 }
 
@@ -216,4 +226,93 @@ kbd {
   border: 1px solid var(--border-default);
   border-radius: 0.25rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Ensure form elements inherit font size for proper scaling */
+button, input, select, textarea {
+  font-size: inherit;
+}
+
+/* Accessibility: prevent double-tap zoom delay on interactive elements */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* Ensure focus states are visible */
+:focus-visible {
+  outline: 2px solid var(--accent-amber);
+  outline-offset: 2px;
+}
+
+/* Remove default focus outline when not using keyboard navigation */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Image viewer styles */
+.image-viewer-checkerboard {
+  background-color: #1c1917;
+  background-image:
+    linear-gradient(45deg, #292524 25%, transparent 25%),
+    linear-gradient(-45deg, #292524 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #292524 75%),
+    linear-gradient(-45deg, transparent 75%, #292524 75%);
+  background-size: 1rem 1rem;
+  background-position: 0 0, 0 0.5rem, 0.5rem -0.5rem, -0.5rem 0;
+}
+
+.image-viewer-shadow {
+  box-shadow: 0 0.267rem 1.333rem rgba(0, 0, 0, 0.4);
+}
+
+/* Image diff overlay slider */
+.image-diff-slider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.2rem;
+  background: white;
+  cursor: ew-resize;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.image-diff-slider::before,
+.image-diff-slider::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+}
+
+.image-diff-slider::before {
+  top: 0;
+  border-left: 0.4rem solid transparent;
+  border-right: 0.4rem solid transparent;
+  border-top: 0.5rem solid white;
+}
+
+.image-diff-slider::after {
+  bottom: 0;
+  border-left: 0.4rem solid transparent;
+  border-right: 0.4rem solid transparent;
+  border-bottom: 0.5rem solid white;
+}
+
+.image-diff-slider-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2rem;
+  height: 2rem;
+  background: rgba(0, 0, 0, 0.7);
+  border: 0.125rem solid white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
 }

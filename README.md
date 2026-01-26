@@ -27,26 +27,8 @@ scripts/build            # Build production app
 
 ## Architecture
 
-### Frontend (React + TypeScript)
-
-- `src/components/` - React components
-  - `FileTree.tsx` - Full repository file browser with change indicators
-  - `CodeViewer.tsx` - Code display with diff highlighting
-  - `ComparisonSelector.tsx` - Pick what to compare (working/staged/branch)
-  - `ReviewFilePanel.tsx` - Review panel for individual files
-  - `TrustPatternsPanel.tsx` - Trust patterns management
-- `src/stores/` - Zustand state management
-- `src/types/` - TypeScript type definitions
-
-### Backend (Rust + Tauri)
-
-- `src-tauri/src/sources/` - Diff source abstraction
-  - `traits.rs` - DiffSource trait for extensibility
-  - `local_git.rs` - Local git repository implementation
-- `src-tauri/src/diff/` - Diff parsing
-- `src-tauri/src/review/` - Review state management
-- `src-tauri/src/trust/` - Trust pattern taxonomy and matching
-- `src-tauri/src/classify/` - Claude classification integration
+- **Frontend**: React + TypeScript + Vite (`src/`), state managed with Zustand
+- **Backend**: Rust + Tauri (`src-tauri/`), classification via Claude CLI
 
 ## Key Concepts
 

@@ -1,8 +1,37 @@
+import { anyLabelMatchesAnyPattern } from "../utils/matching";
+
+// A stash entry
+export interface StashEntry {
+  ref: string; // The stash ref (e.g., "stash@{0}")
+  message: string; // The stash message/description
+}
+
+// Branch list with local and remote branches separated
+export interface BranchList {
+  local: string[];
+  remote: string[];
+  stashes: StashEntry[];
+}
+
+// Git status types
+export interface GitStatusSummary {
+  currentBranch: string;
+  staged: StatusEntry[];
+  unstaged: StatusEntry[];
+  untracked: string[];
+}
+
+export interface StatusEntry {
+  path: string;
+  status: "modified" | "added" | "deleted" | "renamed" | "copied";
+}
+
 // Comparison - what we're reviewing (VS Code model)
 export interface Comparison {
   old: string; // Base ref (e.g., "main")
   new: string; // Compare ref (e.g., "HEAD")
   workingTree: boolean; // Include uncommitted working tree changes
+  stagedOnly?: boolean; // Only show staged changes (index vs HEAD)
   key: string; // Unique key for storage, e.g., "main..HEAD+working-tree"
 }
 
@@ -11,11 +40,15 @@ export function makeComparison(
   old: string,
   newRef: string,
   workingTree: boolean,
+  stagedOnly?: boolean,
 ): Comparison {
-  const key = workingTree
-    ? `${old}..${newRef}+working-tree`
-    : `${old}..${newRef}`;
-  return { old, new: newRef, workingTree, key };
+  let key = `${old}..${newRef}`;
+  if (stagedOnly) {
+    key += "+staged-only";
+  } else if (workingTree) {
+    key += "+working-tree";
+  }
+  return { old, new: newRef, workingTree, stagedOnly, key };
 }
 
 // File tree
@@ -68,11 +101,38 @@ export interface DiffLine {
 
 // Review state
 export interface HunkState {
-  label?: string[]; // Trust pattern labels (can have multiple)
+  label: string[]; // Classification labels, defaults to []
   reasoning?: string; // AI classification reasoning
-  approvedVia?: "manual" | "trust" | "ai";
-  rejected?: boolean; // Explicit rejection flag
-  notes?: string; // Human review notes
+  status?: "approved" | "rejected"; // Explicit human decision (undefined = pending, trust computed from labels)
+}
+
+// Helper to check if a hunk's labels match any trusted pattern
+export function isHunkTrusted(
+  hunkState: HunkState | undefined,
+  trustList: string[],
+): boolean {
+  if (!hunkState?.label || hunkState.label.length === 0) return false;
+  return anyLabelMatchesAnyPattern(hunkState.label, trustList);
+}
+
+// Helper to check if a hunk is "reviewed" (trusted, approved, or rejected)
+export function isHunkReviewed(
+  hunkState: HunkState | undefined,
+  trustList: string[],
+): boolean {
+  if (!hunkState) return false;
+  if (hunkState.status) return true; // approved or rejected
+  return isHunkTrusted(hunkState, trustList);
+}
+
+// Line annotations for inline comments
+export interface LineAnnotation {
+  id: string;
+  filePath: string;
+  lineNumber: number;
+  side: "old" | "new" | "file"; // which version of the file (old=deletion side, new=addition side, file=full file view)
+  content: string;
+  createdAt: string;
 }
 
 // Rejection feedback for export
@@ -82,7 +142,6 @@ export interface RejectionFeedback {
   rejections: Array<{
     hunkId: string;
     filePath: string;
-    notes?: string;
     content: string;
   }>;
 }
@@ -102,9 +161,19 @@ export interface ReviewState {
   hunks: Record<string, HunkState>; // keyed by hunk id
   trustList: string[]; // List of trusted patterns
   notes: string; // Overall review notes
+  annotations: LineAnnotation[]; // Inline annotations on lines
   createdAt: string;
   updatedAt: string;
   completedAt?: string; // When review was marked complete
+}
+
+// Summary of a saved review (for start screen listing)
+export interface ReviewSummary {
+  comparison: Comparison;
+  totalHunks: number;
+  reviewedHunks: number;
+  updatedAt: string;
+  completedAt?: string;
 }
 
 // Trust patterns
@@ -119,4 +188,17 @@ export interface TrustCategory {
   id: string;
   name: string;
   patterns: TrustPattern[];
+}
+
+// File content from backend
+export type ContentType = "text" | "image" | "svg" | "binary";
+
+export interface FileContent {
+  content: string;
+  oldContent?: string; // Old/base version for diff expansion
+  diffPatch: string;
+  hunks: DiffHunk[];
+  contentType: ContentType;
+  imageDataUrl?: string;
+  oldImageDataUrl?: string;
 }

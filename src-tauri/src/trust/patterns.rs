@@ -199,20 +199,12 @@ pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
             id: "code".to_string(),
             name: "Code".to_string(),
             description: "Code movement and structure".to_string(),
-            patterns: vec![
-                TrustPattern {
-                    id: "code:relocated".to_string(),
-                    category: "code".to_string(),
-                    name: "Relocated".to_string(),
-                    description: "Code moved to different location".to_string(),
-                },
-                TrustPattern {
-                    id: "code:extracted".to_string(),
-                    category: "code".to_string(),
-                    name: "Extracted".to_string(),
-                    description: "Code extracted to separate function/module".to_string(),
-                },
-            ],
+            patterns: vec![TrustPattern {
+                id: "code:extracted".to_string(),
+                category: "code".to_string(),
+                name: "Extracted".to_string(),
+                description: "Code extracted to separate function/module".to_string(),
+            }],
         },
         TrustCategory {
             id: "version".to_string(),

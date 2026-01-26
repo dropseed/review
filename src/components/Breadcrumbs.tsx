@@ -6,7 +6,7 @@ export function Breadcrumbs({ filePath }: BreadcrumbsProps) {
   const parts = filePath.split("/");
 
   return (
-    <nav className="flex items-center text-[11px]" aria-label="File path">
+    <nav className="flex items-center text-2xs" aria-label="File path">
       {parts.map((part, index) => {
         const isLast = index === parts.length - 1;
         const path = parts.slice(0, index + 1).join("/");

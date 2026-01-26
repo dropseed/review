@@ -1,4 +1,4 @@
-use super::state::ReviewState;
+use super::state::{ReviewState, ReviewSummary};
 use crate::sources::traits::Comparison;
 use std::fs;
 use std::io;
@@ -102,6 +102,65 @@ pub fn set_current_comparison(
 
     let content = serde_json::to_string_pretty(comparison)?;
     fs::write(&path, content)?;
+
+    Ok(())
+}
+
+/// List all saved reviews in the repository
+pub fn list_saved_reviews(repo_path: &PathBuf) -> Result<Vec<ReviewSummary>, StorageError> {
+    let storage_dir = get_storage_dir(repo_path);
+
+    if !storage_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut summaries = Vec::new();
+
+    for entry in fs::read_dir(&storage_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Only process .json files
+        if path.extension().map_or(false, |ext| ext == "json") {
+            match fs::read_to_string(&path) {
+                Ok(content) => match serde_json::from_str::<ReviewState>(&content) {
+                    Ok(state) => {
+                        summaries.push(state.to_summary());
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[list_saved_reviews] Failed to parse {}: {}",
+                            path.display(),
+                            e
+                        );
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "[list_saved_reviews] Failed to read {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // Sort by updated_at descending (most recent first)
+    summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+    Ok(summaries)
+}
+
+/// Delete a saved review
+pub fn delete_review(repo_path: &PathBuf, comparison: &Comparison) -> Result<(), StorageError> {
+    let storage_dir = get_storage_dir(repo_path);
+    let filename = comparison_filename(comparison);
+    let path = storage_dir.join(&filename);
+
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
 
     Ok(())
 }

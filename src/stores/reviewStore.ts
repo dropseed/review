@@ -1,20 +1,24 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Comparison,
   FileEntry,
   DiffHunk,
   ReviewState,
+  ReviewSummary,
   ClassifyResponse,
   MovePair,
   RejectionFeedback,
+  LineAnnotation,
+  GitStatusSummary,
 } from "../types";
 import { makeComparison } from "../types";
 import {
-  anyLabelMatchesAnyPattern,
-  anyLabelMatchesPattern,
-} from "../utils/matching";
-import { getPreference, setPreference } from "../utils/preferences";
+  getPreference,
+  setPreference,
+  CODE_FONT_SIZE_DEFAULT,
+} from "../utils/preferences";
 
 interface DetectMovePairsResponse {
   pairs: MovePair[];
@@ -33,15 +37,27 @@ interface ReviewStore {
   movePairs: MovePair[];
   reviewState: ReviewState | null;
   focusedHunkIndex: number;
+  gitStatus: GitStatusSummary | null;
+
+  // Saved reviews (for start screen)
+  savedReviews: ReviewSummary[];
+  savedReviewsLoading: boolean;
 
   // UI settings
   sidebarPosition: "left" | "right";
+  codeFontSize: number;
+  codeTheme: string;
   fileToReveal: string | null; // File path to reveal in tree
 
   // Classification state
   claudeAvailable: boolean | null;
   classifying: boolean;
   classificationError: string | null;
+  classifyingHunkIds: Set<string>;
+  autoClassifyEnabled: boolean;
+  classifyCommand: string | null;
+  classifyBatchSize: number;
+  classifyMaxConcurrent: number;
 
   // Actions
   setRepoPath: (path: string) => void;
@@ -58,21 +74,23 @@ interface ReviewStore {
   prevHunk: () => void;
 
   // Persistence
-  loadFiles: () => Promise<void>;
+  loadFiles: (skipAutoClassify?: boolean) => Promise<void>;
   loadAllFiles: () => Promise<void>;
   loadReviewState: () => Promise<void>;
   saveReviewState: () => Promise<void>;
   loadCurrentComparison: () => Promise<void>;
   saveCurrentComparison: () => Promise<void>;
+  loadGitStatus: () => Promise<void>;
+  loadSavedReviews: () => Promise<void>;
+  deleteReview: (comparison: Comparison) => Promise<void>;
 
   // Hunk actions
-  approveHunk: (hunkId: string, via: "manual" | "trust") => void;
+  approveHunk: (hunkId: string) => void;
   unapproveHunk: (hunkId: string) => void;
-  rejectHunk: (hunkId: string, notes?: string) => void;
+  rejectHunk: (hunkId: string) => void;
   unrejectHunk: (hunkId: string) => void;
   approveAllFileHunks: (filePath: string) => void;
   unapproveAllFileHunks: (filePath: string) => void;
-  setHunkNotes: (hunkId: string, notes: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
 
   // Feedback export
@@ -81,19 +99,37 @@ interface ReviewStore {
   // Review notes
   setReviewNotes: (notes: string) => void;
 
+  // Annotations
+  addAnnotation: (
+    filePath: string,
+    lineNumber: number,
+    side: "old" | "new" | "file",
+    content: string,
+  ) => string; // Returns the annotation id
+  updateAnnotation: (annotationId: string, content: string) => void;
+  deleteAnnotation: (annotationId: string) => void;
+  getAnnotationsForFile: (filePath: string) => LineAnnotation[];
+
   // Trust list actions
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
 
   // UI settings actions
   setSidebarPosition: (position: "left" | "right") => void;
+  setCodeFontSize: (size: number) => void;
+  setCodeTheme: (theme: string) => void;
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
   clearFileToReveal: () => void;
 
   // Classification
   checkClaudeAvailable: () => Promise<void>;
-  classifyUnlabeledHunks: () => Promise<void>;
+  classifyUnlabeledHunks: (hunkIds?: string[]) => Promise<void>;
+  triggerAutoClassification: () => void;
+  setAutoClassifyEnabled: (enabled: boolean) => void;
+  setClassifyCommand: (command: string | null) => void;
+  setClassifyBatchSize: (size: number) => void;
+  setClassifyMaxConcurrent: (count: number) => void;
 
   // Complete review
   completeReview: () => void;
@@ -122,6 +158,27 @@ const createDebouncedSave = () => {
 };
 const debouncedSave = createDebouncedSave();
 
+// Debounced auto-classification with generation counter for cancellation
+const createDebouncedAutoClassify = () => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
+
+  return (classifyFn: (gen: number) => Promise<void>) => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    generation++;
+    const currentGen = generation;
+    timeout = setTimeout(async () => {
+      await classifyFn(currentGen);
+    }, 1500);
+  };
+};
+const debouncedAutoClassify = createDebouncedAutoClassify();
+
+// Track current classification generation for cancellation
+let classifyGeneration = 0;
+
 // Helper to get all files flattened from tree
 function flattenFiles(entries: FileEntry[]): string[] {
   const result: string[] = [];
@@ -146,11 +203,21 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   movePairs: [],
   reviewState: null,
   focusedHunkIndex: 0,
+  gitStatus: null,
+  savedReviews: [],
+  savedReviewsLoading: false,
   sidebarPosition: "left",
+  codeFontSize: CODE_FONT_SIZE_DEFAULT,
+  codeTheme: "github-dark",
   fileToReveal: null,
   claudeAvailable: null,
   classifying: false,
   classificationError: null,
+  classifyingHunkIds: new Set<string>(),
+  autoClassifyEnabled: true,
+  classifyCommand: null,
+  classifyBatchSize: 5,
+  classifyMaxConcurrent: 2,
 
   setRepoPath: (path) => set({ repoPath: path }),
 
@@ -214,7 +281,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     set({ focusedHunkIndex: prevIndex });
   },
 
-  loadFiles: async () => {
+  loadFiles: async (skipAutoClassify = false) => {
     const { repoPath, comparison } = get();
     if (!repoPath) return;
 
@@ -276,6 +343,11 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         console.error("Failed to detect move pairs:", err);
         set({ hunks: allHunks, movePairs: [] });
       }
+
+      // Trigger auto-classification after files are loaded (unless skipped)
+      if (!skipAutoClassify) {
+        get().triggerAutoClassification();
+      }
     } catch (err) {
       console.error("Failed to load files:", err);
     }
@@ -317,6 +389,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           hunks: {},
           trustList: [],
           notes: "",
+          annotations: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
@@ -383,7 +456,54 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
   },
 
-  approveHunk: (hunkId, via) => {
+  loadGitStatus: async () => {
+    const { repoPath } = get();
+    if (!repoPath) return;
+
+    try {
+      const status = await invoke<GitStatusSummary>("get_git_status", {
+        repoPath,
+      });
+      set({ gitStatus: status });
+    } catch (err) {
+      console.error("Failed to load git status:", err);
+      set({ gitStatus: null });
+    }
+  },
+
+  loadSavedReviews: async () => {
+    const { repoPath } = get();
+    if (!repoPath) return;
+
+    set({ savedReviewsLoading: true });
+    try {
+      const reviews = await invoke<ReviewSummary[]>("list_saved_reviews", {
+        repoPath,
+      });
+      set({ savedReviews: reviews, savedReviewsLoading: false });
+    } catch (err) {
+      console.error("Failed to load saved reviews:", err);
+      set({ savedReviews: [], savedReviewsLoading: false });
+    }
+  },
+
+  deleteReview: async (comparison) => {
+    const { repoPath, loadSavedReviews } = get();
+    if (!repoPath) return;
+
+    try {
+      await invoke("delete_review", {
+        repoPath,
+        comparison,
+      });
+      // Reload the saved reviews list
+      await loadSavedReviews();
+    } catch (err) {
+      console.error("Failed to delete review:", err);
+    }
+  },
+
+  approveHunk: (hunkId) => {
     const { reviewState, hunks } = get();
     if (!reviewState) return;
 
@@ -391,18 +511,21 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       ...reviewState.hunks,
       [hunkId]: {
         ...reviewState.hunks[hunkId],
-        approvedVia: via,
-        rejected: undefined, // Clear rejection when approving
+        label: reviewState.hunks[hunkId]?.label ?? [],
+        status: "approved" as const,
       },
     };
 
     // If this hunk has a move pair, approve it too
     const hunk = hunks.find((h) => h.id === hunkId);
-    if (hunk?.movePairId && !reviewState.hunks[hunk.movePairId]?.approvedVia) {
+    if (
+      hunk?.movePairId &&
+      reviewState.hunks[hunk.movePairId]?.status !== "approved"
+    ) {
       newHunks[hunk.movePairId] = {
         ...reviewState.hunks[hunk.movePairId],
-        approvedVia: via,
-        rejected: undefined,
+        label: reviewState.hunks[hunk.movePairId]?.label ?? [],
+        status: "approved" as const,
       };
     }
 
@@ -427,18 +550,21 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       ...reviewState.hunks,
       [hunkId]: {
         ...existingHunk,
-        approvedVia: undefined,
+        status: undefined,
       },
     };
 
     // If this hunk has a move pair, unapprove it too
     const hunk = hunks.find((h) => h.id === hunkId);
-    if (hunk?.movePairId && reviewState.hunks[hunk.movePairId]?.approvedVia) {
+    if (
+      hunk?.movePairId &&
+      reviewState.hunks[hunk.movePairId]?.status === "approved"
+    ) {
       const pairedHunk = reviewState.hunks[hunk.movePairId];
       if (pairedHunk) {
         newHunks[hunk.movePairId] = {
           ...pairedHunk,
-          approvedVia: undefined,
+          status: undefined,
         };
       }
     }
@@ -453,30 +579,28 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     debouncedSave(get().saveReviewState);
   },
 
-  rejectHunk: (hunkId, notes) => {
+  rejectHunk: (hunkId) => {
     const { reviewState, hunks } = get();
     if (!reviewState) return;
 
-    const existingHunk = reviewState.hunks[hunkId] || {};
+    const existingHunk = reviewState.hunks[hunkId];
     const newHunks = {
       ...reviewState.hunks,
       [hunkId]: {
         ...existingHunk,
-        rejected: true,
-        approvedVia: undefined, // Clear approval when rejecting
-        ...(notes !== undefined ? { notes } : {}),
+        label: existingHunk?.label ?? [],
+        status: "rejected" as const,
       },
     };
 
     // If this hunk has a move pair, reject it too
     const hunk = hunks.find((h) => h.id === hunkId);
     if (hunk?.movePairId) {
-      const pairedHunkState = reviewState.hunks[hunk.movePairId] || {};
+      const pairedHunkState = reviewState.hunks[hunk.movePairId];
       newHunks[hunk.movePairId] = {
         ...pairedHunkState,
-        rejected: true,
-        approvedVia: undefined,
-        ...(notes !== undefined ? { notes } : {}),
+        label: pairedHunkState?.label ?? [],
+        status: "rejected" as const,
       };
     }
 
@@ -501,18 +625,21 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       ...reviewState.hunks,
       [hunkId]: {
         ...existingHunk,
-        rejected: undefined,
+        status: undefined,
       },
     };
 
     // If this hunk has a move pair, unreject it too
     const hunk = hunks.find((h) => h.id === hunkId);
-    if (hunk?.movePairId && reviewState.hunks[hunk.movePairId]?.rejected) {
+    if (
+      hunk?.movePairId &&
+      reviewState.hunks[hunk.movePairId]?.status === "rejected"
+    ) {
       const pairedHunk = reviewState.hunks[hunk.movePairId];
       if (pairedHunk) {
         newHunks[hunk.movePairId] = {
           ...pairedHunk,
-          rejected: undefined,
+          status: undefined,
         };
       }
     }
@@ -538,7 +665,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     for (const hunk of fileHunks) {
       newHunks[hunk.id] = {
         ...newHunks[hunk.id],
-        approvedVia: "manual",
+        label: newHunks[hunk.id]?.label ?? [],
+        status: "approved" as const,
       };
     }
 
@@ -564,32 +692,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       if (newHunks[hunk.id]) {
         newHunks[hunk.id] = {
           ...newHunks[hunk.id],
-          approvedVia: undefined,
+          status: undefined,
         };
       }
     }
-
-    const newState = {
-      ...reviewState,
-      hunks: newHunks,
-      updatedAt: new Date().toISOString(),
-    };
-
-    set({ reviewState: newState });
-    debouncedSave(get().saveReviewState);
-  },
-
-  setHunkNotes: (hunkId, notes) => {
-    const { reviewState } = get();
-    if (!reviewState) return;
-
-    const newHunks = {
-      ...reviewState.hunks,
-      [hunkId]: {
-        ...reviewState.hunks[hunkId],
-        notes,
-      },
-    };
 
     const newState = {
       ...reviewState,
@@ -605,20 +711,15 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const { reviewState } = get();
     if (!reviewState) return;
 
-    const existingHunk = reviewState.hunks[hunkId] || {};
-    // Convert single label to array for backwards compatibility
+    const existingHunk = reviewState.hunks[hunkId];
+    // Convert single label to array
     const labels = Array.isArray(label) ? label : [label];
-    // Auto-approve if any label matches a trusted pattern (supports glob patterns like imports:*)
-    const shouldAutoApprove =
-      !existingHunk.approvedVia &&
-      anyLabelMatchesAnyPattern(labels, reviewState.trustList);
 
     const newHunks = {
       ...reviewState.hunks,
       [hunkId]: {
         ...existingHunk,
         label: labels,
-        ...(shouldAutoApprove ? { approvedVia: "trust" as const } : {}),
       },
     };
 
@@ -646,31 +747,83 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     debouncedSave(get().saveReviewState);
   },
 
+  addAnnotation: (filePath, lineNumber, side, content) => {
+    const { reviewState } = get();
+    if (!reviewState) return "";
+
+    const id = `${filePath}:${lineNumber}:${side}:${Date.now()}`;
+    const newAnnotation: LineAnnotation = {
+      id,
+      filePath,
+      lineNumber,
+      side,
+      content,
+      createdAt: new Date().toISOString(),
+    };
+
+    const newState = {
+      ...reviewState,
+      annotations: [...(reviewState.annotations ?? []), newAnnotation],
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({ reviewState: newState });
+    debouncedSave(get().saveReviewState);
+    return id;
+  },
+
+  updateAnnotation: (annotationId, content) => {
+    const { reviewState } = get();
+    if (!reviewState) return;
+
+    const annotations = (reviewState.annotations ?? []).map((a) =>
+      a.id === annotationId ? { ...a, content } : a,
+    );
+
+    const newState = {
+      ...reviewState,
+      annotations,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({ reviewState: newState });
+    debouncedSave(get().saveReviewState);
+  },
+
+  deleteAnnotation: (annotationId) => {
+    const { reviewState } = get();
+    if (!reviewState) return;
+
+    const annotations = (reviewState.annotations ?? []).filter(
+      (a) => a.id !== annotationId,
+    );
+
+    const newState = {
+      ...reviewState,
+      annotations,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({ reviewState: newState });
+    debouncedSave(get().saveReviewState);
+  },
+
+  getAnnotationsForFile: (filePath) => {
+    const { reviewState } = get();
+    if (!reviewState) return [];
+    return (reviewState.annotations ?? []).filter(
+      (a) => a.filePath === filePath,
+    );
+  },
+
   addTrustPattern: (pattern) => {
     const { reviewState } = get();
     if (!reviewState) return;
 
     if (reviewState.trustList.includes(pattern)) return;
 
-    // Auto-approve all hunks that have labels matching this pattern (supports glob patterns like imports:*)
-    const newHunks = { ...reviewState.hunks };
-    for (const [hunkId, hunkState] of Object.entries(newHunks)) {
-      const labels = hunkState.label || [];
-      if (
-        labels.length > 0 &&
-        anyLabelMatchesPattern(labels, pattern) &&
-        !hunkState.approvedVia
-      ) {
-        newHunks[hunkId] = {
-          ...hunkState,
-          approvedVia: "trust",
-        };
-      }
-    }
-
     const newState = {
       ...reviewState,
-      hunks: newHunks,
       trustList: [...reviewState.trustList, pattern],
       updatedAt: new Date().toISOString(),
     };
@@ -683,25 +836,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const { reviewState } = get();
     if (!reviewState) return;
 
-    // Revoke trust approval for hunks that matched this pattern (supports glob patterns like imports:*)
-    const newHunks = { ...reviewState.hunks };
-    for (const [hunkId, hunkState] of Object.entries(newHunks)) {
-      const labels = hunkState.label || [];
-      if (
-        labels.length > 0 &&
-        anyLabelMatchesPattern(labels, pattern) &&
-        hunkState.approvedVia === "trust"
-      ) {
-        newHunks[hunkId] = {
-          ...hunkState,
-          approvedVia: undefined,
-        };
-      }
-    }
-
     const newState = {
       ...reviewState,
-      hunks: newHunks,
       trustList: reviewState.trustList.filter((p) => p !== pattern),
       updatedAt: new Date().toISOString(),
     };
@@ -715,9 +851,48 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     setPreference("sidebarPosition", position);
   },
 
+  setCodeFontSize: (size) => {
+    set({ codeFontSize: size });
+    setPreference("codeFontSize", size);
+    // Update CSS variables for global font size and UI scale
+    document.documentElement.style.setProperty("--code-font-size", `${size}px`);
+    document.documentElement.style.setProperty(
+      "--ui-scale",
+      String(size / CODE_FONT_SIZE_DEFAULT),
+    );
+  },
+
+  setCodeTheme: (theme) => {
+    set({ codeTheme: theme });
+    setPreference("codeTheme", theme);
+  },
+
   loadPreferences: async () => {
     const position = await getPreference("sidebarPosition");
-    set({ sidebarPosition: position });
+    const fontSize = await getPreference("codeFontSize");
+    const theme = await getPreference("codeTheme");
+    const autoClassify = await getPreference("autoClassifyEnabled");
+    const classifyCmd = await getPreference("classifyCommand");
+    const batchSize = await getPreference("classifyBatchSize");
+    const maxConcurrent = await getPreference("classifyMaxConcurrent");
+    set({
+      sidebarPosition: position,
+      codeFontSize: fontSize,
+      codeTheme: theme,
+      autoClassifyEnabled: autoClassify,
+      classifyCommand: classifyCmd,
+      classifyBatchSize: batchSize,
+      classifyMaxConcurrent: maxConcurrent,
+    });
+    // Apply font size CSS variables
+    document.documentElement.style.setProperty(
+      "--code-font-size",
+      `${fontSize}px`,
+    );
+    document.documentElement.style.setProperty(
+      "--ui-scale",
+      String(fontSize / CODE_FONT_SIZE_DEFAULT),
+    );
   },
 
   revealFileInTree: (path) => {
@@ -738,76 +913,249 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
   },
 
-  classifyUnlabeledHunks: async () => {
-    const { repoPath, hunks, reviewState } = get();
+  classifyUnlabeledHunks: async (hunkIds) => {
+    const {
+      repoPath,
+      hunks,
+      reviewState,
+      classifyCommand,
+      classifyBatchSize,
+      classifyMaxConcurrent,
+    } = get();
     if (!repoPath || !reviewState) return;
 
-    // Find hunks without labels
-    const unlabeledHunks = hunks.filter((hunk) => {
+    // Increment generation for cancellation
+    classifyGeneration++;
+    const currentGeneration = classifyGeneration;
+
+    // Find hunks to classify - filter to specified ids if provided, then always filter out already-labeled
+    let candidateHunks = hunkIds
+      ? hunks.filter((h) => hunkIds.includes(h.id))
+      : hunks;
+
+    // Always filter out hunks that have already been classified
+    // A hunk is considered classified if it has a label OR reasoning (reasoning without label means "needs manual review")
+    let hunksToClassify = candidateHunks.filter((hunk) => {
       const state = reviewState.hunks[hunk.id];
-      return !state?.label || state.label.length === 0;
+      const hasLabel = state?.label && state.label.length > 0;
+      const hasReasoning = !!state?.reasoning;
+      return !hasLabel && !hasReasoning;
     });
 
-    if (unlabeledHunks.length === 0) {
-      set({ classificationError: "All hunks already have labels" });
+    // Log what we're doing for debugging
+    const alreadyClassifiedCount =
+      candidateHunks.length - hunksToClassify.length;
+    if (alreadyClassifiedCount > 0) {
+      console.log(
+        `[classifyUnlabeledHunks] Skipping ${alreadyClassifiedCount} already-classified hunks`,
+      );
+    }
+
+    if (hunksToClassify.length === 0) {
+      console.log("[classifyUnlabeledHunks] No unclassified hunks to classify");
+      if (!hunkIds) {
+        set({ classificationError: "All hunks already classified" });
+      }
       return;
     }
 
-    set({ classifying: true, classificationError: null });
+    console.log(
+      `[classifyUnlabeledHunks] Classifying ${hunksToClassify.length} hunks: ${hunksToClassify.map((h) => h.id).join(", ")}`,
+    );
+
+    // Track which hunks are being classified
+    const classifyingIds = new Set(hunksToClassify.map((h) => h.id));
+    set({
+      classifying: true,
+      classificationError: null,
+      classifyingHunkIds: classifyingIds,
+    });
+
+    // Set up listener for batch completion events to update progress
+    let unlisten: UnlistenFn | null = null;
+    try {
+      unlisten = await listen<string[]>("classify:batch-complete", (event) => {
+        const completedIds = event.payload;
+        console.log(
+          `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks`,
+        );
+        // Remove completed IDs from the classifying set
+        set((state) => {
+          const newSet = new Set(state.classifyingHunkIds);
+          for (const id of completedIds) {
+            newSet.delete(id);
+          }
+          return { classifyingHunkIds: newSet };
+        });
+      });
+    } catch (err) {
+      console.warn(
+        "[classifyUnlabeledHunks] Failed to set up progress listener:",
+        err,
+      );
+    }
 
     try {
       // Prepare hunk inputs for classification
-      const hunkInputs = unlabeledHunks.map((hunk) => ({
+      const hunkInputs = hunksToClassify.map((hunk) => ({
         id: hunk.id,
         filePath: hunk.filePath,
         content: hunk.content,
       }));
+
+      console.log(
+        `[classifyUnlabeledHunks] Calling classify_hunks_with_claude (gen=${currentGeneration}, batchSize=${classifyBatchSize}, maxConcurrent=${classifyMaxConcurrent})`,
+      );
 
       const response = await invoke<ClassifyResponse>(
         "classify_hunks_with_claude",
         {
           repoPath,
           hunks: hunkInputs,
+          command: classifyCommand || undefined,
+          batchSize: classifyBatchSize,
+          maxConcurrent: classifyMaxConcurrent,
         },
       );
 
+      // Clean up listener
+      if (unlisten) unlisten();
+
+      console.log(
+        `[classifyUnlabeledHunks] Got response with ${Object.keys(response.classifications).length} classifications (gen=${currentGeneration}, current=${classifyGeneration})`,
+      );
+
+      // Check if this classification was cancelled
+      if (currentGeneration !== classifyGeneration) {
+        console.log("[classifyUnlabeledHunks] Cancelled - stale generation");
+        set({ classifying: false, classifyingHunkIds: new Set<string>() });
+        return;
+      }
+
+      // Get fresh review state (may have changed during classification)
+      const freshState = get().reviewState;
+      if (!freshState) return;
+
       // Apply classifications to review state
-      const newHunks = { ...reviewState.hunks };
+      const newHunks = { ...freshState.hunks };
+      const classifiedIds: string[] = [];
       for (const [hunkId, classification] of Object.entries(
         response.classifications,
       )) {
-        const labels = classification.label;
-        const existingHunk = newHunks[hunkId] || {};
-
-        // Check if any label matches trust list for auto-approval
-        const shouldAutoApprove =
-          !existingHunk.approvedVia &&
-          anyLabelMatchesAnyPattern(labels, reviewState.trustList);
-
+        const existingHunk = newHunks[hunkId];
         newHunks[hunkId] = {
           ...existingHunk,
-          label: labels,
+          label: classification.label,
           reasoning: classification.reasoning,
-          ...(shouldAutoApprove ? { approvedVia: "trust" as const } : {}),
         };
+        classifiedIds.push(hunkId);
       }
 
+      console.log(
+        `[classifyUnlabeledHunks] Applied labels to ${classifiedIds.length} hunks`,
+      );
+
       const newState = {
-        ...reviewState,
+        ...freshState,
         hunks: newHunks,
         updatedAt: new Date().toISOString(),
       };
 
-      set({ reviewState: newState, classifying: false });
+      set({
+        reviewState: newState,
+        classifying: false,
+        classifyingHunkIds: new Set<string>(),
+      });
       // Save immediately after classification
-      get().saveReviewState();
+      await get().saveReviewState();
+      console.log("[classifyUnlabeledHunks] Review state saved");
     } catch (err) {
-      console.error("Classification failed:", err);
+      // Clean up listener
+      if (unlisten) unlisten();
+
+      // Check if this classification was cancelled
+      if (currentGeneration !== classifyGeneration) {
+        console.log(
+          "[classifyUnlabeledHunks] Error handler: stale generation, ignoring",
+        );
+        set({ classifying: false, classifyingHunkIds: new Set<string>() });
+        return;
+      }
+      console.error("[classifyUnlabeledHunks] Classification failed:", err);
       set({
         classifying: false,
+        classifyingHunkIds: new Set<string>(),
         classificationError: err instanceof Error ? err.message : String(err),
       });
     }
+  },
+
+  triggerAutoClassification: () => {
+    const {
+      claudeAvailable,
+      autoClassifyEnabled,
+      hunks,
+      reviewState,
+      classifying,
+    } = get();
+
+    // Don't trigger if already classifying
+    if (classifying) {
+      console.log("[triggerAutoClassification] Already classifying, skipping");
+      return;
+    }
+
+    if (!claudeAvailable || !autoClassifyEnabled || !reviewState) {
+      console.log(
+        `[triggerAutoClassification] Skipped - claude: ${claudeAvailable}, autoClassify: ${autoClassifyEnabled}, hasState: ${!!reviewState}`,
+      );
+      return;
+    }
+
+    // Find unclassified hunks (just for logging - actual filtering happens in classifyUnlabeledHunks)
+    // A hunk is considered classified if it has a label OR reasoning
+    const unclassifiedHunks = hunks.filter((hunk) => {
+      const state = reviewState.hunks[hunk.id];
+      const hasLabel = state?.label && state.label.length > 0;
+      const hasReasoning = !!state?.reasoning;
+      return !hasLabel && !hasReasoning;
+    });
+
+    if (unclassifiedHunks.length === 0) {
+      console.log(
+        "[triggerAutoClassification] No unclassified hunks, skipping",
+      );
+      return;
+    }
+
+    console.log(
+      `[triggerAutoClassification] Scheduling classification for ${unclassifiedHunks.length} unclassified hunks`,
+    );
+
+    // Use debounced classification
+    debouncedAutoClassify(async () => {
+      await get().classifyUnlabeledHunks();
+    });
+  },
+
+  setAutoClassifyEnabled: (enabled) => {
+    set({ autoClassifyEnabled: enabled });
+    setPreference("autoClassifyEnabled", enabled);
+  },
+
+  setClassifyCommand: (command) => {
+    set({ classifyCommand: command });
+    setPreference("classifyCommand", command);
+  },
+
+  setClassifyBatchSize: (size) => {
+    set({ classifyBatchSize: size });
+    setPreference("classifyBatchSize", size);
+  },
+
+  setClassifyMaxConcurrent: (count) => {
+    set({ classifyMaxConcurrent: count });
+    setPreference("classifyMaxConcurrent", count);
   },
 
   completeReview: () => {
@@ -832,13 +1180,12 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     // Find all rejected hunks
     const rejections: RejectionFeedback["rejections"] = [];
     for (const [hunkId, hunkState] of Object.entries(reviewState.hunks)) {
-      if (hunkState.rejected) {
+      if (hunkState.status === "rejected") {
         const hunk = hunks.find((h) => h.id === hunkId);
         if (hunk) {
           rejections.push({
             hunkId,
             filePath: hunk.filePath,
-            notes: hunkState.notes,
             content: hunk.content,
           });
         }
@@ -855,7 +1202,18 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   },
 
   refresh: async () => {
-    const { loadFiles, loadAllFiles, loadReviewState } = get();
-    await Promise.all([loadFiles(), loadAllFiles(), loadReviewState()]);
+    const {
+      loadFiles,
+      loadAllFiles,
+      loadReviewState,
+      loadGitStatus,
+      triggerAutoClassification,
+    } = get();
+    // Load review state FIRST to ensure labels are available before auto-classification
+    await loadReviewState();
+    // Then load files and git status (skip auto-classify since we'll trigger it manually after)
+    await Promise.all([loadFiles(true), loadAllFiles(), loadGitStatus()]);
+    // Now trigger auto-classification with the fresh review state
+    triggerAutoClassification();
   },
 }));

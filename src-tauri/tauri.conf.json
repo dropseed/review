@@ -13,13 +13,14 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Compare",
+        "title": "Loading...",
         "width": 1100,
         "height": 750,
         "resizable": true,
         "fullscreen": false,
         "minWidth": 800,
-        "minHeight": 600
+        "minHeight": 600,
+        "tabbingIdentifier": "compare-main"
       }
     ],
     "security": {

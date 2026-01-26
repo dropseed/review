@@ -1,15 +1,33 @@
 import { load, Store } from "@tauri-apps/plugin-store";
 
+// Font size in pixels
+export const CODE_FONT_SIZE_DEFAULT = 13;
+export const CODE_FONT_SIZE_MIN = 8;
+export const CODE_FONT_SIZE_MAX = 32;
+export const CODE_FONT_SIZE_STEP = 1;
+
 export interface Preferences {
   sidebarPosition: "left" | "right";
   sidebarWidth: number;
   editorCommand: string | null;
+  codeFontSize: number; // pixels
+  codeTheme: string;
+  autoClassifyEnabled: boolean;
+  classifyCommand: string | null;
+  classifyBatchSize: number; // hunks per Claude call (1-10)
+  classifyMaxConcurrent: number; // max concurrent Claude calls (1-5)
 }
 
 const defaults: Preferences = {
   sidebarPosition: "left",
   sidebarWidth: 288,
   editorCommand: null,
+  codeFontSize: CODE_FONT_SIZE_DEFAULT,
+  codeTheme: "github-dark",
+  autoClassifyEnabled: true,
+  classifyCommand: null,
+  classifyBatchSize: 5,
+  classifyMaxConcurrent: 2,
 };
 
 // Global preferences store (persisted across sessions)
@@ -57,6 +75,21 @@ export async function getAllPreferences(): Promise<Preferences> {
         (await s.get<number>("sidebarWidth")) ?? defaults.sidebarWidth,
       editorCommand:
         (await s.get<string | null>("editorCommand")) ?? defaults.editorCommand,
+      codeFontSize:
+        (await s.get<number>("codeFontSize")) ?? defaults.codeFontSize,
+      codeTheme: (await s.get<string>("codeTheme")) ?? defaults.codeTheme,
+      autoClassifyEnabled:
+        (await s.get<boolean>("autoClassifyEnabled")) ??
+        defaults.autoClassifyEnabled,
+      classifyCommand:
+        (await s.get<string | null>("classifyCommand")) ??
+        defaults.classifyCommand,
+      classifyBatchSize:
+        (await s.get<number>("classifyBatchSize")) ??
+        defaults.classifyBatchSize,
+      classifyMaxConcurrent:
+        (await s.get<number>("classifyMaxConcurrent")) ??
+        defaults.classifyMaxConcurrent,
     };
   } catch {
     return defaults;

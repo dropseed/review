@@ -4,13 +4,23 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { FileTree } from "./components/FileTree";
 import { CodeViewer } from "./components/CodeViewer";
-import { ReviewFilePanel } from "./components/ReviewFilePanel";
+import { FilesPanel } from "./components/FilesPanel";
 import { ComparisonSelector } from "./components/ComparisonSelector";
 import { DebugModal } from "./components/DebugModal";
-import { TrustPatternsPanel } from "./components/TrustPatternsPanel";
+import { TrustModal } from "./components/TrustModal";
+import { SettingsModal } from "./components/SettingsModal";
+import { GitStatusIndicator } from "./components/GitStatusIndicator";
+import { StartScreen } from "./components/StartScreen";
 import { useReviewStore } from "./stores/reviewStore";
+import { isHunkTrusted, makeComparison, type Comparison } from "./types";
+import {
+  CODE_FONT_SIZE_DEFAULT,
+  CODE_FONT_SIZE_MIN,
+  CODE_FONT_SIZE_MAX,
+  CODE_FONT_SIZE_STEP,
+} from "./utils/preferences";
+import { setLoggerRepoPath, clearLog } from "./utils/logger";
 
 // Get repo path from URL query parameter (for multi-window support)
 function getRepoPathFromUrl(): string | null {
@@ -18,21 +28,39 @@ function getRepoPathFromUrl(): string | null {
   return params.get("repo");
 }
 
-type SidebarMode = "review" | "files" | "trust";
+// Get comparison key from URL query parameter (for multi-window support)
+function getComparisonKeyFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("comparison");
+}
+
+// Parse comparison key back into a Comparison object
+// Key format: "old..new" or "old..new+working-tree"
+function parseComparisonKey(key: string): Comparison | null {
+  const workingTree = key.endsWith("+working-tree");
+  const cleanKey = workingTree ? key.replace("+working-tree", "") : key;
+
+  const parts = cleanKey.split("..");
+  if (parts.length !== 2) return null;
+
+  const [oldRef, newRef] = parts;
+  if (!oldRef || !newRef) return null;
+
+  return makeComparison(oldRef, newRef, workingTree);
+}
 
 function App() {
   const {
     repoPath,
     setRepoPath,
     selectedFile,
-    setSelectedFile,
-    files,
     comparison,
     setComparison,
     loadFiles,
     loadAllFiles,
     loadReviewState,
-    loadCurrentComparison,
+    loadGitStatus,
+    saveCurrentComparison,
     reviewState,
     hunks,
     nextFile,
@@ -40,27 +68,26 @@ function App() {
     nextHunk,
     prevHunk,
     sidebarPosition,
-    setSidebarPosition,
+    codeFontSize,
+    setCodeFontSize,
     loadPreferences,
-    revealFileInTree,
     refresh,
+    classifyingHunkIds,
+    checkClaudeAvailable,
+    triggerAutoClassification,
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(false);
 
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("review");
-  const [sidebarWidth, setSidebarWidth] = useState(288); // 18rem = 288px
+  // Start screen state - show by default unless URL has comparison
+  const [showStartScreen, setShowStartScreen] = useState(true);
+
+  const [sidebarWidth, setSidebarWidth] = useState(19.2); // in rem (288px / 15px base)
   const [showDebugModal, setShowDebugModal] = useState(false);
+  const [showTrustModal, setShowTrustModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const isResizing = useRef(false);
-
-  // Reveal file in the files panel
-  const handleRevealInTree = useCallback(
-    (path: string) => {
-      setSidebarMode("files");
-      revealFileInTree(path);
-    },
-    [revealFileInTree],
-  );
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -76,7 +103,8 @@ function App() {
   // Load preferences on mount
   useEffect(() => {
     loadPreferences();
-  }, [loadPreferences]);
+    checkClaudeAvailable();
+  }, [loadPreferences, checkClaudeAvailable]);
 
   // Register global shortcut to focus the app (Cmd/Ctrl+Shift+R)
   useEffect(() => {
@@ -107,6 +135,8 @@ function App() {
     const urlRepoPath = getRepoPathFromUrl();
     if (urlRepoPath) {
       setRepoPath(urlRepoPath);
+      setLoggerRepoPath(urlRepoPath);
+      clearLog(); // Start fresh each session
       return;
     }
 
@@ -114,6 +144,8 @@ function App() {
     invoke<string>("get_current_repo")
       .then((path) => {
         setRepoPath(path);
+        setLoggerRepoPath(path);
+        clearLog(); // Start fresh each session
       })
       .catch(console.error);
   }, [setRepoPath]);
@@ -136,26 +168,99 @@ function App() {
     }
   }, []);
 
-  // Load current comparison when repo path changes
-  useEffect(() => {
-    if (repoPath) {
-      loadCurrentComparison();
-    }
-  }, [repoPath, loadCurrentComparison]);
+  // Track if comparison has been initialized for this repo
+  const [comparisonReady, setComparisonReady] = useState(false);
 
-  // Load files and review state when repo path or comparison changes
+  // Handle selecting a review from the start screen
+  const handleSelectReview = useCallback(
+    (selectedComparison: Comparison) => {
+      setComparison(selectedComparison);
+      saveCurrentComparison();
+      setComparisonReady(true);
+      setInitialLoading(true);
+      setShowStartScreen(false);
+    },
+    [setComparison, saveCurrentComparison],
+  );
+
+  // Handle going back to the start screen
+  const handleBackToStart = useCallback(() => {
+    setShowStartScreen(true);
+  }, []);
+
+  // Check URL for comparison when repo path changes
+  // If URL has comparison, skip start screen; otherwise show start screen
   useEffect(() => {
     if (repoPath) {
+      setComparisonReady(false);
+
+      // Check URL for comparison (multi-window support with specific comparison)
+      const urlComparisonKey = getComparisonKeyFromUrl();
+      if (urlComparisonKey) {
+        const parsedComparison = parseComparisonKey(urlComparisonKey);
+        if (parsedComparison) {
+          setComparison(parsedComparison);
+          setComparisonReady(true);
+          setInitialLoading(true);
+          setShowStartScreen(false); // Skip start screen if URL has comparison
+          return;
+        }
+      }
+
+      // No URL comparison - show start screen
+      setShowStartScreen(true);
+      setComparisonReady(false);
+    }
+  }, [repoPath, setComparison]);
+
+  // Update window title when comparison changes
+  useEffect(() => {
+    if (repoPath) {
+      const repoName = repoPath.split("/").pop() || "Repository";
+      if (showStartScreen || !comparisonReady) {
+        // Just show repo name on start screen
+        getCurrentWindow().setTitle(repoName).catch(console.error);
+      } else {
+        const compareDisplay =
+          comparison.workingTree && comparison.new === "HEAD"
+            ? "Working Tree"
+            : comparison.new;
+        const title = `${repoName} — ${comparison.old}..${compareDisplay}`;
+        getCurrentWindow().setTitle(title).catch(console.error);
+      }
+    }
+  }, [repoPath, comparisonReady, comparison, showStartScreen]);
+
+  // Load files and review state when comparison is ready and not on start screen
+  useEffect(() => {
+    if (repoPath && comparisonReady && !showStartScreen) {
       const loadData = async () => {
         try {
-          await Promise.all([loadFiles(), loadAllFiles(), loadReviewState()]);
+          // Load review state FIRST to ensure labels are available before auto-classification
+          await loadReviewState();
+          // Then load files (skip auto-classify) and other data in parallel
+          await Promise.all([loadFiles(true), loadAllFiles(), loadGitStatus()]);
+          // Now trigger auto-classification with the loaded review state
+          triggerAutoClassification();
         } catch (err) {
           console.error("Failed to load data:", err);
+        } finally {
+          setInitialLoading(false);
         }
       };
       loadData();
     }
-  }, [repoPath, comparison.key, loadFiles, loadAllFiles, loadReviewState]);
+  }, [
+    repoPath,
+    comparisonReady,
+    showStartScreen,
+    comparison.key,
+    loadFiles,
+    loadAllFiles,
+    loadReviewState,
+    loadGitStatus,
+    triggerAutoClassification,
+  ]);
 
   // Sidebar resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -169,10 +274,14 @@ function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing.current) return;
       // Calculate width based on sidebar position
-      const newWidth =
-        sidebarPosition === "left"
-          ? Math.max(200, Math.min(600, e.clientX))
-          : Math.max(200, Math.min(600, window.innerWidth - e.clientX));
+      // Get the root font size to convert pixels to rem
+      const rootFontSize = parseFloat(
+        getComputedStyle(document.documentElement).fontSize,
+      );
+      const pixelWidth =
+        sidebarPosition === "left" ? e.clientX : window.innerWidth - e.clientX;
+      // Convert to rem and clamp between 13.33rem (200px) and 40rem (600px)
+      const newWidth = Math.max(13.33, Math.min(40, pixelWidth / rootFontSize));
       setSidebarWidth(newWidth);
     };
 
@@ -221,6 +330,45 @@ function App() {
         return;
       }
 
+      // Cmd/Ctrl+, to open settings modal
+      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+        event.preventDefault();
+        setShowSettingsModal(true);
+        return;
+      }
+
+      // Cmd/Ctrl++ to increase font size
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        (event.key === "=" || event.key === "+")
+      ) {
+        event.preventDefault();
+        const newSize = Math.min(
+          codeFontSize + CODE_FONT_SIZE_STEP,
+          CODE_FONT_SIZE_MAX,
+        );
+        setCodeFontSize(newSize);
+        return;
+      }
+
+      // Cmd/Ctrl+- to decrease font size
+      if ((event.metaKey || event.ctrlKey) && event.key === "-") {
+        event.preventDefault();
+        const newSize = Math.max(
+          codeFontSize - CODE_FONT_SIZE_STEP,
+          CODE_FONT_SIZE_MIN,
+        );
+        setCodeFontSize(newSize);
+        return;
+      }
+
+      // Cmd/Ctrl+0 to reset font size to default
+      if ((event.metaKey || event.ctrlKey) && event.key === "0") {
+        event.preventDefault();
+        setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
+        return;
+      }
+
       switch (event.key) {
         case "j":
           nextHunk();
@@ -248,7 +396,15 @@ function App() {
           break;
       }
     },
-    [nextFile, prevFile, nextHunk, prevHunk, handleOpenRepo],
+    [
+      nextFile,
+      prevFile,
+      nextHunk,
+      prevHunk,
+      handleOpenRepo,
+      codeFontSize,
+      setCodeFontSize,
+    ],
   );
 
   useEffect(() => {
@@ -256,40 +412,109 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  // Listen for menu events
+  // Refs for menu event handlers to avoid stale closures
+  const handleOpenRepoRef = useRef(handleOpenRepo);
+  const handleRefreshRef = useRef(handleRefresh);
+  const codeFontSizeRef = useRef(codeFontSize);
+  const setCodeFontSizeRef = useRef(setCodeFontSize);
   useEffect(() => {
+    handleOpenRepoRef.current = handleOpenRepo;
+    handleRefreshRef.current = handleRefresh;
+    codeFontSizeRef.current = codeFontSize;
+    setCodeFontSizeRef.current = setCodeFontSize;
+  }, [handleOpenRepo, handleRefresh, codeFontSize, setCodeFontSize]);
+
+  // Listen for menu events (setup once, use refs to avoid re-subscribing)
+  useEffect(() => {
+    let cancelled = false;
     const unlistenFns: (() => void)[] = [];
 
-    listen("menu:open-repo", () => {
-      handleOpenRepo();
-    })
-      .then((fn) => unlistenFns.push(fn))
-      .catch((err) =>
-        console.error("Failed to listen for menu:open-repo:", err),
-      );
+    const setupListeners = async () => {
+      try {
+        const unlisten1 = await listen("menu:open-repo", () => {
+          handleOpenRepoRef.current();
+        });
+        if (cancelled) {
+          unlisten1();
+          return;
+        }
+        unlistenFns.push(unlisten1);
 
-    listen<string>("menu:sidebar-position", (event) => {
-      if (event.payload === "left" || event.payload === "right") {
-        setSidebarPosition(event.payload);
+        const unlisten2 = await listen("menu:show-debug", () => {
+          setShowDebugModal(true);
+        });
+        if (cancelled) {
+          unlisten2();
+          return;
+        }
+        unlistenFns.push(unlisten2);
+
+        const unlisten3 = await listen("menu:open-settings", () => {
+          setShowSettingsModal(true);
+        });
+        if (cancelled) {
+          unlisten3();
+          return;
+        }
+        unlistenFns.push(unlisten3);
+
+        const unlisten4 = await listen("menu:refresh", () => {
+          handleRefreshRef.current();
+        });
+        if (cancelled) {
+          unlisten4();
+          return;
+        }
+        unlistenFns.push(unlisten4);
+
+        const unlisten5 = await listen("menu:zoom-in", () => {
+          setCodeFontSizeRef.current(
+            Math.min(
+              codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
+              CODE_FONT_SIZE_MAX,
+            ),
+          );
+        });
+        if (cancelled) {
+          unlisten5();
+          return;
+        }
+        unlistenFns.push(unlisten5);
+
+        const unlisten6 = await listen("menu:zoom-out", () => {
+          setCodeFontSizeRef.current(
+            Math.max(
+              codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
+              CODE_FONT_SIZE_MIN,
+            ),
+          );
+        });
+        if (cancelled) {
+          unlisten6();
+          return;
+        }
+        unlistenFns.push(unlisten6);
+
+        const unlisten7 = await listen("menu:zoom-reset", () => {
+          setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT);
+        });
+        if (cancelled) {
+          unlisten7();
+          return;
+        }
+        unlistenFns.push(unlisten7);
+      } catch (err) {
+        console.error("Failed to setup menu listeners:", err);
       }
-    })
-      .then((fn) => unlistenFns.push(fn))
-      .catch((err) =>
-        console.error("Failed to listen for menu:sidebar-position:", err),
-      );
+    };
 
-    listen("menu:show-debug", () => {
-      setShowDebugModal(true);
-    })
-      .then((fn) => unlistenFns.push(fn))
-      .catch((err) =>
-        console.error("Failed to listen for menu:show-debug:", err),
-      );
+    setupListeners();
 
     return () => {
+      cancelled = true;
       unlistenFns.forEach((fn) => fn());
     };
-  }, [handleOpenRepo, setSidebarPosition]);
+  }, []); // Empty deps - setup once, use refs for current values
 
   // Start file watcher when repo is loaded
   useEffect(() => {
@@ -309,64 +534,82 @@ function App() {
   }, [repoPath]);
 
   // Listen for file watcher events
+  // Use refs to avoid stale closures in event handlers
+  const repoPathRef = useRef(repoPath);
+  const loadReviewStateRef = useRef(loadReviewState);
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    repoPathRef.current = repoPath;
+    loadReviewStateRef.current = loadReviewState;
+    refreshRef.current = refresh;
+  }, [repoPath, loadReviewState, refresh]);
+
   useEffect(() => {
     if (!repoPath) return;
 
+    let cancelled = false;
     const unlistenFns: (() => void)[] = [];
 
-    // Review state changed externally
-    listen<string>("review-state-changed", (event) => {
-      console.log(
-        "[watcher] Received review-state-changed event:",
-        event.payload,
-      );
-      if (event.payload === repoPath) {
-        console.log("[watcher] Reloading review state...");
-        loadReviewState();
-      }
-    })
-      .then((fn) => {
+    const setupListeners = async () => {
+      try {
+        // Review state changed externally
+        const unlistenReview = await listen<string>(
+          "review-state-changed",
+          (event) => {
+            console.log(
+              "[watcher] Received review-state-changed event:",
+              event.payload,
+            );
+            if (event.payload === repoPathRef.current) {
+              console.log("[watcher] Reloading review state...");
+              loadReviewStateRef.current();
+            }
+          },
+        );
+        if (cancelled) {
+          unlistenReview();
+          return;
+        }
+        unlistenFns.push(unlistenReview);
         console.log("[watcher] Listening for review-state-changed");
-        unlistenFns.push(fn);
-      })
-      .catch((err) =>
-        console.error(
-          "[watcher] Failed to listen for review-state-changed:",
-          err,
-        ),
-      );
 
-    // Git state changed (branch switch, new commit, etc.)
-    listen<string>("git-changed", (event) => {
-      console.log("[watcher] Received git-changed event:", event.payload);
-      if (event.payload === repoPath) {
-        console.log("[watcher] Refreshing...");
-        refresh();
-      }
-    })
-      .then((fn) => {
+        // Git state changed (branch switch, new commit, etc.)
+        const unlistenGit = await listen<string>("git-changed", (event) => {
+          console.log("[watcher] Received git-changed event:", event.payload);
+          if (event.payload === repoPathRef.current) {
+            console.log("[watcher] Refreshing...");
+            refreshRef.current();
+          }
+        });
+        if (cancelled) {
+          unlistenGit();
+          return;
+        }
+        unlistenFns.push(unlistenGit);
         console.log("[watcher] Listening for git-changed");
-        unlistenFns.push(fn);
-      })
-      .catch((err) =>
-        console.error("[watcher] Failed to listen for git-changed:", err),
-      );
+      } catch (err) {
+        console.error("[watcher] Failed to setup listeners:", err);
+      }
+    };
+
+    setupListeners();
 
     return () => {
+      cancelled = true;
       unlistenFns.forEach((fn) => fn());
     };
-  }, [repoPath, loadReviewState, refresh]);
+  }, [repoPath]);
 
   // Calculate review progress
   const totalHunks = hunks.length;
   const trustedHunks = reviewState
-    ? Object.values(reviewState.hunks).filter((h) => h.approvedVia === "trust")
-        .length
+    ? hunks.filter((h) => {
+        const state = reviewState.hunks[h.id];
+        return !state?.status && isHunkTrusted(state, reviewState.trustList);
+      }).length
     : 0;
   const approvedHunks = reviewState
-    ? Object.values(reviewState.hunks).filter(
-        (h) => h.approvedVia === "manual" || h.approvedVia === "ai",
-      ).length
+    ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "approved").length
     : 0;
   const reviewedHunks = trustedHunks + approvedHunks;
 
@@ -381,32 +624,38 @@ function App() {
     );
   }
 
-  const repoName = repoPath.split("/").pop() || "Repository";
+  // Show start screen when no comparison is selected
+  if (showStartScreen) {
+    return (
+      <StartScreen repoPath={repoPath} onSelectReview={handleSelectReview} />
+    );
+  }
+
+  // Show loading indicator during initial load
+  if (initialLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-stone-950">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-lime-500 animate-spin" />
+          <p className="text-stone-400">Loading review...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
         <div className="flex items-center gap-4">
-          {/* Repo name */}
-          <h1 className="text-sm font-medium text-stone-100">{repoName}</h1>
-
-          {/* Comparison selector */}
-          <ComparisonSelector
-            repoPath={repoPath}
-            value={comparison}
-            onChange={setComparison}
-          />
-
-          {/* Refresh button */}
+          {/* Back to start button */}
           <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="p-1.5 rounded-md text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Refresh (reload files and review state)"
+            onClick={handleBackToStart}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
+            title="Back to reviews"
           >
             <svg
-              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+              className="h-4 w-4"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -414,55 +663,120 @@ function App() {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 21h5v-5" />
+              <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
           </button>
+
+          {/* Comparison selector */}
+          <ComparisonSelector
+            repoPath={repoPath}
+            value={comparison}
+            onChange={setComparison}
+          />
         </div>
 
-        {/* Progress indicator */}
-        {totalHunks > 0 && (
-          <div className="group relative flex items-center gap-2">
-            <span className="text-xs text-stone-500">Reviewed</span>
-            <span className="font-mono text-xs tabular-nums text-stone-400">
-              {reviewedHunks}/{totalHunks}
-            </span>
-            <div className="progress-bar w-24">
-              {/* Trusted segment (left) */}
+        {/* Progress indicator and Trust button */}
+        <div className="flex items-center gap-3">
+          {totalHunks > 0 ? (
+            <div className="group relative flex items-center gap-2">
+              <span className="text-xs text-stone-500">Reviewed</span>
+              <span className="font-mono text-xs tabular-nums text-stone-400">
+                {reviewedHunks}/{totalHunks}
+              </span>
+              <div className="progress-bar w-24">
+                {/* Trusted segment (left) */}
+                <div
+                  className="progress-bar-trusted"
+                  style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
+                />
+                {/* Approved segment (right of trusted) */}
+                <div
+                  className="progress-bar-approved"
+                  style={{
+                    width: `${(approvedHunks / totalHunks) * 100}%`,
+                    left: `${(trustedHunks / totalHunks) * 100}%`,
+                  }}
+                />
+              </div>
+              {/* Hover tooltip */}
               <div
-                className="progress-bar-trusted"
-                style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
-              />
-              {/* Approved segment (right of trusted) */}
-              <div
-                className="progress-bar-approved"
-                style={{
-                  width: `${(approvedHunks / totalHunks) * 100}%`,
-                  left: `${(trustedHunks / totalHunks) * 100}%`,
-                }}
-              />
+                className="absolute top-full right-0 mt-1 hidden group-hover:block
+                              bg-stone-900 border border-stone-700 rounded px-2 py-1.5
+                              text-xs whitespace-nowrap z-50 shadow-lg"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-sky-500" />
+                  <span className="text-stone-300">
+                    Trusted: {trustedHunks}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-lime-500" />
+                  <span className="text-stone-300">
+                    Approved: {approvedHunks}
+                  </span>
+                </div>
+              </div>
             </div>
-            {/* Hover tooltip */}
-            <div
-              className="absolute top-full right-0 mt-1 hidden group-hover:block
-                            bg-stone-900 border border-stone-700 rounded px-2 py-1.5
-                            text-xs whitespace-nowrap z-50 shadow-lg"
+          ) : (
+            <span className="text-xs text-stone-500">Nothing to review</span>
+          )}
+
+          {/* Classification progress indicator */}
+          {classifyingHunkIds.size > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-violet-400">
+              <svg
+                className="h-3.5 w-3.5 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <span>Classifying ({classifyingHunkIds.size})</span>
+            </div>
+          )}
+
+          {/* Trust Settings button */}
+          <button
+            onClick={() => setShowTrustModal(true)}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
+            title="Trust Settings"
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-2 h-2 rounded-full bg-sky-500" />
-                <span className="text-stone-300">Trusted: {trustedHunks}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-lime-500" />
-                <span className="text-stone-300">
-                  Approved: {approvedHunks}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span>Trust</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
+                (reviewState?.trustList.length ?? 0) > 0
+                  ? "bg-amber-500/20 text-amber-400"
+                  : "bg-stone-700 text-stone-500"
+              }`}
+            >
+              {reviewState?.trustList.length ?? 0}
+            </span>
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
@@ -476,58 +790,11 @@ function App() {
               ? "border-l border-stone-800"
               : "border-r border-stone-800"
           }`}
-          style={{ width: sidebarWidth }}
+          style={{ width: `${sidebarWidth}rem` }}
         >
-          {/* Sidebar mode toggle */}
-          <div className="flex border-b border-stone-800">
-            <button
-              onClick={() => setSidebarMode("review")}
-              className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
-                sidebarMode === "review"
-                  ? "border-b-2 border-lime-500 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              Review
-            </button>
-            <button
-              onClick={() => setSidebarMode("files")}
-              className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
-                sidebarMode === "files"
-                  ? "border-b-2 border-lime-500 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              All Files
-            </button>
-            <button
-              onClick={() => setSidebarMode("trust")}
-              className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
-                sidebarMode === "trust"
-                  ? "border-b-2 border-lime-500 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              Trust
-            </button>
-          </div>
-
           {/* Sidebar content */}
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {sidebarMode === "review" ? (
-              <ReviewFilePanel
-                files={files}
-                reviewState={reviewState}
-                selectedFile={selectedFile}
-                onSelectFile={setSelectedFile}
-                onRevealInTree={handleRevealInTree}
-                hunks={hunks}
-              />
-            ) : sidebarMode === "files" ? (
-              <FileTree repoPath={repoPath} />
-            ) : (
-              <TrustPatternsPanel />
-            )}
+          <div className="flex-1 overflow-hidden">
+            <FilesPanel />
           </div>
 
           {/* Resize handle */}
@@ -559,19 +826,54 @@ function App() {
                 />
               </svg>
               <p className="text-sm text-stone-500">Select a file to review</p>
-              <p className="text-xs text-stone-600">
-                <kbd>j</kbd>/<kbd>k</kbd> hunks · <kbd>[</kbd>/<kbd>]</kbd>{" "}
-                files
-              </p>
             </div>
           )}
         </main>
       </div>
 
+      {/* Status Bar */}
+      <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
+        <GitStatusIndicator />
+        <div className="flex items-center gap-3 text-stone-600">
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              j
+            </kbd>
+            <span className="mx-0.5">/</span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              k
+            </kbd>
+            <span className="ml-1">hunks</span>
+          </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              [
+            </kbd>
+            <span className="mx-0.5">/</span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              ]
+            </kbd>
+            <span className="ml-1">files</span>
+          </span>
+        </div>
+      </footer>
+
       {/* Debug Modal */}
       <DebugModal
         isOpen={showDebugModal}
         onClose={() => setShowDebugModal(false)}
+      />
+
+      {/* Trust Modal */}
+      <TrustModal
+        isOpen={showTrustModal}
+        onClose={() => setShowTrustModal(false)}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
       />
     </div>
   );

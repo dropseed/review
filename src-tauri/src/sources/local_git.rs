@@ -1,4 +1,6 @@
-use super::traits::{Comparison, DiffSource, FileEntry, FileStatus};
+use super::traits::{
+    ChangeStatus, Comparison, DiffSource, FileEntry, FileStatus, GitStatusSummary, StatusEntry,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Command;
@@ -52,16 +54,18 @@ impl LocalGitSource {
         Ok("HEAD".to_string())
     }
 
-    /// List all local and remote branches
-    pub fn list_branches(&self) -> Result<Vec<String>, LocalGitError> {
-        let mut branches = Vec::new();
+    /// List all local and remote branches, separated, plus stashes
+    pub fn list_branches(&self) -> Result<super::traits::BranchList, LocalGitError> {
+        let mut local = Vec::new();
+        let mut remote = Vec::new();
+        let mut stashes = Vec::new();
 
         // Get local branches
         let local_output = self.run_git(&["branch", "--format=%(refname:short)"])?;
         for line in local_output.lines() {
             let branch = line.trim();
             if !branch.is_empty() {
-                branches.push(branch.to_string());
+                local.push(branch.to_string());
             }
         }
 
@@ -70,15 +74,112 @@ impl LocalGitSource {
         for line in remote_output.lines() {
             let branch = line.trim();
             if !branch.is_empty() && !branch.ends_with("/HEAD") {
-                branches.push(branch.to_string());
+                remote.push(branch.to_string());
             }
         }
 
-        // Sort and deduplicate
-        branches.sort();
-        branches.dedup();
+        // Get stashes
+        if let Ok(stash_output) = self.run_git(&["stash", "list", "--format=%gd\t%s"]) {
+            for line in stash_output.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                // Format is "stash@{0}\tmessage"
+                let parts: Vec<&str> = line.splitn(2, '\t').collect();
+                let stash_ref = parts[0].to_string();
+                let message = parts.get(1).unwrap_or(&"").to_string();
+                stashes.push(super::traits::StashEntry { stash_ref, message });
+            }
+        }
 
-        Ok(branches)
+        // Sort and deduplicate branch lists
+        local.sort();
+        local.dedup();
+        remote.sort();
+        remote.dedup();
+        // Stashes are already in order (most recent first)
+
+        Ok(super::traits::BranchList { local, remote, stashes })
+    }
+
+    /// Get structured git status (staged, unstaged, untracked)
+    pub fn get_status(&self) -> Result<GitStatusSummary, LocalGitError> {
+        let current_branch = self.get_current_branch()?;
+
+        // Get porcelain status (v1 format)
+        let output = self.run_git(&["status", "--porcelain=v1"])?;
+
+        let mut staged: Vec<StatusEntry> = Vec::new();
+        let mut unstaged: Vec<StatusEntry> = Vec::new();
+        let mut untracked: Vec<String> = Vec::new();
+
+        for line in output.lines() {
+            if line.len() < 3 {
+                continue;
+            }
+
+            let index_status = line.chars().next().unwrap_or(' ');
+            let worktree_status = line.chars().nth(1).unwrap_or(' ');
+            let path = &line[3..];
+
+            // Handle renames (format: "R  old -> new")
+            let actual_path = if path.contains(" -> ") {
+                path.split(" -> ").last().unwrap_or(path).to_string()
+            } else {
+                path.to_string()
+            };
+
+            // Untracked files
+            if index_status == '?' && worktree_status == '?' {
+                untracked.push(actual_path);
+                continue;
+            }
+
+            // Staged changes (index status)
+            if index_status != ' ' && index_status != '?' {
+                let status = match index_status {
+                    'M' => ChangeStatus::Modified,
+                    'A' => ChangeStatus::Added,
+                    'D' => ChangeStatus::Deleted,
+                    'R' => ChangeStatus::Renamed,
+                    'C' => ChangeStatus::Copied,
+                    _ => ChangeStatus::Modified,
+                };
+                staged.push(StatusEntry {
+                    path: actual_path.clone(),
+                    status,
+                });
+            }
+
+            // Unstaged changes (worktree status)
+            if worktree_status != ' ' && worktree_status != '?' {
+                let status = match worktree_status {
+                    'M' => ChangeStatus::Modified,
+                    'A' => ChangeStatus::Added,
+                    'D' => ChangeStatus::Deleted,
+                    'R' => ChangeStatus::Renamed,
+                    'C' => ChangeStatus::Copied,
+                    _ => ChangeStatus::Modified,
+                };
+                unstaged.push(StatusEntry {
+                    path: actual_path,
+                    status,
+                });
+            }
+        }
+
+        Ok(GitStatusSummary {
+            current_branch,
+            staged,
+            unstaged,
+            untracked,
+        })
+    }
+
+    /// Get raw git status output for display
+    pub fn get_status_raw(&self) -> Result<String, LocalGitError> {
+        self.run_git(&["status"])
     }
 
     fn run_git(&self, args: &[&str]) -> Result<String, LocalGitError> {
@@ -94,6 +195,27 @@ impl LocalGitSource {
                 String::from_utf8_lossy(&output.stderr).to_string(),
             ))
         }
+    }
+
+    fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, LocalGitError> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&self.repo_path)
+            .output()?;
+
+        if output.status.success() {
+            Ok(output.stdout)
+        } else {
+            Err(LocalGitError::Git(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ))
+        }
+    }
+
+    /// Get file content as bytes at the specified ref
+    pub fn get_file_bytes(&self, file_path: &str, git_ref: &str) -> Result<Vec<u8>, LocalGitError> {
+        let ref_spec = format!("{}:{}", git_ref, file_path);
+        self.run_git_bytes(&["show", &ref_spec])
     }
 
     /// Get all tracked files from git (fast, uses index)
@@ -120,6 +242,13 @@ impl LocalGitSource {
             Ok(base) => base,
             Err(_) => comparison.old.clone(), // Fall back to direct comparison
         };
+
+        // Handle staged_only mode (only show staged changes)
+        if comparison.staged_only {
+            let staged_output = self.run_git(&["diff", "--name-status", "--cached"])?;
+            self.parse_name_status(&staged_output, &mut changes);
+            return Ok(changes);
+        }
 
         // Get committed changes
         if comparison.old != comparison.new || !comparison.working_tree {
@@ -314,6 +443,28 @@ impl LocalGitSource {
 impl DiffSource for LocalGitSource {
     type Error = LocalGitError;
 
+    fn get_file_lines(
+        &self,
+        file_path: &str,
+        git_ref: &str,
+        start_line: u32,
+        end_line: u32,
+    ) -> Result<Vec<String>, Self::Error> {
+        // Get file content at the specified ref
+        let ref_spec = format!("{}:{}", git_ref, file_path);
+        let output = self.run_git(&["show", &ref_spec])?;
+
+        // Extract the requested lines (1-indexed)
+        let lines: Vec<String> = output
+            .lines()
+            .skip((start_line.saturating_sub(1)) as usize)
+            .take((end_line.saturating_sub(start_line) + 1) as usize)
+            .map(|s| s.to_string())
+            .collect();
+
+        Ok(lines)
+    }
+
     fn list_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, Self::Error> {
         // Get changed files with their status
         let mut file_status = self.get_changed_files(comparison)?;
@@ -451,6 +602,21 @@ impl DiffSource for LocalGitSource {
         file_path: Option<&str>,
     ) -> Result<String, Self::Error> {
         let mut all_diffs = String::new();
+
+        // Handle staged_only mode (only show staged changes)
+        if comparison.staged_only {
+            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", "--cached"];
+
+            if let Some(path) = file_path {
+                args.push("--");
+                args.push(path);
+            }
+
+            if let Ok(output) = self.run_git(&args) {
+                all_diffs.push_str(&output);
+            }
+            return Ok(all_diffs);
+        }
 
         // Get committed diff between old and new refs
         if comparison.old != comparison.new || !comparison.working_tree {

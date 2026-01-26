@@ -28,38 +28,10 @@ scripts/build            # Build production app (outputs to src-tauri/target/rel
 
 ## Architecture
 
-### Frontend (React + TypeScript)
-
-- `src/` - React frontend with Vite
-  - `components/` - React components
-    - `FileTree.tsx` - Full repository file browser with change indicators
-    - `CodeViewer.tsx` - Code display with diff highlighting
-    - `ComparisonSelector.tsx` - Pick what to compare (working/staged/branch)
-    - `ReviewFilePanel.tsx` - Review panel for individual files
-    - `TrustPatternsPanel.tsx` - Trust patterns management
-  - `stores/` - Zustand state management
-  - `types/` - TypeScript type definitions
-  - `utils/` - Utility functions
-
-### Backend (Rust + Tauri)
-
-- `src-tauri/src/` - Rust backend
-  - `sources/` - Diff source abstraction
-    - `traits.rs` - DiffSource trait for extensibility
-    - `local_git.rs` - Local git repository implementation
-  - `diff/` - Diff parsing
-    - `parser.rs` - Parse git diff output into hunks
-  - `review/` - Review state management
-    - `state.rs` - Review state types
-    - `storage.rs` - Persist review state to disk
-  - `trust/` - Trust patterns
-    - `patterns.rs` - Trust patterns taxonomy
-    - `matching.rs` - Glob-style pattern matching
-  - `classify/` - Claude classification
-    - `claude.rs` - Claude CLI integration
-    - `prompt.rs` - Build classification prompts
-  - `commands.rs` - Tauri commands exposed to frontend
-  - `lib.rs` - Main library entry point
+- **Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
+- **Backend**: Rust + Tauri in `src-tauri/src/`, classification via Claude CLI (`claude` command)
+- **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `commands.rs`
+- **Data flow**: Rust computes diffs/hunks → Zustand stores state → User actions invoke Rust → Rust persists to `.git/compare/`
 
 ## Key Concepts
 
@@ -77,16 +49,25 @@ Review state persists in `.git/compare/reviews/<comparison>.json`. Storing insid
 - `notes`: Free-form review notes
 - `comparison`: Structured comparison info
 
+## App Logs
+
+Frontend logs are written to `.git/compare/app.log`. All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
+
+```
+[2026-01-26T12:00:00.000Z] [LOG] Message here
+[2026-01-26T12:00:01.000Z] [ERROR] Error details
+```
+
+Claude can read this log file for debugging. The Debug modal (accessible in the app) shows current state; the log file shows historical activity.
+
+## Claude Code Skills
+
+When working on frontend code, use these skills:
+
+- `/frontend-design` - For building UI components and interfaces with high design quality
+- `/web-design-guidelines` - To review UI code for accessibility and best practices
+- `/vercel-react-best-practices` - For React/Next.js performance patterns when writing or refactoring components
+
 ## Trust Patterns Taxonomy
 
-Located in `src-tauri/src/trust/patterns.rs`. Categories include:
-
-- `imports:*` - Import statement changes
-- `formatting:*` - Whitespace, line length, style
-- `comments:*` - Comment changes
-- `types:*` - Type annotation changes
-- `file:*` - File-level operations (deleted, renamed, moved)
-- `code:relocated`, `rename:*` - Code movement
-- `generated:*` - Auto-generated files
-- `version:bumped` - Version number changes
-- `remove:deprecated` - Deprecated code removal
+Located in `src-tauri/src/trust/patterns.rs`. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.

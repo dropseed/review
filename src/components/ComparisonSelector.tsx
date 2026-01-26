@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Comparison } from "../types";
+import type { Comparison, BranchList } from "../types";
 import { makeComparison } from "../types";
 
 interface ComparisonSelectorProps {
@@ -9,15 +9,20 @@ interface ComparisonSelectorProps {
   onChange: (comparison: Comparison) => void;
 }
 
-// Special value for "Working Tree" option in the compare dropdown
+// Special values for local state options in the compare dropdown
 const WORKING_TREE = "__WORKING_TREE__";
+const STAGED_ONLY = "__STAGED_ONLY__";
 
 export function ComparisonSelector({
   repoPath,
   value,
   onChange,
 }: ComparisonSelectorProps) {
-  const [branches, setBranches] = useState<string[]>([]);
+  const [branches, setBranches] = useState<BranchList>({
+    local: [],
+    remote: [],
+    stashes: [],
+  });
   const [loading, setLoading] = useState(false);
 
   // Load branches when repo path changes
@@ -25,22 +30,27 @@ export function ComparisonSelector({
     if (!repoPath) return;
 
     setLoading(true);
-    invoke<string[]>("list_branches", { repoPath })
+    invoke<BranchList>("list_branches", { repoPath })
       .then((result) => {
         setBranches(result);
       })
       .catch((err) => {
         console.error("Failed to load branches:", err);
-        setBranches([]);
+        setBranches({ local: [], remote: [], stashes: [] });
       })
       .finally(() => {
         setLoading(false);
       });
   }, [repoPath]);
 
+  // All branches combined for validation checks
+  const allBranches = [...branches.local, ...branches.remote];
+
   // Get the current compare value for the dropdown
-  // If workingTree is true and new is HEAD, show "Working Tree"
   const getCompareValue = (): string => {
+    if (value.stagedOnly && value.new === "HEAD") {
+      return STAGED_ONLY;
+    }
     if (value.workingTree && value.new === "HEAD") {
       return WORKING_TREE;
     }
@@ -49,22 +59,32 @@ export function ComparisonSelector({
 
   // Handle base (old) branch change
   const handleBaseChange = (newBase: string) => {
-    onChange(makeComparison(newBase, value.new, value.workingTree));
+    // If the new base matches the current compare, reset compare to Working Tree
+    if (newBase === value.new) {
+      onChange(makeComparison(newBase, "HEAD", true, false));
+    } else {
+      onChange(
+        makeComparison(newBase, value.new, value.workingTree, value.stagedOnly),
+      );
+    }
   };
 
   // Handle compare (new) branch change
   const handleCompareChange = (newCompare: string) => {
     if (newCompare === WORKING_TREE) {
       // Working Tree = HEAD with working_tree flag
-      onChange(makeComparison(value.old, "HEAD", true));
+      onChange(makeComparison(value.old, "HEAD", true, false));
+    } else if (newCompare === STAGED_ONLY) {
+      // Staged Only = HEAD with staged_only flag
+      onChange(makeComparison(value.old, "HEAD", false, true));
     } else {
-      // Specific branch/ref - no working tree changes
-      onChange(makeComparison(value.old, newCompare, false));
+      // Specific branch/ref - no special flags
+      onChange(makeComparison(value.old, newCompare, false, false));
     }
   };
 
   const selectClass = `
-    rounded-lg border border-stone-700/50 bg-stone-800 px-3 py-1.5 text-sm text-stone-200
+    max-w-[11rem] rounded-lg border border-stone-700/50 bg-stone-800 px-3 py-1.5 text-sm text-stone-200
     focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30
     transition-all cursor-pointer hover:border-stone-600/50
     disabled:opacity-50 disabled:cursor-not-allowed
@@ -80,13 +100,26 @@ export function ComparisonSelector({
         className={selectClass}
         title="Base branch"
       >
-        {branches.map((branch) => (
-          <option key={branch} value={branch}>
-            {branch}
-          </option>
-        ))}
+        {branches.local.length > 0 && (
+          <optgroup label="Local Branches">
+            {branches.local.map((branch) => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {branches.remote.length > 0 && (
+          <optgroup label="Remote Branches">
+            {branches.remote.map((branch) => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </optgroup>
+        )}
         {/* Show current value even if not in branches list */}
-        {!branches.includes(value.old) && (
+        {!allBranches.includes(value.old) && (
           <option value={value.old}>{value.old}</option>
         )}
       </select>
@@ -101,30 +134,61 @@ export function ComparisonSelector({
         className={selectClass}
         title="Compare branch"
       >
-        {/* Working Tree option - always at top */}
-        <option value={WORKING_TREE}>Working Tree</option>
-
-        <optgroup label="Branches">
-          {branches.map((branch) => (
-            <option key={branch} value={branch}>
-              {branch}
+        <optgroup label="Local State">
+          <option value={WORKING_TREE}>Working Tree</option>
+          <option value={STAGED_ONLY}>Staged Only</option>
+          {branches.stashes.map((stash) => (
+            <option key={stash.ref} value={stash.ref}>
+              {stash.ref}: {stash.message.slice(0, 20)}
+              {stash.message.length > 20 ? "…" : ""}
             </option>
           ))}
         </optgroup>
 
+        {branches.local.filter((b) => b !== value.old).length > 0 && (
+          <optgroup label="Local Branches">
+            {branches.local
+              .filter((branch) => branch !== value.old)
+              .map((branch) => (
+                <option key={branch} value={branch}>
+                  {branch}
+                </option>
+              ))}
+          </optgroup>
+        )}
+        {branches.remote.filter((b) => b !== value.old).length > 0 && (
+          <optgroup label="Remote Branches">
+            {branches.remote
+              .filter((branch) => branch !== value.old)
+              .map((branch) => (
+                <option key={branch} value={branch}>
+                  {branch}
+                </option>
+              ))}
+          </optgroup>
+        )}
+
         {/* Show current value if it's a custom ref not in branches */}
-        {value.new !== "HEAD" && !branches.includes(value.new) && (
+        {value.new !== "HEAD" && !allBranches.includes(value.new) && (
           <option value={value.new}>{value.new}</option>
         )}
       </select>
 
-      {/* Working tree indicator */}
+      {/* Local state indicator */}
       {value.workingTree && (
         <span
           className="text-xs text-amber-500/70 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20"
-          title="Includes uncommitted changes"
+          title="Includes all uncommitted changes (staged + unstaged)"
         >
           +uncommitted
+        </span>
+      )}
+      {value.stagedOnly && (
+        <span
+          className="text-xs text-lime-500/70 px-1.5 py-0.5 rounded bg-lime-500/10 border border-lime-500/20"
+          title="Shows only staged changes"
+        >
+          staged
         </span>
       )}
     </div>

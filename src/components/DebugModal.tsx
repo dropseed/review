@@ -1,5 +1,26 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo, useState } from "react";
 import { useReviewStore } from "../stores/reviewStore";
+
+// Simple JSON syntax highlighting
+function highlightJson(json: string): React.ReactNode[] {
+  const lines = json.split("\n");
+  return lines.map((line, i) => {
+    // Highlight different parts of JSON
+    const highlighted = line
+      // Keys (before colon)
+      .replace(/"([^"]+)":/g, '<span class="text-sky-400">"$1"</span>:')
+      // String values
+      .replace(/: "([^"]*)"/g, ': <span class="text-amber-300">"$1"</span>')
+      // Numbers
+      .replace(/: (-?\d+\.?\d*)/g, ': <span class="text-violet-400">$1</span>')
+      // Booleans and null
+      .replace(
+        /: (true|false|null)/g,
+        ': <span class="text-rose-400">$1</span>',
+      );
+    return <div key={i} dangerouslySetInnerHTML={{ __html: highlighted }} />;
+  });
+}
 
 interface DebugModalProps {
   isOpen: boolean;
@@ -7,6 +28,10 @@ interface DebugModalProps {
 }
 
 export function DebugModal({ isOpen, onClose }: DebugModalProps) {
+  const [activeTab, setActiveTab] = useState<"persisted" | "in-memory">(
+    "persisted",
+  );
+
   const {
     repoPath,
     comparison,
@@ -17,23 +42,45 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
     focusedHunkIndex,
   } = useReviewStore();
 
-  const debugData = {
+  const persistedData = { reviewState };
+  const inMemoryData = {
     repoPath,
     comparison,
     selectedFile,
     focusedHunkIndex,
     files,
     hunks,
-    reviewState,
   };
 
-  const jsonString = JSON.stringify(debugData, null, 2);
+  const persistedJsonString = JSON.stringify(persistedData, null, 2);
+  const inMemoryJsonString = JSON.stringify(inMemoryData, null, 2);
+  const fullJsonString = JSON.stringify(
+    { ...persistedData, ...inMemoryData },
+    null,
+    2,
+  );
+
+  const highlightedPersistedJson = useMemo(
+    () => highlightJson(persistedJsonString),
+    [persistedJsonString],
+  );
+  const highlightedInMemoryJson = useMemo(
+    () => highlightJson(inMemoryJsonString),
+    [inMemoryJsonString],
+  );
+
+  // Construct the review state file path
+  const reviewStatePath = useMemo(() => {
+    if (!repoPath || !comparison) return null;
+    const comparisonKey = comparison.key || "unknown";
+    return `${repoPath}/.git/compare/reviews/${comparisonKey}.json`;
+  }, [repoPath, comparison]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(jsonString).catch((err) => {
+    navigator.clipboard.writeText(fullJsonString).catch((err) => {
       console.error("Failed to copy:", err);
     });
-  }, [jsonString]);
+  }, [fullJsonString]);
 
   // Handle escape key to close
   useEffect(() => {
@@ -83,11 +130,59 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-stone-700">
+          <button
+            onClick={() => setActiveTab("persisted")}
+            className={`px-4 py-2 text-xs font-medium ${
+              activeTab === "persisted"
+                ? "border-b-2 border-sky-500 text-sky-400"
+                : "text-stone-400 hover:text-stone-200"
+            }`}
+          >
+            Persisted State
+          </button>
+          <button
+            onClick={() => setActiveTab("in-memory")}
+            className={`px-4 py-2 text-xs font-medium ${
+              activeTab === "in-memory"
+                ? "border-b-2 border-sky-500 text-sky-400"
+                : "text-stone-400 hover:text-stone-200"
+            }`}
+          >
+            In-Memory State
+          </button>
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
-          <pre className="whitespace-pre-wrap break-all font-mono text-xs text-stone-300">
-            {jsonString}
-          </pre>
+          {activeTab === "persisted" && (
+            <div>
+              {reviewStatePath && (
+                <div className="mb-3 rounded bg-stone-800 px-3 py-2">
+                  <span className="text-xs text-stone-500">Saved to: </span>
+                  <span className="font-mono text-xs text-stone-300">
+                    {reviewStatePath}
+                  </span>
+                </div>
+              )}
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-stone-300">
+                {highlightedPersistedJson}
+              </pre>
+            </div>
+          )}
+          {activeTab === "in-memory" && (
+            <div>
+              <div className="mb-3 rounded bg-stone-800 px-3 py-2">
+                <span className="text-xs text-stone-500">
+                  Computed from git, not persisted to disk
+                </span>
+              </div>
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-stone-300">
+                {highlightedInMemoryJson}
+              </pre>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
