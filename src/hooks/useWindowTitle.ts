@@ -12,8 +12,11 @@ export function useWindowTitle(
   showStartScreen: boolean,
 ) {
   useEffect(() => {
-    if (repoPath) {
-      const platform = getPlatformServices();
+    const platform = getPlatformServices();
+    if (!repoPath) {
+      // Welcome screen - no repo selected
+      platform.window.setTitle("Compare").catch(console.error);
+    } else {
       const repoName = repoPath.split("/").pop() || "Repository";
       if (showStartScreen || !comparisonReady) {
         // Just show repo name on start screen
