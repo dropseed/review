@@ -6,9 +6,14 @@ import type { ContextMenuState } from "./types";
 interface ContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
+  onOpenInSplit?: (path: string) => void;
 }
 
-export function ContextMenu({ menu, onClose }: ContextMenuProps) {
+export function ContextMenu({
+  menu,
+  onClose,
+  onOpenInSplit,
+}: ContextMenuProps) {
   useEffect(() => {
     const handleClick = () => onClose();
     const handleEsc = (e: KeyboardEvent) => {
@@ -28,6 +33,34 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
       style={{ top: menu.y, left: menu.x }}
       role="menu"
     >
+      {onOpenInSplit && (
+        <>
+          <button
+            onClick={() => {
+              onOpenInSplit(menu.path);
+              onClose();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+            role="menuitem"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 4v16M15 4v16"
+              />
+            </svg>
+            Open in Split View
+          </button>
+          <div className="my-1 h-px bg-stone-700" />
+        </>
+      )}
       <button
         onClick={async () => {
           await openUrl(`vscode://file${menu.fullPath}`);

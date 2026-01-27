@@ -23,6 +23,7 @@ export function ComparisonSelector({
     remote: [],
     stashes: [],
   });
+  const [currentBranch, setCurrentBranch] = useState("HEAD");
   const [loading, setLoading] = useState(false);
 
   // Load branches when repo path changes
@@ -30,9 +31,13 @@ export function ComparisonSelector({
     if (!repoPath) return;
 
     setLoading(true);
-    invoke<BranchList>("list_branches", { repoPath })
-      .then((result) => {
+    Promise.all([
+      invoke<BranchList>("list_branches", { repoPath }),
+      invoke<string>("get_current_branch", { repoPath }),
+    ])
+      .then(([result, curBranch]) => {
         setBranches(result);
+        setCurrentBranch(curBranch);
       })
       .catch((err) => {
         console.error("Failed to load branches:", err);
@@ -48,10 +53,10 @@ export function ComparisonSelector({
 
   // Get the current compare value for the dropdown
   const getCompareValue = (): string => {
-    if (value.stagedOnly && value.new === "HEAD") {
+    if (value.stagedOnly) {
       return STAGED_ONLY;
     }
-    if (value.workingTree && value.new === "HEAD") {
+    if (value.workingTree) {
       return WORKING_TREE;
     }
     return value.new;
@@ -61,7 +66,7 @@ export function ComparisonSelector({
   const handleBaseChange = (newBase: string) => {
     // If the new base matches the current compare, reset compare to Working Tree
     if (newBase === value.new) {
-      onChange(makeComparison(newBase, "HEAD", true, false));
+      onChange(makeComparison(newBase, currentBranch, true, false));
     } else {
       onChange(
         makeComparison(newBase, value.new, value.workingTree, value.stagedOnly),
@@ -72,11 +77,11 @@ export function ComparisonSelector({
   // Handle compare (new) branch change
   const handleCompareChange = (newCompare: string) => {
     if (newCompare === WORKING_TREE) {
-      // Working Tree = HEAD with working_tree flag
-      onChange(makeComparison(value.old, "HEAD", true, false));
+      // Working Tree = current branch with working_tree flag
+      onChange(makeComparison(value.old, currentBranch, true, false));
     } else if (newCompare === STAGED_ONLY) {
-      // Staged Only = HEAD with staged_only flag
-      onChange(makeComparison(value.old, "HEAD", false, true));
+      // Staged Only = current branch with staged_only flag
+      onChange(makeComparison(value.old, currentBranch, false, true));
     } else {
       // Specific branch/ref - no special flags
       onChange(makeComparison(value.old, newCompare, false, false));
@@ -169,9 +174,11 @@ export function ComparisonSelector({
         )}
 
         {/* Show current value if it's a custom ref not in branches */}
-        {value.new !== "HEAD" && !allBranches.includes(value.new) && (
-          <option value={value.new}>{value.new}</option>
-        )}
+        {!value.workingTree &&
+          !value.stagedOnly &&
+          !allBranches.includes(value.new) && (
+            <option value={value.new}>{value.new}</option>
+          )}
       </select>
 
       {/* Local state indicator */}
@@ -185,7 +192,7 @@ export function ComparisonSelector({
       )}
       {value.stagedOnly && (
         <span
-          className="text-xs text-lime-500/70 px-1.5 py-0.5 rounded bg-lime-500/10 border border-lime-500/20"
+          className="text-xs text-emerald-500/70 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
           title="Shows only staged changes"
         >
           staged

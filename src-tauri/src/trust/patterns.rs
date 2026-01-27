@@ -134,6 +134,19 @@ pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
     load_taxonomy_from_json()
 }
 
+/// Get all valid pattern IDs from the taxonomy
+pub fn get_valid_pattern_ids() -> Vec<String> {
+    get_trust_taxonomy()
+        .into_iter()
+        .flat_map(|cat| cat.patterns.into_iter().map(|p| p.id))
+        .collect()
+}
+
+/// Check if a label is a valid pattern ID in the taxonomy
+pub fn is_valid_pattern_id(label: &str) -> bool {
+    get_valid_pattern_ids().contains(&label.to_string())
+}
+
 /// Fallback hardcoded taxonomy in case JSON loading fails
 fn get_default_taxonomy() -> Vec<TrustCategory> {
     vec![

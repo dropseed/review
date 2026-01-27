@@ -1,8 +1,12 @@
 interface BreadcrumbsProps {
   filePath: string;
+  onNavigateToDirectory?: (dirPath: string) => void;
 }
 
-export function Breadcrumbs({ filePath }: BreadcrumbsProps) {
+export function Breadcrumbs({
+  filePath,
+  onNavigateToDirectory,
+}: BreadcrumbsProps) {
   const parts = filePath.split("/");
 
   return (
@@ -17,7 +21,12 @@ export function Breadcrumbs({ filePath }: BreadcrumbsProps) {
             {isLast ? (
               <span className="font-mono text-stone-200">{part}</span>
             ) : (
-              <span className="font-mono text-stone-500">{part}</span>
+              <button
+                onClick={() => onNavigateToDirectory?.(path)}
+                className="font-mono text-stone-500 hover:text-stone-300 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded"
+              >
+                {part}
+              </button>
             )}
           </span>
         );

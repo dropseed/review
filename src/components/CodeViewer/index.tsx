@@ -17,8 +17,15 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({ filePath }: CodeViewerProps) {
-  const { comparison, repoPath, codeTheme, codeFontSize, reviewState } =
-    useReviewStore();
+  const {
+    comparison,
+    repoPath,
+    codeTheme,
+    codeFontSize,
+    reviewState,
+    approveAllFileHunks,
+    revealDirectoryInTree,
+  } = useReviewStore();
 
   // Generate CSS for font size injection into pierre/diffs
   // Pierre/diffs uses --diffs-font-size and --diffs-line-height CSS variables
@@ -136,21 +143,35 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       {/* File header with breadcrumbs */}
       <div className="flex items-center justify-between border-b border-stone-800/50 bg-stone-900 px-3 py-1.5">
         <div className="flex items-center gap-2">
-          <Breadcrumbs filePath={filePath} />
+          <Breadcrumbs
+            filePath={filePath}
+            onNavigateToDirectory={revealDirectoryInTree}
+          />
           {isUntracked ? (
             <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
               New
             </span>
           ) : hasChanges ? (
-            <span
-              className={`rounded px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
-                reviewProgress.reviewed === reviewProgress.total
-                  ? "bg-lime-500/15 text-lime-400"
-                  : "bg-amber-500/15 text-amber-400"
-              }`}
-            >
-              {reviewProgress.reviewed}/{reviewProgress.total} reviewed
-            </span>
+            <>
+              <span
+                className={`rounded px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
+                  reviewProgress.reviewed === reviewProgress.total
+                    ? "bg-lime-500/15 text-lime-400"
+                    : "bg-amber-500/15 text-amber-400"
+                }`}
+              >
+                {reviewProgress.reviewed}/{reviewProgress.total} reviewed
+              </span>
+              {reviewProgress.reviewed < reviewProgress.total && (
+                <button
+                  onClick={() => approveAllFileHunks(filePath)}
+                  className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
+                  title="Approve all hunks in this file"
+                >
+                  Approve All
+                </button>
+              )}
+            </>
           ) : null}
 
           {/* File actions overflow menu */}

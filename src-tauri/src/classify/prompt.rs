@@ -1,18 +1,14 @@
 use crate::trust::patterns::get_trust_taxonomy;
 
-/// Build a formatted taxonomy string for the classification prompt
+/// Build a flat list of all valid labels with descriptions
 fn build_taxonomy_string() -> String {
     let taxonomy = get_trust_taxonomy();
     let mut result = String::new();
 
     for category in taxonomy {
-        result.push_str(&format!("## {}\n", category.name));
-        result.push_str(&format!("{}\n\n", category.description));
-
         for pattern in category.patterns {
             result.push_str(&format!("- `{}`: {}\n", pattern.id, pattern.description));
         }
-        result.push('\n');
     }
 
     result
@@ -32,27 +28,31 @@ pub fn build_single_hunk_prompt(hunk: &HunkInput) -> String {
     let taxonomy = build_taxonomy_string();
 
     format!(
-        r#"Classify this code change hunk. Respond with JSON only, no markdown.
+        r#"Classify this diff hunk. Use ONLY labels from the list below, or empty labels if none apply.
 
-# Trust Pattern Taxonomy
+# Valid Labels (use ONLY these exact strings)
 
 {taxonomy}
-# Hunk to Classify
+# Hunk
 
 File: {file_path}
 ```diff
 {content}
 ```
 
-# Response Format
+# Response
 
-Respond with ONLY this JSON structure (no markdown code blocks):
-{{"label": ["pattern:id"], "reasoning": "Brief explanation"}}
+Return JSON only, no markdown:
+{{"label": ["label:id"], "reasoning": "one sentence"}}
 
-Rules:
-- Use exact pattern IDs from the taxonomy (e.g., "imports:added", "formatting:whitespace")
-- Multiple labels are allowed: {{"label": ["imports:added", "imports:removed"], "reasoning": "..."}}
-- If the change doesn't fit any pattern or mixes trustable with non-trustable changes, use empty labels: {{"label": [], "reasoning": "Requires manual review because..."}}"#,
+# Rules
+
+1. DEFAULT TO EMPTY LABELS. When uncertain, use []. Most hunks need human review.
+2. Labels are for TRIVIAL, MECHANICAL changes only - things a reviewer can safely skip.
+3. A label applies ONLY when the ENTIRE hunk matches its description exactly.
+4. Any change to values, logic, behavior, or configuration = empty labels [].
+5. Mixed changes (e.g., import added + code changed) = empty labels [].
+6. Use ONLY the exact label strings listed above. Inventing labels is forbidden."#,
         taxonomy = taxonomy,
         file_path = hunk.file_path,
         content = hunk.content
@@ -81,27 +81,31 @@ File: {}
     }
 
     format!(
-        r#"Classify these code change hunks. Respond with JSON only, no markdown.
+        r#"Classify these diff hunks. Use ONLY labels from the list below, or empty labels if none apply.
 
-# Trust Pattern Taxonomy
+# Valid Labels (use ONLY these exact strings)
 
 {taxonomy}
-# Hunks to Classify
+# Hunks
 
 {hunks_section}
-# Response Format
+# Response
 
-Respond with ONLY this JSON structure (no markdown code blocks):
+Return JSON only, no markdown:
 {{
-  "hunk_id_1": {{"label": ["pattern:id"], "reasoning": "Brief explanation"}},
-  "hunk_id_2": {{"label": ["pattern:id"], "reasoning": "Brief explanation"}}
+  "hunk_id": {{"label": ["label:id"], "reasoning": "one sentence"}},
+  ...
 }}
 
-Rules:
-- Use exact pattern IDs from the taxonomy (e.g., "imports:added", "formatting:whitespace")
-- Multiple labels are allowed: {{"label": ["imports:added", "imports:removed"], "reasoning": "..."}}
-- If the change doesn't fit any pattern or mixes trustable with non-trustable changes, use empty labels: {{"label": [], "reasoning": "Requires manual review because..."}}
-- You MUST provide a classification for EVERY hunk ID listed above"#,
+# Rules
+
+1. DEFAULT TO EMPTY LABELS. When uncertain, use []. Most hunks need human review.
+2. Labels are for TRIVIAL, MECHANICAL changes only - things a reviewer can safely skip.
+3. A label applies ONLY when the ENTIRE hunk matches its description exactly.
+4. Any change to values, logic, behavior, or configuration = empty labels [].
+5. Mixed changes (e.g., import added + code changed) = empty labels [].
+6. Use ONLY the exact label strings listed above. Inventing labels is forbidden.
+7. You MUST provide a classification for EVERY hunk ID listed above."#,
         taxonomy = taxonomy,
         hunks_section = hunks_section
     )

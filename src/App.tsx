@@ -4,14 +4,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { CodeViewer } from "./components/CodeViewer";
 import { FilesPanel } from "./components/FilesPanel";
-import { ComparisonSelector } from "./components/ComparisonSelector";
+import { SplitContainer } from "./components/SplitContainer";
 import { DebugModal } from "./components/DebugModal";
 import { TrustModal } from "./components/TrustModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { FileFinder } from "./components/FileFinder";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { StartScreen } from "./components/StartScreen";
+import { ComparisonHeader } from "./components/ComparisonHeader";
 import { useReviewStore } from "./stores/reviewStore";
 import { isHunkTrusted, makeComparison, type Comparison } from "./types";
 import {
@@ -53,7 +54,6 @@ function App() {
   const {
     repoPath,
     setRepoPath,
-    selectedFile,
     comparison,
     setComparison,
     loadFiles,
@@ -75,6 +75,11 @@ function App() {
     classifyingHunkIds,
     checkClaudeAvailable,
     triggerAutoClassification,
+    // Split view state and actions
+    secondaryFile,
+    closeSplit,
+    setSplitOrientation,
+    splitOrientation,
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -87,6 +92,7 @@ function App() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showTrustModal, setShowTrustModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showFileFinder, setShowFileFinder] = useState(false);
   const isResizing = useRef(false);
 
   // Manual refresh handler
@@ -221,10 +227,9 @@ function App() {
         // Just show repo name on start screen
         getCurrentWindow().setTitle(repoName).catch(console.error);
       } else {
-        const compareDisplay =
-          comparison.workingTree && comparison.new === "HEAD"
-            ? "Working Tree"
-            : comparison.new;
+        const compareDisplay = comparison.workingTree
+          ? "Working Tree"
+          : comparison.new;
         const title = `${repoName} — ${comparison.old}..${compareDisplay}`;
         getCurrentWindow().setTitle(title).catch(console.error);
       }
@@ -337,6 +342,33 @@ function App() {
         return;
       }
 
+      // Cmd/Ctrl+P to open file finder
+      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
+        event.preventDefault();
+        setShowFileFinder(true);
+        return;
+      }
+
+      // Escape to close split view (only when split is active)
+      if (event.key === "Escape" && secondaryFile !== null) {
+        event.preventDefault();
+        closeSplit();
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+\ to toggle split orientation
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key === "\\"
+      ) {
+        event.preventDefault();
+        setSplitOrientation(
+          splitOrientation === "horizontal" ? "vertical" : "horizontal",
+        );
+        return;
+      }
+
       // Cmd/Ctrl++ to increase font size
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -404,6 +436,10 @@ function App() {
       handleOpenRepo,
       codeFontSize,
       setCodeFontSize,
+      secondaryFile,
+      closeSplit,
+      setSplitOrientation,
+      splitOrientation,
     ],
   );
 
@@ -538,11 +574,13 @@ function App() {
   const repoPathRef = useRef(repoPath);
   const loadReviewStateRef = useRef(loadReviewState);
   const refreshRef = useRef(refresh);
+  const comparisonReadyRef = useRef(comparisonReady);
   useEffect(() => {
     repoPathRef.current = repoPath;
     loadReviewStateRef.current = loadReviewState;
     refreshRef.current = refresh;
-  }, [repoPath, loadReviewState, refresh]);
+    comparisonReadyRef.current = comparisonReady;
+  }, [repoPath, loadReviewState, refresh, comparisonReady]);
 
   useEffect(() => {
     if (!repoPath) return;
@@ -577,6 +615,13 @@ function App() {
         const unlistenGit = await listen<string>("git-changed", (event) => {
           console.log("[watcher] Received git-changed event:", event.payload);
           if (event.payload === repoPathRef.current) {
+            // Only refresh if a comparison has been selected (not on start screen)
+            if (!comparisonReadyRef.current) {
+              console.log(
+                "[watcher] Skipping refresh - no comparison selected",
+              );
+              return;
+            }
             console.log("[watcher] Refreshing...");
             refreshRef.current();
           }
@@ -627,7 +672,11 @@ function App() {
   // Show start screen when no comparison is selected
   if (showStartScreen) {
     return (
-      <StartScreen repoPath={repoPath} onSelectReview={handleSelectReview} />
+      <StartScreen
+        repoPath={repoPath}
+        onSelectReview={handleSelectReview}
+        onOpenRepo={handleOpenRepo}
+      />
     );
   }
 
@@ -647,33 +696,7 @@ function App() {
     <div className="flex h-screen flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        <div className="flex items-center gap-4">
-          {/* Back to start button */}
-          <button
-            onClick={handleBackToStart}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
-            title="Back to reviews"
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-          </button>
-
-          {/* Comparison selector */}
-          <ComparisonSelector
-            repoPath={repoPath}
-            value={comparison}
-            onChange={setComparison}
-          />
-        </div>
+        <ComparisonHeader comparison={comparison} onBack={handleBackToStart} />
 
         {/* Progress indicator and Trust button */}
         <div className="flex items-center gap-3">
@@ -705,7 +728,7 @@ function App() {
                               text-xs whitespace-nowrap z-50 shadow-lg"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-sky-500" />
+                  <span className="w-2 h-2 rounded-full bg-cyan-500" />
                   <span className="text-stone-300">
                     Trusted: {trustedHunks}
                   </span>
@@ -720,32 +743,6 @@ function App() {
             </div>
           ) : (
             <span className="text-xs text-stone-500">Nothing to review</span>
-          )}
-
-          {/* Classification progress indicator */}
-          {classifyingHunkIds.size > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-violet-400">
-              <svg
-                className="h-3.5 w-3.5 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              <span>Classifying ({classifyingHunkIds.size})</span>
-            </div>
           )}
 
           {/* Trust Settings button */}
@@ -769,7 +766,7 @@ function App() {
             <span
               className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
                 (reviewState?.trustList.length ?? 0) > 0
-                  ? "bg-amber-500/20 text-amber-400"
+                  ? "bg-cyan-500/20 text-cyan-400"
                   : "bg-stone-700 text-stone-500"
               }`}
             >
@@ -807,33 +804,44 @@ function App() {
         </aside>
 
         {/* Code viewer */}
-        <main className="flex flex-1 flex-col overflow-hidden bg-stone-950">
-          {selectedFile ? (
-            <CodeViewer filePath={selectedFile} />
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3">
-              <svg
-                className="h-12 w-12 text-stone-700"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                />
-              </svg>
-              <p className="text-sm text-stone-500">Select a file to review</p>
-            </div>
-          )}
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
+          <SplitContainer />
         </main>
       </div>
 
       {/* Status Bar */}
       <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
-        <GitStatusIndicator />
+        <div className="flex items-center gap-3">
+          <GitStatusIndicator />
+          {/* Classification progress indicator */}
+          {classifyingHunkIds.size > 0 && (
+            <div className="flex items-center gap-1.5 text-violet-400">
+              <svg
+                className="h-3 w-3 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <span className="tabular-nums">
+                Classifying {classifyingHunkIds.size} hunk
+                {classifyingHunkIds.size !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-3 text-stone-600">
           <span>
             <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
@@ -855,6 +863,12 @@ function App() {
             </kbd>
             <span className="ml-1">files</span>
           </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}P
+            </kbd>
+            <span className="ml-1">find</span>
+          </span>
         </div>
       </footer>
 
@@ -874,6 +888,12 @@ function App() {
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
+      />
+
+      {/* File Finder */}
+      <FileFinder
+        isOpen={showFileFinder}
+        onClose={() => setShowFileFinder(false)}
       />
     </div>
   );

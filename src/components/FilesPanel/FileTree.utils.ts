@@ -68,7 +68,8 @@ export function processTree(
 
       // Directory matches filter if any child matches
       const anyChildMatches = processedChildren.some((c) => c.matchesFilter);
-      const matchesFilter = viewMode === "all" || anyChildMatches;
+      const matchesFilter =
+        viewMode === "all" || (viewMode === "changes" && anyChildMatches);
 
       return {
         ...entry,
@@ -93,8 +94,9 @@ export function processTree(
     // File has changes if it has hunks to review
     const hasChanges = hunkStatus.total > 0;
 
-    // In changes mode, only show files with hunks
-    const matchesFilter = viewMode === "all" || hasChanges;
+    // Filter based on view mode
+    const matchesFilter =
+      viewMode === "all" || (viewMode === "changes" && hasChanges);
 
     return {
       name: entry.name,
@@ -111,6 +113,64 @@ export function processTree(
 
   const processed = entries.map(process);
   return compactTree(processed);
+}
+
+// Result type for sectioned tree processing
+export interface SectionedTreeResult {
+  needsReview: ProcessedFileEntry[];
+  reviewed: ProcessedFileEntry[];
+}
+
+// Process tree and split into "needs review" and "reviewed" sections
+// Used for the "Changes" view mode to separate pending vs reviewed files
+export function processTreeWithSections(
+  entries: FileEntry[],
+  hunkStatusMap: Map<string, FileHunkStatus>,
+): SectionedTreeResult {
+  // First process the full tree for "changes" view
+  const processed = processTree(entries, hunkStatusMap, "changes");
+
+  // Helper to filter tree by section
+  function filterSection(
+    entries: ProcessedFileEntry[],
+    filterFn: (status: FileHunkStatus) => boolean,
+  ): ProcessedFileEntry[] {
+    return entries
+      .map((entry) => {
+        if (!entry.matchesFilter) return null;
+
+        if (entry.isDirectory && entry.children) {
+          const filteredChildren = filterSection(entry.children, filterFn);
+          // Directory should be included if any children remain
+          if (filteredChildren.length === 0) return null;
+
+          return {
+            ...entry,
+            children: filteredChildren,
+          };
+        }
+
+        // File node - check if it belongs in this section
+        if (!filterFn(entry.hunkStatus)) return null;
+        return entry;
+      })
+      .filter((e): e is ProcessedFileEntry => e !== null);
+  }
+
+  // Needs review: files with pending > 0
+  const needsReview = compactTree(
+    filterSection(processed, (status) => status.pending > 0),
+  );
+
+  // Reviewed: files with total > 0 but pending === 0
+  const reviewed = compactTree(
+    filterSection(
+      processed,
+      (status) => status.total > 0 && status.pending === 0,
+    ),
+  );
+
+  return { needsReview, reviewed };
 }
 
 // Compact single-child directory chains

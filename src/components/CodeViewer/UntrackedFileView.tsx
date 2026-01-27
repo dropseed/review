@@ -58,11 +58,32 @@ export function UntrackedFileView({
             </span>
           )}
 
-          {/* Reject button */}
-          {isRejected ? (
+          {/* Action buttons - matching DiffView hunk style */}
+          {isApproved ? (
+            <button
+              onClick={() => unapproveHunk(hunk.id)}
+              className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-400 transition-all hover:bg-lime-500/25"
+              title="Click to unapprove"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              <span>Approved</span>
+            </button>
+          ) : isRejected ? (
             <button
               onClick={() => unrejectHunk(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-full bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-stone-700/50 hover:text-stone-300"
+              className="group flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/25"
               title="Click to clear rejection"
             >
               <svg
@@ -78,74 +99,29 @@ export function UntrackedFileView({
                   d="M6 18L18 6M6 6l12 12"
                 />
               </svg>
-              <span className="text-xxs">Rejected</span>
+              <span>Rejected</span>
             </button>
-          ) : !isApproved ? (
-            <button
-              onClick={() => rejectHunk(hunk.id)}
-              className="rounded-full bg-stone-700/50 p-1.5 text-stone-400 transition-all hover:bg-rose-500/20 hover:text-rose-400"
-              title="Reject this change"
-              aria-label="Reject change"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+          ) : (
+            <div className="flex items-center rounded-md border border-stone-700/50 overflow-hidden">
+              <button
+                onClick={() => rejectHunk(hunk.id)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-400 transition-all hover:bg-rose-500/15 hover:text-rose-400"
+                title="Reject this change"
+                aria-label="Reject change"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          ) : null}
-
-          {/* Approve button */}
-          {isApproved ? (
-            <button
-              onClick={() => unapproveHunk(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-full bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-400 transition-all hover:bg-rose-500/15 hover:text-rose-400"
-              title="Click to unapprove"
-            >
-              <svg
-                className="h-3.5 w-3.5 group-hover:hidden"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
+                <span>Reject</span>
+              </button>
+              <div className="w-px self-stretch bg-stone-700/50" />
+              <button
+                onClick={() => approveHunk(hunk.id)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-lime-500/15 hover:text-lime-400"
+                title="Approve this change"
+                aria-label="Approve change"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              <svg
-                className="hidden h-3.5 w-3.5 group-hover:block"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              <span className="text-xxs opacity-60">approved</span>
-            </button>
-          ) : !isRejected ? (
-            <button
-              onClick={() => approveHunk(hunk.id)}
-              className="rounded-full bg-stone-700/50 px-3 py-1 text-xs font-medium text-stone-300 transition-all hover:bg-lime-500/20 hover:text-lime-400"
-            >
-              Approve
-            </button>
-          ) : null}
+                <span>Approve</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

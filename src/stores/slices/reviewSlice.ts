@@ -34,6 +34,8 @@ export interface ReviewSlice {
   unrejectHunk: (hunkId: string) => void;
   approveAllFileHunks: (filePath: string) => void;
   unapproveAllFileHunks: (filePath: string) => void;
+  approveAllDirHunks: (dirPath: string) => void;
+  unapproveAllDirHunks: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
 
   // Feedback export
@@ -322,6 +324,62 @@ export const createReviewSlice: SliceCreator<ReviewSlice> = (set, get) => ({
 
     const newHunks = { ...reviewState.hunks };
     for (const hunk of fileHunks) {
+      if (newHunks[hunk.id]) {
+        newHunks[hunk.id] = {
+          ...newHunks[hunk.id],
+          status: undefined,
+        };
+      }
+    }
+
+    const newState = {
+      ...reviewState,
+      hunks: newHunks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({ reviewState: newState });
+    debouncedSave(saveReviewState);
+  },
+
+  approveAllDirHunks: (dirPath) => {
+    const { reviewState, hunks, saveReviewState } = get();
+    if (!reviewState) return;
+
+    // Match hunks whose filePath starts with dirPath/
+    const prefix = dirPath + "/";
+    const dirHunks = hunks.filter((h) => h.filePath.startsWith(prefix));
+    if (dirHunks.length === 0) return;
+
+    const newHunks = { ...reviewState.hunks };
+    for (const hunk of dirHunks) {
+      newHunks[hunk.id] = {
+        ...newHunks[hunk.id],
+        label: newHunks[hunk.id]?.label ?? [],
+        status: "approved" as const,
+      };
+    }
+
+    const newState = {
+      ...reviewState,
+      hunks: newHunks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({ reviewState: newState });
+    debouncedSave(saveReviewState);
+  },
+
+  unapproveAllDirHunks: (dirPath) => {
+    const { reviewState, hunks, saveReviewState } = get();
+    if (!reviewState) return;
+
+    const prefix = dirPath + "/";
+    const dirHunks = hunks.filter((h) => h.filePath.startsWith(prefix));
+    if (dirHunks.length === 0) return;
+
+    const newHunks = { ...reviewState.hunks };
+    for (const hunk of dirHunks) {
       if (newHunks[hunk.id]) {
         newHunks[hunk.id] = {
           ...newHunks[hunk.id],

@@ -52,7 +52,7 @@ export function GitStatusIndicator() {
         {/* Status badges - more compact for status bar */}
         {stagedCount > 0 && (
           <span
-            className="ml-1 font-mono text-xxs font-medium tabular-nums text-lime-400"
+            className="ml-1 font-mono text-xxs font-medium tabular-nums text-emerald-400"
             title={`${stagedCount} staged change${stagedCount !== 1 ? "s" : ""}`}
           >
             +{stagedCount}

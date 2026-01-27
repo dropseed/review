@@ -1,0 +1,537 @@
+import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
+import type { BranchList, StashEntry } from "../types";
+
+// Special values for local state options
+const WORKING_TREE = "__WORKING_TREE__";
+const STAGED_ONLY = "__STAGED_ONLY__";
+
+interface BranchOption {
+  value: string;
+  label: string;
+  group: string;
+  icon?: "branch" | "remote" | "stash" | "tree" | "staged";
+}
+
+interface BranchSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  branches: BranchList;
+  variant: "base" | "compare";
+  disabled?: boolean;
+  excludeValue?: string; // For compare selector to exclude base branch
+  includeLocalState?: boolean; // Include Working Tree / Staged options
+  baseValue?: string; // Current base value (for filtering existing comparisons)
+  existingComparisonKeys?: string[]; // Keys of existing reviews to filter out
+  placeholder?: string; // Placeholder text when value is empty
+}
+
+// Icons for different branch types
+const BranchIcon = memo(function BranchIcon({
+  type,
+}: {
+  type: BranchOption["icon"];
+}) {
+  const baseClass = "w-4 h-4 shrink-0";
+
+  switch (type) {
+    case "tree":
+      return (
+        <svg
+          className={`${baseClass} text-amber-400`}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fillRule="evenodd"
+            d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v8.5A2.25 2.25 0 0115.75 15h-3.105a3.501 3.501 0 001.1 1.677A.75.75 0 0113.26 18H6.74a.75.75 0 01-.484-1.323A3.501 3.501 0 007.355 15H4.25A2.25 2.25 0 012 12.75v-8.5z"
+            clipRule="evenodd"
+          />
+        </svg>
+      );
+    case "staged":
+      return (
+        <svg
+          className={`${baseClass} text-emerald-400`}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fillRule="evenodd"
+            d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+            clipRule="evenodd"
+          />
+        </svg>
+      );
+    case "stash":
+      return (
+        <svg
+          className={`${baseClass} text-violet-400`}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
+          <path
+            fillRule="evenodd"
+            d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.802a2 2 0 01-1.99-1.79L2 7.5z"
+            clipRule="evenodd"
+          />
+        </svg>
+      );
+    case "remote":
+      return (
+        <svg
+          className={`${baseClass} text-sky-400`}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2.75a.75.75 0 001.5 0V9.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0l-3.25 3.5a.75.75 0 101.1 1.02l1.95-2.1v4.59z"
+            clipRule="evenodd"
+          />
+        </svg>
+      );
+    case "branch":
+    default:
+      // Git branch icon (GitHub Octicons style)
+      return (
+        <svg
+          className={`${baseClass} text-stone-400`}
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+        </svg>
+      );
+  }
+});
+
+// Get display name for special values
+function getDisplayName(value: string, branches: BranchList): string {
+  if (value === WORKING_TREE) return "Working Tree";
+  if (value === STAGED_ONLY) return "Staged";
+
+  // Check if it's a stash
+  const stash = branches.stashes.find((s) => s.ref === value);
+  if (stash) {
+    const shortMessage =
+      stash.message.length > 25
+        ? stash.message.slice(0, 25) + "..."
+        : stash.message;
+    return `${stash.ref}: ${shortMessage}`;
+  }
+
+  return value;
+}
+
+// Helper to generate comparison key (must match makeComparison logic)
+function getComparisonKey(base: string, compareValue: string): string {
+  if (compareValue === WORKING_TREE) {
+    return `${base}..${base}+working-tree`;
+  }
+  if (compareValue === STAGED_ONLY) {
+    return `${base}..${base}+staged-only`;
+  }
+  return `${base}..${compareValue}`;
+}
+
+export const BranchSelect = memo(function BranchSelect({
+  value,
+  onChange,
+  label,
+  branches,
+  variant,
+  disabled = false,
+  excludeValue,
+  includeLocalState = false,
+  baseValue,
+  existingComparisonKeys = [],
+  placeholder,
+}: BranchSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [openUpward, setOpenUpward] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const listboxRef = useRef<HTMLUListElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Calculate dropdown direction based on available space
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const dropdownHeight = 300; // approximate max height
+
+      // Open upward if not enough space below but enough above
+      setOpenUpward(spaceBelow < dropdownHeight && spaceAbove > spaceBelow);
+    }
+  }, [isOpen]);
+
+  // Check if a compare option would create an existing comparison
+  const isExistingComparison = useCallback(
+    (compareValue: string): boolean => {
+      if (!baseValue || existingComparisonKeys.length === 0) return false;
+      const key = getComparisonKey(baseValue, compareValue);
+      return existingComparisonKeys.includes(key);
+    },
+    [baseValue, existingComparisonKeys],
+  );
+
+  // Build flat list of options
+  const options = useMemo(() => {
+    const opts: BranchOption[] = [];
+
+    if (includeLocalState) {
+      // Only add Working Tree if not already in progress
+      if (!isExistingComparison(WORKING_TREE)) {
+        opts.push({
+          value: WORKING_TREE,
+          label: "Working Tree",
+          group: "Local State",
+          icon: "tree",
+        });
+      }
+      if (!isExistingComparison(STAGED_ONLY)) {
+        opts.push({
+          value: STAGED_ONLY,
+          label: "Staged",
+          group: "Local State",
+          icon: "staged",
+        });
+      }
+
+      // Add stashes (filter out existing)
+      branches.stashes.forEach((stash: StashEntry) => {
+        if (isExistingComparison(stash.ref)) return;
+        const shortMessage =
+          stash.message.length > 20
+            ? stash.message.slice(0, 20) + "..."
+            : stash.message;
+        opts.push({
+          value: stash.ref,
+          label: `${stash.ref}: ${shortMessage}`,
+          group: "Local State",
+          icon: "stash",
+        });
+      });
+    }
+
+    // Add local branches (filter out excluded and existing)
+    branches.local
+      .filter((b) => b !== excludeValue && !isExistingComparison(b))
+      .forEach((branch) => {
+        opts.push({
+          value: branch,
+          label: branch,
+          group: "Local Branches",
+          icon: "branch",
+        });
+      });
+
+    // Add remote branches (filter out excluded and existing)
+    branches.remote
+      .filter((b) => b !== excludeValue && !isExistingComparison(b))
+      .forEach((branch) => {
+        opts.push({
+          value: branch,
+          label: branch,
+          group: "Remote Branches",
+          icon: "remote",
+        });
+      });
+
+    return opts;
+  }, [branches, excludeValue, includeLocalState, isExistingComparison]);
+
+  // Filter options based on search
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery.trim()) return options;
+    const query = searchQuery.toLowerCase();
+    return options.filter(
+      (opt) =>
+        opt.label.toLowerCase().includes(query) ||
+        opt.value.toLowerCase().includes(query),
+    );
+  }, [options, searchQuery]);
+
+  // Group filtered options for display
+  const groupedOptions = useMemo(() => {
+    const groups: Record<string, BranchOption[]> = {};
+    filteredOptions.forEach((opt) => {
+      if (!groups[opt.group]) groups[opt.group] = [];
+      groups[opt.group].push(opt);
+    });
+    return groups;
+  }, [filteredOptions]);
+
+  // Handle outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setIsOpen(false);
+        setSearchQuery("");
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (isOpen && searchRef.current) {
+      searchRef.current.focus();
+    }
+  }, [isOpen]);
+
+  // Scroll highlighted option into view
+  useEffect(() => {
+    if (isOpen && listboxRef.current) {
+      const highlighted = listboxRef.current.querySelector(
+        '[data-highlighted="true"]',
+      );
+      if (highlighted) {
+        highlighted.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [isOpen, highlightedIndex]);
+
+  // Handle keyboard navigation
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!isOpen) {
+        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+          e.preventDefault();
+          setIsOpen(true);
+        }
+        return;
+      }
+
+      switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          setIsOpen(false);
+          setSearchQuery("");
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          setHighlightedIndex((i) =>
+            Math.min(i + 1, filteredOptions.length - 1),
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setHighlightedIndex((i) => Math.max(i - 1, 0));
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (filteredOptions[highlightedIndex]) {
+            onChange(filteredOptions[highlightedIndex].value);
+            setIsOpen(false);
+            setSearchQuery("");
+          }
+          break;
+        case "Home":
+          e.preventDefault();
+          setHighlightedIndex(0);
+          break;
+        case "End":
+          e.preventDefault();
+          setHighlightedIndex(filteredOptions.length - 1);
+          break;
+      }
+    },
+    [isOpen, filteredOptions, highlightedIndex, onChange],
+  );
+
+  // Handle option selection
+  const handleSelect = useCallback(
+    (optionValue: string) => {
+      onChange(optionValue);
+      setIsOpen(false);
+      setSearchQuery("");
+    },
+    [onChange],
+  );
+
+  // Get current display text
+  const displayText = value ? getDisplayName(value, branches) : null;
+  const showPlaceholder = !value && placeholder;
+
+  // Variant-specific colors
+  const variantClasses =
+    variant === "base"
+      ? "border-terracotta-500/30 hover:border-terracotta-500/50 focus:ring-terracotta-500/30"
+      : "border-sage-500/30 hover:border-sage-500/50 focus:ring-sage-500/30 text-sage-400";
+
+  const buttonId = `branch-select-${variant}`;
+  const listboxId = `branch-listbox-${variant}`;
+
+  return (
+    <div ref={containerRef} className="relative min-w-0 max-w-[200px]">
+      {/* Trigger button */}
+      <button
+        ref={buttonRef}
+        type="button"
+        id={buttonId}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        className={`
+          w-full appearance-none rounded-lg border bg-stone-800/50
+          pl-3 pr-8 py-2 text-sm font-mono
+          text-left
+          transition-all duration-150
+          ${variantClasses}
+          ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-stone-800/70"}
+          focus:outline-none focus:ring-2
+        `}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-labelledby={buttonId}
+        aria-label={label}
+      >
+        <span
+          className={`block truncate ${showPlaceholder ? "text-stone-500" : ""}`}
+        >
+          {displayText || placeholder || "Select..."}
+        </span>
+        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+          <svg
+            className={`h-4 w-4 text-stone-500 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      </button>
+
+      {/* Dropdown */}
+      {isOpen && (
+        <div
+          className={`absolute z-50 w-64 rounded-lg border border-stone-700/50 bg-stone-900/95
+                     backdrop-blur-xl shadow-xl shadow-black/40
+                     ${openUpward ? "bottom-full mb-1 origin-bottom" : "top-full mt-1 origin-top"}`}
+          style={{ animation: "fade-in 0.15s ease-out" }}
+        >
+          {/* Search input */}
+          <div className="p-2 border-b border-stone-800/50">
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setHighlightedIndex(0);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Search branches..."
+              className="w-full rounded-md bg-stone-800/50 border border-stone-700/50
+                         px-3 py-1.5 text-sm text-stone-200
+                         placeholder:text-stone-500
+                         focus:outline-none focus:ring-1 focus:ring-stone-600"
+              aria-label="Search branches"
+            />
+          </div>
+
+          {/* Options list */}
+          <ul
+            ref={listboxRef}
+            id={listboxId}
+            role="listbox"
+            aria-labelledby={buttonId}
+            className="max-h-60 overflow-auto py-1 scrollbar-thin"
+          >
+            {Object.entries(groupedOptions).length === 0 ? (
+              <li className="px-3 py-2 text-sm text-stone-500">
+                No branches found
+              </li>
+            ) : (
+              Object.entries(groupedOptions).map(([group, groupOpts]) => (
+                <li key={group}>
+                  {/* Group header */}
+                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                    {group}
+                  </div>
+                  {/* Group options */}
+                  <ul>
+                    {groupOpts.map((opt) => {
+                      const flatIndex = filteredOptions.indexOf(opt);
+                      const isHighlighted = flatIndex === highlightedIndex;
+                      const isSelected = opt.value === value;
+
+                      return (
+                        <li
+                          key={opt.value}
+                          role="option"
+                          aria-selected={isSelected}
+                          data-highlighted={isHighlighted}
+                          onClick={() => handleSelect(opt.value)}
+                          onMouseEnter={() => setHighlightedIndex(flatIndex)}
+                          className={`
+                            flex items-center gap-2 px-3 py-2 cursor-pointer
+                            text-sm transition-colors duration-75
+                            ${
+                              isHighlighted
+                                ? variant === "base"
+                                  ? "bg-terracotta-500/10 text-stone-100"
+                                  : "bg-sage-500/10 text-stone-100"
+                                : "text-stone-300 hover:bg-stone-800/50"
+                            }
+                            ${isSelected ? "font-medium" : ""}
+                          `}
+                        >
+                          <BranchIcon type={opt.icon} />
+                          <span className="truncate font-mono">
+                            {opt.label}
+                          </span>
+                          {isSelected && (
+                            <svg
+                              className={`ml-auto h-4 w-4 shrink-0 ${variant === "base" ? "text-terracotta-400" : "text-sage-400"}`}
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                              aria-hidden="true"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+});
+
+export { WORKING_TREE, STAGED_ONLY };

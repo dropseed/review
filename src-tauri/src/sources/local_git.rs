@@ -303,6 +303,12 @@ impl LocalGitSource {
         Ok(output.lines().map(|s| s.to_string()).collect())
     }
 
+    /// Check if a file is tracked by git (in the index)
+    pub fn is_file_tracked(&self, file_path: &str) -> Result<bool, LocalGitError> {
+        let output = self.run_git(&["ls-files", file_path])?;
+        Ok(!output.trim().is_empty())
+    }
+
     /// Get all files including gitignored (for browsing, not review)
     /// Uses git ls-files with different flags to get everything
     pub fn list_all_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, LocalGitError> {

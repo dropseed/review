@@ -1,4 +1,5 @@
 use super::prompt::{build_batch_prompt, build_single_hunk_prompt, HunkInput};
+use crate::trust::patterns::is_valid_pattern_id;
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -121,6 +122,29 @@ fn run_claude_with_model(
     Ok(stdout)
 }
 
+/// Filter out invalid labels and return only valid taxonomy pattern IDs
+fn validate_labels(result: ClassificationResult) -> ClassificationResult {
+    let valid_labels: Vec<String> = result
+        .label
+        .into_iter()
+        .filter(|label| {
+            let is_valid = is_valid_pattern_id(label);
+            if !is_valid {
+                eprintln!(
+                    "[validate_labels] Filtered out invalid label: '{}' - not in taxonomy",
+                    label
+                );
+            }
+            is_valid
+        })
+        .collect();
+
+    ClassificationResult {
+        label: valid_labels,
+        reasoning: result.reasoning,
+    }
+}
+
 /// Extract a single classification result from Claude's output
 fn extract_single_classification(output: &str) -> Result<ClassificationResult, ClassifyError> {
     let trimmed = output.trim();
@@ -180,7 +204,8 @@ fn classify_single_hunk(
     let prompt = build_single_hunk_prompt(hunk);
     let output = run_claude_with_model(&prompt, repo_path, model, custom_command)?;
     let result = extract_single_classification(&output)?;
-    Ok((hunk.id.clone(), result))
+    let validated = validate_labels(result);
+    Ok((hunk.id.clone(), validated))
 }
 
 /// Extract batch classifications from Claude's output
@@ -225,13 +250,20 @@ fn extract_batch_classifications(
         )));
     };
 
-    serde_json::from_str(json_str).map_err(|e| {
-        ClassifyError::ParseError(format!(
-            "JSON parse error: {}. Input: {}",
-            e,
-            &json_str[..json_str.len().min(500)]
-        ))
-    })
+    let parsed: HashMap<String, ClassificationResult> =
+        serde_json::from_str(json_str).map_err(|e| {
+            ClassifyError::ParseError(format!(
+                "JSON parse error: {}. Input: {}",
+                e,
+                &json_str[..json_str.len().min(500)]
+            ))
+        })?;
+
+    // Validate all labels in each classification
+    Ok(parsed
+        .into_iter()
+        .map(|(id, result)| (id, validate_labels(result)))
+        .collect())
 }
 
 /// Classify a batch of hunks using a single Claude CLI call
@@ -435,7 +467,7 @@ That's the result."#;
 
 ```json
 {
-    "src/app.ts:hash1": {"label": ["code:relocated"], "reasoning": "Code moved"},
+    "src/app.ts:hash1": {"label": ["imports:reordered"], "reasoning": "Imports reorganized"},
     "src/app.ts:hash2": {"label": [], "reasoning": "Needs review"}
 }
 ```
@@ -444,7 +476,22 @@ Done."#;
 
         let result = extract_batch_classifications(output).unwrap();
         assert_eq!(result.len(), 2);
-        assert_eq!(result["src/app.ts:hash1"].label, vec!["code:relocated"]);
+        assert_eq!(result["src/app.ts:hash1"].label, vec!["imports:reordered"]);
+        assert!(result["src/app.ts:hash2"].label.is_empty());
+    }
+
+    #[test]
+    fn test_extract_batch_classifications_filters_invalid_labels() {
+        let output = r#"{
+            "src/app.ts:hash1": {"label": ["code:invented", "imports:added"], "reasoning": "Mixed valid/invalid"},
+            "src/app.ts:hash2": {"label": ["totally:fake"], "reasoning": "All invalid"}
+        }"#;
+
+        let result = extract_batch_classifications(output).unwrap();
+        assert_eq!(result.len(), 2);
+        // Only valid label should remain
+        assert_eq!(result["src/app.ts:hash1"].label, vec!["imports:added"]);
+        // Invalid labels filtered out, leaving empty
         assert!(result["src/app.ts:hash2"].label.is_empty());
     }
 }

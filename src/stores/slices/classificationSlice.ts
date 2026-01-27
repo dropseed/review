@@ -16,7 +16,7 @@ const createDebouncedAutoClassify = () => {
     const currentGen = generation;
     timeout = setTimeout(async () => {
       await classifyFn(currentGen);
-    }, 1500);
+    }, 3000);
   };
 };
 
@@ -35,6 +35,7 @@ export interface ClassificationSlice {
   // Actions
   checkClaudeAvailable: () => Promise<void>;
   classifyUnlabeledHunks: (hunkIds?: string[]) => Promise<void>;
+  reclassifyHunks: (hunkIds?: string[]) => Promise<void>;
   triggerAutoClassification: () => void;
 }
 
@@ -73,12 +74,14 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
     classifyGeneration++;
     const currentGeneration = classifyGeneration;
 
+    const { classifyingHunkIds } = get();
+
     // Find hunks to classify - filter to specified ids if provided, then filter out already-labeled
     let candidateHunks = hunkIds
       ? hunks.filter((h) => hunkIds.includes(h.id))
       : hunks;
 
-    // Always filter out hunks that have already been classified
+    // Filter out hunks that have already been classified
     let hunksToClassify = candidateHunks.filter((hunk) => {
       const state = reviewState.hunks[hunk.id];
       const hasLabel = state?.label && state.label.length > 0;
@@ -94,6 +97,19 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
       );
     }
 
+    // Filter out hunks that are currently being classified
+    const inFlightCount = hunksToClassify.filter((h) =>
+      classifyingHunkIds.has(h.id),
+    ).length;
+    if (inFlightCount > 0) {
+      console.log(
+        `[classifyUnlabeledHunks] Skipping ${inFlightCount} hunks already being classified`,
+      );
+      hunksToClassify = hunksToClassify.filter(
+        (h) => !classifyingHunkIds.has(h.id),
+      );
+    }
+
     if (hunksToClassify.length === 0) {
       console.log("[classifyUnlabeledHunks] No unclassified hunks to classify");
       if (!hunkIds) {
@@ -106,12 +122,15 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
       `[classifyUnlabeledHunks] Classifying ${hunksToClassify.length} hunks`,
     );
 
-    const classifyingIds = new Set(hunksToClassify.map((h) => h.id));
-    set({
+    const newClassifyingIds = hunksToClassify.map((h) => h.id);
+    set((state) => ({
       classifying: true,
       classificationError: null,
-      classifyingHunkIds: classifyingIds,
-    });
+      classifyingHunkIds: new Set([
+        ...state.classifyingHunkIds,
+        ...newClassifyingIds,
+      ]),
+    }));
 
     // Set up listener for batch completion events
     let unlisten: UnlistenFn | null = null;
@@ -167,7 +186,17 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
       // Check if this classification was cancelled
       if (currentGeneration !== classifyGeneration) {
         console.log("[classifyUnlabeledHunks] Cancelled - stale generation");
-        set({ classifying: false, classifyingHunkIds: new Set<string>() });
+        // Remove only our hunks from the tracking set
+        set((state) => {
+          const remaining = new Set(state.classifyingHunkIds);
+          for (const id of newClassifyingIds) {
+            remaining.delete(id);
+          }
+          return {
+            classifying: remaining.size > 0,
+            classifyingHunkIds: remaining,
+          };
+        });
         return;
       }
 
@@ -194,10 +223,17 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
         updatedAt: new Date().toISOString(),
       };
 
-      set({
-        reviewState: newState,
-        classifying: false,
-        classifyingHunkIds: new Set<string>(),
+      // Remove only our hunks from the tracking set
+      set((state) => {
+        const remaining = new Set(state.classifyingHunkIds);
+        for (const id of newClassifyingIds) {
+          remaining.delete(id);
+        }
+        return {
+          reviewState: newState,
+          classifying: remaining.size > 0,
+          classifyingHunkIds: remaining,
+        };
       });
 
       await saveReviewState();
@@ -205,18 +241,69 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
     } catch (err) {
       if (unlisten) unlisten();
 
-      if (currentGeneration !== classifyGeneration) {
-        set({ classifying: false, classifyingHunkIds: new Set<string>() });
-        return;
-      }
+      // Remove only our hunks from the tracking set
+      set((state) => {
+        const remaining = new Set(state.classifyingHunkIds);
+        for (const id of newClassifyingIds) {
+          remaining.delete(id);
+        }
 
-      console.error("[classifyUnlabeledHunks] Classification failed:", err);
-      set({
-        classifying: false,
-        classifyingHunkIds: new Set<string>(),
-        classificationError: err instanceof Error ? err.message : String(err),
+        if (currentGeneration !== classifyGeneration) {
+          return {
+            classifying: remaining.size > 0,
+            classifyingHunkIds: remaining,
+          };
+        }
+
+        console.error("[classifyUnlabeledHunks] Classification failed:", err);
+        return {
+          classifying: remaining.size > 0,
+          classifyingHunkIds: remaining,
+          classificationError: err instanceof Error ? err.message : String(err),
+        };
       });
     }
+  },
+
+  reclassifyHunks: async (hunkIds) => {
+    const { repoPath, hunks, reviewState, saveReviewState } = get();
+    if (!repoPath || !reviewState) return;
+
+    // Determine which hunks to reclassify
+    const targetHunks = hunkIds
+      ? hunks.filter((h) => hunkIds.includes(h.id))
+      : hunks;
+
+    if (targetHunks.length === 0) return;
+
+    console.log(
+      `[reclassifyHunks] Clearing labels for ${targetHunks.length} hunks`,
+    );
+
+    // Clear existing labels/reasoning for these hunks
+    const newHunks = { ...reviewState.hunks };
+    for (const hunk of targetHunks) {
+      if (newHunks[hunk.id]) {
+        newHunks[hunk.id] = {
+          ...newHunks[hunk.id],
+          label: [],
+          reasoning: undefined,
+        };
+      }
+    }
+
+    const newState = {
+      ...reviewState,
+      hunks: newHunks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({ reviewState: newState });
+    await saveReviewState();
+
+    // Now classify them (they're now "unlabeled")
+    const { classifyUnlabeledHunks } = get();
+    await classifyUnlabeledHunks(targetHunks.map((h) => h.id));
   },
 
   triggerAutoClassification: () => {
@@ -230,8 +317,12 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
     } = get();
 
     if (classifying) {
-      console.log("[triggerAutoClassification] Already classifying, skipping");
-      return;
+      console.log(
+        "[triggerAutoClassification] Already classifying, will reschedule after completion",
+      );
+      // Don't return - let the debounce handle rescheduling
+      // The debounce will wait 3s after this call, by which time the current
+      // classification should be done (or the debounce will be called again)
     }
 
     if (!claudeAvailable || !autoClassifyEnabled || !reviewState) {

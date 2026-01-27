@@ -1,6 +1,8 @@
 import { memo } from "react";
-import type { ProcessedFileEntry, ViewMode } from "./types";
-import { HunkStatusDots, StatusLetter } from "./StatusIndicators";
+import type { ProcessedFileEntry } from "./types";
+import { HunkCount, StatusLetter } from "./StatusIndicators";
+
+export type HunkContext = "needs-review" | "reviewed" | "all";
 
 interface FileNodeProps {
   entry: ProcessedFileEntry;
@@ -11,7 +13,86 @@ interface FileNodeProps {
   onSelectFile: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string) => void;
   registerRef: (path: string, ref: HTMLButtonElement | null) => void;
-  viewMode: ViewMode;
+  hunkContext: HunkContext;
+  onApproveAll?: (path: string, isDir: boolean) => void;
+  onUnapproveAll?: (path: string, isDir: boolean) => void;
+}
+
+// Approve/Unapprove buttons that show on hover
+function ApprovalButtons({
+  hasPending,
+  hasApproved,
+  onApprove,
+  onUnapprove,
+}: {
+  hasPending: boolean;
+  hasApproved: boolean;
+  onApprove: () => void;
+  onUnapprove: () => void;
+}) {
+  if (!hasPending && !hasApproved) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Approve button - show if there are pending hunks */}
+      {hasPending && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onApprove();
+          }}
+          className="flex items-center justify-center w-5 h-5 rounded
+                     text-stone-500 hover:text-lime-400 hover:bg-lime-500/20
+                     transition-colors"
+          title="Approve all"
+        >
+          <svg
+            className="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 13l4 4L19 7"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* Unapprove button - show if there are approved hunks */}
+      {hasApproved && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnapprove();
+          }}
+          className="flex items-center justify-center w-5 h-5 rounded
+                     text-lime-400 hover:text-stone-400 hover:bg-stone-700/50
+                     transition-colors"
+          title="Unapprove all"
+        >
+          <svg
+            className="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 }
 
 export const FileNode = memo(
@@ -24,7 +105,9 @@ export const FileNode = memo(
     onSelectFile,
     onContextMenu,
     registerRef,
-    viewMode,
+    hunkContext,
+    onApproveAll,
+    onUnapproveAll,
   }: FileNodeProps) {
     if (!entry.matchesFilter) {
       return null;
@@ -39,49 +122,49 @@ export const FileNode = memo(
       const visibleChildren = entry.children?.filter((c) => c.matchesFilter);
       const hasReviewableContent = entry.hunkStatus.total > 0;
       const hasPending = entry.hunkStatus.pending > 0;
+      const hasApproved = entry.hunkStatus.approved > 0;
 
       return (
         <div className="select-none">
-          <button
-            className="group flex w-full items-center gap-1.5 py-0.5 pr-2 text-left transition-colors hover:bg-stone-800/40"
+          <div
+            className="group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors hover:bg-stone-800/40"
             style={{ paddingLeft }}
-            onClick={() => onToggle(entry.path)}
-            aria-expanded={isExpanded}
           >
-            {/* Chevron */}
-            <svg
-              className={`h-2.5 w-2.5 flex-shrink-0 text-stone-600 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-              viewBox="0 0 24 24"
-              fill="currentColor"
+            <button
+              className="flex flex-1 items-center gap-1.5 text-left min-w-0"
+              onClick={() => onToggle(entry.path)}
+              aria-expanded={isExpanded}
             >
-              <path d="M10 6l6 6-6 6" />
-            </svg>
+              {/* Chevron */}
+              <svg
+                className={`h-3 w-3 flex-shrink-0 text-stone-600 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M10 6l6 6-6 6" />
+              </svg>
 
-            {/* Folder icon */}
-            <svg
-              className={`h-3.5 w-3.5 flex-shrink-0 ${hasReviewableContent ? (hasPending ? "text-amber-500" : "text-lime-500") : "text-stone-600"}`}
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              {isExpanded ? (
-                <path d="M19.906 9c.382 0 .749.057 1.094.162V9a3 3 0 00-3-3h-3.879a.75.75 0 01-.53-.22L11.47 3.66A2.25 2.25 0 009.879 3H6a3 3 0 00-3 3v3.162A3.756 3.756 0 014.094 9h15.812zM4.094 10.5a2.25 2.25 0 00-2.227 2.568l.857 6A2.25 2.25 0 004.951 21H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-2.227-2.568H4.094z" />
-              ) : (
-                <path d="M19.5 21a3 3 0 003-3v-4.5a3 3 0 00-3-3h-15a3 3 0 00-3 3V18a3 3 0 003 3h15zM1.5 10.146V6a3 3 0 013-3h5.379a2.25 2.25 0 011.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 013 3v1.146A4.483 4.483 0 0019.5 9h-15a4.483 4.483 0 00-3 1.146z" />
-              )}
-            </svg>
+              {/* Directory name */}
+              <span
+                className={`min-w-0 flex-1 truncate text-xs ${hasReviewableContent ? "text-stone-200" : "text-stone-400"}`}
+              >
+                {entry.displayName}
+              </span>
+            </button>
 
-            {/* Directory name */}
-            <span
-              className={`min-w-0 flex-1 truncate text-2xs ${hasReviewableContent ? "text-stone-200" : "text-stone-400"}`}
-            >
-              {entry.displayName}
-            </span>
-
-            {/* Aggregate hunk status */}
-            {entry.hunkStatus.total > 0 && (
-              <HunkStatusDots status={entry.hunkStatus} />
+            {/* Approval button */}
+            {onApproveAll && onUnapproveAll && hasReviewableContent && (
+              <ApprovalButtons
+                hasPending={hasPending}
+                hasApproved={hasApproved}
+                onApprove={() => onApproveAll(entry.path, true)}
+                onUnapprove={() => onUnapproveAll(entry.path, true)}
+              />
             )}
-          </button>
+
+            {/* Aggregate hunk count */}
+            <HunkCount status={entry.hunkStatus} context={hunkContext} />
+          </div>
 
           {isExpanded && visibleChildren && visibleChildren.length > 0 && (
             <div>
@@ -96,7 +179,9 @@ export const FileNode = memo(
                   onSelectFile={onSelectFile}
                   onContextMenu={onContextMenu}
                   registerRef={registerRef}
-                  viewMode={viewMode}
+                  hunkContext={hunkContext}
+                  onApproveAll={onApproveAll}
+                  onUnapproveAll={onUnapproveAll}
                 />
               ))}
             </div>
@@ -107,45 +192,61 @@ export const FileNode = memo(
 
     // File node
     const isUnchanged = !entry.hasChanges;
-    const isComplete =
-      entry.hunkStatus.total > 0 && entry.hunkStatus.pending === 0;
+    const hasReviewableContent = entry.hunkStatus.total > 0;
+    const hasPending = entry.hunkStatus.pending > 0;
+    const hasApproved = entry.hunkStatus.approved > 0;
+    const isComplete = hasReviewableContent && entry.hunkStatus.pending === 0;
 
     return (
-      <button
-        ref={(el) => registerRef(entry.path, el)}
+      <div
+        ref={(el) => registerRef(entry.path, el as HTMLButtonElement | null)}
         onContextMenu={(e) => onContextMenu(e, entry.path)}
-        className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 text-left transition-colors ${
+        className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
           isSelected
             ? "bg-amber-500/15 border-l-2 border-l-amber-400"
             : isUnchanged
               ? "border-l-2 border-l-transparent opacity-75 hover:opacity-90"
               : "border-l-2 border-l-transparent hover:bg-stone-800/40"
         }`}
-        style={{ paddingLeft: `${depth * 0.8 + 1.0}rem` }}
-        onClick={() => onSelectFile(entry.path)}
-        aria-selected={isSelected}
+        style={{ paddingLeft: `${depth * 0.8 + 0.5}rem` }}
       >
-        {/* Git status */}
-        <StatusLetter status={entry.status} />
-
-        {/* File name */}
-        <span
-          className={`min-w-0 flex-1 truncate text-2xs ${
-            isSelected
-              ? "text-stone-100"
-              : isComplete
-                ? "text-lime-400"
-                : entry.hasChanges
-                  ? "text-stone-300"
-                  : "text-stone-400"
-          }`}
+        <button
+          className="flex flex-1 items-center gap-1.5 text-left min-w-0"
+          onClick={() => onSelectFile(entry.path)}
+          aria-selected={isSelected}
         >
-          {entry.name}
-        </span>
+          {/* Git status */}
+          <StatusLetter status={entry.status} />
 
-        {/* Hunk status */}
-        <HunkStatusDots status={entry.hunkStatus} />
-      </button>
+          {/* File name */}
+          <span
+            className={`min-w-0 flex-1 truncate text-xs ${
+              isSelected
+                ? "text-stone-100"
+                : isComplete
+                  ? "text-lime-400"
+                  : entry.hasChanges
+                    ? "text-stone-300"
+                    : "text-stone-400"
+            }`}
+          >
+            {entry.name}
+          </span>
+        </button>
+
+        {/* Approval button */}
+        {onApproveAll && onUnapproveAll && hasReviewableContent && (
+          <ApprovalButtons
+            hasPending={hasPending}
+            hasApproved={hasApproved}
+            onApprove={() => onApproveAll(entry.path, false)}
+            onUnapprove={() => onUnapproveAll(entry.path, false)}
+          />
+        )}
+
+        {/* Hunk count */}
+        <HunkCount status={entry.hunkStatus} context={hunkContext} />
+      </div>
     );
   },
   (prev, next) => {
@@ -154,7 +255,9 @@ export const FileNode = memo(
       prev.depth === next.depth &&
       prev.expandedPaths === next.expandedPaths &&
       prev.selectedFile === next.selectedFile &&
-      prev.viewMode === next.viewMode
+      prev.hunkContext === next.hunkContext &&
+      prev.onApproveAll === next.onApproveAll &&
+      prev.onUnapproveAll === next.onUnapproveAll
     );
   },
 );

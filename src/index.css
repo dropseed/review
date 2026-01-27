@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -21,6 +23,17 @@
   --accent-lime: #84cc16;
   --accent-rose: #f43f5e;
   --accent-sky: #0ea5e9;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-violet: #8b5cf6;
+
+  /* Brand colors from logo */
+  --terracotta-400: #c75d4a;
+  --terracotta-500: #a63d2f;
+  --terracotta-600: #8b3426;
+  --sage-400: #6b9b7a;
+  --sage-500: #4a7c59;
+  --sage-600: #3d6549;
 
   /* Base theme */
   --bg-primary: #0c0a09;
@@ -29,16 +42,16 @@
   --bg-elevated: #44403c;
 
   --text-primary: #fafaf9;
-  --text-secondary: #a8a29e;
-  --text-muted: #78716c;
-  --text-faint: #6b6560;
+  --text-secondary: #c7c4c0;  /* Was #a8a29e, now ~5.5:1 contrast */
+  --text-muted: #a19d99;      /* Was #78716c, now ~4.0:1 contrast */
+  --text-faint: #918d89;      /* Was #6b6560, now ~3.5:1 contrast */
 
   --border-subtle: rgba(168, 162, 158, 0.1);
   --border-default: rgba(168, 162, 158, 0.2);
   --border-strong: rgba(168, 162, 158, 0.3);
 
-  /* Typography - system sans-serif */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  /* Typography - Inter with system fallback */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -69,7 +82,7 @@ body {
 
 /* Scale the entire UI when font size changes (for presentations) */
 html {
-  font-size: calc(15px * var(--ui-scale));
+  font-size: calc(16px * var(--ui-scale));
 }
 
 /* Custom scrollbar */
@@ -157,6 +170,24 @@ html {
   animation: slide-in 0.2s ease-out forwards;
 }
 
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Input styling */
 .input {
   background: var(--bg-primary);
@@ -197,7 +228,7 @@ html {
 .progress-bar-trusted {
   position: absolute;
   height: 100%;
-  background: var(--accent-sky);
+  background: var(--accent-cyan);
   border-radius: 0.125rem 0 0 0.125rem;
   transition: width 0.3s ease;
 }
@@ -233,6 +264,21 @@ button, input, select, textarea {
   font-size: inherit;
 }
 
+/* Windows dark mode: ensure native form elements have proper colors */
+select, option, optgroup {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+option:checked {
+  background-color: var(--stone-600);
+}
+
+optgroup {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 /* Accessibility: prevent double-tap zoom delay on interactive elements */
 button, a, [role="button"] {
   touch-action: manipulation;
@@ -247,6 +293,14 @@ button, a, [role="button"] {
 /* Remove default focus outline when not using keyboard navigation */
 :focus:not(:focus-visible) {
   outline: none;
+}
+
+/* Accessibility: override stone text colors for better contrast */
+@layer utilities {
+  .text-stone-400 { color: #c7c4c0; }
+  .text-stone-500 { color: #a19d99; }
+  .text-stone-600 { color: #918d89; }
+  .text-violet-400 { color: #c4b5fd; }
 }
 
 /* Image viewer styles */
@@ -315,4 +369,62 @@ button, a, [role="button"] {
   align-items: center;
   justify-content: center;
   cursor: ew-resize;
+}
+
+/* Subtle noise texture for depth */
+.texture-noise {
+  position: relative;
+}
+
+.texture-noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+/* Enhanced depth shadows */
+.shadow-depth {
+  box-shadow:
+    0 0.25rem 0.5rem -0.125rem rgba(0, 0, 0, 0.3),
+    0 0.5rem 1rem -0.25rem rgba(0, 0, 0, 0.2),
+    inset 0 0.0625rem 0 rgba(255, 255, 255, 0.03);
+}
+
+/* Glow effects */
+.glow-sage {
+  box-shadow: 0 0 1rem rgba(74, 124, 89, 0.3);
+}
+
+.glow-terracotta {
+  box-shadow: 0 0 1rem rgba(166, 61, 47, 0.3);
+}
+
+/* Interactive button affordance */
+.btn-interactive {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-interactive::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.2) 0%, transparent 70%);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.2s, transform 0.3s;
+}
+
+.btn-interactive:hover::before {
+  opacity: 1;
+  transform: scale(1.5);
+}
+
+.btn-interactive:active::before {
+  opacity: 0.5;
+  transform: scale(2);
 }

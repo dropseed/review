@@ -159,10 +159,16 @@ export const createFilesSlice: SliceCreator<FilesSlice> = (set, get) => ({
         set({ comparison: savedComparison });
       } else {
         try {
-          const defaultBranch = await invoke<string>("get_default_branch", {
-            repoPath,
-          });
-          const newComparison = makeComparison(defaultBranch, "HEAD", true);
+          const [defaultBranch, currentBranch] = await Promise.all([
+            invoke<string>("get_default_branch", { repoPath }),
+            invoke<string>("get_current_branch", { repoPath }),
+          ]);
+          // Use resolved branch name instead of "HEAD" so each branch gets its own review state
+          const newComparison = makeComparison(
+            defaultBranch,
+            currentBranch,
+            true,
+          );
           set({ comparison: newComparison });
         } catch {
           set({ comparison: defaultComparison });

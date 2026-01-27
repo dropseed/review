@@ -90,6 +90,10 @@ export function DiffView({
     updateAnnotation,
     deleteAnnotation,
     classifyingHunkIds,
+    addTrustPattern,
+    removeTrustPattern,
+    reclassifyHunks,
+    claudeAvailable,
   } = useReviewStore();
 
   // Annotation editing state
@@ -116,7 +120,7 @@ export function DiffView({
     hunk.lines.every((l) => l.type === "removed" || l.type === "context") &&
     hunk.lines.some((l) => l.type === "removed");
 
-  // Build line annotations for each hunk - position at first changed line
+  // Build line annotations for each hunk - position at last changed line
   const hunkAnnotations: DiffLineAnnotation<AnnotationMeta>[] = hunks.map(
     (hunk) => {
       const hunkState = reviewState?.hunks[hunk.id];
@@ -125,16 +129,35 @@ export function DiffView({
         : null;
       const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
 
-      // Find the first changed line (added or removed) to position annotation there
-      const firstChangedLine = hunk.lines.find(
+      // Find the last changed line to position annotation after it
+      const changedLines = hunk.lines.filter(
         (l) => l.type === "added" || l.type === "removed",
       );
-      const lineNumber = isSource
-        ? (firstChangedLine?.oldLineNumber ?? hunk.oldStart)
-        : (firstChangedLine?.newLineNumber ?? hunk.newStart);
+      const lastChanged = changedLines[changedLines.length - 1];
+
+      // Determine side and line number based on the last change type
+      // For deletions: use deletions side with oldLineNumber
+      // For additions: use additions side with newLineNumber
+      // This ensures the annotation appears right at the last change
+      let annotationSide: "additions" | "deletions";
+      let lineNumber: number;
+
+      if (!lastChanged) {
+        // No changes (shouldn't happen), fall back to defaults
+        annotationSide = isSource ? "deletions" : "additions";
+        lineNumber = isSource ? hunk.oldStart : hunk.newStart;
+      } else if (lastChanged.type === "removed") {
+        // Last change is a deletion - put annotation on deletions side
+        annotationSide = "deletions";
+        lineNumber = lastChanged.oldLineNumber ?? hunk.oldStart;
+      } else {
+        // Last change is an addition - put annotation on additions side
+        annotationSide = "additions";
+        lineNumber = lastChanged.newLineNumber ?? hunk.newStart;
+      }
 
       return {
-        side: isSource ? ("deletions" as const) : ("additions" as const),
+        side: annotationSide,
         lineNumber,
         metadata: {
           type: "hunk" as const,
@@ -258,7 +281,7 @@ export function DiffView({
 
     return (
       <div
-        className={`flex items-center gap-2 px-3 py-1.5 border-b border-stone-700/50 ${
+        className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
           isRejected
             ? "bg-rose-500/10"
             : isApproved
@@ -268,17 +291,6 @@ export function DiffView({
                 : "bg-stone-800/80"
         }`}
       >
-        {/* Trust labels with reasoning tooltip */}
-        {hunkState?.label?.map((lbl, i) => (
-          <span
-            key={i}
-            className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-400 cursor-help"
-            title={hunkState?.reasoning || undefined}
-          >
-            {lbl}
-          </span>
-        ))}
-
         {/* Classifying indicator */}
         {classifyingHunkIds.has(hunk.id) && (
           <div className="flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5">
@@ -388,64 +400,107 @@ export function DiffView({
             <button
               onClick={() => rejectHunk(hunk.id)}
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-400 transition-all hover:bg-rose-500/15 hover:text-rose-400"
-              title="Reject this change (⌘X)"
+              title="Reject this change"
               aria-label="Reject change"
             >
               <span>Reject</span>
-              <kbd className="hidden sm:inline-block rounded bg-stone-800/80 px-1 py-0.5 text-[0.6rem] font-mono text-stone-500">
-                ⌘X
-              </kbd>
             </button>
             <div className="w-px self-stretch bg-stone-700/50" />
             <button
               onClick={() => approveHunk(hunk.id)}
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-lime-500/15 hover:text-lime-400"
-              title="Approve this change (⌘Y)"
+              title="Approve this change"
               aria-label="Approve change"
             >
               <span>Approve</span>
-              <kbd className="hidden sm:inline-block rounded bg-stone-800/80 px-1 py-0.5 text-[0.6rem] font-mono text-stone-500">
-                ⌘Y
-              </kbd>
             </button>
           </div>
         )}
 
-        {/* Overflow menu - pushed to far right */}
-        <div className="ml-auto">
-          <OverflowMenu>
-            <button
-              onClick={() => {
-                // Find first changed line to add comment at
-                const firstChanged = hunk.lines.find(
-                  (l) => l.type === "added" || l.type === "removed",
-                );
-                const lineNumber = isSource
-                  ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-                  : (firstChanged?.newLineNumber ?? hunk.newStart);
-                setNewAnnotationLine({
-                  lineNumber,
-                  side: isSource ? "old" : "new",
-                  hunkId: hunk.id,
-                });
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+        {/* Comment button - inline after approve/reject */}
+        <button
+          onClick={() => {
+            // Find first changed line to add comment at
+            const firstChanged = hunk.lines.find(
+              (l) => l.type === "added" || l.type === "removed",
+            );
+            const lineNumber = isSource
+              ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
+              : (firstChanged?.newLineNumber ?? hunk.newStart);
+            setNewAnnotationLine({
+              lineNumber,
+              side: isSource ? "old" : "new",
+              hunkId: hunk.id,
+            });
+          }}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
+          title="Add comment"
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+            />
+          </svg>
+          <span className="hidden sm:inline">Comment</span>
+        </button>
+
+        {/* Trust labels - right side, click to toggle trust */}
+        {hunkState?.label && hunkState.label.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <svg
+              className="h-3 w-3 text-stone-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 4.5v15m7.5-7.5h-15"
-                />
-              </svg>
-              Add comment
-            </button>
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            {hunkState.label.map((lbl, i) => {
+              const isTrustedLabel = (reviewState?.trustList ?? []).includes(
+                lbl,
+              );
+              return (
+                <button
+                  key={i}
+                  onClick={() => {
+                    if (isTrustedLabel) {
+                      removeTrustPattern(lbl);
+                    } else {
+                      addTrustPattern(lbl);
+                    }
+                  }}
+                  className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-all hover:ring-1 ${
+                    isTrustedLabel
+                      ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
+                      : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
+                  }`}
+                  title={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"${hunkState?.reasoning ? `\n\n${hunkState.reasoning}` : ""}`}
+                >
+                  {lbl}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Overflow menu */}
+        <div
+          className={
+            hunkState?.label && hunkState.label.length > 0 ? "" : "ml-auto"
+          }
+        >
+          <OverflowMenu>
             {onViewInFile && (
               <button
                 onClick={() => {
@@ -473,6 +528,27 @@ export function DiffView({
                   />
                 </svg>
                 View in file
+              </button>
+            )}
+            {claudeAvailable && (
+              <button
+                onClick={() => reclassifyHunks([hunk.id])}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                  />
+                </svg>
+                Reclassify
               </button>
             )}
             <button

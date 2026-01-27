@@ -1,7 +1,22 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "../stores/reviewStore";
-import { trustCategories } from "../constants/trustPatterns";
 import { anyLabelMatchesPattern } from "../utils/matching";
+
+// Types matching the Rust TrustCategory/TrustPattern structs
+interface TrustPattern {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+}
+
+interface TrustCategory {
+  id: string;
+  name: string;
+  description: string;
+  patterns: TrustPattern[];
+}
 import {
   sendNotification,
   isPermissionGranted,
@@ -24,12 +39,17 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
     classificationError,
     checkClaudeAvailable,
     classifyUnlabeledHunks,
+    reclassifyHunks,
     setSelectedFile,
   } = useReviewStore();
 
+  // Taxonomy loaded from backend
+  const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
+  const [taxonomyLoading, setTaxonomyLoading] = useState(false);
+
   // Track which categories are expanded
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    () => new Set(trustCategories.map((c) => c.id)),
+    new Set(),
   );
 
   // Track preview state
@@ -44,6 +64,27 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
       checkClaudeAvailable();
     }
   }, [isOpen, checkClaudeAvailable]);
+
+  // Load taxonomy from backend when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadTaxonomy = async () => {
+      setTaxonomyLoading(true);
+      try {
+        const categories = await invoke<TrustCategory[]>("get_trust_taxonomy");
+        setTrustCategories(categories);
+        // Expand all categories by default
+        setExpandedCategories(new Set(categories.map((c) => c.id)));
+      } catch (err) {
+        console.error("Failed to load taxonomy:", err);
+      } finally {
+        setTaxonomyLoading(false);
+      }
+    };
+
+    loadTaxonomy();
+  }, [isOpen]);
 
   // Handle escape key to close
   useEffect(() => {
@@ -172,33 +213,20 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
     >
       <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg border border-stone-700 bg-stone-900 shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-800 border-t-2 border-t-amber-500/40 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-stone-800 px-4 py-3">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold tracking-wide text-stone-50">
+            <h2 className="text-sm font-medium text-stone-100">
               Trust Settings
             </h2>
             {trustedCount > 0 && (
-              <div className="flex items-center gap-1.5 rounded bg-amber-500/15 px-2 py-1 ring-1 ring-amber-500/30">
-                <svg
-                  className="h-3 w-3 text-amber-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <span className="text-xxs font-medium tabular-nums text-amber-300">
-                  {trustedCount} pattern{trustedCount !== 1 ? "s" : ""} trusted
-                </span>
-              </div>
+              <span className="text-xxs tabular-nums text-cyan-400">
+                {trustedCount} trusted
+              </span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+            className="rounded-md p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
             aria-label="Close trust settings"
           >
             <svg
@@ -220,7 +248,31 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
 
         {/* Categories */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          {trustCategories.map((category, categoryIndex) => {
+          {taxonomyLoading && (
+            <div className="flex items-center justify-center py-8 text-stone-500">
+              <svg
+                className="h-4 w-4 animate-spin mr-2"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <span className="text-xs">Loading patterns...</span>
+            </div>
+          )}
+          {trustCategories.map((category) => {
             const isExpanded = expandedCategories.has(category.id);
             const categoryTrustedCount = category.patterns.filter((p) =>
               reviewState?.trustList.includes(p.id),
@@ -231,11 +283,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
             );
 
             return (
-              <div
-                key={category.id}
-                className="border-b border-stone-800/60"
-                style={{ animationDelay: `${categoryIndex * 30}ms` }}
-              >
+              <div key={category.id} className="border-b border-stone-800/60">
                 {/* Category header */}
                 <button
                   onClick={() => toggleCategory(category.id)}
@@ -263,35 +311,17 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                     {category.name}
                   </span>
 
-                  {/* Stats badges - with text labels */}
-                  <div className="flex items-center gap-2">
+                  {/* Stats */}
+                  <div className="flex items-center gap-2 text-xxs tabular-nums">
                     {categoryTrustedCount > 0 && (
-                      <span className="flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-xxs font-medium text-amber-400 ring-1 ring-inset ring-amber-500/20">
-                        <svg
-                          className="h-2.5 w-2.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        <span className="tabular-nums">
-                          {categoryTrustedCount}
-                        </span>
-                        <span className="text-amber-400/70">trusted</span>
+                      <span className="text-cyan-400">
+                        {categoryTrustedCount} trusted
                       </span>
                     )}
                     {categoryTotalCount > 0 && (
-                      <span className="flex items-center gap-1 rounded bg-stone-700/60 px-1.5 py-0.5 text-xxs font-medium text-stone-400">
-                        <span className="tabular-nums">
-                          {categoryTotalCount}
-                        </span>
-                        <span className="text-stone-500">
-                          hunk{categoryTotalCount !== 1 ? "s" : ""}
-                        </span>
+                      <span className="text-stone-500">
+                        {categoryTotalCount} hunk
+                        {categoryTotalCount !== 1 ? "s" : ""}
                       </span>
                     )}
                   </div>
@@ -306,7 +336,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                   }`}
                 >
                   <div className="space-y-0.5 pb-2 pl-3 pr-4">
-                    {category.patterns.map((pattern, patternIndex) => {
+                    {category.patterns.map((pattern) => {
                       const isTrusted =
                         reviewState?.trustList.includes(pattern.id) ?? false;
                       const count = patternCounts[pattern.id] || 0;
@@ -316,10 +346,9 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                           key={pattern.id}
                           className={`group flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 transition-all duration-150 ${
                             isTrusted
-                              ? "border-l-4 border-l-amber-500 bg-amber-500/10 pl-1.5"
-                              : "border-l-4 border-l-transparent hover:bg-stone-800/50"
+                              ? "border-l-2 border-l-cyan-500 bg-cyan-500/5 pl-2"
+                              : "border-l-2 border-l-transparent hover:bg-stone-800/40"
                           }`}
-                          style={{ animationDelay: `${patternIndex * 20}ms` }}
                         >
                           {/* Custom checkbox */}
                           <div className="relative mt-0.5 flex-shrink-0">
@@ -336,8 +365,8 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                             <div
                               className={`flex h-4 w-4 items-center justify-center rounded border transition-all duration-150 ${
                                 isTrusted
-                                  ? "border-amber-500 bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)]"
-                                  : "border-stone-500 bg-stone-800 group-hover:border-stone-400"
+                                  ? "border-cyan-500 bg-cyan-500"
+                                  : "border-stone-600 bg-stone-800 group-hover:border-stone-500"
                               }`}
                             >
                               <svg
@@ -364,7 +393,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                               <span
                                 className={`text-xs font-medium transition-colors ${
                                   isTrusted
-                                    ? "text-amber-200"
+                                    ? "text-cyan-200"
                                     : "text-stone-200 group-hover:text-stone-50"
                                 }`}
                               >
@@ -382,37 +411,21 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                                         : pattern.id,
                                     );
                                   }}
-                                  className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xxs transition-all ${
+                                  className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xxs transition-colors ${
                                     previewPatternId === pattern.id
-                                      ? "border-violet-500/50 bg-violet-500/20 text-violet-300"
-                                      : isTrusted
-                                        ? "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50"
-                                        : "border-stone-600 bg-stone-800 text-stone-400 hover:border-stone-500 hover:bg-stone-700 hover:text-stone-300"
+                                      ? "bg-stone-700 text-stone-200"
+                                      : "text-stone-500 hover:bg-stone-800 hover:text-stone-400"
                                   }`}
-                                  title="Click to preview matching hunks"
+                                  title="Preview matching hunks"
                                 >
-                                  <svg
-                                    className="h-2.5 w-2.5"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                    <circle cx="12" cy="12" r="3" />
-                                  </svg>
-                                  <span>
-                                    {count} match{count !== 1 ? "es" : ""}
-                                  </span>
+                                  <span className="tabular-nums">{count}</span>
                                 </button>
                               )}
                             </div>
                             <p
                               className={`mt-0.5 text-xxs leading-relaxed transition-colors text-pretty ${
                                 isTrusted
-                                  ? "text-amber-200/80"
+                                  ? "text-cyan-200/80"
                                   : "text-stone-400"
                               }`}
                             >
@@ -431,33 +444,21 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
 
         {/* Hunk Preview Panel */}
         {previewPatternId && previewHunks.length > 0 && (
-          <div className="border-t-2 border-t-violet-500/40 border-b border-b-stone-700/50 bg-stone-800/40">
+          <div className="border-t border-stone-700 bg-stone-850">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-stone-700/50 px-4 py-2">
+            <div className="flex items-center justify-between border-b border-stone-800 px-4 py-2">
               <div className="flex items-center gap-2">
-                <svg
-                  className="h-3.5 w-3.5 text-violet-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                <span className="text-xs font-medium text-violet-200">
+                <span className="text-xs font-medium text-stone-300">
                   {previewPatternName}
                 </span>
-                <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-violet-300 ring-1 ring-inset ring-violet-500/30">
+                <span className="text-xxs tabular-nums text-stone-500">
                   {previewHunks.length} match
                   {previewHunks.length !== 1 ? "es" : ""}
                 </span>
               </div>
               <button
                 onClick={() => setPreviewPatternId(null)}
-                className="p-0.5 text-stone-400 hover:text-stone-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                className="p-0.5 text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-500/50"
                 title="Close preview"
                 aria-label="Close preview"
               >
@@ -479,19 +480,19 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
             </div>
 
             {/* Hunk list */}
-            <div className="max-h-48 overflow-y-auto scrollbar-thin">
+            <div className="max-h-40 overflow-y-auto scrollbar-thin">
               {previewHunks.map((hunk) => (
                 <button
                   key={hunk.id}
                   onClick={() => handleSelectHunk(hunk.filePath)}
-                  className="group w-full text-left px-4 py-2 border-b border-stone-800/50 last:border-b-0 hover:bg-violet-500/10 transition-colors"
+                  className="group w-full text-left px-4 py-2 border-b border-stone-800/50 last:border-b-0 hover:bg-stone-800/60 transition-colors"
                 >
                   {/* File path */}
-                  <div className="text-xxs font-medium text-stone-300 truncate group-hover:text-violet-200">
+                  <div className="text-xxs font-medium text-stone-400 truncate group-hover:text-stone-200">
                     {hunk.filePath}
                   </div>
                   {/* Content preview */}
-                  <div className="mt-1 font-mono text-xxs text-stone-500 truncate group-hover:text-stone-400">
+                  <div className="mt-0.5 font-mono text-xxs text-stone-600 truncate group-hover:text-stone-500">
                     {hunk.content
                       .split("\n")
                       .slice(0, 2)
@@ -505,104 +506,97 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
           </div>
         )}
 
-        {/* Classification section */}
-        <div className="border-t border-stone-700/50 bg-gradient-to-b from-stone-800/20 to-stone-900/50 p-4">
-          {claudeAvailable && unlabeledCount > 0 && (
-            <button
-              onClick={() => classifyUnlabeledHunks()}
-              disabled={classifying}
-              className={`group relative w-full overflow-hidden rounded-md px-4 py-2.5 text-xs font-medium transition-all duration-200 ${
-                classifying
-                  ? "cursor-wait bg-stone-800 text-stone-400"
-                  : "bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:brightness-110"
-              }`}
-            >
-              {/* Shimmer effect when not classifying */}
-              {!classifying && (
-                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-              )}
-
-              <span className="relative flex items-center justify-center gap-2">
-                {classifying ? (
-                  <>
-                    <svg
-                      className="h-3.5 w-3.5 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    <span>Classifying hunks…</span>
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                    </svg>
-                    <span>Classify with Claude</span>
-                    <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-xxs font-semibold tabular-nums">
-                      {unlabeledCount}
+        {/* Classification status - subtle footer */}
+        <div className="border-t border-stone-800 px-4 py-2.5">
+          <div className="flex items-center justify-between text-2xs">
+            {claudeAvailable && unlabeledCount > 0 && (
+              <>
+                <span className="text-stone-500">
+                  {classifying ? (
+                    <span className="flex items-center gap-1.5">
+                      <svg
+                        className="h-3 w-3 animate-spin text-stone-400"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      <span className="text-stone-400">Classifying…</span>
                     </span>
-                  </>
+                  ) : (
+                    <span className="tabular-nums">
+                      {unlabeledCount} hunk{unlabeledCount !== 1 ? "s" : ""}{" "}
+                      unclassified
+                    </span>
+                  )}
+                </span>
+                {!classifying && (
+                  <button
+                    onClick={() => classifyUnlabeledHunks()}
+                    className="text-stone-500 hover:text-stone-300 transition-colors"
+                  >
+                    Classify now
+                  </button>
                 )}
+              </>
+            )}
+
+            {claudeAvailable && unlabeledCount === 0 && hunks.length > 0 && (
+              <>
+                <span className="flex items-center gap-1.5 text-stone-500">
+                  <svg
+                    className="h-3 w-3 text-stone-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  All hunks classified
+                </span>
+                <button
+                  onClick={() => reclassifyHunks()}
+                  disabled={classifying}
+                  className="text-stone-500 hover:text-stone-300 transition-colors disabled:opacity-50"
+                >
+                  Reclassify
+                </button>
+              </>
+            )}
+
+            {claudeAvailable === false && (
+              <span className="text-stone-500">
+                Install{" "}
+                <a
+                  href="https://claude.ai/code"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-stone-400 hover:text-stone-300 underline decoration-stone-600 hover:decoration-stone-500"
+                >
+                  Claude CLI
+                </a>{" "}
+                for auto-classification
               </span>
-            </button>
-          )}
-
-          {claudeAvailable && unlabeledCount === 0 && hunks.length > 0 && (
-            <div className="flex items-center justify-center gap-2 rounded-md bg-lime-500/10 px-3 py-2 text-xs text-lime-400 ring-1 ring-inset ring-lime-500/20">
-              <svg
-                className="h-3.5 w-3.5 text-lime-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              <span className="font-medium">All hunks classified</span>
-            </div>
-          )}
-
-          {claudeAvailable === false && (
-            <div className="rounded-md bg-stone-800/50 px-3 py-2.5 text-center text-2xs text-stone-300 ring-1 ring-inset ring-stone-700">
-              Install{" "}
-              <a
-                href="https://claude.ai/code"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-violet-400 hover:text-violet-300 underline decoration-violet-400/30 hover:decoration-violet-300/50"
-              >
-                Claude CLI
-              </a>{" "}
-              for auto-classification
-            </div>
-          )}
+            )}
+          </div>
 
           {classificationError && (
-            <div className="mt-2 rounded-md bg-rose-500/10 px-3 py-2 text-2xs text-rose-400 ring-1 ring-inset ring-rose-500/20">
+            <div className="mt-2 rounded-md bg-rose-500/10 px-2.5 py-1.5 text-2xs text-rose-400 ring-1 ring-inset ring-rose-500/20">
               {classificationError}
             </div>
           )}

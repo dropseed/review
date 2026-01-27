@@ -10,47 +10,48 @@ export const STATUS_CONFIG: Record<string, { letter: string; color: string }> =
     untracked: { letter: "U", color: "text-emerald-400" },
   };
 
-// Status indicator dots
-export function HunkStatusDots({ status }: { status: FileHunkStatus }) {
+// Hunk count indicator - context-aware
+// "needs-review": shows pending count
+// "reviewed": shows reviewed count
+// "all": shows reviewed/total
+export function HunkCount({
+  status,
+  context,
+}: {
+  status: FileHunkStatus;
+  context: "needs-review" | "reviewed" | "all";
+}) {
   if (status.total === 0) return null;
 
-  // For many hunks, show counts instead of dots
-  if (status.total > 5) {
-    const reviewed = status.approved + status.trusted + status.rejected;
-    const isComplete = status.pending === 0;
+  const reviewed = status.approved + status.trusted + status.rejected;
+
+  if (context === "needs-review") {
+    // Show pending count
     return (
-      <span
-        className={`font-mono text-xxs tabular-nums ${isComplete ? "text-lime-500" : "text-stone-500"}`}
-      >
-        {reviewed}/{status.total}
+      <span className="font-mono text-xxs tabular-nums text-stone-500">
+        {status.pending}
       </span>
     );
   }
 
-  // Show individual dots for small counts
-  const dots: React.ReactNode[] = [];
-  for (let i = 0; i < status.rejected; i++) {
-    dots.push(
-      <span key={`r${i}`} className="h-1.5 w-1.5 rounded-full bg-rose-500" />,
-    );
-  }
-  for (let i = 0; i < status.pending; i++) {
-    dots.push(
-      <span key={`p${i}`} className="h-1.5 w-1.5 rounded-full bg-stone-600" />,
-    );
-  }
-  for (let i = 0; i < status.approved; i++) {
-    dots.push(
-      <span key={`a${i}`} className="h-1.5 w-1.5 rounded-full bg-lime-500" />,
-    );
-  }
-  for (let i = 0; i < status.trusted; i++) {
-    dots.push(
-      <span key={`t${i}`} className="h-1.5 w-1.5 rounded-full bg-amber-500" />,
+  if (context === "reviewed") {
+    // Show reviewed count
+    return (
+      <span className="font-mono text-xxs tabular-nums text-lime-500">
+        {reviewed}
+      </span>
     );
   }
 
-  return <div className="flex items-center gap-0.5">{dots}</div>;
+  // "all" context - show reviewed/total
+  const isComplete = status.pending === 0;
+  return (
+    <span
+      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-lime-500" : "text-stone-500"}`}
+    >
+      {reviewed}/{status.total}
+    </span>
+  );
 }
 
 // Status letter indicator

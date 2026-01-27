@@ -11,6 +11,7 @@ export interface PreferencesSlice {
   codeFontSize: number;
   codeTheme: string;
   fileToReveal: string | null;
+  directoryToReveal: string | null;
 
   // Classification settings
   autoClassifyEnabled: boolean;
@@ -25,6 +26,8 @@ export interface PreferencesSlice {
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
   clearFileToReveal: () => void;
+  revealDirectoryInTree: (path: string) => void;
+  clearDirectoryToReveal: () => void;
 
   // Classification settings actions
   setAutoClassifyEnabled: (enabled: boolean) => void;
@@ -41,6 +44,7 @@ export const createPreferencesSlice: SliceCreator<PreferencesSlice> = (
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeTheme: "github-dark",
   fileToReveal: null,
+  directoryToReveal: null,
   autoClassifyEnabled: true,
   classifyCommand: null,
   classifyBatchSize: 5,
@@ -106,6 +110,14 @@ export const createPreferencesSlice: SliceCreator<PreferencesSlice> = (
 
   clearFileToReveal: () => {
     set({ fileToReveal: null });
+  },
+
+  revealDirectoryInTree: (path) => {
+    set({ directoryToReveal: path });
+  },
+
+  clearDirectoryToReveal: () => {
+    set({ directoryToReveal: null });
   },
 
   setAutoClassifyEnabled: (enabled) => {

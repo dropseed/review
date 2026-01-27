@@ -337,9 +337,17 @@ pub fn get_file_content(
     );
 
     let hunks = if diff_output.is_empty() {
-        // No diff output - this is an untracked file (if it had changes, git diff would show them)
-        eprintln!("[get_file_content] no diff, creating untracked hunk");
-        vec![crate::diff::parser::create_untracked_hunk(&file_path)]
+        // No diff output - check if file is tracked or untracked
+        let is_tracked = source.is_file_tracked(&file_path).unwrap_or(false);
+        if is_tracked {
+            // File is tracked but has no changes - return empty hunks
+            eprintln!("[get_file_content] no diff, file is tracked (unchanged)");
+            vec![]
+        } else {
+            // File is untracked (new file not yet added to git)
+            eprintln!("[get_file_content] no diff, file is untracked (new)");
+            vec![crate::diff::parser::create_untracked_hunk(&file_path)]
+        }
     } else {
         eprintln!("[get_file_content] parsing diff...");
         let parsed = parse_diff(&diff_output, &file_path);
@@ -508,7 +516,7 @@ pub async fn classify_hunks_with_claude(
     use tauri::Emitter;
     use tokio::time::timeout;
 
-    let model = model.unwrap_or_else(|| "haiku".to_string());
+    let model = model.unwrap_or_else(|| "sonnet".to_string());
     let batch_size = batch_size.unwrap_or(5).max(1).min(20);
     let max_concurrent = max_concurrent.unwrap_or(2).max(1).min(10);
 

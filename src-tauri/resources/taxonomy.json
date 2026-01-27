@@ -3,41 +3,89 @@
     {
       "id": "imports",
       "name": "Imports",
-      "description": "Changes to import statements",
+      "description": "Changes to import/require/use statements",
       "patterns": [
-        { "id": "imports:added", "name": "Added", "description": "New import statements added" },
-        { "id": "imports:removed", "name": "Removed", "description": "Import statements removed" },
-        { "id": "imports:reordered", "name": "Reordered", "description": "Import statements reordered" }
+        {
+          "id": "imports:added",
+          "name": "Added",
+          "description": "New import/require/use statements added. ONLY when the entire hunk is adding imports, with no other code changes."
+        },
+        {
+          "id": "imports:removed",
+          "name": "Removed",
+          "description": "Import/require/use statements deleted. ONLY when the entire hunk is removing imports, with no other code changes."
+        },
+        {
+          "id": "imports:reordered",
+          "name": "Reordered",
+          "description": "Import statements reordered or sorted. The same imports exist before and after, just in different order or grouping."
+        }
       ]
     },
     {
       "id": "formatting",
       "name": "Formatting",
-      "description": "Code style and formatting changes",
+      "description": "Whitespace and style changes with NO semantic meaning",
       "patterns": [
-        { "id": "formatting:whitespace", "name": "Whitespace", "description": "Whitespace-only changes (spaces, tabs, blank lines)" },
-        { "id": "formatting:line-length", "name": "Line length", "description": "Line wrapping for length limits" },
-        { "id": "formatting:style", "name": "Style", "description": "Code style changes (semicolons, quotes, etc.)" }
+        {
+          "id": "formatting:whitespace",
+          "name": "Whitespace",
+          "description": "Changes ONLY to spaces, tabs, indentation, or blank lines. NOT for any change to actual code characters, strings, numbers, or identifiers."
+        },
+        {
+          "id": "formatting:line-length",
+          "name": "Line length",
+          "description": "Code wrapped or unwrapped for line length limits. The code tokens are identical, just split across lines differently."
+        },
+        {
+          "id": "formatting:style",
+          "name": "Style",
+          "description": "Punctuation style changes only: semicolons added/removed, single vs double quotes, trailing commas. NOT for any logic or value changes."
+        }
       ]
     },
     {
       "id": "comments",
       "name": "Comments",
-      "description": "Changes to code comments",
+      "description": "Changes to code comments only",
       "patterns": [
-        { "id": "comments:added", "name": "Added", "description": "New comments added" },
-        { "id": "comments:removed", "name": "Removed", "description": "Comments removed" },
-        { "id": "comments:modified", "name": "Modified", "description": "Comments updated or corrected" }
+        {
+          "id": "comments:added",
+          "name": "Added",
+          "description": "New comments added. ONLY when the entire hunk is adding comments, with no code changes."
+        },
+        {
+          "id": "comments:removed",
+          "name": "Removed",
+          "description": "Comments deleted. ONLY when the entire hunk is removing comments, with no code changes."
+        },
+        {
+          "id": "comments:modified",
+          "name": "Modified",
+          "description": "Existing comment text updated. ONLY when the entire hunk is editing comments, with no code changes."
+        }
       ]
     },
     {
       "id": "types",
       "name": "Types",
-      "description": "Type annotation changes",
+      "description": "Type annotation changes in typed languages",
       "patterns": [
-        { "id": "types:added", "name": "Added", "description": "Type annotations added" },
-        { "id": "types:modified", "name": "Modified", "description": "Type annotations changed" },
-        { "id": "types:removed", "name": "Removed", "description": "Type annotations removed" }
+        {
+          "id": "types:added",
+          "name": "Added",
+          "description": "Type annotations added to previously untyped code (e.g., adding `: string` or `-> int`). Runtime behavior unchanged."
+        },
+        {
+          "id": "types:modified",
+          "name": "Modified",
+          "description": "Type annotations changed (e.g., `string` to `string | null`). NOT for changes to actual values or logic, only type declarations."
+        },
+        {
+          "id": "types:removed",
+          "name": "Removed",
+          "description": "Type annotations removed from code. The runtime logic remains identical."
+        }
       ]
     },
     {
@@ -45,54 +93,50 @@
       "name": "File",
       "description": "File-level operations",
       "patterns": [
-        { "id": "file:deleted", "name": "Deleted", "description": "Entire file deleted" },
-        { "id": "file:renamed", "name": "Renamed", "description": "File renamed" },
-        { "id": "file:moved", "name": "Moved", "description": "File moved to different directory" }
+        {
+          "id": "file:renamed",
+          "name": "Renamed",
+          "description": "File renamed within the same directory. Content is identical or nearly identical."
+        },
+        {
+          "id": "file:moved",
+          "name": "Moved",
+          "description": "File moved to a different directory. Content is identical or nearly identical."
+        }
       ]
     },
     {
       "id": "generated",
       "name": "Generated",
-      "description": "Auto-generated content",
+      "description": "Auto-generated files",
       "patterns": [
-        { "id": "generated:lockfile", "name": "Lock file", "description": "Package lock files (package-lock.json, yarn.lock, etc.)" },
-        { "id": "generated:build", "name": "Build output", "description": "Build artifacts and generated code" },
-        { "id": "generated:schema", "name": "Schema", "description": "Generated schema files" }
+        {
+          "id": "generated:lockfile",
+          "name": "Lock file",
+          "description": "Package manager lock files: package-lock.json, yarn.lock, pnpm-lock.yaml, Cargo.lock, Gemfile.lock, poetry.lock, go.sum."
+        }
       ]
     },
     {
       "id": "rename",
       "name": "Rename",
-      "description": "Identifier renaming",
+      "description": "Identifier renaming with no logic changes",
       "patterns": [
-        { "id": "rename:variable", "name": "Variable", "description": "Variable renamed" },
-        { "id": "rename:function", "name": "Function", "description": "Function or method renamed" },
-        { "id": "rename:class", "name": "Class", "description": "Class or type renamed" }
-      ]
-    },
-    {
-      "id": "code",
-      "name": "Code",
-      "description": "Code movement and structure",
-      "patterns": [
-        { "id": "code:extracted", "name": "Extracted", "description": "Code extracted to separate function/module" }
-      ]
-    },
-    {
-      "id": "version",
-      "name": "Version",
-      "description": "Version number changes",
-      "patterns": [
-        { "id": "version:bumped", "name": "Bumped", "description": "Version number incremented" }
-      ]
-    },
-    {
-      "id": "remove",
-      "name": "Remove",
-      "description": "Code removal",
-      "patterns": [
-        { "id": "remove:deprecated", "name": "Deprecated", "description": "Deprecated code removed" },
-        { "id": "remove:dead-code", "name": "Dead code", "description": "Unreachable or unused code removed" }
+        {
+          "id": "rename:variable",
+          "name": "Variable",
+          "description": "A variable or constant renamed throughout the hunk. Logic unchanged, only the identifier name differs."
+        },
+        {
+          "id": "rename:function",
+          "name": "Function",
+          "description": "A function or method renamed. Implementation unchanged, only the function name differs."
+        },
+        {
+          "id": "rename:class",
+          "name": "Class",
+          "description": "A class, struct, interface, or type renamed. Implementation unchanged, only the type name differs."
+        }
       ]
     }
   ]
