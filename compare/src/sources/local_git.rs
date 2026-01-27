@@ -1,10 +1,25 @@
 use super::traits::{
     ChangeStatus, Comparison, DiffSource, FileEntry, FileStatus, GitStatusSummary, StatusEntry,
 };
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
+
+/// A single search match from git grep
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchMatch {
+    /// File path relative to repo root
+    pub file_path: String,
+    /// 1-indexed line number
+    pub line_number: u32,
+    /// 1-indexed column number where match starts
+    pub column: u32,
+    /// Full content of the matching line
+    pub line_content: String,
+}
 
 #[derive(Error, Debug)]
 pub enum LocalGitError {
@@ -353,6 +368,75 @@ impl LocalGitSource {
         }
 
         Ok(build_file_tree(all_files, &file_status))
+    }
+
+    /// Search file contents using git grep
+    ///
+    /// Returns matches from tracked files in the repository.
+    /// Uses git grep for performance (parallel, respects .gitignore).
+    pub fn search_contents(
+        &self,
+        query: &str,
+        case_sensitive: bool,
+        max_results: usize,
+    ) -> Result<Vec<SearchMatch>, LocalGitError> {
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut args = vec!["grep", "-n", "--column", "--no-color"];
+
+        if !case_sensitive {
+            args.push("-i");
+        }
+
+        // Use fixed strings (literal) to avoid regex interpretation issues
+        args.push("-F");
+        args.push("--");
+        args.push(query);
+
+        // Run git grep - note: returns exit code 1 if no matches, which is not an error
+        let output = Command::new("git")
+            .args(&args)
+            .current_dir(&self.repo_path)
+            .output()?;
+
+        // Exit code 1 means no matches found - return empty vec
+        if !output.status.success() && output.status.code() != Some(1) {
+            return Err(LocalGitError::Git(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut matches = Vec::new();
+
+        for line in stdout.lines() {
+            if matches.len() >= max_results {
+                break;
+            }
+
+            // Parse git grep output: filepath:line:column:content
+            // Use splitn to handle colons in the content
+            let parts: Vec<&str> = line.splitn(4, ':').collect();
+            if parts.len() >= 4 {
+                let file_path = parts[0].to_string();
+                let line_number = parts[1].parse::<u32>().unwrap_or(0);
+                let column = parts[2].parse::<u32>().unwrap_or(0);
+                let line_content = parts[3].to_string();
+
+                if line_number > 0 && column > 0 {
+                    matches.push(SearchMatch {
+                        file_path,
+                        line_number,
+                        column,
+                        line_content,
+                    });
+                }
+            }
+        }
+
+        Ok(matches)
     }
 }
 

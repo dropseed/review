@@ -23,6 +23,7 @@ import type {
   ClassifyOptions,
   DetectMovePairsResponse,
   ExpandedContext,
+  SearchMatch,
 } from "./types";
 
 export class TauriClient implements ApiClient {
@@ -93,6 +94,20 @@ export class TauriClient implements ApiClient {
       comparison,
       startLine,
       endLine,
+    });
+  }
+
+  async searchFileContents(
+    repoPath: string,
+    query: string,
+    caseSensitive: boolean,
+    maxResults: number,
+  ): Promise<SearchMatch[]> {
+    return invoke<SearchMatch[]>("search_file_contents", {
+      repoPath,
+      query,
+      caseSensitive,
+      maxResults,
     });
   }
 

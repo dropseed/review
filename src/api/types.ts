@@ -49,3 +49,10 @@ export interface ExpandedContext {
   startLine: number;
   endLine: number;
 }
+
+export interface SearchMatch {
+  filePath: string;
+  lineNumber: number;
+  column: number;
+  lineContent: string;
+}

@@ -33,6 +33,7 @@ import type { GitSlice } from "./slices/gitSlice";
 import type { ClassificationSlice } from "./slices/classificationSlice";
 import type { FilesSlice } from "./slices/filesSlice";
 import type { ReviewSlice } from "./slices/reviewSlice";
+import type { SearchSlice } from "./slices/searchSlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -40,7 +41,8 @@ export type ReviewStore = PreferencesSlice &
   GitSlice &
   ClassificationSlice &
   FilesSlice &
-  ReviewSlice;
+  ReviewSlice &
+  SearchSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

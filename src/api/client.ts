@@ -21,6 +21,7 @@ import type {
   ClassifyOptions,
   DetectMovePairsResponse,
   ExpandedContext,
+  SearchMatch,
 } from "./types";
 
 export interface ApiClient {
@@ -67,6 +68,14 @@ export interface ApiClient {
     startLine: number,
     endLine: number,
   ): Promise<ExpandedContext>;
+
+  /** Search file contents using git grep */
+  searchFileContents(
+    repoPath: string,
+    query: string,
+    caseSensitive: boolean,
+    maxResults: number,
+  ): Promise<SearchMatch[]>;
 
   // ----- Review state -----
 

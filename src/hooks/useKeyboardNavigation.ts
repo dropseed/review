@@ -26,6 +26,7 @@ interface UseKeyboardNavigationOptions {
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
+  setShowContentSearch: (show: boolean) => void;
 }
 
 /**
@@ -51,6 +52,7 @@ export function useKeyboardNavigation({
   setShowDebugModal,
   setShowSettingsModal,
   setShowFileFinder,
+  setShowContentSearch,
 }: UseKeyboardNavigationOptions) {
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -91,6 +93,17 @@ export function useKeyboardNavigation({
       if ((event.metaKey || event.ctrlKey) && event.key === "p") {
         event.preventDefault();
         setShowFileFinder(true);
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+F to open content search
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key === "f"
+      ) {
+        event.preventDefault();
+        setShowContentSearch(true);
         return;
       }
 
@@ -202,6 +215,7 @@ export function useKeyboardNavigation({
       setShowDebugModal,
       setShowSettingsModal,
       setShowFileFinder,
+      setShowContentSearch,
     ],
   );
 

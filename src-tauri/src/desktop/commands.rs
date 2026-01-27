@@ -10,7 +10,7 @@ use compare::diff::parser::{
 };
 use compare::review::state::{ReviewState, ReviewSummary};
 use compare::review::storage;
-use compare::sources::local_git::LocalGitSource;
+use compare::sources::local_git::{LocalGitSource, SearchMatch};
 use compare::sources::traits::{BranchList, Comparison, DiffSource, FileEntry, GitStatusSummary};
 use compare::trust::patterns::TrustCategory;
 use log::{debug, error, info};
@@ -712,6 +712,7 @@ pub async fn open_repo_window(
     // Handle empty repo_path for creating a new blank window (welcome page)
     if repo_path.is_empty() {
         // Generate a unique label for the new window
+        // Use "repo-" prefix to match capability patterns in default.json
         let mut hasher = DefaultHasher::new();
         format!(
             "new-window-{}",
@@ -721,7 +722,7 @@ pub async fn open_repo_window(
                 .as_nanos()
         )
         .hash(&mut hasher);
-        let label = format!("window-{:x}", hasher.finish());
+        let label = format!("repo-{:x}", hasher.finish());
 
         WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
             .title("Compare")
@@ -788,4 +789,32 @@ pub async fn open_repo_window(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn search_file_contents(
+    repo_path: String,
+    query: String,
+    case_sensitive: bool,
+    max_results: usize,
+) -> Result<Vec<SearchMatch>, String> {
+    debug!(
+        "[search_file_contents] repo_path={}, query={}, case_sensitive={}, max_results={}",
+        repo_path, query, case_sensitive, max_results
+    );
+
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+        error!("[search_file_contents] ERROR creating source: {}", e);
+        e.to_string()
+    })?;
+
+    let results = source
+        .search_contents(&query, case_sensitive, max_results)
+        .map_err(|e| {
+            error!("[search_file_contents] ERROR searching: {}", e);
+            e.to_string()
+        })?;
+
+    info!("[search_file_contents] SUCCESS: {} matches", results.len());
+    Ok(results)
 }

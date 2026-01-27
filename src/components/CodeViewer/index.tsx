@@ -11,7 +11,12 @@ import { UntrackedFileView } from "./UntrackedFileView";
 import { DiffView } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
-import { isMarkdownFile } from "./languageMap";
+import {
+  isMarkdownFile,
+  detectLanguage,
+  type SupportedLanguages,
+} from "./languageMap";
+import { LanguageSelector } from "./LanguageSelector";
 
 interface CodeViewerProps {
   filePath: string;
@@ -29,6 +34,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     hunks: allHunks,
     focusedHunkIndex,
     refreshVersion,
+    scrollToLine,
+    clearScrollToLine,
   } = useReviewStore();
 
   // Get the focused hunk ID if it's in this file
@@ -55,6 +62,10 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">(
     "code",
   );
+  // Language override for syntax highlighting
+  const [languageOverride, setLanguageOverride] = useState<
+    SupportedLanguages | undefined
+  >(undefined);
 
   // Calculate review progress for this file's hunks
   // Must be before early returns to comply with React hooks rules
@@ -68,6 +79,32 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     ).length;
     return { reviewed, total };
   }, [fileContent, reviewState]);
+
+  // Reset language override when switching files
+  useEffect(() => {
+    setLanguageOverride(undefined);
+  }, [filePath]);
+
+  // Handle scrollToLine from search - switch to file view and highlight the line
+  // Wait until file content is loaded before applying the scroll
+  useEffect(() => {
+    if (
+      scrollToLine &&
+      scrollToLine.filePath === filePath &&
+      !loading &&
+      fileContent
+    ) {
+      setViewMode("file");
+      setHighlightLine(scrollToLine.lineNumber);
+      clearScrollToLine();
+
+      // Clear highlight after 2 seconds
+      const timeout = setTimeout(() => {
+        setHighlightLine(null);
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [scrollToLine, filePath, loading, fileContent, clearScrollToLine]);
 
   useEffect(() => {
     if (!repoPath || !comparison) return;
@@ -133,6 +170,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const contentType = fileContent.contentType || "text";
   const isImage = contentType === "image";
   const isSvg = contentType === "svg";
+  const detectedLanguage = detectLanguage(filePath, fileContent.content);
+  const effectiveLanguage = languageOverride ?? detectedLanguage;
   const showImageViewer =
     isImage ||
     (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
@@ -166,6 +205,15 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             filePath={filePath}
             onNavigateToDirectory={revealDirectoryInTree}
           />
+          {/* Language selector only works in file view mode (not diff views) */}
+          {!isImage && (viewMode === "file" || !hasChanges) && (
+            <LanguageSelector
+              language={effectiveLanguage}
+              detectedLanguage={detectedLanguage}
+              isOverridden={languageOverride !== undefined}
+              onLanguageChange={setLanguageOverride}
+            />
+          )}
           {isUntracked ? (
             <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
               New
@@ -370,6 +418,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             hunks={fileContent.hunks}
             theme={codeTheme}
             fontSizeCSS={fontSizeCSS}
+            language={effectiveLanguage}
           />
         ) : hasChanges && viewMode !== "file" ? (
           <DiffView
@@ -386,6 +435,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             oldContent={fileContent.oldContent}
             newContent={fileContent.content}
             focusedHunkId={focusedHunkId}
+            language={effectiveLanguage}
           />
         ) : (
           <PlainCodeView
@@ -394,6 +444,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             highlightLine={highlightLine}
             theme={codeTheme}
             fontSizeCSS={fontSizeCSS}
+            language={effectiveLanguage}
+            lineHeight={lineHeight}
           />
         )}
       </div>

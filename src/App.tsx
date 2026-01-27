@@ -5,6 +5,7 @@ import { DebugModal } from "./components/DebugModal";
 import { TrustModal } from "./components/TrustModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { FileFinder } from "./components/FileFinder";
+import { ContentSearch } from "./components/ContentSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { StartScreen } from "./components/StartScreen";
 import { WelcomePage } from "./components/WelcomePage";
@@ -67,6 +68,7 @@ function App() {
   const [showTrustModal, setShowTrustModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
+  const [showContentSearch, setShowContentSearch] = useState(false);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -133,6 +135,7 @@ function App() {
     setShowDebugModal,
     setShowSettingsModal,
     setShowFileFinder,
+    setShowContentSearch,
   });
 
   useMenuEvents({
@@ -511,6 +514,12 @@ function App() {
             </kbd>
             <span className="ml-1">find</span>
           </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}⇧F
+            </kbd>
+            <span className="ml-1">search</span>
+          </span>
         </div>
       </footer>
 
@@ -536,6 +545,12 @@ function App() {
       <FileFinder
         isOpen={showFileFinder}
         onClose={() => setShowFileFinder(false)}
+      />
+
+      {/* Content Search */}
+      <ContentSearch
+        isOpen={showContentSearch}
+        onClose={() => setShowContentSearch(false)}
       />
     </div>
   );
