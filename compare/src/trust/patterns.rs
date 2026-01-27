@@ -56,6 +56,9 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
 
 /// Load custom patterns from a repository's .git/compare/custom-patterns.json
 /// Returns an empty vec if the file doesn't exist or can't be parsed.
+///
+/// Note: This function returns an empty vec on errors to allow graceful degradation.
+/// Errors are logged for debugging but don't prevent the app from working.
 pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
     let custom_path = repo_path
         .join(".git")
@@ -69,6 +72,8 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
     match std::fs::read_to_string(&custom_path) {
         Ok(content) => match serde_json::from_str::<TaxonomyFile>(&content) {
             Ok(taxonomy) => {
+                // Log successful load for debugging
+                #[cfg(debug_assertions)]
                 eprintln!(
                     "[load_custom_patterns] Loaded {} custom categories from {:?}",
                     taxonomy.categories.len(),
@@ -88,16 +93,18 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
                     .collect()
             }
             Err(e) => {
+                // Log parse errors - user should fix their custom-patterns.json
                 eprintln!(
-                    "[load_custom_patterns] Failed to parse custom patterns at {:?}: {}",
+                    "[load_custom_patterns] Warning: Failed to parse custom patterns at {:?}: {}",
                     custom_path, e
                 );
                 vec![]
             }
         },
         Err(e) => {
+            // Log read errors - could be permissions or corruption
             eprintln!(
-                "[load_custom_patterns] Failed to read custom patterns at {:?}: {}",
+                "[load_custom_patterns] Warning: Failed to read custom patterns at {:?}: {}",
                 custom_path, e
             );
             vec![]
@@ -134,17 +141,26 @@ pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
     load_taxonomy_from_json()
 }
 
-/// Get all valid pattern IDs from the taxonomy
-pub fn get_valid_pattern_ids() -> Vec<String> {
-    get_trust_taxonomy()
-        .into_iter()
-        .flat_map(|cat| cat.patterns.into_iter().map(|p| p.id))
-        .collect()
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
+/// Cached set of valid pattern IDs for efficient validation.
+/// Loaded once on first access and reused for all subsequent calls.
+static VALID_PATTERN_IDS: OnceLock<HashSet<String>> = OnceLock::new();
+
+/// Get all valid pattern IDs from the taxonomy (cached after first call)
+pub fn get_valid_pattern_ids() -> &'static HashSet<String> {
+    VALID_PATTERN_IDS.get_or_init(|| {
+        get_trust_taxonomy()
+            .into_iter()
+            .flat_map(|cat| cat.patterns.into_iter().map(|p| p.id))
+            .collect()
+    })
 }
 
-/// Check if a label is a valid pattern ID in the taxonomy
+/// Check if a label is a valid pattern ID in the taxonomy (O(1) lookup)
 pub fn is_valid_pattern_id(label: &str) -> bool {
-    get_valid_pattern_ids().contains(&label.to_string())
+    get_valid_pattern_ids().contains(label)
 }
 
 /// Fallback hardcoded taxonomy in case JSON loading fails

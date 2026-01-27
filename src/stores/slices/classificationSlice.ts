@@ -20,15 +20,14 @@ const createDebouncedAutoClassify = () => {
 
 const debouncedAutoClassify = createDebouncedAutoClassify();
 
-// Track current classification generation for cancellation
-let classifyGeneration = 0;
-
 export interface ClassificationSlice {
   // Classification state
   claudeAvailable: boolean | null;
   classifying: boolean;
   classificationError: string | null;
   classifyingHunkIds: Set<string>;
+  // Track current classification generation for cancellation (moved into slice to avoid race conditions)
+  classifyGeneration: number;
 
   // Actions
   checkClaudeAvailable: () => Promise<void>;
@@ -44,6 +43,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
   classifying: false,
   classificationError: null,
   classifyingHunkIds: new Set<string>(),
+  classifyGeneration: 0,
 
   checkClaudeAvailable: async () => {
     try {
@@ -64,12 +64,14 @@ export const createClassificationSlice: SliceCreatorWithClient<
       classifyBatchSize,
       classifyMaxConcurrent,
       saveReviewState,
+      classifyGeneration,
     } = get();
     if (!repoPath || !reviewState) return;
 
     // Increment generation for cancellation
-    classifyGeneration++;
-    const currentGeneration = classifyGeneration;
+    const newGeneration = classifyGeneration + 1;
+    set({ classifyGeneration: newGeneration });
+    const currentGeneration = newGeneration;
 
     const { classifyingHunkIds } = get();
 
@@ -167,7 +169,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
       );
 
       // Check if this classification was cancelled
-      if (currentGeneration !== classifyGeneration) {
+      if (currentGeneration !== get().classifyGeneration) {
         console.log("[classifyUnlabeledHunks] Cancelled - stale generation");
         // Remove only our hunks from the tracking set
         set((state) => {
@@ -231,7 +233,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
           remaining.delete(id);
         }
 
-        if (currentGeneration !== classifyGeneration) {
+        if (currentGeneration !== get().classifyGeneration) {
           return {
             classifying: remaining.size > 0,
             classifyingHunkIds: remaining,

@@ -11,6 +11,8 @@ pub enum StorageError {
     Io(#[from] io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("Version conflict: expected version {expected}, found {found}. Another process modified the file.")]
+    VersionConflict { expected: u64, found: u64 },
 }
 
 /// Get the storage directory for review state
@@ -61,13 +63,37 @@ pub fn load_review_state(
     }
 }
 
-/// Save review state
+/// Save review state with optimistic concurrency control.
+///
+/// This function checks that the file hasn't been modified by another process
+/// since the state was loaded. If the version on disk is different from the
+/// expected version (state.version - 1), a VersionConflict error is returned.
+///
+/// Call `state.prepare_for_save()` before saving to increment the version.
 pub fn save_review_state(repo_path: &PathBuf, state: &ReviewState) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path);
     fs::create_dir_all(&storage_dir)?;
 
     let filename = comparison_filename(&state.comparison);
     let path = storage_dir.join(&filename);
+
+    // Check for version conflict if the file exists
+    if path.exists() {
+        let existing_content = fs::read_to_string(&path)?;
+        if let Ok(existing_state) = serde_json::from_str::<ReviewState>(&existing_content) {
+            // If state.version is 0, this is a new save (no conflict check needed)
+            // Otherwise, the expected on-disk version is state.version - 1
+            if state.version > 0 {
+                let expected_disk_version = state.version - 1;
+                if existing_state.version != expected_disk_version {
+                    return Err(StorageError::VersionConflict {
+                        expected: expected_disk_version,
+                        found: existing_state.version,
+                    });
+                }
+            }
+        }
+    }
 
     let content = serde_json::to_string_pretty(state)?;
     fs::write(&path, content)?;

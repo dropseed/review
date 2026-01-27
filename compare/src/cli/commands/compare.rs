@@ -29,7 +29,11 @@ pub fn run(
                             "staged_only": c.staged_only,
                             "key": c.key,
                         });
-                        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&output)
+                                .expect("failed to serialize JSON output")
+                        );
                     } else {
                         let compare_display = if c.working_tree && c.new == "HEAD" {
                             format!("{}..{}", c.old, "Working Tree".cyan())

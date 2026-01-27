@@ -112,6 +112,10 @@ impl From<crate::review::storage::StorageError> for AppError {
         match err {
             StorageError::Io(e) => AppError::storage(format!("IO: {}", e)),
             StorageError::Json(e) => AppError::storage(format!("JSON: {}", e)),
+            StorageError::VersionConflict { expected, found } => AppError::storage(format!(
+                "Version conflict: expected version {}, found {}. Another process modified the file.",
+                expected, found
+            )),
         }
     }
 }

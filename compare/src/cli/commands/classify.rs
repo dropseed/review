@@ -143,7 +143,10 @@ pub fn run(
                 })
             }).collect::<Vec<_>>(),
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
+        );
     } else {
         println!();
         println!(

@@ -38,6 +38,10 @@ pub struct ReviewState {
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    /// Version counter for optimistic concurrency control.
+    /// Incremented on each save to detect concurrent modifications.
+    #[serde(default)]
+    pub version: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +72,14 @@ impl ReviewState {
             annotations: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
+            version: 0,
         }
+    }
+
+    /// Increment version and update timestamp for a save operation
+    pub fn prepare_for_save(&mut self) {
+        self.version += 1;
+        self.updated_at = chrono_now();
     }
 
     /// Create a summary of this review state

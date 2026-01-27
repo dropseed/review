@@ -43,7 +43,10 @@ pub fn run(repo_path: &str, hard: bool, format: OutputFormat) -> Result<(), Stri
             "trust_patterns_cleared": trust_cleared,
             "hard": hard,
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
+        );
     } else {
         println!("{} Review state reset", "✓".green());
         println!("  {} hunk label(s) cleared", hunks_cleared);

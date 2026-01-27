@@ -70,7 +70,10 @@ pub fn run(
             "hunk_id": hunk_id,
             "status": action,
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
+        );
     } else {
         let icon = if approve { "✓".green() } else { "✗".red() };
         let action_colored = if approve {

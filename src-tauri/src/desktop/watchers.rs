@@ -71,7 +71,9 @@ fn is_gitignored(gitignore: &Option<Arc<Gitignore>>, path: &Path, repo_path: &Pa
 
 /// Initialize the global watchers map
 fn init_watchers() {
-    let mut watchers = WATCHERS.lock().unwrap();
+    let mut watchers = WATCHERS
+        .lock()
+        .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
     if watchers.is_none() {
         *watchers = Some(HashMap::new());
     }
@@ -284,7 +286,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         _debouncer: debouncer,
     };
 
-    let mut watchers = WATCHERS.lock().unwrap();
+    let mut watchers = WATCHERS
+        .lock()
+        .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
     if let Some(ref mut map) = *watchers {
         // Stop existing watcher for this repo if any
         map.remove(&repo_path_str);
@@ -298,7 +302,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
 /// Stop watching a repository
 pub fn stop_watching(repo_path: &str) {
     eprintln!("[watcher] Stopping file watcher for {}", repo_path);
-    let mut watchers = WATCHERS.lock().unwrap();
+    let mut watchers = WATCHERS
+        .lock()
+        .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
     if let Some(ref mut map) = *watchers {
         if map.remove(repo_path).is_some() {
             eprintln!("[watcher] Stopped file watcher for {}", repo_path);

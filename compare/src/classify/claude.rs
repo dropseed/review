@@ -74,7 +74,19 @@ fn find_claude_executable() -> Option<String> {
     None
 }
 
-/// Run claude CLI with the given prompt and model, or use a custom command
+/// Run claude CLI with the given prompt and model, or use a custom command.
+///
+/// # Security Warning
+///
+/// The `custom_command` parameter allows arbitrary shell command execution.
+/// This is intentionally provided to allow users to use alternative AI backends
+/// or custom wrappers, but it should only be set by the user through trusted
+/// configuration (the app's settings UI). The command receives the full prompt
+/// as an argument, so ensure the command itself is trusted.
+///
+/// The prompt is passed as a final argument to the command, not through a shell,
+/// which provides some protection against injection, but the command itself
+/// is executed as specified.
 fn run_claude_with_model(
     prompt: &str,
     cwd: &Path,
@@ -342,7 +354,7 @@ where
             let cmd = custom_command.clone();
             let callback = on_batch_complete.clone();
             tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
                 // Run the blocking Claude CLI call in a blocking thread
                 let result = tokio::task::spawn_blocking(move || {
                     classify_batch(&batch, &repo, &m, cmd.as_deref())

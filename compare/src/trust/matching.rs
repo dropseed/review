@@ -18,27 +18,6 @@ pub fn matches_pattern(label: &str, pattern: &str) -> bool {
         return label == pattern;
     }
 
-    // Convert glob pattern to regex
-    // Escape special regex characters except *
-    let mut regex_pattern = String::with_capacity(pattern.len() + 10);
-    regex_pattern.push('^');
-
-    for c in pattern.chars() {
-        match c {
-            '*' => regex_pattern.push_str(".*"),
-            '.' | '+' | '?' | '^' | '$' | '{' | '}' | '(' | ')' | '|' | '[' | ']' | '\\' => {
-                regex_pattern.push('\\');
-                regex_pattern.push(c);
-            }
-            _ => regex_pattern.push(c),
-        }
-    }
-
-    regex_pattern.push('$');
-
-    // Note: We're using a simple regex crate-free implementation for now
-    // to avoid adding a new dependency. For complex patterns, consider
-    // adding the regex crate.
     simple_glob_match(label, pattern)
 }
 
@@ -87,7 +66,6 @@ fn simple_glob_match(label: &str, pattern: &str) -> bool {
 }
 
 /// Check if a label matches any pattern in a list.
-#[allow(dead_code)]
 pub fn matches_any_pattern(label: &str, patterns: &[String]) -> bool {
     patterns
         .iter()
@@ -95,7 +73,6 @@ pub fn matches_any_pattern(label: &str, patterns: &[String]) -> bool {
 }
 
 /// Check if any label in a list matches any pattern.
-#[allow(dead_code)]
 pub fn any_label_matches_any_pattern(labels: &[String], patterns: &[String]) -> bool {
     labels
         .iter()

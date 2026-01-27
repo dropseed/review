@@ -46,7 +46,10 @@ pub fn run(repo_path: &str, show_all: bool, format: OutputFormat) -> Result<(), 
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
+        );
         return Ok(());
     }
 
