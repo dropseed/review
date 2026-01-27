@@ -659,14 +659,16 @@ export function DiffView({
 
   // Create file contents for MultiFileDiff when available
   // Use != null to catch both null and undefined (Rust None serializes to null)
+  // For new files, oldContent is null but we can use empty string
+  // For deleted files, newContent is null but we can use empty string
   const lang = detectLanguage(fileName, newContent || oldContent);
-  const hasFileContents = oldContent != null && newContent != null;
+  const hasFileContents = oldContent != null || newContent != null;
 
   const oldFile: FileContents | undefined = hasFileContents
-    ? { name: fileName, contents: oldContent, lang }
+    ? { name: fileName, contents: oldContent ?? "", lang }
     : undefined;
   const newFile: FileContents | undefined = hasFileContents
-    ? { name: fileName, contents: newContent, lang }
+    ? { name: fileName, contents: newContent ?? "", lang }
     : undefined;
 
   // Performance optimization: detect large files and JSON files
