@@ -258,95 +258,121 @@ export function FilesPanel() {
         {/* File tree */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           {viewMode === "changes" ? (
-            <>
-              {/* Needs Review section */}
-              <SectionHeader
-                title="Needs Review"
-                badge={stats.needsReviewFiles}
-                badgeColor="amber"
-                onExpandAll={() => expandAll(allDirPaths)}
-                onCollapseAll={collapseAll}
-                showTreeControls={allDirPaths.size > 0}
-                showTopBorder={false}
-              >
-                <div className="py-1">
-                  {sectionedFiles.needsReview.length > 0 ? (
-                    sectionedFiles.needsReview.map((entry) => (
-                      <FileNode
-                        key={entry.path}
-                        entry={entry}
-                        depth={0}
-                        expandedPaths={expandedPaths}
-                        onToggle={togglePath}
-                        selectedFile={selectedFile}
-                        onSelectFile={handleSelectFile}
-                        onContextMenu={handleContextMenu}
-                        registerRef={registerRef}
-                        hunkContext="needs-review"
-                        onApproveAll={handleApproveAll}
-                        onUnapproveAll={handleUnapproveAll}
-                      />
-                    ))
-                  ) : (
-                    <div className="py-4 text-center">
-                      <svg
-                        className="mx-auto mb-2 h-6 w-6 text-lime-500"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      <p className="text-xs text-stone-500">
-                        No files need review
-                      </p>
-                    </div>
-                  )}
+            sectionedFiles.needsReview.length === 0 &&
+            sectionedFiles.reviewed.length === 0 ? (
+              /* Empty state when no changes exist */
+              <div className="flex flex-col items-center justify-center h-full px-6 py-12">
+                {/* Abstract diff visualization - two equal bars */}
+                <div className="relative mb-6">
+                  <div className="flex gap-1.5">
+                    <div className="w-10 h-14 rounded bg-stone-800/80 border border-stone-700/50" />
+                    <div className="w-10 h-14 rounded bg-stone-800/80 border border-stone-700/50" />
+                  </div>
+                  {/* Equality indicator */}
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
+                    <div className="w-1.5 h-0.5 bg-stone-600 rounded-full" />
+                    <div className="w-1.5 h-0.5 bg-stone-600 rounded-full" />
+                  </div>
                 </div>
-              </SectionHeader>
 
-              {/* Reviewed section */}
-              <SectionHeader
-                title="Reviewed"
-                badge={stats.reviewedFiles}
-                badgeColor="lime"
-                onExpandAll={() => expandAll(allDirPaths)}
-                onCollapseAll={collapseAll}
-                showTreeControls={allDirPaths.size > 0}
-              >
-                <div className="py-1">
-                  {sectionedFiles.reviewed.length > 0 ? (
-                    sectionedFiles.reviewed.map((entry) => (
-                      <FileNode
-                        key={entry.path}
-                        entry={entry}
-                        depth={0}
-                        expandedPaths={expandedPaths}
-                        onToggle={togglePath}
-                        selectedFile={selectedFile}
-                        onSelectFile={handleSelectFile}
-                        onContextMenu={handleContextMenu}
-                        registerRef={registerRef}
-                        hunkContext="reviewed"
-                        onApproveAll={handleApproveAll}
-                        onUnapproveAll={handleUnapproveAll}
-                      />
-                    ))
-                  ) : (
-                    <div className="py-4 text-center">
-                      <p className="text-xs text-stone-500">
-                        No files reviewed yet
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </SectionHeader>
-            </>
+                <p className="text-sm font-medium text-stone-400 mb-1">
+                  No changes
+                </p>
+                <p className="text-xs text-stone-500 text-center max-w-[200px]">
+                  The base and compare refs are identical
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Needs Review section */}
+                <SectionHeader
+                  title="Needs Review"
+                  badge={stats.needsReviewFiles}
+                  badgeColor="amber"
+                  onExpandAll={() => expandAll(allDirPaths)}
+                  onCollapseAll={collapseAll}
+                  showTreeControls={allDirPaths.size > 0}
+                  showTopBorder={false}
+                >
+                  <div className="py-1">
+                    {sectionedFiles.needsReview.length > 0 ? (
+                      sectionedFiles.needsReview.map((entry) => (
+                        <FileNode
+                          key={entry.path}
+                          entry={entry}
+                          depth={0}
+                          expandedPaths={expandedPaths}
+                          onToggle={togglePath}
+                          selectedFile={selectedFile}
+                          onSelectFile={handleSelectFile}
+                          onContextMenu={handleContextMenu}
+                          registerRef={registerRef}
+                          hunkContext="needs-review"
+                          onApproveAll={handleApproveAll}
+                          onUnapproveAll={handleUnapproveAll}
+                        />
+                      ))
+                    ) : (
+                      <div className="py-4 text-center">
+                        <svg
+                          className="mx-auto mb-2 h-6 w-6 text-lime-500"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        <p className="text-xs text-stone-500">
+                          No files need review
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </SectionHeader>
+
+                {/* Reviewed section */}
+                <SectionHeader
+                  title="Reviewed"
+                  badge={stats.reviewedFiles}
+                  badgeColor="lime"
+                  onExpandAll={() => expandAll(allDirPaths)}
+                  onCollapseAll={collapseAll}
+                  showTreeControls={allDirPaths.size > 0}
+                >
+                  <div className="py-1">
+                    {sectionedFiles.reviewed.length > 0 ? (
+                      sectionedFiles.reviewed.map((entry) => (
+                        <FileNode
+                          key={entry.path}
+                          entry={entry}
+                          depth={0}
+                          expandedPaths={expandedPaths}
+                          onToggle={togglePath}
+                          selectedFile={selectedFile}
+                          onSelectFile={handleSelectFile}
+                          onContextMenu={handleContextMenu}
+                          registerRef={registerRef}
+                          hunkContext="reviewed"
+                          onApproveAll={handleApproveAll}
+                          onUnapproveAll={handleUnapproveAll}
+                        />
+                      ))
+                    ) : (
+                      <div className="py-4 text-center">
+                        <p className="text-xs text-stone-500">
+                          No files reviewed yet
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </SectionHeader>
+              </>
+            )
           ) : (
             <>
               {/* All Files header with expand/collapse */}

@@ -348,7 +348,7 @@ function App() {
               </div>
             </div>
           ) : (
-            <span className="text-xs text-stone-500">Nothing to review</span>
+            <span className="text-xs text-stone-500">No changes to review</span>
           )}
 
           {/* View mode toggle */}

@@ -59,7 +59,7 @@ export function StatusLetter({ status }: { status?: string }) {
   const config = status ? STATUS_CONFIG[status] : null;
 
   if (!config) {
-    // Unchanged file - show dim dash
+    // Unchanged file - show dim dot
     return (
       <span className="w-3 text-center font-mono text-xxs text-stone-500">
         ·

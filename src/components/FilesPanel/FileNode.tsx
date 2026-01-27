@@ -120,6 +120,7 @@ export const FileNode = memo(
 
     if (entry.isDirectory) {
       const visibleChildren = entry.children?.filter((c) => c.matchesFilter);
+      const isGitignored = entry.status === "gitignored";
       const hasReviewableContent = entry.hunkStatus.total > 0;
       const hasPending = entry.hunkStatus.pending > 0;
       const hasApproved = entry.hunkStatus.approved > 0;
@@ -127,7 +128,11 @@ export const FileNode = memo(
       return (
         <div className="select-none">
           <div
-            className="group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors hover:bg-stone-800/40"
+            className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
+              isGitignored
+                ? "opacity-50 hover:opacity-70"
+                : "hover:bg-stone-800/40"
+            }`}
             style={{ paddingLeft }}
           >
             <button
@@ -146,7 +151,7 @@ export const FileNode = memo(
 
               {/* Directory name */}
               <span
-                className={`min-w-0 flex-1 truncate text-xs ${hasReviewableContent ? "text-stone-200" : "text-stone-400"}`}
+                className={`min-w-0 flex-1 truncate text-xs ${isGitignored ? "text-stone-500" : "text-stone-200"}`}
               >
                 {entry.displayName}
               </span>
@@ -191,7 +196,7 @@ export const FileNode = memo(
     }
 
     // File node
-    const isUnchanged = !entry.hasChanges;
+    const isGitignored = entry.status === "gitignored";
     const hasReviewableContent = entry.hunkStatus.total > 0;
     const hasPending = entry.hunkStatus.pending > 0;
     const hasApproved = entry.hunkStatus.approved > 0;
@@ -204,8 +209,8 @@ export const FileNode = memo(
         className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
           isSelected
             ? "bg-amber-500/15 border-l-2 border-l-amber-400"
-            : isUnchanged
-              ? "border-l-2 border-l-transparent opacity-75 hover:opacity-90"
+            : isGitignored
+              ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
               : "border-l-2 border-l-transparent hover:bg-stone-800/40"
         }`}
         style={{ paddingLeft: `${depth * 0.8 + 0.5}rem` }}
@@ -225,9 +230,9 @@ export const FileNode = memo(
                 ? "text-stone-100"
                 : isComplete
                   ? "text-lime-400"
-                  : entry.hasChanges
-                    ? "text-stone-300"
-                    : "text-stone-400"
+                  : isGitignored
+                    ? "text-stone-500"
+                    : "text-stone-300"
             }`}
           >
             {entry.name}
