@@ -95,8 +95,10 @@ export function processTree(
     const hasChanges = hunkStatus.total > 0;
 
     // Filter based on view mode
+    // In "all" mode, exclude deleted files since they don't exist in the current state
     const matchesFilter =
-      viewMode === "all" || (viewMode === "changes" && hasChanges);
+      (viewMode === "all" && entry.status !== "deleted") ||
+      (viewMode === "changes" && hasChanges);
 
     return {
       name: entry.name,
