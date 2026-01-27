@@ -2,7 +2,19 @@ import { File as PierreFile } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores/reviewStore";
 import type { DiffHunk } from "../../types";
 import { isHunkTrusted } from "../../types";
-import { detectLanguage } from "./languageMap";
+import type { SupportedLanguages } from "./languageMap";
+
+/** Returns the appropriate header background class based on hunk state */
+function getHeaderBackgroundClass(
+  isRejected: boolean,
+  isApproved: boolean,
+  isTrusted: boolean,
+): string {
+  if (isRejected) return "bg-rose-500/10";
+  if (isApproved) return "bg-lime-500/5 bg-stone-900/95";
+  if (isTrusted) return "bg-sky-500/5 bg-stone-900/95";
+  return "bg-stone-900/95";
+}
 
 interface UntrackedFileViewProps {
   content: string;
@@ -10,6 +22,8 @@ interface UntrackedFileViewProps {
   hunks: DiffHunk[];
   theme: string;
   fontSizeCSS: string;
+  /** Language override for syntax highlighting */
+  language?: SupportedLanguages;
 }
 
 export function UntrackedFileView({
@@ -18,10 +32,10 @@ export function UntrackedFileView({
   hunks,
   theme,
   fontSizeCSS,
+  language,
 }: UntrackedFileViewProps) {
   const { reviewState, approveHunk, unapproveHunk, rejectHunk, unrejectHunk } =
     useReviewStore();
-  const language = detectLanguage(filePath, content);
 
   // Get the synthetic hunk for this untracked file
   const hunk = hunks[0];
@@ -39,15 +53,7 @@ export function UntrackedFileView({
       {/* Approval controls */}
       {hunk && (
         <div
-          className={`sticky top-0 z-10 mb-2 flex items-center gap-3 border-b border-stone-800/50 backdrop-blur-sm p-3 ${
-            isRejected
-              ? "bg-rose-500/10"
-              : isApproved
-                ? "bg-lime-500/5 bg-stone-900/95"
-                : isTrusted
-                  ? "bg-sky-500/5 bg-stone-900/95"
-                  : "bg-stone-900/95"
-          }`}
+          className={`sticky top-0 z-10 mb-2 flex items-center gap-3 border-b border-stone-800/50 backdrop-blur-sm p-3 ${getHeaderBackgroundClass(isRejected, isApproved, isTrusted)}`}
         >
           <span className="font-mono text-xs text-emerald-500 tabular-nums">
             + {lineCount} lines (new file)
@@ -126,22 +132,24 @@ export function UntrackedFileView({
       )}
 
       {/* File content using pierre/diffs */}
-      <PierreFile
-        file={{
-          name: filePath,
-          contents: content,
-          lang: language,
-        }}
-        options={{
-          theme: {
-            dark: theme,
-            light: theme,
-          },
-          themeType: "dark",
-          disableFileHeader: true,
-          unsafeCSS: fontSizeCSS,
-        }}
-      />
+      <div key={language}>
+        <PierreFile
+          file={{
+            name: filePath,
+            contents: content,
+            lang: language,
+          }}
+          options={{
+            theme: {
+              dark: theme,
+              light: theme,
+            },
+            themeType: "dark",
+            disableFileHeader: true,
+            unsafeCSS: fontSizeCSS,
+          }}
+        />
+      </div>
     </div>
   );
 }

@@ -196,6 +196,45 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     }
   };
 
+  /** Renders the file status badge based on whether file is new, has changes, or unchanged */
+  function renderFileStatusBadge() {
+    if (isUntracked) {
+      return (
+        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
+          New
+        </span>
+      );
+    }
+
+    if (!hasChanges) {
+      return null;
+    }
+
+    const isComplete = reviewProgress.reviewed === reviewProgress.total;
+    const badgeClass = isComplete
+      ? "bg-lime-500/15 text-lime-400"
+      : "bg-amber-500/15 text-amber-400";
+
+    return (
+      <>
+        <span
+          className={`rounded px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeClass}`}
+        >
+          {reviewProgress.reviewed}/{reviewProgress.total} reviewed
+        </span>
+        {!isComplete && (
+          <button
+            onClick={() => approveAllFileHunks(filePath)}
+            className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
+            title="Approve all hunks in this file"
+          >
+            Approve All
+          </button>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
       {/* File header with breadcrumbs */}
@@ -214,32 +253,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
               onLanguageChange={setLanguageOverride}
             />
           )}
-          {isUntracked ? (
-            <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
-              New
-            </span>
-          ) : hasChanges ? (
-            <>
-              <span
-                className={`rounded px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
-                  reviewProgress.reviewed === reviewProgress.total
-                    ? "bg-lime-500/15 text-lime-400"
-                    : "bg-amber-500/15 text-amber-400"
-                }`}
-              >
-                {reviewProgress.reviewed}/{reviewProgress.total} reviewed
-              </span>
-              {reviewProgress.reviewed < reviewProgress.total && (
-                <button
-                  onClick={() => approveAllFileHunks(filePath)}
-                  className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
-                  title="Approve all hunks in this file"
-                >
-                  Approve All
-                </button>
-              )}
-            </>
-          ) : null}
+          {renderFileStatusBadge()}
 
           {/* File actions overflow menu */}
           <OverflowMenu>

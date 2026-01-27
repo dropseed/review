@@ -1,6 +1,9 @@
 import type { SupportedLanguages } from "@pierre/diffs/react";
 import type { ContentType } from "../../types";
 
+// Re-export for convenience
+export type { SupportedLanguages };
+
 // Image extensions
 const imageExtensions = new Set([
   "png",

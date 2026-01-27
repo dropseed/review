@@ -21,6 +21,7 @@ import type {
   ClassifyOptions,
   DetectMovePairsResponse,
   ExpandedContext,
+  SearchMatch,
 } from "./types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -195,6 +196,17 @@ export class HttpClient implements ApiClient {
     // Not implemented in HTTP server yet - return empty
     console.warn("[HttpClient] getExpandedContext not implemented");
     return { lines: [], startLine, endLine };
+  }
+
+  async searchFileContents(
+    _repoPath: string,
+    _query: string,
+    _caseSensitive: boolean,
+    _maxResults: number,
+  ): Promise<SearchMatch[]> {
+    // Not implemented in HTTP server yet - return empty
+    console.warn("[HttpClient] searchFileContents not implemented");
+    return [];
   }
 
   // ----- Review state -----

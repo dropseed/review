@@ -23,6 +23,23 @@ import {
   useKeyboardNavigation,
 } from "./hooks";
 
+/** Returns the appropriate loading progress message based on current phase */
+function getLoadingProgressText(
+  loadingProgress: { phase: string; current: number; total: number } | null,
+): string {
+  if (!loadingProgress) {
+    return "Loading review...";
+  }
+  switch (loadingProgress.phase) {
+    case "files":
+      return "Finding changed files...";
+    case "hunks":
+      return `Loading file ${loadingProgress.current} of ${loadingProgress.total}...`;
+    default:
+      return "Detecting moved code...";
+  }
+}
+
 function App() {
   const {
     repoPath,
@@ -257,13 +274,7 @@ function App() {
 
   // Show loading indicator during initial load
   if (initialLoading) {
-    const progressText = loadingProgress
-      ? loadingProgress.phase === "files"
-        ? "Finding changed files..."
-        : loadingProgress.phase === "hunks"
-          ? `Loading file ${loadingProgress.current} of ${loadingProgress.total}...`
-          : "Detecting moved code..."
-      : "Loading review...";
+    const progressText = getLoadingProgressText(loadingProgress);
 
     return (
       <div className="flex h-screen items-center justify-center bg-stone-950">

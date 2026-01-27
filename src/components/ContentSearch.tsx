@@ -174,6 +174,13 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
 
   if (!isOpen) return null;
 
+  /** Returns the appropriate message when search results are empty */
+  function getEmptyStateMessage(query: string, isLoading: boolean): string {
+    if (!query.trim()) return "Type to search file contents...";
+    if (isLoading) return "Searching...";
+    return "No matches found";
+  }
+
   // Compute the flat index for each result in the grouped display
   let flatIndex = 0;
 
@@ -255,11 +262,7 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
             </div>
           ) : searchResults.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-stone-500">
-              {query.trim()
-                ? searchLoading
-                  ? "Searching..."
-                  : "No matches found"
-                : "Type to search file contents…"}
+              {getEmptyStateMessage(query, searchLoading)}
             </div>
           ) : (
             groupedResults.map((group) => (

@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 compare = { path = "../compare" }
 
 # Tauri and plugins
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"

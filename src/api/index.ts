@@ -36,6 +36,7 @@ export type {
   ClassifyOptions,
   DetectMovePairsResponse,
   ExpandedContext,
+  SearchMatch,
 } from "./types";
 
 import type { ApiClient } from "./client";

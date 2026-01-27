@@ -14,7 +14,19 @@ import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { OverflowMenu } from "./OverflowMenu";
 import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
-import { detectLanguage } from "./languageMap";
+import type { SupportedLanguages } from "./languageMap";
+
+/** Returns the appropriate background class for a hunk based on its state */
+function getHunkBackgroundClass(
+  isRejected: boolean,
+  isApproved: boolean,
+  isTrusted: boolean,
+): string {
+  if (isRejected) return "bg-rose-500/10";
+  if (isApproved) return "bg-lime-500/5";
+  if (isTrusted) return "bg-sky-500/5";
+  return "bg-stone-800/80";
+}
 
 // Error boundary to catch rendering errors
 export class DiffErrorBoundary extends Component<
@@ -74,6 +86,8 @@ interface DiffViewProps {
   newContent?: string;
   // Focused hunk for keyboard navigation
   focusedHunkId?: string | null;
+  /** Language override for syntax highlighting */
+  language?: SupportedLanguages;
 }
 
 export function DiffView({
@@ -87,6 +101,7 @@ export function DiffView({
   oldContent,
   newContent,
   focusedHunkId,
+  language,
 }: DiffViewProps) {
   const {
     reviewState,
@@ -309,15 +324,7 @@ export function DiffView({
         ref={isFocused ? focusedHunkRef : undefined}
         className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
           isFocused ? "ring-2 ring-inset ring-amber-500/70" : ""
-        } ${
-          isRejected
-            ? "bg-rose-500/10"
-            : isApproved
-              ? "bg-lime-500/5"
-              : isTrusted
-                ? "bg-sky-500/5"
-                : "bg-stone-800/80"
-        }`}
+        } ${getHunkBackgroundClass(isRejected, isApproved, isTrusted)}`}
       >
         {/* Move indicator */}
         {pairedHunk && (
@@ -661,14 +668,13 @@ export function DiffView({
   // Use != null to catch both null and undefined (Rust None serializes to null)
   // For new files, oldContent is null but we can use empty string
   // For deleted files, newContent is null but we can use empty string
-  const lang = detectLanguage(fileName, newContent || oldContent);
   const hasFileContents = oldContent != null || newContent != null;
 
   const oldFile: FileContents | undefined = hasFileContents
-    ? { name: fileName, contents: oldContent ?? "", lang }
+    ? { name: fileName, contents: oldContent ?? "", lang: language }
     : undefined;
   const newFile: FileContents | undefined = hasFileContents
-    ? { name: fileName, contents: newContent ?? "", lang }
+    ? { name: fileName, contents: newContent ?? "", lang: language }
     : undefined;
 
   // Performance optimization: detect large files and JSON files
