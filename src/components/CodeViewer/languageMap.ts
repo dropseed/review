@@ -127,6 +127,11 @@ export function getLanguageFromFilename(
   return ext ? langMap[ext] : undefined;
 }
 
+export function isMarkdownFile(filePath: string): boolean {
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  return ext === "md" || ext === "markdown" || ext === "mdx";
+}
+
 // Detect language from file path and optionally content
 export function detectLanguage(
   filePath: string,

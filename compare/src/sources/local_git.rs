@@ -55,13 +55,19 @@ impl LocalGitSource {
     }
 
     /// List all local and remote branches, separated, plus stashes
+    /// Branches are sorted by most recent commit date (newest first)
     pub fn list_branches(&self) -> Result<super::traits::BranchList, LocalGitError> {
         let mut local = Vec::new();
         let mut remote = Vec::new();
         let mut stashes = Vec::new();
 
-        // Get local branches
-        let local_output = self.run_git(&["branch", "--format=%(refname:short)"])?;
+        // Get local branches sorted by most recent commit date
+        let local_output = self.run_git(&[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)",
+            "refs/heads/",
+        ])?;
         for line in local_output.lines() {
             let branch = line.trim();
             if !branch.is_empty() {
@@ -69,8 +75,13 @@ impl LocalGitSource {
             }
         }
 
-        // Get remote branches (excluding HEAD)
-        let remote_output = self.run_git(&["branch", "-r", "--format=%(refname:short)"])?;
+        // Get remote branches sorted by most recent commit date (excluding HEAD)
+        let remote_output = self.run_git(&[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)",
+            "refs/remotes/",
+        ])?;
         for line in remote_output.lines() {
             let branch = line.trim();
             if !branch.is_empty() && !branch.ends_with("/HEAD") {
@@ -93,10 +104,8 @@ impl LocalGitSource {
             }
         }
 
-        // Sort and deduplicate branch lists
-        local.sort();
+        // Deduplicate (already sorted by commit date)
         local.dedup();
-        remote.sort();
         remote.dedup();
         // Stashes are already in order (most recent first)
 

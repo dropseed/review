@@ -292,11 +292,7 @@ const ReviewCard = memo(function ReviewCard({
                 aria-valuemax={100}
               >
                 <div
-                  className={`h-full rounded-full transition-[width] duration-300 ${
-                    review.completedAt
-                      ? "bg-gradient-to-r from-sage-400 to-sage-500 shadow-[0_0_8px_rgba(74,124,89,0.5)]"
-                      : "bg-gradient-to-r from-sage-500 to-sage-400"
-                  }`}
+                  className="h-full rounded-full transition-[width] duration-300 bg-gradient-to-r from-sage-500 to-sage-400"
                   style={{ width: `${progressWidth}%` }}
                 />
               </div>
@@ -315,11 +311,6 @@ const ReviewCard = memo(function ReviewCard({
           <time dateTime={review.updatedAt} className="text-xs text-stone-500">
             {formatRelativeTime(review.updatedAt)}
           </time>
-          {review.completedAt && (
-            <span className="rounded-full bg-green-500/10 border border-green-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-400">
-              Complete
-            </span>
-          )}
         </div>
       </button>
 
@@ -427,11 +418,57 @@ export function StartScreen({
       client.listBranches(repoPath),
       client.getDefaultBranch(repoPath),
       client.getCurrentBranch(repoPath),
+      client.getGitStatus(repoPath),
+      client.listSavedReviews(repoPath),
     ])
-      .then(([branchList, defBranch, curBranch]) => {
+      .then(([branchList, defBranch, curBranch, gitStatus, reviews]) => {
         setBranches(branchList);
         setBaseRef(defBranch);
         setCurrentBranch(curBranch);
+
+        // Smart default for compare branch (only if not already in review):
+        // 1. If there are uncommitted changes, default to Working Tree
+        // 2. Else if current branch is different from base, use current branch
+        // 3. Else use the most recently edited branch that doesn't have a review
+        const hasUncommittedChanges =
+          gitStatus.staged.length > 0 ||
+          gitStatus.unstaged.length > 0 ||
+          gitStatus.untracked.length > 0;
+
+        const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
+
+        let smartDefault: string | null = null;
+
+        if (hasUncommittedChanges) {
+          const workingTreeKey = `${defBranch}..${curBranch}+working-tree`;
+          if (!reviewKeys.has(workingTreeKey)) {
+            smartDefault = WORKING_TREE;
+          }
+        }
+
+        if (!smartDefault && curBranch !== defBranch) {
+          const branchKey = `${defBranch}..${curBranch}`;
+          if (!reviewKeys.has(branchKey)) {
+            smartDefault = curBranch;
+          }
+        }
+
+        // Fallback: find the most recently edited branch without a review
+        // (branchList.local is sorted by most recent commit date)
+        if (!smartDefault) {
+          for (const branch of branchList.local) {
+            if (branch === defBranch) continue; // Skip the base branch
+            const branchKey = `${defBranch}..${branch}`;
+            if (!reviewKeys.has(branchKey)) {
+              smartDefault = branch;
+              break;
+            }
+          }
+        }
+
+        if (smartDefault) {
+          setCompareRef(smartDefault);
+        }
       })
       .catch((err) => {
         console.error("Failed to load branches:", err);

@@ -60,6 +60,9 @@ function App() {
     saveCurrentComparison,
     reviewState,
     hunks,
+    focusedHunkIndex,
+    approveHunk,
+    rejectHunk,
     nextFile,
     prevFile,
     nextHunk,
@@ -407,10 +410,6 @@ function App() {
       }
 
       switch (event.key) {
-        case "r":
-          // Toggle view mode
-          setMainViewMode(mainViewMode === "single" ? "rolling" : "single");
-          break;
         case "j":
           // Navigate to next hunk (handles file switching automatically)
           nextHunk();
@@ -418,6 +417,20 @@ function App() {
         case "k":
           // Navigate to previous hunk (handles file switching automatically)
           prevHunk();
+          break;
+        case "a":
+          // Approve focused hunk
+          if (hunks.length > 0 && focusedHunkIndex < hunks.length) {
+            const focusedHunk = hunks[focusedHunkIndex];
+            approveHunk(focusedHunk.id);
+          }
+          break;
+        case "r":
+          // Reject focused hunk
+          if (hunks.length > 0 && focusedHunkIndex < hunks.length) {
+            const focusedHunk = hunks[focusedHunkIndex];
+            rejectHunk(focusedHunk.id);
+          }
           break;
         case "ArrowDown":
           if (event.metaKey || event.ctrlKey) {
@@ -431,12 +444,6 @@ function App() {
             event.preventDefault();
           }
           break;
-        case "]":
-          nextFile();
-          break;
-        case "[":
-          prevFile();
-          break;
       }
     },
     [
@@ -444,6 +451,10 @@ function App() {
       prevFile,
       nextHunk,
       prevHunk,
+      hunks,
+      focusedHunkIndex,
+      approveHunk,
+      rejectHunk,
       handleOpenRepo,
       codeFontSize,
       setCodeFontSize,
@@ -451,8 +462,6 @@ function App() {
       closeSplit,
       setSplitOrientation,
       splitOrientation,
-      mainViewMode,
-      setMainViewMode,
     ],
   );
 
@@ -739,7 +748,7 @@ function App() {
                   ? "bg-stone-700 text-stone-200"
                   : "text-stone-500 hover:text-stone-300"
               }`}
-              title="Single file view (r)"
+              title="Single file view"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -761,7 +770,7 @@ function App() {
                   ? "bg-stone-700 text-stone-200"
                   : "text-stone-500 hover:text-stone-300"
               }`}
-              title="Rolling view - all files (r)"
+              title="Rolling view - all files"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -889,20 +898,14 @@ function App() {
             <span className="ml-1">hunks</span>
           </span>
           <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              [
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-emerald-500/70">
+              a
             </kbd>
             <span className="mx-0.5">/</span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              ]
-            </kbd>
-            <span className="ml-1">files</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-rose-500/70">
               r
             </kbd>
-            <span className="ml-1">view</span>
+            <span className="ml-1">approve/reject</span>
           </span>
           <span>
             <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">

@@ -10,6 +10,8 @@ import { PlainCodeView } from "./PlainCodeView";
 import { UntrackedFileView } from "./UntrackedFileView";
 import { DiffView } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
+import { MarkdownViewer } from "./MarkdownViewer";
+import { isMarkdownFile } from "./languageMap";
 
 interface CodeViewerProps {
   filePath: string;
@@ -26,6 +28,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     revealDirectoryInTree,
     hunks: allHunks,
     focusedHunkIndex,
+    refreshVersion,
   } = useReviewStore();
 
   // Get the focused hunk ID if it's in this file
@@ -47,6 +50,10 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   // For SVG files: toggle between rendered image view and code diff view
   const [svgViewMode, setSvgViewMode] = useState<"rendered" | "code">(
     "rendered",
+  );
+  // For markdown files: toggle between preview and code/diff view
+  const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">(
+    "code",
   );
 
   // Calculate review progress for this file's hunks
@@ -78,7 +85,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
         setError(String(err));
         setLoading(false);
       });
-  }, [repoPath, filePath, comparison]);
+  }, [repoPath, filePath, comparison, refreshVersion]);
 
   if (loading) {
     return (
@@ -248,6 +255,31 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
           </OverflowMenu>
         </div>
         <div className="flex items-center gap-2">
+          {/* Markdown view mode toggle */}
+          {isMarkdownFile(filePath) && (
+            <div className="flex items-center rounded bg-stone-800/30 p-0.5">
+              <button
+                onClick={() => setMarkdownViewMode("preview")}
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                  markdownViewMode === "preview"
+                    ? "bg-stone-700/50 text-stone-200"
+                    : "text-stone-500 hover:text-stone-300"
+                }`}
+              >
+                Preview
+              </button>
+              <button
+                onClick={() => setMarkdownViewMode("code")}
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                  markdownViewMode === "code"
+                    ? "bg-stone-700/50 text-stone-200"
+                    : "text-stone-500 hover:text-stone-300"
+                }`}
+              >
+                Code
+              </button>
+            </div>
+          )}
           {/* SVG view mode toggle */}
           {isSvg && fileContent.imageDataUrl && (
             <div className="flex items-center rounded bg-stone-800/30 p-0.5">
@@ -322,7 +354,9 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
 
       {/* Content area */}
       <div className="flex-1 overflow-auto scrollbar-thin bg-stone-950">
-        {showImageViewer && fileContent.imageDataUrl ? (
+        {isMarkdownFile(filePath) && markdownViewMode === "preview" ? (
+          <MarkdownViewer content={fileContent.content} />
+        ) : showImageViewer && fileContent.imageDataUrl ? (
           <ImageViewer
             imageDataUrl={fileContent.imageDataUrl}
             oldImageDataUrl={fileContent.oldImageDataUrl}

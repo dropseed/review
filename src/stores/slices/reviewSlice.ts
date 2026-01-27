@@ -17,6 +17,7 @@ export interface ReviewSlice {
   reviewState: ReviewState | null;
   savedReviews: ReviewSummary[];
   savedReviewsLoading: boolean;
+  refreshVersion: number;
 
   // Actions
   setReviewState: (state: ReviewState) => void;
@@ -59,9 +60,6 @@ export interface ReviewSlice {
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
 
-  // Complete review
-  completeReview: () => void;
-
   // Refresh all data
   refresh: () => Promise<void>;
 }
@@ -71,6 +69,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     reviewState: null,
     savedReviews: [],
     savedReviewsLoading: false,
+    refreshVersion: 0,
 
     setReviewState: (state) => set({ reviewState: state }),
 
@@ -532,20 +531,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       debouncedSave(saveReviewState);
     },
 
-    completeReview: () => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const newState = {
-        ...reviewState,
-        completedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      saveReviewState();
-    },
-
     exportRejectionFeedback: () => {
       const { reviewState, hunks } = get();
       if (!reviewState) return null;
@@ -588,5 +573,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       await Promise.all([loadFiles(true), loadAllFiles(), loadGitStatus()]);
       // Now trigger auto-classification with the fresh review state
       triggerAutoClassification();
+      // Increment refresh version to trigger CodeViewer re-fetch
+      set((state) => ({ refreshVersion: state.refreshVersion + 1 }));
     },
   });

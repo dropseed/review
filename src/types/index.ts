@@ -164,7 +164,6 @@ export interface ReviewState {
   annotations: LineAnnotation[]; // Inline annotations on lines
   createdAt: string;
   updatedAt: string;
-  completedAt?: string; // When review was marked complete
 }
 
 // Summary of a saved review (for start screen listing)
@@ -173,7 +172,6 @@ export interface ReviewSummary {
   totalHunks: number;
   reviewedHunks: number;
   updatedAt: string;
-  completedAt?: string;
 }
 
 // Trust patterns

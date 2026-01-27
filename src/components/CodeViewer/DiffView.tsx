@@ -319,32 +319,6 @@ export function DiffView({
                 : "bg-stone-800/80"
         }`}
       >
-        {/* Classifying indicator */}
-        {classifyingHunkIds.has(hunk.id) && (
-          <div className="flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5">
-            <svg
-              className="h-3 w-3 animate-spin text-violet-400"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="3"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <span className="text-xxs text-violet-400">Classifying…</span>
-          </div>
-        )}
-
         {/* Move indicator */}
         {pairedHunk && (
           <button
@@ -384,7 +358,7 @@ export function DiffView({
         {isApproved ? (
           <button
             onClick={() => unapproveHunk(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-400 transition-all hover:bg-lime-500/25"
+            className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 ring-1 ring-inset ring-emerald-500/30"
             title="Click to unapprove"
           >
             <svg
@@ -405,7 +379,7 @@ export function DiffView({
         ) : isRejected ? (
           <button
             onClick={() => unrejectHunk(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/25"
+            className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 ring-1 ring-inset ring-rose-500/30"
             title="Click to clear rejection"
           >
             <svg
@@ -424,23 +398,50 @@ export function DiffView({
             <span>Rejected</span>
           </button>
         ) : (
-          <div className="flex items-center rounded-md border border-stone-700/50 overflow-hidden">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => rejectHunk(hunk.id)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-400 transition-all hover:bg-rose-500/15 hover:text-rose-400"
-              title="Reject this change"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-rose-400/70 bg-rose-500/10 transition-all hover:bg-rose-500/20 hover:text-rose-400"
+              title="Reject this change (r)"
               aria-label="Reject change"
             >
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
               <span>Reject</span>
+              {isFocused && <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>}
             </button>
-            <div className="w-px self-stretch bg-stone-700/50" />
             <button
               onClick={() => approveHunk(hunk.id)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-lime-500/15 hover:text-lime-400"
-              title="Approve this change"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-emerald-400/70 bg-emerald-500/10 transition-all hover:bg-emerald-500/20 hover:text-emerald-400"
+              title="Approve this change (a)"
               aria-label="Approve change"
             >
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
               <span>Approve</span>
+              {isFocused && <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>}
             </button>
           </div>
         )}
@@ -480,125 +481,177 @@ export function DiffView({
           <span className="hidden sm:inline">Comment</span>
         </button>
 
-        {/* Trust labels - right side, click to toggle trust */}
-        {hunkState?.label && hunkState.label.length > 0 && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <svg
-              className="h-3 w-3 text-stone-500"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            {hunkState.label.map((lbl, i) => {
-              const isTrustedLabel = (reviewState?.trustList ?? []).includes(
-                lbl,
-              );
-              return (
-                <button
-                  key={i}
-                  onClick={() => {
-                    if (isTrustedLabel) {
-                      removeTrustPattern(lbl);
-                    } else {
-                      addTrustPattern(lbl);
-                    }
-                  }}
-                  className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-all hover:ring-1 ${
-                    isTrustedLabel
-                      ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
-                      : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
-                  }`}
-                  title={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"${hunkState?.reasoning ? `\n\n${hunkState.reasoning}` : ""}`}
+        {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Classifying indicator - fixed width container to prevent layout shift */}
+          <div className="w-[5.5rem] flex justify-end">
+            {classifyingHunkIds.has(hunk.id) && (
+              <div className="flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5">
+                <svg
+                  className="h-3 w-3 animate-spin text-violet-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  {lbl}
-                </button>
-              );
-            })}
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span className="text-xxs text-violet-400">Classifying…</span>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Overflow menu */}
-        <div
-          className={
-            hunkState?.label && hunkState.label.length > 0 ? "" : "ml-auto"
-          }
-        >
-          <OverflowMenu>
-            {onViewInFile && (
-              <button
-                onClick={() => {
-                  // Find first changed line to jump to
-                  const firstChanged = hunk.lines.find(
-                    (l) => l.type === "added" || l.type === "removed",
-                  );
-                  const targetLine =
-                    firstChanged?.newLineNumber ?? hunk.newStart;
-                  onViewInFile(targetLine);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+          {/* Trust labels - click to toggle trust */}
+          {hunkState?.label && hunkState.label.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <svg
+                className="h-3 w-3 text-stone-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
               >
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                  />
-                </svg>
-                View in file
-              </button>
-            )}
-            {claudeAvailable && (
-              <button
-                onClick={() => reclassifyHunks([hunk.id])}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                  />
-                </svg>
-                Reclassify
-              </button>
-            )}
-            <button
-              onClick={() => handleCopyHunk(hunk)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              {hunkState.label.map((lbl, i) => {
+                const isTrustedLabel = (reviewState?.trustList ?? []).includes(
+                  lbl,
+                );
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      if (isTrustedLabel) {
+                        removeTrustPattern(lbl);
+                      } else {
+                        addTrustPattern(lbl);
+                      }
+                    }}
+                    className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-all hover:ring-1 ${
+                      isTrustedLabel
+                        ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
+                        : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
+                    }`}
+                    title={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"`}
+                  >
+                    {lbl}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Reasoning indicator - shows when reasoning exists */}
+          {hunkState?.reasoning && (
+            <span
+              className="text-stone-600 hover:text-stone-400 cursor-help transition-colors"
+              title={hunkState.reasoning}
             >
               <svg
-                className="h-3.5 w-3.5"
+                className="h-3 w-3"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
                 strokeWidth={2}
+                aria-hidden="true"
               >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
                 />
               </svg>
-              Copy hunk
-            </button>
-          </OverflowMenu>
+            </span>
+          )}
+
+          {/* Overflow menu */}
+          <div>
+            <OverflowMenu>
+              {onViewInFile && (
+                <button
+                  onClick={() => {
+                    // Find first changed line to jump to
+                    const firstChanged = hunk.lines.find(
+                      (l) => l.type === "added" || l.type === "removed",
+                    );
+                    const targetLine =
+                      firstChanged?.newLineNumber ?? hunk.newStart;
+                    onViewInFile(targetLine);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                    />
+                  </svg>
+                  View in file
+                </button>
+              )}
+              {claudeAvailable && (
+                <button
+                  onClick={() => reclassifyHunks([hunk.id])}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                    />
+                  </svg>
+                  Reclassify
+                </button>
+              )}
+              <button
+                onClick={() => handleCopyHunk(hunk)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+                Copy hunk
+              </button>
+            </OverflowMenu>
+          </div>
         </div>
       </div>
     );
@@ -616,6 +669,28 @@ export function DiffView({
     ? { name: fileName, contents: newContent, lang }
     : undefined;
 
+  // Performance optimization: detect large files and JSON files
+  // JSON diffs are often noisy with word-level diffing; large files are slow to render
+  const isJsonFile = fileName.endsWith(".json");
+  const isLockFile =
+    fileName.endsWith("package-lock.json") ||
+    fileName.endsWith("yarn.lock") ||
+    fileName.endsWith("pnpm-lock.yaml") ||
+    fileName.endsWith("Cargo.lock") ||
+    fileName.endsWith("Gemfile.lock") ||
+    fileName.endsWith("composer.lock");
+  const totalLines =
+    (oldContent?.split("\n").length ?? 0) +
+    (newContent?.split("\n").length ?? 0);
+  const isLargeFile = totalLines > 5000;
+
+  // For lock files and very large files, disable word-level diffing entirely
+  // For large JSON files, also disable to improve performance
+  const lineDiffType: "word" | "none" =
+    isLockFile || isLargeFile || (isJsonFile && totalLines > 1000)
+      ? "none"
+      : "word";
+
   const diffOptions = {
     diffStyle: viewMode,
     theme: {
@@ -630,6 +705,10 @@ export function DiffView({
     expandUnchanged: false,
     expansionLineCount: 20,
     hunkSeparators: "line-info" as const,
+    // Performance optimizations
+    tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
+    maxLineDiffLength: 500, // Skip word-level diff for long lines
+    lineDiffType, // Adaptive based on file type/size
   };
 
   const renderHoverUtility = (

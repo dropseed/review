@@ -77,7 +77,6 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
             "trust_list": state.trust_list,
             "notes": state.notes,
             "updated_at": state.updated_at,
-            "completed_at": state.completed_at,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
         return Ok(());

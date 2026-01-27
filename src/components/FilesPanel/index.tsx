@@ -151,7 +151,6 @@ export function FilesPanel() {
     reviewState,
     hunks,
     setReviewNotes,
-    completeReview,
     deleteAnnotation,
     revealFileInTree,
     approveAllFileHunks,
@@ -575,7 +574,7 @@ export function FilesPanel() {
               {/* All Files header with expand/collapse */}
               <div className="flex items-center border-b border-stone-800">
                 <div className="flex-1 px-3 py-2 text-xs font-medium text-stone-300">
-                  All Files
+                  {repoPath?.split("/").pop() || "All Files"}
                 </div>
                 {allDirPaths.size > 0 && (
                   <div className="flex items-center gap-0.5 pr-2">
@@ -663,28 +662,8 @@ export function FilesPanel() {
         </CollapsibleSection>
 
         {/* Actions */}
-        <div className="border-t border-stone-800 p-3 space-y-2">
-          {reviewState?.completedAt ? (
-            <div className="rounded bg-lime-500/10 px-3 py-2 text-center text-xs text-lime-400">
-              Completed {new Date(reviewState.completedAt).toLocaleDateString()}
-            </div>
-          ) : stats.total > 0 ? (
-            <button
-              onClick={() => completeReview()}
-              disabled={stats.pending > 0}
-              className={`btn w-full text-xs ${
-                stats.pending === 0
-                  ? "btn-primary"
-                  : "cursor-not-allowed bg-stone-800 text-stone-500"
-              }`}
-            >
-              {stats.pending > 0
-                ? `${stats.pending} pending`
-                : "Complete Review"}
-            </button>
-          ) : null}
-
-          {hasFeedbackToExport && (
+        {hasFeedbackToExport && (
+          <div className="border-t border-stone-800 p-3">
             <button
               onClick={() => setShowExportModal(true)}
               className="btn w-full text-xs bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
@@ -704,8 +683,8 @@ export function FilesPanel() {
               </svg>
               Export Feedback
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </>
   );

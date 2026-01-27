@@ -38,8 +38,6 @@ pub struct ReviewState {
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
-    #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,7 +68,6 @@ impl ReviewState {
             annotations: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
-            completed_at: None,
         }
     }
 
@@ -105,7 +102,6 @@ impl ReviewState {
             total_hunks,
             reviewed_hunks,
             updated_at: self.updated_at.clone(),
-            completed_at: self.completed_at.clone(),
         }
     }
 }
@@ -176,8 +172,6 @@ pub struct ReviewSummary {
     pub reviewed_hunks: usize,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
-    #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
 }
 
 #[cfg(test)]
@@ -203,7 +197,6 @@ mod tests {
         assert!(state.trust_list.is_empty());
         assert!(state.notes.is_empty());
         assert!(state.annotations.is_empty());
-        assert!(state.completed_at.is_none());
     }
 
     #[test]

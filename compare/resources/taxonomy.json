@@ -30,7 +30,7 @@
         {
           "id": "formatting:whitespace",
           "name": "Whitespace",
-          "description": "Changes ONLY to spaces, tabs, indentation, or blank lines. NOT for any change to actual code characters, strings, numbers, or identifiers."
+          "description": "Changes ONLY to whitespace: adding/removing blank lines, changing indentation, adjusting spaces or tabs. Includes hunks that only add or remove empty lines. NOT for any change to actual code characters, strings, numbers, or identifiers."
         },
         {
           "id": "formatting:line-length",
