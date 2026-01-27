@@ -13,7 +13,6 @@ echo "TypeScript tests passed!"
 
 echo ""
 echo "=== Rust Tests ==="
-cd src-tauri
 cargo test
 echo "Rust tests passed!"
 

@@ -5,4 +5,4 @@ cd "$(dirname "$0")/.."
 npm run tauri build
 
 echo ""
-echo "Build complete. App is in src-tauri/target/release/"
+echo "Build complete. App is in target/release/"

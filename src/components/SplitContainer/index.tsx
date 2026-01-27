@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useReviewStore } from "../../stores/reviewStore";
 import { CodeViewer } from "../CodeViewer";
+import { RollingDiffView } from "../RollingDiffView";
 import { PaneHeader } from "./PaneHeader";
 import { ResizeHandle } from "./ResizeHandle";
 
@@ -10,6 +11,7 @@ export function SplitContainer() {
     secondaryFile,
     focusedPane,
     splitOrientation,
+    mainViewMode,
     setFocusedPane,
     closeSplit,
     swapPanes,
@@ -31,6 +33,11 @@ export function SplitContainer() {
 
   const isSplitActive = secondaryFile !== null;
   const isHorizontal = splitOrientation === "horizontal";
+
+  // Rolling view mode - show all files in one scroll container
+  if (mainViewMode === "rolling") {
+    return <RollingDiffView />;
+  }
 
   // No file selected - show empty state
   if (!selectedFile && !secondaryFile) {

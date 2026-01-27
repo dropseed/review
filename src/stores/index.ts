@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { ReviewStore } from "./types";
+import { getApiClient } from "../api";
+import { getPlatformServices } from "../platform";
 
 import {
   createPreferencesSlice,
@@ -41,12 +43,16 @@ export type {
   GitStatusSummary,
 } from "./types";
 
-// Combined store
+// Get dependencies
+const apiClient = getApiClient();
+const platform = getPlatformServices();
+
+// Combined store with injected dependencies
 export const useReviewStore = create<ReviewStore>()((...args) => ({
-  ...createPreferencesSlice(...args),
+  ...createPreferencesSlice(platform.storage)(...args),
   ...createNavigationSlice(...args),
-  ...createGitSlice(...args),
-  ...createClassificationSlice(...args),
-  ...createFilesSlice(...args),
-  ...createReviewSlice(...args),
+  ...createGitSlice(apiClient)(...args),
+  ...createClassificationSlice(apiClient)(...args),
+  ...createFilesSlice(apiClient)(...args),
+  ...createReviewSlice(apiClient)(...args),
 }));

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, memo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getVersion } from "@tauri-apps/api/app";
 import type { Comparison, BranchList } from "../types";
 import type { ReviewSummary } from "../types";
 import { makeComparison } from "../types";
 import { useReviewStore } from "../stores/reviewStore";
 import { BranchSelect, WORKING_TREE, STAGED_ONLY } from "./BranchSelect";
+import { getApiClient } from "../api";
+import { getPlatformServices } from "../platform";
 
 // Hook for reduced motion preference (reactive)
 function usePrefersReducedMotion(): boolean {
@@ -411,7 +411,10 @@ export function StartScreen({
 
   // Load app version on mount
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(console.error);
+    getPlatformServices()
+      .window.getVersion()
+      .then(setAppVersion)
+      .catch(console.error);
   }, []);
 
   // Load saved reviews and branches on mount
@@ -419,10 +422,11 @@ export function StartScreen({
     loadSavedReviews();
 
     setBranchesLoading(true);
+    const client = getApiClient();
     Promise.all([
-      invoke<BranchList>("list_branches", { repoPath }),
-      invoke<string>("get_default_branch", { repoPath }),
-      invoke<string>("get_current_branch", { repoPath }),
+      client.listBranches(repoPath),
+      client.getDefaultBranch(repoPath),
+      client.getCurrentBranch(repoPath),
     ])
       .then(([branchList, defBranch, curBranch]) => {
         setBranches(branchList);

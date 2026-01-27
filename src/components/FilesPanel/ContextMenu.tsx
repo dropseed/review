@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { getPlatformServices } from "../../platform";
 import type { ContextMenuState } from "./types";
 
 interface ContextMenuProps {
@@ -63,7 +62,8 @@ export function ContextMenu({
       )}
       <button
         onClick={async () => {
-          await openUrl(`vscode://file${menu.fullPath}`);
+          const platform = getPlatformServices();
+          await platform.opener.openUrl(`vscode://file${menu.fullPath}`);
           onClose();
         }}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"
@@ -87,7 +87,8 @@ export function ContextMenu({
       <div className="my-1 h-px bg-stone-700" />
       <button
         onClick={async () => {
-          await writeText(menu.fullPath);
+          const platform = getPlatformServices();
+          await platform.clipboard.writeText(menu.fullPath);
           onClose();
         }}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"
@@ -110,7 +111,8 @@ export function ContextMenu({
       </button>
       <button
         onClick={async () => {
-          await revealItemInDir(menu.fullPath);
+          const platform = getPlatformServices();
+          await platform.opener.revealItemInDir(menu.fullPath);
           onClose();
         }}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"

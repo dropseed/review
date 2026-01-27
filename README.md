@@ -27,6 +27,68 @@ scripts/build            # Build production app
 
 ## Architecture
 
+```mermaid
+graph TB
+    subgraph Frontend["Frontend (src/)"]
+        React["React + TypeScript + Vite"]
+        subgraph Zustand["Zustand Store"]
+            gitSlice["gitSlice"]
+            filesSlice["filesSlice"]
+            reviewSlice["reviewSlice"]
+            classificationSlice["classificationSlice"]
+            navigationSlice["navigationSlice"]
+            preferencesSlice["preferencesSlice"]
+        end
+        React --> Zustand
+    end
+
+    subgraph Desktop["Desktop (src-tauri/)"]
+        commands["commands.rs"]
+        watchers["watchers.rs"]
+        debug_server["debug_server.rs"]
+    end
+
+    subgraph Core["Core Library (compare/)"]
+        sources["sources/
+        DiffSource trait
+        LocalGitSource"]
+        diff["diff/
+        parser"]
+        review["review/
+        state, storage"]
+        trust["trust/
+        patterns, matching"]
+        classify["classify/
+        Claude API"]
+        cli["cli/ (feature-gated)
+        compare-cli, git-compare"]
+    end
+
+    subgraph Storage["Storage"]
+        git_compare[".git/compare/
+        reviews/*.json
+        custom-patterns.json"]
+        tauri_store["Tauri Store
+        (UI preferences)"]
+    end
+
+    React -->|"invoke()"| commands
+    commands --> sources
+    commands --> diff
+    commands --> review
+    commands --> trust
+    commands --> classify
+    watchers -->|"file system events"| React
+
+    sources -->|"git operations"| diff
+    diff -->|"hunks"| review
+    trust -->|"pattern matching"| review
+    classify -->|"Claude API"| trust
+
+    review --> git_compare
+    preferencesSlice --> tauri_store
+```
+
 - **Frontend**: React + TypeScript + Vite (`src/`), state managed with Zustand
 - **Backend**: Rust + Tauri (`src-tauri/`), classification via Claude CLI
 

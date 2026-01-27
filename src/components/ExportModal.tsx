@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { getPlatformServices } from "../platform";
 import type { Comparison, LineAnnotation, DiffHunk, HunkState } from "../types";
 
 interface ExportModalProps {
@@ -116,7 +116,8 @@ export function ExportModal({
   }, [comparison, hunks, hunkStates, annotations, notes]);
 
   const handleCopy = async () => {
-    await writeText(markdown);
+    const platform = getPlatformServices();
+    await platform.clipboard.writeText(markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

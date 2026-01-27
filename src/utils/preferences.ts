@@ -1,10 +1,19 @@
-import { load, Store } from "@tauri-apps/plugin-store";
+/**
+ * Preferences utilities
+ *
+ * This module provides backward-compatible access to preferences.
+ * New code should use the platform storage service directly.
+ */
 
-// Font size in pixels
-export const CODE_FONT_SIZE_DEFAULT = 12;
-export const CODE_FONT_SIZE_MIN = 8;
-export const CODE_FONT_SIZE_MAX = 32;
-export const CODE_FONT_SIZE_STEP = 1;
+import { getPlatformServices } from "../platform";
+
+// Re-export font size constants from preferencesSlice
+export {
+  CODE_FONT_SIZE_DEFAULT,
+  CODE_FONT_SIZE_MIN,
+  CODE_FONT_SIZE_MAX,
+  CODE_FONT_SIZE_STEP,
+} from "../stores/slices/preferencesSlice";
 
 export interface Preferences {
   sidebarPosition: "left" | "right";
@@ -22,7 +31,7 @@ const defaults: Preferences = {
   sidebarPosition: "left",
   sidebarWidth: 288,
   editorCommand: null,
-  codeFontSize: CODE_FONT_SIZE_DEFAULT,
+  codeFontSize: 12, // matches CODE_FONT_SIZE_DEFAULT
   codeTheme: "github-dark",
   autoClassifyEnabled: true,
   classifyCommand: null,
@@ -30,65 +39,67 @@ const defaults: Preferences = {
   classifyMaxConcurrent: 2,
 };
 
-// Global preferences store (persisted across sessions)
-let store: Store | null = null;
-
-async function getStore(): Promise<Store> {
-  if (!store) {
-    store = await load("preferences.json", { autoSave: true, defaults: {} });
-  }
-  return store;
-}
-
+/**
+ * Get a preference value.
+ * Uses the platform storage service.
+ */
 export async function getPreference<K extends keyof Preferences>(
   key: K,
 ): Promise<Preferences[K]> {
   try {
-    const s = await getStore();
-    const value = await s.get<Preferences[K]>(key);
+    const storage = getPlatformServices().storage;
+    const value = await storage.get<Preferences[K]>(key);
     return value ?? defaults[key];
   } catch {
     return defaults[key];
   }
 }
 
+/**
+ * Set a preference value.
+ * Uses the platform storage service.
+ */
 export async function setPreference<K extends keyof Preferences>(
   key: K,
   value: Preferences[K],
 ): Promise<void> {
   try {
-    const s = await getStore();
-    await s.set(key, value);
+    const storage = getPlatformServices().storage;
+    await storage.set(key, value);
   } catch (err) {
     console.error("Failed to save preference:", err);
   }
 }
 
+/**
+ * Get all preferences.
+ */
 export async function getAllPreferences(): Promise<Preferences> {
+  const storage = getPlatformServices().storage;
   try {
-    const s = await getStore();
     return {
       sidebarPosition:
-        (await s.get<"left" | "right">("sidebarPosition")) ??
+        (await storage.get<"left" | "right">("sidebarPosition")) ??
         defaults.sidebarPosition,
       sidebarWidth:
-        (await s.get<number>("sidebarWidth")) ?? defaults.sidebarWidth,
+        (await storage.get<number>("sidebarWidth")) ?? defaults.sidebarWidth,
       editorCommand:
-        (await s.get<string | null>("editorCommand")) ?? defaults.editorCommand,
+        (await storage.get<string | null>("editorCommand")) ??
+        defaults.editorCommand,
       codeFontSize:
-        (await s.get<number>("codeFontSize")) ?? defaults.codeFontSize,
-      codeTheme: (await s.get<string>("codeTheme")) ?? defaults.codeTheme,
+        (await storage.get<number>("codeFontSize")) ?? defaults.codeFontSize,
+      codeTheme: (await storage.get<string>("codeTheme")) ?? defaults.codeTheme,
       autoClassifyEnabled:
-        (await s.get<boolean>("autoClassifyEnabled")) ??
+        (await storage.get<boolean>("autoClassifyEnabled")) ??
         defaults.autoClassifyEnabled,
       classifyCommand:
-        (await s.get<string | null>("classifyCommand")) ??
+        (await storage.get<string | null>("classifyCommand")) ??
         defaults.classifyCommand,
       classifyBatchSize:
-        (await s.get<number>("classifyBatchSize")) ??
+        (await storage.get<number>("classifyBatchSize")) ??
         defaults.classifyBatchSize,
       classifyMaxConcurrent:
-        (await s.get<number>("classifyMaxConcurrent")) ??
+        (await storage.get<number>("classifyMaxConcurrent")) ??
         defaults.classifyMaxConcurrent,
     };
   } catch {

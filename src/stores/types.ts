@@ -10,6 +10,8 @@ import type {
   LineAnnotation,
   GitStatusSummary,
 } from "../types";
+import type { ApiClient } from "../api";
+import type { StorageService } from "../platform";
 
 // Re-export types used by slices
 export type {
@@ -40,8 +42,18 @@ export type ReviewStore = PreferencesSlice &
   FilesSlice &
   ReviewSlice;
 
-// Helper type for creating slices
+// Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;
+
+// Helper type for creating slices with API client
+export type SliceCreatorWithClient<T> = (
+  client: ApiClient,
+) => StateCreator<ReviewStore, [], [], T>;
+
+// Helper type for creating slices with storage service
+export type SliceCreatorWithStorage<T> = (
+  storage: StorageService,
+) => StateCreator<ReviewStore, [], [], T>;
 
 // Debounce helper
 export const createDebouncedFn = (delay: number) => {

@@ -1,7 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { SliceCreator } from "../types";
-import type { ClassifyResponse } from "../../types";
+import type { ApiClient } from "../../api";
+import type { SliceCreatorWithClient } from "../types";
 
 // Debounced auto-classification with generation counter for cancellation
 const createDebouncedAutoClassify = () => {
@@ -39,10 +37,9 @@ export interface ClassificationSlice {
   triggerAutoClassification: () => void;
 }
 
-export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
-  set,
-  get,
-) => ({
+export const createClassificationSlice: SliceCreatorWithClient<
+  ClassificationSlice
+> = (client: ApiClient) => (set, get) => ({
   claudeAvailable: null,
   classifying: false,
   classificationError: null,
@@ -50,7 +47,7 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
 
   checkClaudeAvailable: async () => {
     try {
-      const available = await invoke<boolean>("check_claude_available");
+      const available = await client.checkClaudeAvailable();
       set({ claudeAvailable: available });
     } catch (err) {
       console.error("Failed to check Claude availability:", err);
@@ -133,27 +130,18 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
     }));
 
     // Set up listener for batch completion events
-    let unlisten: UnlistenFn | null = null;
-    try {
-      unlisten = await listen<string[]>("classify:batch-complete", (event) => {
-        const completedIds = event.payload;
-        console.log(
-          `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks`,
-        );
-        set((state) => {
-          const newSet = new Set(state.classifyingHunkIds);
-          for (const id of completedIds) {
-            newSet.delete(id);
-          }
-          return { classifyingHunkIds: newSet };
-        });
-      });
-    } catch (err) {
-      console.warn(
-        "[classifyUnlabeledHunks] Failed to set up progress listener:",
-        err,
+    const unlisten = client.onClassifyProgress((completedIds) => {
+      console.log(
+        `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks`,
       );
-    }
+      set((state) => {
+        const newSet = new Set(state.classifyingHunkIds);
+        for (const id of completedIds) {
+          newSet.delete(id);
+        }
+        return { classifyingHunkIds: newSet };
+      });
+    });
 
     try {
       const hunkInputs = hunksToClassify.map((hunk) => ({
@@ -163,21 +151,16 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
       }));
 
       console.log(
-        `[classifyUnlabeledHunks] Calling classify_hunks_with_claude (gen=${currentGeneration})`,
+        `[classifyUnlabeledHunks] Calling classifyHunks (gen=${currentGeneration})`,
       );
 
-      const response = await invoke<ClassifyResponse>(
-        "classify_hunks_with_claude",
-        {
-          repoPath,
-          hunks: hunkInputs,
-          command: classifyCommand || undefined,
-          batchSize: classifyBatchSize,
-          maxConcurrent: classifyMaxConcurrent,
-        },
-      );
+      const response = await client.classifyHunks(repoPath, hunkInputs, {
+        command: classifyCommand || undefined,
+        batchSize: classifyBatchSize,
+        maxConcurrent: classifyMaxConcurrent,
+      });
 
-      if (unlisten) unlisten();
+      unlisten();
 
       console.log(
         `[classifyUnlabeledHunks] Got ${Object.keys(response.classifications).length} classifications`,
@@ -239,7 +222,7 @@ export const createClassificationSlice: SliceCreator<ClassificationSlice> = (
       await saveReviewState();
       console.log("[classifyUnlabeledHunks] Review state saved");
     } catch (err) {
-      if (unlisten) unlisten();
+      unlisten();
 
       // Remove only our hunks from the tracking set
       set((state) => {

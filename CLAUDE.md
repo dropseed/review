@@ -23,14 +23,27 @@ scripts/fix              # Auto-fix: prettier + cargo fmt
 scripts/pre-commit       # Check only: prettier --check + cargo fmt --check
 
 # Build
-scripts/build            # Build production app (outputs to src-tauri/target/release/)
+scripts/build            # Build production app (outputs to target/release/)
 ```
 
 ## Architecture
 
+The project is organized as a Cargo workspace with two crates:
+
+- **`compare/`** - Core library + CLI (no Tauri dependencies)
+  - `src/classify/` - Claude-based hunk classification
+  - `src/diff/` - Git diff parsing and hunk extraction
+  - `src/review/` - Review state management and persistence
+  - `src/sources/` - Git operations abstraction
+  - `src/trust/` - Trust pattern matching and taxonomy
+  - `src/cli/` - CLI commands (behind `cli` feature flag)
+  - `src/bin/` - CLI binaries (`compare-cli`, `git-compare`)
+
+- **`src-tauri/`** - Desktop app (depends on `compare`)
+  - `src/desktop/` - Tauri-specific code (commands, watchers, debug server)
+
 - **Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
-- **Backend**: Rust + Tauri in `src-tauri/src/`, classification via Claude CLI (`claude` command)
-- **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `commands.rs`
+- **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/commands.rs`
 - **Data flow**: Rust computes diffs/hunks → Zustand stores state → User actions invoke Rust → Rust persists to `.git/compare/`
 
 ## Key Concepts
@@ -84,6 +97,6 @@ When working on frontend code, use these skills:
 
 ## Trust Patterns Taxonomy
 
-The taxonomy is defined in `src-tauri/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
+The taxonomy is defined in `compare/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
 
 Users can extend the taxonomy by creating `.git/compare/custom-patterns.json` with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.

@@ -1,9 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "../../stores/reviewStore";
 import { Breadcrumbs } from "../Breadcrumbs";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
+import { getApiClient } from "../../api";
+import { getPlatformServices } from "../../platform";
 import type { FileContent } from "../../types";
 import { isHunkReviewed } from "../../types";
 import { OverflowMenu } from "./OverflowMenu";
@@ -25,7 +24,14 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     reviewState,
     approveAllFileHunks,
     revealDirectoryInTree,
+    hunks: allHunks,
+    focusedHunkIndex,
   } = useReviewStore();
+
+  // Get the focused hunk ID if it's in this file
+  const focusedHunk = allHunks[focusedHunkIndex];
+  const focusedHunkId =
+    focusedHunk?.filePath === filePath ? focusedHunk.id : null;
 
   // Generate CSS for font size injection into pierre/diffs
   // Pierre/diffs uses --diffs-font-size and --diffs-line-height CSS variables
@@ -57,10 +63,13 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   }, [fileContent, reviewState]);
 
   useEffect(() => {
+    if (!repoPath || !comparison) return;
+
     setLoading(true);
     setError(null);
 
-    invoke<FileContent>("get_file_content", { repoPath, filePath, comparison })
+    getApiClient()
+      .getFileContent(repoPath, filePath, comparison)
       .then((result) => {
         setFileContent(result);
         setLoading(false);
@@ -122,17 +131,20 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
 
   const handleCopyPath = async () => {
-    await writeText(fullPath);
+    const platform = getPlatformServices();
+    await platform.clipboard.writeText(fullPath);
   };
 
   const handleReveal = async () => {
-    await revealItemInDir(fullPath);
+    const platform = getPlatformServices();
+    await platform.opener.revealItemInDir(fullPath);
   };
 
   const handleOpenInEditor = async () => {
     // Try to open with default editor (VS Code, etc.)
     try {
-      await openPath(fullPath);
+      const platform = getPlatformServices();
+      await platform.opener.openPath(fullPath);
     } catch (err) {
       console.error("Failed to open file:", err);
     }
@@ -339,6 +351,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             fileName={filePath}
             oldContent={fileContent.oldContent}
             newContent={fileContent.content}
+            focusedHunkId={focusedHunkId}
           />
         ) : (
           <PlainCodeView

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { isTauriEnvironment } from "../api/client";
 
 const LOG_FILE = ".git/compare/app.log";
 let repoPath: string | null = null;
@@ -24,12 +24,17 @@ function formatMessage(level: string, args: unknown[]): string {
   return `[${timestamp}] [${level}] ${message}\n`;
 }
 
-// Write to log file (fire and forget)
+// Write to log file (fire and forget) - only in Tauri environment
 function writeToFile(line: string) {
   if (!repoPath) return;
+  if (!isTauriEnvironment()) return;
+
   const fullPath = `${repoPath}/${LOG_FILE}`;
-  invoke("append_to_file", { path: fullPath, contents: line }).catch(() => {
-    // Silently fail
+  // Dynamically import to avoid loading Tauri in browser
+  import("@tauri-apps/api/core").then(({ invoke }) => {
+    invoke("append_to_file", { path: fullPath, contents: line }).catch(() => {
+      // Silently fail
+    });
   });
 }
 
@@ -73,11 +78,14 @@ export function initializeLogger() {
   console.log("Logger initialized");
 }
 
-// Clear the log file
+// Clear the log file - only in Tauri environment
 export async function clearLog() {
   if (!repoPath) return;
+  if (!isTauriEnvironment()) return;
+
   const fullPath = `${repoPath}/${LOG_FILE}`;
   try {
+    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("write_text_file", { path: fullPath, contents: "" });
   } catch {
     // Silently fail

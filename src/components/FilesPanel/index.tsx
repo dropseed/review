@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useReviewStore } from "../../stores/reviewStore";
-import { platform } from "@tauri-apps/plugin-os";
+import { getPlatformServices } from "../../platform";
 import { ExportModal } from "../ExportModal";
 import type { ViewMode, ContextMenuState } from "./types";
 import {
@@ -159,6 +159,8 @@ export function FilesPanel() {
     approveAllDirHunks,
     unapproveAllDirHunks,
     openInSplit,
+    mainViewMode,
+    setScrollToFileInRolling,
   } = useReviewStore();
 
   const [viewMode, setViewMode] = useState<ViewMode>("changes");
@@ -171,7 +173,7 @@ export function FilesPanel() {
 
   // Detect platform
   useEffect(() => {
-    setPlatformName(platform());
+    setPlatformName(getPlatformServices().window.getPlatformName());
   }, []);
 
   // Calculate hunk status per file
@@ -344,9 +346,14 @@ export function FilesPanel() {
 
   const handleSelectFile = useCallback(
     (path: string) => {
-      setSelectedFile(path);
+      if (mainViewMode === "rolling") {
+        // In rolling mode, scroll to the file section instead of changing selection
+        setScrollToFileInRolling(path);
+      } else {
+        setSelectedFile(path);
+      }
     },
-    [setSelectedFile],
+    [setSelectedFile, mainViewMode, setScrollToFileInRolling],
   );
 
   const handleContextMenu = useCallback(

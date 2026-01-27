@@ -1,35 +1,67 @@
-use crate::classify::{self, ClassifyResponse, HunkInput};
-use crate::diff::parser::{detect_move_pairs, parse_diff, DiffHunk, MovePair};
-use crate::review::state::{ReviewState, ReviewSummary};
-use crate::review::storage;
-use crate::sources::local_git::LocalGitSource;
-use crate::sources::traits::{Comparison, DiffSource, FileEntry, GitStatusSummary};
-use crate::trust::patterns::TrustCategory;
+//! Tauri command handlers for the desktop application.
+//!
+//! All #[tauri::command] functions are defined here as thin wrappers
+//! that delegate to core business logic modules.
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use compare::classify::{self, ClassifyResponse, HunkInput};
+use compare::diff::parser::{
+    create_untracked_hunk, detect_move_pairs, parse_diff, DiffHunk, MovePair,
+};
+use compare::review::state::{ReviewState, ReviewSummary};
+use compare::review::storage;
+use compare::sources::local_git::LocalGitSource;
+use compare::sources::traits::{BranchList, Comparison, DiffSource, FileEntry, GitStatusSummary};
+use compare::trust::patterns::TrustCategory;
 use serde::Serialize;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+
+// --- Types ---
 
 #[derive(Debug, Serialize)]
 pub struct FileContent {
     pub content: String,
-    /// Old/base version of the file content (for diff expansion)
     #[serde(rename = "oldContent")]
     pub old_content: Option<String>,
     #[serde(rename = "diffPatch")]
     pub diff_patch: String,
-    pub hunks: Vec<crate::diff::parser::DiffHunk>,
-    /// Content type: "text", "image", "svg", or "binary"
+    pub hunks: Vec<DiffHunk>,
     #[serde(rename = "contentType")]
     pub content_type: String,
-    /// Base64 data URL for image files (current/new version)
     #[serde(rename = "imageDataUrl")]
     pub image_data_url: Option<String>,
-    /// Base64 data URL for the old version of the image (for diff comparison)
     #[serde(rename = "oldImageDataUrl")]
     pub old_image_data_url: Option<String>,
 }
 
-/// Image extensions and their MIME types
+#[derive(Debug, Serialize)]
+pub struct DetectMovePairsResponse {
+    pub pairs: Vec<MovePair>,
+    pub hunks: Vec<DiffHunk>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExpandedContextResult {
+    pub lines: Vec<String>,
+    #[serde(rename = "startLine")]
+    pub start_line: u32,
+    #[serde(rename = "endLine")]
+    pub end_line: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ComparisonParam {
+    pub old: String,
+    pub new: String,
+    #[serde(rename = "workingTree")]
+    pub working_tree: bool,
+    pub key: String,
+}
+
+// --- Helper Functions ---
+
 fn get_image_mime_type(extension: &str) -> Option<&'static str> {
     match extension.to_lowercase().as_str() {
         "svg" => Some("image/svg+xml"),
@@ -45,13 +77,11 @@ fn get_image_mime_type(extension: &str) -> Option<&'static str> {
     }
 }
 
-/// Check if a file is an image based on extension
 fn is_image_file(file_path: &str) -> bool {
     let ext = file_path.rsplit('.').next().unwrap_or("");
     get_image_mime_type(ext).is_some()
 }
 
-/// Get the content type for a file
 fn get_content_type(file_path: &str) -> String {
     let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
     if ext == "svg" {
@@ -63,15 +93,15 @@ fn get_content_type(file_path: &str) -> String {
     }
 }
 
-/// Convert bytes to a data URL
 fn bytes_to_data_url(bytes: &[u8], mime_type: &str) -> String {
     let base64_data = BASE64.encode(bytes);
     format!("data:{};base64,{}", mime_type, base64_data)
 }
 
+// --- Tauri Commands ---
+
 #[tauri::command]
 pub fn get_current_repo() -> Result<String, String> {
-    // Check for COMPARE_REPO environment variable first
     if let Ok(repo_path) = std::env::var("COMPARE_REPO") {
         let path = PathBuf::from(&repo_path);
         if path.join(".git").exists() {
@@ -79,10 +109,8 @@ pub fn get_current_repo() -> Result<String, String> {
         }
     }
 
-    // Get current working directory and search up for a git repo
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
 
-    // Search up the directory tree for a .git directory
     let mut current = cwd.as_path();
     loop {
         if current.join(".git").exists() {
@@ -94,7 +122,6 @@ pub fn get_current_repo() -> Result<String, String> {
         }
     }
 
-    // For development, try to find the repo relative to the executable
     if let Ok(exe_path) = std::env::current_exe() {
         let mut current = exe_path.as_path();
         while let Some(parent) = current.parent() {
@@ -157,7 +184,6 @@ pub fn get_file_content(
         repo_path, file_path, comparison
     );
 
-    // Build the full path by joining repo_path and file_path
     let repo_path_buf = PathBuf::from(&repo_path);
     let full_path = repo_path_buf.join(&file_path);
     let file_exists = full_path.exists();
@@ -168,7 +194,6 @@ pub fn get_file_content(
         file_exists
     );
 
-    // For existing files, validate path to prevent directory traversal attacks
     if file_exists {
         let canonical_repo = repo_path_buf
             .canonicalize()
@@ -180,20 +205,16 @@ pub fn get_file_content(
             return Err("Path traversal detected: file path escapes repository".to_string());
         }
     } else {
-        // For deleted files, do a simpler path check (no canonicalization)
-        // Ensure the file_path doesn't contain path traversal sequences
         if file_path.contains("..") {
             return Err("Path traversal detected: file path contains '..'".to_string());
         }
     }
 
-    // Get the git source for diff
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
         eprintln!("[get_file_content] ERROR creating source: {}", e);
         e.to_string()
     })?;
 
-    // Handle deleted files - get diff from git, no current content
     if !file_exists {
         eprintln!("[get_file_content] handling deleted file");
         let diff_output = source
@@ -209,18 +230,17 @@ pub fn get_file_content(
             parse_diff(&diff_output, &file_path)
         };
 
-        // For deleted files in working tree comparisons, get the old content from HEAD
         let old_content = if comparison.working_tree {
             match source.get_file_bytes(&file_path, "HEAD") {
                 Ok(bytes) => String::from_utf8(bytes).ok(),
                 Err(_) => None,
             }
         } else {
-            None // Branch comparisons use PatchDiff
+            None
         };
 
         return Ok(FileContent {
-            content: String::new(), // No current content for deleted files
+            content: String::new(),
             old_content,
             diff_patch: diff_output,
             hunks,
@@ -234,17 +254,14 @@ pub fn get_file_content(
     let ext = file_path.rsplit('.').next().unwrap_or("");
     let mime_type = get_image_mime_type(ext);
 
-    // Get the git source for diff and old file content
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
         eprintln!("[get_file_content] ERROR creating source: {}", e);
         e.to_string()
     })?;
 
-    // Handle image files differently
     if content_type == "image" || content_type == "svg" {
         eprintln!("[get_file_content] handling as image/svg: {}", content_type);
 
-        // Read current file as bytes for data URL
         let current_bytes = std::fs::read(&full_path).map_err(|e| {
             eprintln!("[get_file_content] ERROR reading file bytes: {}", e);
             format!("{}: {}", full_path.display(), e)
@@ -252,14 +269,12 @@ pub fn get_file_content(
 
         let image_data_url = mime_type.map(|mt| bytes_to_data_url(&current_bytes, mt));
 
-        // For SVG, also include raw text content for code view
         let content = if content_type == "svg" {
             String::from_utf8_lossy(&current_bytes).to_string()
         } else {
-            String::new() // Binary images have no text content
+            String::new()
         };
 
-        // Get the diff to determine if file has changes
         let diff_output = source
             .get_diff(&comparison, Some(&file_path))
             .map_err(|e| {
@@ -267,9 +282,7 @@ pub fn get_file_content(
                 e.to_string()
             })?;
 
-        // Try to get old version of the image for diff comparison
         let old_image_data_url = if !diff_output.is_empty() {
-            // File has changes, try to get old version
             let old_ref = if comparison.working_tree {
                 "HEAD".to_string()
             } else {
@@ -286,27 +299,25 @@ pub fn get_file_content(
                 }
                 Err(e) => {
                     eprintln!("[get_file_content] no old version available: {}", e);
-                    None // New file, no old version
+                    None
                 }
             }
         } else {
-            None // No changes, no need for old version
+            None
         };
 
-        // Parse diff hunks for SVG (can show code diff) or create placeholder for images
         let hunks = if diff_output.is_empty() {
-            vec![crate::diff::parser::create_untracked_hunk(&file_path)]
+            vec![create_untracked_hunk(&file_path)]
         } else if content_type == "svg" {
             parse_diff(&diff_output, &file_path)
         } else {
-            // For binary images, create a single "image changed" hunk
-            vec![crate::diff::parser::create_untracked_hunk(&file_path)]
+            vec![create_untracked_hunk(&file_path)]
         };
 
         eprintln!("[get_file_content] SUCCESS (image)");
         return Ok(FileContent {
             content,
-            old_content: None, // Images don't need text old content
+            old_content: None,
             diff_patch: diff_output,
             hunks,
             content_type,
@@ -315,7 +326,6 @@ pub fn get_file_content(
         });
     }
 
-    // Standard text file handling
     let content = std::fs::read_to_string(&full_path).map_err(|e| {
         eprintln!("[get_file_content] ERROR reading file: {}", e);
         format!("{}: {}", full_path.display(), e)
@@ -337,16 +347,13 @@ pub fn get_file_content(
     );
 
     let hunks = if diff_output.is_empty() {
-        // No diff output - check if file is tracked or untracked
         let is_tracked = source.is_file_tracked(&file_path).unwrap_or(false);
         if is_tracked {
-            // File is tracked but has no changes - return empty hunks
             eprintln!("[get_file_content] no diff, file is tracked (unchanged)");
             vec![]
         } else {
-            // File is untracked (new file not yet added to git)
             eprintln!("[get_file_content] no diff, file is untracked (new)");
-            vec![crate::diff::parser::create_untracked_hunk(&file_path)]
+            vec![create_untracked_hunk(&file_path)]
         }
     } else {
         eprintln!("[get_file_content] parsing diff...");
@@ -355,10 +362,8 @@ pub fn get_file_content(
         parsed
     };
 
-    // Get old and new content for diff expansion
     let (old_content, final_content) = if !diff_output.is_empty() {
         if comparison.working_tree {
-            // Working tree: old from HEAD, new from filesystem
             let old = match source.get_file_bytes(&file_path, "HEAD") {
                 Ok(bytes) => {
                     eprintln!(
@@ -372,9 +377,8 @@ pub fn get_file_content(
                     None
                 }
             };
-            (old, content) // Use filesystem content as new
+            (old, content)
         } else {
-            // Branch comparison: both from git refs
             let old = match source.get_file_bytes(&file_path, &comparison.old) {
                 Ok(bytes) => {
                     eprintln!(
@@ -409,10 +413,10 @@ pub fn get_file_content(
                     None
                 }
             };
-            (old, new.unwrap_or(content)) // Use git content if available, else filesystem
+            (old, new.unwrap_or(content))
         }
     } else {
-        (None, content) // No changes
+        (None, content)
     };
 
     eprintln!("[get_file_content] SUCCESS");
@@ -469,7 +473,7 @@ pub fn get_default_branch(repo_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn list_branches(repo_path: String) -> Result<crate::sources::traits::BranchList, String> {
+pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.list_branches().map_err(|e| e.to_string())
 }
@@ -520,7 +524,6 @@ pub async fn classify_hunks_with_claude(
     let batch_size = batch_size.unwrap_or(5).max(1).min(20);
     let max_concurrent = max_concurrent.unwrap_or(2).max(1).min(10);
 
-    // Calculate timeout: base of 60s + 30s per batch (not per hunk)
     let num_batches = (hunks.len() + batch_size - 1) / batch_size;
     let timeout_secs = std::cmp::max(60, num_batches as u64 * 30);
 
@@ -537,7 +540,6 @@ pub async fn classify_hunks_with_claude(
 
     let repo_path_buf = PathBuf::from(&repo_path);
 
-    // Run batched classification with timeout, emitting progress events
     let result = timeout(
         Duration::from_secs(timeout_secs),
         classify::classify_hunks_batched(
@@ -548,7 +550,6 @@ pub async fn classify_hunks_with_claude(
             max_concurrent,
             command.as_deref(),
             move |completed_ids| {
-                // Emit event when a batch completes
                 let _ = app.emit("classify:batch-complete", completed_ids);
             },
         ),
@@ -562,13 +563,6 @@ pub async fn classify_hunks_with_claude(
         result.classifications.len()
     );
     Ok(result)
-}
-
-#[derive(Debug, Serialize)]
-pub struct DetectMovePairsResponse {
-    pub pairs: Vec<MovePair>,
-    /// Updated hunks with move_pair_id populated
-    pub hunks: Vec<DiffHunk>,
 }
 
 #[tauri::command]
@@ -595,7 +589,6 @@ pub fn append_to_file(path: String, contents: String) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::Write;
 
-    // Create parent directories if needed
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directories for {}: {}", path, e))?;
@@ -609,15 +602,6 @@ pub fn append_to_file(path: String, contents: String) -> Result<(), String> {
 
     file.write_all(contents.as_bytes())
         .map_err(|e| format!("Failed to append to file {}: {}", path, e))
-}
-
-#[derive(Debug, Serialize)]
-pub struct ExpandedContextResult {
-    pub lines: Vec<String>,
-    #[serde(rename = "startLine")]
-    pub start_line: u32,
-    #[serde(rename = "endLine")]
-    pub end_line: u32,
 }
 
 #[tauri::command]
@@ -635,8 +619,6 @@ pub fn get_expanded_context(
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
-    // Use the "new" ref from comparison to get the current state of the file
-    // For working tree changes, use HEAD
     let git_ref = if comparison.working_tree {
         "HEAD".to_string()
     } else {
@@ -656,23 +638,89 @@ pub fn get_expanded_context(
     })
 }
 
-/// Check if a label matches a trust pattern.
-/// This provides the same matching logic available in the frontend.
 #[tauri::command]
 pub fn match_trust_pattern(label: String, pattern: String) -> bool {
-    crate::trust::matches_pattern(&label, &pattern)
+    compare::trust::matches_pattern(&label, &pattern)
 }
 
-/// Get the bundled trust pattern taxonomy.
-/// Returns the built-in categories and patterns without any custom extensions.
 #[tauri::command]
 pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
-    crate::trust::patterns::get_trust_taxonomy()
+    compare::trust::patterns::get_trust_taxonomy()
 }
 
-/// Get the trust taxonomy merged with any custom patterns from the repository.
-/// Custom patterns are loaded from `.git/compare/custom-patterns.json`.
 #[tauri::command]
 pub fn get_trust_taxonomy_with_custom(repo_path: String) -> Vec<TrustCategory> {
-    crate::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
+    compare::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
+}
+
+#[tauri::command]
+pub fn start_file_watcher(app: tauri::AppHandle, repo_path: String) -> Result<(), String> {
+    super::watchers::start_watching(&repo_path, app)
+}
+
+#[tauri::command]
+pub fn stop_file_watcher(repo_path: String) {
+    super::watchers::stop_watching(&repo_path);
+}
+
+#[tauri::command]
+pub async fn open_repo_window(
+    app: tauri::AppHandle,
+    repo_path: String,
+    comparison: Option<ComparisonParam>,
+) -> Result<(), String> {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    let comparison_key = comparison
+        .as_ref()
+        .map(|c| c.key.clone())
+        .unwrap_or_else(|| "default".to_string());
+
+    let mut hasher = DefaultHasher::new();
+    format!("{}:{}", repo_path, comparison_key).hash(&mut hasher);
+    let label = format!("repo-{:x}", hasher.finish());
+
+    if let Some(existing) = app.get_webview_window(&label) {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let repo_name = std::path::Path::new(&repo_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Repository".to_string());
+
+    let window_title = if let Some(ref c) = comparison {
+        let compare_display = if c.working_tree && c.new == "HEAD" {
+            "Working Tree".to_string()
+        } else {
+            c.new.clone()
+        };
+        format!("{} — {}..{}", repo_name, c.old, compare_display)
+    } else {
+        repo_name
+    };
+
+    let url = if let Some(ref c) = comparison {
+        WebviewUrl::App(
+            format!(
+                "index.html?repo={}&comparison={}",
+                urlencoding::encode(&repo_path),
+                urlencoding::encode(&c.key)
+            )
+            .into(),
+        )
+    } else {
+        WebviewUrl::App(format!("index.html?repo={}", urlencoding::encode(&repo_path)).into())
+    };
+
+    WebviewWindowBuilder::new(&app, label, url)
+        .title(window_title)
+        .inner_size(1100.0, 750.0)
+        .min_inner_size(800.0, 600.0)
+        .tabbing_identifier("compare-main")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }

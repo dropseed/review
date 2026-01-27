@@ -1,27 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "../stores/reviewStore";
 import { anyLabelMatchesPattern } from "../utils/matching";
-
-// Types matching the Rust TrustCategory/TrustPattern structs
-interface TrustPattern {
-  id: string;
-  category: string;
-  name: string;
-  description: string;
-}
-
-interface TrustCategory {
-  id: string;
-  name: string;
-  description: string;
-  patterns: TrustPattern[];
-}
-import {
-  sendNotification,
-  isPermissionGranted,
-  requestPermission,
-} from "@tauri-apps/plugin-notification";
+import { getApiClient } from "../api";
+import { getPlatformServices } from "../platform";
+import type { TrustCategory } from "../types";
 
 interface TrustModalProps {
   isOpen: boolean;
@@ -72,7 +54,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
     const loadTaxonomy = async () => {
       setTaxonomyLoading(true);
       try {
-        const categories = await invoke<TrustCategory[]>("get_trust_taxonomy");
+        const categories = await getApiClient().getTrustTaxonomy();
         setTrustCategories(categories);
         // Expand all categories by default
         setExpandedCategories(new Set(categories.map((c) => c.id)));
@@ -105,16 +87,13 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
     const notifyCompletion = async () => {
       if (wasClassifying.current && !classifying && !classificationError) {
         // Classification just completed successfully
-        let hasPermission = await isPermissionGranted();
-        if (!hasPermission) {
-          const permission = await requestPermission();
-          hasPermission = permission === "granted";
-        }
+        const platform = getPlatformServices();
+        const hasPermission = await platform.notifications.requestPermission();
         if (hasPermission) {
-          sendNotification({
-            title: "Classification Complete",
-            body: "All hunks have been classified by Claude.",
-          });
+          await platform.notifications.show(
+            "Classification Complete",
+            "All hunks have been classified by Claude.",
+          );
         }
       }
       wasClassifying.current = classifying;

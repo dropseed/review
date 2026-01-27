@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { Comparison, BranchList } from "../types";
 import { makeComparison } from "../types";
+import { getApiClient } from "../api";
 
 interface ComparisonSelectorProps {
   repoPath: string | null;
@@ -31,9 +31,10 @@ export function ComparisonSelector({
     if (!repoPath) return;
 
     setLoading(true);
+    const client = getApiClient();
     Promise.all([
-      invoke<BranchList>("list_branches", { repoPath }),
-      invoke<string>("get_current_branch", { repoPath }),
+      client.listBranches(repoPath),
+      client.getCurrentBranch(repoPath),
     ])
       .then(([result, curBranch]) => {
         setBranches(result);

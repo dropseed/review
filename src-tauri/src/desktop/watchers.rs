@@ -1,3 +1,8 @@
+//! File system watcher for detecting repository changes.
+//!
+//! Watches the repository for working tree changes, git state changes,
+//! and review state changes, then emits events to the frontend.
+
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};

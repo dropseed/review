@@ -1,8 +1,15 @@
-import { useState, useMemo, Component, ReactNode } from "react";
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  Component,
+  ReactNode,
+} from "react";
 import { PatchDiff, MultiFileDiff } from "@pierre/diffs/react";
 import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores/reviewStore";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { OverflowMenu } from "./OverflowMenu";
@@ -65,6 +72,8 @@ interface DiffViewProps {
   fileName: string;
   oldContent?: string;
   newContent?: string;
+  // Focused hunk for keyboard navigation
+  focusedHunkId?: string | null;
 }
 
 export function DiffView({
@@ -77,6 +86,7 @@ export function DiffView({
   fileName,
   oldContent,
   newContent,
+  focusedHunkId,
 }: DiffViewProps) {
   const {
     reviewState,
@@ -95,6 +105,19 @@ export function DiffView({
     reclassifyHunks,
     claudeAvailable,
   } = useReviewStore();
+
+  // Ref to track focused hunk element for scrolling
+  const focusedHunkRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll to focused hunk when it changes
+  useEffect(() => {
+    if (focusedHunkId && focusedHunkRef.current) {
+      focusedHunkRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [focusedHunkId]);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
@@ -209,7 +232,8 @@ export function DiffView({
   };
 
   const handleCopyHunk = async (hunk: DiffHunk) => {
-    await writeText(hunk.content);
+    const platform = getPlatformServices();
+    await platform.clipboard.writeText(hunk.content);
   };
 
   // Handle saving a new annotation
@@ -278,10 +302,14 @@ export function DiffView({
     const isTrusted =
       !hunkState?.status &&
       isHunkTrusted(hunkState, reviewState?.trustList ?? []);
+    const isFocused = hunk.id === focusedHunkId;
 
     return (
       <div
+        ref={isFocused ? focusedHunkRef : undefined}
         className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
+          isFocused ? "ring-2 ring-inset ring-amber-500/70" : ""
+        } ${
           isRejected
             ? "bg-rose-500/10"
             : isApproved

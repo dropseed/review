@@ -1,0 +1,11 @@
+pub mod approve;
+pub mod classify;
+pub mod compare;
+pub mod diff;
+pub mod files;
+pub mod open;
+pub mod reset;
+pub mod status;
+pub mod taxonomy;
+pub mod trust;
+pub mod untrust;

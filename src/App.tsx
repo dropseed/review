@@ -1,9 +1,4 @@
 import { useEffect, useCallback, useState, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
-import { listen } from "@tauri-apps/api/event";
-import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FilesPanel } from "./components/FilesPanel";
 import { SplitContainer } from "./components/SplitContainer";
 import { DebugModal } from "./components/DebugModal";
@@ -22,6 +17,8 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "./utils/preferences";
 import { setLoggerRepoPath, clearLog } from "./utils/logger";
+import { getApiClient } from "./api";
+import { getPlatformServices } from "./platform";
 
 // Get repo path from URL query parameter (for multi-window support)
 function getRepoPathFromUrl(): string | null {
@@ -80,6 +77,11 @@ function App() {
     closeSplit,
     setSplitOrientation,
     splitOrientation,
+    // Main view mode
+    mainViewMode,
+    setMainViewMode,
+    // Loading progress
+    loadingProgress,
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -115,13 +117,13 @@ function App() {
   // Register global shortcut to focus the app (Cmd/Ctrl+Shift+R)
   useEffect(() => {
     const shortcut = "CommandOrControl+Shift+R";
+    const platform = getPlatformServices();
 
     const registerShortcut = async () => {
       try {
-        await register(shortcut, async () => {
-          const window = getCurrentWindow();
-          await window.show();
-          await window.setFocus();
+        await platform.shortcuts.register(shortcut, async () => {
+          await platform.window.show();
+          await platform.window.focus();
         });
       } catch (err) {
         // Shortcut may already be registered or in use
@@ -132,7 +134,7 @@ function App() {
     registerShortcut();
 
     return () => {
-      unregister(shortcut).catch(() => {});
+      platform.shortcuts.unregister(shortcut).catch(() => {});
     };
   }, []);
 
@@ -146,8 +148,10 @@ function App() {
       return;
     }
 
-    // Fall back to getting current working directory from Tauri
-    invoke<string>("get_current_repo")
+    // Fall back to getting current working directory from API
+    const apiClient = getApiClient();
+    apiClient
+      .getCurrentRepo()
       .then((path) => {
         setRepoPath(path);
         setLoggerRepoPath(path);
@@ -158,16 +162,16 @@ function App() {
 
   // Open a new window with a different repository
   const handleOpenRepo = useCallback(async () => {
+    const platform = getPlatformServices();
+    const apiClient = getApiClient();
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
+      const selected = await platform.dialogs.openDirectory({
         title: "Open Repository",
       });
 
-      if (selected && typeof selected === "string") {
+      if (selected) {
         // Open in a new window
-        await invoke("open_repo_window", { repoPath: selected });
+        await apiClient.openRepoWindow(selected);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
@@ -222,16 +226,17 @@ function App() {
   // Update window title when comparison changes
   useEffect(() => {
     if (repoPath) {
+      const platform = getPlatformServices();
       const repoName = repoPath.split("/").pop() || "Repository";
       if (showStartScreen || !comparisonReady) {
         // Just show repo name on start screen
-        getCurrentWindow().setTitle(repoName).catch(console.error);
+        platform.window.setTitle(repoName).catch(console.error);
       } else {
         const compareDisplay = comparison.workingTree
           ? "Working Tree"
           : comparison.new;
         const title = `${repoName} — ${comparison.old}..${compareDisplay}`;
-        getCurrentWindow().setTitle(title).catch(console.error);
+        platform.window.setTitle(title).catch(console.error);
       }
     }
   }, [repoPath, comparisonReady, comparison, showStartScreen]);
@@ -402,10 +407,16 @@ function App() {
       }
 
       switch (event.key) {
+        case "r":
+          // Toggle view mode
+          setMainViewMode(mainViewMode === "single" ? "rolling" : "single");
+          break;
         case "j":
+          // Navigate to next hunk (handles file switching automatically)
           nextHunk();
           break;
         case "k":
+          // Navigate to previous hunk (handles file switching automatically)
           prevHunk();
           break;
         case "ArrowDown":
@@ -440,6 +451,8 @@ function App() {
       closeSplit,
       setSplitOrientation,
       splitOrientation,
+      mainViewMode,
+      setMainViewMode,
     ],
   );
 
@@ -462,92 +475,62 @@ function App() {
 
   // Listen for menu events (setup once, use refs to avoid re-subscribing)
   useEffect(() => {
-    let cancelled = false;
+    const platform = getPlatformServices();
     const unlistenFns: (() => void)[] = [];
 
-    const setupListeners = async () => {
-      try {
-        const unlisten1 = await listen("menu:open-repo", () => {
-          handleOpenRepoRef.current();
-        });
-        if (cancelled) {
-          unlisten1();
-          return;
-        }
-        unlistenFns.push(unlisten1);
+    unlistenFns.push(
+      platform.menuEvents.on("menu:open-repo", () => {
+        handleOpenRepoRef.current();
+      }),
+    );
 
-        const unlisten2 = await listen("menu:show-debug", () => {
-          setShowDebugModal(true);
-        });
-        if (cancelled) {
-          unlisten2();
-          return;
-        }
-        unlistenFns.push(unlisten2);
+    unlistenFns.push(
+      platform.menuEvents.on("menu:show-debug", () => {
+        setShowDebugModal(true);
+      }),
+    );
 
-        const unlisten3 = await listen("menu:open-settings", () => {
-          setShowSettingsModal(true);
-        });
-        if (cancelled) {
-          unlisten3();
-          return;
-        }
-        unlistenFns.push(unlisten3);
+    unlistenFns.push(
+      platform.menuEvents.on("menu:open-settings", () => {
+        setShowSettingsModal(true);
+      }),
+    );
 
-        const unlisten4 = await listen("menu:refresh", () => {
-          handleRefreshRef.current();
-        });
-        if (cancelled) {
-          unlisten4();
-          return;
-        }
-        unlistenFns.push(unlisten4);
+    unlistenFns.push(
+      platform.menuEvents.on("menu:refresh", () => {
+        handleRefreshRef.current();
+      }),
+    );
 
-        const unlisten5 = await listen("menu:zoom-in", () => {
-          setCodeFontSizeRef.current(
-            Math.min(
-              codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
-              CODE_FONT_SIZE_MAX,
-            ),
-          );
-        });
-        if (cancelled) {
-          unlisten5();
-          return;
-        }
-        unlistenFns.push(unlisten5);
+    unlistenFns.push(
+      platform.menuEvents.on("menu:zoom-in", () => {
+        setCodeFontSizeRef.current(
+          Math.min(
+            codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
+            CODE_FONT_SIZE_MAX,
+          ),
+        );
+      }),
+    );
 
-        const unlisten6 = await listen("menu:zoom-out", () => {
-          setCodeFontSizeRef.current(
-            Math.max(
-              codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
-              CODE_FONT_SIZE_MIN,
-            ),
-          );
-        });
-        if (cancelled) {
-          unlisten6();
-          return;
-        }
-        unlistenFns.push(unlisten6);
+    unlistenFns.push(
+      platform.menuEvents.on("menu:zoom-out", () => {
+        setCodeFontSizeRef.current(
+          Math.max(
+            codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
+            CODE_FONT_SIZE_MIN,
+          ),
+        );
+      }),
+    );
 
-        const unlisten7 = await listen("menu:zoom-reset", () => {
-          setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT);
-        });
-        if (cancelled) {
-          unlisten7();
-          return;
-        }
-        unlistenFns.push(unlisten7);
-      } catch (err) {
-        console.error("Failed to setup menu listeners:", err);
-      }
-    };
-
-    setupListeners();
+    unlistenFns.push(
+      platform.menuEvents.on("menu:zoom-reset", () => {
+        setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT);
+      }),
+    );
 
     return () => {
-      cancelled = true;
       unlistenFns.forEach((fn) => fn());
     };
   }, []); // Empty deps - setup once, use refs for current values
@@ -556,16 +539,18 @@ function App() {
   useEffect(() => {
     if (!repoPath) return;
 
+    const apiClient = getApiClient();
     console.log("[watcher] Starting file watcher for", repoPath);
-    invoke("start_file_watcher", { repoPath })
+    apiClient
+      .startFileWatcher(repoPath)
       .then(() => console.log("[watcher] File watcher started for", repoPath))
-      .catch((err) =>
+      .catch((err: unknown) =>
         console.error("[watcher] Failed to start file watcher:", err),
       );
 
     return () => {
       console.log("[watcher] Stopping file watcher for", repoPath);
-      invoke("stop_file_watcher", { repoPath }).catch(() => {});
+      apiClient.stopFileWatcher(repoPath).catch(() => {});
     };
   }, [repoPath]);
 
@@ -585,62 +570,42 @@ function App() {
   useEffect(() => {
     if (!repoPath) return;
 
-    let cancelled = false;
+    const apiClient = getApiClient();
     const unlistenFns: (() => void)[] = [];
 
-    const setupListeners = async () => {
-      try {
-        // Review state changed externally
-        const unlistenReview = await listen<string>(
-          "review-state-changed",
-          (event) => {
-            console.log(
-              "[watcher] Received review-state-changed event:",
-              event.payload,
-            );
-            if (event.payload === repoPathRef.current) {
-              console.log("[watcher] Reloading review state...");
-              loadReviewStateRef.current();
-            }
-          },
+    // Review state changed externally
+    unlistenFns.push(
+      apiClient.onReviewStateChanged((eventRepoPath) => {
+        console.log(
+          "[watcher] Received review-state-changed event:",
+          eventRepoPath,
         );
-        if (cancelled) {
-          unlistenReview();
-          return;
+        if (eventRepoPath === repoPathRef.current) {
+          console.log("[watcher] Reloading review state...");
+          loadReviewStateRef.current();
         }
-        unlistenFns.push(unlistenReview);
-        console.log("[watcher] Listening for review-state-changed");
+      }),
+    );
+    console.log("[watcher] Listening for review-state-changed");
 
-        // Git state changed (branch switch, new commit, etc.)
-        const unlistenGit = await listen<string>("git-changed", (event) => {
-          console.log("[watcher] Received git-changed event:", event.payload);
-          if (event.payload === repoPathRef.current) {
-            // Only refresh if a comparison has been selected (not on start screen)
-            if (!comparisonReadyRef.current) {
-              console.log(
-                "[watcher] Skipping refresh - no comparison selected",
-              );
-              return;
-            }
-            console.log("[watcher] Refreshing...");
-            refreshRef.current();
+    // Git state changed (branch switch, new commit, etc.)
+    unlistenFns.push(
+      apiClient.onGitChanged((eventRepoPath) => {
+        console.log("[watcher] Received git-changed event:", eventRepoPath);
+        if (eventRepoPath === repoPathRef.current) {
+          // Only refresh if a comparison has been selected (not on start screen)
+          if (!comparisonReadyRef.current) {
+            console.log("[watcher] Skipping refresh - no comparison selected");
+            return;
           }
-        });
-        if (cancelled) {
-          unlistenGit();
-          return;
+          console.log("[watcher] Refreshing...");
+          refreshRef.current();
         }
-        unlistenFns.push(unlistenGit);
-        console.log("[watcher] Listening for git-changed");
-      } catch (err) {
-        console.error("[watcher] Failed to setup listeners:", err);
-      }
-    };
-
-    setupListeners();
+      }),
+    );
+    console.log("[watcher] Listening for git-changed");
 
     return () => {
-      cancelled = true;
       unlistenFns.forEach((fn) => fn());
     };
   }, [repoPath]);
@@ -682,11 +647,31 @@ function App() {
 
   // Show loading indicator during initial load
   if (initialLoading) {
+    const progressText = loadingProgress
+      ? loadingProgress.phase === "files"
+        ? "Finding changed files..."
+        : loadingProgress.phase === "hunks"
+          ? `Loading file ${loadingProgress.current} of ${loadingProgress.total}...`
+          : "Detecting moved code..."
+      : "Loading review...";
+
     return (
       <div className="flex h-screen items-center justify-center bg-stone-950">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-lime-500 animate-spin" />
-          <p className="text-stone-400">Loading review...</p>
+          <p className="text-stone-400">{progressText}</p>
+          {loadingProgress?.phase === "hunks" && loadingProgress.total > 0 && (
+            <div className="w-48">
+              <div className="h-1.5 w-full rounded-full bg-stone-800">
+                <div
+                  className="h-1.5 rounded-full bg-lime-500"
+                  style={{
+                    width: `${Math.round((loadingProgress.current / loadingProgress.total) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -744,6 +729,56 @@ function App() {
           ) : (
             <span className="text-xs text-stone-500">Nothing to review</span>
           )}
+
+          {/* View mode toggle */}
+          <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
+            <button
+              onClick={() => setMainViewMode("single")}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                mainViewMode === "single"
+                  ? "bg-stone-700 text-stone-200"
+                  : "text-stone-500 hover:text-stone-300"
+              }`}
+              title="Single file view (r)"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+              </svg>
+              <span>Single</span>
+            </button>
+            <button
+              onClick={() => setMainViewMode("rolling")}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                mainViewMode === "rolling"
+                  ? "bg-stone-700 text-stone-200"
+                  : "text-stone-500 hover:text-stone-300"
+              }`}
+              title="Rolling view - all files (r)"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="5" rx="1" />
+                <rect x="3" y="10" width="18" height="5" rx="1" />
+                <rect x="3" y="17" width="18" height="5" rx="1" />
+              </svg>
+              <span>Rolling</span>
+            </button>
+          </div>
 
           {/* Trust Settings button */}
           <button
@@ -862,6 +897,12 @@ function App() {
               ]
             </kbd>
             <span className="ml-1">files</span>
+          </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              r
+            </kbd>
+            <span className="ml-1">view</span>
           </span>
           <span>
             <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">

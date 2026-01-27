@@ -4,5 +4,4 @@ cd "$(dirname "$0")/.."
 
 npx prettier --write "*.md" "src/**/*.{ts,tsx}" "*.{js,json}"
 
-cd src-tauri
 cargo fmt

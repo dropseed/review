@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useReviewStore } from "../stores/reviewStore";
+import { getApiClient } from "../api";
+import { getPlatformServices } from "../platform";
 
 interface GitStatusModalProps {
   isOpen: boolean;
@@ -30,7 +30,8 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
   // Load raw status when modal opens
   useEffect(() => {
     if (isOpen && repoPath) {
-      invoke<string>("get_git_status_raw", { repoPath })
+      getApiClient()
+        .getGitStatusRaw(repoPath)
         .then(setRawStatus)
         .catch((err) => {
           console.error("Failed to get raw git status:", err);
@@ -42,7 +43,8 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
   // Handle copy
   const handleCopy = async () => {
     try {
-      await writeText(rawStatus);
+      const platform = getPlatformServices();
+      await platform.clipboard.writeText(rawStatus);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
