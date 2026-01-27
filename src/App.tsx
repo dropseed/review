@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { FilesPanel } from "./components/FilesPanel";
 import { SplitContainer } from "./components/SplitContainer";
 import { DebugModal } from "./components/DebugModal";
@@ -9,43 +9,17 @@ import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { StartScreen } from "./components/StartScreen";
 import { ComparisonHeader } from "./components/ComparisonHeader";
 import { useReviewStore } from "./stores/reviewStore";
-import { isHunkTrusted, makeComparison, type Comparison } from "./types";
+import { isHunkTrusted } from "./types";
 import {
-  CODE_FONT_SIZE_DEFAULT,
-  CODE_FONT_SIZE_MIN,
-  CODE_FONT_SIZE_MAX,
-  CODE_FONT_SIZE_STEP,
-} from "./utils/preferences";
-import { setLoggerRepoPath, clearLog } from "./utils/logger";
-import { getApiClient } from "./api";
-import { getPlatformServices } from "./platform";
-
-// Get repo path from URL query parameter (for multi-window support)
-function getRepoPathFromUrl(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("repo");
-}
-
-// Get comparison key from URL query parameter (for multi-window support)
-function getComparisonKeyFromUrl(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("comparison");
-}
-
-// Parse comparison key back into a Comparison object
-// Key format: "old..new" or "old..new+working-tree"
-function parseComparisonKey(key: string): Comparison | null {
-  const workingTree = key.endsWith("+working-tree");
-  const cleanKey = workingTree ? key.replace("+working-tree", "") : key;
-
-  const parts = cleanKey.split("..");
-  if (parts.length !== 2) return null;
-
-  const [oldRef, newRef] = parts;
-  if (!oldRef || !newRef) return null;
-
-  return makeComparison(oldRef, newRef, workingTree);
-}
+  useGlobalShortcut,
+  useWindowTitle,
+  useSidebarResize,
+  useMenuEvents,
+  useFileWatcher,
+  useRepositoryInit,
+  useComparisonLoader,
+  useKeyboardNavigation,
+} from "./hooks";
 
 function App() {
   const {
@@ -88,17 +62,10 @@ function App() {
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(false);
-
-  // Start screen state - show by default unless URL has comparison
-  const [showStartScreen, setShowStartScreen] = useState(true);
-
-  const [sidebarWidth, setSidebarWidth] = useState(19.2); // in rem (288px / 15px base)
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showTrustModal, setShowTrustModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
-  const isResizing = useRef(false);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -117,507 +84,79 @@ function App() {
     checkClaudeAvailable();
   }, [loadPreferences, checkClaudeAvailable]);
 
-  // Register global shortcut to focus the app (Cmd/Ctrl+Shift+R)
-  useEffect(() => {
-    const shortcut = "CommandOrControl+Shift+R";
-    const platform = getPlatformServices();
+  // Custom hooks
+  useGlobalShortcut();
 
-    const registerShortcut = async () => {
-      try {
-        await platform.shortcuts.register(shortcut, async () => {
-          await platform.window.show();
-          await platform.window.focus();
-        });
-      } catch (err) {
-        // Shortcut may already be registered or in use
-        console.debug("Global shortcut registration skipped:", err);
-      }
-    };
+  const {
+    showStartScreen,
+    comparisonReady,
+    initialLoading,
+    setInitialLoading,
+    handleSelectReview,
+    handleBackToStart,
+    handleOpenRepo,
+  } = useRepositoryInit({
+    repoPath,
+    setRepoPath,
+    setComparison,
+    saveCurrentComparison,
+  });
 
-    registerShortcut();
+  useWindowTitle(repoPath, comparison, comparisonReady, showStartScreen);
 
-    return () => {
-      platform.shortcuts.unregister(shortcut).catch(() => {});
-    };
-  }, []);
+  const { sidebarWidth, handleResizeStart } = useSidebarResize({
+    sidebarPosition,
+  });
 
-  useEffect(() => {
-    // Check URL for repo path first (multi-window support)
-    const urlRepoPath = getRepoPathFromUrl();
-    if (urlRepoPath) {
-      setRepoPath(urlRepoPath);
-      setLoggerRepoPath(urlRepoPath);
-      clearLog(); // Start fresh each session
-      return;
-    }
+  useKeyboardNavigation({
+    hunks,
+    focusedHunkIndex,
+    nextFile,
+    prevFile,
+    nextHunk,
+    prevHunk,
+    approveHunk,
+    rejectHunk,
+    handleOpenRepo,
+    codeFontSize,
+    setCodeFontSize,
+    secondaryFile,
+    closeSplit,
+    setSplitOrientation,
+    splitOrientation,
+    setShowDebugModal,
+    setShowSettingsModal,
+    setShowFileFinder,
+  });
 
-    // Fall back to getting current working directory from API
-    const apiClient = getApiClient();
-    apiClient
-      .getCurrentRepo()
-      .then((path) => {
-        setRepoPath(path);
-        setLoggerRepoPath(path);
-        clearLog(); // Start fresh each session
-      })
-      .catch(console.error);
-  }, [setRepoPath]);
+  useMenuEvents({
+    handleOpenRepo,
+    handleRefresh,
+    codeFontSize,
+    setCodeFontSize,
+    setShowDebugModal,
+    setShowSettingsModal,
+  });
 
-  // Open a new window with a different repository
-  const handleOpenRepo = useCallback(async () => {
-    const platform = getPlatformServices();
-    const apiClient = getApiClient();
-    try {
-      const selected = await platform.dialogs.openDirectory({
-        title: "Open Repository",
-      });
+  useFileWatcher({
+    repoPath,
+    comparisonReady,
+    loadReviewState,
+    refresh,
+  });
 
-      if (selected) {
-        // Open in a new window
-        await apiClient.openRepoWindow(selected);
-      }
-    } catch (err) {
-      console.error("Failed to open repository:", err);
-    }
-  }, []);
-
-  // Track if comparison has been initialized for this repo
-  const [comparisonReady, setComparisonReady] = useState(false);
-
-  // Handle selecting a review from the start screen
-  const handleSelectReview = useCallback(
-    (selectedComparison: Comparison) => {
-      setComparison(selectedComparison);
-      saveCurrentComparison();
-      setComparisonReady(true);
-      setInitialLoading(true);
-      setShowStartScreen(false);
-    },
-    [setComparison, saveCurrentComparison],
-  );
-
-  // Handle going back to the start screen
-  const handleBackToStart = useCallback(() => {
-    setShowStartScreen(true);
-  }, []);
-
-  // Check URL for comparison when repo path changes
-  // If URL has comparison, skip start screen; otherwise show start screen
-  useEffect(() => {
-    if (repoPath) {
-      setComparisonReady(false);
-
-      // Check URL for comparison (multi-window support with specific comparison)
-      const urlComparisonKey = getComparisonKeyFromUrl();
-      if (urlComparisonKey) {
-        const parsedComparison = parseComparisonKey(urlComparisonKey);
-        if (parsedComparison) {
-          setComparison(parsedComparison);
-          setComparisonReady(true);
-          setInitialLoading(true);
-          setShowStartScreen(false); // Skip start screen if URL has comparison
-          return;
-        }
-      }
-
-      // No URL comparison - show start screen
-      setShowStartScreen(true);
-      setComparisonReady(false);
-    }
-  }, [repoPath, setComparison]);
-
-  // Update window title when comparison changes
-  useEffect(() => {
-    if (repoPath) {
-      const platform = getPlatformServices();
-      const repoName = repoPath.split("/").pop() || "Repository";
-      if (showStartScreen || !comparisonReady) {
-        // Just show repo name on start screen
-        platform.window.setTitle(repoName).catch(console.error);
-      } else {
-        const compareDisplay = comparison.workingTree
-          ? "Working Tree"
-          : comparison.new;
-        const title = `${repoName} — ${comparison.old}..${compareDisplay}`;
-        platform.window.setTitle(title).catch(console.error);
-      }
-    }
-  }, [repoPath, comparisonReady, comparison, showStartScreen]);
-
-  // Load files and review state when comparison is ready and not on start screen
-  useEffect(() => {
-    if (repoPath && comparisonReady && !showStartScreen) {
-      const loadData = async () => {
-        try {
-          // Load review state FIRST to ensure labels are available before auto-classification
-          await loadReviewState();
-          // Then load files (skip auto-classify) and other data in parallel
-          await Promise.all([loadFiles(true), loadAllFiles(), loadGitStatus()]);
-          // Now trigger auto-classification with the loaded review state
-          triggerAutoClassification();
-        } catch (err) {
-          console.error("Failed to load data:", err);
-        } finally {
-          setInitialLoading(false);
-        }
-      };
-      loadData();
-    }
-  }, [
+  useComparisonLoader({
     repoPath,
     comparisonReady,
     showStartScreen,
-    comparison.key,
+    comparisonKey: comparison.key,
     loadFiles,
     loadAllFiles,
     loadReviewState,
     loadGitStatus,
     triggerAutoClassification,
-  ]);
-
-  // Sidebar resize handlers
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, []);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current) return;
-      // Calculate width based on sidebar position
-      // Get the root font size to convert pixels to rem
-      const rootFontSize = parseFloat(
-        getComputedStyle(document.documentElement).fontSize,
-      );
-      const pixelWidth =
-        sidebarPosition === "left" ? e.clientX : window.innerWidth - e.clientX;
-      // Convert to rem and clamp between 13.33rem (200px) and 40rem (600px)
-      const newWidth = Math.max(13.33, Math.min(40, pixelWidth / rootFontSize));
-      setSidebarWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      if (isResizing.current) {
-        isResizing.current = false;
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      }
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [sidebarPosition]);
-
-  // Keyboard navigation
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      // Don't capture keys when typing in inputs
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-
-      // Cmd/Ctrl+O to open repository
-      if ((event.metaKey || event.ctrlKey) && event.key === "o") {
-        event.preventDefault();
-        handleOpenRepo();
-        return;
-      }
-
-      // Cmd/Ctrl+Shift+D to open debug modal
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key === "d"
-      ) {
-        event.preventDefault();
-        setShowDebugModal(true);
-        return;
-      }
-
-      // Cmd/Ctrl+, to open settings modal
-      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
-        event.preventDefault();
-        setShowSettingsModal(true);
-        return;
-      }
-
-      // Cmd/Ctrl+P to open file finder
-      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
-        event.preventDefault();
-        setShowFileFinder(true);
-        return;
-      }
-
-      // Escape to close split view (only when split is active)
-      if (event.key === "Escape" && secondaryFile !== null) {
-        event.preventDefault();
-        closeSplit();
-        return;
-      }
-
-      // Cmd/Ctrl+Shift+\ to toggle split orientation
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key === "\\"
-      ) {
-        event.preventDefault();
-        setSplitOrientation(
-          splitOrientation === "horizontal" ? "vertical" : "horizontal",
-        );
-        return;
-      }
-
-      // Cmd/Ctrl++ to increase font size
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        (event.key === "=" || event.key === "+")
-      ) {
-        event.preventDefault();
-        const newSize = Math.min(
-          codeFontSize + CODE_FONT_SIZE_STEP,
-          CODE_FONT_SIZE_MAX,
-        );
-        setCodeFontSize(newSize);
-        return;
-      }
-
-      // Cmd/Ctrl+- to decrease font size
-      if ((event.metaKey || event.ctrlKey) && event.key === "-") {
-        event.preventDefault();
-        const newSize = Math.max(
-          codeFontSize - CODE_FONT_SIZE_STEP,
-          CODE_FONT_SIZE_MIN,
-        );
-        setCodeFontSize(newSize);
-        return;
-      }
-
-      // Cmd/Ctrl+0 to reset font size to default
-      if ((event.metaKey || event.ctrlKey) && event.key === "0") {
-        event.preventDefault();
-        setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
-        return;
-      }
-
-      switch (event.key) {
-        case "j":
-          // Navigate to next hunk (handles file switching automatically)
-          nextHunk();
-          break;
-        case "k":
-          // Navigate to previous hunk (handles file switching automatically)
-          prevHunk();
-          break;
-        case "a":
-          // Approve focused hunk
-          if (hunks.length > 0 && focusedHunkIndex < hunks.length) {
-            const focusedHunk = hunks[focusedHunkIndex];
-            approveHunk(focusedHunk.id);
-          }
-          break;
-        case "r":
-          // Reject focused hunk
-          if (hunks.length > 0 && focusedHunkIndex < hunks.length) {
-            const focusedHunk = hunks[focusedHunkIndex];
-            rejectHunk(focusedHunk.id);
-          }
-          break;
-        case "ArrowDown":
-          if (event.metaKey || event.ctrlKey) {
-            nextFile();
-            event.preventDefault();
-          }
-          break;
-        case "ArrowUp":
-          if (event.metaKey || event.ctrlKey) {
-            prevFile();
-            event.preventDefault();
-          }
-          break;
-      }
-    },
-    [
-      nextFile,
-      prevFile,
-      nextHunk,
-      prevHunk,
-      hunks,
-      focusedHunkIndex,
-      approveHunk,
-      rejectHunk,
-      handleOpenRepo,
-      codeFontSize,
-      setCodeFontSize,
-      secondaryFile,
-      closeSplit,
-      setSplitOrientation,
-      splitOrientation,
-    ],
-  );
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
-
-  // Refs for menu event handlers to avoid stale closures
-  const handleOpenRepoRef = useRef(handleOpenRepo);
-  const handleRefreshRef = useRef(handleRefresh);
-  const codeFontSizeRef = useRef(codeFontSize);
-  const setCodeFontSizeRef = useRef(setCodeFontSize);
-  useEffect(() => {
-    handleOpenRepoRef.current = handleOpenRepo;
-    handleRefreshRef.current = handleRefresh;
-    codeFontSizeRef.current = codeFontSize;
-    setCodeFontSizeRef.current = setCodeFontSize;
-  }, [handleOpenRepo, handleRefresh, codeFontSize, setCodeFontSize]);
-
-  // Listen for menu events (setup once, use refs to avoid re-subscribing)
-  useEffect(() => {
-    const platform = getPlatformServices();
-    const unlistenFns: (() => void)[] = [];
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:open-repo", () => {
-        handleOpenRepoRef.current();
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:show-debug", () => {
-        setShowDebugModal(true);
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:open-settings", () => {
-        setShowSettingsModal(true);
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:refresh", () => {
-        handleRefreshRef.current();
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:zoom-in", () => {
-        setCodeFontSizeRef.current(
-          Math.min(
-            codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
-            CODE_FONT_SIZE_MAX,
-          ),
-        );
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:zoom-out", () => {
-        setCodeFontSizeRef.current(
-          Math.max(
-            codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
-            CODE_FONT_SIZE_MIN,
-          ),
-        );
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:zoom-reset", () => {
-        setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT);
-      }),
-    );
-
-    return () => {
-      unlistenFns.forEach((fn) => fn());
-    };
-  }, []); // Empty deps - setup once, use refs for current values
-
-  // Start file watcher when repo is loaded
-  useEffect(() => {
-    if (!repoPath) return;
-
-    const apiClient = getApiClient();
-    console.log("[watcher] Starting file watcher for", repoPath);
-    apiClient
-      .startFileWatcher(repoPath)
-      .then(() => console.log("[watcher] File watcher started for", repoPath))
-      .catch((err: unknown) =>
-        console.error("[watcher] Failed to start file watcher:", err),
-      );
-
-    return () => {
-      console.log("[watcher] Stopping file watcher for", repoPath);
-      apiClient.stopFileWatcher(repoPath).catch(() => {});
-    };
-  }, [repoPath]);
-
-  // Listen for file watcher events
-  // Use refs to avoid stale closures in event handlers
-  const repoPathRef = useRef(repoPath);
-  const loadReviewStateRef = useRef(loadReviewState);
-  const refreshRef = useRef(refresh);
-  const comparisonReadyRef = useRef(comparisonReady);
-  useEffect(() => {
-    repoPathRef.current = repoPath;
-    loadReviewStateRef.current = loadReviewState;
-    refreshRef.current = refresh;
-    comparisonReadyRef.current = comparisonReady;
-  }, [repoPath, loadReviewState, refresh, comparisonReady]);
-
-  useEffect(() => {
-    if (!repoPath) return;
-
-    const apiClient = getApiClient();
-    const unlistenFns: (() => void)[] = [];
-
-    // Review state changed externally
-    unlistenFns.push(
-      apiClient.onReviewStateChanged((eventRepoPath) => {
-        console.log(
-          "[watcher] Received review-state-changed event:",
-          eventRepoPath,
-        );
-        if (eventRepoPath === repoPathRef.current) {
-          console.log("[watcher] Reloading review state...");
-          loadReviewStateRef.current();
-        }
-      }),
-    );
-    console.log("[watcher] Listening for review-state-changed");
-
-    // Git state changed (branch switch, new commit, etc.)
-    unlistenFns.push(
-      apiClient.onGitChanged((eventRepoPath) => {
-        console.log("[watcher] Received git-changed event:", eventRepoPath);
-        if (eventRepoPath === repoPathRef.current) {
-          // Only refresh if a comparison has been selected (not on start screen)
-          if (!comparisonReadyRef.current) {
-            console.log("[watcher] Skipping refresh - no comparison selected");
-            return;
-          }
-          console.log("[watcher] Refreshing...");
-          refreshRef.current();
-        }
-      }),
-    );
-    console.log("[watcher] Listening for git-changed");
-
-    return () => {
-      unlistenFns.forEach((fn) => fn());
-    };
-  }, [repoPath]);
+    setInitialLoading,
+  });
 
   // Calculate review progress
   const totalHunks = hunks.length;

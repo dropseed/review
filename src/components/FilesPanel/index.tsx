@@ -1,16 +1,14 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useReviewStore } from "../../stores/reviewStore";
-import { getPlatformServices } from "../../platform";
 import { ExportModal } from "../ExportModal";
-import type { ViewMode, ContextMenuState } from "./types";
-import {
-  calculateFileHunkStatus,
-  processTree,
-  processTreeWithSections,
-} from "./FileTree.utils";
 import { ContextMenu } from "./ContextMenu";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
+import {
+  useFilePanelFileSystem,
+  useFilePanelNavigation,
+  useFilePanelApproval,
+  useFilePanelFeedback,
+  useFilePanelContextMenu,
+} from "./hooks";
 
 // Simple section header (non-collapsible)
 function SectionHeader({
@@ -138,284 +136,54 @@ function CollapsibleSection({
 }
 
 export function FilesPanel() {
+  // File system data
   const {
     repoPath,
-    allFiles,
     allFilesLoading,
-    selectedFile,
-    setSelectedFile,
-    fileToReveal,
-    clearFileToReveal,
-    directoryToReveal,
-    clearDirectoryToReveal,
-    reviewState,
+    sectionedFiles,
+    allFilesTree,
+    stats,
+    allDirPaths,
     hunks,
+    reviewState,
+  } = useFilePanelFileSystem();
+
+  // Navigation
+  const {
+    selectedFile,
+    viewMode,
+    setViewMode,
+    expandedPaths,
+    togglePath,
+    handleSelectFile,
+    expandAll,
+    collapseAll,
+    registerRef,
+  } = useFilePanelNavigation({ sectionedFiles });
+
+  // Approval actions
+  const { handleApproveAll, handleUnapproveAll } = useFilePanelApproval();
+
+  // Feedback panel
+  const {
+    notes,
+    annotations,
     setReviewNotes,
     deleteAnnotation,
-    revealFileInTree,
-    approveAllFileHunks,
-    unapproveAllFileHunks,
-    approveAllDirHunks,
-    unapproveAllDirHunks,
-    openInSplit,
-    mainViewMode,
-    setScrollToFileInRolling,
-  } = useReviewStore();
+    notesOpen,
+    setNotesOpen,
+    showExportModal,
+    setShowExportModal,
+    hasFeedbackToExport,
+    handleGoToAnnotation,
+  } = useFilePanelFeedback({
+    reviewState,
+    rejectedCount: stats.rejected,
+  });
 
-  const [viewMode, setViewMode] = useState<ViewMode>("changes");
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  const [notesOpen, setNotesOpen] = useState(true);
-  const [platformName, setPlatformName] = useState("");
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const fileRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-
-  // Detect platform
-  useEffect(() => {
-    setPlatformName(getPlatformServices().window.getPlatformName());
-  }, []);
-
-  // Calculate hunk status per file
-  const hunkStatusMap = useMemo(
-    () => calculateFileHunkStatus(hunks, reviewState),
-    [hunks, reviewState],
-  );
-
-  // Process sectioned tree for Changes sections (Needs Review vs Reviewed)
-  const sectionedFiles = useMemo(
-    () => processTreeWithSections(allFiles, hunkStatusMap),
-    [allFiles, hunkStatusMap],
-  );
-
-  // Process tree for All Files section
-  const allFilesTree = useMemo(
-    () => processTree(allFiles, hunkStatusMap, "all"),
-    [allFiles, hunkStatusMap],
-  );
-
-  // Overall stats - count FILES not hunks for section badges
-  const stats = useMemo(() => {
-    let needsReviewFiles = 0;
-    let reviewedFiles = 0;
-    let totalHunks = 0;
-    let pendingHunks = 0;
-    let rejectedHunks = 0;
-
-    for (const status of hunkStatusMap.values()) {
-      totalHunks += status.total;
-      pendingHunks += status.pending;
-      rejectedHunks += status.rejected;
-
-      if (status.total > 0) {
-        if (status.pending > 0) {
-          needsReviewFiles++;
-        } else {
-          reviewedFiles++;
-        }
-      }
-    }
-
-    return {
-      pending: pendingHunks,
-      total: totalHunks,
-      rejected: rejectedHunks,
-      needsReviewFiles,
-      reviewedFiles,
-    };
-  }, [hunkStatusMap]);
-
-  // Collect all directory paths for expand/collapse all
-  const allDirPaths = useMemo(() => {
-    const paths = new Set<string>();
-    function collect(entries: typeof allFilesTree) {
-      for (const entry of entries) {
-        if (entry.isDirectory && entry.matchesFilter) {
-          for (const p of entry.compactedPaths) {
-            paths.add(p);
-          }
-          if (entry.children) {
-            collect(entry.children);
-          }
-        }
-      }
-    }
-    collect(sectionedFiles.needsReview);
-    collect(sectionedFiles.reviewed);
-    collect(allFilesTree);
-    return paths;
-  }, [allFilesTree, sectionedFiles]);
-
-  const expandAll = useCallback(() => {
-    setExpandedPaths(new Set(allDirPaths));
-  }, [allDirPaths]);
-
-  const collapseAll = useCallback(() => {
-    setExpandedPaths(new Set());
-  }, []);
-
-  // Reveal file in tree
-  useEffect(() => {
-    if (fileToReveal) {
-      const parts = fileToReveal.split("/");
-      const pathsToExpand = new Set(expandedPaths);
-      for (let i = 1; i < parts.length; i++) {
-        pathsToExpand.add(parts.slice(0, i).join("/"));
-      }
-      setExpandedPaths(pathsToExpand);
-
-      setTimeout(() => {
-        const ref = fileRefs.current.get(fileToReveal);
-        if (ref) {
-          ref.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 100);
-
-      clearFileToReveal();
-    }
-  }, [fileToReveal, clearFileToReveal, expandedPaths]);
-
-  // Helper to check if a directory path exists in the processed tree
-  const directoryExistsInTree = useCallback(
-    (dirPath: string, entries: typeof allFilesTree): boolean => {
-      for (const entry of entries) {
-        if (!entry.matchesFilter) continue;
-        // Check if this entry's path or compacted paths include the directory
-        if (entry.compactedPaths.includes(dirPath)) return true;
-        if (entry.path === dirPath) return true;
-        if (entry.isDirectory && entry.children) {
-          if (directoryExistsInTree(dirPath, entry.children)) return true;
-        }
-      }
-      return false;
-    },
-    [],
-  );
-
-  // Reveal directory in tree (from breadcrumb clicks)
-  useEffect(() => {
-    if (directoryToReveal) {
-      // Check if directory exists in changes sections
-      const existsInChanges =
-        directoryExistsInTree(directoryToReveal, sectionedFiles.needsReview) ||
-        directoryExistsInTree(directoryToReveal, sectionedFiles.reviewed);
-
-      // If not in changes sections, switch to All Files view
-      if (!existsInChanges && viewMode !== "all") {
-        setViewMode("all");
-      }
-
-      // Expand parent paths
-      const parts = directoryToReveal.split("/");
-      const pathsToExpand = new Set(expandedPaths);
-      for (let i = 1; i <= parts.length; i++) {
-        pathsToExpand.add(parts.slice(0, i).join("/"));
-      }
-      setExpandedPaths(pathsToExpand);
-
-      // Scroll to directory after a short delay to allow expansion
-      setTimeout(() => {
-        const ref = fileRefs.current.get(directoryToReveal);
-        if (ref) {
-          ref.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 100);
-
-      clearDirectoryToReveal();
-    }
-  }, [
-    directoryToReveal,
-    clearDirectoryToReveal,
-    directoryExistsInTree,
-    sectionedFiles,
-    viewMode,
-    expandedPaths,
-  ]);
-
-  const togglePath = useCallback((path: string) => {
-    setExpandedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSelectFile = useCallback(
-    (path: string) => {
-      if (mainViewMode === "rolling") {
-        // In rolling mode, scroll to the file section instead of changing selection
-        setScrollToFileInRolling(path);
-      } else {
-        setSelectedFile(path);
-      }
-    },
-    [setSelectedFile, mainViewMode, setScrollToFileInRolling],
-  );
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent, path: string) => {
-      e.preventDefault();
-      const fullPath = `${repoPath}/${path}`;
-      const revealLabel =
-        platformName === "macos"
-          ? "Reveal in Finder"
-          : platformName === "windows"
-            ? "Reveal in Explorer"
-            : "Reveal in Files";
-      setContextMenu({
-        x: e.clientX,
-        y: e.clientY,
-        path,
-        fullPath,
-        revealLabel,
-      });
-    },
-    [repoPath, platformName],
-  );
-
-  const handleApproveAll = useCallback(
-    (path: string, isDir: boolean) => {
-      if (isDir) {
-        approveAllDirHunks(path);
-      } else {
-        approveAllFileHunks(path);
-      }
-    },
-    [approveAllFileHunks, approveAllDirHunks],
-  );
-
-  const handleUnapproveAll = useCallback(
-    (path: string, isDir: boolean) => {
-      if (isDir) {
-        unapproveAllDirHunks(path);
-      } else {
-        unapproveAllFileHunks(path);
-      }
-    },
-    [unapproveAllFileHunks, unapproveAllDirHunks],
-  );
-
-  const registerRef = useCallback(
-    (path: string, el: HTMLButtonElement | null) => {
-      if (el) {
-        fileRefs.current.set(path, el);
-      } else {
-        fileRefs.current.delete(path);
-      }
-    },
-    [],
-  );
-
-  // Check if there's feedback to export
-  const hasFeedbackToExport = useMemo(() => {
-    const hasRejections = stats.rejected > 0;
-    const hasAnnotations = (reviewState?.annotations ?? []).length > 0;
-    const hasNotes = (reviewState?.notes ?? "").trim().length > 0;
-    return hasRejections || hasAnnotations || hasNotes;
-  }, [stats.rejected, reviewState?.annotations, reviewState?.notes]);
+  // Context menu
+  const { contextMenu, handleContextMenu, closeContextMenu, openInSplit } =
+    useFilePanelContextMenu({ repoPath });
 
   if (allFilesLoading) {
     return (
@@ -433,7 +201,7 @@ export function FilesPanel() {
       {contextMenu && (
         <ContextMenu
           menu={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={closeContextMenu}
           onOpenInSplit={openInSplit}
         />
       )}
@@ -453,9 +221,16 @@ export function FilesPanel() {
       <div className="flex h-full flex-col">
         {/* View mode toggle */}
         <div className="border-b border-stone-800 px-3 py-2">
-          <div className="flex rounded-md bg-stone-800 p-0.5">
+          <div
+            className="flex rounded-md bg-stone-800 p-0.5"
+            role="tablist"
+            aria-label="File view mode"
+          >
             <button
               onClick={() => setViewMode("changes")}
+              role="tab"
+              aria-selected={viewMode === "changes"}
+              aria-controls="files-panel-changes"
               className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                 viewMode === "changes"
                   ? "bg-stone-700 text-stone-100"
@@ -466,6 +241,9 @@ export function FilesPanel() {
             </button>
             <button
               onClick={() => setViewMode("all")}
+              role="tab"
+              aria-selected={viewMode === "all"}
+              aria-controls="files-panel-all"
               className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                 viewMode === "all"
                   ? "bg-stone-700 text-stone-100"
@@ -486,7 +264,7 @@ export function FilesPanel() {
                 title="Needs Review"
                 badge={stats.needsReviewFiles}
                 badgeColor="amber"
-                onExpandAll={expandAll}
+                onExpandAll={() => expandAll(allDirPaths)}
                 onCollapseAll={collapseAll}
                 showTreeControls={allDirPaths.size > 0}
                 showTopBorder={false}
@@ -537,7 +315,7 @@ export function FilesPanel() {
                 title="Reviewed"
                 badge={stats.reviewedFiles}
                 badgeColor="lime"
-                onExpandAll={expandAll}
+                onExpandAll={() => expandAll(allDirPaths)}
                 onCollapseAll={collapseAll}
                 showTreeControls={allDirPaths.size > 0}
               >
@@ -579,7 +357,7 @@ export function FilesPanel() {
                 {allDirPaths.size > 0 && (
                   <div className="flex items-center gap-0.5 pr-2">
                     <button
-                      onClick={expandAll}
+                      onClick={() => expandAll(allDirPaths)}
                       title="Expand all"
                       className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
                     >
@@ -646,17 +424,15 @@ export function FilesPanel() {
         {/* Feedback (Notes + Annotations) */}
         <CollapsibleSection
           title="Feedback"
-          badge={(reviewState?.annotations ?? []).length}
+          badge={annotations.length}
           isOpen={notesOpen}
           onToggle={() => setNotesOpen(!notesOpen)}
         >
           <FeedbackPanel
-            notes={reviewState?.notes || ""}
+            notes={notes}
             onNotesChange={setReviewNotes}
-            annotations={reviewState?.annotations ?? []}
-            onGoToAnnotation={(annotation) => {
-              revealFileInTree(annotation.filePath);
-            }}
+            annotations={annotations}
+            onGoToAnnotation={handleGoToAnnotation}
             onDeleteAnnotation={deleteAnnotation}
           />
         </CollapsibleSection>

@@ -352,111 +352,121 @@ impl LocalGitSource {
             }
         }
 
-        // Build tree from file paths
-        let mut entries: HashMap<String, FileEntry> = HashMap::new();
+        Ok(build_file_tree(all_files, &file_status))
+    }
+}
 
-        // Collect all directories
-        let mut all_dirs: HashSet<String> = HashSet::new();
-        for path in &all_files {
-            let mut current = PathBuf::from(path);
-            while let Some(parent) = current.parent() {
-                let parent_str = parent.to_string_lossy().to_string();
-                if parent_str.is_empty() {
-                    break;
-                }
-                all_dirs.insert(parent_str);
-                current = parent.to_path_buf();
+/// Build a file tree from file paths and statuses.
+/// Shared helper used by both list_files() and list_all_files().
+fn build_file_tree(
+    all_files: HashSet<String>,
+    file_status: &HashMap<String, FileStatus>,
+) -> Vec<FileEntry> {
+    let mut entries: HashMap<String, FileEntry> = HashMap::new();
+
+    // Collect all directories
+    let mut all_dirs: HashSet<String> = HashSet::new();
+    for path in &all_files {
+        let mut current = PathBuf::from(path);
+        while let Some(parent) = current.parent() {
+            let parent_str = parent.to_string_lossy().to_string();
+            if parent_str.is_empty() {
+                break;
             }
+            all_dirs.insert(parent_str);
+            current = parent.to_path_buf();
         }
+    }
 
-        // Create directory entries
-        for dir_path in &all_dirs {
-            let name = PathBuf::from(dir_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+    // Create directory entries
+    for dir_path in &all_dirs {
+        let name = PathBuf::from(dir_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-            entries.insert(
-                dir_path.clone(),
-                FileEntry {
-                    name,
-                    path: dir_path.clone(),
-                    is_directory: true,
-                    children: Some(vec![]),
-                    status: None,
-                },
-            );
-        }
+        entries.insert(
+            dir_path.clone(),
+            FileEntry {
+                name,
+                path: dir_path.clone(),
+                is_directory: true,
+                children: Some(vec![]),
+                status: None,
+            },
+        );
+    }
 
-        // Create file entries
-        for file_path in &all_files {
-            let name = PathBuf::from(file_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+    // Create file entries
+    for file_path in &all_files {
+        let name = PathBuf::from(file_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-            let status = file_status.get(file_path).cloned();
+        let status = file_status.get(file_path).cloned();
 
-            entries.insert(
-                file_path.clone(),
-                FileEntry {
-                    name,
-                    path: file_path.clone(),
-                    is_directory: false,
-                    children: None,
-                    status,
-                },
-            );
-        }
+        entries.insert(
+            file_path.clone(),
+            FileEntry {
+                name,
+                path: file_path.clone(),
+                is_directory: false,
+                children: None,
+                status,
+            },
+        );
+    }
 
-        // Build tree structure
-        let mut paths: Vec<String> = entries.keys().cloned().collect();
-        paths.sort_by(|a, b| {
-            let a_depth = a.matches('/').count();
-            let b_depth = b.matches('/').count();
-            b_depth.cmp(&a_depth).then_with(|| a.cmp(b))
-        });
+    // Build tree structure efficiently
+    // Sort paths by depth (deepest first) so we process children before parents
+    let mut paths: Vec<String> = entries.keys().cloned().collect();
+    paths.sort_by(|a, b| {
+        let a_depth = a.matches('/').count();
+        let b_depth = b.matches('/').count();
+        b_depth.cmp(&a_depth).then_with(|| a.cmp(b))
+    });
 
-        for path in &paths {
-            if let Some(parent_path) = PathBuf::from(path).parent() {
-                let parent_str = parent_path.to_string_lossy().to_string();
-                if !parent_str.is_empty() {
-                    if let Some(child) = entries.get(path).cloned() {
-                        if let Some(parent) = entries.get_mut(&parent_str) {
-                            if let Some(ref mut children) = parent.children {
-                                children.push(child);
-                            }
+    // Add children to parents
+    for path in &paths {
+        if let Some(parent_path) = PathBuf::from(path).parent() {
+            let parent_str = parent_path.to_string_lossy().to_string();
+            if !parent_str.is_empty() {
+                if let Some(child) = entries.get(path).cloned() {
+                    if let Some(parent) = entries.get_mut(&parent_str) {
+                        if let Some(ref mut children) = parent.children {
+                            children.push(child);
                         }
                     }
                 }
             }
         }
+    }
 
-        // Collect root entries
-        let mut root_entries: Vec<FileEntry> = entries
-            .iter()
-            .filter(|(path, _)| !path.contains('/'))
-            .map(|(_, entry)| entry.clone())
-            .collect();
+    // Collect root entries
+    let mut root_entries: Vec<FileEntry> = entries
+        .iter()
+        .filter(|(path, _)| !path.contains('/'))
+        .map(|(_, entry)| entry.clone())
+        .collect();
 
-        // Sort entries
-        fn sort_entries(entries: &mut [FileEntry]) {
-            entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            });
-            for entry in entries.iter_mut() {
-                if let Some(ref mut children) = entry.children {
-                    sort_entries(children);
-                }
+    // Sort entries: directories first, then alphabetically
+    fn sort_entries(entries: &mut [FileEntry]) {
+        entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
+        for entry in entries.iter_mut() {
+            if let Some(ref mut children) = entry.children {
+                sort_entries(children);
             }
         }
-
-        sort_entries(&mut root_entries);
-
-        Ok(root_entries)
     }
+
+    sort_entries(&mut root_entries);
+
+    root_entries
 }
 
 impl DiffSource for LocalGitSource {
@@ -506,113 +516,7 @@ impl DiffSource for LocalGitSource {
             all_files.insert(path.clone());
         }
 
-        // Build tree from file paths (no filesystem walking!)
-        let mut entries: HashMap<String, FileEntry> = HashMap::new();
-
-        // First, collect all directories we need
-        let mut all_dirs: HashSet<String> = HashSet::new();
-        for path in &all_files {
-            let mut current = PathBuf::from(path);
-            while let Some(parent) = current.parent() {
-                let parent_str = parent.to_string_lossy().to_string();
-                if parent_str.is_empty() {
-                    break;
-                }
-                all_dirs.insert(parent_str);
-                current = parent.to_path_buf();
-            }
-        }
-
-        // Create directory entries
-        for dir_path in &all_dirs {
-            let name = PathBuf::from(dir_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            entries.insert(
-                dir_path.clone(),
-                FileEntry {
-                    name,
-                    path: dir_path.clone(),
-                    is_directory: true,
-                    children: Some(vec![]),
-                    status: None,
-                },
-            );
-        }
-
-        // Create file entries
-        for file_path in &all_files {
-            let name = PathBuf::from(file_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let status = file_status.get(file_path).cloned();
-
-            entries.insert(
-                file_path.clone(),
-                FileEntry {
-                    name,
-                    path: file_path.clone(),
-                    is_directory: false,
-                    children: None,
-                    status,
-                },
-            );
-        }
-
-        // Build tree structure efficiently
-        // Sort paths by depth (deepest first) so we process children before parents
-        let mut paths: Vec<String> = entries.keys().cloned().collect();
-        paths.sort_by(|a, b| {
-            let a_depth = a.matches('/').count();
-            let b_depth = b.matches('/').count();
-            b_depth.cmp(&a_depth).then_with(|| a.cmp(b))
-        });
-
-        // Add children to parents
-        for path in &paths {
-            if let Some(parent_path) = PathBuf::from(path).parent() {
-                let parent_str = parent_path.to_string_lossy().to_string();
-                if !parent_str.is_empty() {
-                    // Take the child entry out temporarily
-                    if let Some(child) = entries.get(path).cloned() {
-                        if let Some(parent) = entries.get_mut(&parent_str) {
-                            if let Some(ref mut children) = parent.children {
-                                children.push(child);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Collect root entries
-        let mut root_entries: Vec<FileEntry> = entries
-            .iter()
-            .filter(|(path, _)| !path.contains('/'))
-            .map(|(_, entry)| entry.clone())
-            .collect();
-
-        // Sort entries: directories first, then alphabetically
-        fn sort_entries(entries: &mut [FileEntry]) {
-            entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            });
-            for entry in entries.iter_mut() {
-                if let Some(ref mut children) = entry.children {
-                    sort_entries(children);
-                }
-            }
-        }
-
-        sort_entries(&mut root_entries);
-
-        Ok(root_entries)
+        Ok(build_file_tree(all_files, &file_status))
     }
 
     fn get_diff(
