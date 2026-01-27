@@ -1,5 +1,20 @@
 import type { SliceCreator } from "../types";
-import { flattenFiles } from "../types";
+
+// ========================================================================
+// Navigation Slice
+// ========================================================================
+//
+// This slice manages navigation state (selected file, focused hunk, etc.)
+// and intentionally accesses data from other slices via get():
+//
+// - `hunks` from FilesSlice: to find hunk indices when navigating
+// - `flatFileList` from FilesSlice: to navigate between files
+//
+// This cross-slice access is the standard Zustand pattern for combined
+// stores. All slices are merged into a single store, so get() returns
+// the complete state including all slices.
+//
+// ========================================================================
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
@@ -76,37 +91,35 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   },
 
   nextFile: () => {
-    const { files, selectedFile } = get();
-    const flatFiles = flattenFiles(files);
-    if (flatFiles.length === 0) return;
+    const { flatFileList, selectedFile } = get();
+    if (flatFileList.length === 0) return;
 
     if (!selectedFile) {
-      set({ selectedFile: flatFiles[0], focusedHunkIndex: 0 });
+      set({ selectedFile: flatFileList[0], focusedHunkIndex: 0 });
       return;
     }
 
-    const currentIndex = flatFiles.indexOf(selectedFile);
-    const nextIndex = (currentIndex + 1) % flatFiles.length;
-    set({ selectedFile: flatFiles[nextIndex], focusedHunkIndex: 0 });
+    const currentIndex = flatFileList.indexOf(selectedFile);
+    const nextIndex = (currentIndex + 1) % flatFileList.length;
+    set({ selectedFile: flatFileList[nextIndex], focusedHunkIndex: 0 });
   },
 
   prevFile: () => {
-    const { files, selectedFile } = get();
-    const flatFiles = flattenFiles(files);
-    if (flatFiles.length === 0) return;
+    const { flatFileList, selectedFile } = get();
+    if (flatFileList.length === 0) return;
 
     if (!selectedFile) {
       set({
-        selectedFile: flatFiles[flatFiles.length - 1],
+        selectedFile: flatFileList[flatFileList.length - 1],
         focusedHunkIndex: 0,
       });
       return;
     }
 
-    const currentIndex = flatFiles.indexOf(selectedFile);
+    const currentIndex = flatFileList.indexOf(selectedFile);
     const prevIndex =
-      currentIndex <= 0 ? flatFiles.length - 1 : currentIndex - 1;
-    set({ selectedFile: flatFiles[prevIndex], focusedHunkIndex: 0 });
+      currentIndex <= 0 ? flatFileList.length - 1 : currentIndex - 1;
+    set({ selectedFile: flatFileList[prevIndex], focusedHunkIndex: 0 });
   },
 
   nextHunk: () => {

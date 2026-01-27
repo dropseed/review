@@ -6,6 +6,7 @@
 //! - Trust pattern matching and taxonomy (`trust`)
 //! - Claude-based hunk classification (`classify`)
 //! - Git source abstraction (`sources`)
+//! - File path filtering utilities (`filters`)
 //!
 //! Feature flags:
 //! - `cli`: Command-line interface
@@ -14,6 +15,7 @@
 pub mod classify;
 pub mod diff;
 pub mod error;
+pub mod filters;
 pub mod review;
 pub mod sources;
 pub mod trust;

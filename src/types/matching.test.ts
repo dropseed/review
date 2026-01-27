@@ -5,7 +5,7 @@ import {
   findMatchingPattern,
   anyLabelMatchesAnyPattern,
   anyLabelMatchesPattern,
-} from "./matching";
+} from "./index";
 
 describe("matchesPattern", () => {
   describe("exact matches", () => {

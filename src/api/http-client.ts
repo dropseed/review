@@ -359,6 +359,29 @@ export class HttpClient implements ApiClient {
     return label === pattern;
   }
 
+  async shouldSkipFile(path: string): Promise<boolean> {
+    // Inline skip pattern matching for browser mode
+    const skipPatterns = [
+      /^target\//, // Rust build artifacts
+      /\/target\//, // Nested target directories
+      /\.fingerprint\//, // Cargo fingerprints
+      /^node_modules\//, // Node dependencies
+      /\/node_modules\//, // Nested node_modules
+      /\.git\//, // Git internals
+      /__pycache__\//, // Python bytecode
+      /\.pyc$/, // Python bytecode files
+      /^dist\//, // Common build dir
+      /^build\//, // Common build dir
+      /\/\.next\//, // Next.js build cache
+      /^\.next\//, // Next.js build cache
+      /package-lock\.json$/, // Lock files
+      /yarn\.lock$/,
+      /Cargo\.lock$/,
+      /pnpm-lock\.yaml$/,
+    ];
+    return skipPatterns.some((pattern) => pattern.test(path));
+  }
+
   // ----- File watcher -----
 
   async startFileWatcher(_repoPath: string): Promise<void> {

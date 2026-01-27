@@ -738,6 +738,7 @@ dependencies = [
  "hex",
  "ignore",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

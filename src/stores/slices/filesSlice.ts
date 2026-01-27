@@ -6,12 +6,27 @@ import type {
   DiffHunk,
   MovePair,
 } from "../types";
+import { flattenFiles } from "../types";
 import { makeComparison } from "../../types";
 
 // Default comparison: main..HEAD with working tree changes
 const defaultComparison: Comparison = makeComparison("main", "HEAD", true);
 
-// Files/directories that are likely binary or should be skipped
+// ========================================================================
+// Skip Patterns
+// ========================================================================
+//
+// IMPORTANT: These patterns MUST stay in sync with the Rust implementation
+// in compare/src/filters.rs. The patterns filter out build artifacts and
+// other files that aren't useful to review.
+//
+// Note: The API client has an async `shouldSkipFile()` method that calls
+// the Rust implementation. However, we use a synchronous version here
+// because it's called in a tight loop during file collection. The patterns
+// are identical in both implementations.
+//
+// ========================================================================
+
 const SKIP_PATTERNS = [
   /^target\//, // Rust build artifacts
   /\/target\//, // Nested target directories
@@ -19,9 +34,19 @@ const SKIP_PATTERNS = [
   /^node_modules\//, // Node dependencies
   /\/node_modules\//, // Nested node_modules
   /\.git\//, // Git internals
+  /__pycache__\//, // Python bytecode
+  /\.pyc$/, // Python bytecode files
+  /^dist\//, // Common build dir
+  /^build\//, // Common build dir
+  /\/\.next\//, // Next.js build cache
+  /^\.next\//, // Next.js build cache
+  /package-lock\.json$/, // Lock files (noisy diffs)
+  /yarn\.lock$/, // Lock files
+  /Cargo\.lock$/, // Lock files
+  /pnpm-lock\.yaml$/, // Lock files
 ];
 
-// Check if a file path should be skipped (likely binary/build artifact)
+/** Check if a file path should be skipped (likely binary/build artifact). */
 function shouldSkipFile(path: string): boolean {
   return SKIP_PATTERNS.some((pattern) => pattern.test(path));
 }
@@ -42,6 +67,8 @@ export interface FilesSlice {
   hunks: DiffHunk[];
   movePairs: MovePair[];
   loadingProgress: LoadingProgress | null;
+  // Cached flattened file paths (computed when files change)
+  flatFileList: string[];
 
   // Actions
   setRepoPath: (path: string) => void;
@@ -66,6 +93,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     hunks: [],
     movePairs: [],
     loadingProgress: null,
+    flatFileList: [],
 
     setRepoPath: (path) => set({ repoPath: path }),
 
@@ -75,7 +103,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       get().loadReviewState();
     },
 
-    setFiles: (files) => set({ files }),
+    setFiles: (files) => set({ files, flatFileList: flattenFiles(files) }),
     setHunks: (hunks) => set({ hunks }),
 
     loadFiles: async (skipAutoClassify = false) => {
@@ -86,7 +114,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // Phase 1: Get file list
         set({ loadingProgress: { current: 0, total: 1, phase: "files" } });
         const files = await client.listFiles(repoPath, comparison);
-        set({ files });
+        set({ files, flatFileList: flattenFiles(files) });
 
         // Collect changed file paths (filtering out likely binary/build artifacts)
         const changedPaths: string[] = [];

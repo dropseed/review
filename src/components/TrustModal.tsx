@@ -1,9 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useReviewStore } from "../stores/reviewStore";
-import { anyLabelMatchesPattern } from "../utils/matching";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
-import type { TrustCategory } from "../types";
+import { anyLabelMatchesPattern, type TrustCategory } from "../types";
 
 interface TrustModalProps {
   isOpen: boolean;

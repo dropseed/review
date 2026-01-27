@@ -117,6 +117,9 @@ export interface ApiClient {
   /** Check if a label matches a pattern */
   matchTrustPattern(label: string, pattern: string): Promise<boolean>;
 
+  /** Check if a file path should be skipped (build artifacts, etc.) */
+  shouldSkipFile(path: string): Promise<boolean>;
+
   // ----- File watcher -----
 
   /** Start watching for file changes in the repo */

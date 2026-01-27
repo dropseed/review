@@ -13,6 +13,7 @@ use compare::review::storage;
 use compare::sources::local_git::LocalGitSource;
 use compare::sources::traits::{BranchList, Comparison, DiffSource, FileEntry, GitStatusSummary};
 use compare::trust::patterns::TrustCategory;
+use log::{debug, error, info};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -137,39 +138,39 @@ pub fn get_current_repo() -> Result<String, String> {
 
 #[tauri::command]
 pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
-    eprintln!(
+    debug!(
         "[list_files] repo_path={}, comparison={:?}",
         repo_path, comparison
     );
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        eprintln!("[list_files] ERROR creating source: {}", e);
+        error!("[list_files] ERROR creating source: {}", e);
         e.to_string()
     })?;
 
     let result = source.list_files(&comparison).map_err(|e| {
-        eprintln!("[list_files] ERROR listing files: {}", e);
+        error!("[list_files] ERROR listing files: {}", e);
         e.to_string()
     })?;
-    eprintln!("[list_files] SUCCESS: {} entries", result.len());
+    info!("[list_files] SUCCESS: {} entries", result.len());
     Ok(result)
 }
 
 #[tauri::command]
 pub fn list_all_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
-    eprintln!(
+    debug!(
         "[list_all_files] repo_path={}, comparison={:?}",
         repo_path, comparison
     );
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        eprintln!("[list_all_files] ERROR creating source: {}", e);
+        error!("[list_all_files] ERROR creating source: {}", e);
         e.to_string()
     })?;
 
     let result = source.list_all_files(&comparison).map_err(|e| {
-        eprintln!("[list_all_files] ERROR listing files: {}", e);
+        error!("[list_all_files] ERROR listing files: {}", e);
         e.to_string()
     })?;
-    eprintln!("[list_all_files] SUCCESS: {} entries", result.len());
+    info!("[list_all_files] SUCCESS: {} entries", result.len());
     Ok(result)
 }
 
@@ -179,7 +180,7 @@ pub fn get_file_content(
     file_path: String,
     comparison: Comparison,
 ) -> Result<FileContent, String> {
-    eprintln!(
+    debug!(
         "[get_file_content] repo_path={}, file_path={}, comparison={:?}",
         repo_path, file_path, comparison
     );
@@ -188,7 +189,7 @@ pub fn get_file_content(
     let full_path = repo_path_buf.join(&file_path);
     let file_exists = full_path.exists();
 
-    eprintln!(
+    debug!(
         "[get_file_content] full_path={}, exists={}",
         full_path.display(),
         file_exists
@@ -205,22 +206,35 @@ pub fn get_file_content(
             return Err("Path traversal detected: file path escapes repository".to_string());
         }
     } else {
+        // For non-existent files (deleted), validate the path more strictly
+        // Check for ".." in path components to prevent traversal
         if file_path.contains("..") {
             return Err("Path traversal detected: file path contains '..'".to_string());
+        }
+        // Also validate the file path doesn't try to escape via absolute paths
+        if file_path.starts_with('/') || file_path.starts_with('\\') {
+            return Err("Path traversal detected: file path is absolute".to_string());
+        }
+        // Validate no backslash traversal attempts on Windows-style paths
+        let normalized = file_path.replace('\\', "/");
+        for component in normalized.split('/') {
+            if component == ".." {
+                return Err("Path traversal detected: file path contains '..'".to_string());
+            }
         }
     }
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        eprintln!("[get_file_content] ERROR creating source: {}", e);
+        error!("[get_file_content] ERROR creating source: {}", e);
         e.to_string()
     })?;
 
     if !file_exists {
-        eprintln!("[get_file_content] handling deleted file");
+        debug!("[get_file_content] handling deleted file");
         let diff_output = source
             .get_diff(&comparison, Some(&file_path))
             .map_err(|e| {
-                eprintln!("[get_file_content] ERROR getting diff: {}", e);
+                error!("[get_file_content] ERROR getting diff: {}", e);
                 e.to_string()
             })?;
 
@@ -255,15 +269,15 @@ pub fn get_file_content(
     let mime_type = get_image_mime_type(ext);
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        eprintln!("[get_file_content] ERROR creating source: {}", e);
+        error!("[get_file_content] ERROR creating source: {}", e);
         e.to_string()
     })?;
 
     if content_type == "image" || content_type == "svg" {
-        eprintln!("[get_file_content] handling as image/svg: {}", content_type);
+        debug!("[get_file_content] handling as image/svg: {}", content_type);
 
         let current_bytes = std::fs::read(&full_path).map_err(|e| {
-            eprintln!("[get_file_content] ERROR reading file bytes: {}", e);
+            error!("[get_file_content] ERROR reading file bytes: {}", e);
             format!("{}: {}", full_path.display(), e)
         })?;
 
@@ -278,7 +292,7 @@ pub fn get_file_content(
         let diff_output = source
             .get_diff(&comparison, Some(&file_path))
             .map_err(|e| {
-                eprintln!("[get_file_content] ERROR getting diff: {}", e);
+                error!("[get_file_content] ERROR getting diff: {}", e);
                 e.to_string()
             })?;
 
@@ -291,14 +305,14 @@ pub fn get_file_content(
 
             match source.get_file_bytes(&file_path, &old_ref) {
                 Ok(old_bytes) => {
-                    eprintln!(
+                    debug!(
                         "[get_file_content] got old image bytes: {} bytes",
                         old_bytes.len()
                     );
                     mime_type.map(|mt| bytes_to_data_url(&old_bytes, mt))
                 }
                 Err(e) => {
-                    eprintln!("[get_file_content] no old version available: {}", e);
+                    debug!("[get_file_content] no old version available: {}", e);
                     None
                 }
             }
@@ -314,7 +328,7 @@ pub fn get_file_content(
             vec![create_untracked_hunk(&file_path)]
         };
 
-        eprintln!("[get_file_content] SUCCESS (image)");
+        info!("[get_file_content] SUCCESS (image)");
         return Ok(FileContent {
             content,
             old_content: None,
@@ -327,10 +341,10 @@ pub fn get_file_content(
     }
 
     let content = std::fs::read_to_string(&full_path).map_err(|e| {
-        eprintln!("[get_file_content] ERROR reading file: {}", e);
+        error!("[get_file_content] ERROR reading file: {}", e);
         format!("{}: {}", full_path.display(), e)
     })?;
-    eprintln!(
+    debug!(
         "[get_file_content] file content length: {} bytes",
         content.len()
     );
@@ -338,10 +352,10 @@ pub fn get_file_content(
     let diff_output = source
         .get_diff(&comparison, Some(&file_path))
         .map_err(|e| {
-            eprintln!("[get_file_content] ERROR getting diff: {}", e);
+            error!("[get_file_content] ERROR getting diff: {}", e);
             e.to_string()
         })?;
-    eprintln!(
+    debug!(
         "[get_file_content] diff output length: {} bytes",
         diff_output.len()
     );
@@ -349,16 +363,16 @@ pub fn get_file_content(
     let hunks = if diff_output.is_empty() {
         let is_tracked = source.is_file_tracked(&file_path).unwrap_or(false);
         if is_tracked {
-            eprintln!("[get_file_content] no diff, file is tracked (unchanged)");
+            debug!("[get_file_content] no diff, file is tracked (unchanged)");
             vec![]
         } else {
-            eprintln!("[get_file_content] no diff, file is untracked (new)");
+            debug!("[get_file_content] no diff, file is untracked (new)");
             vec![create_untracked_hunk(&file_path)]
         }
     } else {
-        eprintln!("[get_file_content] parsing diff...");
+        debug!("[get_file_content] parsing diff...");
         let parsed = parse_diff(&diff_output, &file_path);
-        eprintln!("[get_file_content] parsed {} hunks", parsed.len());
+        debug!("[get_file_content] parsed {} hunks", parsed.len());
         parsed
     };
 
@@ -366,14 +380,14 @@ pub fn get_file_content(
         if comparison.working_tree {
             let old = match source.get_file_bytes(&file_path, "HEAD") {
                 Ok(bytes) => {
-                    eprintln!(
+                    debug!(
                         "[get_file_content] got old content from HEAD: {} bytes",
                         bytes.len()
                     );
                     String::from_utf8(bytes).ok()
                 }
                 Err(e) => {
-                    eprintln!("[get_file_content] no old version available: {}", e);
+                    debug!("[get_file_content] no old version available: {}", e);
                     None
                 }
             };
@@ -381,7 +395,7 @@ pub fn get_file_content(
         } else {
             let old = match source.get_file_bytes(&file_path, &comparison.old) {
                 Ok(bytes) => {
-                    eprintln!(
+                    debug!(
                         "[get_file_content] got old content from {}: {} bytes",
                         comparison.old,
                         bytes.len()
@@ -389,7 +403,7 @@ pub fn get_file_content(
                     String::from_utf8(bytes).ok()
                 }
                 Err(e) => {
-                    eprintln!(
+                    debug!(
                         "[get_file_content] no old version at {}: {}",
                         comparison.old, e
                     );
@@ -398,7 +412,7 @@ pub fn get_file_content(
             };
             let new = match source.get_file_bytes(&file_path, &comparison.new) {
                 Ok(bytes) => {
-                    eprintln!(
+                    debug!(
                         "[get_file_content] got new content from {}: {} bytes",
                         comparison.new,
                         bytes.len()
@@ -406,7 +420,7 @@ pub fn get_file_content(
                     String::from_utf8(bytes).ok()
                 }
                 Err(e) => {
-                    eprintln!(
+                    debug!(
                         "[get_file_content] no new version at {}: {}",
                         comparison.new, e
                     );
@@ -419,7 +433,7 @@ pub fn get_file_content(
         (None, content)
     };
 
-    eprintln!("[get_file_content] SUCCESS");
+    info!("[get_file_content] SUCCESS");
     Ok(FileContent {
         content: final_content,
         old_content,
@@ -527,7 +541,7 @@ pub async fn classify_hunks_with_claude(
     let num_batches = (hunks.len() + batch_size - 1) / batch_size;
     let timeout_secs = std::cmp::max(60, num_batches as u64 * 30);
 
-    eprintln!(
+    debug!(
         "[classify_hunks_with_claude] repo_path={}, hunks={}, model={}, command={:?}, batch_size={}, max_concurrent={}, timeout={}s",
         repo_path,
         hunks.len(),
@@ -558,7 +572,7 @@ pub async fn classify_hunks_with_claude(
     .map_err(|_| format!("Classification timed out after {} seconds", timeout_secs))?
     .map_err(|e| e.to_string())?;
 
-    eprintln!(
+    info!(
         "[classify_hunks_with_claude] SUCCESS: {} classifications",
         result.classifications.len()
     );
@@ -567,21 +581,43 @@ pub async fn classify_hunks_with_claude(
 
 #[tauri::command]
 pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsResponse {
-    eprintln!(
+    debug!(
         "[detect_hunks_move_pairs] Analyzing {} hunks for moves",
         hunks.len()
     );
 
     let pairs = detect_move_pairs(&mut hunks);
 
-    eprintln!("[detect_hunks_move_pairs] Found {} move pairs", pairs.len());
+    debug!("[detect_hunks_move_pairs] Found {} move pairs", pairs.len());
 
     DetectMovePairsResponse { pairs, hunks }
 }
 
+/// Validate that a path is within .git/compare/ for security
+fn validate_compare_path(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+
+    // Reject paths with ".." components to prevent traversal
+    if path.contains("..") {
+        return Err("Path traversal detected: path contains '..'".to_string());
+    }
+
+    // The path must contain .git/compare/ to be valid
+    let path_str = path.replace('\\', "/");
+    if !path_str.contains("/.git/compare/") && !path_str.contains(".git/compare/") {
+        return Err(
+            "Security error: writes are only allowed to .git/compare/ directory".to_string(),
+        );
+    }
+
+    Ok(path_buf)
+}
+
 #[tauri::command]
 pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| format!("Failed to write file {}: {}", path, e))
+    let validated_path = validate_compare_path(&path)?;
+    std::fs::write(&validated_path, contents)
+        .map_err(|e| format!("Failed to write file {}: {}", path, e))
 }
 
 #[tauri::command]
@@ -589,7 +625,9 @@ pub fn append_to_file(path: String, contents: String) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::Write;
 
-    if let Some(parent) = std::path::Path::new(&path).parent() {
+    let validated_path = validate_compare_path(&path)?;
+
+    if let Some(parent) = validated_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directories for {}: {}", path, e))?;
     }
@@ -597,7 +635,7 @@ pub fn append_to_file(path: String, contents: String) -> Result<(), String> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path)
+        .open(&validated_path)
         .map_err(|e| format!("Failed to open file {}: {}", path, e))?;
 
     file.write_all(contents.as_bytes())
@@ -612,7 +650,7 @@ pub fn get_expanded_context(
     start_line: u32,
     end_line: u32,
 ) -> Result<ExpandedContextResult, String> {
-    eprintln!(
+    debug!(
         "[get_expanded_context] file={}, lines {}-{}, comparison={:?}",
         file_path, start_line, end_line, comparison
     );
@@ -629,7 +667,7 @@ pub fn get_expanded_context(
         .get_file_lines(&file_path, &git_ref, start_line, end_line)
         .map_err(|e| e.to_string())?;
 
-    eprintln!("[get_expanded_context] SUCCESS: {} lines", lines.len());
+    info!("[get_expanded_context] SUCCESS: {} lines", lines.len());
 
     Ok(ExpandedContextResult {
         lines,
@@ -646,6 +684,11 @@ pub fn match_trust_pattern(label: String, pattern: String) -> bool {
 #[tauri::command]
 pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
     compare::trust::patterns::get_trust_taxonomy()
+}
+
+#[tauri::command]
+pub fn should_skip_file(path: String) -> bool {
+    compare::filters::should_skip_file(&path)
 }
 
 #[tauri::command]

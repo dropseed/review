@@ -170,6 +170,10 @@ export class TauriClient implements ApiClient {
     return invoke<boolean>("match_trust_pattern", { label, pattern });
   }
 
+  async shouldSkipFile(path: string): Promise<boolean> {
+    return invoke<boolean>("should_skip_file", { path });
+  }
+
   // ----- File watcher -----
 
   async startFileWatcher(repoPath: string): Promise<void> {

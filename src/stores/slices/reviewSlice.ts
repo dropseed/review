@@ -9,6 +9,23 @@ import type {
 } from "../types";
 import { createDebouncedFn } from "../types";
 
+// ========================================================================
+// Review Slice
+// ========================================================================
+//
+// This slice manages review state (approvals, rejections, trust list, etc.)
+// and intentionally accesses data from other slices via get():
+//
+// - `hunks` from FilesSlice: to find movePairId for paired move hunks
+//   When approving/rejecting a hunk that's part of a move pair, both
+//   hunks are updated together for consistency.
+//
+// This cross-slice access is the standard Zustand pattern for combined
+// stores. All slices are merged into a single store, so get() returns
+// the complete state including all slices.
+//
+// ========================================================================
+
 // Debounced save operation
 const debouncedSave = createDebouncedFn(500);
 

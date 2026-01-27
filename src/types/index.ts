@@ -1,4 +1,81 @@
-import { anyLabelMatchesAnyPattern } from "../utils/matching";
+// ========================================================================
+// Pattern Matching Utilities
+// ========================================================================
+//
+// IMPORTANT: These functions MUST stay in sync with the Rust implementation
+// in compare/src/trust/matching.rs. Both implementations have parity tests.
+//
+// The Rust version uses manual string splitting, while this uses regex.
+// Both produce identical results for all supported patterns.
+//
+// Patterns support:
+// - Exact matches: "imports:added" matches only "imports:added"
+// - Wildcard suffix: "imports:*" matches "imports:added", "imports:removed"
+// - Wildcard prefix: "*:added" matches "imports:added", "comments:added"
+// - Multiple wildcards: "*:*" matches any "category:label" pattern
+//
+// ========================================================================
+
+/**
+ * Check if a label matches a pattern.
+ * Supports wildcards (`*`) that match any sequence of characters.
+ */
+export function matchesPattern(label: string, pattern: string): boolean {
+  // If no wildcards, use exact match
+  if (!pattern.includes("*")) {
+    return label === pattern;
+  }
+
+  // Convert glob pattern to regex
+  // Escape special regex characters except *
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  // Convert * to regex .*
+  const regexPattern = escaped.replace(/\*/g, ".*");
+  const regex = new RegExp(`^${regexPattern}$`);
+
+  return regex.test(label);
+}
+
+/**
+ * Check if a label matches any pattern in a list.
+ */
+export function matchesAnyPattern(label: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => matchesPattern(label, pattern));
+}
+
+/**
+ * Find the first pattern in a list that matches the label.
+ */
+export function findMatchingPattern(
+  label: string,
+  patterns: string[],
+): string | undefined {
+  return patterns.find((pattern) => matchesPattern(label, pattern));
+}
+
+/**
+ * Check if any label in an array matches any pattern in a list.
+ */
+export function anyLabelMatchesAnyPattern(
+  labels: string[],
+  patterns: string[],
+): boolean {
+  return labels.some((label) => matchesAnyPattern(label, patterns));
+}
+
+/**
+ * Check if any label in an array matches a specific pattern.
+ */
+export function anyLabelMatchesPattern(
+  labels: string[],
+  pattern: string,
+): boolean {
+  return labels.some((label) => matchesPattern(label, pattern));
+}
+
+// ========================================================================
+// Domain Types
+// ========================================================================
 
 // A stash entry
 export interface StashEntry {
@@ -42,6 +119,13 @@ export function makeComparison(
   workingTree: boolean,
   stagedOnly?: boolean,
 ): Comparison {
+  // Validate that old and new refs are different (unless comparing with working tree)
+  if (old === newRef && !workingTree && !stagedOnly) {
+    console.warn(
+      `[makeComparison] Identical refs without working tree changes: ${old}..${newRef}`,
+    );
+  }
+
   let key = `${old}..${newRef}`;
   if (stagedOnly) {
     key += "+staged-only";
