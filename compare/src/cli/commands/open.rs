@@ -1,48 +1,52 @@
+use std::path::PathBuf;
 use std::process::Command;
 
 pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
     // Try to open the Compare app
-    // On macOS, use 'open' command with the app
+    // On macOS, invoke the binary inside the app bundle directly
     // On other platforms, try to find the binary
 
     #[cfg(target_os = "macos")]
     {
-        // Try to open Compare.app
-        let result = Command::new("open")
-            .arg("-a")
-            .arg("Compare")
-            .arg("--args")
-            .arg(repo_path)
-            .status();
+        // Common locations for the app bundle
+        let home_apps = std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join("Applications/Compare.app"))
+            .unwrap_or_default();
+        let app_locations = [PathBuf::from("/Applications/Compare.app"), home_apps];
 
-        match result {
-            Ok(status) if status.success() => {
-                println!("Opened Compare app for {}", repo_path);
-                return Ok(());
+        // Find the binary inside the app bundle
+        for app_path in &app_locations {
+            let binary_path = app_path.join("Contents/MacOS/Compare");
+            if binary_path.exists() {
+                // Spawn the binary directly with the repo path as argument
+                let result = Command::new(&binary_path).arg(repo_path).spawn();
+
+                match result {
+                    Ok(_) => {
+                        println!("Opened Compare app for {}", repo_path);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to launch {}: {}", binary_path.display(), e);
+                    }
+                }
             }
-            _ => {
-                // Try the development binary
-                if let Ok(exe_path) = std::env::current_exe() {
-                    let dev_app = exe_path
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.join("bundle/macos/Compare.app"));
+        }
 
-                    if let Some(app_path) = dev_app {
-                        if app_path.exists() {
-                            let result = Command::new("open")
-                                .arg(app_path)
-                                .arg("--args")
-                                .arg(repo_path)
-                                .status();
+        // Fallback: Try the development binary location
+        if let Ok(exe_path) = std::env::current_exe() {
+            let dev_app = exe_path
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("bundle/macos/Compare.app/Contents/MacOS/Compare"));
 
-                            if let Ok(status) = result {
-                                if status.success() {
-                                    println!("Opened Compare app for {}", repo_path);
-                                    return Ok(());
-                                }
-                            }
-                        }
+            if let Some(binary_path) = dev_app {
+                if binary_path.exists() {
+                    let result = Command::new(&binary_path).arg(repo_path).spawn();
+
+                    if result.is_ok() {
+                        println!("Opened Compare app for {}", repo_path);
+                        return Ok(());
                     }
                 }
             }
