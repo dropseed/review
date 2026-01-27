@@ -1,11 +1,15 @@
 import type { StorageService } from "../../platform";
 import type { SliceCreatorWithStorage } from "../types";
+import type { RecentRepo } from "../../utils/preferences";
 
 // Font size constants
 export const CODE_FONT_SIZE_DEFAULT = 12;
 export const CODE_FONT_SIZE_MIN = 8;
 export const CODE_FONT_SIZE_MAX = 32;
 export const CODE_FONT_SIZE_STEP = 1;
+
+// Max number of recent repositories to keep
+const MAX_RECENT_REPOS = 5;
 
 // Preference defaults
 const defaults = {
@@ -16,6 +20,7 @@ const defaults = {
   classifyCommand: null as string | null,
   classifyBatchSize: 5,
   classifyMaxConcurrent: 2,
+  recentRepositories: [] as RecentRepo[],
 };
 
 export interface PreferencesSlice {
@@ -32,6 +37,9 @@ export interface PreferencesSlice {
   classifyBatchSize: number;
   classifyMaxConcurrent: number;
 
+  // Recent repositories
+  recentRepositories: RecentRepo[];
+
   // Actions
   setSidebarPosition: (position: "left" | "right") => void;
   setCodeFontSize: (size: number) => void;
@@ -47,11 +55,15 @@ export interface PreferencesSlice {
   setClassifyCommand: (command: string | null) => void;
   setClassifyBatchSize: (size: number) => void;
   setClassifyMaxConcurrent: (count: number) => void;
+
+  // Recent repositories actions
+  addRecentRepository: (path: string) => void;
+  removeRecentRepository: (path: string) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
   PreferencesSlice
-> = (storage: StorageService) => (set) => ({
+> = (storage: StorageService) => (set, get) => ({
   // Initial state
   sidebarPosition: defaults.sidebarPosition,
   codeFontSize: defaults.codeFontSize,
@@ -62,6 +74,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   classifyCommand: defaults.classifyCommand,
   classifyBatchSize: defaults.classifyBatchSize,
   classifyMaxConcurrent: defaults.classifyMaxConcurrent,
+  recentRepositories: defaults.recentRepositories,
 
   setSidebarPosition: (position) => {
     set({ sidebarPosition: position });
@@ -104,6 +117,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const maxConcurrent =
       (await storage.get<number>("classifyMaxConcurrent")) ??
       defaults.classifyMaxConcurrent;
+    const recentRepos =
+      (await storage.get<RecentRepo[]>("recentRepositories")) ??
+      defaults.recentRepositories;
 
     set({
       sidebarPosition: position,
@@ -113,6 +129,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       classifyCommand: classifyCmd,
       classifyBatchSize: batchSize,
       classifyMaxConcurrent: maxConcurrent,
+      recentRepositories: recentRepos,
     });
 
     // Apply font size CSS variables
@@ -163,5 +180,31 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   setClassifyMaxConcurrent: (count) => {
     set({ classifyMaxConcurrent: count });
     storage.set("classifyMaxConcurrent", count);
+  },
+
+  addRecentRepository: (path) => {
+    const current = get().recentRepositories;
+    // Extract directory name from path
+    const name = path.split("/").pop() || path;
+    const now = new Date().toISOString();
+
+    // Remove existing entry for this path (to move it to front)
+    const filtered = current.filter((r) => r.path !== path);
+
+    // Add to front and limit to MAX_RECENT_REPOS
+    const updated: RecentRepo[] = [
+      { path, name, lastOpened: now },
+      ...filtered,
+    ].slice(0, MAX_RECENT_REPOS);
+
+    set({ recentRepositories: updated });
+    storage.set("recentRepositories", updated);
+  },
+
+  removeRecentRepository: (path) => {
+    const current = get().recentRepositories;
+    const updated = current.filter((r) => r.path !== path);
+    set({ recentRepositories: updated });
+    storage.set("recentRepositories", updated);
   },
 });

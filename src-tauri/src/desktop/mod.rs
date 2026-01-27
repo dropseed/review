@@ -49,6 +49,11 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?;
 
+            let new_window = MenuItemBuilder::new("New Window")
+                .id("new_window")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?;
+
             let refresh = MenuItemBuilder::new("Refresh")
                 .id("refresh")
                 .accelerator("CmdOrCtrl+R")
@@ -102,6 +107,7 @@ pub fn run() {
                 .build()?;
 
             let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_window)
                 .item(&open_repo)
                 .separator()
                 .close_window()
@@ -155,6 +161,9 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             match id {
+                "new_window" => {
+                    let _: Result<(), _> = app.emit("menu:new-window", ());
+                }
                 "open_repo" => {
                     let _: Result<(), _> = app.emit("menu:open-repo", ());
                 }

@@ -20,7 +20,8 @@
         "fullscreen": false,
         "minWidth": 800,
         "minHeight": 600,
-        "tabbingIdentifier": "compare-main"
+        "tabbingIdentifier": "compare-main",
+        "backgroundColor": "#0c0a09"
       }
     ],
     "security": {

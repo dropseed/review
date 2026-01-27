@@ -20,3 +20,6 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     </ErrorBoundary>
   </React.StrictMode>,
 );
+
+// Remove initial loading indicator
+document.getElementById("initial-loader")?.remove();

@@ -29,6 +29,7 @@ interface StartScreenProps {
   repoPath: string;
   onSelectReview: (comparison: Comparison) => void;
   onOpenRepo: () => void;
+  onCloseRepo: () => void;
 }
 
 // Intl.RelativeTimeFormat for proper i18n
@@ -375,6 +376,7 @@ export function StartScreen({
   repoPath,
   onSelectReview,
   onOpenRepo,
+  onCloseRepo,
 }: StartScreenProps) {
   const { savedReviews, savedReviewsLoading, loadSavedReviews, deleteReview } =
     useReviewStore();
@@ -610,40 +612,51 @@ export function StartScreen({
           </div>
 
           {/* Repo path indicator */}
-          <button
-            onClick={onOpenRepo}
-            className="group mt-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-900/50 border border-stone-800/50 transition-all duration-150 hover:bg-stone-800/50 hover:border-stone-700/50 focus:outline-none focus:ring-2 focus:ring-sage-500/50"
-          >
-            <svg
-              className="w-4 h-4 text-stone-500 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
+          <div className="mt-6 inline-flex items-center gap-1">
+            <button
+              onClick={onOpenRepo}
+              className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-900/50 border border-stone-800/50 transition-all duration-150 hover:bg-stone-800/50 hover:border-stone-700/50 focus:outline-none focus:ring-2 focus:ring-sage-500/50"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
-              />
-            </svg>
-            <span className="font-mono text-sm text-stone-400 group-hover:text-stone-300 transition-colors">
-              {repoPath.replace(/^\/Users\/[^/]+/, "~")}
-            </span>
-            <svg
-              className="w-3.5 h-3.5 text-stone-600 opacity-0 group-hover:opacity-100 transition-opacity"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
+              <svg
+                className="w-4 h-4 text-stone-500 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                />
+              </svg>
+              <span className="font-mono text-sm text-stone-400 group-hover:text-stone-300 transition-colors">
+                {repoPath.replace(/^\/Users\/[^/]+/, "~")}
+              </span>
+            </button>
+            <button
+              onClick={onCloseRepo}
+              className="p-1.5 rounded-lg text-stone-600 hover:text-stone-300 hover:bg-stone-800/50 transition-all focus:outline-none focus:ring-2 focus:ring-sage-500/50"
+              title="Close repository"
+              aria-label="Close repository"
             >
-              <path
-                fillRule="evenodd"
-                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
         </header>
 
         {/* Recent Reviews */}

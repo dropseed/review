@@ -128,14 +128,7 @@ impl Cli {
             return Ok(repo.clone());
         }
 
-        // Use the same logic as commands.rs get_current_repo
-        if let Ok(repo_path) = std::env::var("COMPARE_REPO") {
-            let path = std::path::PathBuf::from(&repo_path);
-            if path.join(".git").exists() {
-                return Ok(repo_path);
-            }
-        }
-
+        // Check current working directory and walk up to find .git
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
 
         let mut current = cwd.as_path();
@@ -149,10 +142,7 @@ impl Cli {
             }
         }
 
-        Err(
-            "Not a git repository. Use --repo or set COMPARE_REPO environment variable."
-                .to_string(),
-        )
+        Err("Not a git repository. Use --repo to specify a repository path.".to_string())
     }
 }
 

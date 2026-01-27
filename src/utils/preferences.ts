@@ -15,6 +15,12 @@ export {
   CODE_FONT_SIZE_STEP,
 } from "../stores/slices/preferencesSlice";
 
+export interface RecentRepo {
+  path: string;
+  name: string; // directory name for display
+  lastOpened: string; // ISO date
+}
+
 export interface Preferences {
   sidebarPosition: "left" | "right";
   sidebarWidth: number;
@@ -25,6 +31,7 @@ export interface Preferences {
   classifyCommand: string | null;
   classifyBatchSize: number; // hunks per Claude call (1-10)
   classifyMaxConcurrent: number; // max concurrent Claude calls (1-5)
+  recentRepositories: RecentRepo[];
 }
 
 const defaults: Preferences = {
@@ -37,6 +44,7 @@ const defaults: Preferences = {
   classifyCommand: null,
   classifyBatchSize: 5,
   classifyMaxConcurrent: 2,
+  recentRepositories: [],
 };
 
 /**
@@ -101,6 +109,9 @@ export async function getAllPreferences(): Promise<Preferences> {
       classifyMaxConcurrent:
         (await storage.get<number>("classifyMaxConcurrent")) ??
         defaults.classifyMaxConcurrent,
+      recentRepositories:
+        (await storage.get<RecentRepo[]>("recentRepositories")) ??
+        defaults.recentRepositories,
     };
   } catch {
     return defaults;

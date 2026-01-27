@@ -9,6 +9,7 @@ import {
 
 interface UseMenuEventsOptions {
   handleOpenRepo: () => void;
+  handleNewWindow: () => void;
   handleRefresh: () => void;
   codeFontSize: number;
   setCodeFontSize: (size: number) => void;
@@ -22,6 +23,7 @@ interface UseMenuEventsOptions {
  */
 export function useMenuEvents({
   handleOpenRepo,
+  handleNewWindow,
   handleRefresh,
   codeFontSize,
   setCodeFontSize,
@@ -30,16 +32,24 @@ export function useMenuEvents({
 }: UseMenuEventsOptions) {
   // Refs to avoid stale closures
   const handleOpenRepoRef = useRef(handleOpenRepo);
+  const handleNewWindowRef = useRef(handleNewWindow);
   const handleRefreshRef = useRef(handleRefresh);
   const codeFontSizeRef = useRef(codeFontSize);
   const setCodeFontSizeRef = useRef(setCodeFontSize);
 
   useEffect(() => {
     handleOpenRepoRef.current = handleOpenRepo;
+    handleNewWindowRef.current = handleNewWindow;
     handleRefreshRef.current = handleRefresh;
     codeFontSizeRef.current = codeFontSize;
     setCodeFontSizeRef.current = setCodeFontSize;
-  }, [handleOpenRepo, handleRefresh, codeFontSize, setCodeFontSize]);
+  }, [
+    handleOpenRepo,
+    handleNewWindow,
+    handleRefresh,
+    codeFontSize,
+    setCodeFontSize,
+  ]);
 
   // Listen for menu events (setup once, use refs for current values)
   useEffect(() => {
@@ -49,6 +59,12 @@ export function useMenuEvents({
     unlistenFns.push(
       platform.menuEvents.on("menu:open-repo", () => {
         handleOpenRepoRef.current();
+      }),
+    );
+
+    unlistenFns.push(
+      platform.menuEvents.on("menu:new-window", () => {
+        handleNewWindowRef.current();
       }),
     );
 

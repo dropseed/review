@@ -7,6 +7,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { FileFinder } from "./components/FileFinder";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { StartScreen } from "./components/StartScreen";
+import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
 import { useReviewStore } from "./stores/reviewStore";
 import { isHunkTrusted } from "./types";
@@ -88,6 +89,8 @@ function App() {
   useGlobalShortcut();
 
   const {
+    repoStatus,
+    repoError,
     showStartScreen,
     comparisonReady,
     initialLoading,
@@ -95,6 +98,9 @@ function App() {
     handleSelectReview,
     handleBackToStart,
     handleOpenRepo,
+    handleNewWindow,
+    handleCloseRepo,
+    handleSelectRepo,
   } = useRepositoryInit({
     repoPath,
     setRepoPath,
@@ -131,6 +137,7 @@ function App() {
 
   useMenuEvents({
     handleOpenRepo,
+    handleNewWindow,
     handleRefresh,
     codeFontSize,
     setCodeFontSize,
@@ -171,7 +178,8 @@ function App() {
     : 0;
   const reviewedHunks = trustedHunks + approvedHunks;
 
-  if (!repoPath) {
+  // Show loading state while determining repo status
+  if (repoStatus === "loading") {
     return (
       <div className="flex h-screen items-center justify-center bg-stone-950">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
@@ -182,6 +190,56 @@ function App() {
     );
   }
 
+  // Show welcome page when no repository is found
+  if (repoStatus === "not_found") {
+    return (
+      <WelcomePage
+        onOpenRepo={handleOpenRepo}
+        onSelectRepo={handleSelectRepo}
+      />
+    );
+  }
+
+  // Show error state for other errors
+  if (repoStatus === "error") {
+    return (
+      <div className="flex h-screen items-center justify-center bg-stone-950">
+        <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+            <svg
+              className="w-6 h-6 text-red-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+              />
+            </svg>
+          </div>
+          <h1 className="text-lg font-medium text-stone-200">
+            Failed to load repository
+          </h1>
+          <p className="text-sm text-stone-400">{repoError}</p>
+          <button
+            onClick={handleOpenRepo}
+            className="mt-4 px-4 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm font-medium hover:bg-stone-700 transition-colors"
+          >
+            Open a Repository
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Guard for TypeScript - if we get here without repoPath, something is wrong
+  if (!repoPath) {
+    return null;
+  }
+
   // Show start screen when no comparison is selected
   if (showStartScreen) {
     return (
@@ -189,6 +247,7 @@ function App() {
         repoPath={repoPath}
         onSelectReview={handleSelectReview}
         onOpenRepo={handleOpenRepo}
+        onCloseRepo={handleCloseRepo}
       />
     );
   }

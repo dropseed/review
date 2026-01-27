@@ -3,6 +3,7 @@ import { makeComparison, type Comparison } from "../types";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
+import { useReviewStore } from "../stores/reviewStore";
 
 // Get repo path from URL query parameter (for multi-window support)
 function getRepoPathFromUrl(): string | null {
@@ -31,14 +32,19 @@ function parseComparisonKey(key: string): Comparison | null {
   return makeComparison(oldRef, newRef, workingTree);
 }
 
+// Repository status for distinguishing loading states
+export type RepoStatus = "loading" | "found" | "not_found" | "error";
+
 interface UseRepositoryInitOptions {
   repoPath: string | null;
-  setRepoPath: (path: string) => void;
+  setRepoPath: (path: string | null) => void;
   setComparison: (comparison: Comparison) => void;
   saveCurrentComparison: () => void;
 }
 
 interface UseRepositoryInitReturn {
+  repoStatus: RepoStatus;
+  repoError: string | null;
   showStartScreen: boolean;
   setShowStartScreen: (show: boolean) => void;
   comparisonReady: boolean;
@@ -48,6 +54,9 @@ interface UseRepositoryInitReturn {
   handleSelectReview: (comparison: Comparison) => void;
   handleBackToStart: () => void;
   handleOpenRepo: () => Promise<void>;
+  handleNewWindow: () => Promise<void>;
+  handleCloseRepo: () => void;
+  handleSelectRepo: (path: string) => void;
 }
 
 /**
@@ -59,10 +68,19 @@ export function useRepositoryInit({
   setComparison,
   saveCurrentComparison,
 }: UseRepositoryInitOptions): UseRepositoryInitReturn {
+  // Repository status tracking
+  const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
+  const [repoError, setRepoError] = useState<string | null>(null);
+
   // Start screen state - show by default unless URL has comparison
   const [showStartScreen, setShowStartScreen] = useState(true);
   const [comparisonReady, setComparisonReady] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
+
+  // Get addRecentRepository from store
+  const addRecentRepository = useReviewStore(
+    (state) => state.addRecentRepository,
+  );
 
   // Initialize repo path from URL or API
   useEffect(() => {
@@ -72,6 +90,8 @@ export function useRepositoryInit({
       setRepoPath(urlRepoPath);
       setLoggerRepoPath(urlRepoPath);
       clearLog(); // Start fresh each session
+      setRepoStatus("found");
+      addRecentRepository(urlRepoPath);
       return;
     }
 
@@ -83,9 +103,25 @@ export function useRepositoryInit({
         setRepoPath(path);
         setLoggerRepoPath(path);
         clearLog(); // Start fresh each session
+        setRepoStatus("found");
+        addRecentRepository(path);
       })
-      .catch(console.error);
-  }, [setRepoPath]);
+      .catch((err) => {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        // Distinguish "not a repo" from actual errors
+        if (
+          errorMessage.includes("Not a git repository") ||
+          errorMessage.includes("not a git repository") ||
+          errorMessage.includes("No git repository found")
+        ) {
+          setRepoStatus("not_found");
+        } else {
+          setRepoStatus("error");
+          setRepoError(errorMessage);
+        }
+        console.error("Repository init error:", err);
+      });
+  }, [setRepoPath, addRecentRepository]);
 
   // Check URL for comparison when repo path changes
   // If URL has comparison, skip start screen; otherwise show start screen
@@ -129,25 +165,64 @@ export function useRepositoryInit({
     setShowStartScreen(true);
   }, []);
 
-  // Open a new window with a different repository
+  // Handle closing the current repo (go to welcome page)
+  const handleCloseRepo = useCallback(() => {
+    setRepoPath(null);
+    setRepoStatus("not_found");
+    setRepoError(null);
+    setShowStartScreen(true);
+    setComparisonReady(false);
+  }, [setRepoPath]);
+
+  // Handle selecting a repo (from welcome page recent list)
+  const handleSelectRepo = useCallback(
+    (path: string) => {
+      setRepoPath(path);
+      setLoggerRepoPath(path);
+      clearLog();
+      setRepoStatus("found");
+      setRepoError(null);
+      addRecentRepository(path);
+    },
+    [setRepoPath, addRecentRepository],
+  );
+
+  // Open a repository in the current window (standard Cmd+O behavior)
   const handleOpenRepo = useCallback(async () => {
     const platform = getPlatformServices();
-    const apiClient = getApiClient();
     try {
       const selected = await platform.dialogs.openDirectory({
         title: "Open Repository",
       });
 
       if (selected) {
-        // Open in a new window
-        await apiClient.openRepoWindow(selected);
+        // Open in current window
+        setRepoPath(selected);
+        setLoggerRepoPath(selected);
+        clearLog();
+        setRepoStatus("found");
+        setRepoError(null);
+        addRecentRepository(selected);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
     }
+  }, [setRepoPath, addRecentRepository]);
+
+  // Open a new window (Cmd+N behavior)
+  const handleNewWindow = useCallback(async () => {
+    const apiClient = getApiClient();
+    try {
+      // Open a new window - pass empty string to get welcome page
+      await apiClient.openRepoWindow("");
+    } catch (err) {
+      console.error("Failed to open new window:", err);
+    }
   }, []);
 
   return {
+    repoStatus,
+    repoError,
     showStartScreen,
     setShowStartScreen,
     comparisonReady,
@@ -157,5 +232,8 @@ export function useRepositoryInit({
     handleSelectReview,
     handleBackToStart,
     handleOpenRepo,
+    handleNewWindow,
+    handleCloseRepo,
+    handleSelectRepo,
   };
 }

@@ -71,7 +71,7 @@ export interface FilesSlice {
   flatFileList: string[];
 
   // Actions
-  setRepoPath: (path: string) => void;
+  setRepoPath: (path: string | null) => void;
   setComparison: (comparison: Comparison) => void;
   setFiles: (files: FileEntry[]) => void;
   setHunks: (hunks: DiffHunk[]) => void;

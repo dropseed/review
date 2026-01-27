@@ -103,13 +103,18 @@ fn bytes_to_data_url(bytes: &[u8], mime_type: &str) -> String {
 
 #[tauri::command]
 pub fn get_current_repo() -> Result<String, String> {
-    if let Ok(repo_path) = std::env::var("COMPARE_REPO") {
-        let path = PathBuf::from(&repo_path);
+    // Check command-line arguments first (for `compare open` CLI command)
+    // Args are passed like: Compare /path/to/repo
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        let repo_path = &args[1];
+        let path = PathBuf::from(repo_path);
         if path.join(".git").exists() {
-            return Ok(repo_path);
+            return Ok(repo_path.clone());
         }
     }
 
+    // Check current working directory and walk up to find .git
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
 
     let mut current = cwd.as_path();
@@ -123,17 +128,7 @@ pub fn get_current_repo() -> Result<String, String> {
         }
     }
 
-    if let Ok(exe_path) = std::env::current_exe() {
-        let mut current = exe_path.as_path();
-        while let Some(parent) = current.parent() {
-            if parent.join(".git").exists() {
-                return Ok(parent.to_string_lossy().to_string());
-            }
-            current = parent;
-        }
-    }
-
-    Err("Not a git repository. Set COMPARE_REPO environment variable.".to_string())
+    Err("No git repository found.".to_string())
 }
 
 #[tauri::command]
@@ -714,6 +709,32 @@ pub async fn open_repo_window(
 ) -> Result<(), String> {
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
+    // Handle empty repo_path for creating a new blank window (welcome page)
+    if repo_path.is_empty() {
+        // Generate a unique label for the new window
+        let mut hasher = DefaultHasher::new();
+        format!(
+            "new-window-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        )
+        .hash(&mut hasher);
+        let label = format!("window-{:x}", hasher.finish());
+
+        WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
+            .title("Compare")
+            .inner_size(1100.0, 750.0)
+            .min_inner_size(800.0, 600.0)
+            .tabbing_identifier("compare-main")
+            .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        return Ok(());
+    }
+
     let comparison_key = comparison
         .as_ref()
         .map(|c| c.key.clone())
@@ -762,6 +783,7 @@ pub async fn open_repo_window(
         .inner_size(1100.0, 750.0)
         .min_inner_size(800.0, 600.0)
         .tabbing_identifier("compare-main")
+        .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
         .build()
         .map_err(|e| e.to_string())?;
 
