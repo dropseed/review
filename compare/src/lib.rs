@@ -13,7 +13,6 @@
 
 // Core modules (always compiled, no Tauri dependencies)
 pub mod classify;
-pub mod claude_code;
 pub mod diff;
 pub mod error;
 pub mod filters;

@@ -1,9 +1,4 @@
-import type {
-  ApiClient,
-  ClaudeCodeMessage,
-  ClaudeCodeSession,
-  ClaudeCodeChainMessage,
-} from "../../api";
+import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 
 // Debounced auto-classification with generation counter for cancellation
@@ -28,10 +23,6 @@ const debouncedAutoClassify = createDebouncedAutoClassify();
 export interface ClassificationSlice {
   // Classification state
   claudeAvailable: boolean | null;
-  claudeCodeActive: boolean | null;
-  claudeCodeSessions: ClaudeCodeSession[];
-  claudeCodeMessages: ClaudeCodeMessage[];
-  claudeCodeChainMessages: ClaudeCodeChainMessage[];
   classifying: boolean;
   classificationError: string | null;
   classifyingHunkIds: Set<string>;
@@ -40,10 +31,6 @@ export interface ClassificationSlice {
 
   // Actions
   checkClaudeAvailable: () => Promise<void>;
-  checkClaudeCodeSessions: () => Promise<void>;
-  fetchClaudeCodeSessions: () => Promise<void>;
-  fetchClaudeCodeMessages: (sessionId?: string) => Promise<void>;
-  fetchClaudeCodeChainMessages: (sessionId: string) => Promise<void>;
   classifyUnlabeledHunks: (hunkIds?: string[]) => Promise<void>;
   reclassifyHunks: (hunkIds?: string[]) => Promise<void>;
   triggerAutoClassification: () => void;
@@ -53,67 +40,10 @@ export const createClassificationSlice: SliceCreatorWithClient<
   ClassificationSlice
 > = (client: ApiClient) => (set, get) => ({
   claudeAvailable: null,
-  claudeCodeActive: null,
-  claudeCodeSessions: [],
-  claudeCodeMessages: [],
-  claudeCodeChainMessages: [],
   classifying: false,
   classificationError: null,
   classifyingHunkIds: new Set<string>(),
   classifyGeneration: 0,
-
-  fetchClaudeCodeSessions: async () => {
-    const { repoPath } = get();
-    if (!repoPath) return;
-    try {
-      const sessions = await client.listClaudeCodeSessions(repoPath, 20);
-      set({ claudeCodeSessions: sessions });
-    } catch (err) {
-      console.error("Failed to fetch Claude Code sessions:", err);
-    }
-  },
-
-  fetchClaudeCodeMessages: async (sessionId?: string) => {
-    const { repoPath } = get();
-    if (!repoPath) return;
-    try {
-      const messages = await client.getClaudeCodeMessages(
-        repoPath,
-        200,
-        sessionId,
-      );
-      set({ claudeCodeMessages: messages });
-    } catch (err) {
-      console.error("Failed to fetch Claude Code messages:", err);
-    }
-  },
-
-  fetchClaudeCodeChainMessages: async (sessionId: string) => {
-    const { repoPath } = get();
-    if (!repoPath) return;
-    try {
-      const messages = await client.getClaudeCodeChainMessages(
-        repoPath,
-        sessionId,
-        200,
-      );
-      set({ claudeCodeChainMessages: messages });
-    } catch (err) {
-      console.error("Failed to fetch Claude Code chain messages:", err);
-    }
-  },
-
-  checkClaudeCodeSessions: async () => {
-    const { repoPath } = get();
-    if (!repoPath) return;
-    try {
-      const status = await client.checkClaudeCodeSessions(repoPath);
-      set({ claudeCodeActive: status.active });
-    } catch (err) {
-      console.error("Failed to check Claude Code sessions:", err);
-      set({ claudeCodeActive: false });
-    }
-  },
 
   checkClaudeAvailable: async () => {
     try {

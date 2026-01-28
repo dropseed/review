@@ -119,9 +119,6 @@ pub enum Commands {
         #[arg(short, long)]
         category: Option<String>,
     },
-
-    /// Check for active Claude Code sessions in this repo
-    ClaudeCode,
 }
 
 impl Cli {
@@ -185,6 +182,5 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Taxonomy { category }) => {
             commands::taxonomy::run(&repo_path, category, cli.format)
         }
-        Some(Commands::ClaudeCode) => commands::claude_code::run(&repo_path, cli.format),
     }
 }

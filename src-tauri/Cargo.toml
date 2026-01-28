@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 compare = { path = "../compare" }
 
 # Tauri and plugins
-tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
@@ -41,10 +41,3 @@ notify-debouncer-mini = "0.4"
 ignore = "0.4"
 chrono = "0.4"
 tiny_http = "0.12"
-
-# Sync server
-axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["cors"] }
-futures = "0.3"
-uuid = { version = "1", features = ["v4"] }
-rand = "0.8"

@@ -3,12 +3,9 @@
 //! This module contains all Tauri-specific code including:
 //! - Command handlers (commands.rs)
 //! - File system watchers (watchers.rs)
-//! - Sync server for mobile companion app (server.rs)
 //! - Debug HTTP server (debug_server.rs, debug builds only)
 
 pub mod commands;
-pub mod server;
-pub mod tray;
 pub mod watchers;
 
 #[cfg(debug_assertions)]
@@ -53,11 +50,6 @@ pub fn run() {
         .setup(|app| {
             #[cfg(debug_assertions)]
             debug_server::start();
-
-            // Set up system tray
-            if let Err(e) = tray::setup_tray(app.handle()) {
-                log::error!("[tray] Failed to set up tray: {}", e);
-            }
 
             let open_repo = MenuItemBuilder::new("Open Repository...")
                 .id("open_repo")
@@ -246,16 +238,6 @@ pub fn run() {
             commands::get_trust_taxonomy_with_custom,
             commands::should_skip_file,
             commands::search_file_contents,
-            // Claude Code session detection
-            commands::check_claude_code_sessions,
-            commands::list_claude_code_sessions,
-            commands::get_claude_code_messages,
-            commands::get_claude_code_chain_messages,
-            // Sync server commands
-            commands::start_sync_server,
-            commands::stop_sync_server,
-            commands::get_sync_server_status,
-            commands::generate_sync_auth_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
