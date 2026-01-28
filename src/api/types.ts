@@ -9,6 +9,8 @@ export type {
   StatusEntry,
   Comparison,
   CommitEntry,
+  CommitDetail,
+  CommitFileChange,
   FileEntry,
   DiffHunk,
   DiffLine,

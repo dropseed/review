@@ -91,6 +91,29 @@ pub struct CommitEntry {
     pub date: String,
 }
 
+/// Detailed commit information including changed files
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDetail {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub author_email: String,
+    pub date: String,
+    pub files: Vec<CommitFileChange>,
+}
+
+/// A file changed in a commit
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFileChange {
+    pub path: String,
+    pub status: String,
+    pub additions: u32,
+    pub deletions: u32,
+}
+
 /// Trait for diff sources - abstracts over local git, GitHub API, etc.
 pub trait DiffSource {
     type Error: std::error::Error;

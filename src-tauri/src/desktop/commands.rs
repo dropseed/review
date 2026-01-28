@@ -12,7 +12,7 @@ use compare::review::state::{ReviewState, ReviewSummary};
 use compare::review::storage;
 use compare::sources::local_git::{LocalGitSource, SearchMatch};
 use compare::sources::traits::{
-    BranchList, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
+    BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
 use compare::trust::patterns::TrustCategory;
 use log::{debug, error, info};
@@ -513,6 +513,12 @@ pub fn list_commits(
     source
         .list_commits(limit, branch.as_deref())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_commit_detail(repo_path: String, hash: String) -> Result<CommitDetail, String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.get_commit_detail(&hash).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

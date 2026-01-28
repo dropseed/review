@@ -247,6 +247,111 @@ impl LocalGitSource {
         Ok(commits)
     }
 
+    /// Get detailed information about a specific commit
+    pub fn get_commit_detail(
+        &self,
+        hash: &str,
+    ) -> Result<super::traits::CommitDetail, LocalGitError> {
+        // Get commit metadata
+        let format_str = "%H%n%h%n%B%n--COMPARE-SEP--%n%an%n%ae%n%aI";
+        let output = self.run_git(&[
+            "show",
+            "--no-patch",
+            &format!("--format={}", format_str),
+            hash,
+        ])?;
+
+        // Parse the output - split on --COMPARE-SEP-- to separate message from metadata
+        let parts: Vec<&str> = output.splitn(2, "--COMPARE-SEP--\n").collect();
+        if parts.len() < 2 {
+            return Err(LocalGitError::Git(format!(
+                "Failed to parse commit {}",
+                hash
+            )));
+        }
+
+        let message_section: Vec<&str> = parts[0].lines().collect();
+        if message_section.len() < 3 {
+            return Err(LocalGitError::Git(format!(
+                "Failed to parse commit metadata for {}",
+                hash
+            )));
+        }
+
+        let full_hash = message_section[0].to_string();
+        let short_hash = message_section[1].to_string();
+        // Message is everything from line 2 to the end of this section, trimmed
+        let message = message_section[2..].join("\n").trim().to_string();
+
+        let meta_lines: Vec<&str> = parts[1].lines().collect();
+        let author = meta_lines.first().unwrap_or(&"").trim().to_string();
+        let author_email = meta_lines.get(1).unwrap_or(&"").trim().to_string();
+        let date = meta_lines.get(2).unwrap_or(&"").trim().to_string();
+
+        // Get changed files with stats
+        let diff_output =
+            self.run_git(&["diff-tree", "--no-commit-id", "-r", "--numstat", hash])?;
+
+        // Also get name-status for file status (A/M/D/R)
+        let status_output =
+            self.run_git(&["diff-tree", "--no-commit-id", "-r", "--name-status", hash])?;
+
+        // Build a map of path -> status
+        let mut status_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for line in status_output.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                let status = match parts[0].chars().next() {
+                    Some('A') => "added",
+                    Some('M') => "modified",
+                    Some('D') => "deleted",
+                    Some('R') => "renamed",
+                    Some('C') => "copied",
+                    _ => "modified",
+                };
+                // For renames, use the new path
+                let path = if parts[0].starts_with('R') && parts.len() >= 3 {
+                    parts[2]
+                } else {
+                    parts[1]
+                };
+                status_map.insert(path.to_string(), status.to_string());
+            }
+        }
+
+        // Parse numstat output
+        let mut files = Vec::new();
+        for line in diff_output.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let additions = parts[0].parse::<u32>().unwrap_or(0);
+                let deletions = parts[1].parse::<u32>().unwrap_or(0);
+                let path = parts[2].to_string();
+                let status = status_map
+                    .get(&path)
+                    .cloned()
+                    .unwrap_or_else(|| "modified".to_string());
+                files.push(super::traits::CommitFileChange {
+                    path,
+                    status,
+                    additions,
+                    deletions,
+                });
+            }
+        }
+
+        Ok(super::traits::CommitDetail {
+            hash: full_hash,
+            short_hash,
+            message,
+            author,
+            author_email,
+            date,
+            files,
+        })
+    }
+
     fn run_git(&self, args: &[&str]) -> Result<String, LocalGitError> {
         let output = Command::new("git")
             .args(args)

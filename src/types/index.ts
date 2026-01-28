@@ -86,6 +86,25 @@ export interface CommitEntry {
   date: string;
 }
 
+// Detailed commit information including changed files
+export interface CommitDetail {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  authorEmail: string;
+  date: string;
+  files: CommitFileChange[];
+}
+
+// A file changed in a commit
+export interface CommitFileChange {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+}
+
 // A stash entry
 export interface StashEntry {
   ref: string; // The stash ref (e.g., "stash@{0}")

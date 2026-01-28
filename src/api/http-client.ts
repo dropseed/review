@@ -11,6 +11,7 @@ import type {
   GitStatusSummary,
   Comparison,
   CommitEntry,
+  CommitDetail,
   FileEntry,
   FileContent,
   ReviewState,
@@ -164,6 +165,22 @@ export class HttpClient implements ApiClient {
   ): Promise<CommitEntry[]> {
     console.warn("[HttpClient] listCommits not implemented");
     return [];
+  }
+
+  async getCommitDetail(
+    _repoPath: string,
+    _hash: string,
+  ): Promise<CommitDetail> {
+    console.warn("[HttpClient] getCommitDetail not implemented");
+    return {
+      hash: "",
+      shortHash: "",
+      message: "",
+      author: "",
+      authorEmail: "",
+      date: "",
+      files: [],
+    };
   }
 
   // ----- File operations -----

@@ -119,6 +119,8 @@ export function DiffView({
     removeTrustPattern,
     reclassifyHunks,
     claudeAvailable,
+    diffLineDiffType: prefLineDiffType,
+    diffIndicators: prefDiffIndicators,
   } = useReviewStore();
 
   // Ref to track focused hunk element for scrolling
@@ -410,12 +412,16 @@ export function DiffView({
             <div className="flex items-center gap-1">
               <button
                 onClick={() => rejectHunk(hunk.id)}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-rose-400/70 bg-rose-500/10 transition-all hover:bg-rose-500/20 hover:text-rose-400"
-                title="Reject this change (r)"
+                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                  isTrusted
+                    ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
+                    : "text-rose-400/70 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-400"
+                }`}
+                title={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
                 aria-label="Reject change"
               >
                 <svg
-                  className="h-3 w-3"
+                  className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -434,12 +440,16 @@ export function DiffView({
               </button>
               <button
                 onClick={() => approveHunk(hunk.id)}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-emerald-400/70 bg-emerald-500/10 transition-all hover:bg-emerald-500/20 hover:text-emerald-400"
-                title="Approve this change (a)"
+                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                  isTrusted
+                    ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
+                    : "text-emerald-400/70 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-400"
+                }`}
+                title={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
                 aria-label="Approve change"
               >
                 <svg
-                  className="h-3 w-3"
+                  className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -701,10 +711,11 @@ export function DiffView({
 
   // For lock files and very large files, disable word-level diffing entirely
   // For large JSON files, also disable to improve performance
-  const lineDiffType: "word" | "none" =
+  // Otherwise use the user's preference
+  const lineDiffType =
     isLockFile || isLargeFile || (isJsonFile && totalLines > 1000)
       ? "none"
-      : "word";
+      : prefLineDiffType;
 
   const diffOptions = {
     diffStyle: viewMode,
@@ -713,7 +724,7 @@ export function DiffView({
       light: theme,
     },
     themeType: "dark" as const,
-    diffIndicators: "bars" as const,
+    diffIndicators: prefDiffIndicators,
     disableBackground: false,
     enableHoverUtility: true,
     unsafeCSS: fontSizeCSS,
@@ -723,7 +734,7 @@ export function DiffView({
     // Performance optimizations
     tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
     maxLineDiffLength: 500, // Skip word-level diff for long lines
-    lineDiffType, // Adaptive based on file type/size
+    lineDiffType, // Adaptive based on file type/size, user preference as default
   };
 
   const renderHoverUtility = (

@@ -11,6 +11,7 @@ import type {
   GitStatusSummary,
   Comparison,
   CommitEntry,
+  CommitDetail,
   FileEntry,
   FileContent,
   ReviewState,
@@ -52,6 +53,9 @@ export interface ApiClient {
     limit?: number,
     branch?: string,
   ): Promise<CommitEntry[]>;
+
+  /** Get detailed information about a specific commit */
+  getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail>;
 
   // ----- File operations -----
 

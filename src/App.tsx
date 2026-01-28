@@ -4,6 +4,7 @@ import { SplitContainer } from "./components/SplitContainer";
 import { DebugModal } from "./components/DebugModal";
 import { TrustModal } from "./components/TrustModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { CommitDetailModal } from "./components/CommitDetailModal";
 import { FileFinder } from "./components/FileFinder";
 import { ContentSearch } from "./components/ContentSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
@@ -88,6 +89,9 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showContentSearch, setShowContentSearch] = useState(false);
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
+    null,
+  );
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -441,7 +445,9 @@ function App() {
         >
           {/* Sidebar content */}
           <div className="flex-1 overflow-hidden">
-            <FilesPanel />
+            <FilesPanel
+              onSelectCommit={(commit) => setSelectedCommitHash(commit.hash)}
+            />
           </div>
 
           {/* Resize handle */}
@@ -544,6 +550,13 @@ function App() {
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
+      />
+
+      {/* Commit Detail Modal */}
+      <CommitDetailModal
+        isOpen={!!selectedCommitHash}
+        onClose={() => setSelectedCommitHash(null)}
+        commitHash={selectedCommitHash}
       />
 
       {/* File Finder */}

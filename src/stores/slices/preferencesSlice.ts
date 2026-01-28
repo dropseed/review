@@ -11,6 +11,10 @@ export const CODE_FONT_SIZE_STEP = 1;
 // Max number of recent repositories to keep
 const MAX_RECENT_REPOS = 5;
 
+// Diff display option types
+export type DiffLineDiffType = "word" | "word-alt" | "char" | "none";
+export type DiffIndicators = "classic" | "bars" | "none";
+
 // Preference defaults
 const defaults = {
   sidebarPosition: "left" as const,
@@ -21,6 +25,8 @@ const defaults = {
   classifyBatchSize: 5,
   classifyMaxConcurrent: 2,
   recentRepositories: [] as RecentRepo[],
+  diffLineDiffType: "word" as DiffLineDiffType,
+  diffIndicators: "bars" as DiffIndicators,
 };
 
 export interface PreferencesSlice {
@@ -30,6 +36,10 @@ export interface PreferencesSlice {
   codeTheme: string;
   fileToReveal: string | null;
   directoryToReveal: string | null;
+
+  // Diff display settings
+  diffLineDiffType: DiffLineDiffType;
+  diffIndicators: DiffIndicators;
 
   // Classification settings
   autoClassifyEnabled: boolean;
@@ -44,6 +54,8 @@ export interface PreferencesSlice {
   setSidebarPosition: (position: "left" | "right") => void;
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
+  setDiffLineDiffType: (type: DiffLineDiffType) => void;
+  setDiffIndicators: (indicators: DiffIndicators) => void;
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
   clearFileToReveal: () => void;
@@ -70,6 +82,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   codeTheme: defaults.codeTheme,
   fileToReveal: null,
   directoryToReveal: null,
+  diffLineDiffType: defaults.diffLineDiffType,
+  diffIndicators: defaults.diffIndicators,
   autoClassifyEnabled: defaults.autoClassifyEnabled,
   classifyCommand: defaults.classifyCommand,
   classifyBatchSize: defaults.classifyBatchSize,
@@ -97,6 +111,16 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("codeTheme", theme);
   },
 
+  setDiffLineDiffType: (type) => {
+    set({ diffLineDiffType: type });
+    storage.set("diffLineDiffType", type);
+  },
+
+  setDiffIndicators: (indicators) => {
+    set({ diffIndicators: indicators });
+    storage.set("diffIndicators", indicators);
+  },
+
   loadPreferences: async () => {
     const position =
       (await storage.get<"left" | "right">("sidebarPosition")) ??
@@ -120,11 +144,19 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const recentRepos =
       (await storage.get<RecentRepo[]>("recentRepositories")) ??
       defaults.recentRepositories;
+    const diffLineDiffType =
+      (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
+      defaults.diffLineDiffType;
+    const diffIndicators =
+      (await storage.get<DiffIndicators>("diffIndicators")) ??
+      defaults.diffIndicators;
 
     set({
       sidebarPosition: position,
       codeFontSize: fontSize,
       codeTheme: theme,
+      diffLineDiffType,
+      diffIndicators,
       autoClassifyEnabled: autoClassify,
       classifyCommand: classifyCmd,
       classifyBatchSize: batchSize,
