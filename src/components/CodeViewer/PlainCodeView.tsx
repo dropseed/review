@@ -1,6 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { File as PierreFile } from "@pierre/diffs/react";
+import type { LineAnnotation as PierreLineAnnotation } from "@pierre/diffs/react";
+import type { LineAnnotation } from "../../types";
+import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
 import type { SupportedLanguages } from "./languageMap";
+
+// Metadata for annotations in file view
+type FileAnnotationMeta =
+  | { type: "user"; data: { annotation: LineAnnotation } }
+  | { type: "new"; data: Record<string, never> };
 
 interface PlainCodeViewProps {
   content: string;
@@ -12,6 +20,14 @@ interface PlainCodeViewProps {
   language?: SupportedLanguages;
   /** Line height in pixels for scroll calculation */
   lineHeight?: number;
+  /** Annotations for this file */
+  annotations?: LineAnnotation[];
+  /** Callback when adding a new annotation */
+  onAddAnnotation?: (lineNumber: number, content: string) => void;
+  /** Callback when updating an annotation */
+  onUpdateAnnotation?: (id: string, content: string) => void;
+  /** Callback when deleting an annotation */
+  onDeleteAnnotation?: (id: string) => void;
 }
 
 export function PlainCodeView({
@@ -22,8 +38,21 @@ export function PlainCodeView({
   fontSizeCSS,
   language,
   lineHeight = 21,
+  annotations = [],
+  onAddAnnotation,
+  onUpdateAnnotation,
+  onDeleteAnnotation,
 }: PlainCodeViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // State for new annotation editor
+  const [newAnnotationLine, setNewAnnotationLine] = useState<number | null>(
+    null,
+  );
+  // State for editing existing annotation
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
+    null,
+  );
 
   // Scroll to highlighted line when it changes
   useEffect(() => {
@@ -60,6 +89,125 @@ export function PlainCodeView({
     }
   }, [highlightLine, lineHeight]);
 
+  // Filter annotations that are for file view (side === "file")
+  const fileAnnotations = useMemo(() => {
+    return annotations.filter((a) => a.side === "file");
+  }, [annotations]);
+
+  // Build line annotations for PierreFile
+  // PierreFile uses LineAnnotation (without side) not DiffLineAnnotation
+  const lineAnnotations: PierreLineAnnotation<FileAnnotationMeta>[] =
+    useMemo(() => {
+      const items: PierreLineAnnotation<FileAnnotationMeta>[] = [];
+
+      // Add existing annotations
+      for (const annotation of fileAnnotations) {
+        items.push({
+          lineNumber: annotation.lineNumber,
+          metadata: { type: "user", data: { annotation } },
+        });
+      }
+
+      // Add new annotation editor if active
+      if (newAnnotationLine !== null) {
+        items.push({
+          lineNumber: newAnnotationLine,
+          metadata: { type: "new", data: {} },
+        });
+      }
+
+      return items;
+    }, [fileAnnotations, newAnnotationLine]);
+
+  // Handle saving a new annotation
+  const handleSaveNewAnnotation = (annotationContent: string) => {
+    if (newAnnotationLine === null || !onAddAnnotation) return;
+    onAddAnnotation(newAnnotationLine, annotationContent);
+    setNewAnnotationLine(null);
+  };
+
+  // Render annotation based on type
+  const renderAnnotation = (
+    annotation: PierreLineAnnotation<FileAnnotationMeta>,
+  ) => {
+    const meta = annotation.metadata!;
+
+    // Handle new annotation editor
+    if (meta.type === "new") {
+      return (
+        <AnnotationEditor
+          onSave={handleSaveNewAnnotation}
+          onCancel={() => setNewAnnotationLine(null)}
+          autoFocus
+        />
+      );
+    }
+
+    // Handle user annotations
+    const { annotation: userAnnotation } = meta.data;
+    const isEditing = editingAnnotationId === userAnnotation.id;
+
+    if (isEditing) {
+      return (
+        <AnnotationEditor
+          initialContent={userAnnotation.content}
+          onSave={(annotationContent) => {
+            onUpdateAnnotation?.(userAnnotation.id, annotationContent);
+            setEditingAnnotationId(null);
+          }}
+          onCancel={() => setEditingAnnotationId(null)}
+          onDelete={() => {
+            onDeleteAnnotation?.(userAnnotation.id);
+            setEditingAnnotationId(null);
+          }}
+          autoFocus
+        />
+      );
+    }
+
+    return (
+      <AnnotationDisplay
+        annotation={userAnnotation}
+        onEdit={() => setEditingAnnotationId(userAnnotation.id)}
+        onDelete={() => onDeleteAnnotation?.(userAnnotation.id)}
+      />
+    );
+  };
+
+  // Render hover utility for adding annotations
+  // For file view, the callback returns { lineNumber } without side
+  const renderHoverUtility = (
+    getHoveredLine: () => { lineNumber: number } | undefined,
+  ) => {
+    const hoveredLine = getHoveredLine();
+    if (!hoveredLine || !onAddAnnotation) return null;
+
+    return (
+      <button
+        className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
+        onClick={() => {
+          setNewAnnotationLine(hoveredLine.lineNumber);
+        }}
+        title="Add comment"
+        aria-label="Add comment"
+      >
+        <svg
+          className="h-3 w-3"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.5}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 4.5v15m7.5-7.5h-15"
+          />
+        </svg>
+      </button>
+    );
+  };
+
   return (
     <div ref={containerRef}>
       <div key={language}>
@@ -74,6 +222,9 @@ export function PlainCodeView({
               ? { start: highlightLine, end: highlightLine, side: "additions" }
               : null
           }
+          lineAnnotations={lineAnnotations}
+          renderAnnotation={renderAnnotation}
+          renderHoverUtility={renderHoverUtility}
           options={{
             theme: {
               dark: theme,
@@ -82,6 +233,7 @@ export function PlainCodeView({
             themeType: "dark",
             disableFileHeader: true,
             unsafeCSS: fontSizeCSS,
+            enableHoverUtility: true,
           }}
         />
       </div>

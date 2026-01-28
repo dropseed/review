@@ -1,0 +1,14 @@
+#!/bin/bash
+# Type check the mobile app
+#
+# Usage:
+#   scripts/mobile-check
+
+set -e
+cd "$(dirname "$0")/../mobile"
+
+echo "Type checking mobile app..."
+npx tsc --noEmit
+
+echo ""
+echo "Type check passed!"

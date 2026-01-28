@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
     // Try to open the Compare app
@@ -19,7 +19,12 @@ pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
             let binary_path = app_path.join("Contents/MacOS/Compare");
             if binary_path.exists() {
                 // Spawn the binary directly with the repo path as argument
-                let result = Command::new(&binary_path).arg(repo_path).spawn();
+                // Redirect stdout/stderr to null so logs don't stream to terminal
+                let result = Command::new(&binary_path)
+                    .arg(repo_path)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
 
                 match result {
                     Ok(_) => {
@@ -42,7 +47,11 @@ pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
 
             if let Some(binary_path) = dev_app {
                 if binary_path.exists() {
-                    let result = Command::new(&binary_path).arg(repo_path).spawn();
+                    let result = Command::new(&binary_path)
+                        .arg(repo_path)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn();
 
                     if result.is_ok() {
                         println!("Opened Compare app for {}", repo_path);

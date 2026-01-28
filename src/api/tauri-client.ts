@@ -24,6 +24,10 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  ClaudeCodeStatus,
+  ClaudeCodeMessage,
+  ClaudeCodeSession,
+  ClaudeCodeChainMessage,
 } from "./types";
 
 export class TauriClient implements ApiClient {
@@ -144,6 +148,44 @@ export class TauriClient implements ApiClient {
   }
 
   // ----- Classification -----
+
+  async checkClaudeCodeSessions(repoPath: string): Promise<ClaudeCodeStatus> {
+    return invoke<ClaudeCodeStatus>("check_claude_code_sessions", { repoPath });
+  }
+
+  async listClaudeCodeSessions(
+    repoPath: string,
+    limit?: number,
+  ): Promise<ClaudeCodeSession[]> {
+    return invoke<ClaudeCodeSession[]>("list_claude_code_sessions", {
+      repoPath,
+      limit,
+    });
+  }
+
+  async getClaudeCodeMessages(
+    repoPath: string,
+    limit?: number,
+    sessionId?: string,
+  ): Promise<ClaudeCodeMessage[]> {
+    return invoke<ClaudeCodeMessage[]>("get_claude_code_messages", {
+      repoPath,
+      limit,
+      sessionId,
+    });
+  }
+
+  async getClaudeCodeChainMessages(
+    repoPath: string,
+    sessionId: string,
+    limit?: number,
+  ): Promise<ClaudeCodeChainMessage[]> {
+    return invoke<ClaudeCodeChainMessage[]>("get_claude_code_chain_messages", {
+      repoPath,
+      sessionId,
+      limit,
+    });
+  }
 
   async checkClaudeAvailable(): Promise<boolean> {
     return invoke<boolean>("check_claude_available");

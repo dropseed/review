@@ -1,0 +1,11 @@
+#!/bin/bash
+# Start Vite dev server if not already running
+# Used by tauri's beforeDevCommand
+
+cd "$(dirname "$0")/.."
+
+if lsof -i :1420 >/dev/null 2>&1; then
+    echo "Vite already running on port 1420"
+else
+    npm run dev
+fi

@@ -12,11 +12,19 @@ Compare is a desktop app (built with Tauri) that helps humans review diffs more 
 # Setup
 scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
 
-# Development
+# Desktop Development
 scripts/dev              # Run in development mode with hot reload
+
+# Mobile Development
+scripts/mobile           # Start Expo dev server for iOS app
+scripts/mobile ios       # Start and open iOS simulator
+scripts/mobile clear     # Clear cache and start fresh
+scripts/mobile-build     # Build development client for simulator
+scripts/mobile-check     # Type check the mobile app
 
 # Testing
 scripts/test             # TypeScript type check + Rust tests
+scripts/test-sync        # E2E test for sync server API
 
 # Linting/Formatting
 scripts/fix              # Auto-fix: prettier + cargo fmt
@@ -42,9 +50,29 @@ The project is organized as a Cargo workspace with two crates:
 - **`src-tauri/`** - Desktop app (depends on `compare`)
   - `src/desktop/` - Tauri-specific code (commands, watchers, debug server)
 
-- **Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
+- **Desktop Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
+- **Mobile App**: Expo + React Native in `mobile/`, state managed with Zustand
 - **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/commands.rs`
 - **Data flow**: Rust computes diffs/hunks → Zustand stores state → User actions invoke Rust → Rust persists to `.git/compare/`
+
+### Mobile App (`mobile/`)
+
+The iOS companion app syncs with the desktop app over the network:
+
+- **`app/`** - Expo Router screens (file-based routing)
+- **`components/`** - React Native components (HunkCard, SwipeableHunk, CodeBlock)
+- **`stores/`** - Zustand slices (connection-slice, sync-slice)
+- **`api/`** - Sync client for HTTP/WebSocket communication
+- **`theme/`** - Design system (colors, typography, spacing)
+
+### Sync Server (`src-tauri/src/desktop/server.rs`)
+
+HTTP/WebSocket server for mobile connectivity:
+
+- **Port**: 17950 (default)
+- **Auth**: Bearer token authentication
+- **API Endpoints**: `/api/repos`, `/api/state`, `/api/diff`, `/api/events` (WebSocket)
+- **Design**: Works over Tailscale VPN for secure remote access
 
 ## Key Concepts
 

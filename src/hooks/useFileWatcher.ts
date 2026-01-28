@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
+import { shouldIgnoreReviewStateReload } from "../stores/slices/reviewSlice";
 
 interface UseFileWatcherOptions {
   repoPath: string | null;
@@ -64,6 +65,13 @@ export function useFileWatcher({
           eventRepoPath,
         );
         if (eventRepoPath === repoPathRef.current) {
+          // Ignore events triggered by our own saves to prevent overwriting user input
+          if (shouldIgnoreReviewStateReload()) {
+            console.log(
+              "[watcher] Ignoring review-state-changed - triggered by our own save",
+            );
+            return;
+          }
           console.log("[watcher] Reloading review state...");
           loadReviewStateRef.current();
         }

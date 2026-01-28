@@ -115,7 +115,17 @@ fn run_claude_with_model(
         let claude_path = find_claude_executable().ok_or(ClassifyError::ClaudeNotFound)?;
 
         Command::new(&claude_path)
-            .args(["--print", "--model", model, "-p", prompt])
+            .args([
+                "--print",
+                "--model",
+                model,
+                "--setting-sources",
+                "",
+                "--disable-slash-commands",
+                "--strict-mcp-config",
+                "-p",
+                prompt,
+            ])
             .current_dir(cwd)
             .output()
             .map_err(|e| ClassifyError::CommandFailed(e.to_string()))?

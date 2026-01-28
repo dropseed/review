@@ -33,6 +33,10 @@ export interface NavigationSlice {
   focusedPane: FocusedPane;
   splitOrientation: SplitOrientation;
 
+  // Claude Code view state
+  showClaudeCodeView: boolean;
+  claudeCodeSelectedSessionId: string | null;
+
   // Actions
   setSelectedFile: (path: string | null) => void;
   nextFile: () => void;
@@ -42,6 +46,11 @@ export interface NavigationSlice {
 
   // Main view mode actions
   setMainViewMode: (mode: MainViewMode) => void;
+
+  // Claude Code view actions
+  setShowClaudeCodeView: (show: boolean) => void;
+  toggleClaudeCodeView: () => void;
+  setClaudeCodeSelectedSessionId: (sessionId: string | null) => void;
 
   // Split view actions
   setSecondaryFile: (path: string | null) => void;
@@ -70,6 +79,10 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   secondaryFile: null,
   focusedPane: "primary" as FocusedPane,
   splitOrientation: "horizontal" as SplitOrientation,
+
+  // Claude Code view state
+  showClaudeCodeView: false,
+  claudeCodeSelectedSessionId: null,
 
   // Rolling view navigation
   scrollToFileInRolling: null,
@@ -170,6 +183,27 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Main view mode actions
   setMainViewMode: (mode) => set({ mainViewMode: mode }),
+
+  // Claude Code view actions
+  setShowClaudeCodeView: (show) =>
+    set({ showClaudeCodeView: show, claudeCodeSelectedSessionId: null }),
+
+  toggleClaudeCodeView: () => {
+    const { showClaudeCodeView, fetchClaudeCodeSessions } = get();
+    const opening = !showClaudeCodeView;
+    set({ showClaudeCodeView: opening, claudeCodeSelectedSessionId: null });
+    if (opening) {
+      fetchClaudeCodeSessions();
+    }
+  },
+
+  setClaudeCodeSelectedSessionId: (sessionId) => {
+    set({ claudeCodeSelectedSessionId: sessionId });
+    if (sessionId) {
+      const { fetchClaudeCodeMessages } = get();
+      fetchClaudeCodeMessages(sessionId);
+    }
+  },
 
   // Rolling view navigation
   setScrollToFileInRolling: (path) => set({ scrollToFileInRolling: path }),

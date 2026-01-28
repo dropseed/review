@@ -22,6 +22,10 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  ClaudeCodeStatus,
+  ClaudeCodeMessage,
+  ClaudeCodeSession,
+  ClaudeCodeChainMessage,
 } from "./types";
 
 export interface ApiClient {
@@ -101,6 +105,29 @@ export interface ApiClient {
   setCurrentComparison(repoPath: string, comparison: Comparison): Promise<void>;
 
   // ----- Classification -----
+
+  /** Check for active Claude Code sessions in the repo */
+  checkClaudeCodeSessions(repoPath: string): Promise<ClaudeCodeStatus>;
+
+  /** List Claude Code sessions from sessions-index.json */
+  listClaudeCodeSessions(
+    repoPath: string,
+    limit?: number,
+  ): Promise<ClaudeCodeSession[]>;
+
+  /** Get recent messages from a Claude Code session */
+  getClaudeCodeMessages(
+    repoPath: string,
+    limit?: number,
+    sessionId?: string,
+  ): Promise<ClaudeCodeMessage[]>;
+
+  /** Get merged messages from all sessions in a chain */
+  getClaudeCodeChainMessages(
+    repoPath: string,
+    sessionId: string,
+    limit?: number,
+  ): Promise<ClaudeCodeChainMessage[]>;
 
   /** Check if Claude CLI is available */
   checkClaudeAvailable(): Promise<boolean>;

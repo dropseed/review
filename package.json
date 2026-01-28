@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "desktop": "tauri dev --no-dev-server"
   },
   "dependencies": {
     "@pierre/diffs": "^1.0.9",

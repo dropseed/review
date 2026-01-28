@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useReviewStore } from "../../stores/reviewStore";
 import { Breadcrumbs } from "../Breadcrumbs";
 import { getApiClient } from "../../api";
@@ -11,6 +11,7 @@ import { UntrackedFileView } from "./UntrackedFileView";
 import { DiffView } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
+import { InFileSearchBar } from "./InFileSearchBar";
 import {
   isMarkdownFile,
   detectLanguage,
@@ -36,6 +37,9 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     refreshVersion,
     scrollToLine,
     clearScrollToLine,
+    addAnnotation,
+    updateAnnotation,
+    deleteAnnotation,
   } = useReviewStore();
 
   // Get the focused hunk ID if it's in this file
@@ -66,6 +70,42 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const [languageOverride, setLanguageOverride] = useState<
     SupportedLanguages | undefined
   >(undefined);
+
+  // In-file search state
+  const [inFileSearchOpen, setInFileSearchOpen] = useState(false);
+
+  // Handle search highlight — stable callback for InFileSearchBar
+  const handleSearchHighlightLine = useCallback((line: number | null) => {
+    setHighlightLine(line);
+    if (line !== null) {
+      setViewMode("file");
+    }
+  }, []);
+
+  // Close search and clear highlight
+  const handleCloseSearch = useCallback(() => {
+    setInFileSearchOpen(false);
+    setHighlightLine(null);
+  }, []);
+
+  // Reset search when file changes
+  useEffect(() => {
+    setInFileSearchOpen(false);
+  }, [filePath]);
+
+  // Cmd+F listener to open in-file search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        if (fileContent) {
+          setInFileSearchOpen(true);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [fileContent]);
 
   // Calculate review progress for this file's hunks
   // Must be before early returns to comply with React hooks rules
@@ -415,7 +455,17 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-auto scrollbar-thin bg-stone-950">
+      <div className="relative flex-1 overflow-auto scrollbar-thin bg-stone-950">
+        {/* In-file search bar */}
+        {inFileSearchOpen && fileContent && (
+          <div className="sticky top-0 z-10 flex justify-end p-2">
+            <InFileSearchBar
+              content={fileContent.content}
+              onHighlightLine={handleSearchHighlightLine}
+              onClose={handleCloseSearch}
+            />
+          </div>
+        )}
         {isMarkdownFile(filePath) && markdownViewMode === "preview" ? (
           <MarkdownViewer content={fileContent.content} />
         ) : showImageViewer && fileContent.imageDataUrl ? (
@@ -460,6 +510,14 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             fontSizeCSS={fontSizeCSS}
             language={effectiveLanguage}
             lineHeight={lineHeight}
+            annotations={reviewState?.annotations?.filter(
+              (a) => a.filePath === filePath,
+            )}
+            onAddAnnotation={(lineNumber, content) =>
+              addAnnotation(filePath, lineNumber, "file", content)
+            }
+            onUpdateAnnotation={updateAnnotation}
+            onDeleteAnnotation={deleteAnnotation}
           />
         )}
       </div>

@@ -19,6 +19,7 @@ import {
 import { createFilesSlice, type FilesSlice } from "./slices/filesSlice";
 import { createReviewSlice, type ReviewSlice } from "./slices/reviewSlice";
 import { createSearchSlice, type SearchSlice } from "./slices/searchSlice";
+import { createSyncSlice, type SyncSlice } from "./slices/syncSlice";
 
 // Re-export types
 export type { ReviewStore };
@@ -30,6 +31,7 @@ export type {
   FilesSlice,
   ReviewSlice,
   SearchSlice,
+  SyncSlice,
 };
 
 // Re-export types from main types file
@@ -58,4 +60,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createFilesSlice(apiClient)(...args),
   ...createReviewSlice(apiClient)(...args),
   ...createSearchSlice(apiClient)(...args),
+  ...createSyncSlice(platform.storage)(...args),
 }));

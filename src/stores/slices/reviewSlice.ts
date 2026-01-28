@@ -29,6 +29,14 @@ import { createDebouncedFn } from "../types";
 // Debounced save operation
 const debouncedSave = createDebouncedFn(500);
 
+// Track when we last saved to ignore file watcher events from our own writes
+let lastSaveTimestamp = 0;
+const SAVE_GRACE_PERIOD_MS = 1000; // Ignore file watcher events within 1s of our save
+
+export function shouldIgnoreReviewStateReload(): boolean {
+  return Date.now() - lastSaveTimestamp < SAVE_GRACE_PERIOD_MS;
+}
+
 export interface ReviewSlice {
   // Review state
   reviewState: ReviewState | null;
@@ -108,6 +116,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
             annotations: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            version: 0,
           },
         });
       }
@@ -119,6 +128,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       try {
         await client.saveReviewState(repoPath, reviewState);
+        // Record save time so file watcher can ignore our own writes
+        lastSaveTimestamp = Date.now();
       } catch (err) {
         console.error("Failed to save review state:", err);
       }

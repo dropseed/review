@@ -110,6 +110,8 @@ pub fn get_current_repo() -> Result<String, String> {
         let repo_path = &args[1];
         let path = PathBuf::from(repo_path);
         if path.join(".git").exists() {
+            // Register with sync server if running
+            super::server::register_repo_global(repo_path.clone());
             return Ok(repo_path.clone());
         }
     }
@@ -120,7 +122,10 @@ pub fn get_current_repo() -> Result<String, String> {
     let mut current = cwd.as_path();
     loop {
         if current.join(".git").exists() {
-            return Ok(current.to_string_lossy().to_string());
+            let repo_path = current.to_string_lossy().to_string();
+            // Register with sync server if running
+            super::server::register_repo_global(repo_path.clone());
+            return Ok(repo_path);
         }
         match current.parent() {
             Some(parent) => current = parent,
@@ -691,6 +696,7 @@ pub fn get_trust_taxonomy_with_custom(repo_path: String) -> Vec<TrustCategory> {
     compare::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
 }
 
+// File watching
 #[tauri::command]
 pub fn start_file_watcher(app: tauri::AppHandle, repo_path: String) -> Result<(), String> {
     super::watchers::start_watching(&repo_path, app)
@@ -701,6 +707,7 @@ pub fn stop_file_watcher(repo_path: String) {
     super::watchers::stop_watching(&repo_path);
 }
 
+// Multi-window support
 #[tauri::command]
 pub async fn open_repo_window(
     app: tauri::AppHandle,
@@ -731,7 +738,7 @@ pub async fn open_repo_window(
             .tabbing_identifier("compare-main")
             .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
             .build()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e: tauri::Error| e.to_string())?;
 
         return Ok(());
     }
@@ -746,7 +753,9 @@ pub async fn open_repo_window(
     let label = format!("repo-{:x}", hasher.finish());
 
     if let Some(existing) = app.get_webview_window(&label) {
-        existing.set_focus().map_err(|e| e.to_string())?;
+        existing
+            .set_focus()
+            .map_err(|e: tauri::Error| e.to_string())?;
         return Ok(());
     }
 
@@ -786,7 +795,7 @@ pub async fn open_repo_window(
         .tabbing_identifier("compare-main")
         .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e: tauri::Error| e.to_string())?;
 
     Ok(())
 }
@@ -817,4 +826,190 @@ pub fn search_file_contents(
 
     info!("[search_file_contents] SUCCESS: {} matches", results.len());
     Ok(results)
+}
+
+// --- Claude Code Session Detection ---
+
+#[tauri::command]
+pub fn check_claude_code_sessions(repo_path: String) -> compare::claude_code::ClaudeCodeStatus {
+    compare::claude_code::check_sessions(&repo_path)
+}
+
+#[tauri::command]
+pub fn list_claude_code_sessions(
+    repo_path: String,
+    limit: Option<usize>,
+) -> Vec<compare::claude_code::SessionInfo> {
+    compare::claude_code::list_sessions(&repo_path, limit.unwrap_or(20))
+}
+
+#[tauri::command]
+pub fn get_claude_code_messages(
+    repo_path: String,
+    limit: Option<usize>,
+    session_id: Option<String>,
+) -> Vec<compare::claude_code::SessionMessage> {
+    compare::claude_code::get_recent_messages(
+        &repo_path,
+        limit.unwrap_or(20),
+        session_id.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn get_claude_code_chain_messages(
+    repo_path: String,
+    session_id: String,
+    limit: Option<usize>,
+) -> Vec<compare::claude_code::ChainMessage> {
+    compare::claude_code::get_chain_messages(&repo_path, &session_id, limit.unwrap_or(200))
+}
+
+// --- Sync Server Commands ---
+
+use super::server::{ServerConfig, DEFAULT_PORT};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
+
+/// Global sync server handle for shutdown
+static SYNC_SERVER_HANDLE: OnceLock<Mutex<Option<tokio::task::JoinHandle<()>>>> = OnceLock::new();
+
+fn get_server_handle() -> &'static Mutex<Option<tokio::task::JoinHandle<()>>> {
+    SYNC_SERVER_HANDLE.get_or_init(|| Mutex::new(None))
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncServerStatus {
+    pub running: bool,
+    pub port: u16,
+    pub tailscale_ip: Option<String>,
+    pub client_count: usize,
+}
+
+#[tauri::command]
+pub async fn start_sync_server(
+    app: tauri::AppHandle,
+    port: Option<u16>,
+    auth_token: String,
+) -> Result<SyncServerStatus, String> {
+    let port = port.unwrap_or(DEFAULT_PORT);
+
+    // Check if already running
+    if super::server::is_running() {
+        return Err("Sync server is already running".to_string());
+    }
+
+    let config = ServerConfig {
+        enabled: true,
+        port,
+        auth_token,
+    };
+
+    // Spawn the server task
+    let handle = tokio::spawn(async move {
+        if let Err(e) = super::server::start(config).await {
+            error!("[sync_server] Server error: {}", e);
+        }
+    });
+
+    // Store the handle
+    let mut guard = get_server_handle().lock().await;
+    *guard = Some(handle);
+
+    // Give server a moment to start
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Register current repo if one is open
+    if let Ok(repo_path) = get_current_repo() {
+        info!("[sync_server] Registering current repo: {}", repo_path);
+        super::server::register_repo_global(repo_path);
+    }
+
+    let tailscale_ip = get_tailscale_ip();
+
+    info!("[sync_server] Started on port {}", port);
+
+    // Update tray state
+    super::tray::update_tray_state(&app);
+
+    Ok(SyncServerStatus {
+        running: true,
+        port,
+        tailscale_ip,
+        client_count: 0,
+    })
+}
+
+#[tauri::command]
+pub async fn stop_sync_server(app: tauri::AppHandle) -> Result<(), String> {
+    super::server::stop();
+
+    // Abort the server task
+    let mut guard = get_server_handle().lock().await;
+    if let Some(handle) = guard.take() {
+        handle.abort();
+    }
+
+    info!("[sync_server] Stopped");
+
+    // Update tray state
+    super::tray::update_tray_state(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_sync_server_status() -> SyncServerStatus {
+    SyncServerStatus {
+        running: super::server::is_running(),
+        port: DEFAULT_PORT,
+        tailscale_ip: get_tailscale_ip(),
+        client_count: super::server::get_client_count(),
+    }
+}
+
+#[tauri::command]
+pub fn generate_sync_auth_token() -> String {
+    super::server::generate_auth_token()
+}
+
+/// Get the Tailscale IP address if available
+fn get_tailscale_ip() -> Option<String> {
+    use std::process::Command;
+
+    // Try to get Tailscale IP using the CLI
+    let output = Command::new("tailscale").args(["ip", "-4"]).output().ok()?;
+
+    if output.status.success() {
+        let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if ip.starts_with("100.") {
+            return Some(ip);
+        }
+    }
+
+    // Fallback: try to find an interface starting with 100.
+    #[cfg(unix)]
+    {
+        let output = Command::new("ifconfig").output().ok()?;
+
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if line.contains("inet ") && line.contains("100.") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    for (i, part) in parts.iter().enumerate() {
+                        if *part == "inet" {
+                            if let Some(ip) = parts.get(i + 1) {
+                                if ip.starts_with("100.") {
+                                    return Some(ip.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }

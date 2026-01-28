@@ -27,6 +27,10 @@ interface UseKeyboardNavigationOptions {
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
+  showClaudeCodeView: boolean;
+  claudeCodeSelectedSessionId: string | null;
+  setClaudeCodeSelectedSessionId: (sessionId: string | null) => void;
+  setShowClaudeCodeView: (show: boolean) => void;
 }
 
 /**
@@ -53,6 +57,10 @@ export function useKeyboardNavigation({
   setShowSettingsModal,
   setShowFileFinder,
   setShowContentSearch,
+  showClaudeCodeView,
+  claudeCodeSelectedSessionId,
+  setClaudeCodeSelectedSessionId,
+  setShowClaudeCodeView,
 }: UseKeyboardNavigationOptions) {
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -96,6 +104,16 @@ export function useKeyboardNavigation({
         return;
       }
 
+      // Cmd/Ctrl+F to block browser find (in-file search handled by CodeViewer)
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key === "f"
+      ) {
+        event.preventDefault();
+        return;
+      }
+
       // Cmd/Ctrl+Shift+F to open content search
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -104,6 +122,17 @@ export function useKeyboardNavigation({
       ) {
         event.preventDefault();
         setShowContentSearch(true);
+        return;
+      }
+
+      // Escape to navigate back in Claude Code view
+      if (event.key === "Escape" && showClaudeCodeView) {
+        event.preventDefault();
+        if (claudeCodeSelectedSessionId) {
+          setClaudeCodeSelectedSessionId(null);
+        } else {
+          setShowClaudeCodeView(false);
+        }
         return;
       }
 
@@ -216,6 +245,10 @@ export function useKeyboardNavigation({
       setShowSettingsModal,
       setShowFileFinder,
       setShowContentSearch,
+      showClaudeCodeView,
+      claudeCodeSelectedSessionId,
+      setClaudeCodeSelectedSessionId,
+      setShowClaudeCodeView,
     ],
   );
 

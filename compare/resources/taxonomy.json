@@ -30,7 +30,7 @@
         {
           "id": "formatting:whitespace",
           "name": "Whitespace",
-          "description": "Changes ONLY to whitespace: adding/removing blank lines, changing indentation, adjusting spaces or tabs. Includes hunks that only add or remove empty lines. NOT for any change to actual code characters, strings, numbers, or identifiers."
+          "description": "Changes ONLY to whitespace: adding/removing blank lines, changing indentation, adjusting spaces or tabs. Includes hunks that only add or remove empty lines. NOT for any change to actual code characters, strings, numbers, identifiers, or template/markup tags (e.g., `{% endif %}`, `<div>`, `{{ }}`). Removing or adding template tags is a structural code change, not whitespace."
         },
         {
           "id": "formatting:line-length",
@@ -52,7 +52,7 @@
         {
           "id": "comments:added",
           "name": "Added",
-          "description": "New comments added. ONLY when the entire hunk is adding comments, with no code changes."
+          "description": "New comments added. ONLY when the entire hunk is adding comments, with no code changes. If the hunk also adds, removes, or modifies any code, use `review:required` instead."
         },
         {
           "id": "comments:removed",
@@ -62,7 +62,7 @@
         {
           "id": "comments:modified",
           "name": "Modified",
-          "description": "Existing comment text updated. ONLY when the entire hunk is editing comments, with no code changes."
+          "description": "Existing comment text updated. ONLY when the entire hunk is editing comments, with no code changes. If the hunk also changes any code logic (even one line), use `review:required` instead."
         }
       ]
     },
@@ -136,6 +136,18 @@
           "id": "rename:class",
           "name": "Class",
           "description": "A class, struct, interface, or type renamed. Implementation unchanged, only the type name differs."
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "name": "Review",
+      "description": "Changes that require human review",
+      "patterns": [
+        {
+          "id": "review:required",
+          "name": "Required",
+          "description": "The hunk contains meaningful changes that require careful human review. Use this as the default when the change does not match any trivial/mechanical pattern."
         }
       ]
     }

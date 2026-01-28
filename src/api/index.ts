@@ -37,6 +37,10 @@ export type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  ClaudeCodeStatus,
+  ClaudeCodeMessage,
+  ClaudeCodeSession,
+  ClaudeCodeChainMessage,
 } from "./types";
 
 import type { ApiClient } from "./client";

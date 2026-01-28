@@ -3,9 +3,12 @@
 //! This module contains all Tauri-specific code including:
 //! - Command handlers (commands.rs)
 //! - File system watchers (watchers.rs)
+//! - Sync server for mobile companion app (server.rs)
 //! - Debug HTTP server (debug_server.rs, debug builds only)
 
 pub mod commands;
+pub mod server;
+pub mod tray;
 pub mod watchers;
 
 #[cfg(debug_assertions)]
@@ -14,8 +17,11 @@ pub mod debug_server;
 // Re-export commands for convenient access
 pub use commands::*;
 
+#[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+#[cfg(desktop)]
 use tauri::Emitter;
+#[cfg(desktop)]
 use tauri_plugin_opener::OpenerExt;
 
 /// Run the Tauri desktop application.
@@ -23,10 +29,9 @@ use tauri_plugin_opener::OpenerExt;
 /// This sets up all plugins, menus, and command handlers, then starts
 /// the Tauri event loop.
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -38,11 +43,21 @@ pub fn run() {
                 .level_for("notify_debouncer_mini", log::LevelFilter::Warn)
                 .build(),
         )
-        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_os::init());
+
+    // Desktop-only plugins and setup
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             #[cfg(debug_assertions)]
             debug_server::start();
+
+            // Set up system tray
+            if let Err(e) = tray::setup_tray(app.handle()) {
+                log::error!("[tray] Failed to set up tray: {}", e);
+            }
 
             let open_repo = MenuItemBuilder::new("Open Repository...")
                 .id("open_repo")
@@ -197,7 +212,9 @@ pub fn run() {
                 }
                 _ => {}
             }
-        })
+        });
+
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::get_current_repo,
             commands::get_current_branch,
@@ -229,6 +246,16 @@ pub fn run() {
             commands::get_trust_taxonomy_with_custom,
             commands::should_skip_file,
             commands::search_file_contents,
+            // Claude Code session detection
+            commands::check_claude_code_sessions,
+            commands::list_claude_code_sessions,
+            commands::get_claude_code_messages,
+            commands::get_claude_code_chain_messages,
+            // Sync server commands
+            commands::start_sync_server,
+            commands::stop_sync_server,
+            commands::get_sync_server_status,
+            commands::generate_sync_auth_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

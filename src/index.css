@@ -438,64 +438,73 @@ button, a, [role="button"] {
 
 /* Markdown prose styling */
 .markdown-prose {
+  font-family: 'Georgia', 'Times New Roman', 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-size: 1.0625rem;
+  line-height: 1.9;
+  color: var(--stone-300);
+  letter-spacing: 0.01em;
+}
+
+/* Headings: sans-serif contrast against serif body */
+.markdown-prose h1,
+.markdown-prose h2,
+.markdown-prose h3,
+.markdown-prose h4,
+.markdown-prose h5,
+.markdown-prose h6 {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-  line-height: 1.7;
 }
 
 .markdown-prose h1 {
-  font-size: 2rem;
+  font-size: 2.5rem;
   font-weight: 700;
   margin-top: 0;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-primary);
+  margin-bottom: 1.5rem;
 }
 
 .markdown-prose h2 {
-  font-size: 1.5rem;
+  font-size: 1.875rem;
   font-weight: 600;
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.25rem;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-primary);
+  margin-top: 3rem;
+  margin-bottom: 1rem;
 }
 
 .markdown-prose h3 {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 600;
-  margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
-  color: var(--text-primary);
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .markdown-prose h4,
 .markdown-prose h5,
 .markdown-prose h6 {
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 600;
-  margin-top: 1.25rem;
+  margin-top: 2rem;
   margin-bottom: 0.5rem;
-  color: var(--text-primary);
 }
 
 .markdown-prose p {
   margin-top: 0;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .markdown-prose a {
-  color: var(--accent-amber);
-  text-decoration: none;
+  color: #93c5fd; /* blue-300 */
+  text-decoration: underline;
+  text-decoration-color: rgba(147, 197, 253, 0.3);
+  text-underline-offset: 3px;
 }
 
 .markdown-prose a:hover {
-  text-decoration: underline;
+  text-decoration-color: #93c5fd;
 }
 
 .markdown-prose strong {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -506,12 +515,12 @@ button, a, [role="button"] {
 .markdown-prose ul,
 .markdown-prose ol {
   margin-top: 0;
-  margin-bottom: 1rem;
-  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding-left: 1.75rem;
 }
 
 .markdown-prose li {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.375rem;
 }
 
 .markdown-prose ul {
@@ -530,11 +539,10 @@ button, a, [role="button"] {
 
 .markdown-prose blockquote {
   margin: 1rem 0;
-  padding: 0.5rem 1rem;
-  border-left: 4px solid var(--accent-amber);
-  background: rgba(245, 158, 11, 0.1);
-  border-radius: 0 0.375rem 0.375rem 0;
-  color: var(--text-secondary);
+  padding: 0.25rem 1.25rem;
+  border-left: 2px solid var(--stone-600);
+  font-style: italic;
+  color: var(--text-muted);
 }
 
 .markdown-prose blockquote p:last-child {
@@ -542,9 +550,11 @@ button, a, [role="button"] {
 }
 
 .markdown-prose hr {
-  margin: 2rem 0;
+  margin: 3rem auto;
   border: none;
-  border-top: 1px solid var(--border-default);
+  width: 4rem;
+  height: 1px;
+  background: var(--stone-600);
 }
 
 .markdown-prose table {
@@ -557,24 +567,24 @@ button, a, [role="button"] {
 .markdown-prose th,
 .markdown-prose td {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   text-align: left;
 }
 
 .markdown-prose th {
-  background: var(--bg-tertiary);
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--text-primary);
-}
-
-.markdown-prose tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 .markdown-prose img {
   max-width: 100%;
   height: auto;
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   margin: 1rem 0;
 }
 
@@ -586,7 +596,7 @@ button, a, [role="button"] {
 
 .markdown-prose li:has(> input[type="checkbox"]) {
   list-style: none;
-  margin-left: -1.5rem;
+  margin-left: -1.75rem;
 }
 
 /* Definition lists */
@@ -600,7 +610,7 @@ button, a, [role="button"] {
 }
 
 .markdown-prose dd {
-  margin-left: 1.5rem;
+  margin-left: 1.75rem;
   color: var(--text-secondary);
 }
 
@@ -610,8 +620,368 @@ button, a, [role="button"] {
   color: var(--text-muted);
 }
 
+/* Inline code */
+.markdown-prose .markdown-inline-code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.875em;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--stone-200);
+}
+
+/* Code blocks */
+.markdown-prose .markdown-block-code {
+  font-size: 0.8125rem;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.25rem;
+}
+
 /* Mermaid diagram container */
 .markdown-prose .mermaid-container svg {
   max-width: 100%;
   height: auto;
+}
+
+/* ========================================================================
+   iOS Safe Areas
+   ======================================================================== */
+
+/* Safe area padding utilities for iOS notch/home indicator */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+.safe-area-right {
+  padding-right: env(safe-area-inset-right);
+}
+
+.safe-area-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.safe-area-y {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-all {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+
+/* Margin variants */
+.safe-area-mt {
+  margin-top: env(safe-area-inset-top);
+}
+
+.safe-area-mb {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+/* Shorthand safe area utilities */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ========================================================================
+   Mobile Touch Interactions
+   ======================================================================== */
+
+/* Swipeable hunk gestures */
+.swipeable-hunk {
+  touch-action: pan-x;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Prevent text selection during swipe */
+.swiping * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* Smooth momentum scrolling on iOS */
+.momentum-scroll {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+/* Haptic feedback visual hint */
+@keyframes haptic-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.98); }
+}
+
+.haptic-feedback {
+  animation: haptic-pulse 0.1s ease-out;
+}
+
+/* Mobile drawer animations */
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawer-slide-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.drawer-enter {
+  animation: drawer-slide-in 0.3s ease-out forwards;
+}
+
+.drawer-exit {
+  animation: drawer-slide-out 0.3s ease-in forwards;
+}
+
+/* Overlay fade */
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.overlay-enter {
+  animation: overlay-fade-in 0.2s ease-out forwards;
+}
+
+.overlay-exit {
+  animation: overlay-fade-out 0.2s ease-in forwards;
+}
+
+/* Touch-friendly tap targets (minimum 44x44 per Apple HIG) */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Prevent iOS bounce/rubber-banding on fixed containers */
+.no-bounce {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+}
+
+/* ========================================================================
+   Mobile Code Block Styles
+   ======================================================================== */
+
+/* Base mobile code block styles */
+.mobile-code-block {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+/* Highlighted code from Shiki */
+.mobile-code-highlighted {
+  background: transparent !important;
+}
+
+.mobile-code-highlighted pre {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: visible;
+}
+
+.mobile-code-highlighted code {
+  display: block;
+  background: transparent !important;
+}
+
+/* Plain code fallback */
+.mobile-code-plain {
+  margin: 0;
+  white-space: pre;
+  color: var(--stone-300);
+}
+
+.mobile-code-plain code {
+  display: block;
+}
+
+/* Loading skeleton */
+.mobile-code-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skeleton-line {
+  height: 0.875rem;
+  background: linear-gradient(
+    90deg,
+    var(--stone-800) 0%,
+    var(--stone-700) 50%,
+    var(--stone-800) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.25rem;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Mobile file header with glassmorphism */
+.mobile-file-header {
+  background: linear-gradient(180deg, rgba(28, 25, 23, 0.95), rgba(28, 25, 23, 0.85));
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Mobile header glassmorphism */
+.mobile-header {
+  background: linear-gradient(180deg, rgba(28, 25, 23, 0.95), rgba(28, 25, 23, 0.85));
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ========================================================================
+   Mobile Micro-animations
+   ======================================================================== */
+
+/* Approval pulse animation */
+@keyframes approval-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(132, 204, 22, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(132, 204, 22, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(132, 204, 22, 0);
+  }
+}
+
+.mobile-approval-pulse {
+  animation: approval-pulse 0.4s ease-out;
+}
+
+/* Rejection shake animation */
+@keyframes rejection-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+.mobile-rejection-shake {
+  animation: rejection-shake 0.4s ease-out;
+}
+
+/* Status badge fade-in with scale */
+@keyframes status-badge-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mobile-status-badge {
+  animation: status-badge-appear 0.2s ease-out;
+}
+
+/* Card stack entrance animation */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.mobile-card-enter {
+  animation: card-enter 0.3s ease-out;
+}
+
+/* Card exit animations */
+@keyframes card-exit-right {
+  to {
+    opacity: 0;
+    transform: translateX(100%) rotate(5deg);
+  }
+}
+
+@keyframes card-exit-left {
+  to {
+    opacity: 0;
+    transform: translateX(-100%) rotate(-5deg);
+  }
+}
+
+.mobile-card-exit-right {
+  animation: card-exit-right 0.25s ease-in forwards;
+}
+
+.mobile-card-exit-left {
+  animation: card-exit-left 0.25s ease-in forwards;
+}
+
+/* Completion celebration animation */
+@keyframes celebration-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.mobile-celebration {
+  animation: celebration-bounce 0.6s ease-out;
+}
+
+/* Mode toggle button animation */
+@keyframes mode-switch {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+.mobile-mode-switch {
+  animation: mode-switch 0.2s ease-out;
 }

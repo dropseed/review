@@ -248,6 +248,7 @@ export interface ReviewState {
   annotations: LineAnnotation[]; // Inline annotations on lines
   createdAt: string;
   updatedAt: string;
+  version: number; // Version counter for optimistic concurrency control
 }
 
 // Summary of a saved review (for start screen listing)

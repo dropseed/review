@@ -7,6 +7,8 @@ import { SettingsModal } from "./components/SettingsModal";
 import { FileFinder } from "./components/FileFinder";
 import { ContentSearch } from "./components/ContentSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
+import { ClaudeCodeIndicator } from "./components/ClaudeCodeIndicator";
+import { SessionList, MessageView } from "./components/ClaudeCode";
 import { StartScreen } from "./components/StartScreen";
 import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
@@ -64,9 +66,11 @@ function App() {
     codeFontSize,
     setCodeFontSize,
     loadPreferences,
+    loadSyncSettings,
     refresh,
     classifyingHunkIds,
     checkClaudeAvailable,
+    checkClaudeCodeSessions,
     triggerAutoClassification,
     // Split view state and actions
     secondaryFile,
@@ -78,6 +82,11 @@ function App() {
     setMainViewMode,
     // Loading progress
     loadingProgress,
+    // Claude Code view
+    showClaudeCodeView,
+    claudeCodeSelectedSessionId,
+    setClaudeCodeSelectedSessionId,
+    setShowClaudeCodeView,
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -101,8 +110,17 @@ function App() {
   // Load preferences on mount
   useEffect(() => {
     loadPreferences();
+    loadSyncSettings();
     checkClaudeAvailable();
-  }, [loadPreferences, checkClaudeAvailable]);
+  }, [loadPreferences, loadSyncSettings, checkClaudeAvailable]);
+
+  // Poll for Claude Code session status every 30 seconds
+  useEffect(() => {
+    if (!repoPath) return;
+    checkClaudeCodeSessions();
+    const interval = setInterval(checkClaudeCodeSessions, 30_000);
+    return () => clearInterval(interval);
+  }, [repoPath, checkClaudeCodeSessions]);
 
   // Custom hooks
   useGlobalShortcut();
@@ -153,6 +171,10 @@ function App() {
     setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
+    showClaudeCodeView,
+    claudeCodeSelectedSessionId,
+    setClaudeCodeSelectedSessionId,
+    setShowClaudeCodeView,
   });
 
   useMenuEvents({
@@ -263,12 +285,19 @@ function App() {
   // Show start screen when no comparison is selected
   if (showStartScreen) {
     return (
-      <StartScreen
-        repoPath={repoPath}
-        onSelectReview={handleSelectReview}
-        onOpenRepo={handleOpenRepo}
-        onCloseRepo={handleCloseRepo}
-      />
+      <>
+        <StartScreen
+          repoPath={repoPath}
+          onSelectReview={handleSelectReview}
+          onOpenRepo={handleOpenRepo}
+          onCloseRepo={handleCloseRepo}
+          onOpenSettings={() => setShowSettingsModal(true)}
+        />
+        <SettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+        />
+      </>
     );
   }
 
@@ -304,8 +333,10 @@ function App() {
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
         <ComparisonHeader comparison={comparison} onBack={handleBackToStart} />
 
-        {/* Progress indicator and Trust button */}
-        <div className="flex items-center gap-3">
+        {/* Progress indicator and Trust button (hidden in Claude Code view) */}
+        <div
+          className={`flex items-center gap-3 ${showClaudeCodeView ? "invisible" : ""}`}
+        >
           {totalHunks > 0 ? (
             <div className="group relative flex items-center gap-2">
               <span className="text-xs text-stone-500">Reviewed</span>
@@ -447,7 +478,7 @@ function App() {
         >
           {/* Sidebar content */}
           <div className="flex-1 overflow-hidden">
-            <FilesPanel />
+            {showClaudeCodeView ? <SessionList /> : <FilesPanel />}
           </div>
 
           {/* Resize handle */}
@@ -459,9 +490,9 @@ function App() {
           />
         </aside>
 
-        {/* Code viewer */}
+        {/* Code viewer / Claude Code message view */}
         <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
-          <SplitContainer />
+          {showClaudeCodeView ? <MessageView /> : <SplitContainer />}
         </main>
       </div>
 
@@ -469,6 +500,7 @@ function App() {
       <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
         <div className="flex items-center gap-3">
           <GitStatusIndicator />
+          <ClaudeCodeIndicator />
           {/* Classification progress indicator */}
           {classifyingHunkIds.size > 0 && (
             <div className="flex items-center gap-1.5 text-violet-400">

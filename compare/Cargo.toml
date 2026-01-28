@@ -23,6 +23,7 @@ futures = "0.3"
 base64 = "0.22"
 ignore = "0.4"
 regex = "1"
+dirs = "5"
 
 # CLI dependencies (feature-gated)
 clap = { version = "4", features = ["derive"], optional = true }

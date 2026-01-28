@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 import type {
   Comparison,
   FileEntry,
+  FileContent,
   DiffHunk,
   ReviewState,
   ReviewSummary,
@@ -17,6 +18,7 @@ import type { StorageService } from "../platform";
 export type {
   Comparison,
   FileEntry,
+  FileContent,
   DiffHunk,
   ReviewState,
   ReviewSummary,
@@ -34,6 +36,7 @@ import type { ClassificationSlice } from "./slices/classificationSlice";
 import type { FilesSlice } from "./slices/filesSlice";
 import type { ReviewSlice } from "./slices/reviewSlice";
 import type { SearchSlice } from "./slices/searchSlice";
+import type { SyncSlice } from "./slices/syncSlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -42,7 +45,8 @@ export type ReviewStore = PreferencesSlice &
   ClassificationSlice &
   FilesSlice &
   ReviewSlice &
-  SearchSlice;
+  SearchSlice &
+  SyncSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

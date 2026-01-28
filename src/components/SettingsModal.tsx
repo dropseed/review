@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useReviewStore } from "../stores/reviewStore";
+import { isTauriEnvironment } from "../api/client";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,
@@ -68,7 +69,40 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setClassifyBatchSize,
     classifyMaxConcurrent,
     setClassifyMaxConcurrent,
+    // Sync server
+    syncServerEnabled,
+    syncServerPort,
+    syncAuthToken,
+    syncServerRunning,
+    syncTailscaleIp,
+    syncError,
+    setSyncServerEnabled,
+    setSyncServerPort,
+    regenerateAuthToken,
   } = useReviewStore();
+
+  const [showToken, setShowToken] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
+
+  const isTauri = isTauriEnvironment();
+
+  const handleCopyToken = async () => {
+    if (syncAuthToken) {
+      await navigator.clipboard.writeText(syncAuthToken);
+      setTokenCopied(true);
+      setTimeout(() => setTokenCopied(false), 2000);
+    }
+  };
+
+  const handleCopyUrl = async () => {
+    if (syncTailscaleIp) {
+      const url = `http://${syncTailscaleIp}:${syncServerPort}`;
+      await navigator.clipboard.writeText(url);
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 2000);
+    }
+  };
 
   // Handle escape key to close
   useEffect(() => {
@@ -109,7 +143,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+      <div className="flex w-full max-w-md max-h-[85vh] flex-col rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
         {/* Header */}
         <div className="relative border-b border-stone-800 px-5 py-4">
           <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-lime-500/5" />
@@ -153,7 +187,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         {/* Content */}
-        <div className="divide-y divide-stone-800/60">
+        <div className="divide-y divide-stone-800/60 overflow-y-auto flex-1 min-h-0">
           {/* Code Font Size */}
           <div className="px-5 py-4">
             <div className="mb-3 flex items-center gap-2">
@@ -539,6 +573,181 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   load.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Sync Server (iOS Companion) - Desktop only */}
+          {isTauri && (
+            <div className="px-5 py-4">
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  className="h-4 w-4 text-stone-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                  <path d="M12 18h.01" />
+                </svg>
+                <span className="text-xs font-medium text-stone-300">
+                  iOS Companion
+                </span>
+                {syncServerRunning && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-lime-500/10 px-2 py-0.5 text-xxs font-medium text-lime-400 ring-1 ring-lime-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-lime-400 animate-pulse" />
+                    Running
+                  </span>
+                )}
+              </div>
+
+              {/* Enable toggle */}
+              <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
+                <span className="text-xs text-stone-300">
+                  Enable sync server
+                </span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={syncServerEnabled}
+                    onChange={(e) => setSyncServerEnabled(e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <div
+                    className={`h-5 w-9 rounded-full transition-colors ${
+                      syncServerEnabled ? "bg-lime-500" : "bg-stone-600"
+                    }`}
+                  />
+                  <div
+                    className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      syncServerEnabled ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </div>
+              </label>
+
+              {syncError && (
+                <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                  <p className="text-xxs text-red-400">{syncError}</p>
+                </div>
+              )}
+
+              {syncServerEnabled && (
+                <>
+                  {/* Connection info */}
+                  {syncTailscaleIp ? (
+                    <div className="mt-3 rounded-lg bg-stone-800/50 border border-stone-700 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xxs text-stone-500 uppercase tracking-wide">
+                          Server URL
+                        </span>
+                        <button
+                          onClick={handleCopyUrl}
+                          className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
+                        >
+                          {urlCopied ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      <code className="block text-xs text-lime-400 font-mono">
+                        http://{syncTailscaleIp}:{syncServerPort}
+                      </code>
+                      <p className="text-xxs text-stone-600">
+                        Enter this URL in the iOS app to connect
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
+                      <p className="text-xxs text-amber-400">
+                        Tailscale not detected. Install and connect Tailscale to
+                        enable remote access.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Auth token */}
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                        Auth Token
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowToken(!showToken)}
+                          className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
+                        >
+                          {showToken ? "Hide" : "Show"}
+                        </button>
+                        <button
+                          onClick={handleCopyToken}
+                          className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
+                        >
+                          {tokenCopied ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type={showToken ? "text" : "password"}
+                        value={syncAuthToken || ""}
+                        readOnly
+                        className="flex-1 rounded-lg bg-stone-800/50 border border-stone-700 px-3 py-2 text-xs text-stone-200 font-mono focus:outline-none"
+                      />
+                      <button
+                        onClick={regenerateAuthToken}
+                        className="rounded-lg bg-stone-800 border border-stone-700 px-3 py-2 text-xs text-stone-400 hover:text-stone-200 hover:border-stone-600 transition-colors"
+                        title="Generate new token"
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                          <path d="M21 3v5h-5" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-xxs text-stone-600 leading-relaxed">
+                      Enter this token in the iOS app for authentication.
+                      Regenerating will disconnect existing sessions.
+                    </p>
+                  </div>
+
+                  {/* Port */}
+                  <div className="mt-3 space-y-1.5">
+                    <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                      Port
+                    </label>
+                    <input
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      value={syncServerPort}
+                      onChange={(e) => {
+                        const port = parseInt(e.target.value, 10);
+                        if (port >= 1024 && port <= 65535) {
+                          setSyncServerPort(port);
+                        }
+                      }}
+                      className="w-24 rounded-lg bg-stone-800/50 border border-stone-700 px-3 py-2 text-xs text-stone-200 font-mono focus:outline-none focus:border-lime-500/50 transition-colors"
+                    />
+                    <p className="text-xxs text-stone-600">
+                      Changing the port requires restarting the server.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <p className="mt-3 text-xxs text-stone-600 leading-relaxed">
+                The sync server allows the iOS companion app to view and modify
+                review state. Requires Tailscale for secure connectivity.
+              </p>
             </div>
           )}
         </div>

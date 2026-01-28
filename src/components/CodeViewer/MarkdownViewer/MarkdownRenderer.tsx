@@ -24,7 +24,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       if (!className) {
         return (
           <code
-            className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-sm text-amber-300"
+            className="markdown-inline-code rounded px-1.5 py-0.5 font-mono text-sm"
             {...props}
           >
             {children}
@@ -35,7 +35,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       // Code blocks
       return (
         <code
-          className={`block overflow-x-auto rounded-lg bg-stone-900 p-4 font-mono text-sm ${className}`}
+          className={`markdown-block-code block overflow-x-auto rounded-lg p-4 font-mono text-sm ${className}`}
           {...props}
         >
           {children}

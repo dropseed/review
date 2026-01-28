@@ -56,3 +56,35 @@ export interface SearchMatch {
   column: number;
   lineContent: string;
 }
+
+export interface ClaudeCodeStatus {
+  active: boolean;
+  session_count: number;
+  last_activity: string | null;
+}
+
+export interface ClaudeCodeMessage {
+  timestamp: string;
+  message_type: string;
+  summary: string;
+}
+
+export interface ClaudeCodeSession {
+  session_id: string;
+  last_activity: string;
+  status: string;
+  message_count: number;
+  summary: string;
+  git_branch: string;
+  parent_session_id: string | null;
+  chain_id: string | null;
+  chain_position: number;
+}
+
+export interface ClaudeCodeChainMessage {
+  timestamp: string;
+  message_type: string;
+  summary: string;
+  session_id: string;
+  session_summary: string;
+}

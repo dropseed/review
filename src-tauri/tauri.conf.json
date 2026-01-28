@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "identifier": "com.dropseed.compare",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "./scripts/start-vite",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"

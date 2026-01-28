@@ -22,6 +22,10 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  ClaudeCodeStatus,
+  ClaudeCodeMessage,
+  ClaudeCodeSession,
+  ClaudeCodeChainMessage,
 } from "./types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -239,6 +243,7 @@ export class HttpClient implements ApiClient {
         annotations: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        version: 0,
       };
       this.reviewStates.set(key, emptyState);
       return emptyState;
@@ -314,6 +319,33 @@ export class HttpClient implements ApiClient {
   }
 
   // ----- Classification -----
+
+  async checkClaudeCodeSessions(_repoPath: string): Promise<ClaudeCodeStatus> {
+    return { active: false, session_count: 0, last_activity: null };
+  }
+
+  async listClaudeCodeSessions(
+    _repoPath: string,
+    _limit?: number,
+  ): Promise<ClaudeCodeSession[]> {
+    return [];
+  }
+
+  async getClaudeCodeMessages(
+    _repoPath: string,
+    _limit?: number,
+    _sessionId?: string,
+  ): Promise<ClaudeCodeMessage[]> {
+    return [];
+  }
+
+  async getClaudeCodeChainMessages(
+    _repoPath: string,
+    _sessionId: string,
+    _limit?: number,
+  ): Promise<ClaudeCodeChainMessage[]> {
+    return [];
+  }
 
   async checkClaudeAvailable(): Promise<boolean> {
     // Claude CLI not available in browser

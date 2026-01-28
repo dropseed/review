@@ -206,12 +206,13 @@ export function DiffView({
   );
 
   // Build annotations for user comments
+  // Include "file" annotations as well - they map to the "additions" side (new/compare version)
   const userAnnotations: DiffLineAnnotation<AnnotationMeta>[] =
     fileAnnotations.map((annotation) => ({
       side:
         annotation.side === "old"
           ? ("deletions" as const)
-          : ("additions" as const),
+          : ("additions" as const), // "new" and "file" both map to additions
       lineNumber: annotation.lineNumber,
       metadata: { type: "user" as const, data: { annotation } },
     }));

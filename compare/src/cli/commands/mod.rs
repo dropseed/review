@@ -1,5 +1,6 @@
 pub mod approve;
 pub mod classify;
+pub mod claude_code;
 pub mod compare;
 pub mod diff;
 pub mod files;
