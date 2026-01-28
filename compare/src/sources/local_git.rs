@@ -490,26 +490,38 @@ impl LocalGitSource {
             }
         }
 
-        // Get ALL files: tracked + untracked + ignored
-        // --others: untracked files
-        // --ignored: include ignored files
-        // --exclude-standard is NOT used here so we get everything
+        // Get tracked files
         let tracked = self.run_git(&["ls-files"])?;
-        let untracked_all = self.run_git(&["ls-files", "--others"])?;
-
         let mut all_files: HashSet<String> = HashSet::new();
         for line in tracked.lines() {
             all_files.insert(line.to_string());
         }
-        for line in untracked_all.lines() {
-            all_files.insert(line.to_string());
-            // Mark as gitignored if not already marked as untracked
-            if !file_status.contains_key(line) {
-                file_status.insert(line.to_string(), FileStatus::Gitignored);
+
+        // Get gitignored entries using --directory to collapse entire ignored
+        // directories into a single entry (avoids listing 100K+ files in node_modules, etc.)
+        let mut gitignored_dirs: HashSet<String> = HashSet::new();
+        if let Ok(ignored) = self.run_git(&[
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+        ]) {
+            for line in ignored.lines() {
+                if let Some(dir_path) = line.strip_suffix('/') {
+                    // Directory entry — add as a gitignored directory
+                    gitignored_dirs.insert(dir_path.to_string());
+                } else {
+                    // Individual file
+                    all_files.insert(line.to_string());
+                    file_status
+                        .entry(line.to_string())
+                        .or_insert(FileStatus::Gitignored);
+                }
             }
         }
 
-        Ok(build_file_tree(all_files, &file_status))
+        Ok(build_file_tree(all_files, &file_status, &gitignored_dirs))
     }
 
     /// Search file contents using git grep
@@ -587,13 +599,27 @@ impl LocalGitSource {
 fn build_file_tree(
     all_files: HashSet<String>,
     file_status: &HashMap<String, FileStatus>,
+    gitignored_dirs: &HashSet<String>,
 ) -> Vec<FileEntry> {
     let mut entries: HashMap<String, FileEntry> = HashMap::new();
 
-    // Collect all directories
+    // Collect all directories (from file paths + gitignored directories)
     let mut all_dirs: HashSet<String> = HashSet::new();
     for path in &all_files {
         let mut current = PathBuf::from(path);
+        while let Some(parent) = current.parent() {
+            let parent_str = parent.to_string_lossy().to_string();
+            if parent_str.is_empty() {
+                break;
+            }
+            all_dirs.insert(parent_str);
+            current = parent.to_path_buf();
+        }
+    }
+    // Add gitignored directories and their parent directories
+    for dir_path in gitignored_dirs {
+        all_dirs.insert(dir_path.clone());
+        let mut current = PathBuf::from(dir_path);
         while let Some(parent) = current.parent() {
             let parent_str = parent.to_string_lossy().to_string();
             if parent_str.is_empty() {
@@ -611,6 +637,12 @@ fn build_file_tree(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
+        let status = if gitignored_dirs.contains(dir_path) {
+            Some(FileStatus::Gitignored)
+        } else {
+            None
+        };
+
         entries.insert(
             dir_path.clone(),
             FileEntry {
@@ -618,7 +650,7 @@ fn build_file_tree(
                 path: dir_path.clone(),
                 is_directory: true,
                 children: Some(vec![]),
-                status: None,
+                status,
             },
         );
     }
@@ -742,7 +774,7 @@ impl DiffSource for LocalGitSource {
             all_files.insert(path.clone());
         }
 
-        Ok(build_file_tree(all_files, &file_status))
+        Ok(build_file_tree(all_files, &file_status, &HashSet::new()))
     }
 
     fn get_diff(
