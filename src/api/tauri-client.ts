@@ -12,6 +12,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  CommitEntry,
   FileEntry,
   FileContent,
   ReviewState,
@@ -51,6 +52,14 @@ export class TauriClient implements ApiClient {
 
   async getGitStatusRaw(repoPath: string): Promise<string> {
     return invoke<string>("get_git_status_raw", { repoPath });
+  }
+
+  async listCommits(
+    repoPath: string,
+    limit?: number,
+    branch?: string,
+  ): Promise<CommitEntry[]> {
+    return invoke<CommitEntry[]>("list_commits", { repoPath, limit, branch });
   }
 
   // ----- File operations -----

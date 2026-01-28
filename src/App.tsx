@@ -7,7 +7,6 @@ import { SettingsModal } from "./components/SettingsModal";
 import { FileFinder } from "./components/FileFinder";
 import { ContentSearch } from "./components/ContentSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
-import { StartScreen } from "./components/StartScreen";
 import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
 import { useReviewStore } from "./stores/reviewStore";
@@ -46,6 +45,7 @@ function App() {
     setRepoPath,
     comparison,
     setComparison,
+    loadCurrentComparison,
     loadFiles,
     loadAllFiles,
     loadReviewState,
@@ -78,6 +78,8 @@ function App() {
     setMainViewMode,
     // Loading progress
     loadingProgress,
+    // History
+    loadCommits,
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -110,24 +112,22 @@ function App() {
   const {
     repoStatus,
     repoError,
-    showStartScreen,
     comparisonReady,
     initialLoading,
     setInitialLoading,
     handleSelectReview,
-    handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
-    handleCloseRepo,
     handleSelectRepo,
   } = useRepositoryInit({
     repoPath,
     setRepoPath,
     setComparison,
+    loadCurrentComparison,
     saveCurrentComparison,
   });
 
-  useWindowTitle(repoPath, comparison, comparisonReady, showStartScreen);
+  useWindowTitle(repoPath, comparison, comparisonReady);
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({
     sidebarPosition,
@@ -175,12 +175,12 @@ function App() {
   useComparisonLoader({
     repoPath,
     comparisonReady,
-    showStartScreen,
     comparisonKey: comparison.key,
     loadFiles,
     loadAllFiles,
     loadReviewState,
     loadGitStatus,
+    loadCommits,
     triggerAutoClassification,
     setInitialLoading,
   });
@@ -260,25 +260,6 @@ function App() {
     return null;
   }
 
-  // Show start screen when no comparison is selected
-  if (showStartScreen) {
-    return (
-      <>
-        <StartScreen
-          repoPath={repoPath}
-          onSelectReview={handleSelectReview}
-          onOpenRepo={handleOpenRepo}
-          onCloseRepo={handleCloseRepo}
-          onOpenSettings={() => setShowSettingsModal(true)}
-        />
-        <SettingsModal
-          isOpen={showSettingsModal}
-          onClose={() => setShowSettingsModal(false)}
-        />
-      </>
-    );
-  }
-
   // Show loading indicator during initial load
   if (initialLoading) {
     const progressText = getLoadingProgressText(loadingProgress);
@@ -309,10 +290,16 @@ function App() {
     <div className="flex h-screen flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        <ComparisonHeader comparison={comparison} onBack={handleBackToStart} />
+        {/* Left: comparison refs */}
+        <ComparisonHeader
+          comparison={comparison}
+          repoPath={repoPath}
+          onSelectReview={handleSelectReview}
+        />
 
-        {/* Progress indicator and Trust button */}
+        {/* Right: review controls */}
         <div className="flex items-center gap-3">
+          {/* Review progress */}
           {totalHunks > 0 ? (
             <div className="group relative flex items-center gap-2">
               <span className="text-xs text-stone-500">Reviewed</span>
@@ -320,12 +307,12 @@ function App() {
                 {reviewedHunks}/{totalHunks}
               </span>
               <div className="progress-bar w-24">
-                {/* Trusted segment (left) */}
                 <div
                   className="progress-bar-trusted"
-                  style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
+                  style={{
+                    width: `${(trustedHunks / totalHunks) * 100}%`,
+                  }}
                 />
-                {/* Approved segment (right of trusted) */}
                 <div
                   className="progress-bar-approved"
                   style={{

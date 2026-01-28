@@ -11,7 +11,9 @@ use compare::diff::parser::{
 use compare::review::state::{ReviewState, ReviewSummary};
 use compare::review::storage;
 use compare::sources::local_git::{LocalGitSource, SearchMatch};
-use compare::sources::traits::{BranchList, Comparison, DiffSource, FileEntry, GitStatusSummary};
+use compare::sources::traits::{
+    BranchList, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
+};
 use compare::trust::patterns::TrustCategory;
 use log::{debug, error, info};
 use serde::Serialize;
@@ -498,6 +500,19 @@ pub fn get_git_status(repo_path: String) -> Result<GitStatusSummary, String> {
 pub fn get_git_status_raw(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_status_raw().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_commits(
+    repo_path: String,
+    limit: Option<usize>,
+    branch: Option<String>,
+) -> Result<Vec<CommitEntry>, String> {
+    let limit = limit.unwrap_or(50);
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source
+        .list_commits(limit, branch.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

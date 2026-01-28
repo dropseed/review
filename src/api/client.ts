@@ -10,6 +10,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  CommitEntry,
   FileEntry,
   FileContent,
   ReviewState,
@@ -44,6 +45,13 @@ export interface ApiClient {
 
   /** Get raw git status output */
   getGitStatusRaw(repoPath: string): Promise<string>;
+
+  /** List recent commits */
+  listCommits(
+    repoPath: string,
+    limit?: number,
+    branch?: string,
+  ): Promise<CommitEntry[]>;
 
   // ----- File operations -----
 

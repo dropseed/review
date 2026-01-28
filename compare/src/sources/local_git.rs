@@ -1,5 +1,6 @@
 use super::traits::{
-    ChangeStatus, Comparison, DiffSource, FileEntry, FileStatus, GitStatusSummary, StatusEntry,
+    ChangeStatus, CommitEntry, Comparison, DiffSource, FileEntry, FileStatus, GitStatusSummary,
+    StatusEntry,
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -208,6 +209,42 @@ impl LocalGitSource {
     /// Get raw git status output for display
     pub fn get_status_raw(&self) -> Result<String, LocalGitError> {
         self.run_git(&["status"])
+    }
+
+    /// List recent commits from git log
+    pub fn list_commits(
+        &self,
+        limit: usize,
+        branch: Option<&str>,
+    ) -> Result<Vec<CommitEntry>, LocalGitError> {
+        let limit_str = format!("-{}", limit);
+        let format_str = "%H%n%h%n%s%n%an%n%aI";
+        let ref_arg = branch.unwrap_or("HEAD");
+
+        let output = self.run_git(&[
+            "log",
+            &limit_str,
+            &format!("--format={}", format_str),
+            ref_arg,
+        ])?;
+
+        let mut commits = Vec::new();
+        let lines: Vec<&str> = output.lines().collect();
+
+        // Each commit produces exactly 5 lines
+        for chunk in lines.chunks(5) {
+            if chunk.len() == 5 {
+                commits.push(CommitEntry {
+                    hash: chunk[0].to_string(),
+                    short_hash: chunk[1].to_string(),
+                    message: chunk[2].to_string(),
+                    author: chunk[3].to_string(),
+                    date: chunk[4].to_string(),
+                });
+            }
+        }
+
+        Ok(commits)
     }
 
     fn run_git(&self, args: &[&str]) -> Result<String, LocalGitError> {

@@ -39,20 +39,18 @@ interface UseRepositoryInitOptions {
   repoPath: string | null;
   setRepoPath: (path: string | null) => void;
   setComparison: (comparison: Comparison) => void;
+  loadCurrentComparison: () => Promise<void>;
   saveCurrentComparison: () => void;
 }
 
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
-  showStartScreen: boolean;
-  setShowStartScreen: (show: boolean) => void;
   comparisonReady: boolean;
   setComparisonReady: (ready: boolean) => void;
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
   handleSelectReview: (comparison: Comparison) => void;
-  handleBackToStart: () => void;
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
@@ -61,23 +59,23 @@ interface UseRepositoryInitReturn {
 
 /**
  * Handles repository initialization, URL parsing, and comparison setup.
+ * Always loads a comparison on startup (from URL, last active, or default).
  */
 export function useRepositoryInit({
   repoPath,
   setRepoPath,
   setComparison,
+  loadCurrentComparison,
   saveCurrentComparison,
 }: UseRepositoryInitOptions): UseRepositoryInitReturn {
   // Repository status tracking
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
 
-  // Start screen state - show by default unless URL has comparison
-  const [showStartScreen, setShowStartScreen] = useState(true);
   const [comparisonReady, setComparisonReady] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
-  // Get addRecentRepository from store
+  // Get store actions
   const addRecentRepository = useReviewStore(
     (state) => state.addRecentRepository,
   );
@@ -123,8 +121,7 @@ export function useRepositoryInit({
       });
   }, [setRepoPath, addRecentRepository]);
 
-  // Check URL for comparison when repo path changes
-  // If URL has comparison, skip start screen; otherwise show start screen
+  // When repo path changes, always load a comparison
   useEffect(() => {
     if (repoPath) {
       setComparisonReady(false);
@@ -137,40 +134,40 @@ export function useRepositoryInit({
           setComparison(parsedComparison);
           setComparisonReady(true);
           setInitialLoading(true);
-          setShowStartScreen(false); // Skip start screen if URL has comparison
           return;
         }
       }
 
-      // No URL comparison - show start screen
-      setShowStartScreen(true);
-      setComparisonReady(false);
+      // No URL comparison — load last active (falls back to default_branch..working_tree)
+      loadCurrentComparison()
+        .then(() => {
+          setComparisonReady(true);
+          setInitialLoading(true);
+        })
+        .catch((err) => {
+          console.error("Failed to load current comparison:", err);
+          setComparisonReady(true);
+          setInitialLoading(true);
+        });
     }
-  }, [repoPath, setComparison]);
+  }, [repoPath, setComparison, loadCurrentComparison]);
 
-  // Handle selecting a review from the start screen
+  // Handle selecting a review from the reviews modal
   const handleSelectReview = useCallback(
     (selectedComparison: Comparison) => {
       setComparison(selectedComparison);
       saveCurrentComparison();
       setComparisonReady(true);
       setInitialLoading(true);
-      setShowStartScreen(false);
     },
     [setComparison, saveCurrentComparison],
   );
-
-  // Handle going back to the start screen
-  const handleBackToStart = useCallback(() => {
-    setShowStartScreen(true);
-  }, []);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
     setRepoPath(null);
     setRepoStatus("not_found");
     setRepoError(null);
-    setShowStartScreen(true);
     setComparisonReady(false);
   }, [setRepoPath]);
 
@@ -223,14 +220,11 @@ export function useRepositoryInit({
   return {
     repoStatus,
     repoError,
-    showStartScreen,
-    setShowStartScreen,
     comparisonReady,
     setComparisonReady,
     initialLoading,
     setInitialLoading,
     handleSelectReview,
-    handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
     handleCloseRepo,

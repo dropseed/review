@@ -214,6 +214,7 @@ pub fn run() {
             commands::list_branches,
             commands::get_git_status,
             commands::get_git_status_raw,
+            commands::list_commits,
             commands::list_files,
             commands::list_all_files,
             commands::get_file_content,

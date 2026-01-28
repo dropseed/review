@@ -80,6 +80,17 @@ pub enum FileStatus {
     Gitignored,
 }
 
+/// A commit entry from git log
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitEntry {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub date: String,
+}
+
 /// Trait for diff sources - abstracts over local git, GitHub API, etc.
 pub trait DiffSource {
     type Error: std::error::Error;

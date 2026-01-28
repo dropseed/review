@@ -1,6 +1,6 @@
 import type { FileEntry } from "../../types";
 
-export type ViewMode = "changes" | "all";
+export type ViewMode = "changes" | "all" | "commits";
 
 // Hunk status for a file
 export interface FileHunkStatus {

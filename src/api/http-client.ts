@@ -10,6 +10,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  CommitEntry,
   FileEntry,
   FileContent,
   ReviewState,
@@ -154,6 +155,15 @@ export class HttpClient implements ApiClient {
     } catch {
       return "Raw git status not available";
     }
+  }
+
+  async listCommits(
+    _repoPath: string,
+    _limit?: number,
+    _branch?: string,
+  ): Promise<CommitEntry[]> {
+    console.warn("[HttpClient] listCommits not implemented");
+    return [];
   }
 
   // ----- File operations -----

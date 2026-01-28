@@ -77,6 +77,15 @@ export function anyLabelMatchesPattern(
 // Domain Types
 // ========================================================================
 
+// A commit entry from git log
+export interface CommitEntry {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
 // A stash entry
 export interface StashEntry {
   ref: string; // The stash ref (e.g., "stash@{0}")

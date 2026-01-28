@@ -8,6 +8,7 @@ export type {
   GitStatusSummary,
   StatusEntry,
   Comparison,
+  CommitEntry,
   FileEntry,
   DiffHunk,
   DiffLine,
