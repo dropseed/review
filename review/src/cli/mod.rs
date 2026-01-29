@@ -1,6 +1,10 @@
 pub mod commands;
 
+use crate::review::storage;
+use crate::sources::local_git::LocalGitSource;
+use crate::sources::traits::Comparison;
 use clap::{Parser, Subcommand};
+use std::path::Path;
 
 #[derive(Debug, Parser)]
 #[command(name = "review")]
@@ -120,6 +124,16 @@ pub enum Commands {
         category: Option<String>,
     },
 
+    /// Show symbol-level changes (functions, classes, etc.)
+    Symbols {
+        /// Specific file to show symbols for
+        file: Option<String>,
+
+        /// Show old/new side-by-side split view
+        #[arg(long)]
+        split: bool,
+    },
+
     /// Run classification eval to measure accuracy
     Eval {
         /// Model to use (e.g., sonnet, haiku, opus)
@@ -175,6 +189,34 @@ impl Cli {
 
         Err("Not a git repository. Use --repo to specify a repository path.".to_owned())
     }
+}
+
+/// Get the current comparison, or auto-detect one from the repo's default and current branches.
+///
+/// Falls back to `<default_branch>..<current_branch>+working-tree`, matching the desktop app behavior.
+pub fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> {
+    // Try saved comparison first
+    if let Some(comparison) =
+        storage::get_current_comparison(repo_path).map_err(|e| e.to_string())?
+    {
+        return Ok(comparison);
+    }
+
+    // Auto-detect: default branch vs current branch with working tree
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let default_branch = source
+        .get_default_branch()
+        .unwrap_or_else(|_| "main".to_owned());
+    let current_branch = source.get_current_branch().map_err(|e| e.to_string())?;
+
+    let key = format!("{default_branch}..{current_branch}+working-tree");
+    Ok(Comparison {
+        old: default_branch,
+        new: current_branch,
+        working_tree: true,
+        staged_only: false,
+        key,
+    })
 }
 
 /// Run the CLI with parsed arguments
@@ -235,6 +277,9 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Open { spec }) => commands::open::run(&repo_path, spec),
         Some(Commands::Taxonomy { category }) => {
             commands::taxonomy::run(&repo_path, category, cli.format)
+        }
+        Some(Commands::Symbols { file, split }) => {
+            commands::symbols::run(&repo_path, file, split, cli.format)
         }
         Some(Commands::Eval { .. }) => unreachable!("handled above"),
     }

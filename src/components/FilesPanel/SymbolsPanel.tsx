@@ -24,7 +24,7 @@ const SYMBOL_ICONS: Record<SymbolKind, { label: string; color: string }> = {
   type: { label: "T", color: "text-teal-400" },
 };
 
-function SymbolKindBadge({ kind }: { kind: SymbolKind | null }) {
+export function SymbolKindBadge({ kind }: { kind: SymbolKind | null }) {
   if (!kind) return <span className="w-4 flex-shrink-0" />;
   const config = SYMBOL_ICONS[kind];
   return (
@@ -48,7 +48,11 @@ const CHANGE_INDICATORS: Record<
   modified: { prefix: "~", color: "text-amber-400" },
 };
 
-function ChangeIndicator({ changeType }: { changeType: SymbolChangeType }) {
+export function ChangeIndicator({
+  changeType,
+}: {
+  changeType: SymbolChangeType;
+}) {
   const config = CHANGE_INDICATORS[changeType];
   return (
     <span
@@ -61,13 +65,13 @@ function ChangeIndicator({ changeType }: { changeType: SymbolChangeType }) {
 
 // --- Status helpers ---
 
-interface SymbolHunkStatus {
+export interface SymbolHunkStatus {
   pending: number;
   reviewed: number;
   total: number;
 }
 
-function getHunkIdsStatus(
+export function getHunkIdsStatus(
   hunkIds: string[],
   hunkStates: Record<string, HunkState>,
   trustList: string[],
@@ -89,7 +93,7 @@ function getHunkIdsStatus(
   return { pending, reviewed, total: pending + reviewed };
 }
 
-function collectAllHunkIds(symbol: SymbolDiff): string[] {
+export function collectAllHunkIds(symbol: SymbolDiff): string[] {
   const ids = [...symbol.hunkIds];
   for (const child of symbol.children) {
     ids.push(...collectAllHunkIds(child));
@@ -97,7 +101,7 @@ function collectAllHunkIds(symbol: SymbolDiff): string[] {
   return ids;
 }
 
-function StatusBadge({ status }: { status: SymbolHunkStatus }) {
+export function StatusBadge({ status }: { status: SymbolHunkStatus }) {
   if (status.total === 0) return null;
 
   const isComplete = status.pending === 0;
@@ -110,7 +114,7 @@ function StatusBadge({ status }: { status: SymbolHunkStatus }) {
   );
 }
 
-function ReviewStatusDot({ status }: { status: SymbolHunkStatus }) {
+export function ReviewStatusDot({ status }: { status: SymbolHunkStatus }) {
   if (status.total === 0) return null;
 
   const isComplete = status.pending === 0;
@@ -125,7 +129,7 @@ function ReviewStatusDot({ status }: { status: SymbolHunkStatus }) {
 
 // --- Sort symbols by: modified first, then added, then removed, within group by line ---
 
-function sortSymbols(symbols: SymbolDiff[]): SymbolDiff[] {
+export function sortSymbols(symbols: SymbolDiff[]): SymbolDiff[] {
   const order: Record<SymbolChangeType, number> = {
     modified: 0,
     added: 1,
@@ -144,7 +148,7 @@ function sortSymbols(symbols: SymbolDiff[]): SymbolDiff[] {
 
 // --- Symbol node ---
 
-const SymbolNode = memo(function SymbolNode({
+export const SymbolNode = memo(function SymbolNode({
   symbol,
   depth,
   hunkStates,
@@ -263,7 +267,7 @@ const SymbolNode = memo(function SymbolNode({
 
 // --- File section ---
 
-const FileSection = memo(function FileSection({
+export const FileSection = memo(function FileSection({
   fileDiff,
   hunkStates,
   trustList,

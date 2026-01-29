@@ -246,6 +246,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
               true,
             );
             set({ comparison: newComparison });
+            get().saveCurrentComparison();
           } catch {
             set({ comparison: defaultComparison });
           }

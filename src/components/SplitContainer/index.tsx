@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useReviewStore } from "../../stores/reviewStore";
 import { CodeViewer } from "../CodeViewer";
 import { RollingDiffView } from "../RollingDiffView";
+import { OverviewView } from "../OverviewView";
 import { PaneHeader } from "./PaneHeader";
 import { ResizeHandle } from "./ResizeHandle";
 
@@ -33,6 +34,11 @@ export function SplitContainer() {
 
   const isSplitActive = secondaryFile !== null;
   const isHorizontal = splitOrientation === "horizontal";
+
+  // Overview mode - show symbol-level changes for all files
+  if (mainViewMode === "overview") {
+    return <OverviewView />;
+  }
 
   // Rolling view mode - show all files in one scroll container
   if (mainViewMode === "rolling") {

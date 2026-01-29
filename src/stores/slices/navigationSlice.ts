@@ -18,7 +18,7 @@ import type { SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
-export type MainViewMode = "single" | "rolling";
+export type MainViewMode = "single" | "rolling" | "overview";
 
 export interface NavigationSlice {
   // Navigation state
