@@ -21,6 +21,7 @@ import {
   CollapsibleContent,
 } from "../../components/ui/collapsible";
 import type { CommitEntry, FileSymbolDiff } from "../../types";
+import { ReviewDataProvider } from "../ReviewDataContext";
 
 // Collapsible section header with icon
 function SectionHeader({
@@ -294,6 +295,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     );
   }, []);
 
+  // Context value for FlatFileNode tree (avoids prop drilling hunkStates/trustList)
+  const reviewDataContextValue = useMemo(
+    () => ({
+      hunkStates: reviewState?.hunks ?? {},
+      trustList: reviewState?.trustList ?? [],
+      onNavigate: handleNavigateToHunk,
+    }),
+    [reviewState?.hunks, reviewState?.trustList, handleNavigateToHunk],
+  );
+
   // Check if there are changes in the comparison
   const hasChanges =
     sectionedFiles.needsReview.length > 0 ||
@@ -322,7 +333,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   }
 
   return (
-    <>
+    <ReviewDataProvider value={reviewDataContextValue}>
       {reviewState && (
         <ExportModal
           isOpen={showExportModal}
@@ -533,14 +544,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                 }
                               }
                               symbolDiff={symbolDiffMap.get(filePath) ?? null}
-                              hunkStates={reviewState?.hunks ?? {}}
-                              trustList={reviewState?.trustList ?? []}
                               selectedFile={selectedFile}
                               onSelectFile={handleSelectFile}
                               hunkContext="needs-review"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
-                              onNavigateToHunk={handleNavigateToHunk}
                             />
                           ))
                         ) : (
@@ -637,14 +645,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                 }
                               }
                               symbolDiff={symbolDiffMap.get(filePath) ?? null}
-                              hunkStates={reviewState?.hunks ?? {}}
-                              trustList={reviewState?.trustList ?? []}
                               selectedFile={selectedFile}
                               onSelectFile={handleSelectFile}
                               hunkContext="reviewed"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
-                              onNavigateToHunk={handleNavigateToHunk}
                             />
                           ))
                         ) : (
@@ -777,6 +782,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           </>
         )}
       </div>
-    </>
+    </ReviewDataProvider>
   );
 }

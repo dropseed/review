@@ -16,11 +16,7 @@ import {
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
 import { SimpleTooltip } from "../ui/tooltip";
-import { PlainCodeView } from "./PlainCodeView";
-import { UntrackedFileView } from "./UntrackedFileView";
-import { DiffView } from "./DiffView";
-import { ImageViewer } from "./ImageViewer";
-import { MarkdownViewer } from "./MarkdownViewer";
+import { FileContentRenderer } from "./FileContentRenderer";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
   isMarkdownFile,
@@ -34,27 +30,25 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({ filePath }: CodeViewerProps) {
-  const {
-    comparison,
-    repoPath,
-    codeTheme,
-    codeFontSize,
-    reviewState,
-    approveAllFileHunks,
-    revealDirectoryInTree,
-    hunks: allHunks,
-    focusedHunkIndex,
-    refreshVersion,
-    scrollToLine,
-    clearScrollToLine,
-    addAnnotation,
-    updateAnnotation,
-    deleteAnnotation,
-    diffLineDiffType,
-    diffIndicators,
-    setDiffLineDiffType,
-    setDiffIndicators,
-  } = useReviewStore();
+  const comparison = useReviewStore((s) => s.comparison);
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const codeTheme = useReviewStore((s) => s.codeTheme);
+  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
+  const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
+  const allHunks = useReviewStore((s) => s.hunks);
+  const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
+  const refreshVersion = useReviewStore((s) => s.refreshVersion);
+  const scrollToLine = useReviewStore((s) => s.scrollToLine);
+  const clearScrollToLine = useReviewStore((s) => s.clearScrollToLine);
+  const addAnnotation = useReviewStore((s) => s.addAnnotation);
+  const updateAnnotation = useReviewStore((s) => s.updateAnnotation);
+  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const diffLineDiffType = useReviewStore((s) => s.diffLineDiffType);
+  const diffIndicators = useReviewStore((s) => s.diffIndicators);
+  const setDiffLineDiffType = useReviewStore((s) => s.setDiffLineDiffType);
+  const setDiffIndicators = useReviewStore((s) => s.setDiffIndicators);
 
   // Get the focused hunk ID if it's in this file
   const focusedHunk = allHunks[focusedHunkIndex];
@@ -622,60 +616,30 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             />
           </div>
         )}
-        {isMarkdownFile(filePath) && markdownViewMode === "preview" ? (
-          <MarkdownViewer content={fileContent.content} />
-        ) : showImageViewer && fileContent.imageDataUrl ? (
-          <ImageViewer
-            imageDataUrl={fileContent.imageDataUrl}
-            oldImageDataUrl={fileContent.oldImageDataUrl}
-            filePath={filePath}
-            hasChanges={hasChanges}
-          />
-        ) : isUntracked ? (
-          <UntrackedFileView
-            content={fileContent.content}
-            filePath={filePath}
-            hunks={fileContent.hunks}
-            theme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
-            language={effectiveLanguage}
-          />
-        ) : hasChanges && viewMode !== "file" ? (
-          <DiffView
-            diffPatch={fileContent.diffPatch}
-            viewMode={viewMode as "unified" | "split"}
-            hunks={fileContent.hunks}
-            theme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
-            onViewInFile={(line) => {
-              setViewMode("file");
-              setHighlightLine(line);
-            }}
-            fileName={filePath}
-            oldContent={fileContent.oldContent}
-            newContent={fileContent.content}
-            focusedHunkId={focusedHunkId}
-            language={effectiveLanguage}
-          />
-        ) : (
-          <PlainCodeView
-            content={fileContent.content}
-            filePath={filePath}
-            highlightLine={highlightLine}
-            theme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
-            language={effectiveLanguage}
-            lineHeight={lineHeight}
-            annotations={reviewState?.annotations?.filter(
-              (a) => a.filePath === filePath,
-            )}
-            onAddAnnotation={(lineNumber, content) =>
-              addAnnotation(filePath, lineNumber, "file", content)
-            }
-            onUpdateAnnotation={updateAnnotation}
-            onDeleteAnnotation={deleteAnnotation}
-          />
-        )}
+        <FileContentRenderer
+          filePath={filePath}
+          fileContent={fileContent}
+          viewMode={viewMode}
+          codeTheme={codeTheme}
+          fontSizeCSS={fontSizeCSS}
+          focusedHunkId={focusedHunkId}
+          effectiveLanguage={effectiveLanguage}
+          markdownViewMode={markdownViewMode}
+          svgViewMode={svgViewMode}
+          showImageViewer={!!showImageViewer}
+          isUntracked={isUntracked}
+          hasChanges={hasChanges}
+          highlightLine={highlightLine}
+          lineHeight={lineHeight}
+          onViewInFile={(line) => {
+            setViewMode("file");
+            setHighlightLine(line);
+          }}
+          reviewState={reviewState}
+          addAnnotation={addAnnotation}
+          updateAnnotation={updateAnnotation}
+          deleteAnnotation={deleteAnnotation}
+        />
       </div>
     </div>
   );

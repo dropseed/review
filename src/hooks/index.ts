@@ -6,8 +6,10 @@ export { useFileWatcher } from "./useFileWatcher";
 export { useRepositoryInit, type RepoStatus } from "./useRepositoryInit";
 export { useComparisonLoader } from "./useComparisonLoader";
 export { useKeyboardNavigation } from "./useKeyboardNavigation";
+export { useReviewProgress } from "./useReviewProgress";
 export {
   useHighlighter,
   getLanguageFromFilename,
   highlightCode,
 } from "./useHighlighter";
+export { usePrefersReducedMotion } from "./usePrefersReducedMotion";

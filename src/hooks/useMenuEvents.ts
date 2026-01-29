@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getPlatformServices } from "../platform";
+import { useReviewStore } from "../stores/reviewStore";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,
@@ -11,8 +12,6 @@ interface UseMenuEventsOptions {
   handleOpenRepo: () => void;
   handleNewWindow: () => void;
   handleRefresh: () => void;
-  codeFontSize: number;
-  setCodeFontSize: (size: number) => void;
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
 }
@@ -25,11 +24,12 @@ export function useMenuEvents({
   handleOpenRepo,
   handleNewWindow,
   handleRefresh,
-  codeFontSize,
-  setCodeFontSize,
   setShowDebugModal,
   setShowSettingsModal,
 }: UseMenuEventsOptions) {
+  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
+
   // Refs to avoid stale closures
   const handleOpenRepoRef = useRef(handleOpenRepo);
   const handleNewWindowRef = useRef(handleNewWindow);

@@ -2,22 +2,20 @@ import { useState, useCallback } from "react";
 import { useReviewStore } from "../../stores/reviewStore";
 import { CodeViewer } from "../CodeViewer";
 import { OverviewView } from "../OverviewView";
-import { PaneHeader } from "./PaneHeader";
+import { PrimaryPaneHeader, SecondaryPaneHeader } from "./PaneHeader";
 import { ResizeHandle } from "./ResizeHandle";
 
 export function SplitContainer() {
-  const {
-    selectedFile,
-    secondaryFile,
-    focusedPane,
-    splitOrientation,
-    topLevelView,
-    setFocusedPane,
-    closeSplit,
-    swapPanes,
-    setSplitOrientation,
-    navigateToOverview,
-  } = useReviewStore();
+  const selectedFile = useReviewStore((s) => s.selectedFile);
+  const secondaryFile = useReviewStore((s) => s.secondaryFile);
+  const focusedPane = useReviewStore((s) => s.focusedPane);
+  const splitOrientation = useReviewStore((s) => s.splitOrientation);
+  const topLevelView = useReviewStore((s) => s.topLevelView);
+  const setFocusedPane = useReviewStore((s) => s.setFocusedPane);
+  const closeSplit = useReviewStore((s) => s.closeSplit);
+  const swapPanes = useReviewStore((s) => s.swapPanes);
+  const setSplitOrientation = useReviewStore((s) => s.setSplitOrientation);
+  const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
 
   // Split size as a fraction (0.5 = 50/50 split)
   const [splitFraction, setSplitFraction] = useState(0.5);
@@ -97,15 +95,13 @@ export function SplitContainer() {
         style={isHorizontal ? { width: primarySize } : { height: primarySize }}
         onClick={handlePrimaryClick}
       >
-        <PaneHeader
+        <PrimaryPaneHeader
           label="Primary"
           isFocused={focusedPane === "primary"}
-          showOrientationToggle
           orientation={splitOrientation}
           onToggleOrientation={() =>
             setSplitOrientation(isHorizontal ? "vertical" : "horizontal")
           }
-          showSwap
           onSwap={swapPanes}
         />
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -137,11 +133,9 @@ export function SplitContainer() {
         }
         onClick={handleSecondaryClick}
       >
-        <PaneHeader
+        <SecondaryPaneHeader
           label="Secondary"
           isFocused={focusedPane === "secondary"}
-          showSwap
-          showClose
           onSwap={swapPanes}
           onClose={closeSplit}
         />

@@ -3,7 +3,7 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { StatusLetter, HunkCount } from "./StatusIndicators";
 import type { FileHunkStatus } from "./types";
 import type { HunkContext } from "./FileNode";
-import type { FileSymbolDiff, SymbolDiff, HunkState } from "../../types";
+import type { FileSymbolDiff, SymbolDiff } from "../../types";
 import {
   SymbolKindBadge,
   ChangeIndicator,
@@ -13,6 +13,7 @@ import {
   getHunkIdsStatus,
 } from "../symbols";
 import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewData } from "../ReviewDataContext";
 
 // --- Props ---
 
@@ -21,14 +22,11 @@ interface FlatFileNodeProps {
   fileStatus: string | undefined;
   hunkStatus: FileHunkStatus;
   symbolDiff: FileSymbolDiff | null;
-  hunkStates: Record<string, HunkState>;
-  trustList: string[];
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
-  onNavigateToHunk: (filePath: string, hunkId: string) => void;
 }
 
 // --- Compact symbol row (recursive, for sidebar) ---
@@ -36,18 +34,13 @@ interface FlatFileNodeProps {
 const CompactSymbolRow = memo(function CompactSymbolRow({
   symbol,
   depth,
-  hunkStates,
-  trustList,
   filePath,
-  onNavigate,
 }: {
   symbol: SymbolDiff;
   depth: number;
-  hunkStates: Record<string, HunkState>;
-  trustList: string[];
   filePath: string;
-  onNavigate: (filePath: string, hunkId: string) => void;
 }) {
+  const { hunkStates, trustList, onNavigate } = useReviewData();
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const [expanded, setExpanded] = useState(true);
 
@@ -165,10 +158,7 @@ const CompactSymbolRow = memo(function CompactSymbolRow({
               key={`${child.changeType}-${child.name}-${child.newRange?.startLine ?? child.oldRange?.startLine ?? 0}`}
               symbol={child}
               depth={depth + 1}
-              hunkStates={hunkStates}
-              trustList={trustList}
               filePath={filePath}
-              onNavigate={onNavigate}
             />
           ))}
         </div>
@@ -184,15 +174,17 @@ export const FlatFileNode = memo(function FlatFileNode({
   fileStatus,
   hunkStatus,
   symbolDiff,
-  hunkStates,
-  trustList,
   selectedFile,
   onSelectFile,
   hunkContext,
   onApproveAll,
   onUnapproveAll,
-  onNavigateToHunk,
 }: FlatFileNodeProps) {
+  const {
+    hunkStates,
+    trustList,
+    onNavigate: onNavigateToHunk,
+  } = useReviewData();
   const [expanded, setExpanded] = useState(false);
 
   const isSelected = selectedFile === filePath;
@@ -354,10 +346,7 @@ export const FlatFileNode = memo(function FlatFileNode({
                   key={`${symbol.changeType}-${symbol.name}-${symbol.newRange?.startLine ?? symbol.oldRange?.startLine ?? 0}`}
                   symbol={symbol}
                   depth={2}
-                  hunkStates={hunkStates}
-                  trustList={trustList}
                   filePath={filePath}
-                  onNavigate={onNavigateToHunk}
                 />
               ))}
 

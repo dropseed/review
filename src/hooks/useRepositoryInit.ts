@@ -35,14 +35,6 @@ function parseComparisonKey(key: string): Comparison | null {
 // Repository status for distinguishing loading states
 export type RepoStatus = "loading" | "found" | "not_found" | "error";
 
-interface UseRepositoryInitOptions {
-  repoPath: string | null;
-  setRepoPath: (path: string | null) => void;
-  setComparison: (comparison: Comparison) => void;
-  loadCurrentComparison: () => Promise<void>;
-  saveCurrentComparison: () => void;
-}
-
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
@@ -61,24 +53,20 @@ interface UseRepositoryInitReturn {
  * Handles repository initialization, URL parsing, and comparison setup.
  * Always loads a comparison on startup (from URL, last active, or default).
  */
-export function useRepositoryInit({
-  repoPath,
-  setRepoPath,
-  setComparison,
-  loadCurrentComparison,
-  saveCurrentComparison,
-}: UseRepositoryInitOptions): UseRepositoryInitReturn {
+export function useRepositoryInit(): UseRepositoryInitReturn {
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const setRepoPath = useReviewStore((s) => s.setRepoPath);
+  const setComparison = useReviewStore((s) => s.setComparison);
+  const loadCurrentComparison = useReviewStore((s) => s.loadCurrentComparison);
+  const saveCurrentComparison = useReviewStore((s) => s.saveCurrentComparison);
+  const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
+
   // Repository status tracking
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
 
   const [comparisonReady, setComparisonReady] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
-
-  // Get store actions
-  const addRecentRepository = useReviewStore(
-    (state) => state.addRecentRepository,
-  );
 
   // Initialize repo path from URL or API
   useEffect(() => {

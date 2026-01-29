@@ -1,29 +1,16 @@
-import { useReviewStore } from "../../stores/reviewStore";
-import { isHunkTrusted } from "../../types";
+import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SummaryStats } from "./SummaryStats";
 import { TrustSection } from "./TrustSection";
 import { DrillDownSection } from "./DrillDownSection";
 
 export function OverviewView() {
-  const hunks = useReviewStore((s) => s.hunks);
-  const reviewState = useReviewStore((s) => s.reviewState);
-
-  // Global progress
-  const totalHunks = hunks.length;
-  const trustedHunks = reviewState
-    ? hunks.filter((h) => {
-        const state = reviewState.hunks[h.id];
-        return !state?.status && isHunkTrusted(state, reviewState.trustList);
-      }).length
-    : 0;
-  const approvedHunks = reviewState
-    ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "approved").length
-    : 0;
-  const pendingHunks = totalHunks - trustedHunks - approvedHunks;
-  const reviewedPercent =
-    totalHunks > 0
-      ? Math.round(((trustedHunks + approvedHunks) / totalHunks) * 100)
-      : 0;
+  const {
+    totalHunks,
+    trustedHunks,
+    approvedHunks,
+    pendingHunks,
+    reviewedPercent,
+  } = useReviewProgress();
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin">

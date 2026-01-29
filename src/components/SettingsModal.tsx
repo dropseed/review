@@ -56,23 +56,25 @@ const THEMES: { value: string; label: string; colors: string[] }[] = [
 ];
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const {
-    sidebarPosition,
-    setSidebarPosition,
-    codeFontSize,
-    setCodeFontSize,
-    codeTheme,
-    setCodeTheme,
-    claudeAvailable,
-    autoClassifyEnabled,
-    setAutoClassifyEnabled,
-    classifyCommand,
-    setClassifyCommand,
-    classifyBatchSize,
-    setClassifyBatchSize,
-    classifyMaxConcurrent,
-    setClassifyMaxConcurrent,
-  } = useReviewStore();
+  const sidebarPosition = useReviewStore((s) => s.sidebarPosition);
+  const setSidebarPosition = useReviewStore((s) => s.setSidebarPosition);
+  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
+  const codeTheme = useReviewStore((s) => s.codeTheme);
+  const setCodeTheme = useReviewStore((s) => s.setCodeTheme);
+  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
+  const autoClassifyEnabled = useReviewStore((s) => s.autoClassifyEnabled);
+  const setAutoClassifyEnabled = useReviewStore(
+    (s) => s.setAutoClassifyEnabled,
+  );
+  const classifyCommand = useReviewStore((s) => s.classifyCommand);
+  const setClassifyCommand = useReviewStore((s) => s.setClassifyCommand);
+  const classifyBatchSize = useReviewStore((s) => s.classifyBatchSize);
+  const setClassifyBatchSize = useReviewStore((s) => s.setClassifyBatchSize);
+  const classifyMaxConcurrent = useReviewStore((s) => s.classifyMaxConcurrent);
+  const setClassifyMaxConcurrent = useReviewStore(
+    (s) => s.setClassifyMaxConcurrent,
+  );
 
   const decreaseFontSize = () => {
     setCodeFontSize(

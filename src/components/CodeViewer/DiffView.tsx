@@ -11,28 +11,13 @@ import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores/reviewStore";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
-import { isHunkTrusted } from "../../types";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "../ui/dropdown-menu";
-import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
 import { SimpleTooltip } from "../../components/ui/tooltip";
+import {
+  NewAnnotationEditor,
+  UserAnnotationDisplay,
+  HunkAnnotationPanel,
+} from "./annotations";
 import type { SupportedLanguages } from "./languageMap";
-
-/** Returns the appropriate background class for a hunk based on its state */
-function getHunkBackgroundClass(
-  isRejected: boolean,
-  isApproved: boolean,
-  isTrusted: boolean,
-): string {
-  if (isRejected) return "bg-rose-500/10";
-  if (isApproved) return "bg-lime-500/5";
-  if (isTrusted) return "bg-sky-500/5";
-  return "bg-stone-800/80";
-}
 
 // Error boundary to catch rendering errors
 export class DiffErrorBoundary extends Component<
@@ -109,25 +94,23 @@ export function DiffView({
   focusedHunkId,
   language,
 }: DiffViewProps) {
-  const {
-    reviewState,
-    approveHunk,
-    unapproveHunk,
-    rejectHunk,
-    unrejectHunk,
-    hunks: allHunks,
-    setSelectedFile,
-    addAnnotation,
-    updateAnnotation,
-    deleteAnnotation,
-    classifyingHunkIds,
-    addTrustPattern,
-    removeTrustPattern,
-    reclassifyHunks,
-    claudeAvailable,
-    diffLineDiffType: prefLineDiffType,
-    diffIndicators: prefDiffIndicators,
-  } = useReviewStore();
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const approveHunk = useReviewStore((s) => s.approveHunk);
+  const unapproveHunk = useReviewStore((s) => s.unapproveHunk);
+  const rejectHunk = useReviewStore((s) => s.rejectHunk);
+  const unrejectHunk = useReviewStore((s) => s.unrejectHunk);
+  const allHunks = useReviewStore((s) => s.hunks);
+  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
+  const addAnnotation = useReviewStore((s) => s.addAnnotation);
+  const updateAnnotation = useReviewStore((s) => s.updateAnnotation);
+  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
+  const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
+  const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
+  const reclassifyHunks = useReviewStore((s) => s.reclassifyHunks);
+  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
+  const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
+  const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
 
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
@@ -276,26 +259,22 @@ export function DiffView({
   const renderAnnotation = (annotation: DiffLineAnnotation<AnnotationMeta>) => {
     const meta = annotation.metadata!;
 
-    // Handle new annotation editor
-    if (meta.type === "new") {
-      return (
-        <AnnotationEditor
-          onSave={handleSaveNewAnnotation}
-          onCancel={() => setNewAnnotationLine(null)}
-          autoFocus
-        />
-      );
-    }
-
-    // Handle user annotations
-    if (meta.type === "user") {
-      const { annotation: userAnnotation } = meta.data;
-      const isEditing = editingAnnotationId === userAnnotation.id;
-
-      if (isEditing) {
+    switch (meta.type) {
+      case "new":
         return (
-          <AnnotationEditor
-            initialContent={userAnnotation.content}
+          <NewAnnotationEditor
+            onSave={handleSaveNewAnnotation}
+            onCancel={() => setNewAnnotationLine(null)}
+          />
+        );
+
+      case "user": {
+        const { annotation: userAnnotation } = meta.data;
+        return (
+          <UserAnnotationDisplay
+            annotation={userAnnotation}
+            isEditing={editingAnnotationId === userAnnotation.id}
+            onEdit={() => setEditingAnnotationId(userAnnotation.id)}
             onSave={(content) => {
               updateAnnotation(userAnnotation.id, content);
               setEditingAnnotationId(null);
@@ -305,412 +284,40 @@ export function DiffView({
               deleteAnnotation(userAnnotation.id);
               setEditingAnnotationId(null);
             }}
-            autoFocus
           />
         );
       }
 
-      return (
-        <AnnotationDisplay
-          annotation={userAnnotation}
-          onEdit={() => setEditingAnnotationId(userAnnotation.id)}
-          onDelete={() => deleteAnnotation(userAnnotation.id)}
-        />
-      );
+      case "hunk": {
+        const { hunk, hunkState, pairedHunk, isSource } = meta.data;
+        return (
+          <HunkAnnotationPanel
+            hunk={hunk}
+            hunkState={hunkState}
+            pairedHunk={pairedHunk}
+            isSource={isSource}
+            focusedHunkId={focusedHunkId}
+            focusedHunkRef={focusedHunkRef}
+            trustList={reviewState?.trustList ?? []}
+            classifyingHunkIds={classifyingHunkIds}
+            claudeAvailable={claudeAvailable}
+            onApprove={approveHunk}
+            onUnapprove={unapproveHunk}
+            onReject={rejectHunk}
+            onUnreject={unrejectHunk}
+            onJumpToPair={handleJumpToPair}
+            onComment={(lineNumber, side, hunkId) =>
+              setNewAnnotationLine({ lineNumber, side, hunkId })
+            }
+            onAddTrustPattern={addTrustPattern}
+            onRemoveTrustPattern={removeTrustPattern}
+            onReclassifyHunks={reclassifyHunks}
+            onCopyHunk={handleCopyHunk}
+            onViewInFile={onViewInFile}
+          />
+        );
+      }
     }
-
-    // Handle hunk annotations
-    const { hunk, hunkState, pairedHunk, isSource } = meta.data;
-    const isApproved = hunkState?.status === "approved";
-    const isRejected = hunkState?.status === "rejected";
-    const isTrusted =
-      !hunkState?.status &&
-      isHunkTrusted(hunkState, reviewState?.trustList ?? []);
-    const isFocused = hunk.id === focusedHunkId;
-
-    return (
-      <div
-        ref={isFocused ? focusedHunkRef : undefined}
-        className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
-          isFocused ? "ring-2 ring-inset ring-amber-500/70" : ""
-        } ${getHunkBackgroundClass(isRejected, isApproved, isTrusted)}`}
-      >
-        {/* Move indicator */}
-        {pairedHunk && (
-          <SimpleTooltip
-            content={`Jump to ${isSource ? "destination" : "source"} in ${pairedHunk.filePath}`}
-          >
-            <button
-              onClick={() => handleJumpToPair(hunk.movePairId!)}
-              className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-all hover:bg-sky-500/25"
-            >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                {isSource ? (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
-                  />
-                ) : (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-                  />
-                )}
-              </svg>
-              <span>{isSource ? "Moved to" : "Moved from"}</span>
-              <span className="opacity-60">
-                {pairedHunk.filePath.split("/").pop()}
-              </span>
-            </button>
-          </SimpleTooltip>
-        )}
-
-        {/* Action buttons - grouped with keyboard shortcuts */}
-        <>
-          {isApproved ? (
-            <SimpleTooltip content="Click to unapprove">
-              <button
-                onClick={() => unapproveHunk(hunk.id)}
-                className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 ring-1 ring-inset ring-emerald-500/30"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                <span>Approved</span>
-              </button>
-            </SimpleTooltip>
-          ) : isRejected ? (
-            <SimpleTooltip content="Click to clear rejection">
-              <button
-                onClick={() => unrejectHunk(hunk.id)}
-                className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 ring-1 ring-inset ring-rose-500/30"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-                <span>Rejected</span>
-              </button>
-            </SimpleTooltip>
-          ) : (
-            <div className="flex items-center gap-1">
-              <SimpleTooltip
-                content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
-              >
-                <button
-                  onClick={() => rejectHunk(hunk.id)}
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
-                    isTrusted
-                      ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
-                      : "text-rose-400/70 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-400"
-                  }`}
-                  aria-label="Reject change"
-                >
-                  <svg
-                    className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2.5}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                  <span>Reject</span>
-                  {isFocused && (
-                    <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>
-                  )}
-                </button>
-              </SimpleTooltip>
-              <SimpleTooltip
-                content={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
-              >
-                <button
-                  onClick={() => approveHunk(hunk.id)}
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
-                    isTrusted
-                      ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
-                      : "text-emerald-400/70 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-400"
-                  }`}
-                  aria-label="Approve change"
-                >
-                  <svg
-                    className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2.5}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                  <span>Approve</span>
-                  {isFocused && (
-                    <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>
-                  )}
-                </button>
-              </SimpleTooltip>
-            </div>
-          )}
-
-          {/* Comment button - inline after approve/reject */}
-          <SimpleTooltip content="Add comment">
-            <button
-              onClick={() => {
-                // Find first changed line to add comment at
-                const firstChanged = hunk.lines.find(
-                  (l) => l.type === "added" || l.type === "removed",
-                );
-                const lineNumber = isSource
-                  ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-                  : (firstChanged?.newLineNumber ?? hunk.newStart);
-                setNewAnnotationLine({
-                  lineNumber,
-                  side: isSource ? "old" : "new",
-                  hunkId: hunk.id,
-                });
-              }}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-                />
-              </svg>
-              <span className="hidden sm:inline">Comment</span>
-            </button>
-          </SimpleTooltip>
-        </>
-
-        {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
-        <div className="ml-auto flex items-center gap-2">
-          {/* Classifying indicator - fixed width container to prevent layout shift */}
-          <div className="w-[5.5rem] flex justify-end">
-            {classifyingHunkIds.has(hunk.id) && (
-              <div className="flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5">
-                <svg
-                  className="h-3 w-3 animate-spin text-violet-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                <span className="text-xxs text-violet-400">Classifying…</span>
-              </div>
-            )}
-          </div>
-
-          {/* Trust labels - click to toggle trust */}
-          {hunkState?.label && hunkState.label.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <svg
-                className="h-3 w-3 text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
-              {hunkState.label.map((lbl, i) => {
-                const isTrustedLabel = (reviewState?.trustList ?? []).includes(
-                  lbl,
-                );
-                return (
-                  <SimpleTooltip
-                    key={i}
-                    content={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"`}
-                  >
-                    <button
-                      onClick={() => {
-                        if (isTrustedLabel) {
-                          removeTrustPattern(lbl);
-                        } else {
-                          addTrustPattern(lbl);
-                        }
-                      }}
-                      className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-all hover:ring-1 ${
-                        isTrustedLabel
-                          ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
-                          : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
-                      }`}
-                    >
-                      {lbl}
-                    </button>
-                  </SimpleTooltip>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Reasoning indicator - shows when reasoning exists */}
-          {hunkState?.reasoning && (
-            <SimpleTooltip content={hunkState.reasoning}>
-              <span className="text-stone-600 hover:text-stone-400 cursor-help transition-colors">
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
-                  />
-                </svg>
-              </span>
-            </SimpleTooltip>
-          )}
-
-          {/* Overflow menu */}
-          <div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
-                  aria-label="More options"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z"
-                    />
-                  </svg>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {onViewInFile && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      // Find first changed line to jump to
-                      const firstChanged = hunk.lines.find(
-                        (l) => l.type === "added" || l.type === "removed",
-                      );
-                      const targetLine =
-                        firstChanged?.newLineNumber ?? hunk.newStart;
-                      onViewInFile(targetLine);
-                    }}
-                  >
-                    <svg
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                      />
-                    </svg>
-                    View in file
-                  </DropdownMenuItem>
-                )}
-                {claudeAvailable && (
-                  <DropdownMenuItem onClick={() => reclassifyHunks([hunk.id])}>
-                    <svg
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                      />
-                    </svg>
-                    Reclassify
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => handleCopyHunk(hunk)}>
-                  <svg
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Copy hunk
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   // Create file contents for MultiFileDiff when available

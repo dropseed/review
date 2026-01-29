@@ -94,6 +94,79 @@ export interface ReviewSlice {
   refresh: () => Promise<void>;
 }
 
+interface HunkStatusGetter {
+  reviewState: ReviewState | null;
+  hunks: { id: string; movePairId?: string; filePath: string }[];
+  saveReviewState: () => Promise<void>;
+}
+
+/**
+ * Shared helper to update hunk statuses (approve/unapprove/reject/unreject).
+ * Handles move pair propagation and debounced save.
+ */
+function updateHunkStatuses(
+  get: () => HunkStatusGetter,
+  set: (partial: { reviewState: ReviewState }) => void,
+  hunkIds: string[],
+  status: "approved" | "rejected" | undefined,
+  options?: {
+    /** Only update move pairs if they currently have this status */
+    movePairOnlyIfStatus?: "approved" | "rejected";
+    /** Skip hunks that don't already exist in reviewState.hunks */
+    skipMissing?: boolean;
+  },
+): void {
+  const { reviewState, hunks, saveReviewState } = get();
+  if (!reviewState || hunkIds.length === 0) return;
+
+  const newHunks = { ...reviewState.hunks };
+  const idsToUpdate = new Set(hunkIds);
+
+  // Collect move pairs
+  for (const hunkId of hunkIds) {
+    const hunk = hunks.find((h) => h.id === hunkId);
+    if (hunk?.movePairId) {
+      if (options?.movePairOnlyIfStatus) {
+        if (
+          reviewState.hunks[hunk.movePairId]?.status ===
+          options.movePairOnlyIfStatus
+        ) {
+          idsToUpdate.add(hunk.movePairId);
+        }
+      } else {
+        idsToUpdate.add(hunk.movePairId);
+      }
+    }
+  }
+
+  for (const id of idsToUpdate) {
+    if (options?.skipMissing && !newHunks[id]) continue;
+    if (status) {
+      newHunks[id] = {
+        ...newHunks[id],
+        label: newHunks[id]?.label ?? [],
+        status,
+      };
+    } else {
+      if (newHunks[id]) {
+        newHunks[id] = {
+          ...newHunks[id],
+          status: undefined,
+        };
+      }
+    }
+  }
+
+  set({
+    reviewState: {
+      ...reviewState,
+      hunks: newHunks,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  debouncedSave(saveReviewState);
+}
+
 export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
   (client: ApiClient) => (set, get) => ({
     reviewState: null,
@@ -167,333 +240,66 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveHunk: (hunkId) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const newHunks = {
-        ...reviewState.hunks,
-        [hunkId]: {
-          ...reviewState.hunks[hunkId],
-          label: reviewState.hunks[hunkId]?.label ?? [],
-          status: "approved" as const,
-        },
-      };
-
-      // If this hunk has a move pair, approve it too
-      const hunk = hunks.find((h) => h.id === hunkId);
-      if (
-        hunk?.movePairId &&
-        reviewState.hunks[hunk.movePairId]?.status !== "approved"
-      ) {
-        newHunks[hunk.movePairId] = {
-          ...reviewState.hunks[hunk.movePairId],
-          label: reviewState.hunks[hunk.movePairId]?.label ?? [],
-          status: "approved" as const,
-        };
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      updateHunkStatuses(get, set, [hunkId], "approved");
     },
 
     unapproveHunk: (hunkId) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const existingHunk = reviewState.hunks[hunkId];
-      if (!existingHunk) return;
-
-      const newHunks = {
-        ...reviewState.hunks,
-        [hunkId]: {
-          ...existingHunk,
-          status: undefined,
-        },
-      };
-
-      // If this hunk has a move pair, unapprove it too
-      const hunk = hunks.find((h) => h.id === hunkId);
-      if (
-        hunk?.movePairId &&
-        reviewState.hunks[hunk.movePairId]?.status === "approved"
-      ) {
-        const pairedHunk = reviewState.hunks[hunk.movePairId];
-        if (pairedHunk) {
-          newHunks[hunk.movePairId] = {
-            ...pairedHunk,
-            status: undefined,
-          };
-        }
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      updateHunkStatuses(get, set, [hunkId], undefined, {
+        movePairOnlyIfStatus: "approved",
+        skipMissing: true,
+      });
     },
 
     rejectHunk: (hunkId) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const existingHunk = reviewState.hunks[hunkId];
-      const newHunks = {
-        ...reviewState.hunks,
-        [hunkId]: {
-          ...existingHunk,
-          label: existingHunk?.label ?? [],
-          status: "rejected" as const,
-        },
-      };
-
-      // If this hunk has a move pair, reject it too
-      const hunk = hunks.find((h) => h.id === hunkId);
-      if (hunk?.movePairId) {
-        const pairedHunkState = reviewState.hunks[hunk.movePairId];
-        newHunks[hunk.movePairId] = {
-          ...pairedHunkState,
-          label: pairedHunkState?.label ?? [],
-          status: "rejected" as const,
-        };
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      updateHunkStatuses(get, set, [hunkId], "rejected");
     },
 
     unrejectHunk: (hunkId) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const existingHunk = reviewState.hunks[hunkId];
-      if (!existingHunk) return;
-
-      const newHunks = {
-        ...reviewState.hunks,
-        [hunkId]: {
-          ...existingHunk,
-          status: undefined,
-        },
-      };
-
-      // If this hunk has a move pair, unreject it too
-      const hunk = hunks.find((h) => h.id === hunkId);
-      if (
-        hunk?.movePairId &&
-        reviewState.hunks[hunk.movePairId]?.status === "rejected"
-      ) {
-        const pairedHunk = reviewState.hunks[hunk.movePairId];
-        if (pairedHunk) {
-          newHunks[hunk.movePairId] = {
-            ...pairedHunk,
-            status: undefined,
-          };
-        }
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      updateHunkStatuses(get, set, [hunkId], undefined, {
+        movePairOnlyIfStatus: "rejected",
+        skipMissing: true,
+      });
     },
 
     approveAllFileHunks: (filePath) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const fileHunks = hunks.filter((h) => h.filePath === filePath);
-      if (fileHunks.length === 0) return;
-
-      const newHunks = { ...reviewState.hunks };
-      for (const hunk of fileHunks) {
-        newHunks[hunk.id] = {
-          ...newHunks[hunk.id],
-          label: newHunks[hunk.id]?.label ?? [],
-          status: "approved" as const,
-        };
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      const { hunks } = get();
+      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      updateHunkStatuses(get, set, ids, "approved");
     },
 
     unapproveAllFileHunks: (filePath) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const fileHunks = hunks.filter((h) => h.filePath === filePath);
-      if (fileHunks.length === 0) return;
-
-      const newHunks = { ...reviewState.hunks };
-      for (const hunk of fileHunks) {
-        if (newHunks[hunk.id]) {
-          newHunks[hunk.id] = {
-            ...newHunks[hunk.id],
-            status: undefined,
-          };
-        }
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      const { hunks } = get();
+      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      updateHunkStatuses(get, set, ids, undefined, { skipMissing: true });
     },
 
     approveHunkIds: (hunkIds) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState || hunkIds.length === 0) return;
-
-      const newHunks = { ...reviewState.hunks };
-      const idsToApprove = new Set(hunkIds);
-
-      // Also collect move pairs
-      for (const hunkId of hunkIds) {
-        const hunk = hunks.find((h) => h.id === hunkId);
-        if (hunk?.movePairId) {
-          idsToApprove.add(hunk.movePairId);
-        }
-      }
-
-      for (const id of idsToApprove) {
-        newHunks[id] = {
-          ...newHunks[id],
-          label: newHunks[id]?.label ?? [],
-          status: "approved" as const,
-        };
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      updateHunkStatuses(get, set, hunkIds, "approved");
     },
 
     unapproveHunkIds: (hunkIds) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState || hunkIds.length === 0) return;
-
-      const newHunks = { ...reviewState.hunks };
-      const idsToUnapprove = new Set(hunkIds);
-
-      // Also collect move pairs
-      for (const hunkId of hunkIds) {
-        const hunk = hunks.find((h) => h.id === hunkId);
-        if (
-          hunk?.movePairId &&
-          reviewState.hunks[hunk.movePairId]?.status === "approved"
-        ) {
-          idsToUnapprove.add(hunk.movePairId);
-        }
-      }
-
-      for (const id of idsToUnapprove) {
-        if (newHunks[id]) {
-          newHunks[id] = {
-            ...newHunks[id],
-            status: undefined,
-          };
-        }
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      updateHunkStatuses(get, set, hunkIds, undefined, {
+        movePairOnlyIfStatus: "approved",
+        skipMissing: true,
+      });
     },
 
     approveAllDirHunks: (dirPath) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
-      // Match hunks whose filePath starts with dirPath/
+      const { hunks } = get();
       const prefix = dirPath + "/";
-      const dirHunks = hunks.filter((h) => h.filePath.startsWith(prefix));
-      if (dirHunks.length === 0) return;
-
-      const newHunks = { ...reviewState.hunks };
-      for (const hunk of dirHunks) {
-        newHunks[hunk.id] = {
-          ...newHunks[hunk.id],
-          label: newHunks[hunk.id]?.label ?? [],
-          status: "approved" as const,
-        };
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      const ids = hunks
+        .filter((h) => h.filePath.startsWith(prefix))
+        .map((h) => h.id);
+      updateHunkStatuses(get, set, ids, "approved");
     },
 
     unapproveAllDirHunks: (dirPath) => {
-      const { reviewState, hunks, saveReviewState } = get();
-      if (!reviewState) return;
-
+      const { hunks } = get();
       const prefix = dirPath + "/";
-      const dirHunks = hunks.filter((h) => h.filePath.startsWith(prefix));
-      if (dirHunks.length === 0) return;
-
-      const newHunks = { ...reviewState.hunks };
-      for (const hunk of dirHunks) {
-        if (newHunks[hunk.id]) {
-          newHunks[hunk.id] = {
-            ...newHunks[hunk.id],
-            status: undefined,
-          };
-        }
-      }
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      const ids = hunks
+        .filter((h) => h.filePath.startsWith(prefix))
+        .map((h) => h.id);
+      updateHunkStatuses(get, set, ids, undefined, { skipMissing: true });
     },
 
     setHunkLabel: (hunkId, label) => {

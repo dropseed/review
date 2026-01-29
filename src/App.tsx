@@ -12,7 +12,6 @@ import { ComparisonHeader } from "./components/ComparisonHeader";
 import { TooltipProvider, SimpleTooltip } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores/reviewStore";
 import { getPlatformServices } from "./platform";
-import { isHunkTrusted } from "./types";
 import {
   useGlobalShortcut,
   useWindowTitle,
@@ -22,6 +21,7 @@ import {
   useRepositoryInit,
   useComparisonLoader,
   useKeyboardNavigation,
+  useReviewProgress,
 } from "./hooks";
 
 /** Returns the appropriate loading progress message based on current phase */
@@ -42,53 +42,20 @@ function getLoadingProgressText(
 }
 
 function App() {
-  const {
-    repoPath,
-    setRepoPath,
-    comparison,
-    setComparison,
-    loadCurrentComparison,
-    loadFiles,
-    loadAllFiles,
-    loadReviewState,
-    loadGitStatus,
-    saveCurrentComparison,
-    reviewState,
-    hunks,
-    focusedHunkIndex,
-    approveHunk,
-    rejectHunk,
-    nextFile,
-    prevFile,
-    nextHunk,
-    prevHunk,
-    sidebarPosition,
-    codeFontSize,
-    setCodeFontSize,
-    loadPreferences,
-    refresh,
-    classifying,
-    classificationError,
-    classifyingHunkIds,
-    checkClaudeAvailable,
-    triggerAutoClassification,
-    // Split view state and actions
-    secondaryFile,
-    closeSplit,
-    setSplitOrientation,
-    splitOrientation,
-    // View hierarchy
-    topLevelView,
-    navigateToBrowse,
-    navigateToOverview,
-    // Loading progress
-    loadingProgress,
-    // History
-    loadCommits,
-    // Remote info
-    remoteInfo,
-    loadRemoteInfo,
-  } = useReviewStore();
+  // Only subscribe to the values App actually renders
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const comparison = useReviewStore((s) => s.comparison);
+  const sidebarPosition = useReviewStore((s) => s.sidebarPosition);
+  const classifying = useReviewStore((s) => s.classifying);
+  const classificationError = useReviewStore((s) => s.classificationError);
+  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
+  const topLevelView = useReviewStore((s) => s.topLevelView);
+  const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
+  const loadingProgress = useReviewStore((s) => s.loadingProgress);
+  const remoteInfo = useReviewStore((s) => s.remoteInfo);
+  const loadPreferences = useReviewStore((s) => s.loadPreferences);
+  const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
+  const refresh = useReviewStore((s) => s.refresh);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -148,13 +115,7 @@ function App() {
     handleOpenRepo,
     handleNewWindow,
     handleSelectRepo,
-  } = useRepositoryInit({
-    repoPath,
-    setRepoPath,
-    setComparison,
-    loadCurrentComparison,
-    saveCurrentComparison,
-  });
+  } = useRepositoryInit();
 
   useWindowTitle(repoPath, comparison, comparisonReady);
 
@@ -163,73 +124,28 @@ function App() {
   });
 
   useKeyboardNavigation({
-    hunks,
-    focusedHunkIndex,
-    nextFile,
-    prevFile,
-    nextHunk,
-    prevHunk,
-    approveHunk,
-    rejectHunk,
     handleOpenRepo,
-    codeFontSize,
-    setCodeFontSize,
-    secondaryFile,
-    closeSplit,
-    setSplitOrientation,
-    splitOrientation,
     setShowDebugModal,
     setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
-    topLevelView,
-    navigateToBrowse,
-    navigateToOverview,
   });
 
   useMenuEvents({
     handleOpenRepo,
     handleNewWindow,
     handleRefresh,
-    codeFontSize,
-    setCodeFontSize,
     setShowDebugModal,
     setShowSettingsModal,
   });
 
-  useFileWatcher({
-    repoPath,
-    comparisonReady,
-    loadReviewState,
-    refresh,
-  });
+  useFileWatcher(comparisonReady);
 
-  useComparisonLoader({
-    repoPath,
-    comparisonReady,
-    comparisonKey: comparison.key,
-    loadFiles,
-    loadAllFiles,
-    loadReviewState,
-    loadGitStatus,
-    loadRemoteInfo,
-    loadCommits,
-    triggerAutoClassification,
-    setInitialLoading,
-  });
+  useComparisonLoader(comparisonReady, setInitialLoading);
 
-  // Calculate review progress
-  const totalHunks = hunks.length;
-  const trustedHunks = reviewState
-    ? hunks.filter((h) => {
-        const state = reviewState.hunks[h.id];
-        return !state?.status && isHunkTrusted(state, reviewState.trustList);
-      }).length
-    : 0;
-  const approvedHunks = reviewState
-    ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "approved").length
-    : 0;
-  const reviewedHunks = trustedHunks + approvedHunks;
+  // Review progress (shared with OverviewView)
+  const { totalHunks, trustedHunks, approvedHunks, reviewedHunks } =
+    useReviewProgress();
 
   // Show loading state while determining repo status
   if (repoStatus === "loading") {

@@ -1,12 +1,7 @@
-import { useState, useEffect, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores/reviewStore";
-import type {
-  FileSymbolDiff,
-  SymbolDiff,
-  DiffHunk,
-  HunkState,
-} from "../../types";
+import type { FileSymbolDiff, SymbolDiff, DiffHunk } from "../../types";
 import {
   SymbolKindBadge,
   ChangeIndicator,
@@ -19,6 +14,7 @@ import {
 import type { SymbolHunkStatus } from "../symbols";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import type { FileHunkStatus } from "../FilesPanel/types";
+import { ReviewDataProvider, useReviewData } from "../ReviewDataContext";
 
 // ========================================================================
 // Types
@@ -173,20 +169,15 @@ function DrillDownHeader() {
 const ListSymbolRow = memo(function ListSymbolRow({
   symbol,
   depth,
-  hunkStates,
-  trustList,
   lineStatsMap,
   filePath,
-  onNavigate,
 }: {
   symbol: SymbolDiff;
   depth: number;
-  hunkStates: Record<string, HunkState>;
-  trustList: string[];
   lineStatsMap: Map<string, LineStats>;
   filePath: string;
-  onNavigate: (filePath: string, hunkId: string) => void;
 }) {
+  const { hunkStates, trustList, onNavigate } = useReviewData();
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const [expanded, setExpanded] = useState(true);
 
@@ -287,11 +278,8 @@ const ListSymbolRow = memo(function ListSymbolRow({
               key={`${child.changeType}-${child.name}-${child.newRange?.startLine ?? child.oldRange?.startLine ?? 0}`}
               symbol={child}
               depth={depth + 1}
-              hunkStates={hunkStates}
-              trustList={trustList}
               lineStatsMap={lineStatsMap}
               filePath={filePath}
-              onNavigate={onNavigate}
             />
           ))}
         </div>
@@ -308,21 +296,16 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
   fileDiff,
   fileHunkStatus,
   fileLineStats,
-  hunkStates,
-  trustList,
   lineStatsMap,
   allHunks,
-  onNavigate,
 }: {
   fileDiff: FileSymbolDiff;
   fileHunkStatus: FileHunkStatus;
   fileLineStats: LineStats;
-  hunkStates: Record<string, HunkState>;
-  trustList: string[];
   lineStatsMap: Map<string, LineStats>;
   allHunks: DiffHunk[];
-  onNavigate: (filePath: string, hunkId: string) => void;
 }) {
+  const { hunkStates, trustList } = useReviewData();
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
@@ -384,20 +367,14 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
               key={`${symbol.changeType}-${symbol.name}-${symbol.newRange?.startLine ?? symbol.oldRange?.startLine ?? 0}`}
               symbol={symbol}
               depth={1}
-              hunkStates={hunkStates}
-              trustList={trustList}
               lineStatsMap={lineStatsMap}
               filePath={fileDiff.filePath}
-              onNavigate={onNavigate}
             />
           ))}
           {fileDiff.topLevelHunkIds.length > 0 && (
             <ListTopLevelRow
               hunkIds={fileDiff.topLevelHunkIds}
-              hunkStates={hunkStates}
-              trustList={trustList}
               filePath={fileDiff.filePath}
-              onNavigate={onNavigate}
             />
           )}
         </div>
@@ -483,17 +460,12 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
 
 function ListTopLevelRow({
   hunkIds,
-  hunkStates,
-  trustList,
   filePath,
-  onNavigate,
 }: {
   hunkIds: string[];
-  hunkStates: Record<string, HunkState>;
-  trustList: string[];
   filePath: string;
-  onNavigate: (filePath: string, hunkId: string) => void;
 }) {
+  const { hunkStates, trustList, onNavigate } = useReviewData();
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
 
   const status = useMemo(
@@ -554,21 +526,12 @@ export function DrillDownSection() {
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
   const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
-  const loadSymbols = useReviewStore((s) => s.loadSymbols);
-  const files = useReviewStore((s) => s.files);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const hunkStates = reviewState?.hunks ?? {};
   const trustList = reviewState?.trustList ?? [];
-
-  // Trigger symbol loading if needed
-  useEffect(() => {
-    if (!symbolsLoaded && !symbolsLoading && files.length > 0) {
-      loadSymbols();
-    }
-  }, [symbolsLoaded, symbolsLoading, files.length, loadSymbols]);
 
   const lineStatsMap = useMemo(() => buildLineStatsMap(hunks), [hunks]);
 
@@ -625,52 +588,56 @@ export function DrillDownSection() {
     return null;
   }
 
+  const contextValue = useMemo(
+    () => ({ hunkStates, trustList, onNavigate: handleNavigate }),
+    [hunkStates, trustList, handleNavigate],
+  );
+
   return (
-    <div className="px-4 mb-6">
-      <DrillDownHeader />
+    <ReviewDataProvider value={contextValue}>
+      <div className="px-4 mb-6">
+        <DrillDownHeader />
 
-      {symbolsLoading && !symbolsLoaded && (
-        <div className="flex items-center justify-center py-8">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-6 w-6 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-            <span className="text-xs text-stone-500">
-              Extracting symbols...
-            </span>
+        {symbolsLoading && !symbolsLoaded && (
+          <div className="flex items-center justify-center py-8">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-6 w-6 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+              <span className="text-xs text-stone-500">
+                Extracting symbols...
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {allChangedFiles.length > 0 && (
-        <div className="rounded-lg border border-stone-800 overflow-hidden">
-          {allChangedFiles.map((fileDiff) => {
-            const status = fileHunkStatusMap.get(fileDiff.filePath) ?? {
-              pending: 0,
-              approved: 0,
-              trusted: 0,
-              rejected: 0,
-              total: 0,
-            };
-            const fileLineStats = getFileLineStats(
-              fileDiff.filePath,
-              hunks,
-              lineStatsMap,
-            );
-            return (
-              <DrillDownFileRow
-                key={fileDiff.filePath}
-                fileDiff={fileDiff}
-                fileHunkStatus={status}
-                fileLineStats={fileLineStats}
-                hunkStates={hunkStates}
-                trustList={trustList}
-                lineStatsMap={lineStatsMap}
-                allHunks={hunks}
-                onNavigate={handleNavigate}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
+        {allChangedFiles.length > 0 && (
+          <div className="rounded-lg border border-stone-800 overflow-hidden">
+            {allChangedFiles.map((fileDiff) => {
+              const status = fileHunkStatusMap.get(fileDiff.filePath) ?? {
+                pending: 0,
+                approved: 0,
+                trusted: 0,
+                rejected: 0,
+                total: 0,
+              };
+              const fileLineStats = getFileLineStats(
+                fileDiff.filePath,
+                hunks,
+                lineStatsMap,
+              );
+              return (
+                <DrillDownFileRow
+                  key={fileDiff.filePath}
+                  fileDiff={fileDiff}
+                  fileHunkStatus={status}
+                  fileLineStats={fileLineStats}
+                  lineStatsMap={lineStatsMap}
+                  allHunks={hunks}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </ReviewDataProvider>
   );
 }

@@ -1,23 +1,16 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { shouldIgnoreReviewStateReload } from "../stores/slices/reviewSlice";
-
-interface UseFileWatcherOptions {
-  repoPath: string | null;
-  comparisonReady: boolean;
-  loadReviewState: () => Promise<void>;
-  refresh: () => Promise<void>;
-}
+import { useReviewStore } from "../stores/reviewStore";
 
 /**
  * Manages file watcher lifecycle and listens for review state/git change events.
  */
-export function useFileWatcher({
-  repoPath,
-  comparisonReady,
-  loadReviewState,
-  refresh,
-}: UseFileWatcherOptions) {
+export function useFileWatcher(comparisonReady: boolean) {
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const loadReviewState = useReviewStore((s) => s.loadReviewState);
+  const refresh = useReviewStore((s) => s.refresh);
+
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
   const loadReviewStateRef = useRef(loadReviewState);

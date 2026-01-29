@@ -1,36 +1,18 @@
 import { useEffect, useCallback } from "react";
+import { useReviewStore } from "../stores/reviewStore";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
-import type { DiffHunk } from "../types";
-import type { TopLevelView } from "../stores/slices/navigationSlice";
 
 interface UseKeyboardNavigationOptions {
-  hunks: DiffHunk[];
-  focusedHunkIndex: number;
-  nextFile: () => void;
-  prevFile: () => void;
-  nextHunk: () => void;
-  prevHunk: () => void;
-  approveHunk: (hunkId: string) => void;
-  rejectHunk: (hunkId: string) => void;
   handleOpenRepo: () => void;
-  codeFontSize: number;
-  setCodeFontSize: (size: number) => void;
-  secondaryFile: string | null;
-  closeSplit: () => void;
-  setSplitOrientation: (orientation: "horizontal" | "vertical") => void;
-  splitOrientation: "horizontal" | "vertical";
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
-  topLevelView: TopLevelView;
-  navigateToBrowse: (filePath?: string) => void;
-  navigateToOverview: () => void;
 }
 
 /**
@@ -38,29 +20,30 @@ interface UseKeyboardNavigationOptions {
  * j/k for hunk navigation, a/r for approve/reject, modal toggles, font size, split view.
  */
 export function useKeyboardNavigation({
-  hunks,
-  focusedHunkIndex,
-  nextFile,
-  prevFile,
-  nextHunk,
-  prevHunk,
-  approveHunk,
-  rejectHunk,
   handleOpenRepo,
-  codeFontSize,
-  setCodeFontSize,
-  secondaryFile,
-  closeSplit,
-  setSplitOrientation,
-  splitOrientation,
   setShowDebugModal,
   setShowSettingsModal,
   setShowFileFinder,
   setShowContentSearch,
-  topLevelView,
-  navigateToBrowse,
-  navigateToOverview,
 }: UseKeyboardNavigationOptions) {
+  const hunks = useReviewStore((s) => s.hunks);
+  const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
+  const nextFile = useReviewStore((s) => s.nextFile);
+  const prevFile = useReviewStore((s) => s.prevFile);
+  const nextHunk = useReviewStore((s) => s.nextHunk);
+  const prevHunk = useReviewStore((s) => s.prevHunk);
+  const approveHunk = useReviewStore((s) => s.approveHunk);
+  const rejectHunk = useReviewStore((s) => s.rejectHunk);
+  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
+  const secondaryFile = useReviewStore((s) => s.secondaryFile);
+  const closeSplit = useReviewStore((s) => s.closeSplit);
+  const setSplitOrientation = useReviewStore((s) => s.setSplitOrientation);
+  const splitOrientation = useReviewStore((s) => s.splitOrientation);
+  const topLevelView = useReviewStore((s) => s.topLevelView);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       // Don't capture keys when typing in inputs
