@@ -50,6 +50,28 @@
   --border-default: rgba(168, 162, 158, 0.2);
   --border-strong: rgba(168, 162, 158, 0.3);
 
+  /* shadcn/ui compatible tokens (dark only) */
+  --background: 20 6% 4%;
+  --foreground: 40 6% 97%;
+  --card: 24 6% 10%;
+  --card-foreground: 40 6% 97%;
+  --popover: 24 6% 10%;
+  --popover-foreground: 40 6% 97%;
+  --primary: 84 81% 44%;
+  --primary-foreground: 20 6% 4%;
+  --secondary: 25 6% 25%;
+  --secondary-foreground: 40 6% 96%;
+  --muted: 20 6% 15%;
+  --muted-foreground: 30 3% 60%;
+  --accent: 20 6% 15%;
+  --accent-foreground: 40 6% 97%;
+  --destructive: 347 77% 60%;
+  --destructive-foreground: 40 6% 97%;
+  --border: 25 6% 25%;
+  --input: 25 6% 25%;
+  --ring: 43 96% 56%;
+  --radius: 0.5rem;
+
   /* Typography - Inter with system fallback */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   line-height: 1.5;

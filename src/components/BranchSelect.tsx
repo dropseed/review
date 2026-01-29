@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
 import type { BranchList, StashEntry } from "../types";
+import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 
 // Special values for local state options
 const WORKING_TREE = "__WORKING_TREE__";
@@ -157,24 +158,8 @@ export const BranchSelect = memo(function BranchSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [openUpward, setOpenUpward] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const listboxRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-
-  // Calculate dropdown direction based on available space
-  useEffect(() => {
-    if (isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const dropdownHeight = 300; // approximate max height
-
-      // Open upward if not enough space below but enough above
-      setOpenUpward(spaceBelow < dropdownHeight && spaceAbove > spaceBelow);
-    }
-  }, [isOpen]);
 
   // Check if a compare option would create an existing comparison
   const isExistingComparison = useCallback(
@@ -273,32 +258,6 @@ export const BranchSelect = memo(function BranchSelect({
     return groups;
   }, [filteredOptions]);
 
-  // Handle outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-        setSearchQuery("");
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isOpen]);
-
-  // Focus search input when opened
-  useEffect(() => {
-    if (isOpen && searchRef.current) {
-      searchRef.current.focus();
-    }
-  }, [isOpen]);
-
   // Scroll highlighted option into view
   useEffect(() => {
     if (isOpen && listboxRef.current) {
@@ -311,23 +270,10 @@ export const BranchSelect = memo(function BranchSelect({
     }
   }, [isOpen, highlightedIndex]);
 
-  // Handle keyboard navigation
+  // Handle keyboard navigation within the dropdown
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (!isOpen) {
-        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
-          e.preventDefault();
-          setIsOpen(true);
-        }
-        return;
-      }
-
       switch (e.key) {
-        case "Escape":
-          e.preventDefault();
-          setIsOpen(false);
-          setSearchQuery("");
-          break;
         case "ArrowDown":
           e.preventDefault();
           setHighlightedIndex((i) =>
@@ -356,7 +302,7 @@ export const BranchSelect = memo(function BranchSelect({
           break;
       }
     },
-    [isOpen, filteredOptions, highlightedIndex, onChange],
+    [filteredOptions, highlightedIndex, onChange],
   );
 
   // Handle option selection
@@ -368,6 +314,15 @@ export const BranchSelect = memo(function BranchSelect({
     },
     [onChange],
   );
+
+  // Reset state when popover closes
+  const handleOpenChange = useCallback((open: boolean) => {
+    setIsOpen(open);
+    if (!open) {
+      setSearchQuery("");
+      setHighlightedIndex(0);
+    }
+  }, []);
 
   // Get current display text
   const displayText = value ? getDisplayName(value, branches) : null;
@@ -383,154 +338,147 @@ export const BranchSelect = memo(function BranchSelect({
   const listboxId = `branch-listbox-${variant}`;
 
   return (
-    <div ref={containerRef} className="relative min-w-0 max-w-[200px]">
-      {/* Trigger button */}
-      <button
-        ref={buttonRef}
-        type="button"
-        id={buttonId}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        className={`
-          w-full appearance-none rounded-lg border bg-stone-800/50
-          pl-3 pr-8 py-2 text-sm font-mono
-          text-left
-          transition-all duration-150
-          ${variantClasses}
-          ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-stone-800/70"}
-          focus:outline-none focus:ring-2
-        `}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        aria-labelledby={buttonId}
-        aria-label={label}
+    <Popover open={isOpen} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          id={buttonId}
+          disabled={disabled}
+          className={`
+            relative w-full max-w-[200px] min-w-0 appearance-none rounded-lg border bg-stone-800/50
+            pl-3 pr-8 py-2 text-sm font-mono
+            text-left
+            transition-all duration-150
+            ${variantClasses}
+            ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-stone-800/70"}
+            focus:outline-none focus:ring-2
+          `}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          aria-label={label}
+        >
+          <span
+            className={`block truncate ${showPlaceholder ? "text-stone-500" : ""}`}
+          >
+            {displayText || placeholder || "Select..."}
+          </span>
+          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+            <svg
+              className={`h-4 w-4 text-stone-500 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-64 p-0"
+        align="start"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          searchRef.current?.focus();
+        }}
       >
-        <span
-          className={`block truncate ${showPlaceholder ? "text-stone-500" : ""}`}
-        >
-          {displayText || placeholder || "Select..."}
-        </span>
-        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-          <svg
-            className={`h-4 w-4 text-stone-500 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </span>
-      </button>
-
-      {/* Dropdown */}
-      {isOpen && (
-        <div
-          className={`absolute z-50 w-64 rounded-lg border border-stone-700/50 bg-stone-900/95
-                     backdrop-blur-xl shadow-xl shadow-black/40
-                     ${openUpward ? "bottom-full mb-1 origin-bottom" : "top-full mt-1 origin-top"}`}
-          style={{ animation: "fade-in 0.15s ease-out" }}
-        >
-          {/* Search input */}
-          <div className="p-2 border-b border-stone-800/50">
-            <input
-              ref={searchRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setHighlightedIndex(0);
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="Search branches..."
-              className="w-full rounded-md bg-stone-800/50 border border-stone-700/50
-                         px-3 py-1.5 text-sm text-stone-200
-                         placeholder:text-stone-500
-                         focus:outline-none focus:ring-1 focus:ring-stone-600"
-              aria-label="Search branches"
-            />
-          </div>
-
-          {/* Options list */}
-          <ul
-            ref={listboxRef}
-            id={listboxId}
-            role="listbox"
-            aria-labelledby={buttonId}
-            className="max-h-60 overflow-auto py-1 scrollbar-thin"
-          >
-            {Object.entries(groupedOptions).length === 0 ? (
-              <li className="px-3 py-2 text-sm text-stone-500">
-                No branches found
-              </li>
-            ) : (
-              Object.entries(groupedOptions).map(([group, groupOpts]) => (
-                <li key={group}>
-                  {/* Group header */}
-                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
-                    {group}
-                  </div>
-                  {/* Group options */}
-                  <ul>
-                    {groupOpts.map((opt) => {
-                      const flatIndex = filteredOptions.indexOf(opt);
-                      const isHighlighted = flatIndex === highlightedIndex;
-                      const isSelected = opt.value === value;
-
-                      return (
-                        <li
-                          key={opt.value}
-                          role="option"
-                          aria-selected={isSelected}
-                          data-highlighted={isHighlighted}
-                          onClick={() => handleSelect(opt.value)}
-                          onMouseEnter={() => setHighlightedIndex(flatIndex)}
-                          className={`
-                            flex items-center gap-2 px-3 py-2 cursor-pointer
-                            text-sm transition-colors duration-75
-                            ${
-                              isHighlighted
-                                ? variant === "base"
-                                  ? "bg-terracotta-500/10 text-stone-100"
-                                  : "bg-sage-500/10 text-stone-100"
-                                : "text-stone-300 hover:bg-stone-800/50"
-                            }
-                            ${isSelected ? "font-medium" : ""}
-                          `}
-                        >
-                          <BranchIcon type={opt.icon} />
-                          <span className="truncate font-mono">
-                            {opt.label}
-                          </span>
-                          {isSelected && (
-                            <svg
-                              className={`ml-auto h-4 w-4 shrink-0 ${variant === "base" ? "text-terracotta-400" : "text-sage-400"}`}
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                              aria-hidden="true"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              ))
-            )}
-          </ul>
+        {/* Search input */}
+        <div className="p-2 border-b border-stone-800/50">
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setHighlightedIndex(0);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="Search branches..."
+            className="w-full rounded-md bg-stone-800/50 border border-stone-700/50
+                       px-3 py-1.5 text-sm text-stone-200
+                       placeholder:text-stone-500
+                       focus:outline-none focus:ring-1 focus:ring-stone-600"
+            aria-label="Search branches"
+          />
         </div>
-      )}
-    </div>
+
+        {/* Options list */}
+        <ul
+          ref={listboxRef}
+          id={listboxId}
+          role="listbox"
+          aria-labelledby={buttonId}
+          className="max-h-60 overflow-auto py-1 scrollbar-thin"
+        >
+          {Object.entries(groupedOptions).length === 0 ? (
+            <li className="px-3 py-2 text-sm text-stone-500">
+              No branches found
+            </li>
+          ) : (
+            Object.entries(groupedOptions).map(([group, groupOpts]) => (
+              <li key={group}>
+                {/* Group header */}
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                  {group}
+                </div>
+                {/* Group options */}
+                <ul>
+                  {groupOpts.map((opt) => {
+                    const flatIndex = filteredOptions.indexOf(opt);
+                    const isHighlighted = flatIndex === highlightedIndex;
+                    const isSelected = opt.value === value;
+
+                    return (
+                      <li
+                        key={opt.value}
+                        role="option"
+                        aria-selected={isSelected}
+                        data-highlighted={isHighlighted}
+                        onClick={() => handleSelect(opt.value)}
+                        onMouseEnter={() => setHighlightedIndex(flatIndex)}
+                        className={`
+                          flex items-center gap-2 px-3 py-2 cursor-pointer
+                          text-sm transition-colors duration-75
+                          ${
+                            isHighlighted
+                              ? variant === "base"
+                                ? "bg-terracotta-500/10 text-stone-100"
+                                : "bg-sage-500/10 text-stone-100"
+                              : "text-stone-300 hover:bg-stone-800/50"
+                          }
+                          ${isSelected ? "font-medium" : ""}
+                        `}
+                      >
+                        <BranchIcon type={opt.icon} />
+                        <span className="truncate font-mono">{opt.label}</span>
+                        {isSelected && (
+                          <svg
+                            className={`ml-auto h-4 w-4 shrink-0 ${variant === "base" ? "text-terracotta-400" : "text-sage-400"}`}
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))
+          )}
+        </ul>
+      </PopoverContent>
+    </Popover>
   );
 });
 

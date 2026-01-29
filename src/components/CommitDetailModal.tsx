@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores/reviewStore";
 import type { CommitDetail } from "../types";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface CommitDetailModalProps {
   isOpen: boolean;
@@ -68,83 +69,59 @@ export function CommitDetailModal({
       });
   }, [isOpen, commitHash, repoPath]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex w-full max-w-lg max-h-[85vh] flex-col rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex w-full max-w-lg max-h-[85vh] flex-col rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="relative border-b border-stone-800 px-5 py-4">
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-800 ring-1 ring-stone-700">
-                <svg
-                  className="h-4 w-4 text-stone-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="3" />
-                  <line x1="12" y1="3" x2="12" y2="9" />
-                  <line x1="12" y1="15" x2="12" y2="21" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-stone-100">
-                  Commit{" "}
-                  {detail ? (
-                    <span className="font-mono text-amber-400">
-                      {detail.shortHash}
-                    </span>
-                  ) : commitHash ? (
-                    <span className="font-mono text-amber-400">
-                      {commitHash.slice(0, 7)}
-                    </span>
-                  ) : null}
-                </h2>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300"
-            >
+        <DialogHeader className="relative px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-800 ring-1 ring-stone-700">
               <svg
-                className="h-5 w-5"
-                fill="none"
+                className="h-4 w-4 text-stone-400"
                 viewBox="0 0 24 24"
+                fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
+                <circle cx="12" cy="12" r="3" />
+                <line x1="12" y1="3" x2="12" y2="9" />
+                <line x1="12" y1="15" x2="12" y2="21" />
               </svg>
-            </button>
+            </div>
+            <DialogTitle>
+              Commit{" "}
+              {detail ? (
+                <span className="font-mono text-amber-400">
+                  {detail.shortHash}
+                </span>
+              ) : commitHash ? (
+                <span className="font-mono text-amber-400">
+                  {commitHash.slice(0, 7)}
+                </span>
+              ) : null}
+            </DialogTitle>
           </div>
-        </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </DialogHeader>
 
         {/* Content */}
         <div className="overflow-y-auto flex-1 min-h-0">
@@ -256,7 +233,7 @@ export function CommitDetailModal({
             </>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -3,6 +3,7 @@ import { useReviewStore } from "../stores/reviewStore";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { anyLabelMatchesPattern, type TrustCategory } from "../types";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface TrustModalProps {
   isOpen: boolean;
@@ -66,20 +67,6 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
 
     loadTaxonomy();
   }, [isOpen]);
-
-  // Handle escape key to close
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
 
   // Send notification when classification completes
   useEffect(() => {
@@ -180,22 +167,15 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg border border-stone-700 bg-stone-900 shadow-2xl">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-800 px-4 py-3">
+        <DialogHeader>
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-stone-100">
+            <DialogTitle className="text-sm font-medium">
               Trust Settings
-            </h2>
+            </DialogTitle>
             {trustedCount > 0 && (
               <span className="text-xxs tabular-nums text-cyan-400">
                 {trustedCount} trusted
@@ -222,7 +202,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
               />
             </svg>
           </button>
-        </div>
+        </DialogHeader>
 
         {/* Categories */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -476,7 +456,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                       .slice(0, 2)
                       .join(" ")
                       .slice(0, 80)}
-                    {hunk.content.length > 80 && "…"}
+                    {hunk.content.length > 80 && "..."}
                   </div>
                 </button>
               ))}
@@ -511,7 +491,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                         />
                       </svg>
-                      <span className="text-stone-400">Classifying…</span>
+                      <span className="text-stone-400">Classifying...</span>
                     </span>
                   ) : (
                     <span className="tabular-nums">
@@ -579,7 +559,7 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

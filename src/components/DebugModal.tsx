@@ -1,5 +1,6 @@
-import { useEffect, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useReviewStore } from "../stores/reviewStore";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 // Simple JSON syntax highlighting
 function highlightJson(json: string): React.ReactNode[] {
@@ -82,34 +83,11 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
     });
   }, [fullJsonString]);
 
-  // Handle escape key to close
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <div
-        className="relative flex max-h-[80vh] w-[80vw] max-w-4xl flex-col rounded-lg border border-stone-700 bg-stone-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-700 px-4 py-3">
-          <h2 className="text-sm font-medium text-stone-100">Debug Data</h2>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex max-h-[80vh] w-[80vw] max-w-4xl flex-col rounded-lg overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-medium">Debug Data</DialogTitle>
           <button
             onClick={onClose}
             className="rounded p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-100"
@@ -128,7 +106,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
               />
             </svg>
           </button>
-        </div>
+        </DialogHeader>
 
         {/* Tabs */}
         <div className="flex border-b border-stone-700">
@@ -194,7 +172,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
             Copy to Clipboard
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

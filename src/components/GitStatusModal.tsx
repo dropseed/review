@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useReviewStore } from "../stores/reviewStore";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface GitStatusModalProps {
   isOpen: boolean;
@@ -12,20 +13,6 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
   const { gitStatus, repoPath } = useReviewStore();
   const [rawStatus, setRawStatus] = useState<string>("");
   const [copied, setCopied] = useState(false);
-
-  // Handle escape key to close
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
 
   // Load raw status when modal opens
   useEffect(() => {
@@ -52,18 +39,12 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
     }
   };
 
-  if (!isOpen || !gitStatus) return null;
+  if (!gitStatus) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg border border-stone-700 bg-stone-900 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-800 border-t-2 border-t-sky-500/40 px-4 py-3">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg overflow-hidden">
+        <DialogHeader className="border-t-2 border-t-sky-500/40">
           <div className="flex items-center gap-3">
             {/* Branch icon */}
             <svg
@@ -80,9 +61,9 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
               <circle cx="6" cy="18" r="3" />
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
-            <h2 className="text-sm font-semibold tracking-wide text-stone-50">
+            <DialogTitle className="text-sm font-semibold tracking-wide">
               {gitStatus.currentBranch}
-            </h2>
+            </DialogTitle>
           </div>
           <div className="flex items-center gap-2">
             {/* Copy button */}
@@ -146,7 +127,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
               </svg>
             </button>
           </div>
-        </div>
+        </DialogHeader>
 
         {/* Raw output */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -154,7 +135,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
             {rawStatus || "Loading..."}
           </pre>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

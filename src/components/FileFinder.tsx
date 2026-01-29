@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useReviewStore } from "../stores/reviewStore";
 import type { FileEntry } from "../types";
+import { Dialog, DialogOverlay, DialogPortal } from "./ui/dialog";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 
 interface FileFinderProps {
   isOpen: boolean;
@@ -262,110 +265,28 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
             handleSelect(results[selectedIndex].path);
           }
           break;
-        case "Escape":
-          e.preventDefault();
-          onClose();
-          break;
       }
     },
-    [results, selectedIndex, handleSelect, onClose],
+    [results, selectedIndex, handleSelect],
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-sm animate-fade-in pt-[15vh]"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      style={{
-        // Honor reduced motion preference
-        animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "none"
-          : undefined,
-      }}
-    >
-      <div className="w-full max-w-xl h-fit rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
-        {/* Search input */}
-        <div className="border-b border-stone-800 p-3">
-          <div className="flex items-center gap-3 px-2">
-            <svg
-              className="h-4 w-4 text-stone-500 flex-shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search files..."
-              aria-label="Search files"
-              className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none"
-            />
-            {query && (
-              <button
-                onClick={() => setQuery("")}
-                className="text-stone-500 hover:text-stone-300 transition-colors"
-                aria-label="Clear search"
-              >
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Results list */}
-        <div
-          ref={listRef}
-          className="max-h-80 overflow-y-auto scrollbar-thin"
-          role="listbox"
-          aria-label="File search results"
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          className="fixed left-[50%] top-[15vh] z-50 w-full max-w-xl translate-x-[-50%] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=open]:slide-in-from-left-1/2"
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-stone-500">
-              {query ? "No matching files" : "No files available"}
-            </div>
-          ) : (
-            results.map((result, index) => (
-              <button
-                key={result.path}
-                data-index={index}
-                role="option"
-                aria-selected={index === selectedIndex}
-                onClick={() => handleSelect(result.path)}
-                className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${
-                  index === selectedIndex
-                    ? "bg-stone-800"
-                    : "hover:bg-stone-800/50"
-                }`}
-              >
-                {/* File icon */}
+          <VisuallyHidden.Root>
+            <DialogPrimitive.Title>Find File</DialogPrimitive.Title>
+          </VisuallyHidden.Root>
+          <div className="rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+            {/* Search input */}
+            <div className="border-b border-stone-800 p-3">
+              <div className="flex items-center gap-3 px-2">
                 <svg
-                  className={`h-4 w-4 flex-shrink-0 ${
-                    result.isChanged ? "text-amber-500" : "text-stone-500"
-                  }`}
+                  className="h-4 w-4 text-stone-500 flex-shrink-0"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -373,59 +294,135 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                  <polyline points="14 2 14 8 20 8" />
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
                 </svg>
-
-                {/* File path with highlighted matches */}
-                <div className="flex-1 min-w-0 font-mono text-sm">
-                  <span className="text-stone-300 truncate block">
-                    <HighlightedText
-                      text={result.path}
-                      indices={result.matchIndices}
-                    />
-                  </span>
-                </div>
-
-                {/* Changed indicator */}
-                {result.isChanged && (
-                  <span className="text-xxs text-amber-500/80 flex-shrink-0">
-                    changed
-                  </span>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search files..."
+                  aria-label="Search files"
+                  className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none"
+                />
+                {query && (
+                  <button
+                    onClick={() => setQuery("")}
+                    className="text-stone-500 hover:text-stone-300 transition-colors"
+                    aria-label="Clear search"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
                 )}
-              </button>
-            ))
-          )}
-        </div>
+              </div>
+            </div>
 
-        {/* Footer with keyboard hints */}
-        <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                ↑
-              </kbd>
-              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                ↓
-              </kbd>
-              <span className="ml-0.5">navigate</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                Enter
-              </kbd>
-              <span className="ml-0.5">select</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                Esc
-              </kbd>
-              <span className="ml-0.5">close</span>
-            </span>
+            {/* Results list */}
+            <div
+              ref={listRef}
+              className="max-h-80 overflow-y-auto scrollbar-thin"
+              role="listbox"
+              aria-label="File search results"
+            >
+              {results.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-stone-500">
+                  {query ? "No matching files" : "No files available"}
+                </div>
+              ) : (
+                results.map((result, index) => (
+                  <button
+                    key={result.path}
+                    data-index={index}
+                    role="option"
+                    aria-selected={index === selectedIndex}
+                    onClick={() => handleSelect(result.path)}
+                    className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${
+                      index === selectedIndex
+                        ? "bg-stone-800"
+                        : "hover:bg-stone-800/50"
+                    }`}
+                  >
+                    {/* File icon */}
+                    <svg
+                      className={`h-4 w-4 flex-shrink-0 ${
+                        result.isChanged ? "text-amber-500" : "text-stone-500"
+                      }`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+
+                    {/* File path with highlighted matches */}
+                    <div className="flex-1 min-w-0 font-mono text-sm">
+                      <span className="text-stone-300 truncate block">
+                        <HighlightedText
+                          text={result.path}
+                          indices={result.matchIndices}
+                        />
+                      </span>
+                    </div>
+
+                    {/* Changed indicator */}
+                    {result.isChanged && (
+                      <span className="text-xxs text-amber-500/80 flex-shrink-0">
+                        changed
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+
+            {/* Footer with keyboard hints */}
+            <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    ↑
+                  </kbd>
+                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    ↓
+                  </kbd>
+                  <span className="ml-0.5">navigate</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    Enter
+                  </kbd>
+                  <span className="ml-0.5">select</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    Esc
+                  </kbd>
+                  <span className="ml-0.5">close</span>
+                </span>
+              </div>
+              <span>{results.length} files</span>
+            </div>
           </div>
-          <span>{results.length} files</span>
-        </div>
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </Dialog>
   );
 }

@@ -1,4 +1,12 @@
 import { memo } from "react";
+import { getPlatformServices } from "../../platform";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "../ui/context-menu";
 import type { ProcessedFileEntry } from "./types";
 import { HunkCount, StatusLetter } from "./StatusIndicators";
 
@@ -11,7 +19,9 @@ interface FileNodeProps {
   onToggle: (path: string) => void;
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
-  onContextMenu: (e: React.MouseEvent, path: string) => void;
+  repoPath: string | null;
+  revealLabel: string;
+  onOpenInSplit?: (path: string) => void;
   registerRef: (path: string, ref: HTMLButtonElement | null) => void;
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
@@ -103,7 +113,9 @@ export const FileNode = memo(
     onToggle,
     selectedFile,
     onSelectFile,
-    onContextMenu,
+    repoPath,
+    revealLabel,
+    onOpenInSplit,
     registerRef,
     hunkContext,
     onApproveAll,
@@ -182,7 +194,9 @@ export const FileNode = memo(
                   onToggle={onToggle}
                   selectedFile={selectedFile}
                   onSelectFile={onSelectFile}
-                  onContextMenu={onContextMenu}
+                  repoPath={repoPath}
+                  revealLabel={revealLabel}
+                  onOpenInSplit={onOpenInSplit}
                   registerRef={registerRef}
                   hunkContext={hunkContext}
                   onApproveAll={onApproveAll}
@@ -201,57 +215,146 @@ export const FileNode = memo(
     const hasPending = entry.hunkStatus.pending > 0;
     const hasApproved = entry.hunkStatus.approved > 0;
     const isComplete = hasReviewableContent && entry.hunkStatus.pending === 0;
+    const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
 
     return (
-      <div
-        ref={(el) => registerRef(entry.path, el as HTMLButtonElement | null)}
-        onContextMenu={(e) => onContextMenu(e, entry.path)}
-        className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
-          isSelected
-            ? "bg-amber-500/15 border-l-2 border-l-amber-400"
-            : isGitignored
-              ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
-              : "border-l-2 border-l-transparent hover:bg-stone-800/40"
-        }`}
-        style={{ paddingLeft: `${depth * 0.8 + 0.5}rem` }}
-      >
-        <button
-          className="flex flex-1 items-center gap-1.5 text-left min-w-0"
-          onClick={() => onSelectFile(entry.path)}
-          aria-selected={isSelected}
-        >
-          {/* Git status */}
-          <StatusLetter status={entry.status} />
-
-          {/* File name */}
-          <span
-            className={`min-w-0 flex-1 truncate text-xs ${
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            ref={(el) =>
+              registerRef(entry.path, el as HTMLButtonElement | null)
+            }
+            className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
               isSelected
-                ? "text-stone-100"
-                : isComplete
-                  ? "text-lime-400"
-                  : isGitignored
-                    ? "text-stone-500"
-                    : "text-stone-300"
+                ? "bg-amber-500/15 border-l-2 border-l-amber-400"
+                : isGitignored
+                  ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
+                  : "border-l-2 border-l-transparent hover:bg-stone-800/40"
             }`}
+            style={{ paddingLeft: `${depth * 0.8 + 0.5}rem` }}
           >
-            {entry.name}
-          </span>
-        </button>
+            <button
+              className="flex flex-1 items-center gap-1.5 text-left min-w-0"
+              onClick={() => onSelectFile(entry.path)}
+              aria-selected={isSelected}
+            >
+              {/* Git status */}
+              <StatusLetter status={entry.status} />
 
-        {/* Approval button */}
-        {onApproveAll && onUnapproveAll && hasReviewableContent && (
-          <ApprovalButtons
-            hasPending={hasPending}
-            hasApproved={hasApproved}
-            onApprove={() => onApproveAll(entry.path, false)}
-            onUnapprove={() => onUnapproveAll(entry.path, false)}
-          />
-        )}
+              {/* File name */}
+              <span
+                className={`min-w-0 flex-1 truncate text-xs ${
+                  isSelected
+                    ? "text-stone-100"
+                    : isComplete
+                      ? "text-lime-400"
+                      : isGitignored
+                        ? "text-stone-500"
+                        : "text-stone-300"
+                }`}
+              >
+                {entry.name}
+              </span>
+            </button>
 
-        {/* Hunk count */}
-        <HunkCount status={entry.hunkStatus} context={hunkContext} />
-      </div>
+            {/* Approval button */}
+            {onApproveAll && onUnapproveAll && hasReviewableContent && (
+              <ApprovalButtons
+                hasPending={hasPending}
+                hasApproved={hasApproved}
+                onApprove={() => onApproveAll(entry.path, false)}
+                onUnapprove={() => onUnapproveAll(entry.path, false)}
+              />
+            )}
+
+            {/* Hunk count */}
+            <HunkCount status={entry.hunkStatus} context={hunkContext} />
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {onOpenInSplit && (
+            <>
+              <ContextMenuItem onSelect={() => onOpenInSplit(entry.path)}>
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 4v16M15 4v16"
+                  />
+                </svg>
+                Open in Split View
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
+          <ContextMenuItem
+            onSelect={async () => {
+              const platform = getPlatformServices();
+              await platform.opener.openUrl(`vscode://file${fullPath}`);
+            }}
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              />
+            </svg>
+            Open in VS Code
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onSelect={async () => {
+              const platform = getPlatformServices();
+              await platform.clipboard.writeText(fullPath);
+            }}
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+            Copy Path
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={async () => {
+              const platform = getPlatformServices();
+              await platform.opener.revealItemInDir(fullPath);
+            }}
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              />
+            </svg>
+            {revealLabel}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   },
   (prev, next) => {
@@ -262,7 +365,10 @@ export const FileNode = memo(
       prev.selectedFile === next.selectedFile &&
       prev.hunkContext === next.hunkContext &&
       prev.onApproveAll === next.onApproveAll &&
-      prev.onUnapproveAll === next.onUnapproveAll
+      prev.onUnapproveAll === next.onUnapproveAll &&
+      prev.repoPath === next.repoPath &&
+      prev.revealLabel === next.revealLabel &&
+      prev.onOpenInSplit === next.onOpenInSplit
     );
   },
 );

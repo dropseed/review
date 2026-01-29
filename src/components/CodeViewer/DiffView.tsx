@@ -12,7 +12,12 @@ import { useReviewStore } from "../../stores/reviewStore";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
-import { OverflowMenu } from "./OverflowMenu";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "../ui/dropdown-menu";
 import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
 import type { SupportedLanguages } from "./languageMap";
 
@@ -604,22 +609,14 @@ export function DiffView({
 
           {/* Overflow menu */}
           <div>
-            <OverflowMenu>
-              {onViewInFile && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
-                  onClick={() => {
-                    // Find first changed line to jump to
-                    const firstChanged = hunk.lines.find(
-                      (l) => l.type === "added" || l.type === "removed",
-                    );
-                    const targetLine =
-                      firstChanged?.newLineNumber ?? hunk.newStart;
-                    onViewInFile(targetLine);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+                  className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+                  aria-label="More options"
                 >
                   <svg
-                    className="h-3.5 w-3.5"
+                    className="h-4 w-4"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -628,19 +625,58 @@ export function DiffView({
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                      d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z"
                     />
                   </svg>
-                  View in file
                 </button>
-              )}
-              {claudeAvailable && (
-                <button
-                  onClick={() => reclassifyHunks([hunk.id])}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
-                >
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onViewInFile && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      // Find first changed line to jump to
+                      const firstChanged = hunk.lines.find(
+                        (l) => l.type === "added" || l.type === "removed",
+                      );
+                      const targetLine =
+                        firstChanged?.newLineNumber ?? hunk.newStart;
+                      onViewInFile(targetLine);
+                    }}
+                  >
+                    <svg
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                      />
+                    </svg>
+                    View in file
+                  </DropdownMenuItem>
+                )}
+                {claudeAvailable && (
+                  <DropdownMenuItem onClick={() => reclassifyHunks([hunk.id])}>
+                    <svg
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                      />
+                    </svg>
+                    Reclassify
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => handleCopyHunk(hunk)}>
                   <svg
-                    className="h-3.5 w-3.5"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -649,32 +685,13 @@ export function DiffView({
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
                     />
                   </svg>
-                  Reclassify
-                </button>
-              )}
-              <button
-                onClick={() => handleCopyHunk(hunk)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-                Copy hunk
-              </button>
-            </OverflowMenu>
+                  Copy hunk
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

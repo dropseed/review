@@ -10,6 +10,7 @@ import { ContentSearch } from "./components/ContentSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores/reviewStore";
 import { isHunkTrusted } from "./types";
 import {
@@ -291,311 +292,315 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-stone-950">
-      {/* Header */}
-      <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        {/* Left: comparison refs */}
-        <ComparisonHeader
-          comparison={comparison}
-          repoPath={repoPath}
-          onSelectReview={handleSelectReview}
-        />
+    <TooltipProvider delayDuration={300}>
+      <div className="flex h-screen flex-col bg-stone-950">
+        {/* Header */}
+        <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
+          {/* Left: comparison refs */}
+          <ComparisonHeader
+            comparison={comparison}
+            repoPath={repoPath}
+            onSelectReview={handleSelectReview}
+          />
 
-        {/* Right: review controls */}
-        <div className="flex items-center gap-3">
-          {/* Review progress */}
-          {totalHunks > 0 ? (
-            <div className="group relative flex items-center gap-2">
-              <span className="text-xs text-stone-500">Reviewed</span>
-              <span className="font-mono text-xs tabular-nums text-stone-400">
-                {reviewedHunks}/{totalHunks}
-              </span>
-              <div className="progress-bar w-24">
+          {/* Right: review controls */}
+          <div className="flex items-center gap-3">
+            {/* Review progress */}
+            {totalHunks > 0 ? (
+              <div className="group relative flex items-center gap-2">
+                <span className="text-xs text-stone-500">Reviewed</span>
+                <span className="font-mono text-xs tabular-nums text-stone-400">
+                  {reviewedHunks}/{totalHunks}
+                </span>
+                <div className="progress-bar w-24">
+                  <div
+                    className="progress-bar-trusted"
+                    style={{
+                      width: `${(trustedHunks / totalHunks) * 100}%`,
+                    }}
+                  />
+                  <div
+                    className="progress-bar-approved"
+                    style={{
+                      width: `${(approvedHunks / totalHunks) * 100}%`,
+                      left: `${(trustedHunks / totalHunks) * 100}%`,
+                    }}
+                  />
+                </div>
+                {/* Hover tooltip */}
                 <div
-                  className="progress-bar-trusted"
-                  style={{
-                    width: `${(trustedHunks / totalHunks) * 100}%`,
-                  }}
-                />
-                <div
-                  className="progress-bar-approved"
-                  style={{
-                    width: `${(approvedHunks / totalHunks) * 100}%`,
-                    left: `${(trustedHunks / totalHunks) * 100}%`,
-                  }}
-                />
-              </div>
-              {/* Hover tooltip */}
-              <div
-                className="absolute top-full right-0 mt-1 hidden group-hover:block
+                  className="absolute top-full right-0 mt-1 hidden group-hover:block
                               bg-stone-900 border border-stone-700 rounded px-2 py-1.5
                               text-xs whitespace-nowrap z-50 shadow-lg"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                  <span className="text-stone-300">
-                    Trusted: {trustedHunks}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-lime-500" />
-                  <span className="text-stone-300">
-                    Approved: {approvedHunks}
-                  </span>
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                    <span className="text-stone-300">
+                      Trusted: {trustedHunks}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-lime-500" />
+                    <span className="text-stone-300">
+                      Approved: {approvedHunks}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <span className="text-xs text-stone-500">No changes to review</span>
-          )}
-
-          {/* View mode toggle */}
-          <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
-            <button
-              onClick={() => setMainViewMode("single")}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                mainViewMode === "single"
-                  ? "bg-stone-700 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-              title="Single file view"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-              </svg>
-              <span>Single</span>
-            </button>
-            <button
-              onClick={() => setMainViewMode("rolling")}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                mainViewMode === "rolling"
-                  ? "bg-stone-700 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-              title="Rolling view - all files"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="18" height="5" rx="1" />
-                <rect x="3" y="10" width="18" height="5" rx="1" />
-                <rect x="3" y="17" width="18" height="5" rx="1" />
-              </svg>
-              <span>Rolling</span>
-            </button>
-            <button
-              onClick={() => setMainViewMode("overview")}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                mainViewMode === "overview"
-                  ? "bg-stone-700 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-              title="Overview - symbol changes"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              <span>Overview</span>
-            </button>
-          </div>
-
-          {/* Trust Settings button */}
-          <button
-            onClick={() => setShowTrustModal(true)}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
-            title="Trust Settings"
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            <span>Trust</span>
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
-                (reviewState?.trustList.length ?? 0) > 0
-                  ? "bg-cyan-500/20 text-cyan-400"
-                  : "bg-stone-700 text-stone-500"
-              }`}
-            >
-              {reviewState?.trustList.length ?? 0}
-            </span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main content */}
-      <div
-        className={`flex flex-1 overflow-hidden ${sidebarPosition === "right" ? "flex-row-reverse" : "flex-row"}`}
-      >
-        {/* Sidebar */}
-        <aside
-          className={`relative flex flex-shrink-0 flex-col bg-stone-900 ${
-            sidebarPosition === "right"
-              ? "border-l border-stone-800"
-              : "border-r border-stone-800"
-          }`}
-          style={{ width: `${sidebarWidth}rem` }}
-        >
-          {/* Sidebar content */}
-          <div className="flex-1 overflow-hidden">
-            <FilesPanel
-              onSelectCommit={(commit) => setSelectedCommitHash(commit.hash)}
-            />
-          </div>
-
-          {/* Resize handle */}
-          <div
-            onMouseDown={handleResizeStart}
-            className={`absolute top-0 h-full w-1 cursor-col-resize hover:bg-lime-500/50 active:bg-lime-500 ${
-              sidebarPosition === "right" ? "left-0" : "right-0"
-            }`}
-          />
-        </aside>
-
-        {/* Code viewer */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
-          <SplitContainer />
-        </main>
-      </div>
-
-      {/* Status Bar */}
-      <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
-        <div className="flex items-center gap-3">
-          <GitStatusIndicator />
-          {/* Classification progress indicator */}
-          {classifyingHunkIds.size > 0 && (
-            <div className="flex items-center gap-1.5 text-violet-400">
-              <svg
-                className="h-3 w-3 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              <span className="tabular-nums">
-                Classifying {classifyingHunkIds.size} hunk
-                {classifyingHunkIds.size !== 1 ? "s" : ""}
+            ) : (
+              <span className="text-xs text-stone-500">
+                No changes to review
               </span>
+            )}
+
+            {/* View mode toggle */}
+            <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
+              <button
+                onClick={() => setMainViewMode("single")}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                  mainViewMode === "single"
+                    ? "bg-stone-700 text-stone-200"
+                    : "text-stone-500 hover:text-stone-300"
+                }`}
+                title="Single file view"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+                <span>Single</span>
+              </button>
+              <button
+                onClick={() => setMainViewMode("rolling")}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                  mainViewMode === "rolling"
+                    ? "bg-stone-700 text-stone-200"
+                    : "text-stone-500 hover:text-stone-300"
+                }`}
+                title="Rolling view - all files"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="3" width="18" height="5" rx="1" />
+                  <rect x="3" y="10" width="18" height="5" rx="1" />
+                  <rect x="3" y="17" width="18" height="5" rx="1" />
+                </svg>
+                <span>Rolling</span>
+              </button>
+              <button
+                onClick={() => setMainViewMode("overview")}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                  mainViewMode === "overview"
+                    ? "bg-stone-700 text-stone-200"
+                    : "text-stone-500 hover:text-stone-300"
+                }`}
+                title="Overview - symbol changes"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
+                </svg>
+                <span>Overview</span>
+              </button>
             </div>
-          )}
+
+            {/* Trust Settings button */}
+            <button
+              onClick={() => setShowTrustModal(true)}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
+              title="Trust Settings"
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span>Trust</span>
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
+                  (reviewState?.trustList.length ?? 0) > 0
+                    ? "bg-cyan-500/20 text-cyan-400"
+                    : "bg-stone-700 text-stone-500"
+                }`}
+              >
+                {reviewState?.trustList.length ?? 0}
+              </span>
+            </button>
+          </div>
+        </header>
+
+        {/* Main content */}
+        <div
+          className={`flex flex-1 overflow-hidden ${sidebarPosition === "right" ? "flex-row-reverse" : "flex-row"}`}
+        >
+          {/* Sidebar */}
+          <aside
+            className={`relative flex flex-shrink-0 flex-col bg-stone-900 ${
+              sidebarPosition === "right"
+                ? "border-l border-stone-800"
+                : "border-r border-stone-800"
+            }`}
+            style={{ width: `${sidebarWidth}rem` }}
+          >
+            {/* Sidebar content */}
+            <div className="flex-1 overflow-hidden">
+              <FilesPanel
+                onSelectCommit={(commit) => setSelectedCommitHash(commit.hash)}
+              />
+            </div>
+
+            {/* Resize handle */}
+            <div
+              onMouseDown={handleResizeStart}
+              className={`absolute top-0 h-full w-1 cursor-col-resize hover:bg-lime-500/50 active:bg-lime-500 ${
+                sidebarPosition === "right" ? "left-0" : "right-0"
+              }`}
+            />
+          </aside>
+
+          {/* Code viewer */}
+          <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
+            <SplitContainer />
+          </main>
         </div>
-        <div className="flex items-center gap-3 text-stone-600">
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              j
-            </kbd>
-            <span className="mx-0.5">/</span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              k
-            </kbd>
-            <span className="ml-1">hunks</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-emerald-500/70">
-              a
-            </kbd>
-            <span className="mx-0.5">/</span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-rose-500/70">
-              r
-            </kbd>
-            <span className="ml-1">approve/reject</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}P
-            </kbd>
-            <span className="ml-1">find</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}⇧F
-            </kbd>
-            <span className="ml-1">search</span>
-          </span>
-        </div>
-      </footer>
 
-      {/* Debug Modal */}
-      <DebugModal
-        isOpen={showDebugModal}
-        onClose={() => setShowDebugModal(false)}
-      />
+        {/* Status Bar */}
+        <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
+          <div className="flex items-center gap-3">
+            <GitStatusIndicator />
+            {/* Classification progress indicator */}
+            {classifyingHunkIds.size > 0 && (
+              <div className="flex items-center gap-1.5 text-violet-400">
+                <svg
+                  className="h-3 w-3 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span className="tabular-nums">
+                  Classifying {classifyingHunkIds.size} hunk
+                  {classifyingHunkIds.size !== 1 ? "s" : ""}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-stone-600">
+            <span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+                j
+              </kbd>
+              <span className="mx-0.5">/</span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+                k
+              </kbd>
+              <span className="ml-1">hunks</span>
+            </span>
+            <span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-emerald-500/70">
+                a
+              </kbd>
+              <span className="mx-0.5">/</span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-rose-500/70">
+                r
+              </kbd>
+              <span className="ml-1">approve/reject</span>
+            </span>
+            <span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+                {"\u2318"}P
+              </kbd>
+              <span className="ml-1">find</span>
+            </span>
+            <span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+                {"\u2318"}⇧F
+              </kbd>
+              <span className="ml-1">search</span>
+            </span>
+          </div>
+        </footer>
 
-      {/* Trust Modal */}
-      <TrustModal
-        isOpen={showTrustModal}
-        onClose={() => setShowTrustModal(false)}
-      />
+        {/* Debug Modal */}
+        <DebugModal
+          isOpen={showDebugModal}
+          onClose={() => setShowDebugModal(false)}
+        />
 
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
-      />
+        {/* Trust Modal */}
+        <TrustModal
+          isOpen={showTrustModal}
+          onClose={() => setShowTrustModal(false)}
+        />
 
-      {/* Commit Detail Modal */}
-      <CommitDetailModal
-        isOpen={!!selectedCommitHash}
-        onClose={() => setSelectedCommitHash(null)}
-        commitHash={selectedCommitHash}
-      />
+        {/* Settings Modal */}
+        <SettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+        />
 
-      {/* File Finder */}
-      <FileFinder
-        isOpen={showFileFinder}
-        onClose={() => setShowFileFinder(false)}
-      />
+        {/* Commit Detail Modal */}
+        <CommitDetailModal
+          isOpen={!!selectedCommitHash}
+          onClose={() => setSelectedCommitHash(null)}
+          commitHash={selectedCommitHash}
+        />
 
-      {/* Content Search */}
-      <ContentSearch
-        isOpen={showContentSearch}
-        onClose={() => setShowContentSearch(false)}
-      />
-    </div>
+        {/* File Finder */}
+        <FileFinder
+          isOpen={showFileFinder}
+          onClose={() => setShowFileFinder(false)}
+        />
+
+        {/* Content Search */}
+        <ContentSearch
+          isOpen={showContentSearch}
+          onClose={() => setShowContentSearch(false)}
+        />
+      </div>
+    </TooltipProvider>
   );
 }
 

@@ -1,6 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { getPlatformServices } from "../platform";
 import type { Comparison, LineAnnotation, DiffHunk, HunkState } from "../types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "./ui/dialog";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -29,16 +36,6 @@ export function ExportModal({
       setCopied(false);
     }
   }, [isOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleEsc);
-    return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen, onClose]);
 
   // Calculate stats and generate markdown
   const { markdown, stats } = useMemo(() => {
@@ -122,25 +119,16 @@ export function ExportModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative z-10 w-full max-w-2xl max-h-[80vh] m-4 flex flex-col bg-stone-900 rounded-xl border border-stone-700 shadow-2xl">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex w-full max-w-2xl max-h-[80vh] m-4 flex-col rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-800">
+        <DialogHeader className="px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-stone-100">
-              Export Review Feedback
-            </h2>
-            <p className="text-xs text-stone-500 mt-0.5">{comparison.key}</p>
+            <DialogTitle>Export Review Feedback</DialogTitle>
+            <DialogDescription className="mt-0.5">
+              {comparison.key}
+            </DialogDescription>
           </div>
           <button
             onClick={onClose}
@@ -160,7 +148,7 @@ export function ExportModal({
               />
             </svg>
           </button>
-        </div>
+        </DialogHeader>
 
         {/* Stats bar */}
         <div className="flex items-center gap-4 px-4 py-2 bg-stone-800/50 border-b border-stone-800 text-xs">
@@ -253,7 +241,7 @@ export function ExportModal({
             )}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

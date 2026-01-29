@@ -20,12 +20,3 @@ export interface ProcessedFileEntry extends FileEntry {
   displayName: string;
   compactedPaths: string[];
 }
-
-// Context menu state
-export interface ContextMenuState {
-  x: number;
-  y: number;
-  path: string;
-  fullPath: string;
-  revealLabel: string;
-}

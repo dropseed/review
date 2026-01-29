@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ExportModal } from "../ExportModal";
 import { CommitsPanel } from "../CommitsPanel";
-import { ContextMenu } from "./ContextMenu";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
 import { SymbolsPanel } from "./SymbolsPanel";
@@ -10,9 +9,9 @@ import {
   useFilePanelNavigation,
   useFilePanelApproval,
   useFilePanelFeedback,
-  useFilePanelContextMenu,
 } from "./hooks";
 import { useReviewStore } from "../../stores/reviewStore";
+import { getPlatformServices } from "../../platform";
 import type { CommitEntry } from "../../types";
 
 // Simple section header (non-collapsible)
@@ -202,9 +201,19 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     rejectedCount: stats.rejected,
   });
 
-  // Context menu
-  const { contextMenu, handleContextMenu, closeContextMenu, openInSplit } =
-    useFilePanelContextMenu({ repoPath });
+  // Context menu support
+  const { openInSplit } = useReviewStore();
+  const [revealLabel, setRevealLabel] = useState("Reveal in Finder");
+  useEffect(() => {
+    const platformName = getPlatformServices().window.getPlatformName();
+    setRevealLabel(
+      platformName === "macos"
+        ? "Reveal in Finder"
+        : platformName === "windows"
+          ? "Reveal in Explorer"
+          : "Reveal in Files",
+    );
+  }, []);
 
   // Check if there are changes in the comparison
   const hasChanges =
@@ -232,14 +241,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   return (
     <>
-      {contextMenu && (
-        <ContextMenu
-          menu={contextMenu}
-          onClose={closeContextMenu}
-          onOpenInSplit={openInSplit}
-        />
-      )}
-
       {reviewState && (
         <ExportModal
           isOpen={showExportModal}
@@ -394,7 +395,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               onToggle={togglePath}
                               selectedFile={selectedFile}
                               onSelectFile={handleSelectFile}
-                              onContextMenu={handleContextMenu}
+                              repoPath={repoPath}
+                              revealLabel={revealLabel}
+                              onOpenInSplit={openInSplit}
                               registerRef={registerRef}
                               hunkContext="needs-review"
                               onApproveAll={handleApproveAll}
@@ -444,7 +447,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               onToggle={togglePath}
                               selectedFile={selectedFile}
                               onSelectFile={handleSelectFile}
-                              onContextMenu={handleContextMenu}
+                              repoPath={repoPath}
+                              revealLabel={revealLabel}
+                              onOpenInSplit={openInSplit}
                               registerRef={registerRef}
                               hunkContext="reviewed"
                               onApproveAll={handleApproveAll}
@@ -519,7 +524,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           onToggle={togglePath}
                           selectedFile={selectedFile}
                           onSelectFile={handleSelectFile}
-                          onContextMenu={handleContextMenu}
+                          repoPath={repoPath}
+                          revealLabel={revealLabel}
+                          onOpenInSplit={openInSplit}
                           registerRef={registerRef}
                           hunkContext="all"
                           onApproveAll={handleApproveAll}
