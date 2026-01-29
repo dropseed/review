@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import type { SupportedLanguages } from "./languageMap";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { SimpleTooltip } from "../ui/tooltip";
+import { Input } from "../ui/input";
 
 // Human-readable display names for languages
 export const languageDisplayNames: Record<string, string> = {
@@ -158,13 +159,13 @@ export function LanguageSelector({
       >
         {/* Search input */}
         <div className="border-b border-stone-700 p-1.5">
-          <input
+          <Input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search languages..."
-            className="w-full rounded bg-stone-900/50 px-2 py-1 text-xs text-stone-300 placeholder-stone-500 outline-none focus:ring-1 focus:ring-amber-500/50"
+            className="rounded bg-stone-900/50 py-1 text-xs focus:ring-1 focus:ring-amber-500/50"
           />
         </div>
 
