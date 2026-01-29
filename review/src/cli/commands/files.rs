@@ -12,7 +12,7 @@ pub fn run(repo_path: &str, show_all: bool, format: OutputFormat) -> Result<(), 
     let comparison = storage::get_current_comparison(&path)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_string()
+            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
         })?;
 
     // Get files

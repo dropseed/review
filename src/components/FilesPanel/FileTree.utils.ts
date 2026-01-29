@@ -6,6 +6,10 @@ import type { FileHunkStatus, ProcessedFileEntry, ViewMode } from "./types";
 export function calculateFileHunkStatus(
   hunks: Array<{ id: string; filePath: string }>,
   reviewState: ReviewState | null,
+  options?: {
+    autoApproveStaged?: boolean;
+    stagedFilePaths?: Set<string>;
+  },
 ): Map<string, FileHunkStatus> {
   const statusMap = new Map<string, FileHunkStatus>();
 
@@ -26,6 +30,11 @@ export function calculateFileHunkStatus(
     } else if (hunkState?.status === "approved") {
       current.approved++;
     } else if (isHunkTrusted(hunkState, trustList)) {
+      current.trusted++;
+    } else if (
+      options?.autoApproveStaged &&
+      options.stagedFilePaths?.has(hunk.filePath)
+    ) {
       current.trusted++;
     } else {
       current.pending++;

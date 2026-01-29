@@ -72,11 +72,11 @@ export function SplitContainer() {
 
   return (
     <div
-      className={`flex flex-1 overflow-hidden ${isHorizontal ? "flex-row" : "flex-col"}`}
+      className={`flex flex-1 min-h-0 overflow-hidden ${isHorizontal ? "flex-row" : "flex-col"}`}
     >
       {/* Primary Pane */}
       <div
-        className={`flex flex-col overflow-hidden ${
+        className={`flex min-h-0 flex-col overflow-hidden ${
           focusedPane === "primary" ? "ring-1 ring-inset ring-amber-500/30" : ""
         }`}
         style={isHorizontal ? { width: primarySize } : { height: primarySize }}
@@ -93,7 +93,7 @@ export function SplitContainer() {
           showSwap
           onSwap={swapPanes}
         />
-        <div className="flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {selectedFile ? (
             <CodeViewer filePath={selectedFile} />
           ) : (
@@ -112,7 +112,7 @@ export function SplitContainer() {
 
       {/* Secondary Pane */}
       <div
-        className={`flex flex-col overflow-hidden ${
+        className={`flex min-h-0 flex-col overflow-hidden ${
           focusedPane === "secondary"
             ? "ring-1 ring-inset ring-amber-500/30"
             : ""
@@ -130,7 +130,7 @@ export function SplitContainer() {
           onSwap={swapPanes}
           onClose={closeSplit}
         />
-        <div className="flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <CodeViewer filePath={secondaryFile} />
         </div>
       </div>

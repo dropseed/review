@@ -16,7 +16,7 @@ pub fn run(
     let comparison = storage::get_current_comparison(&path)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_string()
+            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
         })?;
 
     // Load review state
@@ -25,7 +25,7 @@ pub fn run(
     // Get or create hunk state
     let hunk_state = state
         .hunks
-        .entry(hunk_id.to_string())
+        .entry(hunk_id.to_owned())
         .or_insert_with(|| HunkState {
             label: Vec::new(),
             reasoning: None,
@@ -48,12 +48,9 @@ pub fn run(
 
     if already {
         if format == OutputFormat::Json {
-            println!(
-                r#"{{"message": "Hunk already {}", "hunk_id": "{}"}}"#,
-                action, hunk_id
-            );
+            println!(r#"{{"message": "Hunk already {action}", "hunk_id": "{hunk_id}"}}"#);
         } else {
-            println!("Hunk '{}' is already {}", hunk_id, action);
+            println!("Hunk '{hunk_id}' is already {action}");
         }
         return Ok(());
     }

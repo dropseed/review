@@ -27,6 +27,16 @@ use tauri_plugin_opener::OpenerExt;
 /// the Tauri event loop.
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(
+            |app: &tauri::AppHandle, argv, _cwd| {
+                // When a second instance is launched, its CLI args are forwarded here.
+                // Find a repo path argument (first non-flag arg after the binary name)
+                // and open it in a new window/tab.
+                if let Some(repo_path) = argv.iter().skip(1).find(|a| !a.starts_with('-')) {
+                    let _ = app.emit("open-repo-path", repo_path.clone());
+                }
+            },
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

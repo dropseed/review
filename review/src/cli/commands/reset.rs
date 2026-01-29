@@ -11,7 +11,7 @@ pub fn run(repo_path: &str, hard: bool, format: OutputFormat) -> Result<(), Stri
     let comparison = storage::get_current_comparison(&path)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_string()
+            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
         })?;
 
     // Load current state to preserve some data
@@ -49,9 +49,9 @@ pub fn run(repo_path: &str, hard: bool, format: OutputFormat) -> Result<(), Stri
         );
     } else {
         println!("{} Review state reset", "✓".green());
-        println!("  {} hunk label(s) cleared", hunks_cleared);
+        println!("  {hunks_cleared} hunk label(s) cleared");
         if hard {
-            println!("  {} trust pattern(s) cleared", trust_cleared);
+            println!("  {trust_cleared} trust pattern(s) cleared");
         } else {
             println!(
                 "  {} Trust list preserved (use --hard to also clear)",

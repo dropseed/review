@@ -136,16 +136,21 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
 
   // Calculate review progress for this file's hunks
   // Must be before early returns to comply with React hooks rules
+  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
   const reviewProgress = useMemo(() => {
     if (!fileContent) return { reviewed: 0, total: 0 };
     const total = fileContent.hunks.length;
     if (total === 0) return { reviewed: 0, total: 0 };
     const trustList = reviewState?.trustList ?? [];
     const reviewed = fileContent.hunks.filter((hunk) =>
-      isHunkReviewed(reviewState?.hunks[hunk.id], trustList),
+      isHunkReviewed(reviewState?.hunks[hunk.id], trustList, {
+        autoApproveStaged: reviewState?.autoApproveStaged,
+        stagedFilePaths,
+        filePath,
+      }),
     ).length;
     return { reviewed, total };
-  }, [fileContent, reviewState]);
+  }, [fileContent, reviewState, stagedFilePaths, filePath]);
 
   // Reset language override when switching files
   useEffect(() => {
@@ -306,7 +311,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
       {/* File header with breadcrumbs */}
       <div className="flex items-center justify-between border-b border-stone-800/50 bg-stone-900 px-3 py-1.5">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           <Breadcrumbs
             filePath={filePath}
             onNavigateToDirectory={revealDirectoryInTree}

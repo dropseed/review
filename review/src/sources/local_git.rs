@@ -32,6 +32,7 @@ pub enum LocalGitError {
     NotARepo,
 }
 
+#[derive(Debug)]
 pub struct LocalGitSource {
     repo_path: PathBuf,
 }
@@ -47,7 +48,7 @@ impl LocalGitSource {
     /// Get the current branch name
     pub fn get_current_branch(&self) -> Result<String, LocalGitError> {
         let output = self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"])?;
-        Ok(output.trim().to_string())
+        Ok(output.trim().to_owned())
     }
 
     /// The well-known SHA for git's empty tree object.
@@ -58,8 +59,8 @@ impl LocalGitSource {
     /// if the ref doesn't exist (e.g., HEAD in an empty repo with no commits).
     fn resolve_ref_or_empty_tree(&self, git_ref: &str) -> String {
         match self.run_git(&["rev-parse", "--verify", git_ref]) {
-            Ok(output) => output.trim().to_string(),
-            Err(_) => Self::EMPTY_TREE.to_string(),
+            Ok(output) => output.trim().to_owned(),
+            Err(_) => Self::EMPTY_TREE.to_owned(),
         }
     }
 
@@ -69,18 +70,18 @@ impl LocalGitSource {
         if let Ok(output) = self.run_git(&["symbolic-ref", "refs/remotes/origin/HEAD"]) {
             let trimmed = output.trim();
             if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/") {
-                return Ok(branch.to_string());
+                return Ok(branch.to_owned());
             }
         }
         // Fall back to checking if main or master exists
         if self.run_git(&["rev-parse", "--verify", "main"]).is_ok() {
-            return Ok("main".to_string());
+            return Ok("main".to_owned());
         }
         if self.run_git(&["rev-parse", "--verify", "master"]).is_ok() {
-            return Ok("master".to_string());
+            return Ok("master".to_owned());
         }
         // Last resort: use HEAD
-        Ok("HEAD".to_string())
+        Ok("HEAD".to_owned())
     }
 
     /// List all local and remote branches, separated, plus stashes
@@ -100,7 +101,7 @@ impl LocalGitSource {
         for line in local_output.lines() {
             let branch = line.trim();
             if !branch.is_empty() {
-                local.push(branch.to_string());
+                local.push(branch.to_owned());
             }
         }
 
@@ -114,7 +115,7 @@ impl LocalGitSource {
         for line in remote_output.lines() {
             let branch = line.trim();
             if !branch.is_empty() && !branch.ends_with("/HEAD") {
-                remote.push(branch.to_string());
+                remote.push(branch.to_owned());
             }
         }
 
@@ -127,7 +128,7 @@ impl LocalGitSource {
                 }
                 // Format is "stash@{0}\tmessage"
                 let parts: Vec<&str> = line.splitn(2, '\t').collect();
-                let stash_ref = parts[0].to_string();
+                let stash_ref = parts[0].to_owned();
                 let message = parts.get(1).unwrap_or(&"").to_string();
                 stashes.push(super::traits::StashEntry { stash_ref, message });
             }
@@ -167,9 +168,9 @@ impl LocalGitSource {
 
             // Handle renames (format: "R  old -> new")
             let actual_path = if path.contains(" -> ") {
-                path.split(" -> ").last().unwrap_or(path).to_string()
+                path.split(" -> ").last().unwrap_or(path).to_owned()
             } else {
-                path.to_string()
+                path.to_owned()
             };
 
             // Untracked files
@@ -181,7 +182,6 @@ impl LocalGitSource {
             // Staged changes (index status)
             if index_status != ' ' && index_status != '?' {
                 let status = match index_status {
-                    'M' => ChangeStatus::Modified,
                     'A' => ChangeStatus::Added,
                     'D' => ChangeStatus::Deleted,
                     'R' => ChangeStatus::Renamed,
@@ -197,7 +197,6 @@ impl LocalGitSource {
             // Unstaged changes (worktree status)
             if worktree_status != ' ' && worktree_status != '?' {
                 let status = match worktree_status {
-                    'M' => ChangeStatus::Modified,
                     'A' => ChangeStatus::Added,
                     'D' => ChangeStatus::Deleted,
                     'R' => ChangeStatus::Renamed,
@@ -230,14 +229,14 @@ impl LocalGitSource {
         limit: usize,
         branch: Option<&str>,
     ) -> Result<Vec<CommitEntry>, LocalGitError> {
-        let limit_str = format!("-{}", limit);
+        let limit_str = format!("-{limit}");
         let format_str = "%H%n%h%n%s%n%an%n%aI";
         let ref_arg = branch.unwrap_or("HEAD");
 
         let output = self.run_git(&[
             "log",
             &limit_str,
-            &format!("--format={}", format_str),
+            &format!("--format={format_str}"),
             ref_arg,
         ])?;
 
@@ -248,11 +247,11 @@ impl LocalGitSource {
         for chunk in lines.chunks(5) {
             if chunk.len() == 5 {
                 commits.push(CommitEntry {
-                    hash: chunk[0].to_string(),
-                    short_hash: chunk[1].to_string(),
-                    message: chunk[2].to_string(),
-                    author: chunk[3].to_string(),
-                    date: chunk[4].to_string(),
+                    hash: chunk[0].to_owned(),
+                    short_hash: chunk[1].to_owned(),
+                    message: chunk[2].to_owned(),
+                    author: chunk[3].to_owned(),
+                    date: chunk[4].to_owned(),
                 });
             }
         }
@@ -270,36 +269,32 @@ impl LocalGitSource {
         let output = self.run_git(&[
             "show",
             "--no-patch",
-            &format!("--format={}", format_str),
+            &format!("--format={format_str}"),
             hash,
         ])?;
 
         // Parse the output - split on --COMPARE-SEP-- to separate message from metadata
         let parts: Vec<&str> = output.splitn(2, "--COMPARE-SEP--\n").collect();
         if parts.len() < 2 {
-            return Err(LocalGitError::Git(format!(
-                "Failed to parse commit {}",
-                hash
-            )));
+            return Err(LocalGitError::Git(format!("Failed to parse commit {hash}")));
         }
 
         let message_section: Vec<&str> = parts[0].lines().collect();
         if message_section.len() < 3 {
             return Err(LocalGitError::Git(format!(
-                "Failed to parse commit metadata for {}",
-                hash
+                "Failed to parse commit metadata for {hash}"
             )));
         }
 
-        let full_hash = message_section[0].to_string();
-        let short_hash = message_section[1].to_string();
+        let full_hash = message_section[0].to_owned();
+        let short_hash = message_section[1].to_owned();
         // Message is everything from line 2 to the end of this section, trimmed
-        let message = message_section[2..].join("\n").trim().to_string();
+        let message = message_section[2..].join("\n").trim().to_owned();
 
         let meta_lines: Vec<&str> = parts[1].lines().collect();
-        let author = meta_lines.first().unwrap_or(&"").trim().to_string();
-        let author_email = meta_lines.get(1).unwrap_or(&"").trim().to_string();
-        let date = meta_lines.get(2).unwrap_or(&"").trim().to_string();
+        let author = meta_lines.first().unwrap_or(&"").trim().to_owned();
+        let author_email = meta_lines.get(1).unwrap_or(&"").trim().to_owned();
+        let date = meta_lines.get(2).unwrap_or(&"").trim().to_owned();
 
         // Get changed files with stats
         let diff_output =
@@ -317,7 +312,6 @@ impl LocalGitSource {
             if parts.len() >= 2 {
                 let status = match parts[0].chars().next() {
                     Some('A') => "added",
-                    Some('M') => "modified",
                     Some('D') => "deleted",
                     Some('R') => "renamed",
                     Some('C') => "copied",
@@ -329,7 +323,7 @@ impl LocalGitSource {
                 } else {
                     parts[1]
                 };
-                status_map.insert(path.to_string(), status.to_string());
+                status_map.insert(path.to_owned(), status.to_owned());
             }
         }
 
@@ -340,11 +334,11 @@ impl LocalGitSource {
             if parts.len() >= 3 {
                 let additions = parts[0].parse::<u32>().unwrap_or(0);
                 let deletions = parts[1].parse::<u32>().unwrap_or(0);
-                let path = parts[2].to_string();
+                let path = parts[2].to_owned();
                 let status = status_map
                     .get(&path)
                     .cloned()
-                    .unwrap_or_else(|| "modified".to_string());
+                    .unwrap_or_else(|| "modified".to_owned());
                 files.push(super::traits::CommitFileChange {
                     path,
                     status,
@@ -397,20 +391,20 @@ impl LocalGitSource {
 
     /// Get file content as bytes at the specified ref
     pub fn get_file_bytes(&self, file_path: &str, git_ref: &str) -> Result<Vec<u8>, LocalGitError> {
-        let ref_spec = format!("{}:{}", git_ref, file_path);
+        let ref_spec = format!("{git_ref}:{file_path}");
         self.run_git_bytes(&["show", &ref_spec])
     }
 
     /// Get all tracked files from git (fast, uses index)
     fn get_tracked_files(&self) -> Result<Vec<String>, LocalGitError> {
         let output = self.run_git(&["ls-files"])?;
-        Ok(output.lines().map(|s| s.to_string()).collect())
+        Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
     }
 
     /// Get the merge-base between two refs
     fn get_merge_base(&self, ref1: &str, ref2: &str) -> Result<String, LocalGitError> {
         let output = self.run_git(&["merge-base", ref1, ref2])?;
-        Ok(output.trim().to_string())
+        Ok(output.trim().to_owned())
     }
 
     fn get_changed_files(
@@ -436,7 +430,7 @@ impl LocalGitSource {
         // Get committed changes
         if comparison.old != comparison.new || !comparison.working_tree {
             let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
-            let range = format!("{}..{}", base, resolved_new);
+            let range = format!("{base}..{resolved_new}");
             let output = self.run_git(&["diff", "--name-status", &range])?;
             self.parse_name_status(&output, &mut changes);
         }
@@ -456,13 +450,16 @@ impl LocalGitSource {
         Ok(changes)
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "method on LocalGitSource for consistency"
+    )]
     fn parse_name_status(&self, output: &str, changes: &mut HashMap<String, FileStatus>) {
         for line in output.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 2 {
                 let status = match parts[0].chars().next() {
                     Some('A') => FileStatus::Added,
-                    Some('M') => FileStatus::Modified,
                     Some('D') => FileStatus::Deleted,
                     Some('R') => FileStatus::Renamed,
                     _ => FileStatus::Modified,
@@ -473,7 +470,7 @@ impl LocalGitSource {
                 } else {
                     parts[1]
                 };
-                changes.insert(path.to_string(), status);
+                changes.insert(path.to_owned(), status);
             }
         }
     }
@@ -481,7 +478,7 @@ impl LocalGitSource {
     /// Get untracked files (not in git index, not ignored)
     fn get_untracked_files(&self) -> Result<Vec<String>, LocalGitError> {
         let output = self.run_git(&["ls-files", "--others", "--exclude-standard"])?;
-        Ok(output.lines().map(|s| s.to_string()).collect())
+        Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
     }
 
     /// Check if a file is tracked by git (in the index)
@@ -509,7 +506,7 @@ impl LocalGitSource {
         let tracked = self.run_git(&["ls-files"])?;
         let mut all_files: HashSet<String> = HashSet::new();
         for line in tracked.lines() {
-            all_files.insert(line.to_string());
+            all_files.insert(line.to_owned());
         }
 
         // Get gitignored entries using --directory to collapse entire ignored
@@ -525,12 +522,12 @@ impl LocalGitSource {
             for line in ignored.lines() {
                 if let Some(dir_path) = line.strip_suffix('/') {
                     // Directory entry — add as a gitignored directory
-                    gitignored_dirs.insert(dir_path.to_string());
+                    gitignored_dirs.insert(dir_path.to_owned());
                 } else {
                     // Individual file
-                    all_files.insert(line.to_string());
+                    all_files.insert(line.to_owned());
                     file_status
-                        .entry(line.to_string())
+                        .entry(line.to_owned())
                         .or_insert(FileStatus::Gitignored);
                 }
             }
@@ -589,10 +586,10 @@ impl LocalGitSource {
             // Use splitn to handle colons in the content
             let parts: Vec<&str> = line.splitn(4, ':').collect();
             if parts.len() >= 4 {
-                let file_path = parts[0].to_string();
+                let file_path = parts[0].to_owned();
                 let line_number = parts[1].parse::<u32>().unwrap_or(0);
                 let column = parts[2].parse::<u32>().unwrap_or(0);
-                let line_content = parts[3].to_string();
+                let line_content = parts[3].to_owned();
 
                 if line_number > 0 && column > 0 {
                     matches.push(SearchMatch {
@@ -610,7 +607,11 @@ impl LocalGitSource {
 }
 
 /// Build a file tree from file paths and statuses.
-/// Shared helper used by both list_files() and list_all_files().
+/// Shared helper used by both `list_files()` and `list_all_files()`.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership for consistency with callers that build and pass the set"
+)]
 fn build_file_tree(
     all_files: HashSet<String>,
     file_status: &HashMap<String, FileStatus>,
@@ -753,7 +754,7 @@ impl DiffSource for LocalGitSource {
         end_line: u32,
     ) -> Result<Vec<String>, Self::Error> {
         // Get file content at the specified ref
-        let ref_spec = format!("{}:{}", git_ref, file_path);
+        let ref_spec = format!("{git_ref}:{file_path}");
         let output = self.run_git(&["show", &ref_spec])?;
 
         // Extract the requested lines (1-indexed)
@@ -761,7 +762,7 @@ impl DiffSource for LocalGitSource {
             .lines()
             .skip((start_line.saturating_sub(1)) as usize)
             .take((end_line.saturating_sub(start_line) + 1) as usize)
-            .map(|s| s.to_string())
+            .map(std::borrow::ToOwned::to_owned)
             .collect();
 
         Ok(lines)
@@ -823,7 +824,7 @@ impl DiffSource for LocalGitSource {
             };
 
             let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
-            let range = format!("{}..{}", base, resolved_new);
+            let range = format!("{base}..{resolved_new}");
             let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &range];
 
             if let Some(path) = file_path {

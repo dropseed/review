@@ -81,6 +81,9 @@ export interface ReviewSlice {
   deleteAnnotation: (annotationId: string) => void;
   getAnnotationsForFile: (filePath: string) => LineAnnotation[];
 
+  // Auto-approve staged
+  setAutoApproveStaged: (enabled: boolean) => void;
+
   // Trust list actions
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
@@ -527,6 +530,20 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       return (reviewState.annotations ?? []).filter(
         (a) => a.filePath === filePath,
       );
+    },
+
+    setAutoApproveStaged: (enabled) => {
+      const { reviewState, saveReviewState } = get();
+      if (!reviewState) return;
+
+      const newState = {
+        ...reviewState,
+        autoApproveStaged: enabled,
+        updatedAt: new Date().toISOString(),
+      };
+
+      set({ reviewState: newState });
+      debouncedSave(saveReviewState);
     },
 
     addTrustPattern: (pattern) => {

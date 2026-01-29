@@ -28,6 +28,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
 
 # Desktop-specific dependencies
 log = "0.4"
@@ -41,3 +42,6 @@ notify-debouncer-mini = "0.4"
 ignore = "0.4"
 chrono = "0.4"
 tiny_http = "0.12"
+
+[lints]
+workspace = true

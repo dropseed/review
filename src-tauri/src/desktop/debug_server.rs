@@ -25,21 +25,21 @@ pub fn start() {
 
     thread::spawn(|| {
         if let Err(e) = run_server() {
-            eprintln!("[debug_server] Server error: {}", e);
+            eprintln!("[debug_server] Server error: {e}");
         }
         SERVER_RUNNING.store(false, Ordering::SeqCst);
     });
 }
 
 fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = format!("127.0.0.1:{}", PORT);
-    let server = Server::http(&addr).map_err(|e| format!("Failed to bind: {}", e))?;
+    let addr = format!("127.0.0.1:{PORT}");
+    let server = Server::http(&addr).map_err(|e| format!("Failed to bind: {e}"))?;
 
-    eprintln!("[debug_server] Listening on http://{}", addr);
+    eprintln!("[debug_server] Listening on http://{addr}");
 
     for request in server.incoming_requests() {
         if let Err(e) = handle_request(request) {
-            eprintln!("[debug_server] Request error: {}", e);
+            eprintln!("[debug_server] Request error: {e}");
         }
     }
 
@@ -48,12 +48,12 @@ fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Extract URL parts into owned strings to avoid borrow issues
-    let url = request.url().to_string();
-    let path = url.split('?').next().unwrap_or("/").to_string();
-    let query = url.split('?').nth(1).unwrap_or("").to_string();
-    let method = request.method().as_str().to_string();
+    let url = request.url().to_owned();
+    let path = url.split('?').next().unwrap_or("/").to_owned();
+    let query = url.split('?').nth(1).unwrap_or("").to_owned();
+    let method = request.method().as_str().to_owned();
 
-    eprintln!("[debug_server] {} {} (query: {})", method, path, query);
+    eprintln!("[debug_server] {method} {path} (query: {query})");
 
     // Handle CORS preflight
     if method == "OPTIONS" {
@@ -147,7 +147,7 @@ fn json_response<T: Serialize>(data: &T) -> Response<Cursor<Vec<u8>>> {
         Ok(json) => Response::from_string(json)
             .with_header(content_type_json())
             .with_header(cors_header()),
-        Err(e) => error_response(500, &format!("Serialization error: {}", e)),
+        Err(e) => error_response(500, &format!("Serialization error: {e}")),
     }
 }
 
@@ -182,22 +182,16 @@ fn get_comparison_from_query(
 ) -> Option<Comparison> {
     let old = params.get("old")?.clone();
     let new = params.get("new")?.clone();
-    let working_tree = params
-        .get("workingTree")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let staged_only = params
-        .get("stagedOnly")
-        .map(|v| v == "true")
-        .unwrap_or(false);
+    let working_tree = params.get("workingTree").is_some_and(|v| v == "true");
+    let staged_only = params.get("stagedOnly").is_some_and(|v| v == "true");
 
     // Build the key the same way the frontend does
     let key = if working_tree {
-        format!("{}..{}+working-tree", old, new)
+        format!("{old}..{new}+working-tree")
     } else if staged_only {
-        format!("{}..{}+staged", old, new)
+        format!("{old}..{new}+staged")
     } else {
-        format!("{}..{}", old, new)
+        format!("{old}..{new}")
     };
 
     Some(Comparison {
@@ -237,7 +231,7 @@ fn handle_get_branches(query: &str) -> Response<Cursor<Vec<u8>>> {
         None => match commands::get_current_repo() {
             Ok(p) => p,
             Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {}", e))
+                return error_response(400, &format!("No repo specified and none found: {e}"))
             }
         },
     };
@@ -256,14 +250,13 @@ fn handle_list_files(query: &str) -> Response<Cursor<Vec<u8>>> {
         None => match commands::get_current_repo() {
             Ok(p) => p,
             Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {}", e))
+                return error_response(400, &format!("No repo specified and none found: {e}"))
             }
         },
     };
 
-    let comparison = match get_comparison_from_query(&params) {
-        Some(c) => c,
-        None => return error_response(400, "Missing comparison params (old, new)"),
+    let Some(comparison) = get_comparison_from_query(&params) else {
+        return error_response(400, "Missing comparison params (old, new)");
     };
 
     match commands::list_files(repo_path, comparison) {
@@ -280,14 +273,13 @@ fn handle_get_state(query: &str) -> Response<Cursor<Vec<u8>>> {
         None => match commands::get_current_repo() {
             Ok(p) => p,
             Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {}", e))
+                return error_response(400, &format!("No repo specified and none found: {e}"))
             }
         },
     };
 
-    let comparison = match get_comparison_from_query(&params) {
-        Some(c) => c,
-        None => return error_response(400, "Missing comparison params (old, new)"),
+    let Some(comparison) = get_comparison_from_query(&params) else {
+        return error_response(400, "Missing comparison params (old, new)");
     };
 
     match commands::load_review_state(repo_path, comparison) {
@@ -304,7 +296,7 @@ fn handle_get_status(query: &str) -> Response<Cursor<Vec<u8>>> {
         None => match commands::get_current_repo() {
             Ok(p) => p,
             Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {}", e))
+                return error_response(400, &format!("No repo specified and none found: {e}"))
             }
         },
     };
@@ -323,7 +315,7 @@ fn handle_get_file(query: &str) -> Response<Cursor<Vec<u8>>> {
         None => match commands::get_current_repo() {
             Ok(p) => p,
             Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {}", e))
+                return error_response(400, &format!("No repo specified and none found: {e}"))
             }
         },
     };
@@ -333,9 +325,8 @@ fn handle_get_file(query: &str) -> Response<Cursor<Vec<u8>>> {
         None => return error_response(400, "Missing 'path' parameter"),
     };
 
-    let comparison = match get_comparison_from_query(&params) {
-        Some(c) => c,
-        None => return error_response(400, "Missing comparison params (old, new)"),
+    let Some(comparison) = get_comparison_from_query(&params) else {
+        return error_response(400, "Missing comparison params (old, new)");
     };
 
     match commands::get_file_content(repo_path, file_path, comparison) {
@@ -404,14 +395,13 @@ fn handle_save_state(query: &str, body: Option<&str>) -> Response<Cursor<Vec<u8>
         Err(e) => return e,
     };
 
-    let body = match body {
-        Some(b) => b,
-        None => return error_response(400, "Missing request body"),
+    let Some(body) = body else {
+        return error_response(400, "Missing request body");
     };
 
     let state: ReviewState = match serde_json::from_str(body) {
         Ok(s) => s,
-        Err(e) => return error_response(400, &format!("Invalid JSON: {}", e)),
+        Err(e) => return error_response(400, &format!("Invalid JSON: {e}")),
     };
 
     match commands::save_review_state(repo_path, state) {
@@ -427,9 +417,8 @@ fn handle_delete_state(query: &str) -> Response<Cursor<Vec<u8>>> {
         Err(e) => return e,
     };
 
-    let comparison = match get_comparison_from_query(&params) {
-        Some(c) => c,
-        None => return error_response(400, "Missing comparison params (old, new)"),
+    let Some(comparison) = get_comparison_from_query(&params) else {
+        return error_response(400, "Missing comparison params (old, new)");
     };
 
     match commands::delete_review(repo_path, comparison) {
@@ -471,14 +460,13 @@ fn handle_set_comparison(query: &str, body: Option<&str>) -> Response<Cursor<Vec
         Err(e) => return e,
     };
 
-    let body = match body {
-        Some(b) => b,
-        None => return error_response(400, "Missing request body"),
+    let Some(body) = body else {
+        return error_response(400, "Missing request body");
     };
 
     let request: SetComparisonRequest = match serde_json::from_str(body) {
         Ok(r) => r,
-        Err(e) => return error_response(400, &format!("Invalid JSON: {}", e)),
+        Err(e) => return error_response(400, &format!("Invalid JSON: {e}")),
     };
 
     match commands::set_current_comparison(repo_path, request.comparison) {
@@ -498,14 +486,13 @@ struct SetComparisonRequest {
 }
 
 fn handle_detect_moves(body: Option<&str>) -> Response<Cursor<Vec<u8>>> {
-    let body = match body {
-        Some(b) => b,
-        None => return error_response(400, "Missing request body"),
+    let Some(body) = body else {
+        return error_response(400, "Missing request body");
     };
 
     let request: DetectMovesRequest = match serde_json::from_str(body) {
         Ok(r) => r,
-        Err(e) => return error_response(400, &format!("Invalid JSON: {}", e)),
+        Err(e) => return error_response(400, &format!("Invalid JSON: {e}")),
     };
 
     let result = commands::detect_hunks_move_pairs(request.hunks);
@@ -522,7 +509,7 @@ fn get_repo_path(
             Ok(p) => Ok(p),
             Err(e) => Err(error_response(
                 400,
-                &format!("No repo specified and none found: {}", e),
+                &format!("No repo specified and none found: {e}"),
             )),
         },
     }

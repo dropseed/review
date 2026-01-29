@@ -1,4 +1,5 @@
 use crate::trust::patterns::get_trust_taxonomy;
+use std::fmt::Write;
 
 /// Build a flat list of all valid labels with descriptions
 fn build_taxonomy_string() -> String {
@@ -7,7 +8,7 @@ fn build_taxonomy_string() -> String {
 
     for category in taxonomy {
         for pattern in category.patterns {
-            result.push_str(&format!("- `{}`: {}\n", pattern.id, pattern.description));
+            let _ = writeln!(result, "- `{}`: {}", pattern.id, pattern.description);
         }
     }
 
@@ -70,19 +71,20 @@ pub fn build_batch_prompt(hunks: &[HunkInput]) -> String {
 
     let mut hunks_section = String::new();
     for (i, hunk) in hunks.iter().enumerate() {
-        hunks_section.push_str(&format!(
-            r#"### Hunk {} (ID: {})
+        let _ = write!(
+            hunks_section,
+            r"### Hunk {} (ID: {})
 File: {}
 ```diff
 {}
 ```
 
-"#,
+",
             i + 1,
             hunk.id,
             hunk.file_path,
             hunk.content
-        ));
+        );
     }
 
     format!(
@@ -116,8 +118,6 @@ After analyzing all hunks, return JSON on its own line:
 {{
   "hunk_id": {{"label": [], "reasoning": "one sentence"}},
   ...
-}}"#,
-        taxonomy = taxonomy,
-        hunks_section = hunks_section
+}}"#
     )
 }

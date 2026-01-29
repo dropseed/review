@@ -7,7 +7,7 @@
 /// - `imports:added` matches only `imports:added`
 /// - `*:removed` matches `imports:removed`, `comments:removed`
 /// - `imports` does NOT match `imports:added` (exact match only without wildcard)
-
+///
 /// Check if a label matches a pattern.
 ///
 /// Supports wildcards (`*`) that match any sequence of characters.

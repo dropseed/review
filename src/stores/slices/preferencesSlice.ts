@@ -3,7 +3,7 @@ import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
 
 // Font size constants
-export const CODE_FONT_SIZE_DEFAULT = 12;
+export const CODE_FONT_SIZE_DEFAULT = 11;
 export const CODE_FONT_SIZE_MIN = 8;
 export const CODE_FONT_SIZE_MAX = 32;
 export const CODE_FONT_SIZE_STEP = 1;

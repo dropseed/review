@@ -154,7 +154,7 @@ fn chrono_now() -> String {
     };
 
     let mut month = 1;
-    for days_in_month in days_in_months.iter() {
+    for days_in_month in &days_in_months {
         if remaining_days < *days_in_month {
             break;
         }
@@ -163,10 +163,7 @@ fn chrono_now() -> String {
     }
     let day = remaining_days + 1;
 
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-        year, month, day, hours, minutes, seconds, millis
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
 }
 
 fn is_leap_year(year: i32) -> bool {

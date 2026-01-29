@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustPattern {
@@ -37,7 +37,7 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
                 .map(|mut cat| {
                     for pattern in &mut cat.patterns {
                         if pattern.category.is_empty() {
-                            pattern.category = cat.id.clone();
+                            pattern.category.clone_from(&cat.id);
                         }
                     }
                     cat
@@ -45,10 +45,7 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
                 .collect()
         }
         Err(e) => {
-            eprintln!(
-                "[load_taxonomy_from_json] Failed to parse bundled taxonomy: {}",
-                e
-            );
+            eprintln!("[load_taxonomy_from_json] Failed to parse bundled taxonomy: {e}");
             get_default_taxonomy()
         }
     }
@@ -59,7 +56,7 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
 ///
 /// Note: This function returns an empty vec on errors to allow graceful degradation.
 /// Errors are logged for debugging but don't prevent the app from working.
-pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
+pub fn load_custom_patterns(repo_path: &Path) -> Vec<TrustCategory> {
     let custom_path = repo_path
         .join(".git")
         .join("review")
@@ -75,9 +72,9 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
                 // Log successful load for debugging
                 #[cfg(debug_assertions)]
                 eprintln!(
-                    "[load_custom_patterns] Loaded {} custom categories from {:?}",
+                    "[load_custom_patterns] Loaded {} custom categories from {}",
                     taxonomy.categories.len(),
-                    custom_path
+                    custom_path.display()
                 );
                 taxonomy
                     .categories
@@ -85,7 +82,7 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
                     .map(|mut cat| {
                         for pattern in &mut cat.patterns {
                             if pattern.category.is_empty() {
-                                pattern.category = cat.id.clone();
+                                pattern.category.clone_from(&cat.id);
                             }
                         }
                         cat
@@ -95,8 +92,8 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
             Err(e) => {
                 // Log parse errors - user should fix their custom-patterns.json
                 eprintln!(
-                    "[load_custom_patterns] Warning: Failed to parse custom patterns at {:?}: {}",
-                    custom_path, e
+                    "[load_custom_patterns] Warning: Failed to parse custom patterns at {}: {e}",
+                    custom_path.display()
                 );
                 vec![]
             }
@@ -104,8 +101,8 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
         Err(e) => {
             // Log read errors - could be permissions or corruption
             eprintln!(
-                "[load_custom_patterns] Warning: Failed to read custom patterns at {:?}: {}",
-                custom_path, e
+                "[load_custom_patterns] Warning: Failed to read custom patterns at {}: {e}",
+                custom_path.display()
             );
             vec![]
         }
@@ -114,7 +111,7 @@ pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
 
 /// Get the full trust taxonomy, merging bundled patterns with custom patterns.
 /// Custom patterns are appended to the bundled taxonomy.
-pub fn get_trust_taxonomy_with_custom(repo_path: &PathBuf) -> Vec<TrustCategory> {
+pub fn get_trust_taxonomy_with_custom(repo_path: &Path) -> Vec<TrustCategory> {
     let mut taxonomy = load_taxonomy_from_json();
     let custom = load_custom_patterns(repo_path);
 
@@ -167,77 +164,77 @@ pub fn is_valid_pattern_id(label: &str) -> bool {
 fn get_default_taxonomy() -> Vec<TrustCategory> {
     vec![
         TrustCategory {
-            id: "imports".to_string(),
-            name: "Imports".to_string(),
-            description: "Changes to import statements".to_string(),
+            id: "imports".to_owned(),
+            name: "Imports".to_owned(),
+            description: "Changes to import statements".to_owned(),
             patterns: vec![
                 TrustPattern {
-                    id: "imports:added".to_string(),
-                    category: "imports".to_string(),
-                    name: "Added".to_string(),
-                    description: "New import statements added".to_string(),
+                    id: "imports:added".to_owned(),
+                    category: "imports".to_owned(),
+                    name: "Added".to_owned(),
+                    description: "New import statements added".to_owned(),
                 },
                 TrustPattern {
-                    id: "imports:removed".to_string(),
-                    category: "imports".to_string(),
-                    name: "Removed".to_string(),
-                    description: "Import statements removed".to_string(),
+                    id: "imports:removed".to_owned(),
+                    category: "imports".to_owned(),
+                    name: "Removed".to_owned(),
+                    description: "Import statements removed".to_owned(),
                 },
                 TrustPattern {
-                    id: "imports:reordered".to_string(),
-                    category: "imports".to_string(),
-                    name: "Reordered".to_string(),
-                    description: "Import statements reordered".to_string(),
+                    id: "imports:reordered".to_owned(),
+                    category: "imports".to_owned(),
+                    name: "Reordered".to_owned(),
+                    description: "Import statements reordered".to_owned(),
                 },
             ],
         },
         TrustCategory {
-            id: "formatting".to_string(),
-            name: "Formatting".to_string(),
-            description: "Code style and formatting changes".to_string(),
+            id: "formatting".to_owned(),
+            name: "Formatting".to_owned(),
+            description: "Code style and formatting changes".to_owned(),
             patterns: vec![
                 TrustPattern {
-                    id: "formatting:whitespace".to_string(),
-                    category: "formatting".to_string(),
-                    name: "Whitespace".to_string(),
-                    description: "Whitespace-only changes (spaces, tabs, blank lines)".to_string(),
+                    id: "formatting:whitespace".to_owned(),
+                    category: "formatting".to_owned(),
+                    name: "Whitespace".to_owned(),
+                    description: "Whitespace-only changes (spaces, tabs, blank lines)".to_owned(),
                 },
                 TrustPattern {
-                    id: "formatting:line-length".to_string(),
-                    category: "formatting".to_string(),
-                    name: "Line length".to_string(),
-                    description: "Line wrapping for length limits".to_string(),
+                    id: "formatting:line-length".to_owned(),
+                    category: "formatting".to_owned(),
+                    name: "Line length".to_owned(),
+                    description: "Line wrapping for length limits".to_owned(),
                 },
                 TrustPattern {
-                    id: "formatting:style".to_string(),
-                    category: "formatting".to_string(),
-                    name: "Style".to_string(),
-                    description: "Code style changes (semicolons, quotes, etc.)".to_string(),
+                    id: "formatting:style".to_owned(),
+                    category: "formatting".to_owned(),
+                    name: "Style".to_owned(),
+                    description: "Code style changes (semicolons, quotes, etc.)".to_owned(),
                 },
             ],
         },
         TrustCategory {
-            id: "comments".to_string(),
-            name: "Comments".to_string(),
-            description: "Changes to code comments".to_string(),
+            id: "comments".to_owned(),
+            name: "Comments".to_owned(),
+            description: "Changes to code comments".to_owned(),
             patterns: vec![
                 TrustPattern {
-                    id: "comments:added".to_string(),
-                    category: "comments".to_string(),
-                    name: "Added".to_string(),
-                    description: "New comments added".to_string(),
+                    id: "comments:added".to_owned(),
+                    category: "comments".to_owned(),
+                    name: "Added".to_owned(),
+                    description: "New comments added".to_owned(),
                 },
                 TrustPattern {
-                    id: "comments:removed".to_string(),
-                    category: "comments".to_string(),
-                    name: "Removed".to_string(),
-                    description: "Comments removed".to_string(),
+                    id: "comments:removed".to_owned(),
+                    category: "comments".to_owned(),
+                    name: "Removed".to_owned(),
+                    description: "Comments removed".to_owned(),
                 },
                 TrustPattern {
-                    id: "comments:modified".to_string(),
-                    category: "comments".to_string(),
-                    name: "Modified".to_string(),
-                    description: "Comments updated or corrected".to_string(),
+                    id: "comments:modified".to_owned(),
+                    category: "comments".to_owned(),
+                    name: "Modified".to_owned(),
+                    description: "Comments updated or corrected".to_owned(),
                 },
             ],
         },
@@ -247,6 +244,7 @@ fn get_default_taxonomy() -> Vec<TrustCategory> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_load_taxonomy_from_json() {

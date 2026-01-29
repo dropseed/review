@@ -2,7 +2,7 @@ use super::state::{ReviewState, ReviewSummary};
 use crate::sources::traits::Comparison;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -16,27 +16,19 @@ pub enum StorageError {
 }
 
 /// Get the storage directory for review state
-fn get_storage_dir(repo_path: &PathBuf) -> PathBuf {
+fn get_storage_dir(repo_path: &Path) -> PathBuf {
     repo_path.join(".git").join("review").join("reviews")
 }
 
 /// Get the file path for storing the current comparison
-fn get_current_comparison_path(repo_path: &PathBuf) -> PathBuf {
+fn get_current_comparison_path(repo_path: &Path) -> PathBuf {
     repo_path.join(".git").join("review").join("current")
 }
 
 /// Sanitize a comparison key for use as a filename
 /// Replaces characters that are problematic in filenames
 fn sanitize_key(key: &str) -> String {
-    key.replace('/', "_")
-        .replace('\\', "_")
-        .replace(':', "_")
-        .replace('*', "_")
-        .replace('?', "_")
-        .replace('"', "_")
-        .replace('<', "_")
-        .replace('>', "_")
-        .replace('|', "_")
+    key.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
 }
 
 /// Generate a filename for a comparison based on its key
@@ -46,7 +38,7 @@ fn comparison_filename(comparison: &Comparison) -> String {
 
 /// Load review state for a comparison
 pub fn load_review_state(
-    repo_path: &PathBuf,
+    repo_path: &Path,
     comparison: &Comparison,
 ) -> Result<ReviewState, StorageError> {
     let storage_dir = get_storage_dir(repo_path);
@@ -70,7 +62,7 @@ pub fn load_review_state(
 /// expected version (state.version - 1), a VersionConflict error is returned.
 ///
 /// Call `state.prepare_for_save()` before saving to increment the version.
-pub fn save_review_state(repo_path: &PathBuf, state: &ReviewState) -> Result<(), StorageError> {
+pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path);
     fs::create_dir_all(&storage_dir)?;
 
@@ -102,7 +94,7 @@ pub fn save_review_state(repo_path: &PathBuf, state: &ReviewState) -> Result<(),
 }
 
 /// Get the current comparison (persisted across sessions)
-pub fn get_current_comparison(repo_path: &PathBuf) -> Result<Option<Comparison>, StorageError> {
+pub fn get_current_comparison(repo_path: &Path) -> Result<Option<Comparison>, StorageError> {
     let path = get_current_comparison_path(repo_path);
 
     if path.exists() {
@@ -116,7 +108,7 @@ pub fn get_current_comparison(repo_path: &PathBuf) -> Result<Option<Comparison>,
 
 /// Set the current comparison (persisted across sessions)
 pub fn set_current_comparison(
-    repo_path: &PathBuf,
+    repo_path: &Path,
     comparison: &Comparison,
 ) -> Result<(), StorageError> {
     let path = get_current_comparison_path(repo_path);
@@ -133,7 +125,7 @@ pub fn set_current_comparison(
 }
 
 /// List all saved reviews in the repository
-pub fn list_saved_reviews(repo_path: &PathBuf) -> Result<Vec<ReviewSummary>, StorageError> {
+pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, StorageError> {
     let storage_dir = get_storage_dir(repo_path);
 
     if !storage_dir.exists() {
@@ -147,7 +139,7 @@ pub fn list_saved_reviews(repo_path: &PathBuf) -> Result<Vec<ReviewSummary>, Sto
         let path = entry.path();
 
         // Only process .json files
-        if path.extension().map_or(false, |ext| ext == "json") {
+        if path.extension().is_some_and(|ext| ext == "json") {
             match fs::read_to_string(&path) {
                 Ok(content) => match serde_json::from_str::<ReviewState>(&content) {
                     Ok(state) => {
@@ -179,7 +171,7 @@ pub fn list_saved_reviews(repo_path: &PathBuf) -> Result<Vec<ReviewSummary>, Sto
 }
 
 /// Delete a saved review
-pub fn delete_review(repo_path: &PathBuf, comparison: &Comparison) -> Result<(), StorageError> {
+pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path);
     let filename = comparison_filename(comparison);
     let path = storage_dir.join(&filename);

@@ -82,13 +82,18 @@ impl AppError {
     /// Check if this error is recoverable (user can retry or take action)
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::Git { .. } => true,            // Git operations can often be retried
-            Self::Storage { .. } => true,        // Storage issues may be transient
-            Self::Classification { .. } => true, // Classification can be retried
-            Self::NotFound { .. } => false,      // Resource genuinely doesn't exist
-            Self::PathTraversal { .. } => false, // Security issue, not recoverable
-            Self::Io { .. } => true,             // IO issues may be transient
-            Self::Parse { .. } => false,         // Parse errors won't change on retry
+            // Git operations can often be retried
+            // Storage issues may be transient
+            // Classification can be retried
+            // IO issues may be transient
+            Self::Git { .. }
+            | Self::Storage { .. }
+            | Self::Classification { .. }
+            | Self::Io { .. } => true,
+            // Resource genuinely doesn't exist
+            // Security issue, not recoverable
+            // Parse errors won't change on retry
+            Self::NotFound { .. } | Self::PathTraversal { .. } | Self::Parse { .. } => false,
         }
     }
 }
@@ -110,11 +115,10 @@ impl From<crate::review::storage::StorageError> for AppError {
     fn from(err: crate::review::storage::StorageError) -> Self {
         use crate::review::storage::StorageError;
         match err {
-            StorageError::Io(e) => AppError::storage(format!("IO: {}", e)),
-            StorageError::Json(e) => AppError::storage(format!("JSON: {}", e)),
+            StorageError::Io(e) => AppError::storage(format!("IO: {e}")),
+            StorageError::Json(e) => AppError::storage(format!("JSON: {e}")),
             StorageError::VersionConflict { expected, found } => AppError::storage(format!(
-                "Version conflict: expected version {}, found {}. Another process modified the file.",
-                expected, found
+                "Version conflict: expected version {expected}, found {found}. Another process modified the file."
             )),
         }
     }
@@ -129,10 +133,10 @@ impl From<crate::classify::ClassifyError> for AppError {
                 "Claude CLI not found. Install from https://claude.ai/code",
             ),
             ClassifyError::CommandFailed(msg) => {
-                AppError::classification(format!("Command failed: {}", msg))
+                AppError::classification(format!("Command failed: {msg}"))
             }
             ClassifyError::ParseError(msg) => {
-                AppError::classification(format!("Parse error: {}", msg))
+                AppError::classification(format!("Parse error: {msg}"))
             }
             ClassifyError::EmptyResponse => AppError::classification("Empty response from Claude"),
             ClassifyError::Io(e) => AppError::io(e.to_string()),

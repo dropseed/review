@@ -14,12 +14,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
+/// Debounce interval for file system events in milliseconds.
+const WATCHER_DEBOUNCE_MS: u64 = 200;
+
 /// Log a message to the app.log file (for debugging watcher events)
 fn log_to_file(repo_path: &Path, message: &str) {
     let log_path = repo_path.join(".git/review/app.log");
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
-        let _ = writeln!(file, "[{}] [WATCHER] {}", timestamp, message);
+        let _ = writeln!(file, "[{timestamp}] [WATCHER] {message}");
     }
 }
 
@@ -58,7 +61,7 @@ fn build_gitignore(repo_path: &Path) -> Option<Gitignore> {
 }
 
 /// Check if a path is ignored by gitignore
-fn is_gitignored(gitignore: &Option<Arc<Gitignore>>, path: &Path, repo_path: &Path) -> bool {
+fn is_gitignored(gitignore: Option<&Arc<Gitignore>>, path: &Path, repo_path: &Path) -> bool {
     if let Some(gi) = gitignore {
         // Get path relative to repo root for proper matching
         if let Ok(relative) = path.strip_prefix(repo_path) {
@@ -84,7 +87,10 @@ fn should_ignore_path(path_str: &str) -> bool {
     // Ignore most .git internals - only care about specific meaningful changes
     if path_str.contains("/.git/") || path_str.contains("\\.git\\") {
         // Always ignore .lock files in .git (transient lock files)
-        if path_str.ends_with(".lock") {
+        if std::path::Path::new(path_str)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
+        {
             return true;
         }
 
@@ -151,7 +157,10 @@ fn categorize_change(path_str: &str) -> ChangeKind {
     // Review state files (inside .git/review/) - but not log files
     if path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\") {
         // Ignore log files to prevent feedback loops with our own logging
-        if path_str.ends_with(".log") {
+        if std::path::Path::new(path_str)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("log"))
+        {
             return ChangeKind::Ignored;
         }
         return ChangeKind::ReviewState;
@@ -167,15 +176,19 @@ fn categorize_change(path_str: &str) -> ChangeKind {
 /// - Working tree changes (file creates, edits, deletes)
 /// - Git state changes (commits, branch switches, staging)
 /// - Review state changes (.git/review/)
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "AppHandle is cloned into the watcher closure and must be owned"
+)]
 pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     init_watchers();
 
-    let repo_path_str = repo_path.to_string();
+    let repo_path_str = repo_path.to_owned();
     let repo_path_buf = PathBuf::from(repo_path);
     let git_dir = repo_path_buf.join(".git");
 
     if !git_dir.exists() {
-        return Err(format!("Not a git repository: {}", repo_path));
+        return Err(format!("Not a git repository: {repo_path}"));
     }
 
     // Create review directory if it doesn't exist (so we can watch it)
@@ -194,9 +207,8 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     // Clone gitignore for the closure
     let gitignore_for_closure = gitignore.clone();
 
-    // Create debounced watcher with 200ms debounce (slightly longer for working tree)
     let mut debouncer = new_debouncer(
-        Duration::from_millis(200),
+        Duration::from_millis(WATCHER_DEBOUNCE_MS),
         move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
             match result {
                 Ok(events) => {
@@ -216,18 +228,16 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         }
 
                         // Skip gitignored paths (but not .git internal paths which we handle separately)
-                        if !path_str.contains("/.git/") && !path_str.contains("\\.git\\") {
-                            if is_gitignored(
-                                &gitignore_for_closure,
+                        if !path_str.contains("/.git/")
+                            && !path_str.contains("\\.git\\")
+                            && is_gitignored(
+                                gitignore_for_closure.as_ref(),
                                 &event.path,
                                 &repo_path_for_closure,
-                            ) {
-                                log_to_file(
-                                    &repo_path_for_closure,
-                                    &format!("GITIGNORED: {}", path_str),
-                                );
-                                continue;
-                            }
+                            )
+                        {
+                            log_to_file(&repo_path_for_closure, &format!("GITIGNORED: {path_str}"));
+                            continue;
                         }
 
                         let category = categorize_change(&path_str);
@@ -241,7 +251,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             };
                             log_to_file(
                                 &repo_path_for_closure,
-                                &format!("Event: {} -> {}", category_str, path_str),
+                                &format!("Event: {category_str} -> {path_str}"),
                             );
                         }
 
@@ -258,28 +268,28 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
 
                     // Emit events to frontend
                     if review_changed {
-                        eprintln!("[watcher] Review state changed for {}", repo_for_closure);
+                        eprintln!("[watcher] Review state changed for {repo_for_closure}");
                         let _ = app_clone.emit("review-state-changed", &repo_for_closure);
                     }
 
                     if working_tree_changed {
-                        eprintln!("[watcher] Working tree changed for {}", repo_for_closure);
+                        eprintln!("[watcher] Working tree changed for {repo_for_closure}");
                         let _ = app_clone.emit("git-changed", &repo_for_closure);
                     }
                 }
                 Err(e) => {
-                    eprintln!("[watcher] Error: {:?}", e);
+                    eprintln!("[watcher] Error: {e}");
                 }
             }
         },
     )
-    .map_err(|e| format!("Failed to create watcher: {}", e))?;
+    .map_err(|e| format!("Failed to create watcher: {e}"))?;
 
     // Watch the entire repository recursively
     debouncer
         .watcher()
         .watch(&repo_path_buf, RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch repository: {}", e))?;
+        .map_err(|e| format!("Failed to watch repository: {e}"))?;
 
     // Store the watcher handle
     let handle = WatcherHandle {
@@ -295,19 +305,19 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         map.insert(repo_path_str.clone(), handle);
     }
 
-    eprintln!("[watcher] Started file watcher for {}", repo_path_str);
+    eprintln!("[watcher] Started file watcher for {repo_path_str}");
     Ok(())
 }
 
 /// Stop watching a repository
 pub fn stop_watching(repo_path: &str) {
-    eprintln!("[watcher] Stopping file watcher for {}", repo_path);
+    eprintln!("[watcher] Stopping file watcher for {repo_path}");
     let mut watchers = WATCHERS
         .lock()
         .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
     if let Some(ref mut map) = *watchers {
         if map.remove(repo_path).is_some() {
-            eprintln!("[watcher] Stopped file watcher for {}", repo_path);
+            eprintln!("[watcher] Stopped file watcher for {repo_path}");
         }
     }
 }

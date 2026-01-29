@@ -23,9 +23,9 @@ pub fn run(repo_path: &str, category: Option<String>, format: OutputFormat) -> R
 
     if categories.is_empty() {
         if let Some(cat) = category {
-            return Err(format!("Category '{}' not found", cat));
+            return Err(format!("Category '{cat}' not found"));
         }
-        return Err("No taxonomy categories found".to_string());
+        return Err("No taxonomy categories found".to_owned());
     }
 
     if format == OutputFormat::Json {

@@ -3,6 +3,12 @@
 //! All #[tauri::command] functions are defined here as thin wrappers
 //! that delegate to core business logic modules.
 
+// Tauri's IPC protocol requires command parameters to be owned types.
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri commands require owned parameters for IPC deserialization"
+)]
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
 use review::classify::{self, ClassifyResponse, HunkInput};
@@ -19,6 +25,38 @@ use review::symbols::{self, FileSymbolDiff};
 use review::trust::patterns::TrustCategory;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
+
+// --- Window defaults ---
+
+/// Default window width in logical pixels.
+const DEFAULT_WINDOW_WIDTH: f64 = 1100.0;
+/// Default window height in logical pixels.
+const DEFAULT_WINDOW_HEIGHT: f64 = 750.0;
+/// Minimum window width in logical pixels.
+const MIN_WINDOW_WIDTH: f64 = 800.0;
+/// Minimum window height in logical pixels.
+const MIN_WINDOW_HEIGHT: f64 = 600.0;
+/// Background color for new windows (dark neutral).
+const WINDOW_BG_COLOR: tauri::window::Color = tauri::window::Color(0x0c, 0x0a, 0x09, 0xff);
+
+// --- Classification defaults ---
+
+/// Default number of hunks per classification batch.
+const DEFAULT_BATCH_SIZE: usize = 5;
+/// Minimum allowed batch size.
+const MIN_BATCH_SIZE: usize = 1;
+/// Maximum allowed batch size.
+const MAX_BATCH_SIZE: usize = 20;
+/// Default number of concurrent classification batches.
+const DEFAULT_MAX_CONCURRENT: usize = 2;
+/// Minimum concurrent batches.
+const MIN_CONCURRENT: usize = 1;
+/// Maximum concurrent batches.
+const MAX_CONCURRENT: usize = 10;
+/// Base timeout in seconds for classification.
+const CLASSIFY_BASE_TIMEOUT_SECS: u64 = 60;
+/// Additional timeout seconds per batch.
+const CLASSIFY_SECS_PER_BATCH: u64 = 30;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
@@ -89,17 +127,17 @@ fn is_image_file(file_path: &str) -> bool {
 fn get_content_type(file_path: &str) -> String {
     let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
     if ext == "svg" {
-        "svg".to_string()
+        "svg".to_owned()
     } else if is_image_file(file_path) {
-        "image".to_string()
+        "image".to_owned()
     } else {
-        "text".to_string()
+        "text".to_owned()
     }
 }
 
 fn bytes_to_data_url(bytes: &[u8], mime_type: &str) -> String {
     let base64_data = BASE64.encode(bytes);
-    format!("data:{};base64,{}", mime_type, base64_data)
+    format!("data:{mime_type};base64,{base64_data}")
 }
 
 // --- Tauri Commands ---
@@ -132,22 +170,19 @@ pub fn get_current_repo() -> Result<String, String> {
         }
     }
 
-    Err("No git repository found.".to_string())
+    Err("No git repository found.".to_owned())
 }
 
 #[tauri::command]
 pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
-    debug!(
-        "[list_files] repo_path={}, comparison={:?}",
-        repo_path, comparison
-    );
+    debug!("[list_files] repo_path={repo_path}, comparison={comparison:?}");
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[list_files] ERROR creating source: {}", e);
+        error!("[list_files] ERROR creating source: {e}");
         e.to_string()
     })?;
 
     let result = source.list_files(&comparison).map_err(|e| {
-        error!("[list_files] ERROR listing files: {}", e);
+        error!("[list_files] ERROR listing files: {e}");
         e.to_string()
     })?;
     info!("[list_files] SUCCESS: {} entries", result.len());
@@ -156,17 +191,14 @@ pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileE
 
 #[tauri::command]
 pub fn list_all_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
-    debug!(
-        "[list_all_files] repo_path={}, comparison={:?}",
-        repo_path, comparison
-    );
+    debug!("[list_all_files] repo_path={repo_path}, comparison={comparison:?}");
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[list_all_files] ERROR creating source: {}", e);
+        error!("[list_all_files] ERROR creating source: {e}");
         e.to_string()
     })?;
 
     let result = source.list_all_files(&comparison).map_err(|e| {
-        error!("[list_all_files] ERROR listing files: {}", e);
+        error!("[list_all_files] ERROR listing files: {e}");
         e.to_string()
     })?;
     info!("[list_all_files] SUCCESS: {} entries", result.len());
@@ -180,8 +212,7 @@ pub fn get_file_content(
     comparison: Comparison,
 ) -> Result<FileContent, String> {
     debug!(
-        "[get_file_content] repo_path={}, file_path={}, comparison={:?}",
-        repo_path, file_path, comparison
+        "[get_file_content] repo_path={repo_path}, file_path={file_path}, comparison={comparison:?}"
     );
 
     let repo_path_buf = PathBuf::from(&repo_path);
@@ -197,34 +228,34 @@ pub fn get_file_content(
     if file_exists {
         let canonical_repo = repo_path_buf
             .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize repo path: {}", e))?;
+            .map_err(|e| format!("Failed to canonicalize repo path: {e}"))?;
         let canonical_full = full_path
             .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize file path: {}", e))?;
+            .map_err(|e| format!("Failed to canonicalize file path: {e}"))?;
         if !canonical_full.starts_with(&canonical_repo) {
-            return Err("Path traversal detected: file path escapes repository".to_string());
+            return Err("Path traversal detected: file path escapes repository".to_owned());
         }
     } else {
         // For non-existent files (deleted), validate the path more strictly
         // Check for ".." in path components to prevent traversal
         if file_path.contains("..") {
-            return Err("Path traversal detected: file path contains '..'".to_string());
+            return Err("Path traversal detected: file path contains '..'".to_owned());
         }
         // Also validate the file path doesn't try to escape via absolute paths
         if file_path.starts_with('/') || file_path.starts_with('\\') {
-            return Err("Path traversal detected: file path is absolute".to_string());
+            return Err("Path traversal detected: file path is absolute".to_owned());
         }
         // Validate no backslash traversal attempts on Windows-style paths
         let normalized = file_path.replace('\\', "/");
         for component in normalized.split('/') {
             if component == ".." {
-                return Err("Path traversal detected: file path contains '..'".to_string());
+                return Err("Path traversal detected: file path contains '..'".to_owned());
             }
         }
     }
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_file_content] ERROR creating source: {}", e);
+        error!("[get_file_content] ERROR creating source: {e}");
         e.to_string()
     })?;
 
@@ -233,7 +264,7 @@ pub fn get_file_content(
         let diff_output = source
             .get_diff(&comparison, Some(&file_path))
             .map_err(|e| {
-                error!("[get_file_content] ERROR getting diff: {}", e);
+                error!("[get_file_content] ERROR getting diff: {e}");
                 e.to_string()
             })?;
 
@@ -257,7 +288,7 @@ pub fn get_file_content(
             old_content,
             diff_patch: diff_output,
             hunks,
-            content_type: "text".to_string(),
+            content_type: "text".to_owned(),
             image_data_url: None,
             old_image_data_url: None,
         });
@@ -268,15 +299,15 @@ pub fn get_file_content(
     let mime_type = get_image_mime_type(ext);
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_file_content] ERROR creating source: {}", e);
+        error!("[get_file_content] ERROR creating source: {e}");
         e.to_string()
     })?;
 
     if content_type == "image" || content_type == "svg" {
-        debug!("[get_file_content] handling as image/svg: {}", content_type);
+        debug!("[get_file_content] handling as image/svg: {content_type}");
 
         let current_bytes = std::fs::read(&full_path).map_err(|e| {
-            error!("[get_file_content] ERROR reading file bytes: {}", e);
+            error!("[get_file_content] ERROR reading file bytes: {e}");
             format!("{}: {}", full_path.display(), e)
         })?;
 
@@ -291,13 +322,15 @@ pub fn get_file_content(
         let diff_output = source
             .get_diff(&comparison, Some(&file_path))
             .map_err(|e| {
-                error!("[get_file_content] ERROR getting diff: {}", e);
+                error!("[get_file_content] ERROR getting diff: {e}");
                 e.to_string()
             })?;
 
-        let old_image_data_url = if !diff_output.is_empty() {
+        let old_image_data_url = if diff_output.is_empty() {
+            None
+        } else {
             let old_ref = if comparison.working_tree {
-                "HEAD".to_string()
+                "HEAD".to_owned()
             } else {
                 comparison.old.clone()
             };
@@ -311,12 +344,10 @@ pub fn get_file_content(
                     mime_type.map(|mt| bytes_to_data_url(&old_bytes, mt))
                 }
                 Err(e) => {
-                    debug!("[get_file_content] no old version available: {}", e);
+                    debug!("[get_file_content] no old version available: {e}");
                     None
                 }
             }
-        } else {
-            None
         };
 
         let hunks = if diff_output.is_empty() {
@@ -340,7 +371,7 @@ pub fn get_file_content(
     }
 
     let content = std::fs::read_to_string(&full_path).map_err(|e| {
-        error!("[get_file_content] ERROR reading file: {}", e);
+        error!("[get_file_content] ERROR reading file: {e}");
         format!("{}: {}", full_path.display(), e)
     })?;
     debug!(
@@ -351,7 +382,7 @@ pub fn get_file_content(
     let diff_output = source
         .get_diff(&comparison, Some(&file_path))
         .map_err(|e| {
-            error!("[get_file_content] ERROR getting diff: {}", e);
+            error!("[get_file_content] ERROR getting diff: {e}");
             e.to_string()
         })?;
     debug!(
@@ -375,61 +406,59 @@ pub fn get_file_content(
         parsed
     };
 
-    let (old_content, final_content) = if !diff_output.is_empty() {
-        if comparison.working_tree {
-            let old = match source.get_file_bytes(&file_path, "HEAD") {
-                Ok(bytes) => {
-                    debug!(
-                        "[get_file_content] got old content from HEAD: {} bytes",
-                        bytes.len()
-                    );
-                    String::from_utf8(bytes).ok()
-                }
-                Err(e) => {
-                    debug!("[get_file_content] no old version available: {}", e);
-                    None
-                }
-            };
-            (old, content)
-        } else {
-            let old = match source.get_file_bytes(&file_path, &comparison.old) {
-                Ok(bytes) => {
-                    debug!(
-                        "[get_file_content] got old content from {}: {} bytes",
-                        comparison.old,
-                        bytes.len()
-                    );
-                    String::from_utf8(bytes).ok()
-                }
-                Err(e) => {
-                    debug!(
-                        "[get_file_content] no old version at {}: {}",
-                        comparison.old, e
-                    );
-                    None
-                }
-            };
-            let new = match source.get_file_bytes(&file_path, &comparison.new) {
-                Ok(bytes) => {
-                    debug!(
-                        "[get_file_content] got new content from {}: {} bytes",
-                        comparison.new,
-                        bytes.len()
-                    );
-                    String::from_utf8(bytes).ok()
-                }
-                Err(e) => {
-                    debug!(
-                        "[get_file_content] no new version at {}: {}",
-                        comparison.new, e
-                    );
-                    None
-                }
-            };
-            (old, new.unwrap_or(content))
-        }
-    } else {
+    let (old_content, final_content) = if diff_output.is_empty() {
         (None, content)
+    } else if comparison.working_tree {
+        let old = match source.get_file_bytes(&file_path, "HEAD") {
+            Ok(bytes) => {
+                debug!(
+                    "[get_file_content] got old content from HEAD: {} bytes",
+                    bytes.len()
+                );
+                String::from_utf8(bytes).ok()
+            }
+            Err(e) => {
+                debug!("[get_file_content] no old version available: {e}");
+                None
+            }
+        };
+        (old, content)
+    } else {
+        let old = match source.get_file_bytes(&file_path, &comparison.old) {
+            Ok(bytes) => {
+                debug!(
+                    "[get_file_content] got old content from {}: {} bytes",
+                    comparison.old,
+                    bytes.len()
+                );
+                String::from_utf8(bytes).ok()
+            }
+            Err(e) => {
+                debug!(
+                    "[get_file_content] no old version at {}: {}",
+                    comparison.old, e
+                );
+                None
+            }
+        };
+        let new = match source.get_file_bytes(&file_path, &comparison.new) {
+            Ok(bytes) => {
+                debug!(
+                    "[get_file_content] got new content from {}: {} bytes",
+                    comparison.new,
+                    bytes.len()
+                );
+                String::from_utf8(bytes).ok()
+            }
+            Err(e) => {
+                debug!(
+                    "[get_file_content] no new version at {}: {}",
+                    comparison.new, e
+                );
+                None
+            }
+        };
+        (old, new.unwrap_or(content))
     };
 
     info!("[get_file_content] SUCCESS");
@@ -552,12 +581,19 @@ pub async fn classify_hunks_with_claude(
     use tauri::Emitter;
     use tokio::time::timeout;
 
-    let model = model.unwrap_or_else(|| "sonnet".to_string());
-    let batch_size = batch_size.unwrap_or(5).max(1).min(20);
-    let max_concurrent = max_concurrent.unwrap_or(2).max(1).min(10);
+    let model = model.unwrap_or_else(|| "sonnet".to_owned());
+    let batch_size = batch_size
+        .unwrap_or(DEFAULT_BATCH_SIZE)
+        .clamp(MIN_BATCH_SIZE, MAX_BATCH_SIZE);
+    let max_concurrent = max_concurrent
+        .unwrap_or(DEFAULT_MAX_CONCURRENT)
+        .clamp(MIN_CONCURRENT, MAX_CONCURRENT);
 
-    let num_batches = (hunks.len() + batch_size - 1) / batch_size;
-    let timeout_secs = std::cmp::max(60, num_batches as u64 * 30);
+    let num_batches = hunks.len().div_ceil(batch_size);
+    let timeout_secs = std::cmp::max(
+        CLASSIFY_BASE_TIMEOUT_SECS,
+        num_batches as u64 * CLASSIFY_SECS_PER_BATCH,
+    );
 
     debug!(
         "[classify_hunks_with_claude] repo_path={}, hunks={}, model={}, command={:?}, batch_size={}, max_concurrent={}, timeout={}s",
@@ -587,7 +623,7 @@ pub async fn classify_hunks_with_claude(
         ),
     )
     .await
-    .map_err(|_| format!("Classification timed out after {} seconds", timeout_secs))?
+    .map_err(|_| format!("Classification timed out after {timeout_secs} seconds"))?
     .map_err(|e| e.to_string())?;
 
     info!(
@@ -617,15 +653,13 @@ fn validate_review_path(path: &str) -> Result<PathBuf, String> {
 
     // Reject paths with ".." components to prevent traversal
     if path.contains("..") {
-        return Err("Path traversal detected: path contains '..'".to_string());
+        return Err("Path traversal detected: path contains '..'".to_owned());
     }
 
     // The path must contain .git/review/ to be valid
     let path_str = path.replace('\\', "/");
     if !path_str.contains("/.git/review/") && !path_str.contains(".git/review/") {
-        return Err(
-            "Security error: writes are only allowed to .git/review/ directory".to_string(),
-        );
+        return Err("Security error: writes are only allowed to .git/review/ directory".to_owned());
     }
 
     Ok(path_buf)
@@ -635,7 +669,7 @@ fn validate_review_path(path: &str) -> Result<PathBuf, String> {
 pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
     let validated_path = validate_review_path(&path)?;
     std::fs::write(&validated_path, contents)
-        .map_err(|e| format!("Failed to write file {}: {}", path, e))
+        .map_err(|e| format!("Failed to write file {path}: {e}"))
 }
 
 #[tauri::command]
@@ -647,17 +681,17 @@ pub fn append_to_file(path: String, contents: String) -> Result<(), String> {
 
     if let Some(parent) = validated_path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directories for {}: {}", path, e))?;
+            .map_err(|e| format!("Failed to create directories for {path}: {e}"))?;
     }
 
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&validated_path)
-        .map_err(|e| format!("Failed to open file {}: {}", path, e))?;
+        .map_err(|e| format!("Failed to open file {path}: {e}"))?;
 
     file.write_all(contents.as_bytes())
-        .map_err(|e| format!("Failed to append to file {}: {}", path, e))
+        .map_err(|e| format!("Failed to append to file {path}: {e}"))
 }
 
 #[tauri::command]
@@ -669,14 +703,13 @@ pub fn get_expanded_context(
     end_line: u32,
 ) -> Result<ExpandedContextResult, String> {
     debug!(
-        "[get_expanded_context] file={}, lines {}-{}, comparison={:?}",
-        file_path, start_line, end_line, comparison
+        "[get_expanded_context] file={file_path}, lines {start_line}-{end_line}, comparison={comparison:?}"
     );
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
     let git_ref = if comparison.working_tree {
-        "HEAD".to_string()
+        "HEAD".to_owned()
     } else {
         comparison.new.clone()
     };
@@ -751,10 +784,10 @@ pub async fn open_repo_window(
 
         WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
             .title("Review")
-            .inner_size(1100.0, 750.0)
-            .min_inner_size(800.0, 600.0)
+            .inner_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+            .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
             .tabbing_identifier("review-main")
-            .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
+            .background_color(WINDOW_BG_COLOR)
             .build()
             .map_err(|e: tauri::Error| e.to_string())?;
 
@@ -763,11 +796,10 @@ pub async fn open_repo_window(
 
     let comparison_key = comparison
         .as_ref()
-        .map(|c| c.key.clone())
-        .unwrap_or_else(|| "default".to_string());
+        .map_or_else(|| "default".to_owned(), |c| c.key.clone());
 
     let mut hasher = DefaultHasher::new();
-    format!("{}:{}", repo_path, comparison_key).hash(&mut hasher);
+    format!("{repo_path}:{comparison_key}").hash(&mut hasher);
     let label = format!("repo-{:x}", hasher.finish());
 
     if let Some(existing) = app.get_webview_window(&label) {
@@ -777,14 +809,14 @@ pub async fn open_repo_window(
         return Ok(());
     }
 
-    let repo_name = std::path::Path::new(&repo_path)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Repository".to_string());
+    let repo_name = std::path::Path::new(&repo_path).file_name().map_or_else(
+        || "Repository".to_owned(),
+        |s| s.to_string_lossy().to_string(),
+    );
 
     let window_title = if let Some(ref c) = comparison {
         let compare_display = if c.working_tree && c.new == "HEAD" {
-            "Working Tree".to_string()
+            "Working Tree".to_owned()
         } else {
             c.new.clone()
         };
@@ -811,7 +843,7 @@ pub async fn open_repo_window(
         .inner_size(1100.0, 750.0)
         .min_inner_size(800.0, 600.0)
         .tabbing_identifier("review-main")
-        .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
+        .background_color(WINDOW_BG_COLOR)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
 
@@ -831,13 +863,13 @@ pub fn get_file_symbol_diffs(
     );
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_file_symbol_diffs] ERROR creating source: {}", e);
+        error!("[get_file_symbol_diffs] ERROR creating source: {e}");
         e.to_string()
     })?;
 
     // Determine the git refs for old and new sides
     let old_ref = if comparison.working_tree {
-        "HEAD".to_string()
+        "HEAD".to_owned()
     } else {
         comparison.old.clone()
     };
@@ -904,19 +936,18 @@ pub fn search_file_contents(
     max_results: usize,
 ) -> Result<Vec<SearchMatch>, String> {
     debug!(
-        "[search_file_contents] repo_path={}, query={}, case_sensitive={}, max_results={}",
-        repo_path, query, case_sensitive, max_results
+        "[search_file_contents] repo_path={repo_path}, query={query}, case_sensitive={case_sensitive}, max_results={max_results}"
     );
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[search_file_contents] ERROR creating source: {}", e);
+        error!("[search_file_contents] ERROR creating source: {e}");
         e.to_string()
     })?;
 
     let results = source
         .search_contents(&query, case_sensitive, max_results)
         .map_err(|e| {
-            error!("[search_file_contents] ERROR searching: {}", e);
+            error!("[search_file_contents] ERROR searching: {e}");
             e.to_string()
         })?;
 

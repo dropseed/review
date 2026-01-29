@@ -63,7 +63,7 @@ fn find_claude_executable() -> Option<String> {
                     .next()
                     .unwrap_or("")
                     .trim()
-                    .to_string();
+                    .to_owned();
                 if !path.is_empty() {
                     return Some(path);
                 }
@@ -98,7 +98,7 @@ fn run_claude_with_model(
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         if parts.is_empty() {
             return Err(ClassifyError::CommandFailed(
-                "Custom command is empty".to_string(),
+                "Custom command is empty".to_owned(),
             ));
         }
         let program = parts[0];
@@ -153,8 +153,7 @@ fn validate_labels(result: ClassificationResult) -> ClassificationResult {
             let is_valid = is_valid_pattern_id(label);
             if !is_valid {
                 eprintln!(
-                    "[validate_labels] Filtered out invalid label: '{}' - not in taxonomy",
-                    label
+                    "[validate_labels] Filtered out invalid label: '{label}' - not in taxonomy"
                 );
             }
             is_valid
@@ -183,8 +182,7 @@ fn extract_single_classification(output: &str) -> Result<ClassificationResult, C
         let after_marker = &trimmed[start + 3..];
         let after_newline = after_marker
             .find('\n')
-            .map(|i| &after_marker[i + 1..])
-            .unwrap_or(after_marker);
+            .map_or(after_marker, |i| &after_marker[i + 1..]);
         if let Some(end) = after_newline.find("```") {
             after_newline[..end].trim()
         } else {
@@ -197,7 +195,7 @@ fn extract_single_classification(output: &str) -> Result<ClassificationResult, C
             &trimmed[start..=end]
         } else {
             return Err(ClassifyError::ParseError(
-                "Could not find complete JSON object".to_string(),
+                "Could not find complete JSON object".to_owned(),
             ));
         }
     } else {
@@ -248,8 +246,7 @@ fn extract_batch_classifications(
         let after_marker = &trimmed[start + 3..];
         let after_newline = after_marker
             .find('\n')
-            .map(|i| &after_marker[i + 1..])
-            .unwrap_or(after_marker);
+            .map_or(after_marker, |i| &after_marker[i + 1..]);
         if let Some(end) = after_newline.find("```") {
             after_newline[..end].trim()
         } else {
@@ -262,7 +259,7 @@ fn extract_batch_classifications(
             &trimmed[start..=end]
         } else {
             return Err(ClassifyError::ParseError(
-                "Could not find complete JSON object".to_string(),
+                "Could not find complete JSON object".to_owned(),
             ));
         }
     } else {
@@ -334,8 +331,8 @@ where
 
     let semaphore = Arc::new(Semaphore::new(max_concurrent));
     let repo_path = repo_path.to_path_buf();
-    let model = model.to_string();
-    let custom_command = custom_command.map(|s| s.to_string());
+    let model = model.to_owned();
+    let custom_command = custom_command.map(std::borrow::ToOwned::to_owned);
     let on_batch_complete = Arc::new(on_batch_complete);
 
     // Split hunks into batches, keeping track of IDs per batch
@@ -358,11 +355,11 @@ where
     let tasks: Vec<_> = batches
         .into_iter()
         .map(|(batch_ids, batch)| {
-            let sem = semaphore.clone();
+            let sem = Arc::clone(&semaphore);
             let repo = repo_path.clone();
             let m = model.clone();
             let cmd = custom_command.clone();
-            let callback = on_batch_complete.clone();
+            let callback = Arc::clone(&on_batch_complete);
             tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
                 // Run the blocking Claude CLI call in a blocking thread
@@ -370,7 +367,7 @@ where
                     classify_batch(&batch, &repo, &m, cmd.as_deref())
                 })
                 .await
-                .map_err(|e| ClassifyError::CommandFailed(format!("Task join error: {}", e)))?;
+                .map_err(|e| ClassifyError::CommandFailed(format!("Task join error: {e}")))?;
 
                 // Call the callback with the batch IDs that were processed
                 callback(batch_ids);
@@ -394,7 +391,7 @@ where
                 errors.push(e.to_string());
             }
             Err(e) => {
-                errors.push(format!("Task join error: {}", e));
+                errors.push(format!("Task join error: {e}"));
             }
         }
     }

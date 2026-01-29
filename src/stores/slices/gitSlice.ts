@@ -4,6 +4,7 @@ import type { SliceCreatorWithClient, GitStatusSummary } from "../types";
 export interface GitSlice {
   // Git state
   gitStatus: GitStatusSummary | null;
+  stagedFilePaths: Set<string>;
 
   // Actions
   loadGitStatus: () => Promise<void>;
@@ -12,6 +13,7 @@ export interface GitSlice {
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
   (client: ApiClient) => (set, get) => ({
     gitStatus: null,
+    stagedFilePaths: new Set<string>(),
 
     loadGitStatus: async () => {
       const { repoPath } = get();
@@ -19,10 +21,11 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
       try {
         const status = await client.getGitStatus(repoPath);
-        set({ gitStatus: status });
+        const staged = new Set<string>(status.staged.map((e) => e.path));
+        set({ gitStatus: status, stagedFilePaths: staged });
       } catch (err) {
         console.error("Failed to load git status:", err);
-        set({ gitStatus: null });
+        set({ gitStatus: null, stagedFilePaths: new Set<string>() });
       }
     },
   });

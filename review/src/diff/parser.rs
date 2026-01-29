@@ -128,7 +128,7 @@ impl HunkBuilder {
 
         self.lines.push(DiffLine {
             line_type,
-            content: content.to_string(),
+            content: content.to_owned(),
             old_line_number: old_ln,
             new_line_number: new_ln,
         });
@@ -141,11 +141,11 @@ impl HunkBuilder {
         let content_hash = hex::encode(&content_hasher.finalize()[..8]);
 
         // Generate unique ID from filepath and content hash
-        let id = format!("{}:{}", file_path, content_hash);
+        let id = format!("{file_path}:{content_hash}");
 
         DiffHunk {
             id,
-            file_path: file_path.to_string(),
+            file_path: file_path.to_owned(),
             old_start: self.old_start,
             old_count: self.old_count,
             new_start: self.new_start,
@@ -187,14 +187,14 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
 /// Create a hunk for an untracked (new) file.
 /// The hunk ID is based on the filepath for stability.
 pub fn create_untracked_hunk(file_path: &str) -> DiffHunk {
-    let content = "(untracked file)".to_string();
+    let content = "(untracked file)".to_owned();
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     let content_hash = hex::encode(&hasher.finalize()[..8]);
 
     DiffHunk {
-        id: format!("{}:{}", file_path, content_hash),
-        file_path: file_path.to_string(),
+        id: format!("{file_path}:{content_hash}"),
+        file_path: file_path.to_owned(),
         old_start: 0,
         old_count: 0,
         new_start: 1,
@@ -202,7 +202,7 @@ pub fn create_untracked_hunk(file_path: &str) -> DiffHunk {
         content,
         lines: vec![DiffLine {
             line_type: LineType::Added,
-            content: "(new file)".to_string(),
+            content: "(new file)".to_owned(),
             old_line_number: None,
             new_line_number: Some(1),
         }],

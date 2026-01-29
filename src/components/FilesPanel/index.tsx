@@ -146,6 +146,11 @@ interface FilesPanelProps {
 
 export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const commits = useReviewStore((s) => s.commits);
+  const comparison = useReviewStore((s) => s.comparison);
+  const autoApproveStaged = useReviewStore(
+    (s) => s.reviewState?.autoApproveStaged ?? false,
+  );
+  const setAutoApproveStaged = useReviewStore((s) => s.setAutoApproveStaged);
 
   // Track selected commit hash locally (for highlighting in CommitsPanel)
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
@@ -305,6 +310,33 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             </button>
           </div>
         </div>
+
+        {/* Auto-approve staged toggle - only for working tree comparisons */}
+        {comparison?.workingTree && viewMode === "changes" && (
+          <div className="flex items-center justify-between border-b border-stone-800 px-3 py-1.5">
+            <label
+              htmlFor="auto-approve-staged"
+              className="text-xxs text-stone-400 cursor-pointer select-none"
+            >
+              Auto-approve staged
+            </label>
+            <button
+              id="auto-approve-staged"
+              role="switch"
+              aria-checked={autoApproveStaged}
+              onClick={() => setAutoApproveStaged(!autoApproveStaged)}
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                autoApproveStaged ? "bg-lime-500/60" : "bg-stone-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  autoApproveStaged ? "translate-x-3.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Panel content based on view mode */}
         {viewMode === "commits" ? (

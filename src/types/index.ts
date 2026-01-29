@@ -227,11 +227,24 @@ export function isHunkTrusted(
   return anyLabelMatchesAnyPattern(hunkState.label, trustList);
 }
 
-// Helper to check if a hunk is "reviewed" (trusted, approved, or rejected)
+// Helper to check if a hunk is "reviewed" (trusted, approved, rejected, or staged-approved)
 export function isHunkReviewed(
   hunkState: HunkState | undefined,
   trustList: string[],
+  options?: {
+    autoApproveStaged?: boolean;
+    stagedFilePaths?: Set<string>;
+    filePath?: string;
+  },
 ): boolean {
+  // Check staged-approved first (doesn't require hunkState)
+  if (
+    options?.autoApproveStaged &&
+    options.filePath &&
+    options.stagedFilePaths?.has(options.filePath)
+  ) {
+    return true;
+  }
   if (!hunkState) return false;
   if (hunkState.status) return true; // approved or rejected
   return isHunkTrusted(hunkState, trustList);
@@ -274,6 +287,7 @@ export interface ReviewState {
   trustList: string[]; // List of trusted patterns
   notes: string; // Overall review notes
   annotations: LineAnnotation[]; // Inline annotations on lines
+  autoApproveStaged?: boolean; // When true, hunks in staged files are treated as reviewed
   createdAt: string;
   updatedAt: string;
   version: number; // Version counter for optimistic concurrency control

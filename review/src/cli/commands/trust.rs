@@ -11,7 +11,7 @@ pub fn run(repo_path: &str, pattern: &str, format: OutputFormat) -> Result<(), S
     let comparison = storage::get_current_comparison(&path)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_string()
+            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
         })?;
 
     // Load review state
@@ -20,8 +20,7 @@ pub fn run(repo_path: &str, pattern: &str, format: OutputFormat) -> Result<(), S
     // Validate pattern format (should be category:pattern or category:*)
     if !pattern.contains(':') {
         return Err(format!(
-            "Invalid pattern format '{}'. Expected 'category:label' or 'category:*'",
-            pattern
+            "Invalid pattern format '{pattern}'. Expected 'category:label' or 'category:*'"
         ));
     }
 
@@ -39,12 +38,9 @@ pub fn run(repo_path: &str, pattern: &str, format: OutputFormat) -> Result<(), S
     }
 
     // Check if already in trust list
-    if state.trust_list.contains(&pattern.to_string()) {
+    if state.trust_list.contains(&pattern.to_owned()) {
         if format == OutputFormat::Json {
-            println!(
-                r#"{{"message": "Pattern already trusted", "pattern": "{}"}}"#,
-                pattern
-            );
+            println!(r#"{{"message": "Pattern already trusted", "pattern": "{pattern}"}}"#);
         } else {
             println!("Pattern '{}' is already in the trust list", pattern.cyan());
         }
@@ -52,7 +48,7 @@ pub fn run(repo_path: &str, pattern: &str, format: OutputFormat) -> Result<(), S
     }
 
     // Add to trust list
-    state.trust_list.push(pattern.to_string());
+    state.trust_list.push(pattern.to_owned());
 
     // Count how many hunks this will trust
     let newly_trusted = state

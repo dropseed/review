@@ -4,7 +4,7 @@ use crate::trust::patterns::is_valid_pattern_id;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::Instant;
 
 // --- Data types ---
@@ -74,13 +74,13 @@ fn load_fixtures(
     case_filter: Option<&str>,
 ) -> Result<Vec<EvalCase>, String> {
     let json_str = if let Some(path) = fixtures_path {
-        std::fs::read_to_string(path).map_err(|e| format!("Failed to read fixtures file: {}", e))?
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read fixtures file: {e}"))?
     } else {
-        include_str!("../../../resources/eval/cases.json").to_string()
+        include_str!("../../../resources/eval/cases.json").to_owned()
     };
 
     let cases: Vec<EvalCase> =
-        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse fixtures: {}", e))?;
+        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse fixtures: {e}"))?;
 
     // Validate all labels in cases exist in taxonomy
     for case in &cases {
@@ -121,13 +121,13 @@ fn load_fixtures(
         .collect();
 
     if filtered.is_empty() {
-        return Err("No test cases match the given filters".to_string());
+        return Err("No test cases match the given filters".to_owned());
     }
 
     Ok(filtered)
 }
 
-fn run_eval_case(case: &EvalCase, cwd: &PathBuf, model: &str) -> CaseResult {
+fn run_eval_case(case: &EvalCase, cwd: &Path, model: &str) -> CaseResult {
     let start = Instant::now();
     let hunk = HunkInput {
         id: case.id.clone(),
@@ -218,12 +218,12 @@ fn build_report(
             }
             let result = &results[result_idx];
             let category = if case.expected.accept.is_empty() {
-                "none-expected".to_string()
+                "none-expected".to_owned()
             } else {
                 case.tags
                     .first()
                     .cloned()
-                    .unwrap_or_else(|| "other".to_string())
+                    .unwrap_or_else(|| "other".to_owned())
             };
 
             let entry = category_map.entry(category).or_insert((0, 0));
@@ -250,7 +250,7 @@ fn build_report(
     per_category.sort_by(|a, b| a.category.cmp(&b.category));
 
     EvalReport {
-        model: model.to_string(),
+        model: model.to_owned(),
         total_cases: cases.len(),
         total_runs: runs,
         passed,
@@ -301,12 +301,11 @@ fn print_text_report(report: &EvalReport, cases: &[EvalCase], verbose: bool) {
         for result in &report.results {
             let status = match result.outcome {
                 CaseOutcome::Pass => "PASS".green(),
-                CaseOutcome::FailRejected => "FAIL".red(),
-                CaseOutcome::FailMissed => "FAIL".red(),
+                CaseOutcome::FailRejected | CaseOutcome::FailMissed => "FAIL".red(),
                 CaseOutcome::Error => "ERR ".red(),
             };
             let labels = if result.returned_labels.is_empty() {
-                "(empty)".to_string()
+                "(empty)".to_owned()
             } else {
                 result.returned_labels.join(", ")
             };
@@ -329,10 +328,9 @@ fn print_text_report(report: &EvalReport, cases: &[EvalCase], verbose: bool) {
         println!("{}", "Failures:".bold());
         for result in &failures {
             let status = match result.outcome {
-                CaseOutcome::FailRejected => "FAIL",
-                CaseOutcome::FailMissed => "FAIL",
+                CaseOutcome::FailRejected | CaseOutcome::FailMissed => "FAIL",
                 CaseOutcome::Error => "ERR ",
-                _ => continue,
+                CaseOutcome::Pass => continue,
             };
 
             println!("  {}  {}", status.red(), result.case_id.bold());
@@ -340,22 +338,22 @@ fn print_text_report(report: &EvalReport, cases: &[EvalCase], verbose: bool) {
             // Find the case to show expected
             if let Some(case) = cases.iter().find(|c| c.id == result.case_id) {
                 let expected_str = if case.expected.accept.is_empty() {
-                    "(empty / needs review)".to_string()
+                    "(empty / needs review)".to_owned()
                 } else {
                     case.expected.accept.join(" | ")
                 };
-                println!("        Expected: {}", expected_str);
+                println!("        Expected: {expected_str}");
             }
 
             let got = if result.returned_labels.is_empty() {
-                "(empty)".to_string()
+                "(empty)".to_owned()
             } else {
                 result.returned_labels.join(", ")
             };
-            println!("        Got:      {}", got);
+            println!("        Got:      {got}");
 
             if let Some(ref err) = result.error {
-                println!("        Error:    {}", err);
+                println!("        Error:    {err}");
             } else if !result.reasoning.is_empty() {
                 println!("        Reason:   \"{}\"", result.reasoning);
             }
@@ -372,6 +370,10 @@ fn print_json_report(report: &EvalReport) {
 
 // --- CLI entry point ---
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "CLI entry point with many options"
+)]
 pub fn run(
     model: &str,
     runs: usize,
@@ -385,13 +387,13 @@ pub fn run(
     if !check_claude_available() {
         return Err(
             "Claude CLI not found. Please install: npm install -g @anthropic-ai/claude-code"
-                .to_string(),
+                .to_owned(),
         );
     }
 
     let cases = load_fixtures(fixtures, tag, case)?;
 
-    let cwd = std::env::current_dir().map_err(|e| format!("Failed to get cwd: {}", e))?;
+    let cwd = std::env::current_dir().map_err(|e| format!("Failed to get cwd: {e}"))?;
 
     if format == OutputFormat::Text {
         println!(
@@ -413,8 +415,8 @@ pub fn run(
             for _ in 0..runs {
                 let case = case.clone();
                 let cwd = cwd.clone();
-                let model = model.to_string();
-                let sem = semaphore.clone();
+                let model = model.to_owned();
+                let sem = std::sync::Arc::clone(&semaphore);
 
                 tasks.push(tokio::spawn(async move {
                     let _permit = sem.acquire().await.expect("semaphore closed");

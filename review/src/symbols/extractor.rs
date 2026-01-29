@@ -245,9 +245,8 @@ fn extract_variable_function(node: Node, source: &str) -> Option<Symbol> {
 /// Extract methods from a JS/TS class body.
 fn extract_class_methods_js(class_node: Node, source: &str) -> Vec<Symbol> {
     let mut methods = Vec::new();
-    let body = match class_node.child_by_field_name("body") {
-        Some(b) => b,
-        None => return methods,
+    let Some(body) = class_node.child_by_field_name("body") else {
+        return methods;
     };
 
     let mut cursor = body.walk();
@@ -314,9 +313,8 @@ fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
 
 fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
     let mut methods = Vec::new();
-    let body = match class_node.child_by_field_name("body") {
-        Some(b) => b,
-        None => return methods,
+    let Some(body) = class_node.child_by_field_name("body") else {
+        return methods;
     };
 
     let mut cursor = body.walk();
@@ -378,7 +376,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
             let full_name = if receiver.is_empty() {
                 name
             } else {
-                format!("({}).{}", receiver, name)
+                format!("({receiver}).{name}")
             };
 
             Some(Symbol {
@@ -424,7 +422,7 @@ fn extract_go_receiver(node: Node, source: &str) -> Option<String> {
         if child.kind() == "parameter_declaration" {
             if let Some(type_node) = child.child_by_field_name("type") {
                 let text = node_text(type_node, source);
-                return Some(text.trim_start_matches('*').to_string());
+                return Some(text.trim_start_matches('*').to_owned());
             }
         }
     }
@@ -441,18 +439,18 @@ fn node_text<'a>(node: Node<'a>, source: &'a str) -> &'a str {
 /// Find a named child field and return its text.
 fn find_child_text(node: Node, field: &str, source: &str) -> Option<String> {
     node.child_by_field_name(field)
-        .map(|n| node_text(n, source).to_string())
+        .map(|n| node_text(n, source).to_owned())
 }
 
 /// Find the name for a Rust `impl` block (e.g., "MyStruct" or "MyTrait for MyStruct").
 fn find_impl_name(node: Node, source: &str) -> Option<String> {
     let type_node = node.child_by_field_name("type")?;
-    let type_name = node_text(type_node, source).to_string();
+    let type_name = node_text(type_node, source).to_owned();
 
     // Check for trait impl: `impl Trait for Type`
     if let Some(trait_node) = node.child_by_field_name("trait") {
-        let trait_name = node_text(trait_node, source).to_string();
-        Some(format!("{} for {}", trait_name, type_name))
+        let trait_name = node_text(trait_node, source).to_owned();
+        Some(format!("{trait_name} for {type_name}"))
     } else {
         Some(type_name)
     }
@@ -461,9 +459,8 @@ fn find_impl_name(node: Node, source: &str) -> Option<String> {
 /// Extract method symbols from a Rust trait/impl body.
 fn extract_methods_from_body(parent: Node, source: &str, _ext: &str) -> Vec<Symbol> {
     let mut methods = Vec::new();
-    let body = match parent.child_by_field_name("body") {
-        Some(b) => b,
-        None => return methods,
+    let Some(body) = parent.child_by_field_name("body") else {
+        return methods;
     };
 
     let mut cursor = body.walk();
@@ -487,9 +484,8 @@ fn extract_methods_from_body(parent: Node, source: &str, _ext: &str) -> Vec<Symb
 /// Extract symbols from the body node of a container (module, etc.).
 fn extract_symbols_from_body(parent: Node, source: &str, ext: &str) -> Vec<Symbol> {
     let mut symbols = Vec::new();
-    let body = match parent.child_by_field_name("body") {
-        Some(b) => b,
-        None => return symbols,
+    let Some(body) = parent.child_by_field_name("body") else {
+        return symbols;
     };
 
     let mut cursor = body.walk();
@@ -582,7 +578,7 @@ pub fn compute_file_symbol_diff(
     if get_language_for_file(file_path).is_none() {
         // No grammar - all hunks are top-level
         return FileSymbolDiff {
-            file_path: file_path.to_string(),
+            file_path: file_path.to_owned(),
             symbols: vec![],
             top_level_hunk_ids: file_hunks.iter().map(|h| h.id.clone()).collect(),
             has_grammar: false,
@@ -613,7 +609,7 @@ pub fn compute_file_symbol_diff(
         .collect();
 
     FileSymbolDiff {
-        file_path: file_path.to_string(),
+        file_path: file_path.to_owned(),
         symbols,
         top_level_hunk_ids,
         has_grammar: true,

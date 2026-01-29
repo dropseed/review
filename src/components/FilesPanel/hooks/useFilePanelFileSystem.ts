@@ -11,13 +11,23 @@ import {
  * Groups: repoPath, allFiles, allFilesLoading, hunks, reviewState (for hunk status)
  */
 export function useFilePanelFileSystem() {
-  const { repoPath, allFiles, allFilesLoading, hunks, reviewState } =
-    useReviewStore();
+  const {
+    repoPath,
+    allFiles,
+    allFilesLoading,
+    hunks,
+    reviewState,
+    stagedFilePaths,
+  } = useReviewStore();
 
   // Calculate hunk status per file
   const hunkStatusMap = useMemo(
-    () => calculateFileHunkStatus(hunks, reviewState),
-    [hunks, reviewState],
+    () =>
+      calculateFileHunkStatus(hunks, reviewState, {
+        autoApproveStaged: reviewState?.autoApproveStaged,
+        stagedFilePaths,
+      }),
+    [hunks, reviewState, stagedFilePaths],
   );
 
   // Process sectioned tree for Changes sections (Needs Review vs Reviewed)

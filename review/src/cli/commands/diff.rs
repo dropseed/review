@@ -7,6 +7,10 @@ use crate::trust::matches_pattern;
 use colored::Colorize;
 use std::path::PathBuf;
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "file parameter passed from clap's owned String"
+)]
 pub fn run(
     repo_path: &str,
     labeled: bool,
@@ -19,7 +23,7 @@ pub fn run(
     let comparison = storage::get_current_comparison(&path)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_string()
+            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
         })?;
 
     // Get the diff
@@ -111,7 +115,7 @@ pub fn run(
             let hunks = parse_diff(&file_diff, &file_path);
 
             // Print file header
-            println!("{}", format!("=== {} ===", file_path).bold());
+            println!("{}", format!("=== {file_path} ===").bold());
 
             for hunk in hunks {
                 let hunk_state = state.hunks.get(&hunk.id);
@@ -176,7 +180,7 @@ pub fn run(
             } else if line.starts_with("diff --git") || line.starts_with("index ") {
                 println!("{}", line.dimmed());
             } else {
-                println!("{}", line);
+                println!("{line}");
             }
         }
     }
@@ -209,10 +213,10 @@ fn split_diff_by_file(diff: &str) -> Vec<String> {
 fn extract_file_path(file_diff: &str) -> Option<String> {
     for line in file_diff.lines() {
         if let Some(path) = line.strip_prefix("+++ b/") {
-            return Some(path.to_string());
+            return Some(path.to_owned());
         }
         if let Some(path) = line.strip_prefix("+++ a/") {
-            return Some(path.to_string());
+            return Some(path.to_owned());
         }
     }
     None

@@ -2,7 +2,7 @@ pub mod commands;
 
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "review")]
 #[command(author, version, about = "Review diffs more efficiently", long_about = None)]
 pub struct Cli {
@@ -25,7 +25,7 @@ pub enum OutputFormat {
     Json,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Show current comparison and review progress
     Status,
@@ -173,7 +173,7 @@ impl Cli {
             }
         }
 
-        Err("Not a git repository. Use --repo to specify a repository path.".to_string())
+        Err("Not a git repository. Use --repo to specify a repository path.".to_owned())
     }
 }
 
@@ -205,7 +205,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
     let repo_path = cli.get_repo_path()?;
 
     match cli.command {
-        None => commands::status::run(&repo_path, cli.format),
+        None => commands::open::run(&repo_path, None),
         Some(Commands::Status) => commands::status::run(&repo_path, cli.format),
         Some(Commands::Diff { labeled, file }) => {
             commands::diff::run(&repo_path, labeled, file, cli.format)

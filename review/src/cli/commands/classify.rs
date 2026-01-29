@@ -21,7 +21,7 @@ pub fn run(
     if !check_claude_available() {
         return Err(
             "Claude CLI not found. Please install: npm install -g @anthropic-ai/claude-code"
-                .to_string(),
+                .to_owned(),
         );
     }
 
@@ -29,7 +29,7 @@ pub fn run(
     let comparison = storage::get_current_comparison(&path)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_string()
+            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
         })?;
 
     // Load review state
@@ -60,7 +60,7 @@ pub fn run(
         for hunk in hunks {
             // Check if already classified
             let existing = state.hunks.get(&hunk.id);
-            if existing.map(|h| !h.label.is_empty()).unwrap_or(false) {
+            if existing.is_some_and(|h| !h.label.is_empty()) {
                 continue;
             }
 
@@ -122,7 +122,7 @@ pub fn run(
             status: None,
         });
 
-        hunk_state.label = classification.label.clone();
+        hunk_state.label.clone_from(&classification.label);
         hunk_state.reasoning = Some(classification.reasoning.clone());
         classified_count += 1;
     }
@@ -159,7 +159,7 @@ pub fn run(
         // Show summary by label
         let mut label_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
-        for (_id, classification) in &result.classifications {
+        for classification in result.classifications.values() {
             for label in &classification.label {
                 *label_counts.entry(label.clone()).or_insert(0) += 1;
             }
@@ -171,7 +171,7 @@ pub fn run(
             let mut sorted: Vec<_> = label_counts.iter().collect();
             sorted.sort_by(|a, b| b.1.cmp(a.1));
             for (label, count) in sorted.iter().take(10) {
-                println!("  {} {}", label.cyan(), format!("({})", count).dimmed());
+                println!("  {} {}", label.cyan(), format!("({count})").dimmed());
             }
             if sorted.len() > 10 {
                 println!(
@@ -210,10 +210,10 @@ fn split_diff_by_file(diff: &str) -> Vec<String> {
 fn extract_file_path(file_diff: &str) -> Option<String> {
     for line in file_diff.lines() {
         if let Some(path) = line.strip_prefix("+++ b/") {
-            return Some(path.to_string());
+            return Some(path.to_owned());
         }
         if let Some(path) = line.strip_prefix("+++ a/") {
-            return Some(path.to_string());
+            return Some(path.to_owned());
         }
     }
     None
