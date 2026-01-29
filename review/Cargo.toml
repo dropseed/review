@@ -27,11 +27,21 @@ dirs = "5"
 
 # Tree-sitter for symbol extraction
 tree-sitter = "0.25"
-tree-sitter-rust = "0.24"
-tree-sitter-javascript = "0.25"
-tree-sitter-typescript = "0.23"
-tree-sitter-python = "0.25"
-tree-sitter-go = "0.25"
+
+# Grammar crates (all optional, gated by features)
+tree-sitter-rust = { version = "0.24", optional = true }
+tree-sitter-javascript = { version = "0.25", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-go = { version = "0.25", optional = true }
+tree-sitter-ruby = { version = "0.23", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-c = { version = "0.24", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
+tree-sitter-c-sharp = { version = "0.23", optional = true }
+tree-sitter-php = { version = "0.24", optional = true }
+tree-sitter-css = { version = "0.25", optional = true }
+tree-sitter-html = { version = "0.23", optional = true }
 
 # CLI dependencies (feature-gated)
 clap = { version = "4", features = ["derive"], optional = true }
@@ -39,6 +49,33 @@ colored = { version = "2", optional = true }
 
 [features]
 default = []
+symbols-typescript = ["dep:tree-sitter-typescript", "dep:tree-sitter-javascript"]
+symbols-rust-lang = ["dep:tree-sitter-rust"]
+symbols-python = ["dep:tree-sitter-python"]
+symbols-go = ["dep:tree-sitter-go"]
+symbols-ruby = ["dep:tree-sitter-ruby"]
+symbols-java = ["dep:tree-sitter-java"]
+symbols-c = ["dep:tree-sitter-c"]
+symbols-cpp = ["dep:tree-sitter-cpp"]
+symbols-csharp = ["dep:tree-sitter-c-sharp"]
+symbols-php = ["dep:tree-sitter-php"]
+symbols-css = ["dep:tree-sitter-css"]
+symbols-html = ["dep:tree-sitter-html"]
+symbols-dev = ["symbols-typescript", "symbols-rust-lang", "symbols-python"]
+symbols-all = [
+    "symbols-typescript",
+    "symbols-rust-lang",
+    "symbols-python",
+    "symbols-go",
+    "symbols-ruby",
+    "symbols-java",
+    "symbols-c",
+    "symbols-cpp",
+    "symbols-csharp",
+    "symbols-php",
+    "symbols-css",
+    "symbols-html",
+]
 cli = ["clap", "colored"]
 
 [[bin]]

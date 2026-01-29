@@ -2,7 +2,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-npm run tauri build
+npm run tauri build -- --features symbols-all
 
 echo ""
 echo "Build complete. App is in target/release/"

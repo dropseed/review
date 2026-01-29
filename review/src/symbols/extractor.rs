@@ -9,12 +9,34 @@ use tree_sitter::{Language, Node, Parser};
 pub fn get_language_for_file(file_path: &str) -> Option<Language> {
     let ext = file_path.rsplit('.').next()?.to_lowercase();
     match ext.as_str() {
+        #[cfg(feature = "symbols-rust-lang")]
         "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
+        #[cfg(feature = "symbols-typescript")]
         "js" | "jsx" | "mjs" | "cjs" => Some(tree_sitter_javascript::LANGUAGE.into()),
+        #[cfg(feature = "symbols-typescript")]
         "ts" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        #[cfg(feature = "symbols-typescript")]
         "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        #[cfg(feature = "symbols-python")]
         "py" | "pyi" => Some(tree_sitter_python::LANGUAGE.into()),
+        #[cfg(feature = "symbols-go")]
         "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        #[cfg(feature = "symbols-ruby")]
+        "rb" => Some(tree_sitter_ruby::LANGUAGE.into()),
+        #[cfg(feature = "symbols-java")]
+        "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        #[cfg(feature = "symbols-c")]
+        "c" | "h" => Some(tree_sitter_c::LANGUAGE.into()),
+        #[cfg(feature = "symbols-cpp")]
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => Some(tree_sitter_cpp::LANGUAGE.into()),
+        #[cfg(feature = "symbols-csharp")]
+        "cs" => Some(tree_sitter_c_sharp::LANGUAGE.into()),
+        #[cfg(feature = "symbols-php")]
+        "php" => Some(tree_sitter_php::LANGUAGE_PHP.into()),
+        #[cfg(feature = "symbols-css")]
+        "css" => Some(tree_sitter_css::LANGUAGE.into()),
+        #[cfg(feature = "symbols-html")]
+        "html" | "htm" => Some(tree_sitter_html::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -40,6 +62,13 @@ fn extract_symbols_from_node(node: Node, source: &str, ext: &str) -> Vec<Symbol>
     for child in node.children(&mut cursor) {
         if let Some(symbol) = node_to_symbol(child, source, ext) {
             symbols.push(symbol);
+        } else {
+            // For languages like HTML where symbols are deeply nested,
+            // recurse into unmatched nodes to find symbols at any depth.
+            #[cfg(feature = "symbols-html")]
+            if matches!(ext, "html" | "htm") {
+                symbols.extend(extract_symbols_from_node(child, source, ext));
+            }
         }
     }
 
@@ -51,16 +80,37 @@ fn node_to_symbol(node: Node, source: &str, ext: &str) -> Option<Symbol> {
     let kind_str = node.kind();
 
     match ext {
+        #[cfg(feature = "symbols-rust-lang")]
         "rs" => rust_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-typescript")]
         "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" => js_ts_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-python")]
         "py" | "pyi" => python_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-go")]
         "go" => go_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-ruby")]
+        "rb" => ruby_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-java")]
+        "java" => java_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-c")]
+        "c" | "h" => c_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-cpp")]
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => cpp_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-csharp")]
+        "cs" => csharp_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-php")]
+        "php" => php_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-css")]
+        "css" => css_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-html")]
+        "html" | "htm" => html_node_to_symbol(node, source, kind_str),
         _ => None,
     }
 }
 
 // --- Rust ---
 
+#[cfg(feature = "symbols-rust-lang")]
 fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
     match kind_str {
         "function_item" => {
@@ -147,6 +197,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
 
 // --- JavaScript / TypeScript ---
 
+#[cfg(feature = "symbols-typescript")]
 fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
     match kind_str {
         "function_declaration" | "generator_function_declaration" => {
@@ -219,6 +270,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
 }
 
 /// Extract function names from const/let/var declarations with arrow/function expressions.
+#[cfg(feature = "symbols-typescript")]
 fn extract_variable_function(node: Node, source: &str) -> Option<Symbol> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -243,6 +295,7 @@ fn extract_variable_function(node: Node, source: &str) -> Option<Symbol> {
 }
 
 /// Extract methods from a JS/TS class body.
+#[cfg(feature = "symbols-typescript")]
 fn extract_class_methods_js(class_node: Node, source: &str) -> Vec<Symbol> {
     let mut methods = Vec::new();
     let Some(body) = class_node.child_by_field_name("body") else {
@@ -272,6 +325,7 @@ fn extract_class_methods_js(class_node: Node, source: &str) -> Vec<Symbol> {
 
 // --- Python ---
 
+#[cfg(feature = "symbols-python")]
 fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
     match kind_str {
         "function_definition" => {
@@ -311,6 +365,7 @@ fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
     }
 }
 
+#[cfg(feature = "symbols-python")]
 fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
     let mut methods = Vec::new();
     let Some(body) = class_node.child_by_field_name("body") else {
@@ -356,6 +411,7 @@ fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
 
 // --- Go ---
 
+#[cfg(feature = "symbols-go")]
 fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
     match kind_str {
         "function_declaration" => {
@@ -415,6 +471,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
 }
 
 /// Extract Go receiver type name from a method declaration.
+#[cfg(feature = "symbols-go")]
 fn extract_go_receiver(node: Node, source: &str) -> Option<String> {
     let receiver = node.child_by_field_name("receiver")?;
     let mut cursor = receiver.walk();
@@ -423,6 +480,769 @@ fn extract_go_receiver(node: Node, source: &str) -> Option<String> {
             if let Some(type_node) = child.child_by_field_name("type") {
                 let text = node_text(type_node, source);
                 return Some(text.trim_start_matches('*').to_owned());
+            }
+        }
+    }
+    None
+}
+
+// --- Ruby ---
+
+#[cfg(feature = "symbols-ruby")]
+fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "method" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "singleton_method" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name: format!("self.{name}"),
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "class" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_ruby_methods(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Class,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "module" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_ruby_body_symbols(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Module,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-ruby")]
+fn extract_ruby_methods(node: Node, source: &str) -> Vec<Symbol> {
+    let mut methods = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return methods;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        match child.kind() {
+            "method" => {
+                if let Some(name) = find_child_text(child, "name", source) {
+                    methods.push(Symbol {
+                        name,
+                        kind: SymbolKind::Method,
+                        start_line: child.start_position().row as u32 + 1,
+                        end_line: child.end_position().row as u32 + 1,
+                        children: vec![],
+                    });
+                }
+            }
+            "singleton_method" => {
+                if let Some(name) = find_child_text(child, "name", source) {
+                    methods.push(Symbol {
+                        name: format!("self.{name}"),
+                        kind: SymbolKind::Method,
+                        start_line: child.start_position().row as u32 + 1,
+                        end_line: child.end_position().row as u32 + 1,
+                        children: vec![],
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    methods
+}
+
+#[cfg(feature = "symbols-ruby")]
+fn extract_ruby_body_symbols(node: Node, source: &str) -> Vec<Symbol> {
+    let mut symbols = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return symbols;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if let Some(sym) = ruby_node_to_symbol(child, source, child.kind()) {
+            symbols.push(sym);
+        }
+    }
+
+    symbols
+}
+
+// --- Java ---
+
+#[cfg(feature = "symbols-java")]
+fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "class_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_java_members(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Class,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "interface_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Interface,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "method_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Method,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "enum_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Enum,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-java")]
+fn extract_java_members(node: Node, source: &str) -> Vec<Symbol> {
+    let mut members = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return members;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if child.kind() == "method_declaration" {
+            if let Some(name) = find_child_text(child, "name", source) {
+                members.push(Symbol {
+                    name,
+                    kind: SymbolKind::Method,
+                    start_line: child.start_position().row as u32 + 1,
+                    end_line: child.end_position().row as u32 + 1,
+                    children: vec![],
+                });
+            }
+        }
+    }
+
+    members
+}
+
+// --- C ---
+
+#[cfg(feature = "symbols-c")]
+fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "function_definition" => {
+            let declarator = node.child_by_field_name("declarator")?;
+            let name = find_function_declarator_name(declarator, source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "struct_specifier" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Struct,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "enum_specifier" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Enum,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "type_definition" => {
+            let name = find_child_text(node, "declarator", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Type,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "declaration" => {
+            // Check for forward declarations of structs/enums at top level
+            // (only match if there's a struct/enum specifier with a body)
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "struct_specifier" | "enum_specifier" => {
+                        if child.child_by_field_name("body").is_some() {
+                            return c_node_to_symbol(child, source, child.kind());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Extract the function name from a C/C++ function declarator (may be nested in pointer_declarator).
+#[cfg(any(feature = "symbols-c", feature = "symbols-cpp"))]
+fn find_function_declarator_name(node: Node, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_declarator" => find_child_text(node, "declarator", source),
+        "pointer_declarator" => {
+            let inner = node.child_by_field_name("declarator")?;
+            find_function_declarator_name(inner, source)
+        }
+        _ => Some(node_text(node, source).to_owned()),
+    }
+}
+
+// --- C++ ---
+
+#[cfg(feature = "symbols-cpp")]
+fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "function_definition" => {
+            let declarator = node.child_by_field_name("declarator")?;
+            let name = find_function_declarator_name(declarator, source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "class_specifier" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_cpp_class_members(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Class,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "struct_specifier" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Struct,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "enum_specifier" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Enum,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "namespace_definition" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_cpp_namespace_symbols(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Module,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "declaration" => {
+            // Check for struct/class/enum declarations with bodies
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "class_specifier" | "struct_specifier" | "enum_specifier" => {
+                        if child.child_by_field_name("body").is_some() {
+                            return cpp_node_to_symbol(child, source, child.kind());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-cpp")]
+fn extract_cpp_class_members(node: Node, source: &str) -> Vec<Symbol> {
+    let mut members = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return members;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        match child.kind() {
+            "function_definition" => {
+                if let Some(declarator) = child.child_by_field_name("declarator") {
+                    if let Some(name) = find_function_declarator_name(declarator, source) {
+                        members.push(Symbol {
+                            name,
+                            kind: SymbolKind::Method,
+                            start_line: child.start_position().row as u32 + 1,
+                            end_line: child.end_position().row as u32 + 1,
+                            children: vec![],
+                        });
+                    }
+                }
+            }
+            "declaration" => {
+                // Method declarations (not definitions)
+                let mut inner_cursor = child.walk();
+                for inner in child.children(&mut inner_cursor) {
+                    if inner.kind() == "function_declarator" {
+                        if let Some(name) = find_child_text(inner, "declarator", source) {
+                            members.push(Symbol {
+                                name,
+                                kind: SymbolKind::Method,
+                                start_line: child.start_position().row as u32 + 1,
+                                end_line: child.end_position().row as u32 + 1,
+                                children: vec![],
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    members
+}
+
+#[cfg(feature = "symbols-cpp")]
+fn extract_cpp_namespace_symbols(node: Node, source: &str) -> Vec<Symbol> {
+    let mut symbols = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return symbols;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if let Some(sym) = cpp_node_to_symbol(child, source, child.kind()) {
+            symbols.push(sym);
+        }
+    }
+
+    symbols
+}
+
+// --- C# ---
+
+#[cfg(feature = "symbols-csharp")]
+fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "class_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_csharp_members(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Class,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "interface_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Interface,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "method_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Method,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "struct_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Struct,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "enum_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Enum,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "namespace_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_csharp_namespace_symbols(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Module,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-csharp")]
+fn extract_csharp_members(node: Node, source: &str) -> Vec<Symbol> {
+    let mut members = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return members;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if child.kind() == "method_declaration" {
+            if let Some(name) = find_child_text(child, "name", source) {
+                members.push(Symbol {
+                    name,
+                    kind: SymbolKind::Method,
+                    start_line: child.start_position().row as u32 + 1,
+                    end_line: child.end_position().row as u32 + 1,
+                    children: vec![],
+                });
+            }
+        }
+    }
+
+    members
+}
+
+#[cfg(feature = "symbols-csharp")]
+fn extract_csharp_namespace_symbols(node: Node, source: &str) -> Vec<Symbol> {
+    let mut symbols = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return symbols;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if let Some(sym) = csharp_node_to_symbol(child, source, child.kind()) {
+            symbols.push(sym);
+        }
+    }
+
+    symbols
+}
+
+// --- PHP ---
+
+#[cfg(feature = "symbols-php")]
+fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "class_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_php_members(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Class,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "function_definition" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "method_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Method,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "interface_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Interface,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "trait_declaration" => {
+            let name = find_child_text(node, "name", source)?;
+            let children = extract_php_members(node, source);
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Trait,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children,
+            })
+        }
+        "program" => {
+            // PHP wraps everything in a program node; recurse into children
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if let Some(sym) = php_node_to_symbol(child, source, child.kind()) {
+                    return Some(sym);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-php")]
+fn extract_php_members(node: Node, source: &str) -> Vec<Symbol> {
+    let mut members = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return members;
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if child.kind() == "method_declaration" {
+            if let Some(name) = find_child_text(child, "name", source) {
+                members.push(Symbol {
+                    name,
+                    kind: SymbolKind::Method,
+                    start_line: child.start_position().row as u32 + 1,
+                    end_line: child.end_position().row as u32 + 1,
+                    children: vec![],
+                });
+            }
+        }
+    }
+
+    members
+}
+
+// --- CSS ---
+
+#[cfg(feature = "symbols-css")]
+fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "rule_set" => {
+            // Extract the selector text as the symbol name
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "selectors" {
+                    let name = node_text(child, source).to_owned();
+                    return Some(Symbol {
+                        name,
+                        kind: SymbolKind::Function,
+                        start_line: node.start_position().row as u32 + 1,
+                        end_line: node.end_position().row as u32 + 1,
+                        children: vec![],
+                    });
+                }
+            }
+            None
+        }
+        "media_statement" => {
+            // Use the full @media text up to the block as the name
+            let name = extract_css_at_rule_name(node, source)?;
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Module,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "keyframes_statement" => {
+            // Try the "name" field first, then walk children for "keyframes_name" node
+            let name_node = if let Some(n) = node.child_by_field_name("name") {
+                Some(n)
+            } else {
+                let mut cursor = node.walk();
+                let found = node
+                    .children(&mut cursor)
+                    .find(|c| c.kind() == "keyframes_name");
+                found
+            };
+            let name = node_text(name_node?, source).to_owned();
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-css")]
+fn extract_css_at_rule_name(node: Node, source: &str) -> Option<String> {
+    // Get text from node start to just before the block
+    let full_text = node_text(node, source);
+    // Find the opening brace and take everything before it
+    if let Some(pos) = full_text.find('{') {
+        let name = full_text[..pos].trim().to_owned();
+        if name.is_empty() {
+            None
+        } else {
+            Some(name)
+        }
+    } else {
+        Some(full_text.trim().to_owned())
+    }
+}
+
+// --- HTML ---
+
+#[cfg(feature = "symbols-html")]
+fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "element" => {
+            // Only extract elements with an id attribute
+            // Find the start_tag child (it's a child node, not a named field)
+            let mut cursor = node.walk();
+            let start_tag = node
+                .children(&mut cursor)
+                .find(|c| c.kind() == "start_tag")?;
+            let id = extract_html_id_attribute(start_tag, source)?;
+            Some(Symbol {
+                name: id,
+                kind: SymbolKind::Function,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        "script_element" => Some(Symbol {
+            name: "<script>".to_owned(),
+            kind: SymbolKind::Module,
+            start_line: node.start_position().row as u32 + 1,
+            end_line: node.end_position().row as u32 + 1,
+            children: vec![],
+        }),
+        "style_element" => Some(Symbol {
+            name: "<style>".to_owned(),
+            kind: SymbolKind::Module,
+            start_line: node.start_position().row as u32 + 1,
+            end_line: node.end_position().row as u32 + 1,
+            children: vec![],
+        }),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "symbols-html")]
+fn extract_html_id_attribute(start_tag: Node, source: &str) -> Option<String> {
+    let mut cursor = start_tag.walk();
+    for child in start_tag.children(&mut cursor) {
+        if child.kind() == "attribute" {
+            // In tree-sitter-html, attribute children are: attribute_name, "=", quoted_attribute_value
+            let mut attr_cursor = child.walk();
+            let mut attr_name = None;
+            let mut attr_value = None;
+            for attr_child in child.children(&mut attr_cursor) {
+                match attr_child.kind() {
+                    "attribute_name" => attr_name = Some(node_text(attr_child, source)),
+                    "quoted_attribute_value" => {
+                        // The value inside quotes: find the attribute_value child
+                        let mut val_cursor = attr_child.walk();
+                        for val_child in attr_child.children(&mut val_cursor) {
+                            if val_child.kind() == "attribute_value" {
+                                attr_value = Some(node_text(val_child, source));
+                            }
+                        }
+                        // Fallback: use the full text minus quotes
+                        if attr_value.is_none() {
+                            let full = node_text(attr_child, source);
+                            attr_value = Some(full.trim_matches('"').trim_matches('\''));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if attr_name == Some("id") {
+                if let Some(val) = attr_value {
+                    return Some(format!("#{val}"));
+                }
             }
         }
     }
@@ -443,6 +1263,7 @@ fn find_child_text(node: Node, field: &str, source: &str) -> Option<String> {
 }
 
 /// Find the name for a Rust `impl` block (e.g., "MyStruct" or "MyTrait for MyStruct").
+#[cfg(feature = "symbols-rust-lang")]
 fn find_impl_name(node: Node, source: &str) -> Option<String> {
     let type_node = node.child_by_field_name("type")?;
     let type_name = node_text(type_node, source).to_owned();
@@ -457,6 +1278,7 @@ fn find_impl_name(node: Node, source: &str) -> Option<String> {
 }
 
 /// Extract method symbols from a Rust trait/impl body.
+#[cfg(feature = "symbols-rust-lang")]
 fn extract_methods_from_body(parent: Node, source: &str, _ext: &str) -> Vec<Symbol> {
     let mut methods = Vec::new();
     let Some(body) = parent.child_by_field_name("body") else {
@@ -482,6 +1304,7 @@ fn extract_methods_from_body(parent: Node, source: &str, _ext: &str) -> Vec<Symb
 }
 
 /// Extract symbols from the body node of a container (module, etc.).
+#[cfg(feature = "symbols-rust-lang")]
 fn extract_symbols_from_body(parent: Node, source: &str, ext: &str) -> Vec<Symbol> {
     let mut symbols = Vec::new();
     let Some(body) = parent.child_by_field_name("body") else {
@@ -822,6 +1645,7 @@ fn hunk_overlaps_new_range(hunk: &DiffHunk, sym_start: u32, sym_end: u32) -> boo
 mod tests {
     use super::*;
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_extract_rust_symbols() {
         let source = r#"
@@ -863,6 +1687,7 @@ trait Bar {
         assert_eq!(impl_sym.children.len(), 2); // new, value
     }
 
+    #[cfg(feature = "symbols-python")]
     #[test]
     fn test_extract_python_symbols() {
         let source = r#"
@@ -887,6 +1712,7 @@ class MyClass:
         assert_eq!(class.children.len(), 2);
     }
 
+    #[cfg(feature = "symbols-typescript")]
     #[test]
     fn test_extract_js_symbols() {
         let source = r#"
@@ -909,6 +1735,7 @@ class MyClass {
         assert_eq!(class.kind, SymbolKind::Class);
     }
 
+    #[cfg(feature = "symbols-typescript")]
     #[test]
     fn test_extract_ts_symbols() {
         let source = r#"
@@ -932,6 +1759,7 @@ type Result = string | number;
         assert_eq!(type_sym.kind, SymbolKind::Type);
     }
 
+    #[cfg(feature = "symbols-go")]
     #[test]
     fn test_extract_go_symbols() {
         let source = r#"
@@ -1030,6 +1858,7 @@ func (s *Server) Start() {
         assert_eq!(top_level, vec!["test.rs:def".to_string()]);
     }
 
+    #[cfg(feature = "symbols-typescript")]
     #[test]
     fn test_arrow_function_extraction() {
         let source = r#"
@@ -1075,6 +1904,7 @@ const add = function(a, b) {
         }
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_function_added() {
         let old_src = "fn existing() {\n    1\n}\n";
@@ -1100,6 +1930,7 @@ const add = function(a, b) {
             .is_none());
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_function_removed() {
         let old_src = "fn existing() {\n    1\n}\n\nfn old_func() {\n    2\n}\n";
@@ -1118,6 +1949,7 @@ const add = function(a, b) {
         assert!(removed.new_range.is_none());
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_function_modified() {
         let old_src = "fn hello() {\n    println!(\"old\");\n}\n";
@@ -1133,6 +1965,7 @@ const add = function(a, b) {
         assert!(result.symbols[0].new_range.is_some());
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_unchanged_excluded() {
         let src = "fn unchanged() {\n    1\n}\n\nfn modified() {\n    2\n}\n";
@@ -1151,6 +1984,7 @@ const add = function(a, b) {
             .is_none());
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_new_file() {
         let new_src = "fn brand_new() {\n    1\n}\n";
@@ -1161,6 +1995,7 @@ const add = function(a, b) {
         assert_eq!(result.symbols[0].change_type, SymbolChangeType::Added);
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_deleted_file() {
         let old_src = "fn going_away() {\n    1\n}\n";
@@ -1181,6 +2016,7 @@ const add = function(a, b) {
         assert_eq!(result.top_level_hunk_ids, vec!["f:h1"]);
     }
 
+    #[cfg(feature = "symbols-python")]
     #[test]
     fn test_diff_python_class_with_methods() {
         let old_src =
@@ -1213,6 +2049,7 @@ const add = function(a, b) {
             .is_none());
     }
 
+    #[cfg(feature = "symbols-rust-lang")]
     #[test]
     fn test_diff_top_level_hunks() {
         let old_src = "// header\n\nfn hello() {\n    1\n}\n";
@@ -1225,5 +2062,325 @@ const add = function(a, b) {
         assert!(result.symbols.is_empty());
         // The header hunk should be top-level
         assert_eq!(result.top_level_hunk_ids, vec!["f:h1"]);
+    }
+
+    // --- New language tests ---
+
+    #[cfg(feature = "symbols-ruby")]
+    #[test]
+    fn test_extract_ruby_symbols() {
+        let source = r#"
+module Greetings
+  class Hello
+    def initialize(name)
+      @name = name
+    end
+
+    def greet
+      puts @name
+    end
+
+    def self.create(name)
+      new(name)
+    end
+  end
+
+  def helper
+    true
+  end
+end
+"#;
+        let symbols = extract_symbols(source, "test.rb").unwrap();
+        assert!(!symbols.is_empty());
+
+        let module = symbols.iter().find(|s| s.name == "Greetings").unwrap();
+        assert_eq!(module.kind, SymbolKind::Module);
+
+        // Module should contain the class and helper method
+        let class = module.children.iter().find(|s| s.name == "Hello").unwrap();
+        assert_eq!(class.kind, SymbolKind::Class);
+        assert!(class.children.len() >= 2); // initialize, greet, self.create
+    }
+
+    #[cfg(feature = "symbols-java")]
+    #[test]
+    fn test_extract_java_symbols() {
+        let source = r#"
+public class Calculator {
+    public int add(int a, int b) {
+        return a + b;
+    }
+
+    public int subtract(int a, int b) {
+        return a - b;
+    }
+}
+
+interface Computable {
+    int compute();
+}
+
+enum Operation {
+    ADD, SUBTRACT
+}
+"#;
+        let symbols = extract_symbols(source, "test.java").unwrap();
+        assert!(symbols.len() >= 3);
+
+        let class = symbols.iter().find(|s| s.name == "Calculator").unwrap();
+        assert_eq!(class.kind, SymbolKind::Class);
+        assert_eq!(class.children.len(), 2); // add, subtract
+
+        let iface = symbols.iter().find(|s| s.name == "Computable").unwrap();
+        assert_eq!(iface.kind, SymbolKind::Interface);
+
+        let enum_sym = symbols.iter().find(|s| s.name == "Operation").unwrap();
+        assert_eq!(enum_sym.kind, SymbolKind::Enum);
+    }
+
+    #[cfg(feature = "symbols-c")]
+    #[test]
+    fn test_extract_c_symbols() {
+        let source = r#"
+struct Point {
+    int x;
+    int y;
+};
+
+enum Color {
+    RED,
+    GREEN,
+    BLUE
+};
+
+typedef int Number;
+
+int add(int a, int b) {
+    return a + b;
+}
+
+void greet(const char* name) {
+    printf("Hello, %s\n", name);
+}
+"#;
+        let symbols = extract_symbols(source, "test.c").unwrap();
+        assert!(symbols.len() >= 4);
+
+        let struct_sym = symbols.iter().find(|s| s.name == "Point").unwrap();
+        assert_eq!(struct_sym.kind, SymbolKind::Struct);
+
+        let enum_sym = symbols.iter().find(|s| s.name == "Color").unwrap();
+        assert_eq!(enum_sym.kind, SymbolKind::Enum);
+
+        let func = symbols.iter().find(|s| s.name == "add").unwrap();
+        assert_eq!(func.kind, SymbolKind::Function);
+
+        let greet = symbols.iter().find(|s| s.name == "greet").unwrap();
+        assert_eq!(greet.kind, SymbolKind::Function);
+    }
+
+    #[cfg(feature = "symbols-cpp")]
+    #[test]
+    fn test_extract_cpp_symbols() {
+        let source = r#"
+namespace math {
+
+class Calculator {
+public:
+    int add(int a, int b) {
+        return a + b;
+    }
+};
+
+}
+
+struct Point {
+    int x;
+    int y;
+};
+
+int helper() {
+    return 42;
+}
+"#;
+        let symbols = extract_symbols(source, "test.cpp").unwrap();
+        assert!(symbols.len() >= 3);
+
+        let ns = symbols.iter().find(|s| s.name == "math").unwrap();
+        assert_eq!(ns.kind, SymbolKind::Module);
+        // namespace should contain Calculator
+        let calc = ns.children.iter().find(|s| s.name == "Calculator").unwrap();
+        assert_eq!(calc.kind, SymbolKind::Class);
+
+        let struct_sym = symbols.iter().find(|s| s.name == "Point").unwrap();
+        assert_eq!(struct_sym.kind, SymbolKind::Struct);
+
+        let func = symbols.iter().find(|s| s.name == "helper").unwrap();
+        assert_eq!(func.kind, SymbolKind::Function);
+    }
+
+    #[cfg(feature = "symbols-csharp")]
+    #[test]
+    fn test_extract_csharp_symbols() {
+        let source = r#"
+namespace MyApp {
+    class Service {
+        void Start() {
+        }
+
+        void Stop() {
+        }
+    }
+
+    interface IRunnable {
+    }
+
+    struct Point {
+    }
+
+    enum Status {
+        Active,
+        Inactive
+    }
+}
+"#;
+        let symbols = extract_symbols(source, "test.cs").unwrap();
+        assert!(!symbols.is_empty());
+
+        let ns = symbols.iter().find(|s| s.name == "MyApp").unwrap();
+        assert_eq!(ns.kind, SymbolKind::Module);
+
+        // Namespace should contain Service, IRunnable, Point, Status
+        let svc = ns.children.iter().find(|s| s.name == "Service").unwrap();
+        assert_eq!(svc.kind, SymbolKind::Class);
+        assert_eq!(svc.children.len(), 2); // Start, Stop
+
+        let iface = ns.children.iter().find(|s| s.name == "IRunnable").unwrap();
+        assert_eq!(iface.kind, SymbolKind::Interface);
+
+        let struct_sym = ns.children.iter().find(|s| s.name == "Point").unwrap();
+        assert_eq!(struct_sym.kind, SymbolKind::Struct);
+
+        let enum_sym = ns.children.iter().find(|s| s.name == "Status").unwrap();
+        assert_eq!(enum_sym.kind, SymbolKind::Enum);
+    }
+
+    #[cfg(feature = "symbols-php")]
+    #[test]
+    fn test_extract_php_symbols() {
+        let source = r#"<?php
+
+class UserService {
+    public function getUser($id) {
+        return null;
+    }
+
+    public function createUser($data) {
+        return null;
+    }
+}
+
+function helper() {
+    return true;
+}
+
+interface Repository {
+}
+
+trait Cacheable {
+    public function cache() {
+    }
+}
+"#;
+        let symbols = extract_symbols(source, "test.php").unwrap();
+        assert!(symbols.len() >= 3);
+
+        let class = symbols.iter().find(|s| s.name == "UserService").unwrap();
+        assert_eq!(class.kind, SymbolKind::Class);
+        assert_eq!(class.children.len(), 2); // getUser, createUser
+
+        let func = symbols.iter().find(|s| s.name == "helper").unwrap();
+        assert_eq!(func.kind, SymbolKind::Function);
+
+        let iface = symbols.iter().find(|s| s.name == "Repository").unwrap();
+        assert_eq!(iface.kind, SymbolKind::Interface);
+
+        let trait_sym = symbols.iter().find(|s| s.name == "Cacheable").unwrap();
+        assert_eq!(trait_sym.kind, SymbolKind::Trait);
+    }
+
+    #[cfg(feature = "symbols-css")]
+    #[test]
+    fn test_extract_css_symbols() {
+        let source = r#"
+.header {
+    color: red;
+}
+
+#main {
+    display: flex;
+}
+
+@media (max-width: 768px) {
+    .header {
+        color: blue;
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+"#;
+        let symbols = extract_symbols(source, "test.css").unwrap();
+        assert!(symbols.len() >= 3);
+
+        let header = symbols.iter().find(|s| s.name == ".header").unwrap();
+        assert_eq!(header.kind, SymbolKind::Function);
+
+        let main = symbols.iter().find(|s| s.name == "#main").unwrap();
+        assert_eq!(main.kind, SymbolKind::Function);
+
+        let keyframes = symbols.iter().find(|s| s.name == "fadeIn").unwrap();
+        assert_eq!(keyframes.kind, SymbolKind::Function);
+
+        let media = symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Module)
+            .unwrap();
+        assert!(media.name.contains("@media"));
+    }
+
+    #[cfg(feature = "symbols-html")]
+    #[test]
+    fn test_extract_html_symbols() {
+        let source = r#"<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Hello</h1>
+    </div>
+    <script>
+        console.log("hello");
+    </script>
+</body>
+</html>
+"#;
+        let symbols = extract_symbols(source, "test.html").unwrap();
+
+        // Should find #app, <script>, <style>
+        let app = symbols.iter().find(|s| s.name == "#app");
+        assert!(app.is_some());
+
+        let script = symbols.iter().find(|s| s.name == "<script>");
+        assert!(script.is_some());
+
+        let style = symbols.iter().find(|s| s.name == "<style>");
+        assert!(style.is_some());
     }
 }

@@ -13,7 +13,7 @@ echo "TypeScript tests passed!"
 
 echo ""
 echo "=== Rust Tests ==="
-cargo test
+cargo test --features symbols-all
 echo "Rust tests passed!"
 
 echo ""
