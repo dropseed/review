@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
 import type { BranchList, StashEntry } from "../types";
+import { Input } from "./ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 
 // Special values for local state options
@@ -388,7 +389,7 @@ export const BranchSelect = memo(function BranchSelect({
       >
         {/* Search input */}
         <div className="p-2 border-b border-stone-800/50">
-          <input
+          <Input
             ref={searchRef}
             type="text"
             value={searchQuery}
@@ -398,10 +399,7 @@ export const BranchSelect = memo(function BranchSelect({
             }}
             onKeyDown={handleKeyDown}
             placeholder="Search branches..."
-            className="w-full rounded-md bg-stone-800/50 border border-stone-700/50
-                       px-3 py-1.5 text-sm text-stone-200
-                       placeholder:text-stone-500
-                       focus:outline-none focus:ring-1 focus:ring-stone-600"
+            className="py-1.5 text-sm"
             aria-label="Search branches"
           />
         </div>

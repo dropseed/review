@@ -6,6 +6,7 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
 import { SimpleTooltip } from "./ui/tooltip";
 import { Switch } from "./ui/switch";
 import { Slider } from "./ui/slider";
@@ -444,12 +445,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <label className="text-xxs text-stone-500 uppercase tracking-wide">
                   Custom Command
                 </label>
-                <input
+                <Input
                   type="text"
                   value={classifyCommand || ""}
                   onChange={(e) => setClassifyCommand(e.target.value || null)}
                   placeholder="claude --print --model haiku -p"
-                  className="w-full rounded-lg bg-stone-800/50 border border-stone-700 px-3 py-2 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+                  className="text-xs"
                 />
                 <p className="text-xxs text-stone-600 leading-relaxed">
                   Leave blank for default. The prompt is appended as the last

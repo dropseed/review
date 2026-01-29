@@ -1,4 +1,5 @@
 import type { LineAnnotation } from "../../types";
+import { Textarea } from "../ui/textarea";
 import { SimpleTooltip } from "../ui/tooltip";
 
 // Annotation list item with refined hover states
@@ -108,10 +109,10 @@ export function FeedbackPanel({
           </label>
         </div>
         <div className="relative">
-          <textarea
+          <Textarea
             id="review-notes"
             placeholder="Overall observations, summary, questions…"
-            className="w-full h-20 px-3 py-2.5 text-xs leading-relaxed text-stone-200 placeholder:text-stone-600 bg-stone-900/80 border border-stone-800/80 rounded-md resize-none transition-all duration-150 focus:outline-none focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 focus:bg-stone-900"
+            className="h-20 text-xs leading-relaxed resize-none bg-stone-900/80 border-stone-800/80 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 focus:bg-stone-900"
             value={notes}
             onChange={(e) => onNotesChange(e.target.value)}
           />

@@ -3,6 +3,12 @@ import { useReviewStore } from "../stores/reviewStore";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { anyLabelMatchesPattern, type TrustCategory } from "../types";
+import { Checkbox } from "./ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "./ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { SimpleTooltip } from "./ui/tooltip";
 
@@ -242,164 +248,138 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
             );
 
             return (
-              <div key={category.id} className="border-b border-stone-800/60">
-                {/* Category header */}
-                <button
-                  onClick={() => toggleCategory(category.id)}
-                  className={`group flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors ${
-                    isExpanded ? "bg-stone-800/30" : "hover:bg-stone-800/40"
-                  }`}
-                >
-                  {/* Expand icon */}
-                  <svg
-                    className={`h-3.5 w-3.5 text-stone-400 transition-transform duration-200 ease-out ${
-                      isExpanded ? "rotate-90" : ""
-                    }`}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
+              <Collapsible
+                key={category.id}
+                open={isExpanded}
+                onOpenChange={() => toggleCategory(category.id)}
+              >
+                <div className="border-b border-stone-800/60">
+                  {/* Category header */}
+                  <CollapsibleTrigger asChild>
+                    <button
+                      className={`group flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors ${
+                        isExpanded ? "bg-stone-800/30" : "hover:bg-stone-800/40"
+                      }`}
+                    >
+                      {/* Expand icon */}
+                      <svg
+                        className={`h-3.5 w-3.5 text-stone-400 transition-transform duration-200 ease-out ${
+                          isExpanded ? "rotate-90" : ""
+                        }`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
 
-                  {/* Category name */}
-                  <span className="flex-1 text-xs font-medium text-stone-200 group-hover:text-stone-50">
-                    {category.name}
-                  </span>
-
-                  {/* Stats */}
-                  <div className="flex items-center gap-2 text-xxs tabular-nums">
-                    {categoryTrustedCount > 0 && (
-                      <span className="text-cyan-400">
-                        {categoryTrustedCount} trusted
+                      {/* Category name */}
+                      <span className="flex-1 text-xs font-medium text-stone-200 group-hover:text-stone-50">
+                        {category.name}
                       </span>
-                    )}
-                    {categoryTotalCount > 0 && (
-                      <span className="text-stone-500">
-                        {categoryTotalCount} hunk
-                        {categoryTotalCount !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-                </button>
 
-                {/* Patterns - animated collapse */}
-                <div
-                  className={`overflow-hidden transition-all duration-200 ease-out ${
-                    isExpanded
-                      ? "max-h-[33rem] opacity-100"
-                      : "max-h-0 opacity-0"
-                  }`}
-                >
-                  <div className="space-y-0.5 pb-2 pl-3 pr-4">
-                    {category.patterns.map((pattern) => {
-                      const isTrusted =
-                        reviewState?.trustList.includes(pattern.id) ?? false;
-                      const count = patternCounts[pattern.id] || 0;
+                      {/* Stats */}
+                      <div className="flex items-center gap-2 text-xxs tabular-nums">
+                        {categoryTrustedCount > 0 && (
+                          <span className="text-cyan-400">
+                            {categoryTrustedCount} trusted
+                          </span>
+                        )}
+                        {categoryTotalCount > 0 && (
+                          <span className="text-stone-500">
+                            {categoryTotalCount} hunk
+                            {categoryTotalCount !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  </CollapsibleTrigger>
 
-                      return (
-                        <label
-                          key={pattern.id}
-                          className={`group flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 transition-all duration-150 ${
-                            isTrusted
-                              ? "border-l-2 border-l-cyan-500 bg-cyan-500/5 pl-2"
-                              : "border-l-2 border-l-transparent hover:bg-stone-800/40"
-                          }`}
-                        >
-                          {/* Custom checkbox */}
-                          <div className="relative mt-0.5 flex-shrink-0">
-                            <input
-                              type="checkbox"
+                  {/* Patterns */}
+                  <CollapsibleContent className="overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0">
+                    <div className="space-y-0.5 pb-2 pl-3 pr-4">
+                      {category.patterns.map((pattern) => {
+                        const isTrusted =
+                          reviewState?.trustList.includes(pattern.id) ?? false;
+                        const count = patternCounts[pattern.id] || 0;
+
+                        return (
+                          <label
+                            key={pattern.id}
+                            className={`group flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 transition-all duration-150 ${
+                              isTrusted
+                                ? "border-l-2 border-l-cyan-500 bg-cyan-500/5 pl-2"
+                                : "border-l-2 border-l-transparent hover:bg-stone-800/40"
+                            }`}
+                          >
+                            <Checkbox
+                              className="mt-0.5 flex-shrink-0 group-hover:data-[state=unchecked]:border-stone-500"
                               checked={isTrusted}
-                              onChange={() =>
+                              onCheckedChange={() =>
                                 isTrusted
                                   ? removeTrustPattern(pattern.id)
                                   : addTrustPattern(pattern.id)
                               }
-                              className="peer sr-only"
                             />
-                            <div
-                              className={`flex h-4 w-4 items-center justify-center rounded border transition-all duration-150 ${
-                                isTrusted
-                                  ? "border-cyan-500 bg-cyan-500"
-                                  : "border-stone-600 bg-stone-800 group-hover:border-stone-500"
-                              }`}
-                            >
-                              <svg
-                                className={`h-2.5 w-2.5 transition-all duration-150 ${
-                                  isTrusted
-                                    ? "scale-100 text-stone-900 opacity-100"
-                                    : "scale-75 opacity-0"
-                                }`}
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </div>
-                          </div>
 
-                          {/* Content */}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-xs font-medium transition-colors ${
+                            {/* Content */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`text-xs font-medium transition-colors ${
+                                    isTrusted
+                                      ? "text-cyan-200"
+                                      : "text-stone-200 group-hover:text-stone-50"
+                                  }`}
+                                >
+                                  {pattern.name}
+                                </span>
+                                {count > 0 && (
+                                  <SimpleTooltip content="Preview matching hunks">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setPreviewPatternId(
+                                          previewPatternId === pattern.id
+                                            ? null
+                                            : pattern.id,
+                                        );
+                                      }}
+                                      className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xxs transition-colors ${
+                                        previewPatternId === pattern.id
+                                          ? "bg-stone-700 text-stone-200"
+                                          : "text-stone-500 hover:bg-stone-800 hover:text-stone-400"
+                                      }`}
+                                    >
+                                      <span className="tabular-nums">
+                                        {count}
+                                      </span>
+                                    </button>
+                                  </SimpleTooltip>
+                                )}
+                              </div>
+                              <p
+                                className={`mt-0.5 text-xxs leading-relaxed transition-colors text-pretty ${
                                   isTrusted
-                                    ? "text-cyan-200"
-                                    : "text-stone-200 group-hover:text-stone-50"
+                                    ? "text-cyan-200/80"
+                                    : "text-stone-400"
                                 }`}
                               >
-                                {pattern.name}
-                              </span>
-                              {count > 0 && (
-                                <SimpleTooltip content="Preview matching hunks">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setPreviewPatternId(
-                                        previewPatternId === pattern.id
-                                          ? null
-                                          : pattern.id,
-                                      );
-                                    }}
-                                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xxs transition-colors ${
-                                      previewPatternId === pattern.id
-                                        ? "bg-stone-700 text-stone-200"
-                                        : "text-stone-500 hover:bg-stone-800 hover:text-stone-400"
-                                    }`}
-                                  >
-                                    <span className="tabular-nums">
-                                      {count}
-                                    </span>
-                                  </button>
-                                </SimpleTooltip>
-                              )}
+                                {pattern.description}
+                              </p>
                             </div>
-                            <p
-                              className={`mt-0.5 text-xxs leading-relaxed transition-colors text-pretty ${
-                                isTrusted
-                                  ? "text-cyan-200/80"
-                                  : "text-stone-400"
-                              }`}
-                            >
-                              {pattern.description}
-                            </p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </CollapsibleContent>
                 </div>
-              </div>
+              </Collapsible>
             );
           })}
         </div>

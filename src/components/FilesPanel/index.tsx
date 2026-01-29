@@ -13,6 +13,13 @@ import {
 import { useReviewStore } from "../../stores/reviewStore";
 import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../../components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Switch } from "../../components/ui/switch";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "../../components/ui/collapsible";
 import type { CommitEntry } from "../../types";
 
 // Simple section header (non-collapsible)
@@ -115,30 +122,30 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-t border-stone-800">
-      <div className="flex items-center">
-        <button
-          onClick={onToggle}
-          className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset"
-          aria-expanded={isOpen}
-        >
-          <svg
-            className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-          <span className="flex-1">{title}</span>
-          {badge !== undefined && badge > 0 && (
-            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400 tabular-nums">
-              {badge}
-            </span>
-          )}
-        </button>
+    <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
+      <div className="border-t border-stone-800">
+        <div className="flex items-center">
+          <CollapsibleTrigger asChild>
+            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset">
+              <svg
+                className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+              <span className="flex-1">{title}</span>
+              {badge !== undefined && badge > 0 && (
+                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400 tabular-nums">
+                  {badge}
+                </span>
+              )}
+            </button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent>{children}</CollapsibleContent>
       </div>
-      {isOpen && children}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -259,60 +266,17 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       <div className="flex h-full flex-col">
         {/* View mode toggle - always show all three tabs */}
         <div className="border-b border-stone-800 px-3 py-2">
-          <div
-            className="flex rounded-md bg-stone-800 p-0.5"
-            role="tablist"
-            aria-label="File view mode"
+          <Tabs
+            value={viewMode}
+            onValueChange={(v) => setViewMode(v as typeof viewMode)}
           >
-            <button
-              onClick={() => setViewMode("changes")}
-              role="tab"
-              aria-selected={viewMode === "changes"}
-              className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                viewMode === "changes"
-                  ? "bg-stone-700 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              Changes
-            </button>
-            <button
-              onClick={() => setViewMode("all")}
-              role="tab"
-              aria-selected={viewMode === "all"}
-              className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                viewMode === "all"
-                  ? "bg-stone-700 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              Files
-            </button>
-            <button
-              onClick={() => setViewMode("commits")}
-              role="tab"
-              aria-selected={viewMode === "commits"}
-              className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                viewMode === "commits"
-                  ? "bg-stone-700 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              Commits
-            </button>
-            <button
-              onClick={() => setViewMode("symbols")}
-              role="tab"
-              aria-selected={viewMode === "symbols"}
-              className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                viewMode === "symbols"
-                  ? "bg-stone-700 text-stone-100"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-            >
-              Symbols
-            </button>
-          </div>
+            <TabsList aria-label="File view mode">
+              <TabsTrigger value="changes">Changes</TabsTrigger>
+              <TabsTrigger value="all">Files</TabsTrigger>
+              <TabsTrigger value="commits">Commits</TabsTrigger>
+              <TabsTrigger value="symbols">Symbols</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Auto-approve staged toggle - only for working tree comparisons */}
@@ -324,21 +288,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             >
               Auto-approve staged
             </label>
-            <button
+            <Switch
               id="auto-approve-staged"
-              role="switch"
-              aria-checked={autoApproveStaged}
-              onClick={() => setAutoApproveStaged(!autoApproveStaged)}
-              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                autoApproveStaged ? "bg-lime-500/60" : "bg-stone-700"
-              }`}
-            >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                  autoApproveStaged ? "translate-x-3.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+              checked={autoApproveStaged}
+              onCheckedChange={setAutoApproveStaged}
+            />
           </div>
         )}
 
