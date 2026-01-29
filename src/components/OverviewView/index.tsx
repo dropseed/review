@@ -16,6 +16,9 @@ import {
   StatusBadge,
   ReviewStatusDot,
 } from "../FilesPanel/SymbolsPanel";
+import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
+import type { FileHunkStatus } from "../FilesPanel/types";
+import { isHunkTrusted } from "../../types";
 
 type OverviewLayout = "list" | "split";
 
@@ -109,11 +112,43 @@ export function OverviewView() {
   const setMainViewMode = useReviewStore((s) => s.setMainViewMode);
 
   const [layout, setLayout] = useState<OverviewLayout>("split");
+  const [symbolsExpanded, setSymbolsExpanded] = useState(true);
 
   const hunkStates = reviewState?.hunks ?? {};
   const trustList = reviewState?.trustList ?? [];
 
   const lineStatsMap = useMemo(() => buildLineStatsMap(hunks), [hunks]);
+
+  // Global progress
+  const totalHunks = hunks.length;
+  const trustedHunks = reviewState
+    ? hunks.filter((h) => {
+        const state = reviewState.hunks[h.id];
+        return !state?.status && isHunkTrusted(state, reviewState.trustList);
+      }).length
+    : 0;
+  const approvedHunks = reviewState
+    ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "approved").length
+    : 0;
+  const pendingHunks = totalHunks - trustedHunks - approvedHunks;
+  const reviewedPercent =
+    totalHunks > 0
+      ? Math.round(((trustedHunks + approvedHunks) / totalHunks) * 100)
+      : 0;
+
+  // Per-file breakdown
+  const fileHunkStatus = useMemo(
+    () => calculateFileHunkStatus(hunks, reviewState),
+    [hunks, reviewState],
+  );
+  const pendingFiles = useMemo(() => {
+    const entries: Array<{ path: string; status: FileHunkStatus }> = [];
+    for (const [path, status] of fileHunkStatus) {
+      if (status.pending > 0) entries.push({ path, status });
+    }
+    entries.sort((a, b) => b.status.pending - a.status.pending);
+    return entries;
+  }, [fileHunkStatus]);
 
   useEffect(() => {
     if (!symbolsLoaded && !symbolsLoading) {
@@ -133,6 +168,14 @@ export function OverviewView() {
     [setSelectedFile, hunks, setMainViewMode],
   );
 
+  const handleFileNavigate = useCallback(
+    (filePath: string) => {
+      setSelectedFile(filePath);
+      setMainViewMode("single");
+    },
+    [setSelectedFile, setMainViewMode],
+  );
+
   const filesWithChanges = useMemo(
     () =>
       symbolDiffs.filter(
@@ -141,127 +184,306 @@ export function OverviewView() {
     [symbolDiffs],
   );
 
-  if (symbolsLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <span className="text-sm text-stone-500">Extracting symbols...</span>
+  return (
+    <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="max-w-5xl mx-auto py-4">
+        {/* Section 1: Summary Stats */}
+        <SummaryStats
+          totalHunks={totalHunks}
+          trustedHunks={trustedHunks}
+          approvedHunks={approvedHunks}
+          pendingHunks={pendingHunks}
+          reviewedPercent={reviewedPercent}
+        />
+
+        {/* Section 2: Needs Review — File Breakdown */}
+        {pendingFiles.length > 0 && (
+          <div className="px-4 mb-6">
+            <h3 className="text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
+              Needs Review
+            </h3>
+            <div className="rounded-lg border border-stone-800 overflow-hidden">
+              {pendingFiles.map((entry) => (
+                <PendingFileRow
+                  key={entry.path}
+                  path={entry.path}
+                  status={entry.status}
+                  onNavigate={handleFileNavigate}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Section 3: Symbol Changes */}
+        <div className="px-4">
+          <button
+            className="flex items-center gap-1.5 mb-2 group"
+            onClick={() => setSymbolsExpanded(!symbolsExpanded)}
+          >
+            <svg
+              className={`h-3 w-3 text-stone-600 transition-transform ${symbolsExpanded ? "rotate-90" : ""}`}
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M10 6l6 6-6 6" />
+            </svg>
+            <h3 className="text-xs font-medium text-stone-400 uppercase tracking-wide">
+              Symbol Changes
+            </h3>
+            {filesWithChanges.length > 0 && (
+              <span className="text-xxs text-stone-600 tabular-nums">
+                {filesWithChanges.length} file
+                {filesWithChanges.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </button>
+
+          {symbolsExpanded && (
+            <>
+              {symbolsLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="h-6 w-6 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+                    <span className="text-xs text-stone-500">
+                      Extracting symbols...
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {symbolsLoaded && filesWithChanges.length === 0 && (
+                <p className="text-xs text-stone-600 py-4">
+                  No changed symbols found in this comparison.
+                </p>
+              )}
+
+              {filesWithChanges.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-end mb-2">
+                    <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
+                      <button
+                        onClick={() => setLayout("list")}
+                        className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                          layout === "list"
+                            ? "bg-stone-700 text-stone-200"
+                            : "text-stone-500 hover:text-stone-300"
+                        }`}
+                        title="List view"
+                      >
+                        <svg
+                          className="h-3 w-3"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <line x1="3" y1="6" x2="21" y2="6" />
+                          <line x1="3" y1="12" x2="21" y2="12" />
+                          <line x1="3" y1="18" x2="21" y2="18" />
+                        </svg>
+                        <span>List</span>
+                      </button>
+                      <button
+                        onClick={() => setLayout("split")}
+                        className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                          layout === "split"
+                            ? "bg-stone-700 text-stone-200"
+                            : "text-stone-500 hover:text-stone-300"
+                        }`}
+                        title="Split old/new view"
+                      >
+                        <svg
+                          className="h-3 w-3"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <line x1="12" y1="3" x2="12" y2="21" />
+                        </svg>
+                        <span>Split</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {layout === "list"
+                    ? filesWithChanges.map((fileDiff) => (
+                        <FileSection
+                          key={fileDiff.filePath}
+                          fileDiff={fileDiff}
+                          hunkStates={hunkStates}
+                          trustList={trustList}
+                          onNavigate={handleNavigate}
+                          defaultExpanded={true}
+                        />
+                      ))
+                    : filesWithChanges.map((fileDiff) => (
+                        <SplitFileSection
+                          key={fileDiff.filePath}
+                          fileDiff={fileDiff}
+                          hunkStates={hunkStates}
+                          trustList={trustList}
+                          onNavigate={handleNavigate}
+                          lineStatsMap={lineStatsMap}
+                        />
+                      ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (symbolsLoaded && filesWithChanges.length === 0) {
+// --- Summary Stats ---
+
+function SummaryStats({
+  totalHunks,
+  trustedHunks,
+  approvedHunks,
+  pendingHunks,
+  reviewedPercent,
+}: {
+  totalHunks: number;
+  trustedHunks: number;
+  approvedHunks: number;
+  pendingHunks: number;
+  reviewedPercent: number;
+}) {
+  if (totalHunks === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3">
-        <svg
-          className="h-12 w-12 text-stone-700"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
-          />
-        </svg>
-        <p className="text-sm text-stone-500">
-          No changed symbols found in this comparison
-        </p>
+      <div className="px-4 pb-4 mb-4 border-b border-stone-800">
+        <p className="text-sm text-stone-500">No hunks in this comparison.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin">
-      <div className="max-w-5xl mx-auto py-4">
-        <div className="px-4 pb-3 mb-2 border-b border-stone-800 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-medium text-stone-300">
-              Symbol Overview
-            </h2>
-            <p className="text-xs text-stone-500 mt-0.5">
-              {filesWithChanges.length} file
-              {filesWithChanges.length !== 1 ? "s" : ""} with symbol changes
-            </p>
-          </div>
-          <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
-            <button
-              onClick={() => setLayout("list")}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                layout === "list"
-                  ? "bg-stone-700 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-              title="List view"
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-              <span>List</span>
-            </button>
-            <button
-              onClick={() => setLayout("split")}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                layout === "split"
-                  ? "bg-stone-700 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
-              }`}
-              title="Split old/new view"
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="12" y1="3" x2="12" y2="21" />
-              </svg>
-              <span>Split</span>
-            </button>
-          </div>
-        </div>
+    <div className="px-4 pb-4 mb-4 border-b border-stone-800">
+      <div className="flex items-baseline gap-3 mb-3">
+        <span className="text-2xl font-semibold text-stone-100 tabular-nums">
+          {reviewedPercent}%
+        </span>
+        <span className="text-sm text-stone-400">reviewed</span>
+        <span className="text-xs text-stone-600 tabular-nums ml-auto">
+          {trustedHunks + approvedHunks}/{totalHunks} hunks
+        </span>
+      </div>
 
-        {layout === "list"
-          ? filesWithChanges.map((fileDiff) => (
-              <FileSection
-                key={fileDiff.filePath}
-                fileDiff={fileDiff}
-                hunkStates={hunkStates}
-                trustList={trustList}
-                onNavigate={handleNavigate}
-                defaultExpanded={true}
-              />
-            ))
-          : filesWithChanges.map((fileDiff) => (
-              <SplitFileSection
-                key={fileDiff.filePath}
-                fileDiff={fileDiff}
-                hunkStates={hunkStates}
-                trustList={trustList}
-                onNavigate={handleNavigate}
-                lineStatsMap={lineStatsMap}
-              />
-            ))}
+      {/* Progress bar */}
+      <div className="h-2 rounded-full bg-stone-800 overflow-hidden flex">
+        {trustedHunks > 0 && (
+          <div
+            className="bg-cyan-500 transition-all duration-300"
+            style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
+          />
+        )}
+        {approvedHunks > 0 && (
+          <div
+            className="bg-lime-500 transition-all duration-300"
+            style={{ width: `${(approvedHunks / totalHunks) * 100}%` }}
+          />
+        )}
+      </div>
+
+      {/* Stat chips */}
+      <div className="flex items-center gap-4 mt-3">
+        <StatChip color="bg-cyan-500" label="Trusted" count={trustedHunks} />
+        <StatChip color="bg-lime-500" label="Approved" count={approvedHunks} />
+        <StatChip
+          color="bg-amber-500"
+          label="Needs Review"
+          count={pendingHunks}
+        />
+        <span className="text-xxs text-stone-600 tabular-nums ml-auto">
+          {totalHunks} total
+        </span>
       </div>
     </div>
+  );
+}
+
+function StatChip({
+  color,
+  label,
+  count,
+}: {
+  color: string;
+  label: string;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`h-2 w-2 rounded-full ${color}`} />
+      <span className="text-xs text-stone-400">{label}</span>
+      <span className="text-xs text-stone-300 font-medium tabular-nums">
+        {count}
+      </span>
+    </div>
+  );
+}
+
+// --- Pending File Row ---
+
+function PendingFileRow({
+  path,
+  status,
+  onNavigate,
+}: {
+  path: string;
+  status: FileHunkStatus;
+  onNavigate: (filePath: string) => void;
+}) {
+  const fileName = path.split("/").pop() || path;
+  const dirPath = path.includes("/")
+    ? path.substring(0, path.lastIndexOf("/"))
+    : "";
+  const reviewedCount = status.approved + status.trusted;
+  const filePercent =
+    status.total > 0 ? Math.round((reviewedCount / status.total) * 100) : 0;
+
+  return (
+    <button
+      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-stone-800/40 transition-colors border-b border-stone-800/50 last:border-b-0"
+      onClick={() => onNavigate(path)}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs">
+          {dirPath && <span className="text-stone-500">{dirPath}/</span>}
+          <span className="text-stone-200 font-medium">{fileName}</span>
+        </div>
+      </div>
+      <span className="text-xxs text-amber-400/80 tabular-nums flex-shrink-0">
+        {status.pending} pending
+      </span>
+      <div className="w-16 flex-shrink-0">
+        <div className="h-1 rounded-full bg-stone-800 overflow-hidden flex">
+          {status.trusted > 0 && (
+            <div
+              className="bg-cyan-500"
+              style={{ width: `${(status.trusted / status.total) * 100}%` }}
+            />
+          )}
+          {status.approved > 0 && (
+            <div
+              className="bg-lime-500"
+              style={{ width: `${(status.approved / status.total) * 100}%` }}
+            />
+          )}
+        </div>
+      </div>
+      <span className="text-xxs text-stone-600 tabular-nums flex-shrink-0 w-8 text-right">
+        {filePercent}%
+      </span>
+    </button>
   );
 }
 
