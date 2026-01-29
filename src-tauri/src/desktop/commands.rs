@@ -13,7 +13,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
 use review::classify::{self, ClassifyResponse, HunkInput};
 use review::diff::parser::{
-    create_untracked_hunk, detect_move_pairs, parse_diff, DiffHunk, MovePair,
+    create_untracked_hunk, detect_move_pairs, parse_diff, parse_multi_file_diff, DiffHunk, MovePair,
 };
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage;
@@ -857,7 +857,7 @@ pub async fn open_repo_window(
 }
 
 #[tauri::command]
-pub fn get_file_symbol_diffs(
+pub async fn get_file_symbol_diffs(
     repo_path: String,
     file_paths: Vec<String>,
     comparison: Comparison,
@@ -868,70 +868,77 @@ pub fn get_file_symbol_diffs(
         file_paths.len()
     );
 
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_file_symbol_diffs] ERROR creating source: {e}");
-        e.to_string()
-    })?;
+    tokio::task::spawn_blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+            error!("[get_file_symbol_diffs] ERROR creating source: {e}");
+            e.to_string()
+        })?;
 
-    // Determine the git refs for old and new sides
-    let old_ref = if comparison.working_tree {
-        "HEAD".to_owned()
-    } else {
-        comparison.old.clone()
-    };
-
-    let mut all_hunks = Vec::new();
-    for file_path in &file_paths {
-        let file_diff = source
-            .get_diff(&comparison, Some(file_path))
-            .unwrap_or_default();
-        if !file_diff.is_empty() {
-            let hunks = review::diff::parser::parse_diff(&file_diff, file_path);
-            all_hunks.extend(hunks);
-        }
-    }
-
-    let mut results = Vec::new();
-
-    for file_path in &file_paths {
-        // Get old content
-        let old_content = source
-            .get_file_bytes(file_path, &old_ref)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok());
-
-        // Get new content
-        let new_content = if comparison.working_tree {
-            let full_path = PathBuf::from(&repo_path).join(file_path);
-            std::fs::read_to_string(&full_path).ok()
+        // Determine the git refs for old and new sides
+        let old_ref = if comparison.working_tree {
+            "HEAD".to_owned()
         } else {
-            source
-                .get_file_bytes(file_path, &comparison.new)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
+            comparison.old.clone()
         };
 
-        let file_hunks: Vec<_> = all_hunks
-            .iter()
-            .filter(|h| h.file_path == *file_path)
-            .cloned()
-            .collect();
+        // Single git diff call for all files instead of one per file
+        let full_diff = source.get_diff(&comparison, None).unwrap_or_default();
+        let all_hunks = parse_multi_file_diff(&full_diff);
 
-        let diff = symbols::extractor::compute_file_symbol_diff(
-            old_content.as_deref(),
-            new_content.as_deref(),
-            file_path,
-            &file_hunks,
+        // Process files in parallel: each gets its own thread for git show + tree-sitter parsing
+        let results: Vec<FileSymbolDiff> = std::thread::scope(|s| {
+            let handles: Vec<_> = file_paths
+                .iter()
+                .map(|file_path| {
+                    let source = &source;
+                    let all_hunks = &all_hunks;
+                    let old_ref = old_ref.as_str();
+                    let comparison = &comparison;
+                    let repo_path = repo_path.as_str();
+                    s.spawn(move || {
+                        // Get old content
+                        let old_content = source
+                            .get_file_bytes(file_path, old_ref)
+                            .ok()
+                            .and_then(|bytes| String::from_utf8(bytes).ok());
+
+                        // Get new content
+                        let new_content = if comparison.working_tree {
+                            let full_path = PathBuf::from(repo_path).join(file_path);
+                            std::fs::read_to_string(&full_path).ok()
+                        } else {
+                            source
+                                .get_file_bytes(file_path, &comparison.new)
+                                .ok()
+                                .and_then(|bytes| String::from_utf8(bytes).ok())
+                        };
+
+                        let file_hunks: Vec<_> = all_hunks
+                            .iter()
+                            .filter(|h| h.file_path == *file_path)
+                            .cloned()
+                            .collect();
+
+                        symbols::extractor::compute_file_symbol_diff(
+                            old_content.as_deref(),
+                            new_content.as_deref(),
+                            file_path,
+                            &file_hunks,
+                        )
+                    })
+                })
+                .collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        });
+
+        info!(
+            "[get_file_symbol_diffs] SUCCESS: {} files processed",
+            results.len()
         );
-
-        results.push(diff);
-    }
-
-    info!(
-        "[get_file_symbol_diffs] SUCCESS: {} files processed",
-        results.len()
-    );
-    Ok(results)
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

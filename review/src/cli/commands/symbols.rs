@@ -6,6 +6,7 @@ use crate::symbols::extractor::compute_file_symbol_diff;
 use crate::symbols::{FileSymbolDiff, SymbolChangeType, SymbolDiff, SymbolKind};
 use colored::Colorize;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::PathBuf;
 
 /// Line stats for a single hunk.
@@ -234,7 +235,7 @@ fn print_inline(results: &[FileSymbolDiff], stats: &HashMap<String, HunkLineStat
         file_count
     );
     if total_top_level > 0 {
-        summary.push_str(&format!(", {total_top_level} top-level hunk(s)"));
+        write!(summary, ", {total_top_level} top-level hunk(s)").unwrap();
     }
     println!("{summary}");
 }
@@ -450,11 +451,7 @@ fn kind_badge(kind: Option<&SymbolKind>) -> String {
 }
 
 fn count_symbols(symbol: &SymbolDiff) -> usize {
-    1 + symbol
-        .children
-        .iter()
-        .map(|c| count_symbols(c))
-        .sum::<usize>()
+    1 + symbol.children.iter().map(count_symbols).sum::<usize>()
 }
 
 fn flatten_file_paths(entries: &[FileEntry], output: &mut Vec<String>) {

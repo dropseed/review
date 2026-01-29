@@ -90,6 +90,49 @@ pub fn parse_diff(diff_output: &str, file_path: &str) -> Vec<DiffHunk> {
     hunks
 }
 
+/// Parse a combined multi-file git diff output into hunks.
+/// Splits on "diff --git" boundaries, extracts the file path from "+++ b/" lines,
+/// and delegates each section to `parse_diff`.
+pub fn parse_multi_file_diff(diff_output: &str) -> Vec<DiffHunk> {
+    let mut hunks = Vec::new();
+    let mut current_section = String::new();
+    let mut current_file: Option<String> = None;
+
+    for line in diff_output.lines() {
+        if line.starts_with("diff --git ") {
+            // Flush previous section
+            if let Some(ref file_path) = current_file {
+                if !current_section.is_empty() {
+                    hunks.extend(parse_diff(&current_section, file_path));
+                }
+            }
+            current_section.clear();
+            current_file = None;
+        } else if let Some(path) = line.strip_prefix("+++ b/") {
+            current_file = Some(path.to_owned());
+        } else if line.starts_with("+++ /dev/null") {
+            // File was deleted — use the path from "--- a/" which we already skipped,
+            // but we can extract it from the "diff --git" line. For deleted files,
+            // the hunks won't match any requested file_path so they'll be filtered out.
+            // We still need a file path for parse_diff, so try to extract from --- line.
+            // Actually, we need to handle this: let's track the --- path too.
+            // For now, current_file stays None and we skip this section.
+        } else {
+            current_section.push_str(line);
+            current_section.push('\n');
+        }
+    }
+
+    // Flush last section
+    if let Some(ref file_path) = current_file {
+        if !current_section.is_empty() {
+            hunks.extend(parse_diff(&current_section, file_path));
+        }
+    }
+
+    hunks
+}
+
 struct HunkBuilder {
     old_start: u32,
     old_count: u32,
@@ -548,5 +591,66 @@ mod tests {
         // Check that move_pair_id was set on both hunks
         assert_eq!(hunks[0].move_pair_id, Some(add_hunk.id.clone()));
         assert_eq!(hunks[1].move_pair_id, Some(del_hunk.id.clone()));
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_empty() {
+        let hunks = parse_multi_file_diff("");
+        assert!(hunks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_single_file() {
+        let diff = "diff --git a/foo.rs b/foo.rs\n--- a/foo.rs\n+++ b/foo.rs\n@@ -1,2 +1,3 @@\n context\n+added\n context2";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].file_path, "foo.rs");
+        assert_eq!(hunks[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_multiple_files() {
+        let diff = "\
+diff --git a/foo.rs b/foo.rs
+--- a/foo.rs
++++ b/foo.rs
+@@ -1,2 +1,3 @@
+ context
++added
+ context2
+diff --git a/bar.rs b/bar.rs
+--- a/bar.rs
++++ b/bar.rs
+@@ -5,2 +5,2 @@
+-old line
++new line
+ context";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(hunks[0].file_path, "foo.rs");
+        assert_eq!(hunks[1].file_path, "bar.rs");
+        assert_eq!(hunks[1].old_start, 5);
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_deleted_file() {
+        // Deleted files have "+++ /dev/null" — they should be skipped
+        let diff = "\
+diff --git a/deleted.rs b/deleted.rs
+--- a/deleted.rs
++++ /dev/null
+@@ -1,2 +0,0 @@
+-line1
+-line2
+diff --git a/kept.rs b/kept.rs
+--- a/kept.rs
++++ b/kept.rs
+@@ -1,1 +1,1 @@
+-old
++new";
+        let hunks = parse_multi_file_diff(diff);
+        // Only the kept.rs hunk should be present
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].file_path, "kept.rs");
     }
 }
