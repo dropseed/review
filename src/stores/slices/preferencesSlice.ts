@@ -15,6 +15,9 @@ const MAX_RECENT_REPOS = 5;
 export type DiffLineDiffType = "word" | "word-alt" | "char" | "none";
 export type DiffIndicators = "classic" | "bars" | "none";
 
+// Changes display mode type
+export type ChangesDisplayMode = "tree" | "flat";
+
 // Preference defaults
 const defaults = {
   sidebarPosition: "left" as const,
@@ -27,6 +30,7 @@ const defaults = {
   recentRepositories: [] as RecentRepo[],
   diffLineDiffType: "word" as DiffLineDiffType,
   diffIndicators: "bars" as DiffIndicators,
+  changesDisplayMode: "tree" as ChangesDisplayMode,
 };
 
 export interface PreferencesSlice {
@@ -40,6 +44,9 @@ export interface PreferencesSlice {
   // Diff display settings
   diffLineDiffType: DiffLineDiffType;
   diffIndicators: DiffIndicators;
+
+  // Changes panel display mode
+  changesDisplayMode: ChangesDisplayMode;
 
   // Classification settings
   autoClassifyEnabled: boolean;
@@ -56,6 +63,7 @@ export interface PreferencesSlice {
   setCodeTheme: (theme: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
   setDiffIndicators: (indicators: DiffIndicators) => void;
+  setChangesDisplayMode: (mode: ChangesDisplayMode) => void;
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
   clearFileToReveal: () => void;
@@ -84,6 +92,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   directoryToReveal: null,
   diffLineDiffType: defaults.diffLineDiffType,
   diffIndicators: defaults.diffIndicators,
+  changesDisplayMode: defaults.changesDisplayMode,
   autoClassifyEnabled: defaults.autoClassifyEnabled,
   classifyCommand: defaults.classifyCommand,
   classifyBatchSize: defaults.classifyBatchSize,
@@ -121,6 +130,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("diffIndicators", indicators);
   },
 
+  setChangesDisplayMode: (mode) => {
+    set({ changesDisplayMode: mode });
+    storage.set("changesDisplayMode", mode);
+  },
+
   loadPreferences: async () => {
     const position =
       (await storage.get<"left" | "right">("sidebarPosition")) ??
@@ -150,6 +164,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const diffIndicators =
       (await storage.get<DiffIndicators>("diffIndicators")) ??
       defaults.diffIndicators;
+    const changesDisplayMode =
+      (await storage.get<ChangesDisplayMode>("changesDisplayMode")) ??
+      defaults.changesDisplayMode;
 
     set({
       sidebarPosition: position,
@@ -157,6 +174,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       codeTheme: theme,
       diffLineDiffType,
       diffIndicators,
+      changesDisplayMode,
       autoClassifyEnabled: autoClassify,
       classifyCommand: classifyCmd,
       classifyBatchSize: batchSize,

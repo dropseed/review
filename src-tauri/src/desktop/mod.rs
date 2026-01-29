@@ -220,6 +220,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_current_repo,
             commands::get_current_branch,
+            commands::get_remote_info,
             commands::get_default_branch,
             commands::list_branches,
             commands::get_git_status,

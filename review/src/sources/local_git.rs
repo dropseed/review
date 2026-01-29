@@ -8,6 +8,16 @@ use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
 
+/// Information about the git remote (org/repo and browse URL)
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteInfo {
+    /// Display name, e.g. "org/repo"
+    pub name: String,
+    /// URL to open in a browser, e.g. "https://github.com/org/repo"
+    pub browse_url: String,
+}
+
 /// A single search match from git grep
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +59,13 @@ impl LocalGitSource {
     pub fn get_current_branch(&self) -> Result<String, LocalGitError> {
         let output = self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"])?;
         Ok(output.trim().to_owned())
+    }
+
+    /// Get remote info (org/repo name and browse URL) from the origin remote
+    pub fn get_remote_info(&self) -> Result<RemoteInfo, LocalGitError> {
+        let url = self.run_git(&["remote", "get-url", "origin"])?;
+        let url = url.trim();
+        parse_remote_url(url)
     }
 
     /// The well-known SHA for git's empty tree object.
@@ -860,4 +877,61 @@ impl DiffSource for LocalGitSource {
 
         Ok(all_diffs)
     }
+}
+
+/// Parse a git remote URL into a `RemoteInfo` with org/repo name and browse URL.
+///
+/// Supported formats:
+/// - `https://github.com/org/repo.git`
+/// - `https://github.com/org/repo`
+/// - `git@github.com:org/repo.git`
+/// - `ssh://git@github.com/org/repo.git`
+fn parse_remote_url(url: &str) -> Result<RemoteInfo, LocalGitError> {
+    // SSH shorthand: git@host:org/repo.git
+    if let Some(rest) = url.strip_prefix("git@") {
+        if let Some((host, path)) = rest.split_once(':') {
+            let path = path.strip_suffix(".git").unwrap_or(path);
+            return Ok(RemoteInfo {
+                name: path.to_owned(),
+                browse_url: format!("https://{host}/{path}"),
+            });
+        }
+    }
+
+    // HTTPS or SSH URL: https://host/org/repo.git or ssh://git@host/org/repo.git
+    if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("ssh://") {
+        // Strip scheme
+        let without_scheme = if let Some(rest) = url.strip_prefix("https://") {
+            rest
+        } else if let Some(rest) = url.strip_prefix("http://") {
+            rest
+        } else if let Some(rest) = url.strip_prefix("ssh://") {
+            rest
+        } else {
+            url
+        };
+
+        // Strip optional user@ prefix (e.g. git@)
+        let without_user = if let Some((_user, rest)) = without_scheme.split_once('@') {
+            rest
+        } else {
+            without_scheme
+        };
+
+        // Split into host and path
+        if let Some((host, path)) = without_user.split_once('/') {
+            let path = path.strip_suffix(".git").unwrap_or(path);
+            // Ensure we have at least org/repo (two path segments)
+            if path.contains('/') {
+                return Ok(RemoteInfo {
+                    name: path.to_owned(),
+                    browse_url: format!("https://{host}/{path}"),
+                });
+            }
+        }
+    }
+
+    Err(LocalGitError::Git(format!(
+        "Could not parse remote URL: {url}"
+    )))
 }

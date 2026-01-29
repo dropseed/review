@@ -11,7 +11,7 @@ interface UseFilePanelNavigationOptions {
 
 /**
  * Handles file selection and reveal logic in the FilesPanel.
- * Groups: selectedFile, fileToReveal, directoryToReveal, mainViewMode
+ * Groups: selectedFile, fileToReveal, directoryToReveal, topLevelView
  */
 export function useFilePanelNavigation({
   sectionedFiles,
@@ -23,8 +23,8 @@ export function useFilePanelNavigation({
     clearFileToReveal,
     directoryToReveal,
     clearDirectoryToReveal,
-    mainViewMode,
-    setScrollToFileInRolling,
+    topLevelView,
+    navigateToBrowse,
   } = useReviewStore();
 
   const [viewMode, setViewMode] = useState<ViewMode>("changes");
@@ -123,14 +123,14 @@ export function useFilePanelNavigation({
 
   const handleSelectFile = useCallback(
     (path: string) => {
-      if (mainViewMode === "rolling") {
-        // In rolling mode, scroll to the file section instead of changing selection
-        setScrollToFileInRolling(path);
+      if (topLevelView === "overview") {
+        // Auto-switch from overview to browse when clicking a file in sidebar
+        navigateToBrowse(path);
       } else {
         setSelectedFile(path);
       }
     },
-    [setSelectedFile, mainViewMode, setScrollToFileInRolling],
+    [setSelectedFile, topLevelView, navigateToBrowse],
   );
 
   const expandAll = useCallback((allDirPaths: Set<string>) => {

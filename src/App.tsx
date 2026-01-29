@@ -1,8 +1,7 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { FilesPanel } from "./components/FilesPanel";
 import { SplitContainer } from "./components/SplitContainer";
 import { DebugModal } from "./components/DebugModal";
-import { TrustModal } from "./components/TrustModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { CommitDetailModal } from "./components/CommitDetailModal";
 import { FileFinder } from "./components/FileFinder";
@@ -12,6 +11,7 @@ import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
 import { TooltipProvider, SimpleTooltip } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores/reviewStore";
+import { getPlatformServices } from "./platform";
 import { isHunkTrusted } from "./types";
 import {
   useGlobalShortcut,
@@ -67,6 +67,8 @@ function App() {
     setCodeFontSize,
     loadPreferences,
     refresh,
+    classifying,
+    classificationError,
     classifyingHunkIds,
     checkClaudeAvailable,
     triggerAutoClassification,
@@ -75,18 +77,21 @@ function App() {
     closeSplit,
     setSplitOrientation,
     splitOrientation,
-    // Main view mode
-    mainViewMode,
-    setMainViewMode,
+    // View hierarchy
+    topLevelView,
+    navigateToBrowse,
+    navigateToOverview,
     // Loading progress
     loadingProgress,
     // History
     loadCommits,
+    // Remote info
+    remoteInfo,
+    loadRemoteInfo,
   } = useReviewStore();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
-  const [showTrustModal, setShowTrustModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showContentSearch, setShowContentSearch] = useState(false);
@@ -110,6 +115,25 @@ function App() {
     loadPreferences();
     checkClaudeAvailable();
   }, [loadPreferences, checkClaudeAvailable]);
+
+  // Send desktop notification when classification completes
+  const wasClassifying = useRef(false);
+  useEffect(() => {
+    const notifyCompletion = async () => {
+      if (wasClassifying.current && !classifying && !classificationError) {
+        const platform = getPlatformServices();
+        const hasPermission = await platform.notifications.requestPermission();
+        if (hasPermission) {
+          await platform.notifications.show(
+            "Classification Complete",
+            "All hunks have been classified by Claude.",
+          );
+        }
+      }
+      wasClassifying.current = classifying;
+    };
+    notifyCompletion();
+  }, [classifying, classificationError]);
 
   // Custom hooks
   useGlobalShortcut();
@@ -158,6 +182,9 @@ function App() {
     setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
+    topLevelView,
+    navigateToBrowse,
+    navigateToOverview,
   });
 
   useMenuEvents({
@@ -185,6 +212,7 @@ function App() {
     loadAllFiles,
     loadReviewState,
     loadGitStatus,
+    loadRemoteInfo,
     loadCommits,
     triggerAutoClassification,
     setInitialLoading,
@@ -296,12 +324,39 @@ function App() {
       <div className="flex h-screen flex-col bg-stone-950">
         {/* Header */}
         <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-          {/* Left: comparison refs */}
-          <ComparisonHeader
-            comparison={comparison}
-            repoPath={repoPath}
-            onSelectReview={handleSelectReview}
-          />
+          {/* Left: repo name + comparison refs */}
+          <div className="flex items-center gap-2">
+            {remoteInfo && (
+              <button
+                onClick={() => {
+                  const platform = getPlatformServices();
+                  platform.opener.openUrl(remoteInfo.browseUrl);
+                }}
+                className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-300 transition-colors"
+                title={remoteInfo.browseUrl}
+              >
+                <span>{remoteInfo.name}</span>
+                <svg
+                  className="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </button>
+            )}
+            <ComparisonHeader
+              comparison={comparison}
+              repoPath={repoPath}
+              onSelectReview={handleSelectReview}
+            />
+          </div>
 
           {/* Right: review controls */}
           <div className="flex items-center gap-3">
@@ -353,92 +408,18 @@ function App() {
               </span>
             )}
 
-            {/* View mode toggle */}
-            <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
-              <SimpleTooltip content="Single file view">
-                <button
-                  onClick={() => setMainViewMode("single")}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                    mainViewMode === "single"
-                      ? "bg-stone-700 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                  </svg>
-                  <span>Single</span>
-                </button>
-              </SimpleTooltip>
-              <SimpleTooltip content="Rolling view - all files">
-                <button
-                  onClick={() => setMainViewMode("rolling")}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                    mainViewMode === "rolling"
-                      ? "bg-stone-700 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="3" width="18" height="5" rx="1" />
-                    <rect x="3" y="10" width="18" height="5" rx="1" />
-                    <rect x="3" y="17" width="18" height="5" rx="1" />
-                  </svg>
-                  <span>Rolling</span>
-                </button>
-              </SimpleTooltip>
-              <SimpleTooltip content="Overview - symbol changes">
-                <button
-                  onClick={() => setMainViewMode("overview")}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                    mainViewMode === "overview"
-                      ? "bg-stone-700 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="3" width="7" height="7" rx="1" />
-                    <rect x="14" y="3" width="7" height="7" rx="1" />
-                    <rect x="3" y="14" width="7" height="7" rx="1" />
-                    <rect x="14" y="14" width="7" height="7" rx="1" />
-                  </svg>
-                  <span>Overview</span>
-                </button>
-              </SimpleTooltip>
-            </div>
-
-            {/* Trust Settings button */}
-            <SimpleTooltip content="Trust Settings">
+            {/* Overview button */}
+            <SimpleTooltip content="Overview (Esc)">
               <button
-                onClick={() => setShowTrustModal(true)}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
+                onClick={navigateToOverview}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                  topLevelView === "overview"
+                    ? "bg-stone-800 text-stone-200"
+                    : "text-stone-500 hover:bg-stone-800 hover:text-stone-300"
+                }`}
               >
                 <svg
-                  className="h-4 w-4"
+                  className="h-3.5 w-3.5"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -446,18 +427,12 @@ function App() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
                 </svg>
-                <span>Trust</span>
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
-                    (reviewState?.trustList.length ?? 0) > 0
-                      ? "bg-cyan-500/20 text-cyan-400"
-                      : "bg-stone-700 text-stone-500"
-                  }`}
-                >
-                  {reviewState?.trustList.length ?? 0}
-                </span>
+                <span>Overview</span>
               </button>
             </SimpleTooltip>
           </div>
@@ -571,12 +546,6 @@ function App() {
         <DebugModal
           isOpen={showDebugModal}
           onClose={() => setShowDebugModal(false)}
-        />
-
-        {/* Trust Modal */}
-        <TrustModal
-          isOpen={showTrustModal}
-          onClose={() => setShowTrustModal(false)}
         />
 
         {/* Settings Modal */}

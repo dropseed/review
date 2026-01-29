@@ -27,6 +27,7 @@ import type {
   ExpandedContext,
   SearchMatch,
   FileSymbolDiff,
+  RemoteInfo,
 } from "./types";
 
 export class TauriClient implements ApiClient {
@@ -38,6 +39,14 @@ export class TauriClient implements ApiClient {
 
   async getCurrentBranch(repoPath: string): Promise<string> {
     return invoke<string>("get_current_branch", { repoPath });
+  }
+
+  async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
+    try {
+      return await invoke<RemoteInfo>("get_remote_info", { repoPath });
+    } catch {
+      return null;
+    }
   }
 
   async getDefaultBranch(repoPath: string): Promise<string> {

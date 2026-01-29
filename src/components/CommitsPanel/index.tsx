@@ -30,6 +30,7 @@ export function CommitsPanel({
   selectedCommitHash,
 }: CommitsPanelProps) {
   const commits = useReviewStore((s) => s.commits);
+  const comparison = useReviewStore((s) => s.comparison);
   const historyLoading = useReviewStore((s) => s.historyLoading);
   const repoPath = useReviewStore((s) => s.repoPath);
   const loadCommits = useReviewStore((s) => s.loadCommits);
@@ -104,6 +105,12 @@ export function CommitsPanel({
     );
   }
 
+  const compareRefColor = comparison.stagedOnly
+    ? "text-emerald-400"
+    : comparison.workingTree
+      ? "text-violet-400"
+      : "text-stone-300";
+
   return (
     <div
       ref={listRef}
@@ -111,6 +118,24 @@ export function CommitsPanel({
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      {/* Comparison range header */}
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-800 bg-stone-900 px-3 py-1.5">
+        <div className="flex items-center gap-1 text-xs min-w-0">
+          <span className="text-stone-400 truncate">{comparison.old}</span>
+          <span className="text-stone-600 flex-shrink-0">..</span>
+          <span className={`${compareRefColor} truncate`}>
+            {comparison.stagedOnly
+              ? "Staged"
+              : comparison.workingTree
+                ? "Working Tree"
+                : comparison.new}
+          </span>
+        </div>
+        <span className="text-xxs text-stone-600 tabular-nums flex-shrink-0 ml-2">
+          {commits.length} commit{commits.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
       {commits.map((commit) => {
         const isSelected = commit.hash === selectedCommitHash;
 

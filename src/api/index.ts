@@ -42,6 +42,7 @@ export type {
   LineRange,
   SymbolDiff,
   FileSymbolDiff,
+  RemoteInfo,
 } from "./types";
 
 import type { ApiClient } from "./client";

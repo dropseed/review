@@ -73,6 +73,33 @@ export function useFilePanelFileSystem() {
     };
   }, [hunkStatusMap]);
 
+  // Flat file lists per section (for flat display mode)
+  const flatSectionedFiles = useMemo(() => {
+    const needsReview: string[] = [];
+    const reviewed: string[] = [];
+    for (const [filePath, status] of hunkStatusMap.entries()) {
+      if (status.total === 0) continue;
+      if (status.pending > 0) needsReview.push(filePath);
+      else reviewed.push(filePath);
+    }
+    needsReview.sort((a, b) => a.localeCompare(b));
+    reviewed.sort((a, b) => a.localeCompare(b));
+    return { needsReview, reviewed };
+  }, [hunkStatusMap]);
+
+  // Git status letter per file path (derived from allFiles tree)
+  const fileStatusMap = useMemo(() => {
+    const map = new Map<string, string>();
+    function collect(entries: typeof allFiles) {
+      for (const e of entries) {
+        if (e.status && !e.isDirectory) map.set(e.path, e.status);
+        if (e.children) collect(e.children);
+      }
+    }
+    collect(allFiles);
+    return map;
+  }, [allFiles]);
+
   // Collect all directory paths for expand/collapse all
   const allDirPaths = useMemo(() => {
     const paths = new Set<string>();
@@ -99,6 +126,8 @@ export function useFilePanelFileSystem() {
     allFilesLoading,
     hunkStatusMap,
     sectionedFiles,
+    flatSectionedFiles,
+    fileStatusMap,
     allFilesTree,
     stats,
     allDirPaths,

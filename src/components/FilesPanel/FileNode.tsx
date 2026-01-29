@@ -140,6 +140,11 @@ export const FileNode = memo(
       const hasPending = entry.hunkStatus.pending > 0;
       const hasApproved = entry.hunkStatus.approved > 0;
 
+      const barPct =
+        hunkContext === "all" && entry.siblingMaxFileCount > 0
+          ? (entry.fileCount / entry.siblingMaxFileCount) * 100
+          : 0;
+
       return (
         <div className="select-none">
           <div
@@ -172,6 +177,21 @@ export const FileNode = memo(
               </span>
             </button>
 
+            {/* Relative size bar + file count on hover (Browse only) */}
+            {barPct > 0 && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="font-mono text-xxs tabular-nums text-stone-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {entry.fileCount}
+                </span>
+                <div className="w-12 flex justify-end">
+                  <div
+                    className="h-1 rounded-full bg-stone-600"
+                    style={{ width: `${Math.max(barPct, 10)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Approval button */}
             {onApproveAll && onUnapproveAll && hasReviewableContent && (
               <ApprovalButtons
@@ -182,8 +202,10 @@ export const FileNode = memo(
               />
             )}
 
-            {/* Aggregate hunk count */}
-            <HunkCount status={entry.hunkStatus} context={hunkContext} />
+            {/* Aggregate hunk count (hidden in Browse mode) */}
+            {hunkContext !== "all" && (
+              <HunkCount status={entry.hunkStatus} context={hunkContext} />
+            )}
           </div>
 
           {isExpanded && visibleChildren && visibleChildren.length > 0 && (
@@ -270,8 +292,10 @@ export const FileNode = memo(
               />
             )}
 
-            {/* Hunk count */}
-            <HunkCount status={entry.hunkStatus} context={hunkContext} />
+            {/* Hunk count (hidden in Browse mode) */}
+            {hunkContext !== "all" && (
+              <HunkCount status={entry.hunkStatus} context={hunkContext} />
+            )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>

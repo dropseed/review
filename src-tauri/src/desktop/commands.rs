@@ -17,7 +17,7 @@ use review::diff::parser::{
 };
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage;
-use review::sources::local_git::{LocalGitSource, SearchMatch};
+use review::sources::local_git::{LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
@@ -506,6 +506,12 @@ pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), St
 pub fn get_current_branch(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_current_branch().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_remote_info(repo_path: String) -> Result<RemoteInfo, String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.get_remote_info().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

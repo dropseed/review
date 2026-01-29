@@ -95,7 +95,52 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     loadingProgress: null,
     flatFileList: [],
 
-    setRepoPath: (path) => set({ repoPath: path }),
+    setRepoPath: (path) => {
+      const currentPath = get().repoPath;
+      if (path === currentPath) return;
+
+      // Reset all per-repo state when switching repositories.
+      // Since all slices share one Zustand store, we can reset cross-slice
+      // state here to prevent stale data from the previous repo.
+      set({
+        repoPath: path,
+        // Files
+        files: [],
+        allFiles: [],
+        hunks: [],
+        movePairs: [],
+        flatFileList: [],
+        loadingProgress: null,
+        // Navigation
+        selectedFile: null,
+        focusedHunkIndex: 0,
+        topLevelView: "overview" as const,
+        secondaryFile: null,
+        focusedPane: "primary" as const,
+        // Search
+        searchQuery: "",
+        searchResults: [],
+        searchLoading: false,
+        searchError: null,
+        scrollToLine: null,
+        // Classification
+        classifying: false,
+        classificationError: null,
+        classifyingHunkIds: new Set<string>(),
+        classifyGeneration: get().classifyGeneration + 1,
+        // Review
+        reviewState: null,
+        // Git
+        gitStatus: null,
+        stagedFilePaths: new Set<string>(),
+        // History
+        commits: [],
+        // Symbols
+        symbolDiffs: [],
+        symbolsLoading: false,
+        symbolsLoaded: false,
+      });
+    },
 
     setComparison: (comparison) => {
       set({ comparison });

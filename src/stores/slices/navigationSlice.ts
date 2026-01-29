@@ -18,15 +18,15 @@ import type { SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
-export type MainViewMode = "single" | "rolling" | "overview";
+export type TopLevelView = "overview" | "browse";
 
 export interface NavigationSlice {
   // Navigation state
   selectedFile: string | null;
   focusedHunkIndex: number;
 
-  // Main view mode (single file vs rolling)
-  mainViewMode: MainViewMode;
+  // View hierarchy: overview (home) vs browse
+  topLevelView: TopLevelView;
 
   // Split view state
   secondaryFile: string | null;
@@ -40,8 +40,10 @@ export interface NavigationSlice {
   nextHunk: () => void;
   prevHunk: () => void;
 
-  // Main view mode actions
-  setMainViewMode: (mode: MainViewMode) => void;
+  // View hierarchy actions
+  setTopLevelView: (view: TopLevelView) => void;
+  navigateToBrowse: (filePath?: string) => void;
+  navigateToOverview: () => void;
 
   // Split view actions
   setSecondaryFile: (path: string | null) => void;
@@ -50,10 +52,6 @@ export interface NavigationSlice {
   openInSplit: (path: string) => void;
   closeSplit: () => void;
   swapPanes: () => void;
-
-  // Rolling view navigation
-  scrollToFileInRolling: string | null;
-  setScrollToFileInRolling: (path: string | null) => void;
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -63,16 +61,13 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   selectedFile: null,
   focusedHunkIndex: 0,
 
-  // Main view mode
-  mainViewMode: "single" as MainViewMode,
+  // View hierarchy
+  topLevelView: "overview" as TopLevelView,
 
   // Split view state
   secondaryFile: null,
   focusedPane: "primary" as FocusedPane,
   splitOrientation: "horizontal" as SplitOrientation,
-
-  // Rolling view navigation
-  scrollToFileInRolling: null,
 
   setSelectedFile: (path) => {
     const { secondaryFile, focusedPane, hunks } = get();
@@ -123,56 +118,47 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   },
 
   nextHunk: () => {
-    const { hunks, focusedHunkIndex, mainViewMode } = get();
+    const { hunks, focusedHunkIndex } = get();
     if (hunks.length === 0) return;
     const nextIndex = Math.min(focusedHunkIndex + 1, hunks.length - 1);
     const nextHunk = hunks[nextIndex];
 
-    // Update selected file if the focused hunk is in a different file
     if (nextHunk) {
-      if (mainViewMode === "rolling") {
-        // In rolling mode, scroll to the file section
-        set({
-          focusedHunkIndex: nextIndex,
-          scrollToFileInRolling: nextHunk.filePath,
-        });
-      } else {
-        // In single mode, change the selected file
-        set({ focusedHunkIndex: nextIndex, selectedFile: nextHunk.filePath });
-      }
+      set({ focusedHunkIndex: nextIndex, selectedFile: nextHunk.filePath });
     } else {
       set({ focusedHunkIndex: nextIndex });
     }
   },
 
   prevHunk: () => {
-    const { hunks, focusedHunkIndex, mainViewMode } = get();
+    const { hunks, focusedHunkIndex } = get();
     if (hunks.length === 0) return;
     const prevIndex = Math.max(focusedHunkIndex - 1, 0);
     const prevHunk = hunks[prevIndex];
 
-    // Update selected file if the focused hunk is in a different file
     if (prevHunk) {
-      if (mainViewMode === "rolling") {
-        // In rolling mode, scroll to the file section
-        set({
-          focusedHunkIndex: prevIndex,
-          scrollToFileInRolling: prevHunk.filePath,
-        });
-      } else {
-        // In single mode, change the selected file
-        set({ focusedHunkIndex: prevIndex, selectedFile: prevHunk.filePath });
-      }
+      set({ focusedHunkIndex: prevIndex, selectedFile: prevHunk.filePath });
     } else {
       set({ focusedHunkIndex: prevIndex });
     }
   },
 
-  // Main view mode actions
-  setMainViewMode: (mode) => set({ mainViewMode: mode }),
-
-  // Rolling view navigation
-  setScrollToFileInRolling: (path) => set({ scrollToFileInRolling: path }),
+  // View hierarchy actions
+  setTopLevelView: (view) => set({ topLevelView: view }),
+  navigateToBrowse: (filePath?) => {
+    const updates: Partial<NavigationSlice> = { topLevelView: "browse" };
+    if (filePath !== undefined) {
+      updates.selectedFile = filePath;
+      // Find the index of the first hunk in the selected file
+      const { hunks } = get();
+      const firstHunkIndex = hunks.findIndex((h) => h.filePath === filePath);
+      if (firstHunkIndex >= 0) {
+        updates.focusedHunkIndex = firstHunkIndex;
+      }
+    }
+    set(updates);
+  },
+  navigateToOverview: () => set({ topLevelView: "overview" }),
 
   // Split view actions
   setSecondaryFile: (path) => set({ secondaryFile: path }),

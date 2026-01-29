@@ -111,7 +111,7 @@ function HighlightedText({
 }
 
 export function FileFinder({ isOpen, onClose }: FileFinderProps) {
-  const { allFiles, files, setSelectedFile } = useReviewStore();
+  const { allFiles, files, navigateToBrowse } = useReviewStore();
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -242,10 +242,10 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
 
   const handleSelect = useCallback(
     (path: string) => {
-      setSelectedFile(path);
+      navigateToBrowse(path);
       onClose();
     },
-    [setSelectedFile, onClose],
+    [navigateToBrowse, onClose],
   );
 
   const handleKeyDown = useCallback(

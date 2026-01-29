@@ -60,6 +60,8 @@ export interface ReviewSlice {
   unrejectHunk: (hunkId: string) => void;
   approveAllFileHunks: (filePath: string) => void;
   unapproveAllFileHunks: (filePath: string) => void;
+  approveHunkIds: (hunkIds: string[]) => void;
+  unapproveHunkIds: (hunkIds: string[]) => void;
   approveAllDirHunks: (dirPath: string) => void;
   unapproveAllDirHunks: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
@@ -353,6 +355,76 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         if (newHunks[hunk.id]) {
           newHunks[hunk.id] = {
             ...newHunks[hunk.id],
+            status: undefined,
+          };
+        }
+      }
+
+      const newState = {
+        ...reviewState,
+        hunks: newHunks,
+        updatedAt: new Date().toISOString(),
+      };
+
+      set({ reviewState: newState });
+      debouncedSave(saveReviewState);
+    },
+
+    approveHunkIds: (hunkIds) => {
+      const { reviewState, hunks, saveReviewState } = get();
+      if (!reviewState || hunkIds.length === 0) return;
+
+      const newHunks = { ...reviewState.hunks };
+      const idsToApprove = new Set(hunkIds);
+
+      // Also collect move pairs
+      for (const hunkId of hunkIds) {
+        const hunk = hunks.find((h) => h.id === hunkId);
+        if (hunk?.movePairId) {
+          idsToApprove.add(hunk.movePairId);
+        }
+      }
+
+      for (const id of idsToApprove) {
+        newHunks[id] = {
+          ...newHunks[id],
+          label: newHunks[id]?.label ?? [],
+          status: "approved" as const,
+        };
+      }
+
+      const newState = {
+        ...reviewState,
+        hunks: newHunks,
+        updatedAt: new Date().toISOString(),
+      };
+
+      set({ reviewState: newState });
+      debouncedSave(saveReviewState);
+    },
+
+    unapproveHunkIds: (hunkIds) => {
+      const { reviewState, hunks, saveReviewState } = get();
+      if (!reviewState || hunkIds.length === 0) return;
+
+      const newHunks = { ...reviewState.hunks };
+      const idsToUnapprove = new Set(hunkIds);
+
+      // Also collect move pairs
+      for (const hunkId of hunkIds) {
+        const hunk = hunks.find((h) => h.id === hunkId);
+        if (
+          hunk?.movePairId &&
+          reviewState.hunks[hunk.movePairId]?.status === "approved"
+        ) {
+          idsToUnapprove.add(hunk.movePairId);
+        }
+      }
+
+      for (const id of idsToUnapprove) {
+        if (newHunks[id]) {
+          newHunks[id] = {
+            ...newHunks[id],
             status: undefined,
           };
         }

@@ -93,6 +93,9 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
         ("GET", "/default-branch") => handle_get_default_branch(&query),
         ("GET", "/current-branch") => handle_get_current_branch(&query),
 
+        // Remote info
+        ("GET", "/remote-info") => handle_get_remote_info(&query),
+
         // Git status
         ("GET", "/status") => handle_get_status(&query),
         ("GET", "/status/raw") => handle_get_status_raw(&query),
@@ -371,6 +374,19 @@ fn handle_get_current_branch(query: &str) -> Response<Cursor<Vec<u8>>> {
 
     match commands::get_current_branch(repo_path) {
         Ok(branch) => json_response(&BranchResponse { branch }),
+        Err(e) => error_response(500, &e),
+    }
+}
+
+fn handle_get_remote_info(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    match commands::get_remote_info(repo_path) {
+        Ok(info) => json_response(&info),
         Err(e) => error_response(500, &e),
     }
 }

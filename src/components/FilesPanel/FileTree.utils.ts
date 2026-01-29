@@ -80,6 +80,11 @@ export function processTree(
       const matchesFilter =
         viewMode === "all" || (viewMode === "changes" && anyChildMatches);
 
+      const fileCount = processedChildren.reduce(
+        (sum, child) => sum + (child.isDirectory ? child.fileCount : 1),
+        0,
+      );
+
       return {
         ...entry,
         children: processedChildren,
@@ -88,6 +93,8 @@ export function processTree(
         matchesFilter,
         displayName: entry.name,
         compactedPaths: [entry.path],
+        fileCount,
+        siblingMaxFileCount: 0,
       };
     }
 
@@ -119,11 +126,13 @@ export function processTree(
       matchesFilter,
       displayName: entry.name,
       compactedPaths: [entry.path],
+      fileCount: 0,
+      siblingMaxFileCount: 0,
     };
   }
 
   const processed = entries.map(process);
-  return compactTree(processed);
+  return annotateSiblingMax(compactTree(processed));
 }
 
 // Result type for sectioned tree processing
@@ -169,19 +178,45 @@ export function processTreeWithSections(
   }
 
   // Needs review: files with pending > 0
-  const needsReview = compactTree(
-    filterSection(processed, (status) => status.pending > 0),
+  const needsReview = annotateSiblingMax(
+    compactTree(filterSection(processed, (status) => status.pending > 0)),
   );
 
   // Reviewed: files with total > 0 but pending === 0
-  const reviewed = compactTree(
-    filterSection(
-      processed,
-      (status) => status.total > 0 && status.pending === 0,
+  const reviewed = annotateSiblingMax(
+    compactTree(
+      filterSection(
+        processed,
+        (status) => status.total > 0 && status.pending === 0,
+      ),
     ),
   );
 
   return { needsReview, reviewed };
+}
+
+// Annotate each directory entry with the max fileCount among its sibling directories
+function annotateSiblingMax(
+  entries: ProcessedFileEntry[],
+): ProcessedFileEntry[] {
+  const maxFileCount = entries.reduce(
+    (max, e) => (e.isDirectory && e.fileCount > max ? e.fileCount : max),
+    0,
+  );
+
+  return entries.map((entry) => {
+    if (!entry.isDirectory) return entry;
+
+    const annotatedChildren = entry.children
+      ? annotateSiblingMax(entry.children)
+      : undefined;
+
+    return {
+      ...entry,
+      siblingMaxFileCount: maxFileCount,
+      children: annotatedChildren,
+    };
+  });
 }
 
 // Compact single-child directory chains
@@ -213,6 +248,7 @@ export function compactTree(
         ],
         children: onlyChild.children,
         path: onlyChild.path,
+        fileCount: onlyChild.fileCount,
       };
     }
 

@@ -1,6 +1,6 @@
 import type { FileEntry } from "../../types";
 
-export type ViewMode = "changes" | "all" | "commits" | "symbols";
+export type ViewMode = "changes" | "all" | "commits";
 
 // Hunk status for a file
 export interface FileHunkStatus {
@@ -19,4 +19,6 @@ export interface ProcessedFileEntry extends FileEntry {
   children?: ProcessedFileEntry[];
   displayName: string;
   compactedPaths: string[];
+  fileCount: number;
+  siblingMaxFileCount: number;
 }

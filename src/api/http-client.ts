@@ -25,6 +25,7 @@ import type {
   ExpandedContext,
   SearchMatch,
   FileSymbolDiff,
+  RemoteInfo,
 } from "./types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -121,6 +122,16 @@ export class HttpClient implements ApiClient {
       // Fallback to status
       const status = await this.getGitStatus(repoPath);
       return status.currentBranch || "main";
+    }
+  }
+
+  async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
+    try {
+      return await this.fetchJson<RemoteInfo>(
+        `/remote-info?${this.buildRepoQuery(repoPath)}`,
+      );
+    } catch {
+      return null;
     }
   }
 

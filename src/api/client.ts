@@ -25,6 +25,7 @@ import type {
   ExpandedContext,
   SearchMatch,
   FileSymbolDiff,
+  RemoteInfo,
 } from "./types";
 
 export interface ApiClient {
@@ -35,6 +36,9 @@ export interface ApiClient {
 
   /** Get the current branch name */
   getCurrentBranch(repoPath: string): Promise<string>;
+
+  /** Get remote info (org/repo name and browse URL) */
+  getRemoteInfo(repoPath: string): Promise<RemoteInfo | null>;
 
   /** Get the default branch (e.g., main or master) */
   getDefaultBranch(repoPath: string): Promise<string>;

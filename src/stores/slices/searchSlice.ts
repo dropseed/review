@@ -67,12 +67,18 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     clearScrollToLine: () => set({ scrollToLine: null }),
 
     navigateToSearchResult: (index) => {
-      const { searchResults, setSelectedFile, mainViewMode, hunks } = get();
+      const { searchResults, navigateToBrowse, topLevelView, hunks } = get();
       const result = searchResults[index];
       if (!result) return;
 
-      // Select the file
-      setSelectedFile(result.filePath);
+      // Auto-switch to browse if in overview
+      if (topLevelView === "overview") {
+        navigateToBrowse(result.filePath);
+      } else {
+        // Select the file within browse
+        const { setSelectedFile } = get();
+        setSelectedFile(result.filePath);
+      }
 
       // Set scroll target for line highlighting
       set({
@@ -97,11 +103,6 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
 
       if (hunkIndex >= 0) {
         set({ focusedHunkIndex: hunkIndex });
-      }
-
-      // In rolling mode, trigger scroll to file
-      if (mainViewMode === "rolling") {
-        set({ scrollToFileInRolling: result.filePath });
       }
     },
   });

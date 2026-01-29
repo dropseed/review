@@ -64,3 +64,8 @@ export interface SearchMatch {
   column: number;
   lineContent: string;
 }
+
+export interface RemoteInfo {
+  name: string;
+  browseUrl: string;
+}

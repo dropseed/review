@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { ExportModal } from "../ExportModal";
 import { CommitsPanel } from "../CommitsPanel";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
-import { SymbolsPanel } from "./SymbolsPanel";
+import { FlatFileNode } from "./FlatFileNode";
+import { TrustBadges } from "./TrustBadges";
 import {
   useFilePanelFileSystem,
   useFilePanelNavigation,
@@ -14,19 +15,21 @@ import { useReviewStore } from "../../stores/reviewStore";
 import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import { Switch } from "../../components/ui/switch";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
 } from "../../components/ui/collapsible";
-import type { CommitEntry } from "../../types";
+import type { CommitEntry, FileSymbolDiff } from "../../types";
 
-// Simple section header (non-collapsible)
+// Collapsible section header with icon
 function SectionHeader({
   title,
+  icon,
   badge,
   badgeColor = "amber",
+  isOpen,
+  onToggle,
   onExpandAll,
   onCollapseAll,
   showTreeControls,
@@ -34,8 +37,11 @@ function SectionHeader({
   children,
 }: {
   title: string;
+  icon?: React.ReactNode;
   badge?: number;
   badgeColor?: "amber" | "lime" | "cyan";
+  isOpen: boolean;
+  onToggle: () => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   showTreeControls?: boolean;
@@ -49,61 +55,73 @@ function SectionHeader({
   };
 
   return (
-    <div
-      className={`border-b border-stone-800 ${showTopBorder ? "border-t" : ""}`}
-    >
-      <div className="flex items-center">
-        <div className="flex flex-1 items-center gap-2 px-3 py-2 text-xs font-medium text-stone-300">
-          <span className="flex-1">{title}</span>
-          {badge !== undefined && badge > 0 && (
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeColors[badgeColor]}`}
-            >
-              {badge}
-            </span>
+    <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
+      <div
+        className={`border-b border-stone-800 ${showTopBorder ? "border-t" : ""}`}
+      >
+        <div className="flex items-center">
+          <CollapsibleTrigger asChild>
+            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset">
+              <svg
+                className={`h-3 w-3 text-stone-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+              {icon}
+              <span className="flex-1">{title}</span>
+              {badge !== undefined && badge > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeColors[badgeColor]}`}
+                >
+                  {badge}
+                </span>
+              )}
+            </button>
+          </CollapsibleTrigger>
+          {isOpen && showTreeControls && onExpandAll && onCollapseAll && (
+            <div className="flex items-center gap-0.5 pr-2">
+              <SimpleTooltip content="Expand all">
+                <button
+                  onClick={onExpandAll}
+                  className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
+                >
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 16 16"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <rect x="2" y="2" width="12" height="12" rx="1" />
+                    <path d="M8 5v6M5 8h6" />
+                  </svg>
+                </button>
+              </SimpleTooltip>
+              <SimpleTooltip content="Collapse all">
+                <button
+                  onClick={onCollapseAll}
+                  className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
+                >
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 16 16"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <rect x="2" y="2" width="12" height="12" rx="1" />
+                    <path d="M5 8h6" />
+                  </svg>
+                </button>
+              </SimpleTooltip>
+            </div>
           )}
         </div>
-        {showTreeControls && onExpandAll && onCollapseAll && (
-          <div className="flex items-center gap-0.5 pr-2">
-            <SimpleTooltip content="Expand all">
-              <button
-                onClick={onExpandAll}
-                className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-              >
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 16 16"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <rect x="2" y="2" width="12" height="12" rx="1" />
-                  <path d="M8 5v6M5 8h6" />
-                </svg>
-              </button>
-            </SimpleTooltip>
-            <SimpleTooltip content="Collapse all">
-              <button
-                onClick={onCollapseAll}
-                className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-              >
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 16 16"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <rect x="2" y="2" width="12" height="12" rx="1" />
-                  <path d="M5 8h6" />
-                </svg>
-              </button>
-            </SimpleTooltip>
-          </div>
-        )}
+        <CollapsibleContent>{children}</CollapsibleContent>
       </div>
-      {children}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -155,22 +173,24 @@ interface FilesPanelProps {
 
 export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const commits = useReviewStore((s) => s.commits);
-  const comparison = useReviewStore((s) => s.comparison);
-  const autoApproveStaged = useReviewStore(
-    (s) => s.reviewState?.autoApproveStaged ?? false,
-  );
-  const setAutoApproveStaged = useReviewStore((s) => s.setAutoApproveStaged);
 
   // Track selected commit hash locally (for highlighting in CommitsPanel)
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
 
+  // Section collapse state
+  const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
+  const [reviewedOpen, setReviewedOpen] = useState(true);
+
   // File system data
   const {
     repoPath,
     allFilesLoading,
+    hunkStatusMap,
     sectionedFiles,
+    flatSectionedFiles,
+    fileStatusMap,
     allFilesTree,
     stats,
     allDirPaths,
@@ -193,6 +213,55 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   // Approval actions
   const { handleApproveAll, handleUnapproveAll } = useFilePanelApproval();
+
+  // Changes display mode (tree vs flat)
+  const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
+  const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
+
+  // Symbol data for flat mode
+  const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
+  const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
+  const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
+  const loadSymbols = useReviewStore((s) => s.loadSymbols);
+  const files = useReviewStore((s) => s.files);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+
+  // Trigger symbol loading when switching to flat mode
+  useEffect(() => {
+    if (
+      changesDisplayMode === "flat" &&
+      !symbolsLoaded &&
+      !symbolsLoading &&
+      files.length > 0
+    ) {
+      loadSymbols();
+    }
+  }, [
+    changesDisplayMode,
+    symbolsLoaded,
+    symbolsLoading,
+    files.length,
+    loadSymbols,
+  ]);
+
+  // Symbol diff map for flat mode
+  const symbolDiffMap = useMemo(() => {
+    const map = new Map<string, FileSymbolDiff>();
+    for (const sd of symbolDiffs) map.set(sd.filePath, sd);
+    return map;
+  }, [symbolDiffs]);
+
+  // Navigate to a specific hunk (used by flat mode symbol rows)
+  const handleNavigateToHunk = useCallback(
+    (filePath: string, hunkId: string) => {
+      navigateToBrowse(filePath);
+      const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
+      if (hunkIndex >= 0) {
+        useReviewStore.setState({ focusedHunkIndex: hunkIndex });
+      }
+    },
+    [navigateToBrowse, hunks],
+  );
 
   // Feedback panel
   const {
@@ -227,7 +296,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   // Check if there are changes in the comparison
   const hasChanges =
-    sectionedFiles.needsReview.length > 0 || sectionedFiles.reviewed.length > 0;
+    sectionedFiles.needsReview.length > 0 ||
+    sectionedFiles.reviewed.length > 0 ||
+    flatSectionedFiles.needsReview.length > 0 ||
+    flatSectionedFiles.reviewed.length > 0;
 
   // Handle commit selection
   const handleCommitSelect = (hash: string) => {
@@ -272,27 +344,60 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           >
             <TabsList aria-label="File view mode">
               <TabsTrigger value="changes">Changes</TabsTrigger>
-              <TabsTrigger value="all">Files</TabsTrigger>
+              <TabsTrigger value="all">Browse</TabsTrigger>
               <TabsTrigger value="commits">Commits</TabsTrigger>
-              <TabsTrigger value="symbols">Symbols</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
 
-        {/* Auto-approve staged toggle - only for working tree comparisons */}
-        {comparison?.workingTree && viewMode === "changes" && (
-          <div className="flex items-center justify-between border-b border-stone-800 px-3 py-1.5">
-            <label
-              htmlFor="auto-approve-staged"
-              className="text-xxs text-stone-400 cursor-pointer select-none"
-            >
-              Auto-approve staged
-            </label>
-            <Switch
-              id="auto-approve-staged"
-              checked={autoApproveStaged}
-              onCheckedChange={setAutoApproveStaged}
-            />
+        {/* Trust pattern badges - quick toggles in changes view */}
+        {viewMode === "changes" && <TrustBadges />}
+
+        {/* Tree/Flat toggle for changes view */}
+        {viewMode === "changes" && hasChanges && (
+          <div className="flex items-center justify-end px-3 py-1 border-b border-stone-800">
+            <div className="flex items-center gap-0.5 rounded-md bg-stone-800/50 p-0.5">
+              <SimpleTooltip content="Tree view">
+                <button
+                  onClick={() => setChangesDisplayMode("tree")}
+                  className={`rounded p-1 transition-colors ${
+                    changesDisplayMode === "tree"
+                      ? "bg-stone-700 text-stone-200"
+                      : "text-stone-500 hover:text-stone-300"
+                  }`}
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 16 16"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
+                  </svg>
+                </button>
+              </SimpleTooltip>
+              <SimpleTooltip content="Flat view with symbols">
+                <button
+                  onClick={() => setChangesDisplayMode("flat")}
+                  className={`rounded p-1 transition-colors ${
+                    changesDisplayMode === "flat"
+                      ? "bg-stone-700 text-stone-200"
+                      : "text-stone-500 hover:text-stone-300"
+                  }`}
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 16 16"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
+                  </svg>
+                </button>
+              </SimpleTooltip>
+            </div>
           </div>
         )}
 
@@ -302,8 +407,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             onSelectCommit={handleCommitSelect}
             selectedCommitHash={selectedCommitHash}
           />
-        ) : viewMode === "symbols" ? (
-          <SymbolsPanel />
         ) : (
           <>
             {/* File tree */}
@@ -331,34 +434,113 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   </div>
                 ) : (
                   <>
+                    {/* Symbol loading spinner for flat mode */}
+                    {changesDisplayMode === "flat" &&
+                      symbolsLoading &&
+                      !symbolsLoaded && (
+                        <div className="flex items-center justify-center py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="h-4 w-4 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+                            <span className="text-xs text-stone-500">
+                              Extracting symbols...
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                     {/* Needs Review section */}
                     <SectionHeader
                       title="Needs Review"
+                      icon={
+                        <svg
+                          className="h-3.5 w-3.5 text-stone-500"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      }
                       badge={stats.needsReviewFiles}
                       badgeColor="amber"
+                      isOpen={needsReviewOpen}
+                      onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
                       onExpandAll={() => expandAll(allDirPaths)}
                       onCollapseAll={collapseAll}
-                      showTreeControls={allDirPaths.size > 0}
+                      showTreeControls={
+                        changesDisplayMode === "tree" && allDirPaths.size > 0
+                      }
                       showTopBorder={false}
                     >
                       <div className="py-1">
-                        {sectionedFiles.needsReview.length > 0 ? (
-                          sectionedFiles.needsReview.map((entry) => (
-                            <FileNode
-                              key={entry.path}
-                              entry={entry}
-                              depth={0}
-                              expandedPaths={expandedPaths}
-                              onToggle={togglePath}
+                        {changesDisplayMode === "tree" ? (
+                          sectionedFiles.needsReview.length > 0 ? (
+                            sectionedFiles.needsReview.map((entry) => (
+                              <FileNode
+                                key={entry.path}
+                                entry={entry}
+                                depth={0}
+                                expandedPaths={expandedPaths}
+                                onToggle={togglePath}
+                                selectedFile={selectedFile}
+                                onSelectFile={handleSelectFile}
+                                repoPath={repoPath}
+                                revealLabel={revealLabel}
+                                onOpenInSplit={openInSplit}
+                                registerRef={registerRef}
+                                hunkContext="needs-review"
+                                onApproveAll={handleApproveAll}
+                                onUnapproveAll={handleUnapproveAll}
+                              />
+                            ))
+                          ) : (
+                            <div className="py-4 text-center">
+                              <svg
+                                className="mx-auto mb-2 h-6 w-6 text-lime-500"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M5 13l4 4L19 7"
+                                />
+                              </svg>
+                              <p className="text-xs text-stone-500">
+                                No files need review
+                              </p>
+                            </div>
+                          )
+                        ) : flatSectionedFiles.needsReview.length > 0 ? (
+                          flatSectionedFiles.needsReview.map((filePath) => (
+                            <FlatFileNode
+                              key={filePath}
+                              filePath={filePath}
+                              fileStatus={fileStatusMap.get(filePath)}
+                              hunkStatus={
+                                hunkStatusMap.get(filePath) ?? {
+                                  pending: 0,
+                                  approved: 0,
+                                  trusted: 0,
+                                  rejected: 0,
+                                  total: 0,
+                                }
+                              }
+                              symbolDiff={symbolDiffMap.get(filePath) ?? null}
+                              hunkStates={reviewState?.hunks ?? {}}
+                              trustList={reviewState?.trustList ?? []}
                               selectedFile={selectedFile}
                               onSelectFile={handleSelectFile}
-                              repoPath={repoPath}
-                              revealLabel={revealLabel}
-                              onOpenInSplit={openInSplit}
-                              registerRef={registerRef}
                               hunkContext="needs-review"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
+                              onNavigateToHunk={handleNavigateToHunk}
                             />
                           ))
                         ) : (
@@ -387,30 +569,82 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     {/* Reviewed section */}
                     <SectionHeader
                       title="Reviewed"
+                      icon={
+                        <svg
+                          className="h-3.5 w-3.5 text-stone-500"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                          <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg>
+                      }
                       badge={stats.reviewedFiles}
                       badgeColor="lime"
+                      isOpen={reviewedOpen}
+                      onToggle={() => setReviewedOpen(!reviewedOpen)}
                       onExpandAll={() => expandAll(allDirPaths)}
                       onCollapseAll={collapseAll}
-                      showTreeControls={allDirPaths.size > 0}
+                      showTreeControls={
+                        changesDisplayMode === "tree" && allDirPaths.size > 0
+                      }
                     >
                       <div className="py-1">
-                        {sectionedFiles.reviewed.length > 0 ? (
-                          sectionedFiles.reviewed.map((entry) => (
-                            <FileNode
-                              key={entry.path}
-                              entry={entry}
-                              depth={0}
-                              expandedPaths={expandedPaths}
-                              onToggle={togglePath}
+                        {changesDisplayMode === "tree" ? (
+                          sectionedFiles.reviewed.length > 0 ? (
+                            sectionedFiles.reviewed.map((entry) => (
+                              <FileNode
+                                key={entry.path}
+                                entry={entry}
+                                depth={0}
+                                expandedPaths={expandedPaths}
+                                onToggle={togglePath}
+                                selectedFile={selectedFile}
+                                onSelectFile={handleSelectFile}
+                                repoPath={repoPath}
+                                revealLabel={revealLabel}
+                                onOpenInSplit={openInSplit}
+                                registerRef={registerRef}
+                                hunkContext="reviewed"
+                                onApproveAll={handleApproveAll}
+                                onUnapproveAll={handleUnapproveAll}
+                              />
+                            ))
+                          ) : (
+                            <div className="py-4 text-center">
+                              <p className="text-xs text-stone-500">
+                                No files reviewed yet
+                              </p>
+                            </div>
+                          )
+                        ) : flatSectionedFiles.reviewed.length > 0 ? (
+                          flatSectionedFiles.reviewed.map((filePath) => (
+                            <FlatFileNode
+                              key={filePath}
+                              filePath={filePath}
+                              fileStatus={fileStatusMap.get(filePath)}
+                              hunkStatus={
+                                hunkStatusMap.get(filePath) ?? {
+                                  pending: 0,
+                                  approved: 0,
+                                  trusted: 0,
+                                  rejected: 0,
+                                  total: 0,
+                                }
+                              }
+                              symbolDiff={symbolDiffMap.get(filePath) ?? null}
+                              hunkStates={reviewState?.hunks ?? {}}
+                              trustList={reviewState?.trustList ?? []}
                               selectedFile={selectedFile}
                               onSelectFile={handleSelectFile}
-                              repoPath={repoPath}
-                              revealLabel={revealLabel}
-                              onOpenInSplit={openInSplit}
-                              registerRef={registerRef}
                               hunkContext="reviewed"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
+                              onNavigateToHunk={handleNavigateToHunk}
                             />
                           ))
                         ) : (
@@ -488,8 +722,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           onOpenInSplit={openInSplit}
                           registerRef={registerRef}
                           hunkContext="all"
-                          onApproveAll={handleApproveAll}
-                          onUnapproveAll={handleUnapproveAll}
                         />
                       ))
                     ) : (

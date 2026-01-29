@@ -8,6 +8,7 @@ interface UseComparisonLoaderOptions {
   loadAllFiles: () => Promise<void>;
   loadReviewState: () => Promise<void>;
   loadGitStatus: () => Promise<void>;
+  loadRemoteInfo: () => Promise<void>;
   loadCommits: (repoPath: string, limit?: number) => Promise<void>;
   triggerAutoClassification: () => void;
   setInitialLoading: (loading: boolean) => void;
@@ -24,6 +25,7 @@ export function useComparisonLoader({
   loadAllFiles,
   loadReviewState,
   loadGitStatus,
+  loadRemoteInfo,
   loadCommits,
   triggerAutoClassification,
   setInitialLoading,
@@ -39,6 +41,7 @@ export function useComparisonLoader({
             loadFiles(true),
             loadAllFiles(),
             loadGitStatus(),
+            loadRemoteInfo(),
             loadCommits(repoPath),
           ]);
           // Now trigger auto-classification with the loaded review state
@@ -59,6 +62,7 @@ export function useComparisonLoader({
     loadAllFiles,
     loadReviewState,
     loadGitStatus,
+    loadRemoteInfo,
     loadCommits,
     triggerAutoClassification,
     setInitialLoading,

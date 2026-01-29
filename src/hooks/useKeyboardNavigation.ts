@@ -6,6 +6,7 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
 import type { DiffHunk } from "../types";
+import type { TopLevelView } from "../stores/slices/navigationSlice";
 
 interface UseKeyboardNavigationOptions {
   hunks: DiffHunk[];
@@ -27,6 +28,9 @@ interface UseKeyboardNavigationOptions {
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
+  topLevelView: TopLevelView;
+  navigateToBrowse: (filePath?: string) => void;
+  navigateToOverview: () => void;
 }
 
 /**
@@ -53,6 +57,9 @@ export function useKeyboardNavigation({
   setShowSettingsModal,
   setShowFileFinder,
   setShowContentSearch,
+  topLevelView,
+  navigateToBrowse,
+  navigateToOverview,
 }: UseKeyboardNavigationOptions) {
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -117,11 +124,18 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Escape to close split view (only when split is active)
-      if (event.key === "Escape" && secondaryFile !== null) {
-        event.preventDefault();
-        closeSplit();
-        return;
+      // Escape: close split if active, otherwise return to overview from browse
+      if (event.key === "Escape") {
+        if (secondaryFile !== null) {
+          event.preventDefault();
+          closeSplit();
+          return;
+        }
+        if (topLevelView === "browse") {
+          event.preventDefault();
+          navigateToOverview();
+          return;
+        }
       }
 
       // Cmd/Ctrl+Shift+\ to toggle split orientation
@@ -171,10 +185,18 @@ export function useKeyboardNavigation({
 
       switch (event.key) {
         case "j":
+          // In overview, switch to browse first
+          if (topLevelView === "overview") {
+            navigateToBrowse();
+          }
           // Navigate to next hunk (handles file switching automatically)
           nextHunk();
           break;
         case "k":
+          // In overview, switch to browse first
+          if (topLevelView === "overview") {
+            navigateToBrowse();
+          }
           // Navigate to previous hunk (handles file switching automatically)
           prevHunk();
           break;
@@ -226,6 +248,9 @@ export function useKeyboardNavigation({
       setShowSettingsModal,
       setShowFileFinder,
       setShowContentSearch,
+      topLevelView,
+      navigateToBrowse,
+      navigateToOverview,
     ],
   );
 
