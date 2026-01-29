@@ -4,19 +4,19 @@
 //! that delegate to core business logic modules.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use compare::classify::{self, ClassifyResponse, HunkInput};
-use compare::diff::parser::{
+use log::{debug, error, info};
+use review::classify::{self, ClassifyResponse, HunkInput};
+use review::diff::parser::{
     create_untracked_hunk, detect_move_pairs, parse_diff, DiffHunk, MovePair,
 };
-use compare::review::state::{ReviewState, ReviewSummary};
-use compare::review::storage;
-use compare::sources::local_git::{LocalGitSource, SearchMatch};
-use compare::sources::traits::{
+use review::review::state::{ReviewState, ReviewSummary};
+use review::review::storage;
+use review::sources::local_git::{LocalGitSource, SearchMatch};
+use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
-use compare::symbols::{self, FileSymbolDiff};
-use compare::trust::patterns::TrustCategory;
-use log::{debug, error, info};
+use review::symbols::{self, FileSymbolDiff};
+use review::trust::patterns::TrustCategory;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -106,8 +106,8 @@ fn bytes_to_data_url(bytes: &[u8], mime_type: &str) -> String {
 
 #[tauri::command]
 pub fn get_current_repo() -> Result<String, String> {
-    // Check command-line arguments first (for `compare open` CLI command)
-    // Args are passed like: Compare /path/to/repo
+    // Check command-line arguments first (for `review open` CLI command)
+    // Args are passed like: Review /path/to/repo
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         let repo_path = &args[1];
@@ -611,8 +611,8 @@ pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsRespo
     DetectMovePairsResponse { pairs, hunks }
 }
 
-/// Validate that a path is within .git/compare/ for security
-fn validate_compare_path(path: &str) -> Result<PathBuf, String> {
+/// Validate that a path is within .git/review/ for security
+fn validate_review_path(path: &str) -> Result<PathBuf, String> {
     let path_buf = PathBuf::from(path);
 
     // Reject paths with ".." components to prevent traversal
@@ -620,11 +620,11 @@ fn validate_compare_path(path: &str) -> Result<PathBuf, String> {
         return Err("Path traversal detected: path contains '..'".to_string());
     }
 
-    // The path must contain .git/compare/ to be valid
+    // The path must contain .git/review/ to be valid
     let path_str = path.replace('\\', "/");
-    if !path_str.contains("/.git/compare/") && !path_str.contains(".git/compare/") {
+    if !path_str.contains("/.git/review/") && !path_str.contains(".git/review/") {
         return Err(
-            "Security error: writes are only allowed to .git/compare/ directory".to_string(),
+            "Security error: writes are only allowed to .git/review/ directory".to_string(),
         );
     }
 
@@ -633,7 +633,7 @@ fn validate_compare_path(path: &str) -> Result<PathBuf, String> {
 
 #[tauri::command]
 pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    let validated_path = validate_compare_path(&path)?;
+    let validated_path = validate_review_path(&path)?;
     std::fs::write(&validated_path, contents)
         .map_err(|e| format!("Failed to write file {}: {}", path, e))
 }
@@ -643,7 +643,7 @@ pub fn append_to_file(path: String, contents: String) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::Write;
 
-    let validated_path = validate_compare_path(&path)?;
+    let validated_path = validate_review_path(&path)?;
 
     if let Some(parent) = validated_path.parent() {
         std::fs::create_dir_all(parent)
@@ -696,22 +696,22 @@ pub fn get_expanded_context(
 
 #[tauri::command]
 pub fn match_trust_pattern(label: String, pattern: String) -> bool {
-    compare::trust::matches_pattern(&label, &pattern)
+    review::trust::matches_pattern(&label, &pattern)
 }
 
 #[tauri::command]
 pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
-    compare::trust::patterns::get_trust_taxonomy()
+    review::trust::patterns::get_trust_taxonomy()
 }
 
 #[tauri::command]
 pub fn should_skip_file(path: String) -> bool {
-    compare::filters::should_skip_file(&path)
+    review::filters::should_skip_file(&path)
 }
 
 #[tauri::command]
 pub fn get_trust_taxonomy_with_custom(repo_path: String) -> Vec<TrustCategory> {
-    compare::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
+    review::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
 }
 
 // File watching
@@ -750,10 +750,10 @@ pub async fn open_repo_window(
         let label = format!("repo-{:x}", hasher.finish());
 
         WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
-            .title("Compare")
+            .title("Review")
             .inner_size(1100.0, 750.0)
             .min_inner_size(800.0, 600.0)
-            .tabbing_identifier("compare-main")
+            .tabbing_identifier("review-main")
             .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
             .build()
             .map_err(|e: tauri::Error| e.to_string())?;
@@ -810,7 +810,7 @@ pub async fn open_repo_window(
         .title(window_title)
         .inner_size(1100.0, 750.0)
         .min_inner_size(800.0, 600.0)
-        .tabbing_identifier("compare-main")
+        .tabbing_identifier("review-main")
         .background_color(tauri::window::Color(0x0c, 0x0a, 0x09, 0xff))
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
@@ -848,7 +848,7 @@ pub fn get_file_symbol_diffs(
             .get_diff(&comparison, Some(file_path))
             .unwrap_or_default();
         if !file_diff.is_empty() {
-            let hunks = compare::diff::parser::parse_diff(&file_diff, file_path);
+            let hunks = review::diff::parser::parse_diff(&file_diff, file_path);
             all_hunks.extend(hunks);
         }
     }

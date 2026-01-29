@@ -3,7 +3,7 @@ pub mod commands;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "compare")]
+#[command(name = "review")]
 #[command(author, version, about = "Review diffs more efficiently", long_about = None)]
 pub struct Cli {
     /// Repository path (defaults to current directory)

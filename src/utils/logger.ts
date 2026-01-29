@@ -1,6 +1,6 @@
 import { isTauriEnvironment } from "../api/client";
 
-const LOG_FILE = ".git/compare/app.log";
+const LOG_FILE = ".git/review/app.log";
 let repoPath: string | null = null;
 
 // Set the repo path for logging (call this once app knows the repo)

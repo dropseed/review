@@ -1,5 +1,5 @@
 /**
- * Semantic color system for the Compare app.
+ * Semantic color system for the Review app.
  *
  * Color assignments:
  * - Trust (auto-approve patterns): cyan

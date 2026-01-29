@@ -1,5 +1,5 @@
 #!/bin/bash
-# Development script for Compare desktop app
+# Development script for Review desktop app
 
 set -e
 cd "$(dirname "$0")/.."

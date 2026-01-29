@@ -1,4 +1,4 @@
-# Compare
+# Review
 
 A desktop app for reviewing code diffs with trust patterns and annotation support.
 
@@ -48,7 +48,7 @@ graph TB
         debug_server["debug_server.rs"]
     end
 
-    subgraph Core["Core Library (compare/)"]
+    subgraph Core["Core Library (review/)"]
         sources["sources/
         DiffSource trait
         LocalGitSource"]
@@ -61,11 +61,11 @@ graph TB
         classify["classify/
         Claude API"]
         cli["cli/ (feature-gated)
-        compare-cli, git-compare"]
+        review, git-review"]
     end
 
     subgraph Storage["Storage"]
-        git_compare[".git/compare/
+        git_review[".git/review/
         reviews/*.json
         custom-patterns.json"]
         tauri_store["Tauri Store
@@ -85,7 +85,7 @@ graph TB
     trust -->|"pattern matching"| review
     classify -->|"Claude API"| trust
 
-    review --> git_compare
+    review --> git_review
     preferencesSlice --> tauri_store
 ```
 
@@ -97,7 +97,7 @@ graph TB
 - **Comparison** - What you're reviewing (working changes, staged, branch diff)
 - **Hunk** - A block of changes, identified by `filepath:hash`
 - **Trust Pattern** - A label like `imports:added` that can auto-approve hunks
-- **Review State** - Persisted in `.git/compare/reviews/`
+- **Review State** - Persisted in `.git/review/reviews/`
 
 ## Extending
 

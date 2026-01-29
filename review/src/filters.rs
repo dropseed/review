@@ -43,7 +43,7 @@ static SKIP_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 /// # Examples
 ///
 /// ```
-/// use compare::filters::should_skip_file;
+/// use review::filters::should_skip_file;
 ///
 /// assert!(should_skip_file("target/debug/myapp"));
 /// assert!(should_skip_file("node_modules/lodash/index.js"));

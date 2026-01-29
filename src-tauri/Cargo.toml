@@ -1,12 +1,12 @@
 [package]
-name = "compare-desktop"
+name = "review-desktop"
 version = "0.0.1"
 description = "A diff review desktop app"
 edition = "2021"
-default-run = "compare-desktop"
+default-run = "review-desktop"
 
 [lib]
-name = "compare_desktop"
+name = "review_desktop"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Core library
-compare = { path = "../compare" }
+review = { path = "../review" }
 
 # Tauri and plugins
 tauri = { version = "2", features = ["devtools"] }

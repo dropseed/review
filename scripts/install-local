@@ -2,21 +2,21 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# Install Compare CLI and Tauri app for local use (separate from dev workflow)
+# Install Review CLI and Tauri app for local use (separate from dev workflow)
 
 echo "Installing CLI binaries to ~/.cargo/bin/..."
-cargo install --path compare --features cli --force
+cargo install --path review --features cli --force
 
 echo ""
 echo "Building Tauri app..."
 npm run tauri build
 
 echo ""
-echo "Installing Compare.app to /Applications/..."
-cp -r target/release/bundle/macos/Compare.app /Applications/
+echo "Installing Review.app to /Applications/..."
+cp -r target/release/bundle/macos/Review.app /Applications/
 
 echo ""
 echo "Done! Installed:"
-echo "  - compare-cli (in ~/.cargo/bin/)"
-echo "  - git-compare (in ~/.cargo/bin/, use as 'git compare')"
-echo "  - Compare.app (in /Applications/)"
+echo "  - review (in ~/.cargo/bin/)"
+echo "  - git-review (in ~/.cargo/bin/, use as 'git review')"
+echo "  - Review.app (in /Applications/)"

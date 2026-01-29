@@ -14,7 +14,7 @@ export function useWindowTitle(
   useEffect(() => {
     const platform = getPlatformServices();
     if (!repoPath) {
-      platform.window.setTitle("Compare").catch(console.error);
+      platform.window.setTitle("Review").catch(console.error);
     } else {
       const repoName = repoPath.split("/").pop() || "Repository";
       if (comparisonReady) {

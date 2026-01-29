@@ -1,11 +1,11 @@
 [package]
-name = "compare"
+name = "review"
 version = "0.0.1"
 description = "A diff review library and CLI"
 edition = "2021"
 
 [lib]
-name = "compare"
+name = "review"
 path = "src/lib.rs"
 
 [dependencies]
@@ -42,13 +42,13 @@ default = []
 cli = ["clap", "colored"]
 
 [[bin]]
-name = "compare-cli"
-path = "src/bin/compare_cli.rs"
+name = "review"
+path = "src/bin/review.rs"
 required-features = ["cli"]
 
 [[bin]]
-name = "git-compare"
-path = "src/bin/git_compare.rs"
+name = "git-review"
+path = "src/bin/git_review.rs"
 required-features = ["cli"]
 
 [dev-dependencies]

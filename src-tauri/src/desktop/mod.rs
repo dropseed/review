@@ -91,8 +91,8 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?;
 
-            let compare_help = MenuItemBuilder::new("Compare Help")
-                .id("compare_help")
+            let review_help = MenuItemBuilder::new("Review Help")
+                .id("review_help")
                 .build(app)?;
 
             let report_issue = MenuItemBuilder::new("Report Issue...")
@@ -148,7 +148,7 @@ pub fn run() {
                 .build()?;
 
             let help_menu = SubmenuBuilder::new(app, "Help")
-                .item(&compare_help)
+                .item(&review_help)
                 .item(&report_issue)
                 .build()?;
 
@@ -192,15 +192,15 @@ pub fn run() {
                 "settings" => {
                     let _: Result<(), _> = app.emit("menu:open-settings", ());
                 }
-                "compare_help" => {
+                "review_help" => {
                     let _ = app
                         .opener()
-                        .open_url("https://github.com/dropseed/compare", None::<&str>);
+                        .open_url("https://github.com/dropseed/review", None::<&str>);
                 }
                 "report_issue" => {
                     let _ = app
                         .opener()
-                        .open_url("https://github.com/dropseed/compare/issues", None::<&str>);
+                        .open_url("https://github.com/dropseed/review/issues", None::<&str>);
                 }
                 _ => {}
             }

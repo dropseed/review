@@ -1,5 +1,5 @@
 use clap::Parser;
-use compare::cli::{run, Cli};
+use review::cli::{run, Cli};
 
 fn main() {
     let cli = Cli::parse();

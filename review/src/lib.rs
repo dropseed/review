@@ -1,4 +1,4 @@
-//! Compare library - core functionality for diff review and classification.
+//! Review library - core functionality for diff review and classification.
 //!
 //! This crate provides:
 //! - Git diff parsing and hunk extraction (`diff`)

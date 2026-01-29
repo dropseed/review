@@ -1,7 +1,7 @@
-//! Compare Desktop - Tauri desktop application for diff review.
+//! Review Desktop - Tauri desktop application for diff review.
 //!
 //! This crate provides the desktop UI built on Tauri.
-//! Core functionality is provided by the `compare` crate.
+//! Core functionality is provided by the `review` crate.
 
 pub mod desktop;
 

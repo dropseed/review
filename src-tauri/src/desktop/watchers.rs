@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter};
 
 /// Log a message to the app.log file (for debugging watcher events)
 fn log_to_file(repo_path: &Path, message: &str) {
-    let log_path = repo_path.join(".git/compare/app.log");
+    let log_path = repo_path.join(".git/review/app.log");
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
         let _ = writeln!(file, "[{}] [WATCHER] {}", timestamp, message);
@@ -90,8 +90,8 @@ fn should_ignore_path(path_str: &str) -> bool {
 
         // Only allow these specific .git paths that indicate meaningful state changes
         let meaningful_git_paths = [
-            "/compare/", // Our review state
-            "\\compare\\",
+            "/review/", // Our review state
+            "\\review\\",
             "/refs/heads/", // Branch changes
             "\\refs\\heads\\",
             "/refs/remotes/", // Remote tracking branches
@@ -148,8 +148,8 @@ fn categorize_change(path_str: &str) -> ChangeKind {
         return ChangeKind::Ignored;
     }
 
-    // Review state files (inside .git/compare/) - but not log files
-    if path_str.contains("/.git/compare/") || path_str.contains("\\.git\\compare\\") {
+    // Review state files (inside .git/review/) - but not log files
+    if path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\") {
         // Ignore log files to prevent feedback loops with our own logging
         if path_str.ends_with(".log") {
             return ChangeKind::Ignored;
@@ -166,7 +166,7 @@ fn categorize_change(path_str: &str) -> ChangeKind {
 /// Watches the entire repository recursively for:
 /// - Working tree changes (file creates, edits, deletes)
 /// - Git state changes (commits, branch switches, staging)
-/// - Review state changes (.git/compare/)
+/// - Review state changes (.git/review/)
 pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     init_watchers();
 
@@ -178,8 +178,8 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         return Err(format!("Not a git repository: {}", repo_path));
     }
 
-    // Create compare directory if it doesn't exist (so we can watch it)
-    let human_review_dir = git_dir.join("compare");
+    // Create review directory if it doesn't exist (so we can watch it)
+    let human_review_dir = git_dir.join("review");
     if !human_review_dir.exists() {
         std::fs::create_dir_all(&human_review_dir).ok();
     }

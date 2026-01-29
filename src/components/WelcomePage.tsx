@@ -217,7 +217,7 @@ export function WelcomePage({ onOpenRepo, onSelectRepo }: WelcomePageProps) {
           </svg>
 
           <h1 className="text-3xl font-bold tracking-tight text-stone-100">
-            Compare
+            Review
           </h1>
           <p className="text-base text-stone-400 mt-2">
             Trust the <span className="italic text-stone-300">trivial</span>.

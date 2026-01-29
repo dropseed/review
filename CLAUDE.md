@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Compare is a desktop app (built with Tauri) that helps humans review diffs more efficiently. It classifies hunks (individual change blocks), enables bulk-approval of trivial changes, and focuses attention on what needs careful human review. It is **not** an AI code reviewer—it assists the review process.
+Review is a desktop app (built with Tauri) that helps humans review diffs more efficiently. It classifies hunks (individual change blocks), enables bulk-approval of trivial changes, and focuses attention on what needs careful human review. It is **not** an AI code reviewer—it assists the review process.
 
 ## Development Commands
 
@@ -30,21 +30,21 @@ scripts/build            # Build production app (outputs to target/release/)
 
 The project is organized as a Cargo workspace with two crates:
 
-- **`compare/`** - Core library + CLI (no Tauri dependencies)
+- **`review/`** - Core library + CLI (no Tauri dependencies)
   - `src/classify/` - Claude-based hunk classification
   - `src/diff/` - Git diff parsing and hunk extraction
   - `src/review/` - Review state management and persistence
   - `src/sources/` - Git operations abstraction
   - `src/trust/` - Trust pattern matching and taxonomy
   - `src/cli/` - CLI commands (behind `cli` feature flag)
-  - `src/bin/` - CLI binaries (`compare-cli`, `git-compare`)
+  - `src/bin/` - CLI binaries (`review`, `git-review`)
 
-- **`src-tauri/`** - Desktop app (depends on `compare`)
+- **`src-tauri/`** - Desktop app (depends on `review`)
   - `src/desktop/` - Tauri-specific code (commands, watchers, debug server)
 
 - **Desktop Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
 - **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/commands.rs`
-- **Data flow**: Rust computes diffs/hunks → Zustand stores state → User actions invoke Rust → Rust persists to `.git/compare/`
+- **Data flow**: Rust computes diffs/hunks → Zustand stores state → User actions invoke Rust → Rust persists to `.git/review/`
 
 ## Key Concepts
 
@@ -55,7 +55,7 @@ The project is organized as a Cargo workspace with two crates:
 
 ## State Storage
 
-Compare uses two storage mechanisms:
+Review uses two storage mechanisms:
 
 **UI Preferences** (global, via Tauri Store):
 
@@ -63,7 +63,7 @@ Compare uses two storage mechanisms:
 - Persists across all repositories
 - Stored in Tauri's app data directory
 
-**Review State** (per-repo, in `.git/compare/`):
+**Review State** (per-repo, in `.git/review/`):
 
 - `reviews/<comparison>.json` - Hunk labels, approvals, notes
 - `current-comparison.json` - Last active comparison
@@ -78,7 +78,7 @@ Storing review state inside `.git/` means it's automatically ignored by git and 
 
 ## App Logs
 
-Frontend logs are written to `.git/compare/app.log`. All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
+Frontend logs are written to `.git/review/app.log`. All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
 
 ```
 [2026-01-26T12:00:00.000Z] [LOG] Message here
@@ -97,6 +97,6 @@ When working on frontend code, use these skills:
 
 ## Trust Patterns Taxonomy
 
-The taxonomy is defined in `compare/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
+The taxonomy is defined in `review/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
 
-Users can extend the taxonomy by creating `.git/compare/custom-patterns.json` with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.
+Users can extend the taxonomy by creating `.git/review/custom-patterns.json` with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.

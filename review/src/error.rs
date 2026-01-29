@@ -1,7 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
-/// Unified error type for the Compare application.
+/// Unified error type for the Review application.
 ///
 /// This enum provides structured error information that can be
 /// serialized to JSON for the frontend to handle appropriately.

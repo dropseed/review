@@ -54,7 +54,7 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
     }
 }
 
-/// Load custom patterns from a repository's .git/compare/custom-patterns.json
+/// Load custom patterns from a repository's .git/review/custom-patterns.json
 /// Returns an empty vec if the file doesn't exist or can't be parsed.
 ///
 /// Note: This function returns an empty vec on errors to allow graceful degradation.
@@ -62,7 +62,7 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
 pub fn load_custom_patterns(repo_path: &PathBuf) -> Vec<TrustCategory> {
     let custom_path = repo_path
         .join(".git")
-        .join("compare")
+        .join("review")
         .join("custom-patterns.json");
 
     if !custom_path.exists() {

@@ -2,9 +2,9 @@
 //! Only active in debug builds. Listens on localhost:3333.
 
 use super::commands;
-use compare::diff::parser::DiffHunk;
-use compare::review::state::ReviewState;
-use compare::sources::traits::Comparison;
+use review::diff::parser::DiffHunk;
+use review::review::state::ReviewState;
+use review::sources::traits::Comparison;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -727,66 +727,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compare"
-version = "0.0.1"
-dependencies = [
- "base64 0.22.1",
- "clap",
- "colored",
- "dirs 5.0.1",
- "futures",
- "glob",
- "hex",
- "ignore",
- "log",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "urlencoding",
- "walkdir",
-]
-
-[[package]]
-name = "compare-desktop"
-version = "0.0.1"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "compare",
- "ignore",
- "log",
- "notify",
- "notify-debouncer-mini",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-log",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-os",
- "tauri-plugin-shell",
- "tauri-plugin-store",
- "tauri-plugin-window-state",
- "tiny_http",
- "tokio",
- "urlencoding",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3828,6 +3768,66 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+]
+
+[[package]]
+name = "review"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "clap",
+ "colored",
+ "dirs 5.0.1",
+ "futures",
+ "glob",
+ "hex",
+ "ignore",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "urlencoding",
+ "walkdir",
+]
+
+[[package]]
+name = "review-desktop"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "ignore",
+ "log",
+ "notify",
+ "notify-debouncer-mini",
+ "review",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tauri-plugin-shell",
+ "tauri-plugin-store",
+ "tauri-plugin-window-state",
+ "tiny_http",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]

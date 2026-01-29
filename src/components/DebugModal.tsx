@@ -73,7 +73,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
   const reviewStatePath = useMemo(() => {
     if (!repoPath || !comparison) return null;
     const comparisonKey = comparison.key || "unknown";
-    return `${repoPath}/.git/compare/reviews/${comparisonKey}.json`;
+    return `${repoPath}/.git/review/reviews/${comparisonKey}.json`;
   }, [repoPath, comparison]);
 
   const handleCopy = useCallback(() => {
