@@ -15,6 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
+import { SimpleTooltip } from "../ui/tooltip";
 import { PlainCodeView } from "./PlainCodeView";
 import { UntrackedFileView } from "./UntrackedFileView";
 import { DiffView } from "./DiffView";
@@ -300,13 +301,14 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
           {reviewProgress.reviewed}/{reviewProgress.total} reviewed
         </span>
         {!isComplete && (
-          <button
-            onClick={() => approveAllFileHunks(filePath)}
-            className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
-            title="Approve all hunks in this file"
-          >
-            Approve All
-          </button>
+          <SimpleTooltip content="Approve all hunks in this file">
+            <button
+              onClick={() => approveAllFileHunks(filePath)}
+              className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
+            >
+              Approve All
+            </button>
+          </SimpleTooltip>
         )}
       </>
     );
@@ -501,26 +503,27 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
               {/* Diff display options */}
               {viewMode !== "file" && (
                 <div className="relative" ref={diffOptionsRef}>
-                  <button
-                    onClick={() => setShowDiffOptions(!showDiffOptions)}
-                    className={`rounded p-1 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 ${
-                      showDiffOptions ? "bg-stone-800 text-stone-300" : ""
-                    }`}
-                    title="Diff display options"
-                  >
-                    <svg
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                  <SimpleTooltip content="Diff display options">
+                    <button
+                      onClick={() => setShowDiffOptions(!showDiffOptions)}
+                      className={`rounded p-1 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 ${
+                        showDiffOptions ? "bg-stone-800 text-stone-300" : ""
+                      }`}
                     >
-                      <circle cx="12" cy="12" r="3" />
-                      <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                    </svg>
-                  </button>
+                      <svg
+                        className="h-3.5 w-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+                      </svg>
+                    </button>
+                  </SimpleTooltip>
                   {showDiffOptions && (
                     <div className="absolute right-0 top-full mt-1 z-50 w-48 rounded-lg border border-stone-700 bg-stone-900 shadow-xl">
                       <div className="px-3 py-2 border-b border-stone-800">

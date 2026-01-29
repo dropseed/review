@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, memo } from "react";
+import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores/reviewStore";
 import type {
   FileSymbolDiff,
@@ -28,12 +29,13 @@ export function SymbolKindBadge({ kind }: { kind: SymbolKind | null }) {
   if (!kind) return <span className="w-4 flex-shrink-0" />;
   const config = SYMBOL_ICONS[kind];
   return (
-    <span
-      className={`flex-shrink-0 font-mono text-xxs font-bold ${config.color}`}
-      title={kind}
-    >
-      {config.label}
-    </span>
+    <SimpleTooltip content={kind}>
+      <span
+        className={`flex-shrink-0 font-mono text-xxs font-bold ${config.color}`}
+      >
+        {config.label}
+      </span>
+    </SimpleTooltip>
   );
 }
 
@@ -229,16 +231,17 @@ export const SymbolNode = memo(function SymbolNode({
         <SymbolKindBadge kind={symbol.kind} />
 
         {/* Symbol name */}
-        <button
-          className="min-w-0 flex-1 truncate text-left text-xs text-stone-300"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleClick();
-          }}
-          title={symbol.name}
-        >
-          {symbol.name}
-        </button>
+        <SimpleTooltip content={symbol.name}>
+          <button
+            className="min-w-0 flex-1 truncate text-left text-xs text-stone-300"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClick();
+            }}
+          >
+            {symbol.name}
+          </button>
+        </SimpleTooltip>
 
         {/* Hunk count & review status */}
         <StatusBadge status={status} />

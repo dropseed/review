@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import type { SupportedLanguages } from "./languageMap";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
+import { SimpleTooltip } from "../ui/tooltip";
 
 // Human-readable display names for languages
 export const languageDisplayNames: Record<string, string> = {
@@ -104,45 +105,48 @@ export function LanguageSelector({
   return (
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       {/* Badge button */}
-      <PopoverTrigger asChild>
-        <button
-          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs font-medium transition-colors ${
-            isOverridden
-              ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
-              : "bg-stone-800/60 text-stone-400 hover:bg-stone-700/60"
-          }`}
-          title={
-            isOverridden
-              ? `Language override: ${displayName} (click to change)`
-              : `Detected: ${displayName} (click to override)`
-          }
-        >
-          <svg
-            className="h-2.5 w-2.5 text-stone-500"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+      <SimpleTooltip
+        content={
+          isOverridden
+            ? `Language override: ${displayName} (click to change)`
+            : `Detected: ${displayName} (click to override)`
+        }
+      >
+        <PopoverTrigger asChild>
+          <button
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs font-medium transition-colors ${
+              isOverridden
+                ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                : "bg-stone-800/60 text-stone-400 hover:bg-stone-700/60"
+            }`}
           >
-            <polyline points="16 18 22 12 16 6" />
-            <polyline points="8 6 2 12 8 18" />
-          </svg>
-          {isOverridden ? displayName : `Auto (${displayName})`}
-          <svg
-            className={`h-2.5 w-2.5 text-stone-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-      </PopoverTrigger>
+            <svg
+              className="h-2.5 w-2.5 text-stone-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+            {isOverridden ? displayName : `Auto (${displayName})`}
+            <svg
+              className={`h-2.5 w-2.5 text-stone-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+        </PopoverTrigger>
+      </SimpleTooltip>
 
       <PopoverContent
         className="w-48 p-0"

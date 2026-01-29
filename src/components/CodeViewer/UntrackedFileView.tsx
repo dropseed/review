@@ -1,4 +1,5 @@
 import { File as PierreFile } from "@pierre/diffs/react";
+import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores/reviewStore";
 import type { DiffHunk } from "../../types";
 import { isHunkTrusted } from "../../types";
@@ -66,66 +67,70 @@ export function UntrackedFileView({
 
           {/* Action buttons - matching DiffView hunk style */}
           {isApproved ? (
-            <button
-              onClick={() => unapproveHunk(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-400 transition-all hover:bg-lime-500/25"
-              title="Click to unapprove"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
+            <SimpleTooltip content="Click to unapprove">
+              <button
+                onClick={() => unapproveHunk(hunk.id)}
+                className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-400 transition-all hover:bg-lime-500/25"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              <span>Approved</span>
-            </button>
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                <span>Approved</span>
+              </button>
+            </SimpleTooltip>
           ) : isRejected ? (
-            <button
-              onClick={() => unrejectHunk(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/25"
-              title="Click to clear rejection"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
+            <SimpleTooltip content="Click to clear rejection">
+              <button
+                onClick={() => unrejectHunk(hunk.id)}
+                className="group flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/25"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              <span>Rejected</span>
-            </button>
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+                <span>Rejected</span>
+              </button>
+            </SimpleTooltip>
           ) : (
             <div className="flex items-center rounded-md border border-stone-700/50 overflow-hidden">
-              <button
-                onClick={() => rejectHunk(hunk.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-400 transition-all hover:bg-rose-500/15 hover:text-rose-400"
-                title="Reject this change"
-                aria-label="Reject change"
-              >
-                <span>Reject</span>
-              </button>
+              <SimpleTooltip content="Reject this change">
+                <button
+                  onClick={() => rejectHunk(hunk.id)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-400 transition-all hover:bg-rose-500/15 hover:text-rose-400"
+                  aria-label="Reject change"
+                >
+                  <span>Reject</span>
+                </button>
+              </SimpleTooltip>
               <div className="w-px self-stretch bg-stone-700/50" />
-              <button
-                onClick={() => approveHunk(hunk.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-lime-500/15 hover:text-lime-400"
-                title="Approve this change"
-                aria-label="Approve change"
-              >
-                <span>Approve</span>
-              </button>
+              <SimpleTooltip content="Approve this change">
+                <button
+                  onClick={() => approveHunk(hunk.id)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-lime-500/15 hover:text-lime-400"
+                  aria-label="Approve change"
+                >
+                  <span>Approve</span>
+                </button>
+              </SimpleTooltip>
             </div>
           )}
         </div>

@@ -7,6 +7,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from "../ui/context-menu";
+import { SimpleTooltip } from "../ui/tooltip";
 import type { ProcessedFileEntry } from "./types";
 import { HunkCount, StatusLetter } from "./StatusIndicators";
 
@@ -48,58 +49,60 @@ function ApprovalButtons({
     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
       {/* Approve button - show if there are pending hunks */}
       {hasPending && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onApprove();
-          }}
-          className="flex items-center justify-center w-5 h-5 rounded
-                     text-stone-500 hover:text-lime-400 hover:bg-lime-500/20
-                     transition-colors"
-          title="Approve all"
-        >
-          <svg
-            className="w-3 h-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
+        <SimpleTooltip content="Approve all">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onApprove();
+            }}
+            className="flex items-center justify-center w-5 h-5 rounded
+                       text-stone-500 hover:text-lime-400 hover:bg-lime-500/20
+                       transition-colors"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          </button>
+        </SimpleTooltip>
       )}
 
       {/* Unapprove button - show if there are approved hunks */}
       {hasApproved && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onUnapprove();
-          }}
-          className="flex items-center justify-center w-5 h-5 rounded
-                     text-lime-400 hover:text-stone-400 hover:bg-stone-700/50
-                     transition-colors"
-          title="Unapprove all"
-        >
-          <svg
-            className="w-3 h-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
+        <SimpleTooltip content="Unapprove all">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnapprove();
+            }}
+            className="flex items-center justify-center w-5 h-5 rounded
+                       text-lime-400 hover:text-stone-400 hover:bg-stone-700/50
+                       transition-colors"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+              />
+            </svg>
+          </button>
+        </SimpleTooltip>
       )}
     </div>
   );

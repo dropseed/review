@@ -4,6 +4,7 @@ import type { LineAnnotation as PierreLineAnnotation } from "@pierre/diffs/react
 import type { LineAnnotation } from "../../types";
 import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
 import type { SupportedLanguages } from "./languageMap";
+import { SimpleTooltip } from "../ui/tooltip";
 
 // Metadata for annotations in file view
 type FileAnnotationMeta =
@@ -183,28 +184,29 @@ export function PlainCodeView({
     if (!hoveredLine || !onAddAnnotation) return null;
 
     return (
-      <button
-        className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
-        onClick={() => {
-          setNewAnnotationLine(hoveredLine.lineNumber);
-        }}
-        title="Add comment"
-        aria-label="Add comment"
-      >
-        <svg
-          className="h-3 w-3"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2.5}
+      <SimpleTooltip content="Add comment">
+        <button
+          className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
+          onClick={() => {
+            setNewAnnotationLine(hoveredLine.lineNumber);
+          }}
+          aria-label="Add comment"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 4.5v15m7.5-7.5h-15"
-          />
-        </svg>
-      </button>
+          <svg
+            className="h-3 w-3"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"
+            />
+          </svg>
+        </button>
+      </SimpleTooltip>
     );
   };
 

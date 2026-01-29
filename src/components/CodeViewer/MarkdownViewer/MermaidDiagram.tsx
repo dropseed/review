@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useId, useCallback } from "react";
+import { SimpleTooltip } from "../../ui/tooltip";
 
 interface MermaidDiagramProps {
   code: string;
@@ -159,49 +160,56 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
       {/* Zoom controls - visible on hover */}
       {!loading && (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded bg-stone-800/90 p-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            onClick={zoomOut}
-            disabled={zoom <= MIN_ZOOM}
-            className="rounded p-1 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
-            title="Zoom out"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          <SimpleTooltip content="Zoom out">
+            <button
+              onClick={zoomOut}
+              disabled={zoom <= MIN_ZOOM}
+              className="rounded p-1 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-            </svg>
-          </button>
-          <button
-            onClick={resetView}
-            className="min-w-[3rem] rounded px-1 py-0.5 text-xs tabular-nums text-stone-400 hover:bg-stone-700 hover:text-stone-200"
-            title="Reset view"
-          >
-            {Math.round(zoom * 100)}%
-          </button>
-          <button
-            onClick={zoomIn}
-            disabled={zoom >= MAX_ZOOM}
-            className="rounded p-1 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
-            title="Zoom in"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M20 12H4"
+                />
+              </svg>
+            </button>
+          </SimpleTooltip>
+          <SimpleTooltip content="Reset view">
+            <button
+              onClick={resetView}
+              className="min-w-[3rem] rounded px-1 py-0.5 text-xs tabular-nums text-stone-400 hover:bg-stone-700 hover:text-stone-200"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          </button>
+              {Math.round(zoom * 100)}%
+            </button>
+          </SimpleTooltip>
+          <SimpleTooltip content="Zoom in">
+            <button
+              onClick={zoomIn}
+              disabled={zoom >= MAX_ZOOM}
+              className="rounded p-1 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+            </button>
+          </SimpleTooltip>
         </div>
       )}
       {loading && (

@@ -12,6 +12,7 @@ import {
 } from "./hooks";
 import { useReviewStore } from "../../stores/reviewStore";
 import { getPlatformServices } from "../../platform";
+import { SimpleTooltip } from "../../components/ui/tooltip";
 import type { CommitEntry } from "../../types";
 
 // Simple section header (non-collapsible)
@@ -57,38 +58,40 @@ function SectionHeader({
         </div>
         {showTreeControls && onExpandAll && onCollapseAll && (
           <div className="flex items-center gap-0.5 pr-2">
-            <button
-              onClick={onExpandAll}
-              title="Expand all"
-              className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-            >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                viewBox="0 0 16 16"
-                stroke="currentColor"
-                strokeWidth={1.5}
+            <SimpleTooltip content="Expand all">
+              <button
+                onClick={onExpandAll}
+                className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
               >
-                <rect x="2" y="2" width="12" height="12" rx="1" />
-                <path d="M8 5v6M5 8h6" />
-              </svg>
-            </button>
-            <button
-              onClick={onCollapseAll}
-              title="Collapse all"
-              className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-            >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                viewBox="0 0 16 16"
-                stroke="currentColor"
-                strokeWidth={1.5}
+                <svg
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 16 16"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <rect x="2" y="2" width="12" height="12" rx="1" />
+                  <path d="M8 5v6M5 8h6" />
+                </svg>
+              </button>
+            </SimpleTooltip>
+            <SimpleTooltip content="Collapse all">
+              <button
+                onClick={onCollapseAll}
+                className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
               >
-                <rect x="2" y="2" width="12" height="12" rx="1" />
-                <path d="M5 8h6" />
-              </svg>
-            </button>
+                <svg
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 16 16"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <rect x="2" y="2" width="12" height="12" rx="1" />
+                  <path d="M5 8h6" />
+                </svg>
+              </button>
+            </SimpleTooltip>
           </div>
         )}
       </div>
@@ -476,38 +479,40 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     </div>
                     {allDirPaths.size > 0 && (
                       <div className="flex items-center gap-0.5 pr-2">
-                        <button
-                          onClick={() => expandAll(allDirPaths)}
-                          title="Expand all"
-                          className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-                        >
-                          <svg
-                            className="h-3 w-3"
-                            fill="none"
-                            viewBox="0 0 16 16"
-                            stroke="currentColor"
-                            strokeWidth={1.5}
+                        <SimpleTooltip content="Expand all">
+                          <button
+                            onClick={() => expandAll(allDirPaths)}
+                            className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
                           >
-                            <rect x="2" y="2" width="12" height="12" rx="1" />
-                            <path d="M8 5v6M5 8h6" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={collapseAll}
-                          title="Collapse all"
-                          className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-                        >
-                          <svg
-                            className="h-3 w-3"
-                            fill="none"
-                            viewBox="0 0 16 16"
-                            stroke="currentColor"
-                            strokeWidth={1.5}
+                            <svg
+                              className="h-3 w-3"
+                              fill="none"
+                              viewBox="0 0 16 16"
+                              stroke="currentColor"
+                              strokeWidth={1.5}
+                            >
+                              <rect x="2" y="2" width="12" height="12" rx="1" />
+                              <path d="M8 5v6M5 8h6" />
+                            </svg>
+                          </button>
+                        </SimpleTooltip>
+                        <SimpleTooltip content="Collapse all">
+                          <button
+                            onClick={collapseAll}
+                            className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
                           >
-                            <rect x="2" y="2" width="12" height="12" rx="1" />
-                            <path d="M5 8h6" />
-                          </svg>
-                        </button>
+                            <svg
+                              className="h-3 w-3"
+                              fill="none"
+                              viewBox="0 0 16 16"
+                              stroke="currentColor"
+                              strokeWidth={1.5}
+                            >
+                              <rect x="2" y="2" width="12" height="12" rx="1" />
+                              <path d="M5 8h6" />
+                            </svg>
+                          </button>
+                        </SimpleTooltip>
                       </div>
                     )}
                   </div>

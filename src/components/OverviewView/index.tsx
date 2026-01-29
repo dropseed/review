@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores/reviewStore";
 import type {
   FileSymbolDiff,
@@ -262,53 +263,55 @@ export function OverviewView() {
                 <div>
                   <div className="flex items-center justify-end mb-2">
                     <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
-                      <button
-                        onClick={() => setLayout("list")}
-                        className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                          layout === "list"
-                            ? "bg-stone-700 text-stone-200"
-                            : "text-stone-500 hover:text-stone-300"
-                        }`}
-                        title="List view"
-                      >
-                        <svg
-                          className="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                      <SimpleTooltip content="List view">
+                        <button
+                          onClick={() => setLayout("list")}
+                          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                            layout === "list"
+                              ? "bg-stone-700 text-stone-200"
+                              : "text-stone-500 hover:text-stone-300"
+                          }`}
                         >
-                          <line x1="3" y1="6" x2="21" y2="6" />
-                          <line x1="3" y1="12" x2="21" y2="12" />
-                          <line x1="3" y1="18" x2="21" y2="18" />
-                        </svg>
-                        <span>List</span>
-                      </button>
-                      <button
-                        onClick={() => setLayout("split")}
-                        className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                          layout === "split"
-                            ? "bg-stone-700 text-stone-200"
-                            : "text-stone-500 hover:text-stone-300"
-                        }`}
-                        title="Split old/new view"
-                      >
-                        <svg
-                          className="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                          <svg
+                            className="h-3 w-3"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <line x1="3" y1="6" x2="21" y2="6" />
+                            <line x1="3" y1="12" x2="21" y2="12" />
+                            <line x1="3" y1="18" x2="21" y2="18" />
+                          </svg>
+                          <span>List</span>
+                        </button>
+                      </SimpleTooltip>
+                      <SimpleTooltip content="Split old/new view">
+                        <button
+                          onClick={() => setLayout("split")}
+                          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                            layout === "split"
+                              ? "bg-stone-700 text-stone-200"
+                              : "text-stone-500 hover:text-stone-300"
+                          }`}
                         >
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                          <line x1="12" y1="3" x2="12" y2="21" />
-                        </svg>
-                        <span>Split</span>
-                      </button>
+                          <svg
+                            className="h-3 w-3"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <line x1="12" y1="3" x2="12" y2="21" />
+                          </svg>
+                          <span>Split</span>
+                        </button>
+                      </SimpleTooltip>
                     </div>
                   </div>
 

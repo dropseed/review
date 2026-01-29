@@ -6,6 +6,9 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { SimpleTooltip } from "./ui/tooltip";
+import { Switch } from "./ui/switch";
+import { Slider } from "./ui/slider";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -154,26 +157,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="flex items-center justify-between rounded-lg bg-stone-800/50 px-3 py-2">
               <div className="flex items-center gap-2">
                 {/* Decrease button */}
-                <button
-                  onClick={decreaseFontSize}
-                  disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
-                  className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Decrease font size (Cmd+-)"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
+                <SimpleTooltip content="Decrease font size (Cmd+-)">
+                  <button
+                    onClick={decreaseFontSize}
+                    disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
+                    className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M20 12H4"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M20 12H4"
+                      />
+                    </svg>
+                  </button>
+                </SimpleTooltip>
 
                 {/* Current size display */}
                 <div className="flex min-w-[5.5rem] flex-col items-center px-3">
@@ -183,37 +187,39 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
 
                 {/* Increase button */}
-                <button
-                  onClick={increaseFontSize}
-                  disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
-                  className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Increase font size (Cmd++)"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
+                <SimpleTooltip content="Increase font size (Cmd++)">
+                  <button
+                    onClick={increaseFontSize}
+                    disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
+                    className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                  </button>
+                </SimpleTooltip>
               </div>
 
               {/* Reset button */}
               {codeFontSize !== CODE_FONT_SIZE_DEFAULT && (
-                <button
-                  onClick={resetFontSize}
-                  className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
-                  title="Reset to default (Cmd+0)"
-                >
-                  Reset
-                </button>
+                <SimpleTooltip content="Reset to default (Cmd+0)">
+                  <button
+                    onClick={resetFontSize}
+                    className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </SimpleTooltip>
               )}
             </div>
             <p className="mt-2 text-xxs text-stone-600">
@@ -427,24 +433,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <span className="text-xs text-stone-300">
                   Auto-classify new hunks
                 </span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={autoClassifyEnabled}
-                    onChange={(e) => setAutoClassifyEnabled(e.target.checked)}
-                    className="peer sr-only"
-                  />
-                  <div
-                    className={`h-5 w-9 rounded-full transition-colors ${
-                      autoClassifyEnabled ? "bg-violet-500" : "bg-stone-600"
-                    }`}
-                  />
-                  <div
-                    className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                      autoClassifyEnabled ? "translate-x-4" : "translate-x-0"
-                    }`}
-                  />
-                </div>
+                <Switch
+                  checked={autoClassifyEnabled}
+                  onCheckedChange={setAutoClassifyEnabled}
+                />
               </label>
 
               {/* Classify command */}
@@ -475,15 +467,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     {classifyBatchSize}
                   </span>
                 </div>
-                <input
-                  type="range"
+                <Slider
                   min={1}
                   max={10}
-                  value={classifyBatchSize}
-                  onChange={(e) =>
-                    setClassifyBatchSize(parseInt(e.target.value, 10))
-                  }
-                  className="w-full h-1.5 bg-stone-700 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                  step={1}
+                  value={[classifyBatchSize]}
+                  onValueChange={([val]) => setClassifyBatchSize(val)}
                 />
                 <p className="text-xxs text-stone-600 leading-relaxed">
                   Hunks per Claude call. Higher values use fewer API calls but
@@ -501,15 +490,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     {classifyMaxConcurrent}
                   </span>
                 </div>
-                <input
-                  type="range"
+                <Slider
                   min={1}
                   max={5}
-                  value={classifyMaxConcurrent}
-                  onChange={(e) =>
-                    setClassifyMaxConcurrent(parseInt(e.target.value, 10))
-                  }
-                  className="w-full h-1.5 bg-stone-700 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                  step={1}
+                  value={[classifyMaxConcurrent]}
+                  onValueChange={([val]) => setClassifyMaxConcurrent(val)}
                 />
                 <p className="text-xxs text-stone-600 leading-relaxed">
                   Maximum parallel Claude processes. Lower values reduce system

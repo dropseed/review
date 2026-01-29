@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useReviewStore } from "../stores/reviewStore";
+import { SimpleTooltip } from "./ui/tooltip";
 import { GitStatusModal } from "./GitStatusModal";
 
 // Branch icon component
@@ -37,44 +38,38 @@ export function GitStatusIndicator() {
 
   return (
     <>
-      <button
-        onClick={() => setShowModal(true)}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5
-                   text-stone-400 hover:bg-stone-800 hover:text-stone-200
-                   transition-colors"
-        title={`Branch: ${gitStatus.currentBranch}${hasChanges ? " (has changes)" : ""}`}
+      <SimpleTooltip
+        content={`Branch: ${gitStatus.currentBranch}${hasChanges ? " (has changes)" : ""}`}
       >
-        <BranchIcon className="h-3 w-3 text-stone-500" />
-        <span className="font-medium text-stone-300 max-w-[7rem] truncate">
-          {gitStatus.currentBranch}
-        </span>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5
+                     text-stone-400 hover:bg-stone-800 hover:text-stone-200
+                     transition-colors"
+        >
+          <BranchIcon className="h-3 w-3 text-stone-500" />
+          <span className="font-medium text-stone-300 max-w-[7rem] truncate">
+            {gitStatus.currentBranch}
+          </span>
 
-        {/* Status badges - more compact for status bar */}
-        {stagedCount > 0 && (
-          <span
-            className="ml-1 font-mono text-xxs font-medium tabular-nums text-emerald-400"
-            title={`${stagedCount} staged change${stagedCount !== 1 ? "s" : ""}`}
-          >
-            +{stagedCount}
-          </span>
-        )}
-        {unstagedCount > 0 && (
-          <span
-            className="ml-0.5 font-mono text-xxs font-medium tabular-nums text-amber-400"
-            title={`${unstagedCount} unstaged change${unstagedCount !== 1 ? "s" : ""}`}
-          >
-            ~{unstagedCount}
-          </span>
-        )}
-        {untrackedCount > 0 && (
-          <span
-            className="ml-0.5 font-mono text-xxs font-medium tabular-nums text-stone-500"
-            title={`${untrackedCount} untracked file${untrackedCount !== 1 ? "s" : ""}`}
-          >
-            ?{untrackedCount}
-          </span>
-        )}
-      </button>
+          {/* Status badges - more compact for status bar */}
+          {stagedCount > 0 && (
+            <span className="ml-1 font-mono text-xxs font-medium tabular-nums text-emerald-400">
+              +{stagedCount}
+            </span>
+          )}
+          {unstagedCount > 0 && (
+            <span className="ml-0.5 font-mono text-xxs font-medium tabular-nums text-amber-400">
+              ~{unstagedCount}
+            </span>
+          )}
+          {untrackedCount > 0 && (
+            <span className="ml-0.5 font-mono text-xxs font-medium tabular-nums text-stone-500">
+              ?{untrackedCount}
+            </span>
+          )}
+        </button>
+      </SimpleTooltip>
 
       <GitStatusModal isOpen={showModal} onClose={() => setShowModal(false)} />
     </>

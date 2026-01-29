@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, forwardRef } from "react";
+import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores/reviewStore";
 import { getApiClient } from "../../api";
 import type { FileContent, DiffHunk } from "../../types";
@@ -116,20 +117,21 @@ export const RollingFileSection = forwardRef<
           </button>
 
           {/* File path */}
-          <button
-            onClick={() => setSelectedFile(filePath)}
-            className="flex items-center gap-1.5 min-w-0 text-left hover:text-amber-400 transition-colors"
-            title={`Open ${filePath} in single file view`}
-          >
-            {dirPath && (
-              <span className="text-xs text-stone-500 truncate">
-                {dirPath}/
+          <SimpleTooltip content={`Open ${filePath} in single file view`}>
+            <button
+              onClick={() => setSelectedFile(filePath)}
+              className="flex items-center gap-1.5 min-w-0 text-left hover:text-amber-400 transition-colors"
+            >
+              {dirPath && (
+                <span className="text-xs text-stone-500 truncate">
+                  {dirPath}/
+                </span>
+              )}
+              <span className="text-sm font-medium text-stone-200 truncate">
+                {fileName}
               </span>
-            )}
-            <span className="text-sm font-medium text-stone-200 truncate">
-              {fileName}
-            </span>
-          </button>
+            </button>
+          </SimpleTooltip>
 
           {/* Status badges */}
           {isUntracked && (
@@ -153,13 +155,14 @@ export const RollingFileSection = forwardRef<
         {/* Actions */}
         <div className="flex items-center gap-2">
           {reviewProgress.reviewed < reviewProgress.total && (
-            <button
-              onClick={() => approveAllFileHunks(filePath)}
-              className="rounded bg-lime-500/10 px-2 py-1 text-xs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
-              title="Approve all hunks in this file"
-            >
-              Approve All
-            </button>
+            <SimpleTooltip content="Approve all hunks in this file">
+              <button
+                onClick={() => approveAllFileHunks(filePath)}
+                className="rounded bg-lime-500/10 px-2 py-1 text-xs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
+              >
+                Approve All
+              </button>
+            </SimpleTooltip>
           )}
         </div>
       </div>

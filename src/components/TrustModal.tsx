@@ -4,6 +4,7 @@ import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { anyLabelMatchesPattern, type TrustCategory } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { SimpleTooltip } from "./ui/tooltip";
 
 interface TrustModalProps {
   isOpen: boolean;
@@ -358,26 +359,29 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                                 {pattern.name}
                               </span>
                               {count > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setPreviewPatternId(
+                                <SimpleTooltip content="Preview matching hunks">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setPreviewPatternId(
+                                        previewPatternId === pattern.id
+                                          ? null
+                                          : pattern.id,
+                                      );
+                                    }}
+                                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xxs transition-colors ${
                                       previewPatternId === pattern.id
-                                        ? null
-                                        : pattern.id,
-                                    );
-                                  }}
-                                  className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xxs transition-colors ${
-                                    previewPatternId === pattern.id
-                                      ? "bg-stone-700 text-stone-200"
-                                      : "text-stone-500 hover:bg-stone-800 hover:text-stone-400"
-                                  }`}
-                                  title="Preview matching hunks"
-                                >
-                                  <span className="tabular-nums">{count}</span>
-                                </button>
+                                        ? "bg-stone-700 text-stone-200"
+                                        : "text-stone-500 hover:bg-stone-800 hover:text-stone-400"
+                                    }`}
+                                  >
+                                    <span className="tabular-nums">
+                                      {count}
+                                    </span>
+                                  </button>
+                                </SimpleTooltip>
                               )}
                             </div>
                             <p
@@ -414,27 +418,28 @@ export function TrustModal({ isOpen, onClose }: TrustModalProps) {
                   {previewHunks.length !== 1 ? "es" : ""}
                 </span>
               </div>
-              <button
-                onClick={() => setPreviewPatternId(null)}
-                className="p-0.5 text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-500/50"
-                title="Close preview"
-                aria-label="Close preview"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  aria-hidden="true"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
+              <SimpleTooltip content="Close preview">
+                <button
+                  onClick={() => setPreviewPatternId(null)}
+                  className="p-0.5 text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-500/50"
+                  aria-label="Close preview"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    className="h-3.5 w-3.5"
+                    aria-hidden="true"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </SimpleTooltip>
             </div>
 
             {/* Hunk list */}

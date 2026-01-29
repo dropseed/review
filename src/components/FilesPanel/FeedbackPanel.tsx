@@ -1,4 +1,5 @@
 import type { LineAnnotation } from "../../types";
+import { SimpleTooltip } from "../ui/tooltip";
 
 // Annotation list item with refined hover states
 function AnnotationItem({
@@ -12,14 +13,42 @@ function AnnotationItem({
 }) {
   return (
     <div className="group relative rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-stone-700/80 hover:bg-stone-800/40 transition-all duration-150">
-      <button
-        onClick={onGoTo}
-        className="w-full text-left p-2.5 pr-8 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset rounded-md"
-        title="Go to this line"
-      >
-        <div className="flex items-center gap-1.5 mb-1">
+      <SimpleTooltip content="Go to this line">
+        <button
+          onClick={onGoTo}
+          className="w-full text-left p-2.5 pr-8 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset rounded-md"
+        >
+          <div className="flex items-center gap-1.5 mb-1">
+            <svg
+              className="h-3 w-3 text-amber-500/70 flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+              />
+            </svg>
+            <span className="text-xxs font-mono text-amber-400/90 truncate tabular-nums">
+              {annotation.filePath}:{annotation.lineNumber}
+            </span>
+          </div>
+          <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
+            {annotation.content}
+          </p>
+        </button>
+      </SimpleTooltip>
+      <SimpleTooltip content="Delete comment">
+        <button
+          onClick={onDelete}
+          className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-all duration-150 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
+          aria-label="Delete comment"
+        >
           <svg
-            className="h-3 w-3 text-amber-500/70 flex-shrink-0"
+            className="h-3 w-3"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -28,37 +57,11 @@ function AnnotationItem({
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+              d="M6 18L18 6M6 6l12 12"
             />
           </svg>
-          <span className="text-xxs font-mono text-amber-400/90 truncate tabular-nums">
-            {annotation.filePath}:{annotation.lineNumber}
-          </span>
-        </div>
-        <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
-          {annotation.content}
-        </p>
-      </button>
-      <button
-        onClick={onDelete}
-        className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-all duration-150 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
-        title="Delete comment"
-        aria-label="Delete comment"
-      >
-        <svg
-          className="h-3 w-3"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M6 18L18 6M6 6l12 12"
-          />
-        </svg>
-      </button>
+        </button>
+      </SimpleTooltip>
     </div>
   );
 }

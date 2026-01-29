@@ -1,5 +1,4 @@
 export { CodeViewer } from "./CodeViewer/index";
-export { ComparisonSelector } from "./ComparisonSelector";
 export { FilesPanel } from "./FilesPanel/index";
 export { Breadcrumbs } from "./Breadcrumbs";
 export { DebugModal } from "./DebugModal";

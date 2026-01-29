@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { SimpleTooltip } from "../ui/tooltip";
 
 interface InFileSearchBarProps {
   content: string;
@@ -119,18 +120,21 @@ export function InFileSearchBar({
       </div>
 
       {/* Case sensitivity toggle */}
-      <button
-        onClick={() => setCaseSensitive(!caseSensitive)}
-        className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold transition-colors ${
-          caseSensitive
-            ? "bg-amber-500/20 text-amber-400"
-            : "text-stone-500 hover:text-stone-300 hover:bg-stone-700/50"
-        }`}
-        title={caseSensitive ? "Case sensitive (on)" : "Case sensitive (off)"}
-        aria-label="Toggle case sensitivity"
+      <SimpleTooltip
+        content={caseSensitive ? "Case sensitive (on)" : "Case sensitive (off)"}
       >
-        Aa
-      </button>
+        <button
+          onClick={() => setCaseSensitive(!caseSensitive)}
+          className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold transition-colors ${
+            caseSensitive
+              ? "bg-amber-500/20 text-amber-400"
+              : "text-stone-500 hover:text-stone-300 hover:bg-stone-700/50"
+          }`}
+          aria-label="Toggle case sensitivity"
+        >
+          Aa
+        </button>
+      </SimpleTooltip>
 
       {/* Match count */}
       <span
@@ -146,72 +150,75 @@ export function InFileSearchBar({
       </span>
 
       {/* Previous match */}
-      <button
-        onClick={goToPrev}
-        disabled={matchingLines.length === 0}
-        className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200 disabled:opacity-30 disabled:pointer-events-none"
-        title="Previous match (Shift+Enter)"
-        aria-label="Previous match"
-      >
-        <svg
-          className="h-3.5 w-3.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
+      <SimpleTooltip content="Previous match (Shift+Enter)">
+        <button
+          onClick={goToPrev}
+          disabled={matchingLines.length === 0}
+          className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200 disabled:opacity-30 disabled:pointer-events-none"
+          aria-label="Previous match"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M5 15l7-7 7 7"
-          />
-        </svg>
-      </button>
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 15l7-7 7 7"
+            />
+          </svg>
+        </button>
+      </SimpleTooltip>
 
       {/* Next match */}
-      <button
-        onClick={goToNext}
-        disabled={matchingLines.length === 0}
-        className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200 disabled:opacity-30 disabled:pointer-events-none"
-        title="Next match (Enter)"
-        aria-label="Next match"
-      >
-        <svg
-          className="h-3.5 w-3.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
+      <SimpleTooltip content="Next match (Enter)">
+        <button
+          onClick={goToNext}
+          disabled={matchingLines.length === 0}
+          className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200 disabled:opacity-30 disabled:pointer-events-none"
+          aria-label="Next match"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </button>
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+      </SimpleTooltip>
 
       {/* Close */}
-      <button
-        onClick={onClose}
-        className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200"
-        title="Close (Escape)"
-        aria-label="Close search"
-      >
-        <svg
-          className="h-3.5 w-3.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
+      <SimpleTooltip content="Close (Escape)">
+        <button
+          onClick={onClose}
+          className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200"
+          aria-label="Close search"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M6 18L18 6M6 6l12 12"
-          />
-        </svg>
-      </button>
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </SimpleTooltip>
     </div>
   );
 }

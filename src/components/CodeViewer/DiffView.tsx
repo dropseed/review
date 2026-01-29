@@ -19,6 +19,7 @@ import {
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
 import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
+import { SimpleTooltip } from "../../components/ui/tooltip";
 import type { SupportedLanguages } from "./languageMap";
 
 /** Returns the appropriate background class for a hunk based on its state */
@@ -336,125 +337,52 @@ export function DiffView({
       >
         {/* Move indicator */}
         {pairedHunk && (
-          <button
-            onClick={() => handleJumpToPair(hunk.movePairId!)}
-            className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-all hover:bg-sky-500/25"
-            title={`Jump to ${isSource ? "destination" : "source"} in ${pairedHunk.filePath}`}
+          <SimpleTooltip
+            content={`Jump to ${isSource ? "destination" : "source"} in ${pairedHunk.filePath}`}
           >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+            <button
+              onClick={() => handleJumpToPair(hunk.movePairId!)}
+              className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-all hover:bg-sky-500/25"
             >
-              {isSource ? (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
-                />
-              ) : (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-                />
-              )}
-            </svg>
-            <span>{isSource ? "Moved to" : "Moved from"}</span>
-            <span className="opacity-60">
-              {pairedHunk.filePath.split("/").pop()}
-            </span>
-          </button>
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                {isSource ? (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
+                  />
+                ) : (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
+                  />
+                )}
+              </svg>
+              <span>{isSource ? "Moved to" : "Moved from"}</span>
+              <span className="opacity-60">
+                {pairedHunk.filePath.split("/").pop()}
+              </span>
+            </button>
+          </SimpleTooltip>
         )}
 
         {/* Action buttons - grouped with keyboard shortcuts */}
         <>
           {isApproved ? (
-            <button
-              onClick={() => unapproveHunk(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 ring-1 ring-inset ring-emerald-500/30"
-              title="Click to unapprove"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              <span>Approved</span>
-            </button>
-          ) : isRejected ? (
-            <button
-              onClick={() => unrejectHunk(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 ring-1 ring-inset ring-rose-500/30"
-              title="Click to clear rejection"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              <span>Rejected</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-1">
+            <SimpleTooltip content="Click to unapprove">
               <button
-                onClick={() => rejectHunk(hunk.id)}
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
-                  isTrusted
-                    ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
-                    : "text-rose-400/70 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-400"
-                }`}
-                title={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
-                aria-label="Reject change"
+                onClick={() => unapproveHunk(hunk.id)}
+                className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 ring-1 ring-inset ring-emerald-500/30"
               >
                 <svg
-                  className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-                <span>Reject</span>
-                {isFocused && (
-                  <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>
-                )}
-              </button>
-              <button
-                onClick={() => approveHunk(hunk.id)}
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
-                  isTrusted
-                    ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
-                    : "text-emerald-400/70 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-400"
-                }`}
-                title={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
-                aria-label="Approve change"
-              >
-                <svg
-                  className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
+                  className="h-3.5 w-3.5"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -466,48 +394,133 @@ export function DiffView({
                     d="M5 13l4 4L19 7"
                   />
                 </svg>
-                <span>Approve</span>
-                {isFocused && (
-                  <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>
-                )}
+                <span>Approved</span>
               </button>
+            </SimpleTooltip>
+          ) : isRejected ? (
+            <SimpleTooltip content="Click to clear rejection">
+              <button
+                onClick={() => unrejectHunk(hunk.id)}
+                className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 ring-1 ring-inset ring-rose-500/30"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+                <span>Rejected</span>
+              </button>
+            </SimpleTooltip>
+          ) : (
+            <div className="flex items-center gap-1">
+              <SimpleTooltip
+                content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
+              >
+                <button
+                  onClick={() => rejectHunk(hunk.id)}
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                    isTrusted
+                      ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
+                      : "text-rose-400/70 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-400"
+                  }`}
+                  aria-label="Reject change"
+                >
+                  <svg
+                    className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                  <span>Reject</span>
+                  {isFocused && (
+                    <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>
+                  )}
+                </button>
+              </SimpleTooltip>
+              <SimpleTooltip
+                content={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
+              >
+                <button
+                  onClick={() => approveHunk(hunk.id)}
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                    isTrusted
+                      ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
+                      : "text-emerald-400/70 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-400"
+                  }`}
+                  aria-label="Approve change"
+                >
+                  <svg
+                    className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  <span>Approve</span>
+                  {isFocused && (
+                    <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>
+                  )}
+                </button>
+              </SimpleTooltip>
             </div>
           )}
 
           {/* Comment button - inline after approve/reject */}
-          <button
-            onClick={() => {
-              // Find first changed line to add comment at
-              const firstChanged = hunk.lines.find(
-                (l) => l.type === "added" || l.type === "removed",
-              );
-              const lineNumber = isSource
-                ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-                : (firstChanged?.newLineNumber ?? hunk.newStart);
-              setNewAnnotationLine({
-                lineNumber,
-                side: isSource ? "old" : "new",
-                hunkId: hunk.id,
-              });
-            }}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
-            title="Add comment"
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          <SimpleTooltip content="Add comment">
+            <button
+              onClick={() => {
+                // Find first changed line to add comment at
+                const firstChanged = hunk.lines.find(
+                  (l) => l.type === "added" || l.type === "removed",
+                );
+                const lineNumber = isSource
+                  ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
+                  : (firstChanged?.newLineNumber ?? hunk.newStart);
+                setNewAnnotationLine({
+                  lineNumber,
+                  side: isSource ? "old" : "new",
+                  hunkId: hunk.id,
+                });
+              }}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-              />
-            </svg>
-            <span className="hidden sm:inline">Comment</span>
-          </button>
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+                />
+              </svg>
+              <span className="hidden sm:inline">Comment</span>
+            </button>
+          </SimpleTooltip>
         </>
 
         {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
@@ -561,24 +574,27 @@ export function DiffView({
                   lbl,
                 );
                 return (
-                  <button
+                  <SimpleTooltip
                     key={i}
-                    onClick={() => {
-                      if (isTrustedLabel) {
-                        removeTrustPattern(lbl);
-                      } else {
-                        addTrustPattern(lbl);
-                      }
-                    }}
-                    className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-all hover:ring-1 ${
-                      isTrustedLabel
-                        ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
-                        : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
-                    }`}
-                    title={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"`}
+                    content={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"`}
                   >
-                    {lbl}
-                  </button>
+                    <button
+                      onClick={() => {
+                        if (isTrustedLabel) {
+                          removeTrustPattern(lbl);
+                        } else {
+                          addTrustPattern(lbl);
+                        }
+                      }}
+                      className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-all hover:ring-1 ${
+                        isTrustedLabel
+                          ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
+                          : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
+                      }`}
+                    >
+                      {lbl}
+                    </button>
+                  </SimpleTooltip>
                 );
               })}
             </div>
@@ -586,25 +602,24 @@ export function DiffView({
 
           {/* Reasoning indicator - shows when reasoning exists */}
           {hunkState?.reasoning && (
-            <span
-              className="text-stone-600 hover:text-stone-400 cursor-help transition-colors"
-              title={hunkState.reasoning}
-            >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
-                />
-              </svg>
-            </span>
+            <SimpleTooltip content={hunkState.reasoning}>
+              <span className="text-stone-600 hover:text-stone-400 cursor-help transition-colors">
+                <svg
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
+                  />
+                </svg>
+              </span>
+            </SimpleTooltip>
           )}
 
           {/* Overflow menu */}
@@ -763,32 +778,33 @@ export function DiffView({
     if (!hoveredLine) return null;
 
     return (
-      <button
-        className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
-        onClick={() => {
-          setNewAnnotationLine({
-            lineNumber: hoveredLine.lineNumber,
-            side: hoveredLine.side === "additions" ? "new" : "old",
-            hunkId: "hover",
-          });
-        }}
-        title="Add comment"
-        aria-label="Add comment"
-      >
-        <svg
-          className="h-3 w-3"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2.5}
+      <SimpleTooltip content="Add comment">
+        <button
+          className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
+          onClick={() => {
+            setNewAnnotationLine({
+              lineNumber: hoveredLine.lineNumber,
+              side: hoveredLine.side === "additions" ? "new" : "old",
+              hunkId: "hover",
+            });
+          }}
+          aria-label="Add comment"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 4.5v15m7.5-7.5h-15"
-          />
-        </svg>
-      </button>
+          <svg
+            className="h-3 w-3"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"
+            />
+          </svg>
+        </button>
+      </SimpleTooltip>
     );
   };
 

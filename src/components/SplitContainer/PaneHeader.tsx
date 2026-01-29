@@ -1,4 +1,5 @@
 import type { SplitOrientation } from "../../stores/slices/navigationSlice";
+import { SimpleTooltip } from "../ui/tooltip";
 
 interface PaneHeaderProps {
   label: string;
@@ -40,67 +41,72 @@ export function PaneHeader({
       </span>
       <div className="flex items-center gap-1">
         {showOrientationToggle && onToggleOrientation && (
-          <button
-            onClick={onToggleOrientation}
-            className="flex h-5 w-5 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors"
-            title={`Switch to ${isHorizontal ? "vertical" : "horizontal"} split`}
+          <SimpleTooltip
+            content={`Switch to ${isHorizontal ? "vertical" : "horizontal"} split`}
           >
-            <svg
-              className={`h-3 w-3 ${isHorizontal ? "" : "rotate-90"}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+            <button
+              onClick={onToggleOrientation}
+              className="flex h-5 w-5 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 4v16M15 4v16"
-              />
-            </svg>
-          </button>
+              <svg
+                className={`h-3 w-3 ${isHorizontal ? "" : "rotate-90"}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 4v16M15 4v16"
+                />
+              </svg>
+            </button>
+          </SimpleTooltip>
         )}
         {showSwap && onSwap && (
-          <button
-            onClick={onSwap}
-            className="flex h-5 w-5 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors"
-            title="Swap panes"
-          >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          <SimpleTooltip content="Swap panes">
+            <button
+              onClick={onSwap}
+              className="flex h-5 w-5 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
-              />
-            </svg>
-          </button>
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+                />
+              </svg>
+            </button>
+          </SimpleTooltip>
         )}
         {showClose && onClose && (
-          <button
-            onClick={onClose}
-            className="flex h-5 w-5 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors"
-            title="Close split"
-          >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          <SimpleTooltip content="Close split">
+            <button
+              onClick={onClose}
+              className="flex h-5 w-5 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </SimpleTooltip>
         )}
       </div>
     </div>

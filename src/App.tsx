@@ -10,7 +10,7 @@ import { ContentSearch } from "./components/ContentSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
-import { TooltipProvider } from "./components/ui/tooltip";
+import { TooltipProvider, SimpleTooltip } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores/reviewStore";
 import { isHunkTrusted } from "./types";
 import {
@@ -355,107 +355,111 @@ function App() {
 
             {/* View mode toggle */}
             <div className="flex items-center rounded-md bg-stone-800/50 p-0.5">
-              <button
-                onClick={() => setMainViewMode("single")}
-                className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                  mainViewMode === "single"
-                    ? "bg-stone-700 text-stone-200"
-                    : "text-stone-500 hover:text-stone-300"
-                }`}
-                title="Single file view"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              <SimpleTooltip content="Single file view">
+                <button
+                  onClick={() => setMainViewMode("single")}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                    mainViewMode === "single"
+                      ? "bg-stone-700 text-stone-200"
+                      : "text-stone-500 hover:text-stone-300"
+                  }`}
                 >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                </svg>
-                <span>Single</span>
-              </button>
-              <button
-                onClick={() => setMainViewMode("rolling")}
-                className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                  mainViewMode === "rolling"
-                    ? "bg-stone-700 text-stone-200"
-                    : "text-stone-500 hover:text-stone-300"
-                }`}
-                title="Rolling view - all files"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                  </svg>
+                  <span>Single</span>
+                </button>
+              </SimpleTooltip>
+              <SimpleTooltip content="Rolling view - all files">
+                <button
+                  onClick={() => setMainViewMode("rolling")}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                    mainViewMode === "rolling"
+                      ? "bg-stone-700 text-stone-200"
+                      : "text-stone-500 hover:text-stone-300"
+                  }`}
                 >
-                  <rect x="3" y="3" width="18" height="5" rx="1" />
-                  <rect x="3" y="10" width="18" height="5" rx="1" />
-                  <rect x="3" y="17" width="18" height="5" rx="1" />
-                </svg>
-                <span>Rolling</span>
-              </button>
-              <button
-                onClick={() => setMainViewMode("overview")}
-                className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-                  mainViewMode === "overview"
-                    ? "bg-stone-700 text-stone-200"
-                    : "text-stone-500 hover:text-stone-300"
-                }`}
-                title="Overview - symbol changes"
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="18" height="5" rx="1" />
+                    <rect x="3" y="10" width="18" height="5" rx="1" />
+                    <rect x="3" y="17" width="18" height="5" rx="1" />
+                  </svg>
+                  <span>Rolling</span>
+                </button>
+              </SimpleTooltip>
+              <SimpleTooltip content="Overview - symbol changes">
+                <button
+                  onClick={() => setMainViewMode("overview")}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                    mainViewMode === "overview"
+                      ? "bg-stone-700 text-stone-200"
+                      : "text-stone-500 hover:text-stone-300"
+                  }`}
                 >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <rect x="14" y="3" width="7" height="7" rx="1" />
-                  <rect x="3" y="14" width="7" height="7" rx="1" />
-                  <rect x="14" y="14" width="7" height="7" rx="1" />
-                </svg>
-                <span>Overview</span>
-              </button>
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                  </svg>
+                  <span>Overview</span>
+                </button>
+              </SimpleTooltip>
             </div>
 
             {/* Trust Settings button */}
-            <button
-              onClick={() => setShowTrustModal(true)}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
-              title="Trust Settings"
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <SimpleTooltip content="Trust Settings">
+              <button
+                onClick={() => setShowTrustModal(true)}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors"
               >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
-              <span>Trust</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
-                  (reviewState?.trustList.length ?? 0) > 0
-                    ? "bg-cyan-500/20 text-cyan-400"
-                    : "bg-stone-700 text-stone-500"
-                }`}
-              >
-                {reviewState?.trustList.length ?? 0}
-              </span>
-            </button>
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                <span>Trust</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
+                    (reviewState?.trustList.length ?? 0) > 0
+                      ? "bg-cyan-500/20 text-cyan-400"
+                      : "bg-stone-700 text-stone-500"
+                  }`}
+                >
+                  {reviewState?.trustList.length ?? 0}
+                </span>
+              </button>
+            </SimpleTooltip>
           </div>
         </header>
 
