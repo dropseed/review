@@ -14,6 +14,7 @@ use compare::sources::local_git::{LocalGitSource, SearchMatch};
 use compare::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
+use compare::symbols::{self, FileSymbolDiff};
 use compare::trust::patterns::TrustCategory;
 use log::{debug, error, info};
 use serde::Serialize;
@@ -815,6 +816,84 @@ pub async fn open_repo_window(
         .map_err(|e: tauri::Error| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_file_symbol_diffs(
+    repo_path: String,
+    file_paths: Vec<String>,
+    comparison: Comparison,
+) -> Result<Vec<FileSymbolDiff>, String> {
+    debug!(
+        "[get_file_symbol_diffs] repo_path={}, files={}",
+        repo_path,
+        file_paths.len()
+    );
+
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+        error!("[get_file_symbol_diffs] ERROR creating source: {}", e);
+        e.to_string()
+    })?;
+
+    // Determine the git refs for old and new sides
+    let old_ref = if comparison.working_tree {
+        "HEAD".to_string()
+    } else {
+        comparison.old.clone()
+    };
+
+    let mut all_hunks = Vec::new();
+    for file_path in &file_paths {
+        let file_diff = source
+            .get_diff(&comparison, Some(file_path))
+            .unwrap_or_default();
+        if !file_diff.is_empty() {
+            let hunks = compare::diff::parser::parse_diff(&file_diff, file_path);
+            all_hunks.extend(hunks);
+        }
+    }
+
+    let mut results = Vec::new();
+
+    for file_path in &file_paths {
+        // Get old content
+        let old_content = source
+            .get_file_bytes(file_path, &old_ref)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+
+        // Get new content
+        let new_content = if comparison.working_tree {
+            let full_path = PathBuf::from(&repo_path).join(file_path);
+            std::fs::read_to_string(&full_path).ok()
+        } else {
+            source
+                .get_file_bytes(file_path, &comparison.new)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+        };
+
+        let file_hunks: Vec<_> = all_hunks
+            .iter()
+            .filter(|h| h.file_path == *file_path)
+            .cloned()
+            .collect();
+
+        let diff = symbols::extractor::compute_file_symbol_diff(
+            old_content.as_deref(),
+            new_content.as_deref(),
+            file_path,
+            &file_hunks,
+        );
+
+        results.push(diff);
+    }
+
+    info!(
+        "[get_file_symbol_diffs] SUCCESS: {} files processed",
+        results.len()
+    );
+    Ok(results)
 }
 
 #[tauri::command]

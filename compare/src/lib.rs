@@ -18,6 +18,7 @@ pub mod error;
 pub mod filters;
 pub mod review;
 pub mod sources;
+pub mod symbols;
 pub mod trust;
 
 // CLI module (feature-gated)

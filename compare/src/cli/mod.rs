@@ -119,6 +119,37 @@ pub enum Commands {
         #[arg(short, long)]
         category: Option<String>,
     },
+
+    /// Run classification eval to measure accuracy
+    Eval {
+        /// Model to use (e.g., sonnet, haiku, opus)
+        #[arg(short, long, default_value = "sonnet")]
+        model: String,
+
+        /// Number of runs per case (for consistency checks)
+        #[arg(short = 'n', long, default_value = "1")]
+        runs: usize,
+
+        /// Filter by tag
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Filter by case ID
+        #[arg(long)]
+        case: Option<String>,
+
+        /// Path to custom fixtures file
+        #[arg(long)]
+        fixtures: Option<String>,
+
+        /// Maximum concurrent classifications
+        #[arg(long, default_value = "2")]
+        concurrency: usize,
+
+        /// Show every case result
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 impl Cli {
@@ -148,6 +179,29 @@ impl Cli {
 
 /// Run the CLI with parsed arguments
 pub fn run(cli: Cli) -> Result<(), String> {
+    // Eval doesn't require a git repo — handle it before resolving repo_path
+    if let Some(Commands::Eval {
+        model,
+        runs,
+        tag,
+        case,
+        fixtures,
+        concurrency,
+        verbose,
+    }) = cli.command
+    {
+        return commands::eval::run(
+            &model,
+            runs,
+            tag.as_deref(),
+            case.as_deref(),
+            fixtures.as_deref(),
+            concurrency,
+            verbose,
+            cli.format,
+        );
+    }
+
     let repo_path = cli.get_repo_path()?;
 
     match cli.command {
@@ -182,5 +236,6 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Taxonomy { category }) => {
             commands::taxonomy::run(&repo_path, category, cli.format)
         }
+        Some(Commands::Eval { .. }) => unreachable!("handled above"),
     }
 }

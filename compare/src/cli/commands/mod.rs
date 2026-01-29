@@ -2,6 +2,7 @@ pub mod approve;
 pub mod classify;
 pub mod compare;
 pub mod diff;
+pub mod eval;
 pub mod files;
 pub mod open;
 pub mod reset;

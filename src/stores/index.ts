@@ -20,6 +20,7 @@ import { createFilesSlice, type FilesSlice } from "./slices/filesSlice";
 import { createReviewSlice, type ReviewSlice } from "./slices/reviewSlice";
 import { createSearchSlice, type SearchSlice } from "./slices/searchSlice";
 import { createHistorySlice, type HistorySlice } from "./slices/historySlice";
+import { createSymbolsSlice, type SymbolsSlice } from "./slices/symbolsSlice";
 
 // Re-export types
 export type { ReviewStore };
@@ -32,6 +33,7 @@ export type {
   ReviewSlice,
   SearchSlice,
   HistorySlice,
+  SymbolsSlice,
 };
 
 // Re-export types from main types file
@@ -46,6 +48,7 @@ export type {
   LineAnnotation,
   GitStatusSummary,
   CommitEntry,
+  FileSymbolDiff,
 } from "./types";
 
 // Get dependencies
@@ -62,4 +65,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createReviewSlice(apiClient)(...args),
   ...createSearchSlice(apiClient)(...args),
   ...createHistorySlice(apiClient)(...args),
+  ...createSymbolsSlice(apiClient)(...args),
 }));

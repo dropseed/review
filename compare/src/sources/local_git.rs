@@ -50,6 +50,19 @@ impl LocalGitSource {
         Ok(output.trim().to_string())
     }
 
+    /// The well-known SHA for git's empty tree object.
+    /// This exists in every git repo and represents a tree with no files.
+    const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf899d15363d7aa16";
+
+    /// Resolve a ref to a commit SHA hash, falling back to the empty tree
+    /// if the ref doesn't exist (e.g., HEAD in an empty repo with no commits).
+    fn resolve_ref_or_empty_tree(&self, git_ref: &str) -> String {
+        match self.run_git(&["rev-parse", "--verify", git_ref]) {
+            Ok(output) => output.trim().to_string(),
+            Err(_) => Self::EMPTY_TREE.to_string(),
+        }
+    }
+
     /// Get the default branch name (main or master)
     pub fn get_default_branch(&self) -> Result<String, LocalGitError> {
         // Try to get from remote origin HEAD
@@ -410,7 +423,7 @@ impl LocalGitSource {
         // Use merge-base to handle divergent branches properly
         let base = match self.get_merge_base(&comparison.old, &comparison.new) {
             Ok(base) => base,
-            Err(_) => comparison.old.clone(), // Fall back to direct comparison
+            Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
         };
 
         // Handle staged_only mode (only show staged changes)
@@ -422,7 +435,8 @@ impl LocalGitSource {
 
         // Get committed changes
         if comparison.old != comparison.new || !comparison.working_tree {
-            let range = format!("{}..{}", base, comparison.new);
+            let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
+            let range = format!("{}..{}", base, resolved_new);
             let output = self.run_git(&["diff", "--name-status", &range])?;
             self.parse_name_status(&output, &mut changes);
         }
@@ -434,7 +448,8 @@ impl LocalGitSource {
             self.parse_name_status(&unstaged_output, &mut changes);
 
             // Get staged changes (index vs HEAD)
-            let staged_output = self.run_git(&["diff", "--name-status", "--cached"])?;
+            let head = self.resolve_ref_or_empty_tree("HEAD");
+            let staged_output = self.run_git(&["diff", "--name-status", "--cached", &head])?;
             self.parse_name_status(&staged_output, &mut changes);
         }
 
@@ -804,10 +819,11 @@ impl DiffSource for LocalGitSource {
             // Get merge-base for proper 3-way diff on divergent branches
             let base = match self.get_merge_base(&comparison.old, &comparison.new) {
                 Ok(base) => base,
-                Err(_) => comparison.old.clone(),
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
             };
 
-            let range = format!("{}..{}", base, comparison.new);
+            let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
+            let range = format!("{}..{}", base, resolved_new);
             let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &range];
 
             if let Some(path) = file_path {
@@ -823,7 +839,8 @@ impl DiffSource for LocalGitSource {
         // If working_tree is true, also get uncommitted changes
         if comparison.working_tree {
             // Get combined staged + unstaged changes (HEAD vs working tree)
-            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", "HEAD"];
+            let head = self.resolve_ref_or_empty_tree("HEAD");
+            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &head];
 
             if let Some(path) = file_path {
                 args.push("--");

@@ -217,7 +217,7 @@ fn extract_single_classification(output: &str) -> Result<ClassificationResult, C
 }
 
 /// Classify a single hunk using Claude CLI
-fn classify_single_hunk(
+pub(crate) fn classify_single_hunk(
     hunk: &HunkInput,
     repo_path: &Path,
     model: &str,

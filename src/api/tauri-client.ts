@@ -26,6 +26,7 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  FileSymbolDiff,
 } from "./types";
 
 export class TauriClient implements ApiClient {
@@ -201,6 +202,20 @@ export class TauriClient implements ApiClient {
 
   async shouldSkipFile(path: string): Promise<boolean> {
     return invoke<boolean>("should_skip_file", { path });
+  }
+
+  // ----- Symbols -----
+
+  async getFileSymbolDiffs(
+    repoPath: string,
+    filePaths: string[],
+    comparison: Comparison,
+  ): Promise<FileSymbolDiff[]> {
+    return invoke<FileSymbolDiff[]>("get_file_symbol_diffs", {
+      repoPath,
+      filePaths,
+      comparison,
+    });
   }
 
   // ----- File watcher -----

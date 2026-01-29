@@ -240,6 +240,7 @@ pub fn run() {
             commands::get_trust_taxonomy_with_custom,
             commands::should_skip_file,
             commands::search_file_contents,
+            commands::get_file_symbol_diffs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

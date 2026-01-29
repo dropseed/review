@@ -4,6 +4,7 @@ import { CommitsPanel } from "../CommitsPanel";
 import { ContextMenu } from "./ContextMenu";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
+import { SymbolsPanel } from "./SymbolsPanel";
 import {
   useFilePanelFileSystem,
   useFilePanelNavigation,
@@ -290,6 +291,18 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             >
               Commits
             </button>
+            <button
+              onClick={() => setViewMode("symbols")}
+              role="tab"
+              aria-selected={viewMode === "symbols"}
+              className={`flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                viewMode === "symbols"
+                  ? "bg-stone-700 text-stone-100"
+                  : "text-stone-500 hover:text-stone-300"
+              }`}
+            >
+              Symbols
+            </button>
           </div>
         </div>
 
@@ -299,6 +312,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             onSelectCommit={handleCommitSelect}
             selectedCommitHash={selectedCommitHash}
           />
+        ) : viewMode === "symbols" ? (
+          <SymbolsPanel />
         ) : (
           <>
             {/* File tree */}

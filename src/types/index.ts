@@ -301,6 +301,43 @@ export interface TrustCategory {
   patterns: TrustPattern[];
 }
 
+// Symbol extraction types
+export type SymbolKind =
+  | "function"
+  | "class"
+  | "struct"
+  | "trait"
+  | "impl"
+  | "method"
+  | "enum"
+  | "interface"
+  | "module"
+  | "type";
+
+export type SymbolChangeType = "added" | "removed" | "modified";
+
+export interface LineRange {
+  startLine: number;
+  endLine: number;
+}
+
+export interface SymbolDiff {
+  name: string;
+  kind: SymbolKind | null;
+  changeType: SymbolChangeType;
+  hunkIds: string[];
+  children: SymbolDiff[];
+  oldRange?: LineRange;
+  newRange?: LineRange;
+}
+
+export interface FileSymbolDiff {
+  filePath: string;
+  symbols: SymbolDiff[];
+  topLevelHunkIds: string[];
+  hasGrammar: boolean;
+}
+
 // File content from backend
 export type ContentType = "text" | "image" | "svg" | "binary";
 

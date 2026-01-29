@@ -107,8 +107,12 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     setHunks: (hunks) => set({ hunks }),
 
     loadFiles: async (skipAutoClassify = false) => {
-      const { repoPath, comparison, triggerAutoClassification } = get();
+      const { repoPath, comparison, triggerAutoClassification, clearSymbols } =
+        get();
       if (!repoPath) return;
+
+      // Clear symbols so they reload when the Symbols tab is next opened
+      clearSymbols();
 
       try {
         // Phase 1: Get file list

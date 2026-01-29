@@ -11,6 +11,7 @@ import type {
   LineAnnotation,
   GitStatusSummary,
   CommitEntry,
+  FileSymbolDiff,
 } from "../types";
 import type { ApiClient } from "../api";
 import type { StorageService } from "../platform";
@@ -28,6 +29,7 @@ export type {
   LineAnnotation,
   GitStatusSummary,
   CommitEntry,
+  FileSymbolDiff,
 };
 
 // Import all slice types
@@ -39,6 +41,7 @@ import type { FilesSlice } from "./slices/filesSlice";
 import type { ReviewSlice } from "./slices/reviewSlice";
 import type { SearchSlice } from "./slices/searchSlice";
 import type { HistorySlice } from "./slices/historySlice";
+import type { SymbolsSlice } from "./slices/symbolsSlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -48,7 +51,8 @@ export type ReviewStore = PreferencesSlice &
   FilesSlice &
   ReviewSlice &
   SearchSlice &
-  HistorySlice;
+  HistorySlice &
+  SymbolsSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

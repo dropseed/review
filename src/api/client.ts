@@ -24,6 +24,7 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  FileSymbolDiff,
 } from "./types";
 
 export interface ApiClient {
@@ -140,6 +141,15 @@ export interface ApiClient {
 
   /** Check if a file path should be skipped (build artifacts, etc.) */
   shouldSkipFile(path: string): Promise<boolean>;
+
+  // ----- Symbols -----
+
+  /** Compute symbol-level diffs for files */
+  getFileSymbolDiffs(
+    repoPath: string,
+    filePaths: string[],
+    comparison: Comparison,
+  ): Promise<FileSymbolDiff[]>;
 
   // ----- File watcher -----
 

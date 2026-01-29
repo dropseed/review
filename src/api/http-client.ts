@@ -24,6 +24,7 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  FileSymbolDiff,
 } from "./types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -420,6 +421,17 @@ export class HttpClient implements ApiClient {
       /pnpm-lock\.yaml$/,
     ];
     return skipPatterns.some((pattern) => pattern.test(path));
+  }
+
+  // ----- Symbols -----
+
+  async getFileSymbolDiffs(
+    _repoPath: string,
+    _filePaths: string[],
+    _comparison: Comparison,
+  ): Promise<FileSymbolDiff[]> {
+    console.warn("[HttpClient] getFileSymbolDiffs not implemented");
+    return [];
   }
 
   // ----- File watcher -----

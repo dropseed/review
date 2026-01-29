@@ -52,7 +52,7 @@
         {
           "id": "comments:added",
           "name": "Added",
-          "description": "New comments added. ONLY when the entire hunk is adding comments, with no code changes. If the hunk also adds, removes, or modifies any code, use `review:required` instead."
+          "description": "New comments added. ONLY when the entire hunk is adding comments, with no code changes."
         },
         {
           "id": "comments:removed",
@@ -62,7 +62,7 @@
         {
           "id": "comments:modified",
           "name": "Modified",
-          "description": "Existing comment text updated. ONLY when the entire hunk is editing comments, with no code changes. If the hunk also changes any code logic (even one line), use `review:required` instead."
+          "description": "Existing comment text updated. ONLY when the entire hunk is editing comments, with no code changes."
         }
       ]
     },
@@ -136,18 +136,6 @@
           "id": "rename:class",
           "name": "Class",
           "description": "A class, struct, interface, or type renamed. Implementation unchanged, only the type name differs."
-        }
-      ]
-    },
-    {
-      "id": "review",
-      "name": "Review",
-      "description": "Changes that require human review",
-      "patterns": [
-        {
-          "id": "review:required",
-          "name": "Required",
-          "description": "The hunk contains meaningful changes that require careful human review. Use this as the default when the change does not match any trivial/mechanical pattern."
         }
       ]
     }

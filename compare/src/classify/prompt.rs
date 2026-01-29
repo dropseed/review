@@ -28,19 +28,19 @@ pub fn build_single_hunk_prompt(hunk: &HunkInput) -> String {
     let taxonomy = build_taxonomy_string();
 
     format!(
-        r#"Determine if this diff hunk is a trivial, mechanical change that a reviewer can safely skip. If it is, apply the matching label. If not, use `review:required`.
+        r#"Determine if this diff hunk is a trivial, mechanical change that a reviewer can safely skip. If it matches a trivial pattern, apply the matching label. If not, return an empty label array.
 
 # Valid Labels (use ONLY these exact strings)
 
 {taxonomy}
 # Rules
 
-1. DEFAULT TO `review:required`. Most hunks need human review. Only use other labels for trivial, mechanical changes.
-2. A non-review label applies ONLY when the ENTIRE hunk matches its description exactly.
-3. Any change to values, logic, behavior, or configuration = `review:required`.
-4. Mixed changes (e.g., import added + code changed) = `review:required`.
+1. DEFAULT TO EMPTY LABELS. Most hunks need human review. Only apply a label for trivial, mechanical changes.
+2. A label applies ONLY when the ENTIRE hunk matches its description exactly.
+3. Any change to values, logic, behavior, or configuration = empty labels.
+4. Mixed changes (e.g., import added + code changed) = empty labels.
 5. Template/markup tags (`{{% endif %}}`, `<div>`, `{{{{ }}}}`) are structural code, NOT whitespace. Removing or adding them is a code change.
-6. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = `review:required`.
+6. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = empty labels.
 7. Use ONLY the exact label strings listed above.
 
 # Hunk
@@ -54,10 +54,10 @@ File: {file_path}
 
 STEP 1: List each changed line (+ or -) and what it does (code, comment, whitespace, import, etc.)
 STEP 2: Do ALL changed lines fall under a single trivial label's description?
-STEP 3: If yes, use that label. If not, use review:required.
+STEP 3: If yes, use that label. If not, return empty labels.
 
 After your analysis, return JSON on its own line:
-{{"label": ["label:id"], "reasoning": "one sentence"}}"#,
+{{"label": [], "reasoning": "one sentence"}}"#,
         taxonomy = taxonomy,
         file_path = hunk.file_path,
         content = hunk.content
@@ -86,19 +86,19 @@ File: {}
     }
 
     format!(
-        r#"Determine if these diff hunks are trivial, mechanical changes that a reviewer can safely skip. If a hunk is trivial, apply the matching label. If not, use `review:required`.
+        r#"Determine if these diff hunks are trivial, mechanical changes that a reviewer can safely skip. If a hunk matches a trivial pattern, apply the matching label. If not, return an empty label array.
 
 # Valid Labels (use ONLY these exact strings)
 
 {taxonomy}
 # Rules
 
-1. DEFAULT TO `review:required`. Most hunks need human review. Only use other labels for trivial, mechanical changes.
-2. A non-review label applies ONLY when the ENTIRE hunk matches its description exactly.
-3. Any change to values, logic, behavior, or configuration = `review:required`.
-4. Mixed changes (e.g., import added + code changed) = `review:required`.
+1. DEFAULT TO EMPTY LABELS. Most hunks need human review. Only apply a label for trivial, mechanical changes.
+2. A label applies ONLY when the ENTIRE hunk matches its description exactly.
+3. Any change to values, logic, behavior, or configuration = empty labels.
+4. Mixed changes (e.g., import added + code changed) = empty labels.
 5. Template/markup tags (`{{% endif %}}`, `<div>`, `{{{{ }}}}`) are structural code, NOT whitespace. Removing or adding them is a code change.
-6. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = `review:required`.
+6. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = empty labels.
 7. Use ONLY the exact label strings listed above.
 8. You MUST classify EVERY hunk ID listed above.
 
@@ -110,11 +110,11 @@ File: {}
 For EACH hunk, analyze it step by step:
 STEP 1: List each changed line (+ or -) and what it does (code, comment, whitespace, import, etc.)
 STEP 2: Do ALL changed lines fall under a single trivial label's description?
-STEP 3: If yes, use that label. If not, use review:required.
+STEP 3: If yes, use that label. If not, return empty labels.
 
 After analyzing all hunks, return JSON on its own line:
 {{
-  "hunk_id": {{"label": ["label:id"], "reasoning": "one sentence"}},
+  "hunk_id": {{"label": [], "reasoning": "one sentence"}},
   ...
 }}"#,
         taxonomy = taxonomy,

@@ -26,6 +26,11 @@ export type {
   TrustCategory,
   ContentType,
   FileContent,
+  SymbolKind,
+  SymbolChangeType,
+  LineRange,
+  SymbolDiff,
+  FileSymbolDiff,
 } from "../types";
 
 // Additional types for API operations

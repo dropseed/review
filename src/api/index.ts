@@ -37,6 +37,11 @@ export type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  SymbolKind,
+  SymbolChangeType,
+  LineRange,
+  SymbolDiff,
+  FileSymbolDiff,
 } from "./types";
 
 import type { ApiClient } from "./client";

@@ -1,0 +1,211 @@
+[
+  {
+    "id": "imports-added-python-01",
+    "description": "Simple Python import addition",
+    "file_path": "src/app.py",
+    "content": "@@ -1,3 +1,4 @@\n import os\n import sys\n+import json\n import pathlib",
+    "expected": {
+      "accept": ["imports:added"],
+      "reject": []
+    },
+    "tags": ["imports"]
+  },
+  {
+    "id": "imports-reordered-js-01",
+    "description": "JavaScript imports reordered alphabetically",
+    "file_path": "src/index.js",
+    "content": "@@ -1,4 +1,4 @@\n-import React from 'react';\n-import App from './App';\n import { useState } from 'react';\n+import App from './App';\n+import React from 'react';\n import './index.css';",
+    "expected": {
+      "accept": ["imports:reordered"],
+      "reject": []
+    },
+    "tags": ["imports"]
+  },
+  {
+    "id": "imports-mixed-with-code-01",
+    "description": "Import added alongside a code change",
+    "file_path": "src/utils.ts",
+    "content": "@@ -1,5 +1,7 @@\n import { readFile } from 'fs';\n+import { writeFile } from 'fs';\n \n export function processData(input: string) {\n-  return input.trim();\n+  const result = input.trim();\n+  return result.toUpperCase();\n }",
+    "expected": {
+      "accept": [],
+      "reject": ["imports:added"]
+    },
+    "tags": ["imports"]
+  },
+  {
+    "id": "formatting-whitespace-01",
+    "description": "Blank lines added between functions",
+    "file_path": "src/helpers.py",
+    "content": "@@ -5,4 +5,6 @@\n def foo():\n     pass\n \n+\n+\n def bar():\n     pass",
+    "expected": {
+      "accept": ["formatting:whitespace"],
+      "reject": []
+    },
+    "tags": ["formatting"]
+  },
+  {
+    "id": "formatting-style-semicolons-01",
+    "description": "Semicolons added to JavaScript",
+    "file_path": "src/config.js",
+    "content": "@@ -1,4 +1,4 @@\n-const name = 'app'\n-const version = '1.0'\n-const debug = false\n+const name = 'app';\n+const version = '1.0';\n+const debug = false;\n export default { name, version, debug }",
+    "expected": {
+      "accept": ["formatting:style"],
+      "reject": []
+    },
+    "tags": ["formatting"]
+  },
+  {
+    "id": "formatting-template-tag-removal-01",
+    "description": "Template tag removed is a code change, not whitespace",
+    "file_path": "templates/base.html",
+    "content": "@@ -10,5 +10,3 @@\n <div class=\"content\">\n-  {% if show_banner %}\n   <h1>Welcome</h1>\n-  {% endif %}\n </div>",
+    "expected": {
+      "accept": [],
+      "reject": ["formatting:whitespace"]
+    },
+    "tags": ["formatting"]
+  },
+  {
+    "id": "comments-added-01",
+    "description": "Comment added above a function",
+    "file_path": "src/auth.py",
+    "content": "@@ -10,3 +10,5 @@\n \n+# Authenticate the user against the database\n+# Returns True if credentials are valid\n def authenticate(username, password):\n     return db.check(username, password)",
+    "expected": {
+      "accept": ["comments:added"],
+      "reject": []
+    },
+    "tags": ["comments"]
+  },
+  {
+    "id": "comments-mixed-with-code-01",
+    "description": "Comment added alongside a code change",
+    "file_path": "src/utils.py",
+    "content": "@@ -1,4 +1,5 @@\n def calculate(x, y):\n+    # Add validation\n+    if x < 0:\n+        raise ValueError(\"x must be positive\")\n     return x + y",
+    "expected": {
+      "accept": [],
+      "reject": ["comments:added"]
+    },
+    "tags": ["comments"]
+  },
+  {
+    "id": "types-added-01",
+    "description": "Type annotations added to Python function",
+    "file_path": "src/helpers.py",
+    "content": "@@ -1,3 +1,3 @@\n-def greet(name):\n+def greet(name: str) -> str:\n     return f\"Hello, {name}\"",
+    "expected": {
+      "accept": ["types:added"],
+      "reject": []
+    },
+    "tags": ["types"]
+  },
+  {
+    "id": "types-modified-01",
+    "description": "TypeScript type annotation changed",
+    "file_path": "src/api.ts",
+    "content": "@@ -5,3 +5,3 @@\n interface Config {\n-  timeout: number;\n+  timeout: number | undefined;\n   retries: number;",
+    "expected": {
+      "accept": ["types:modified"],
+      "reject": []
+    },
+    "tags": ["types"]
+  },
+  {
+    "id": "generated-lockfile-01",
+    "description": "Package lock file updated",
+    "file_path": "package-lock.json",
+    "content": "@@ -100,5 +100,5 @@\n     \"lodash\": {\n-      \"version\": \"4.17.20\",\n-      \"resolved\": \"https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz\",\n+      \"version\": \"4.17.21\",\n+      \"resolved\": \"https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz\",\n       \"requires\": {}",
+    "expected": {
+      "accept": ["generated:lockfile"],
+      "reject": []
+    },
+    "tags": ["generated"]
+  },
+  {
+    "id": "rename-variable-01",
+    "description": "Variable renamed throughout function",
+    "file_path": "src/process.py",
+    "content": "@@ -1,5 +1,5 @@\n-def process(lst):\n-    for item in lst:\n-        print(item)\n-    return len(lst)\n+def process(items):\n+    for item in items:\n+        print(item)\n+    return len(items)",
+    "expected": {
+      "accept": ["rename:variable"],
+      "reject": []
+    },
+    "tags": ["rename"]
+  },
+  {
+    "id": "rename-function-01",
+    "description": "Function renamed",
+    "file_path": "src/api.ts",
+    "content": "@@ -1,4 +1,4 @@\n-export function getData(id: string) {\n+export function fetchData(id: string) {\n   const url = `/api/items/${id}`;\n   return fetch(url).then(r => r.json());\n }",
+    "expected": {
+      "accept": ["rename:function"],
+      "reject": []
+    },
+    "tags": ["rename"]
+  },
+  {
+    "id": "needs-review-logic-change-01",
+    "description": "Conditional logic changed",
+    "file_path": "src/auth.py",
+    "content": "@@ -5,4 +5,5 @@\n def check_access(user, resource):\n-    if user.is_admin:\n+    if user.is_admin or user.has_role('editor'):\n         return True\n+    log.info(f\"Access denied for {user.name}\")\n     return False",
+    "expected": {
+      "accept": [],
+      "reject": ["comments:added", "formatting:whitespace"]
+    },
+    "tags": ["needs-review"]
+  },
+  {
+    "id": "needs-review-config-change-01",
+    "description": "Configuration value changed",
+    "file_path": "config/settings.py",
+    "content": "@@ -10,3 +10,3 @@\n DATABASE = {\n-    'timeout': 30,\n+    'timeout': 60,\n     'retries': 3,",
+    "expected": {
+      "accept": [],
+      "reject": ["formatting:style"]
+    },
+    "tags": ["needs-review"]
+  },
+  {
+    "id": "needs-review-new-function-01",
+    "description": "New function added",
+    "file_path": "src/utils.ts",
+    "content": "@@ -20,3 +20,10 @@\n export function add(a: number, b: number) {\n   return a + b;\n }\n+\n+export function multiply(a: number, b: number): number {\n+  if (a === 0 || b === 0) {\n+    return 0;\n+  }\n+  return a * b;\n+}",
+    "expected": {
+      "accept": [],
+      "reject": ["types:added"]
+    },
+    "tags": ["needs-review"]
+  },
+  {
+    "id": "file-renamed-01",
+    "description": "File renamed with identical content",
+    "file_path": "src/helpers.ts",
+    "content": "rename from src/utils.ts\nrename to src/helpers.ts",
+    "expected": {
+      "accept": ["file:renamed"],
+      "reject": []
+    },
+    "tags": ["file"]
+  },
+  {
+    "id": "file-moved-01",
+    "description": "File moved to different directory",
+    "file_path": "lib/utils/helpers.py",
+    "content": "rename from src/helpers.py\nrename to lib/utils/helpers.py",
+    "expected": {
+      "accept": ["file:moved"],
+      "reject": []
+    },
+    "tags": ["file"]
+  },
+  {
+    "id": "imports-removed-go-01",
+    "description": "Go import removed",
+    "file_path": "main.go",
+    "content": "@@ -3,5 +3,4 @@\n import (\n \t\"fmt\"\n-\t\"os\"\n \t\"strings\"\n )",
+    "expected": {
+      "accept": ["imports:removed"],
+      "reject": []
+    },
+    "tags": ["imports"]
+  }
+]
