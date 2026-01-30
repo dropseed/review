@@ -367,7 +367,7 @@ export function DiffView({
     disableBackground: false,
     enableHoverUtility: true,
     unsafeCSS: fontSizeCSS,
-    expandUnchanged: false,
+    expandUnchanged: true,
     expansionLineCount: 20,
     hunkSeparators: "line-info" as const,
     // Performance optimizations

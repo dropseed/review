@@ -102,9 +102,6 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   // Handle search highlight — stable callback for InFileSearchBar
   const handleSearchHighlightLine = useCallback((line: number | null) => {
     setHighlightLine(line);
-    if (line !== null) {
-      setViewMode("file");
-    }
   }, []);
 
   // Close search and clear highlight
@@ -164,7 +161,6 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       !loading &&
       fileContent
     ) {
-      setViewMode("file");
       setHighlightLine(scrollToLine.lineNumber);
       clearScrollToLine();
 
@@ -336,7 +332,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             onNavigateToDirectory={revealDirectoryInTree}
           />
           {/* Language selector only works in file view mode (not diff views) */}
-          {!isImage && (viewMode === "file" || !hasChanges) && (
+          {!isImage && !hasChanges && (
             <LanguageSelector
               language={effectiveLanguage}
               detectedLanguage={detectedLanguage}
@@ -498,125 +494,110 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
                 >
                   Split
                 </button>
-                <button
-                  onClick={() => {
-                    setViewMode("file");
-                    setHighlightLine(null);
-                  }}
-                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                    viewMode === "file"
-                      ? "bg-stone-700/50 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  File
-                </button>
               </div>
               {/* Diff display options */}
-              {viewMode !== "file" && (
-                <div className="relative" ref={diffOptionsRef}>
-                  <SimpleTooltip content="Diff display options">
-                    <button
-                      onClick={() => setShowDiffOptions(!showDiffOptions)}
-                      className={`rounded p-1 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 ${
-                        showDiffOptions ? "bg-stone-800 text-stone-300" : ""
-                      }`}
+              <div className="relative" ref={diffOptionsRef}>
+                <SimpleTooltip content="Diff display options">
+                  <button
+                    onClick={() => setShowDiffOptions(!showDiffOptions)}
+                    className={`rounded p-1 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 ${
+                      showDiffOptions ? "bg-stone-800 text-stone-300" : ""
+                    }`}
+                  >
+                    <svg
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     >
-                      <svg
-                        className="h-3.5 w-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                      </svg>
-                    </button>
-                  </SimpleTooltip>
-                  {showDiffOptions && (
-                    <div className="absolute right-0 top-full mt-1 z-50 w-48 rounded-lg border border-stone-700 bg-stone-900 shadow-xl">
-                      <div className="px-3 py-2 border-b border-stone-800">
-                        <span className="text-xxs font-medium text-stone-500 uppercase tracking-wide">
-                          Highlighting
-                        </span>
-                      </div>
-                      <div className="p-1">
-                        {(
-                          [
-                            ["word", "Word"],
-                            ["word-alt", "Word Alt"],
-                            ["char", "Char"],
-                            ["none", "None"],
-                          ] as [DiffLineDiffType, string][]
-                        ).map(([value, label]) => (
-                          <button
-                            key={value}
-                            onClick={() => setDiffLineDiffType(value)}
-                            className={`flex w-full items-center justify-between rounded px-2 py-1 text-xs transition-colors ${
-                              diffLineDiffType === value
-                                ? "bg-stone-800 text-stone-200"
-                                : "text-stone-400 hover:bg-stone-800/50 hover:text-stone-300"
-                            }`}
-                          >
-                            <span>{label}</span>
-                            {diffLineDiffType === value && (
-                              <svg
-                                className="h-3 w-3 text-amber-500"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth={3}
-                              >
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="px-3 py-2 border-t border-b border-stone-800">
-                        <span className="text-xxs font-medium text-stone-500 uppercase tracking-wide">
-                          Indicators
-                        </span>
-                      </div>
-                      <div className="p-1">
-                        {(
-                          [
-                            ["classic", "Classic (+/-)"],
-                            ["bars", "Bars"],
-                            ["none", "None"],
-                          ] as [DiffIndicators, string][]
-                        ).map(([value, label]) => (
-                          <button
-                            key={value}
-                            onClick={() => setDiffIndicators(value)}
-                            className={`flex w-full items-center justify-between rounded px-2 py-1 text-xs transition-colors ${
-                              diffIndicators === value
-                                ? "bg-stone-800 text-stone-200"
-                                : "text-stone-400 hover:bg-stone-800/50 hover:text-stone-300"
-                            }`}
-                          >
-                            <span>{label}</span>
-                            {diffIndicators === value && (
-                              <svg
-                                className="h-3 w-3 text-amber-500"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth={3}
-                              >
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            )}
-                          </button>
-                        ))}
-                      </div>
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+                    </svg>
+                  </button>
+                </SimpleTooltip>
+                {showDiffOptions && (
+                  <div className="absolute right-0 top-full mt-1 z-50 w-48 rounded-lg border border-stone-700 bg-stone-900 shadow-xl">
+                    <div className="px-3 py-2 border-b border-stone-800">
+                      <span className="text-xxs font-medium text-stone-500 uppercase tracking-wide">
+                        Highlighting
+                      </span>
                     </div>
-                  )}
-                </div>
-              )}
+                    <div className="p-1">
+                      {(
+                        [
+                          ["word", "Word"],
+                          ["word-alt", "Word Alt"],
+                          ["char", "Char"],
+                          ["none", "None"],
+                        ] as [DiffLineDiffType, string][]
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          onClick={() => setDiffLineDiffType(value)}
+                          className={`flex w-full items-center justify-between rounded px-2 py-1 text-xs transition-colors ${
+                            diffLineDiffType === value
+                              ? "bg-stone-800 text-stone-200"
+                              : "text-stone-400 hover:bg-stone-800/50 hover:text-stone-300"
+                          }`}
+                        >
+                          <span>{label}</span>
+                          {diffLineDiffType === value && (
+                            <svg
+                              className="h-3 w-3 text-amber-500"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={3}
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="px-3 py-2 border-t border-b border-stone-800">
+                      <span className="text-xxs font-medium text-stone-500 uppercase tracking-wide">
+                        Indicators
+                      </span>
+                    </div>
+                    <div className="p-1">
+                      {(
+                        [
+                          ["classic", "Classic (+/-)"],
+                          ["bars", "Bars"],
+                          ["none", "None"],
+                        ] as [DiffIndicators, string][]
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          onClick={() => setDiffIndicators(value)}
+                          className={`flex w-full items-center justify-between rounded px-2 py-1 text-xs transition-colors ${
+                            diffIndicators === value
+                              ? "bg-stone-800 text-stone-200"
+                              : "text-stone-400 hover:bg-stone-800/50 hover:text-stone-300"
+                          }`}
+                        >
+                          <span>{label}</span>
+                          {diffIndicators === value && (
+                            <svg
+                              className="h-3 w-3 text-amber-500"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={3}
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -650,7 +631,6 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
           highlightLine={highlightLine}
           lineHeight={lineHeight}
           onViewInFile={(line) => {
-            setViewMode("file");
             setHighlightLine(line);
           }}
           reviewState={reviewState}

@@ -273,8 +273,7 @@ export function CommitDetailModal({
                   <PatchDiff
                     patch={patch}
                     options={{
-                      diffStyle:
-                        diffViewMode === "file" ? "unified" : diffViewMode,
+                      diffStyle: diffViewMode,
                       theme: {
                         dark: codeTheme,
                         light: codeTheme,

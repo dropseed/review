@@ -19,7 +19,7 @@ export type DiffIndicators = "classic" | "bars" | "none";
 export type ChangesDisplayMode = "tree" | "flat";
 
 // Diff view mode type
-export type DiffViewMode = "unified" | "split" | "file";
+export type DiffViewMode = "unified" | "split";
 
 // Preference defaults
 const defaults = {
@@ -181,9 +181,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const changesDisplayMode =
       (await storage.get<ChangesDisplayMode>("changesDisplayMode")) ??
       defaults.changesDisplayMode;
-    const diffViewMode =
-      (await storage.get<DiffViewMode>("diffViewMode")) ??
+    let diffViewMode: DiffViewMode =
+      ((await storage.get<string>("diffViewMode")) as DiffViewMode) ??
       defaults.diffViewMode;
+    // Migrate legacy "file" mode to "split"
+    if ((diffViewMode as string) === "file") diffViewMode = "split";
 
     set({
       sidebarPosition: position,

@@ -10,7 +10,7 @@ import { MarkdownViewer } from "./MarkdownViewer";
 interface FileContentRendererProps {
   filePath: string;
   fileContent: FileContent;
-  viewMode: "unified" | "split" | "file";
+  viewMode: "unified" | "split";
   codeTheme: string;
   fontSizeCSS: string;
   focusedHunkId: string | null;
@@ -86,11 +86,11 @@ export function FileContentRenderer({
   }
 
   // Diff view (unified or split) for files with changes
-  if (hasChanges && viewMode !== "file") {
+  if (hasChanges) {
     return (
       <DiffView
         diffPatch={fileContent.diffPatch}
-        viewMode={viewMode as "unified" | "split"}
+        viewMode={viewMode}
         hunks={fileContent.hunks}
         theme={codeTheme}
         fontSizeCSS={fontSizeCSS}
