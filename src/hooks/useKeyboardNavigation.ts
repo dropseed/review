@@ -13,6 +13,7 @@ interface UseKeyboardNavigationOptions {
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
+  setShowSymbolSearch: (show: boolean) => void;
 }
 
 /**
@@ -25,6 +26,7 @@ export function useKeyboardNavigation({
   setShowSettingsModal,
   setShowFileFinder,
   setShowContentSearch,
+  setShowSymbolSearch,
 }: UseKeyboardNavigationOptions) {
   const hunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
@@ -83,6 +85,17 @@ export function useKeyboardNavigation({
       if ((event.metaKey || event.ctrlKey) && event.key === "p") {
         event.preventDefault();
         setShowFileFinder(true);
+        return;
+      }
+
+      // Cmd/Ctrl+R to open symbol search
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key === "r"
+      ) {
+        event.preventDefault();
+        setShowSymbolSearch(true);
         return;
       }
 
@@ -231,6 +244,7 @@ export function useKeyboardNavigation({
       setShowSettingsModal,
       setShowFileFinder,
       setShowContentSearch,
+      setShowSymbolSearch,
       topLevelView,
       navigateToBrowse,
       navigateToOverview,

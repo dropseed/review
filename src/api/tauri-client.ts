@@ -26,6 +26,7 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
 } from "./types";
@@ -224,6 +225,18 @@ export class TauriClient implements ApiClient {
       repoPath,
       filePaths,
       comparison,
+    });
+  }
+
+  async getFileSymbols(
+    repoPath: string,
+    filePath: string,
+    gitRef?: string,
+  ): Promise<FileSymbol[] | null> {
+    return invoke<FileSymbol[] | null>("get_file_symbols", {
+      repoPath,
+      filePath,
+      gitRef: gitRef ?? null,
     });
   }
 

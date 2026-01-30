@@ -6,6 +6,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { CommitDetailModal } from "./components/CommitDetailModal";
 import { FileFinder } from "./components/FileFinder";
 import { ContentSearch } from "./components/ContentSearch";
+import { SymbolSearch } from "./components/SymbolSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
@@ -62,6 +63,7 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showContentSearch, setShowContentSearch] = useState(false);
+  const [showSymbolSearch, setShowSymbolSearch] = useState(false);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
@@ -129,6 +131,7 @@ function App() {
     setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
+    setShowSymbolSearch,
   });
 
   useMenuEvents({
@@ -451,6 +454,12 @@ function App() {
             </span>
             <span>
               <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+                {"\u2318"}R
+              </kbd>
+              <span className="ml-1">symbols</span>
+            </span>
+            <span>
+              <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
                 {"\u2318"}⇧F
               </kbd>
               <span className="ml-1">search</span>
@@ -487,6 +496,12 @@ function App() {
         <ContentSearch
           isOpen={showContentSearch}
           onClose={() => setShowContentSearch(false)}
+        />
+
+        {/* Symbol Search */}
+        <SymbolSearch
+          isOpen={showSymbolSearch}
+          onClose={() => setShowSymbolSearch(false)}
         />
       </div>
     </TooltipProvider>

@@ -335,6 +335,14 @@ export interface LineRange {
   endLine: number;
 }
 
+export interface FileSymbol {
+  name: string;
+  kind: SymbolKind;
+  startLine: number;
+  endLine: number;
+  children: FileSymbol[];
+}
+
 export interface SymbolDiff {
   name: string;
   kind: SymbolKind | null;

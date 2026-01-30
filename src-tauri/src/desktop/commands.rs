@@ -21,7 +21,7 @@ use review::sources::local_git::{LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
-use review::symbols::{self, FileSymbolDiff};
+use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -937,6 +937,40 @@ pub async fn get_file_symbol_diffs(
             results.len()
         );
         Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_file_symbols(
+    repo_path: String,
+    file_path: String,
+    git_ref: Option<String>,
+) -> Result<Option<Vec<Symbol>>, String> {
+    debug!(
+        "[get_file_symbols] repo_path={}, file_path={}, ref={:?}",
+        repo_path, file_path, git_ref
+    );
+
+    tokio::task::spawn_blocking(move || {
+        let content = if let Some(r) = &git_ref {
+            let source = LocalGitSource::new(std::path::PathBuf::from(&repo_path))
+                .map_err(|e| e.to_string())?;
+            source
+                .get_file_bytes(&file_path, r)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+        } else {
+            let full_path = std::path::PathBuf::from(&repo_path).join(&file_path);
+            std::fs::read_to_string(&full_path).ok()
+        };
+
+        let Some(content) = content else {
+            return Ok(None);
+        };
+
+        Ok(symbols::extractor::extract_symbols(&content, &file_path))
     })
     .await
     .map_err(|e| e.to_string())?

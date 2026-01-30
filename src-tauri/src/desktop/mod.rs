@@ -77,10 +77,7 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?;
 
-            let refresh = MenuItemBuilder::new("Refresh")
-                .id("refresh")
-                .accelerator("CmdOrCtrl+R")
-                .build(app)?;
+            let refresh = MenuItemBuilder::new("Refresh").id("refresh").build(app)?;
 
             let actual_size = MenuItemBuilder::new("Actual Size")
                 .id("actual_size")
@@ -258,6 +255,7 @@ pub fn run() {
             commands::should_skip_file,
             commands::search_file_contents,
             commands::get_file_symbol_diffs,
+            commands::get_file_symbols,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

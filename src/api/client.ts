@@ -24,6 +24,7 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
 } from "./types";
@@ -154,6 +155,13 @@ export interface ApiClient {
     filePaths: string[],
     comparison: Comparison,
   ): Promise<FileSymbolDiff[]>;
+
+  /** Extract all symbols from a file using tree-sitter */
+  getFileSymbols(
+    repoPath: string,
+    filePath: string,
+    gitRef?: string,
+  ): Promise<FileSymbol[] | null>;
 
   // ----- File watcher -----
 

@@ -29,6 +29,7 @@ export type {
   SymbolKind,
   SymbolChangeType,
   LineRange,
+  FileSymbol,
   SymbolDiff,
   FileSymbolDiff,
 } from "../types";

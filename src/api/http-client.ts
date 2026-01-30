@@ -24,6 +24,7 @@ import type {
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
+  FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
 } from "./types";
@@ -443,6 +444,15 @@ export class HttpClient implements ApiClient {
   ): Promise<FileSymbolDiff[]> {
     console.warn("[HttpClient] getFileSymbolDiffs not implemented");
     return [];
+  }
+
+  async getFileSymbols(
+    _repoPath: string,
+    _filePath: string,
+    _gitRef?: string,
+  ): Promise<FileSymbol[] | null> {
+    console.warn("[HttpClient] getFileSymbols not implemented");
+    return null;
   }
 
   // ----- File watcher -----
