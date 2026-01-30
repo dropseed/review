@@ -169,7 +169,12 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           set({ loadingProgress: { current: 0, total: 1, phase: "files" } });
         }
         const files = await client.listFiles(repoPath, comparison);
-        set({ files, flatFileList: flattenFiles(files) });
+        const flatFileList = flattenFiles(files);
+
+        // During refresh, defer set() to batch with hunks/movePairs at the end
+        if (!isRefreshing) {
+          set({ files, flatFileList });
+        }
 
         // Collect changed file paths (filtering out likely binary/build artifacts)
         const changedPaths: string[] = [];
@@ -249,10 +254,24 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
         try {
           const result = await client.detectMovePairs(allHunks);
-          set({ hunks: result.hunks, movePairs: result.pairs });
+          if (isRefreshing) {
+            // Single batched update: files + hunks + movePairs together
+            set({
+              files,
+              flatFileList,
+              hunks: result.hunks,
+              movePairs: result.pairs,
+            });
+          } else {
+            set({ hunks: result.hunks, movePairs: result.pairs });
+          }
         } catch (err) {
           console.error("Failed to detect move pairs:", err);
-          set({ hunks: allHunks, movePairs: [] });
+          if (isRefreshing) {
+            set({ files, flatFileList, hunks: allHunks, movePairs: [] });
+          } else {
+            set({ hunks: allHunks, movePairs: [] });
+          }
         }
 
         // Clear progress

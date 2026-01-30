@@ -42,7 +42,6 @@ export interface ReviewSlice {
   reviewState: ReviewState | null;
   savedReviews: ReviewSummary[];
   savedReviewsLoading: boolean;
-  refreshVersion: number;
 
   // Actions
   setReviewState: (state: ReviewState) => void;
@@ -172,16 +171,17 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     reviewState: null,
     savedReviews: [],
     savedReviewsLoading: false,
-    refreshVersion: 0,
 
     setReviewState: (state) => set({ reviewState: state }),
 
     loadReviewState: async () => {
-      const { repoPath, comparison } = get();
+      const { repoPath, comparison, reviewState: currentState } = get();
       if (!repoPath) return;
 
       try {
         const state = await client.loadReviewState(repoPath, comparison);
+        // Skip update if the state hasn't changed (avoids unnecessary re-renders)
+        if (currentState && state.updatedAt === currentState.updatedAt) return;
         set({ reviewState: state });
       } catch (err) {
         console.error("Failed to load review state:", err);
@@ -484,7 +484,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     refresh: async () => {
       const {
         loadFiles,
-        loadAllFiles,
         loadReviewState,
         loadGitStatus,
         triggerAutoClassification,
@@ -493,15 +492,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Load review state FIRST to ensure labels are available before auto-classification
       await loadReviewState();
       // Then load files and git status (skip auto-classify since we'll trigger it manually after)
-      // Pass isRefreshing=true to suppress loading progress indicators
-      await Promise.all([
-        loadFiles(true, true),
-        loadAllFiles(),
-        loadGitStatus(),
-      ]);
+      // Pass isRefreshing=true to suppress loading progress indicators and batch state updates
+      await Promise.all([loadFiles(true, true), loadGitStatus()]);
       // Now trigger auto-classification with the fresh review state
       triggerAutoClassification();
-      // Increment refresh version to trigger CodeViewer re-fetch
-      set((state) => ({ refreshVersion: state.refreshVersion + 1 }));
     },
   });

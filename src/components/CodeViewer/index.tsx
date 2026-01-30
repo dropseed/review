@@ -39,7 +39,6 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
   const allHunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
-  const refreshVersion = useReviewStore((s) => s.refreshVersion);
   const scrollToLine = useReviewStore((s) => s.scrollToLine);
   const clearScrollToLine = useReviewStore((s) => s.clearScrollToLine);
   const addAnnotation = useReviewStore((s) => s.addAnnotation);
@@ -178,6 +177,18 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     }
   }, [scrollToLine, filePath, loading, fileContent, clearScrollToLine]);
 
+  // Derive a stable key from hunk IDs for this file.
+  // Hunk IDs include content hashes (filepath:hash), so any actual content
+  // change produces new IDs, triggering a re-fetch without a global counter.
+  const fileHunkKey = useMemo(
+    () =>
+      allHunks
+        .filter((h) => h.filePath === filePath)
+        .map((h) => h.id)
+        .join(","),
+    [allHunks, filePath],
+  );
+
   const prevFilePathRef = useRef(filePath);
 
   useEffect(() => {
@@ -202,7 +213,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
         setError(String(err));
         setLoading(false);
       });
-  }, [repoPath, filePath, comparison, refreshVersion]);
+  }, [repoPath, filePath, comparison, fileHunkKey]);
 
   if (loading) {
     return (

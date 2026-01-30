@@ -19,12 +19,20 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     remoteInfo: null,
 
     loadGitStatus: async () => {
-      const { repoPath } = get();
+      const { repoPath, stagedFilePaths: currentStaged } = get();
       if (!repoPath) return;
 
       try {
         const status = await client.getGitStatus(repoPath);
-        const staged = new Set<string>(status.staged.map((e) => e.path));
+        const newStagedPaths = status.staged.map((e) => e.path);
+        // Skip update if staged paths haven't changed
+        if (
+          currentStaged.size === newStagedPaths.length &&
+          newStagedPaths.every((p) => currentStaged.has(p))
+        ) {
+          return;
+        }
+        const staged = new Set<string>(newStagedPaths);
         set({ gitStatus: status, stagedFilePaths: staged });
       } catch (err) {
         console.error("Failed to load git status:", err);
