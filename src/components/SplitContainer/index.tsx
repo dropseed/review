@@ -71,10 +71,8 @@ export function SplitContainer() {
   // Single pane mode
   if (!isSplitActive) {
     return selectedFile ? (
-      <div className="flex flex-1 flex-col min-h-0">
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <CodeViewer filePath={selectedFile} />
-        </div>
+      <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+        <CodeViewer filePath={selectedFile} />
       </div>
     ) : null;
   }
@@ -104,7 +102,7 @@ export function SplitContainer() {
           }
           onSwap={swapPanes}
         />
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
           {selectedFile ? (
             <CodeViewer filePath={selectedFile} />
           ) : (
@@ -139,7 +137,7 @@ export function SplitContainer() {
           onSwap={swapPanes}
           onClose={closeSplit}
         />
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
           <CodeViewer filePath={secondaryFile} />
         </div>
       </div>

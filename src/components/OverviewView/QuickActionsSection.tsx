@@ -77,7 +77,7 @@ export function QuickActionsSection() {
   const reviewState = useReviewStore((s) => s.reviewState);
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
 
-  const [sectionExpanded, setSectionExpanded] = useState(true);
+  const [sectionExpanded, setSectionExpanded] = useState(false);
 
   // Build a Set of file paths per status, then compute pending hunk IDs per action
   const actionData = useMemo(() => {
@@ -146,7 +146,7 @@ export function QuickActionsSection() {
   if (visibleActions.length === 0) return null;
 
   return (
-    <div className="px-4 mb-6">
+    <div className="px-4 mb-4">
       {/* Section header */}
       <button
         className="flex items-center gap-1.5 mb-2 group w-full text-left"
@@ -163,7 +163,7 @@ export function QuickActionsSection() {
         <h3 className="text-xs font-medium text-stone-400 uppercase tracking-wide">
           Quick Actions
         </h3>
-        <span className="text-xxs tabular-nums text-lime-400/80">
+        <span className="text-xxs tabular-nums text-stone-500">
           {visibleActions.length} available
         </span>
       </button>

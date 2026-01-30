@@ -178,10 +178,18 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     }
   }, [scrollToLine, filePath, loading, fileContent, clearScrollToLine]);
 
+  const prevFilePathRef = useRef(filePath);
+
   useEffect(() => {
     if (!repoPath || !comparison) return;
 
-    setLoading(true);
+    const isFileSwitch = prevFilePathRef.current !== filePath;
+    prevFilePathRef.current = filePath;
+
+    // Only show spinner on file switch or initial load
+    if (isFileSwitch || !fileContent) {
+      setLoading(true);
+    }
     setError(null);
 
     getApiClient()

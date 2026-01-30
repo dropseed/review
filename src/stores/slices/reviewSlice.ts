@@ -493,7 +493,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Load review state FIRST to ensure labels are available before auto-classification
       await loadReviewState();
       // Then load files and git status (skip auto-classify since we'll trigger it manually after)
-      await Promise.all([loadFiles(true), loadAllFiles(), loadGitStatus()]);
+      // Pass isRefreshing=true to suppress loading progress indicators
+      await Promise.all([
+        loadFiles(true, true),
+        loadAllFiles(),
+        loadGitStatus(),
+      ]);
       // Now trigger auto-classification with the fresh review state
       triggerAutoClassification();
       // Increment refresh version to trigger CodeViewer re-fetch

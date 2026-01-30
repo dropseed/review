@@ -31,9 +31,15 @@ pub fn run() {
             |app: &tauri::AppHandle, argv, _cwd| {
                 // When a second instance is launched, its CLI args are forwarded here.
                 // Find a repo path argument (first non-flag arg after the binary name)
-                // and open it in a new window/tab.
+                // and open it in a new window directly (handles dedup of existing windows).
                 if let Some(repo_path) = argv.iter().skip(1).find(|a| !a.starts_with('-')) {
-                    let _ = app.emit("open-repo-path", repo_path.clone());
+                    let app_clone = app.clone();
+                    let repo = repo_path.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = commands::open_repo_window(app_clone, repo, None).await {
+                            log::error!("Failed to open repo window from CLI: {}", e);
+                        }
+                    });
                 }
             },
         ))

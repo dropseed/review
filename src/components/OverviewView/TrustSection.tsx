@@ -35,7 +35,7 @@ export function TrustSection() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(),
   );
-  const [sectionExpanded, setSectionExpanded] = useState(true);
+  const [sectionExpanded, setSectionExpanded] = useState(false);
   const [previewPatternId, setPreviewPatternId] = useState<string | null>(null);
 
   // Load taxonomy on mount

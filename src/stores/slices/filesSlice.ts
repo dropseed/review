@@ -77,7 +77,10 @@ export interface FilesSlice {
   setHunks: (hunks: DiffHunk[]) => void;
 
   // Loading
-  loadFiles: (skipAutoClassify?: boolean) => Promise<void>;
+  loadFiles: (
+    skipAutoClassify?: boolean,
+    isRefreshing?: boolean,
+  ) => Promise<void>;
   loadAllFiles: () => Promise<void>;
   loadCurrentComparison: () => Promise<void>;
   saveCurrentComparison: () => Promise<void>;
@@ -152,7 +155,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     setFiles: (files) => set({ files, flatFileList: flattenFiles(files) }),
     setHunks: (hunks) => set({ hunks }),
 
-    loadFiles: async (skipAutoClassify = false) => {
+    loadFiles: async (skipAutoClassify = false, isRefreshing = false) => {
       const { repoPath, comparison, triggerAutoClassification, clearSymbols } =
         get();
       if (!repoPath) return;
@@ -162,7 +165,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
 
       try {
         // Phase 1: Get file list
-        set({ loadingProgress: { current: 0, total: 1, phase: "files" } });
+        if (!isRefreshing) {
+          set({ loadingProgress: { current: 0, total: 1, phase: "files" } });
+        }
         const files = await client.listFiles(repoPath, comparison);
         set({ files, flatFileList: flattenFiles(files) });
 
@@ -203,7 +208,11 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         const total = changedPaths.length;
         for (let i = 0; i < changedPaths.length; i++) {
           const filePath = changedPaths[i];
-          set({ loadingProgress: { current: i + 1, total, phase: "hunks" } });
+          if (!isRefreshing) {
+            set({
+              loadingProgress: { current: i + 1, total, phase: "hunks" },
+            });
+          }
 
           // Yield to event loop periodically to allow UI to update
           if (i % 5 === 0) {
@@ -235,7 +244,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
 
         // Phase 3: Detect move pairs
-        set({ loadingProgress: { current: 0, total: 1, phase: "moves" } });
+        if (!isRefreshing) {
+          set({ loadingProgress: { current: 0, total: 1, phase: "moves" } });
+        }
         try {
           const result = await client.detectMovePairs(allHunks);
           set({ hunks: result.hunks, movePairs: result.pairs });
@@ -245,7 +256,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
 
         // Clear progress
-        set({ loadingProgress: null });
+        if (!isRefreshing) {
+          set({ loadingProgress: null });
+        }
 
         // Trigger auto-classification after files are loaded
         if (!skipAutoClassify) {
@@ -253,7 +266,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
       } catch (err) {
         console.error("Failed to load files:", err);
-        set({ loadingProgress: null });
+        if (!isRefreshing) {
+          set({ loadingProgress: null });
+        }
       }
     },
 

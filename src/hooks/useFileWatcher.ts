@@ -16,6 +16,7 @@ export function useFileWatcher(comparisonReady: boolean) {
   const loadReviewStateRef = useRef(loadReviewState);
   const refreshRef = useRef(refresh);
   const comparisonReadyRef = useRef(comparisonReady);
+  const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     repoPathRef.current = repoPath;
@@ -73,6 +74,7 @@ export function useFileWatcher(comparisonReady: boolean) {
     console.log("[watcher] Listening for review-state-changed");
 
     // Git state changed (branch switch, new commit, etc.)
+    // Debounce at 2s to avoid rapid refreshes during active editing
     unlistenFns.push(
       apiClient.onGitChanged((eventRepoPath) => {
         console.log("[watcher] Received git-changed event:", eventRepoPath);
@@ -82,14 +84,25 @@ export function useFileWatcher(comparisonReady: boolean) {
             console.log("[watcher] Skipping refresh - no comparison selected");
             return;
           }
-          console.log("[watcher] Refreshing...");
-          refreshRef.current();
+          // Clear any pending debounce timer
+          if (gitChangedTimerRef.current) {
+            clearTimeout(gitChangedTimerRef.current);
+          }
+          console.log("[watcher] Debouncing refresh (2s)...");
+          gitChangedTimerRef.current = setTimeout(() => {
+            gitChangedTimerRef.current = null;
+            console.log("[watcher] Refreshing...");
+            refreshRef.current();
+          }, 2000);
         }
       }),
     );
     console.log("[watcher] Listening for git-changed");
 
     return () => {
+      if (gitChangedTimerRef.current) {
+        clearTimeout(gitChangedTimerRef.current);
+      }
       unlistenFns.forEach((fn) => fn());
     };
   }, [repoPath]);
