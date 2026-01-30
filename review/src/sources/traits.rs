@@ -102,6 +102,7 @@ pub struct CommitDetail {
     pub author_email: String,
     pub date: String,
     pub files: Vec<CommitFileChange>,
+    pub diff: String,
 }
 
 /// A file changed in a commit

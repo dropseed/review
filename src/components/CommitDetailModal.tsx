@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { PatchDiff } from "@pierre/diffs/react";
+import { useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores/reviewStore";
 import type { CommitDetail } from "../types";
@@ -25,6 +26,30 @@ function formatDate(isoDate: string): string {
   }
 }
 
+/** Split a multi-file unified diff into individual per-file patches */
+function splitPatch(patch: string): string[] {
+  const parts: string[] = [];
+  const lines = patch.split("\n");
+  let current: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git ")) {
+      if (current.length > 0) {
+        parts.push(current.join("\n"));
+      }
+      current = [line];
+    } else if (current.length > 0) {
+      // Only collect lines after we've seen the first "diff --git"
+      current.push(line);
+    }
+    // Skip any leading lines before the first "diff --git" (e.g. commit hash)
+  }
+  if (current.length > 0) {
+    parts.push(current.join("\n"));
+  }
+  return parts;
+}
+
 function statusIcon(status: string) {
   switch (status) {
     case "added":
@@ -46,9 +71,17 @@ export function CommitDetailModal({
   commitHash,
 }: CommitDetailModalProps) {
   const { repoPath } = useReviewStore();
+  const codeTheme = useReviewStore((s) => s.codeTheme);
+  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const filePatches = useMemo(
+    () => (detail?.diff ? splitPatch(detail.diff) : []),
+    [detail?.diff],
+  );
 
   useEffect(() => {
     if (!isOpen || !commitHash || !repoPath) return;
@@ -71,7 +104,7 @@ export function CommitDetailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex w-full max-w-lg max-h-[85vh] flex-col rounded-xl overflow-hidden">
+      <DialogContent className="flex w-full max-w-5xl max-h-[85vh] flex-col rounded-xl overflow-hidden">
         {/* Header */}
         <DialogHeader className="relative px-5 py-4">
           <div className="flex items-center gap-3">
@@ -193,7 +226,7 @@ export function CommitDetailModal({
               </div>
 
               {/* Changed files */}
-              <div className="px-5 py-3">
+              <div className="px-5 py-3 border-b border-stone-800/60">
                 <div className="mb-2 flex items-center gap-2">
                   <span className="text-xxs font-medium text-stone-500 uppercase tracking-wide">
                     Changed files
@@ -230,6 +263,28 @@ export function CommitDetailModal({
                   ))}
                 </div>
               </div>
+
+              {/* Diff */}
+              {filePatches.map((patch, i) => (
+                <div
+                  key={i}
+                  className="border-b border-stone-800/60 last:border-b-0"
+                >
+                  <PatchDiff
+                    patch={patch}
+                    options={{
+                      diffStyle:
+                        diffViewMode === "file" ? "unified" : diffViewMode,
+                      theme: {
+                        dark: codeTheme,
+                        light: codeTheme,
+                      },
+                      themeType: "dark" as const,
+                      unsafeCSS: `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${Math.round(codeFontSize * 1.5)}px; }`,
+                    }}
+                  />
+                </div>
+              ))}
             </>
           )}
         </div>

@@ -100,6 +100,10 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
         ("GET", "/status") => handle_get_status(&query),
         ("GET", "/status/raw") => handle_get_status_raw(&query),
 
+        // Commits
+        ("GET", "/commits") => handle_list_commits(&query),
+        ("GET", "/commit") => handle_get_commit_detail(&query),
+
         // Files and content
         ("GET", "/files") => handle_list_files(&query),
         ("GET", "/file") => handle_get_file(&query),
@@ -400,6 +404,39 @@ fn handle_get_status_raw(query: &str) -> Response<Cursor<Vec<u8>>> {
 
     match commands::get_git_status_raw(repo_path) {
         Ok(raw) => json_response(&RawStatusResponse { raw }),
+        Err(e) => error_response(500, &e),
+    }
+}
+
+fn handle_list_commits(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let limit = params.get("limit").and_then(|v| v.parse::<usize>().ok());
+    let branch = params.get("branch").cloned();
+
+    match commands::list_commits(repo_path, limit, branch) {
+        Ok(commits) => json_response(&commits),
+        Err(e) => error_response(500, &e),
+    }
+}
+
+fn handle_get_commit_detail(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let Some(hash) = params.get("hash") else {
+        return error_response(400, "Missing 'hash' parameter");
+    };
+
+    match commands::get_commit_detail(repo_path, hash.clone()) {
+        Ok(detail) => json_response(&detail),
         Err(e) => error_response(500, &e),
     }
 }

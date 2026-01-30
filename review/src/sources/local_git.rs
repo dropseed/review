@@ -365,6 +365,15 @@ impl LocalGitSource {
             }
         }
 
+        // Get the full diff patch for the commit
+        let diff_patch = self.run_git(&[
+            "diff-tree",
+            "-p",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            hash,
+        ])?;
+
         Ok(super::traits::CommitDetail {
             hash: full_hash,
             short_hash,
@@ -373,6 +382,7 @@ impl LocalGitSource {
             author_email,
             date,
             files,
+            diff: diff_patch,
         })
     }
 

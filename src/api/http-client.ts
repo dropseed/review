@@ -172,28 +172,20 @@ export class HttpClient implements ApiClient {
   }
 
   async listCommits(
-    _repoPath: string,
-    _limit?: number,
-    _branch?: string,
+    repoPath: string,
+    limit?: number,
+    branch?: string,
   ): Promise<CommitEntry[]> {
-    console.warn("[HttpClient] listCommits not implemented");
-    return [];
+    let query = this.buildRepoQuery(repoPath);
+    if (limit != null) query += `&limit=${limit}`;
+    if (branch) query += `&branch=${encodeURIComponent(branch)}`;
+    return this.fetchJson<CommitEntry[]>(`/commits?${query}`);
   }
 
-  async getCommitDetail(
-    _repoPath: string,
-    _hash: string,
-  ): Promise<CommitDetail> {
-    console.warn("[HttpClient] getCommitDetail not implemented");
-    return {
-      hash: "",
-      shortHash: "",
-      message: "",
-      author: "",
-      authorEmail: "",
-      date: "",
-      files: [],
-    };
+  async getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail> {
+    return this.fetchJson<CommitDetail>(
+      `/commit?${this.buildRepoQuery(repoPath)}&hash=${encodeURIComponent(hash)}`,
+    );
   }
 
   // ----- File operations -----

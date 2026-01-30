@@ -95,6 +95,7 @@ export interface CommitDetail {
   authorEmail: string;
   date: string;
   files: CommitFileChange[];
+  diff: string;
 }
 
 // A file changed in a commit
