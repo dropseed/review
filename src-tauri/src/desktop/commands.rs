@@ -274,13 +274,14 @@ pub fn get_file_content(
             parse_diff(&diff_output, &file_path)
         };
 
-        let old_content = if comparison.working_tree {
-            match source.get_file_bytes(&file_path, "HEAD") {
-                Ok(bytes) => String::from_utf8(bytes).ok(),
-                Err(_) => None,
-            }
+        let old_ref = if comparison.working_tree {
+            "HEAD"
         } else {
-            None
+            &comparison.old
+        };
+        let old_content = match source.get_file_bytes(&file_path, old_ref) {
+            Ok(bytes) => String::from_utf8(bytes).ok(),
+            Err(_) => None,
         };
 
         return Ok(FileContent {
@@ -458,7 +459,7 @@ pub fn get_file_content(
                 None
             }
         };
-        (old, new.unwrap_or(content))
+        (old, new.unwrap_or_default())
     };
 
     info!("[get_file_content] SUCCESS");

@@ -1,5 +1,6 @@
 import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SummaryStats } from "./SummaryStats";
+import { QuickActionsSection } from "./QuickActionsSection";
 import { TrustSection } from "./TrustSection";
 import { DrillDownSection } from "./DrillDownSection";
 
@@ -24,10 +25,13 @@ export function OverviewView() {
           reviewedPercent={reviewedPercent}
         />
 
-        {/* Section 2: Trust Patterns + Classification */}
+        {/* Section 2: Quick Actions */}
+        <QuickActionsSection />
+
+        {/* Section 3: Trust Patterns + Classification */}
         <TrustSection />
 
-        {/* Section 3: Drill-Down — Files → Symbols → Hunks */}
+        {/* Section 4: Drill-Down — Files → Symbols → Hunks */}
         <DrillDownSection />
       </div>
     </div>

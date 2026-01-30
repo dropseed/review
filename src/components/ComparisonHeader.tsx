@@ -49,8 +49,8 @@ export function ComparisonHeader({
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <div className="relative flex items-center h-full">
         {/* Clickable comparison display */}
-        <PopoverTrigger asChild>
-          <SimpleTooltip content="Switch comparison">
+        <SimpleTooltip content="Switch comparison">
+          <PopoverTrigger asChild>
             <button
               className={`flex items-center gap-2 h-full px-1 -mx-1 rounded
                        transition-colors duration-100
@@ -97,8 +97,8 @@ export function ComparisonHeader({
                 />
               </svg>
             </button>
-          </SimpleTooltip>
-        </PopoverTrigger>
+          </PopoverTrigger>
+        </SimpleTooltip>
 
         <PopoverContent className="w-[420px] p-0" align="start">
           <ReviewsPopover

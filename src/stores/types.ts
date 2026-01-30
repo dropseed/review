@@ -94,3 +94,18 @@ export function flattenFiles(entries: FileEntry[]): string[] {
   }
   return result;
 }
+
+// Helper to get all files flattened from tree with their status
+export function flattenFilesWithStatus(
+  entries: FileEntry[],
+): { path: string; status: FileEntry["status"] }[] {
+  const result: { path: string; status: FileEntry["status"] }[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory && entry.children) {
+      result.push(...flattenFilesWithStatus(entry.children));
+    } else if (!entry.isDirectory) {
+      result.push({ path: entry.path, status: entry.status });
+    }
+  }
+  return result;
+}

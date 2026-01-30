@@ -135,6 +135,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         stagedFilePaths: new Set<string>(),
         // History
         commits: [],
+        commitsLoaded: false,
         // Symbols
         symbolDiffs: [],
         symbolsLoading: false,

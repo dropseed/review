@@ -584,14 +584,14 @@ export function DrillDownSection() {
     return result;
   }, [symbolDiffs, hunks]);
 
-  if (allChangedFiles.length === 0 && !symbolsLoading) {
-    return null;
-  }
-
   const contextValue = useMemo(
     () => ({ hunkStates, trustList, onNavigate: handleNavigate }),
     [hunkStates, trustList, handleNavigate],
   );
+
+  if (allChangedFiles.length === 0 && !symbolsLoading) {
+    return null;
+  }
 
   return (
     <ReviewDataProvider value={contextValue}>

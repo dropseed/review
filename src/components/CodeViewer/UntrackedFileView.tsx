@@ -59,9 +59,9 @@ export function UntrackedFileView({
           <span className="font-mono text-xs text-emerald-500 tabular-nums">
             + {lineCount} lines (new file)
           </span>
-          {hunkState?.label && (
+          {hunkState?.label && hunkState.label.length > 0 && (
             <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-400">
-              {hunkState.label}
+              {hunkState.label.join(", ")}
             </span>
           )}
 

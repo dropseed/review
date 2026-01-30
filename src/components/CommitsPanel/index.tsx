@@ -33,17 +33,18 @@ export function CommitsPanel({
   const comparison = useReviewStore((s) => s.comparison);
   const historyLoading = useReviewStore((s) => s.historyLoading);
   const repoPath = useReviewStore((s) => s.repoPath);
+  const commitsLoaded = useReviewStore((s) => s.commitsLoaded);
   const loadCommits = useReviewStore((s) => s.loadCommits);
 
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
-  // Load commits if empty
+  // Load commits on mount (or when repoPath changes)
   useEffect(() => {
-    if (repoPath && commits.length === 0 && !historyLoading) {
+    if (repoPath && !commitsLoaded && !historyLoading) {
       loadCommits(repoPath);
     }
-  }, [repoPath, commits.length, historyLoading, loadCommits]);
+  }, [repoPath, commitsLoaded, historyLoading, loadCommits]);
 
   // Scroll selected commit into view
   useEffect(() => {

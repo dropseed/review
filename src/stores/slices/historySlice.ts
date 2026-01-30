@@ -5,6 +5,7 @@ import type { SliceCreatorWithClient } from "../types";
 export interface HistorySlice {
   commits: CommitEntry[];
   historyLoading: boolean;
+  commitsLoaded: boolean;
 
   loadCommits: (repoPath: string, limit?: number) => Promise<void>;
 }
@@ -13,15 +14,16 @@ export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
   (client: ApiClient) => (set) => ({
     commits: [],
     historyLoading: false,
+    commitsLoaded: false,
 
     loadCommits: async (repoPath: string, limit?: number) => {
       set({ historyLoading: true });
       try {
         const commits = await client.listCommits(repoPath, limit);
-        set({ commits, historyLoading: false });
+        set({ commits, historyLoading: false, commitsLoaded: true });
       } catch (err) {
         console.error("Failed to load commits:", err);
-        set({ historyLoading: false });
+        set({ historyLoading: false, commitsLoaded: true });
       }
     },
   });
