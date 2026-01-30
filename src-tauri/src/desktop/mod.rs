@@ -21,6 +21,42 @@ use tauri::Emitter;
 #[cfg(desktop)]
 use tauri_plugin_opener::OpenerExt;
 
+/// Path to the signal file used by the CLI to request opening a repo.
+/// Matches the path written by `review/src/cli/commands/open.rs`.
+#[cfg(desktop)]
+fn open_request_path() -> std::path::PathBuf {
+    let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
+    std::path::PathBuf::from(tmp).join("review-open-request")
+}
+
+/// Read and delete the signal file. Returns the repo path if the file
+/// exists and was written recently (within 30 seconds).
+#[cfg(desktop)]
+fn read_open_request() -> Option<String> {
+    let path = open_request_path();
+    let content = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+
+    let mut lines = content.lines();
+    let timestamp: u64 = lines.next()?.parse().ok()?;
+    let repo_path = lines.next()?.trim().to_owned();
+
+    // Ignore stale requests (e.g. from a crashed CLI run)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if now.saturating_sub(timestamp) > 30 {
+        return None;
+    }
+
+    if repo_path.is_empty() {
+        None
+    } else {
+        Some(repo_path)
+    }
+}
+
 /// Run the Tauri desktop application.
 ///
 /// This sets up all plugins, menus, and command handlers, then starts
@@ -29,6 +65,10 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
+                // Clean up signal file — the CLI may have written one before this
+                // second process was intercepted by the single-instance plugin.
+                let _ = std::fs::remove_file(open_request_path());
+
                 // When a second instance is launched, its CLI args are forwarded here.
                 // Find a repo path argument (first non-flag arg after the binary name)
                 // and open it in a new window directly (handles dedup of existing windows).
@@ -37,7 +77,7 @@ pub fn run() {
                     let repo = repo_path.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) = commands::open_repo_window(app_clone, repo, None).await {
-                            log::error!("Failed to open repo window from CLI: {}", e);
+                            log::error!("Failed to open repo window from CLI: {e}");
                         }
                     });
                 }
@@ -236,7 +276,7 @@ pub fn run() {
             }
         });
 
-    builder
+    let app = builder
         .invoke_handler(tauri::generate_handler![
             commands::get_current_repo,
             commands::get_current_branch,
@@ -274,6 +314,23 @@ pub fn run() {
             commands::get_file_symbol_diffs,
             commands::get_file_symbols,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        // When the app is reactivated (e.g. via `open -a`), check for a
+        // pending open request from the CLI. This handles the case where
+        // the app was already running and `open -a` dropped --args.
+        #[cfg(desktop)]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            if let Some(repo_path) = read_open_request() {
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = commands::open_repo_window(handle, repo_path, None).await {
+                        log::error!("Failed to open repo from CLI signal: {e}");
+                    }
+                });
+            }
+        }
+    });
 }

@@ -1,13 +1,23 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+/// Path to the signal file used to communicate a repo path to the running app.
+/// On macOS, `open -a` silently drops `--args` when the app is already running.
+/// The CLI writes the requested repo path here, and the app reads it on reactivation.
+fn open_request_path() -> PathBuf {
+    let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
+    PathBuf::from(tmp).join("review-open-request")
+}
+
 pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
-    // Try to open the Review app by launching the binary directly.
-    // On macOS, we launch the binary inside the .app bundle instead of using
-    // `open -a`, because `open -a` silently drops `--args` when the app is
-    // already running. Direct binary launch always starts a second process
-    // (briefly), which the Tauri single-instance plugin intercepts — it
-    // forwards the args to the existing instance and exits.
+    // Write a signal file with a timestamp and the requested repo path.
+    // This is the reliable channel for the already-running case where
+    // `open -a` activates the app but drops `--args`.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let _ = std::fs::write(open_request_path(), format!("{now}\n{repo_path}"));
 
     #[cfg(target_os = "macos")]
     {
@@ -17,23 +27,29 @@ pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
             .unwrap_or_default();
         let app_locations = [PathBuf::from("/Applications/Review.app"), home_apps];
 
-        // Launch the binary inside the app bundle directly
+        // Use `open -a` to launch or activate the app.
+        // --args works for fresh launches; the signal file handles the rest.
         for app_path in &app_locations {
-            let binary_path = app_path.join("Contents/MacOS/Review");
-            if binary_path.exists() {
-                let result = Command::new(&binary_path)
+            if app_path.exists() {
+                let result = Command::new("open")
+                    .arg("-a")
+                    .arg(app_path)
+                    .arg("--args")
                     .arg(repo_path)
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .spawn();
+                    .status();
 
                 match result {
-                    Ok(_) => {
+                    Ok(status) if status.success() => {
                         println!("Opened Review app for {repo_path}");
                         return Ok(());
                     }
+                    Ok(_) => {
+                        eprintln!("open -a failed for {}", app_path.display());
+                    }
                     Err(e) => {
-                        eprintln!("Failed to launch {}: {}", binary_path.display(), e);
+                        eprintln!("Failed to run open -a {}: {}", app_path.display(), e);
                     }
                 }
             }
@@ -47,17 +63,21 @@ pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
                 .map(|p| p.join("bundle/macos/Review.app"));
 
             if let Some(app_path) = dev_app {
-                let binary_path = app_path.join("Contents/MacOS/Review");
-                if binary_path.exists() {
-                    let result = Command::new(&binary_path)
+                if app_path.exists() {
+                    let result = Command::new("open")
+                        .arg("-a")
+                        .arg(&app_path)
+                        .arg("--args")
                         .arg(repo_path)
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
-                        .spawn();
+                        .status();
 
-                    if let Ok(_) = result {
-                        println!("Opened Review app for {repo_path}");
-                        return Ok(());
+                    if let Ok(status) = result {
+                        if status.success() {
+                            println!("Opened Review app for {repo_path}");
+                            return Ok(());
+                        }
                     }
                 }
             }
