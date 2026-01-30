@@ -526,6 +526,11 @@ impl LocalGitSource {
             all_files.insert(line.to_owned());
         }
 
+        // Ensure all changed/untracked files are included in the tree
+        for path in file_status.keys() {
+            all_files.insert(path.clone());
+        }
+
         // Get gitignored entries using --directory to collapse entire ignored
         // directories into a single entry (avoids listing 100K+ files in node_modules, etc.)
         let mut gitignored_dirs: HashSet<String> = HashSet::new();
