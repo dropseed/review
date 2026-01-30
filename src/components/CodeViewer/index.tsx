@@ -48,6 +48,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const diffIndicators = useReviewStore((s) => s.diffIndicators);
   const setDiffLineDiffType = useReviewStore((s) => s.setDiffLineDiffType);
   const setDiffIndicators = useReviewStore((s) => s.setDiffIndicators);
+  const viewMode = useReviewStore((s) => s.diffViewMode);
+  const setViewMode = useReviewStore((s) => s.setDiffViewMode);
 
   // Get the focused hunk ID if it's in this file
   const focusedHunk = allHunks[focusedHunkIndex];
@@ -61,9 +63,6 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
-  const [viewMode, setViewMode] = useState<"unified" | "split" | "file">(
-    "unified",
-  );
   const [highlightLine, setHighlightLine] = useState<number | null>(null);
   // For SVG files: toggle between rendered image view and code diff view
   const [svgViewMode, setSvgViewMode] = useState<"rendered" | "code">(
