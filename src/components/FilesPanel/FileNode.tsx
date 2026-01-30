@@ -13,6 +13,33 @@ import { HunkCount, StatusLetter } from "./StatusIndicators";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
+function directoryNameColor(
+  isGitignored: boolean,
+  hunkContext: HunkContext,
+  hasReviewableContent: boolean,
+  hasPending: boolean,
+): string {
+  if (isGitignored) return "text-stone-500";
+  if (hunkContext !== "all") return "text-stone-200";
+  if (hasReviewableContent && !hasPending) return "text-lime-400";
+  if (hasPending) return "text-amber-200";
+  return "text-stone-500";
+}
+
+function fileNameColor(
+  isSelected: boolean,
+  isComplete: boolean,
+  isGitignored: boolean,
+  hunkContext: HunkContext,
+  hasReviewableContent: boolean,
+): string {
+  if (isSelected) return "text-stone-100";
+  if (isComplete) return "text-lime-400";
+  if (isGitignored) return "text-stone-500";
+  if (hunkContext === "all" && hasReviewableContent) return "text-amber-400";
+  return "text-stone-300";
+}
+
 interface FileNodeProps {
   entry: ProcessedFileEntry;
   depth: number;
@@ -171,7 +198,7 @@ export const FileNode = memo(
 
               {/* Directory name */}
               <span
-                className={`min-w-0 flex-1 truncate text-xs ${isGitignored ? "text-stone-500" : "text-stone-200"}`}
+                className={`min-w-0 flex-1 truncate text-xs ${directoryNameColor(isGitignored, hunkContext, hasReviewableContent, hasPending)}`}
               >
                 {entry.displayName}
               </span>
@@ -268,15 +295,7 @@ export const FileNode = memo(
 
               {/* File name */}
               <span
-                className={`min-w-0 flex-1 truncate text-xs ${
-                  isSelected
-                    ? "text-stone-100"
-                    : isComplete
-                      ? "text-lime-400"
-                      : isGitignored
-                        ? "text-stone-500"
-                        : "text-stone-300"
-                }`}
+                className={`min-w-0 flex-1 truncate text-xs ${fileNameColor(isSelected, isComplete, isGitignored, hunkContext, hasReviewableContent)}`}
               >
                 {entry.name}
               </span>
