@@ -37,6 +37,8 @@ pub fn get_language_for_file(file_path: &str) -> Option<Language> {
         "css" => Some(tree_sitter_css::LANGUAGE.into()),
         #[cfg(feature = "symbols-html")]
         "html" | "htm" => Some(tree_sitter_html::LANGUAGE.into()),
+        #[cfg(feature = "symbols-markdown")]
+        "md" | "markdown" | "mdx" => Some(tree_sitter_md::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -63,10 +65,14 @@ fn extract_symbols_from_node(node: Node, source: &str, ext: &str) -> Vec<Symbol>
         if let Some(symbol) = node_to_symbol(child, source, ext) {
             symbols.push(symbol);
         } else {
-            // For languages like HTML where symbols are deeply nested,
+            // For languages like HTML/Markdown where symbols are deeply nested,
             // recurse into unmatched nodes to find symbols at any depth.
             #[cfg(feature = "symbols-html")]
             if matches!(ext, "html" | "htm") {
+                symbols.extend(extract_symbols_from_node(child, source, ext));
+            }
+            #[cfg(feature = "symbols-markdown")]
+            if matches!(ext, "md" | "markdown" | "mdx") {
                 symbols.extend(extract_symbols_from_node(child, source, ext));
             }
         }
@@ -104,6 +110,8 @@ fn node_to_symbol(node: Node, source: &str, ext: &str) -> Option<Symbol> {
         "css" => css_node_to_symbol(node, source, kind_str),
         #[cfg(feature = "symbols-html")]
         "html" | "htm" => html_node_to_symbol(node, source, kind_str),
+        #[cfg(feature = "symbols-markdown")]
+        "md" | "markdown" | "mdx" => markdown_node_to_symbol(node, source, kind_str),
         _ => None,
     }
 }
@@ -1249,6 +1257,31 @@ fn extract_html_id_attribute(start_tag: Node, source: &str) -> Option<String> {
     None
 }
 
+// --- Markdown ---
+
+#[cfg(feature = "symbols-markdown")]
+fn markdown_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> {
+    match kind_str {
+        "atx_heading" | "setext_heading" => {
+            let heading_text = node_text(node, source).trim().to_owned();
+            // Strip leading '#' markers and whitespace for name
+            let name = heading_text.trim_start_matches('#').trim().to_owned();
+            if name.is_empty() {
+                return None;
+            }
+            // Use Module for headings as they represent document sections
+            Some(Symbol {
+                name,
+                kind: SymbolKind::Module,
+                start_line: node.start_position().row as u32 + 1,
+                end_line: node.end_position().row as u32 + 1,
+                children: vec![],
+            })
+        }
+        _ => None,
+    }
+}
+
 // --- Helpers ---
 
 /// Get the text content of a node.
@@ -1793,6 +1826,7 @@ func (s *Server) Start() {
     #[test]
     fn test_no_grammar_returns_none() {
         assert!(extract_symbols("hello", "test.json").is_none());
+        #[cfg(not(feature = "symbols-markdown"))]
         assert!(extract_symbols("hello", "test.md").is_none());
     }
 
@@ -2382,5 +2416,43 @@ trait Cacheable {
 
         let style = symbols.iter().find(|s| s.name == "<style>");
         assert!(style.is_some());
+    }
+
+    #[cfg(feature = "symbols-markdown")]
+    #[test]
+    fn test_extract_markdown_symbols() {
+        let source = r#"# Introduction
+
+Some text here.
+
+## Getting Started
+
+More text.
+
+### Installation
+
+Install steps.
+
+## API Reference
+
+API docs.
+"#;
+        let symbols = extract_symbols(source, "test.md").unwrap();
+        assert!(symbols.len() >= 4);
+
+        let intro = symbols.iter().find(|s| s.name == "Introduction").unwrap();
+        assert_eq!(intro.kind, SymbolKind::Module);
+
+        let getting_started = symbols
+            .iter()
+            .find(|s| s.name == "Getting Started")
+            .unwrap();
+        assert_eq!(getting_started.kind, SymbolKind::Module);
+
+        let install = symbols.iter().find(|s| s.name == "Installation").unwrap();
+        assert_eq!(install.kind, SymbolKind::Module);
+
+        let api = symbols.iter().find(|s| s.name == "API Reference").unwrap();
+        assert_eq!(api.kind, SymbolKind::Module);
     }
 }
