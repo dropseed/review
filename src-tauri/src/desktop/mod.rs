@@ -67,9 +67,19 @@ pub fn run() {
             #[cfg(debug_assertions)]
             debug_server::start();
 
+            let close = MenuItemBuilder::new("Close")
+                .id("close")
+                .accelerator("CmdOrCtrl+W")
+                .build(app)?;
+
             let open_repo = MenuItemBuilder::new("Open Repository...")
                 .id("open_repo")
                 .accelerator("CmdOrCtrl+O")
+                .build(app)?;
+
+            let new_tab = MenuItemBuilder::new("New Tab")
+                .id("new_tab")
+                .accelerator("CmdOrCtrl+T")
                 .build(app)?;
 
             let new_window = MenuItemBuilder::new("New Window")
@@ -127,10 +137,11 @@ pub fn run() {
                 .build()?;
 
             let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_tab)
                 .item(&new_window)
                 .item(&open_repo)
                 .separator()
-                .close_window()
+                .item(&close)
                 .build()?;
 
             let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -181,6 +192,12 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             match id {
+                "close" => {
+                    let _: Result<(), _> = app.emit("menu:close", ());
+                }
+                "new_tab" => {
+                    let _: Result<(), _> = app.emit("menu:new-tab", ());
+                }
                 "new_window" => {
                     let _: Result<(), _> = app.emit("menu:new-window", ());
                 }

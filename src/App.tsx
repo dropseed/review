@@ -13,6 +13,7 @@ import { ComparisonHeader } from "./components/ComparisonHeader";
 import { TooltipProvider, SimpleTooltip } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores/reviewStore";
 import { getPlatformServices } from "./platform";
+import { getApiClient } from "./api";
 import {
   useGlobalShortcut,
   useWindowTitle,
@@ -57,6 +58,10 @@ function App() {
   const loadPreferences = useReviewStore((s) => s.loadPreferences);
   const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
   const refresh = useReviewStore((s) => s.refresh);
+  const selectedFile = useReviewStore((s) => s.selectedFile);
+  const secondaryFile = useReviewStore((s) => s.secondaryFile);
+  const closeSplit = useReviewStore((s) => s.closeSplit);
+  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -78,6 +83,35 @@ function App() {
       setIsRefreshing(false);
     }
   }, [refresh, isRefreshing]);
+
+  // Close handler: cascading close (split → file → window)
+  const handleClose = useCallback(async () => {
+    if (secondaryFile !== null) {
+      closeSplit();
+    } else if (selectedFile !== null) {
+      setSelectedFile(null);
+      navigateToOverview();
+    } else {
+      const platform = getPlatformServices();
+      await platform.window.close();
+    }
+  }, [
+    secondaryFile,
+    selectedFile,
+    closeSplit,
+    setSelectedFile,
+    navigateToOverview,
+  ]);
+
+  // New tab handler: open a new tab with the current repo
+  const handleNewTab = useCallback(async () => {
+    const apiClient = getApiClient();
+    try {
+      await apiClient.openRepoWindow(repoPath || "");
+    } catch (err) {
+      console.error("Failed to open new tab:", err);
+    }
+  }, [repoPath]);
 
   // Load preferences on mount
   useEffect(() => {
@@ -135,6 +169,8 @@ function App() {
   });
 
   useMenuEvents({
+    handleClose,
+    handleNewTab,
     handleOpenRepo,
     handleNewWindow,
     handleRefresh,

@@ -845,7 +845,7 @@ pub async fn open_repo_window(
         WebviewUrl::App(format!("index.html?repo={}", urlencoding::encode(&repo_path)).into())
     };
 
-    WebviewWindowBuilder::new(&app, label, url)
+    let window = WebviewWindowBuilder::new(&app, label, url)
         .title(window_title)
         .inner_size(1100.0, 750.0)
         .min_inner_size(800.0, 600.0)
@@ -853,6 +853,8 @@ pub async fn open_repo_window(
         .background_color(WINDOW_BG_COLOR)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+
+    let _ = window.set_focus();
 
     Ok(())
 }

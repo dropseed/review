@@ -9,6 +9,8 @@ import {
 } from "../utils/preferences";
 
 interface UseMenuEventsOptions {
+  handleClose: () => void;
+  handleNewTab: () => void;
   handleOpenRepo: () => void;
   handleNewWindow: () => void;
   handleRefresh: () => void;
@@ -21,6 +23,8 @@ interface UseMenuEventsOptions {
  * Uses refs to avoid stale closures.
  */
 export function useMenuEvents({
+  handleClose,
+  handleNewTab,
   handleOpenRepo,
   handleNewWindow,
   handleRefresh,
@@ -31,6 +35,8 @@ export function useMenuEvents({
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
 
   // Refs to avoid stale closures
+  const handleCloseRef = useRef(handleClose);
+  const handleNewTabRef = useRef(handleNewTab);
   const handleOpenRepoRef = useRef(handleOpenRepo);
   const handleNewWindowRef = useRef(handleNewWindow);
   const handleRefreshRef = useRef(handleRefresh);
@@ -38,12 +44,16 @@ export function useMenuEvents({
   const setCodeFontSizeRef = useRef(setCodeFontSize);
 
   useEffect(() => {
+    handleCloseRef.current = handleClose;
+    handleNewTabRef.current = handleNewTab;
     handleOpenRepoRef.current = handleOpenRepo;
     handleNewWindowRef.current = handleNewWindow;
     handleRefreshRef.current = handleRefresh;
     codeFontSizeRef.current = codeFontSize;
     setCodeFontSizeRef.current = setCodeFontSize;
   }, [
+    handleClose,
+    handleNewTab,
     handleOpenRepo,
     handleNewWindow,
     handleRefresh,
@@ -55,6 +65,18 @@ export function useMenuEvents({
   useEffect(() => {
     const platform = getPlatformServices();
     const unlistenFns: (() => void)[] = [];
+
+    unlistenFns.push(
+      platform.menuEvents.on("menu:close", () => {
+        handleCloseRef.current();
+      }),
+    );
+
+    unlistenFns.push(
+      platform.menuEvents.on("menu:new-tab", () => {
+        handleNewTabRef.current();
+      }),
+    );
 
     unlistenFns.push(
       platform.menuEvents.on("menu:open-repo", () => {
