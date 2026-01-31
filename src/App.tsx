@@ -198,8 +198,8 @@ function App() {
     );
   }
 
-  // Show welcome page when no repository is found
-  if (repoStatus === "not_found") {
+  // Show welcome page when no repository is found or user closed the repo
+  if (repoStatus === "not_found" || repoStatus === "welcome") {
     return (
       <WelcomePage
         onOpenRepo={handleOpenRepo}

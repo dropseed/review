@@ -67,7 +67,12 @@ async function resolveRoutePrefix(repoPath: string): Promise<string> {
 }
 
 // Repository status for distinguishing loading states
-export type RepoStatus = "loading" | "found" | "not_found" | "error";
+export type RepoStatus =
+  | "loading"
+  | "found"
+  | "not_found"
+  | "welcome"
+  | "error";
 
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
@@ -145,8 +150,16 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       }
 
       // Check sessionStorage (page refresh case)
+      // null = key absent (first launch) → fall through to cwd detection
+      // "" = empty sentinel (user closed repo) → stay on welcome
+      // path string = page refresh mid-session → restore the repo
       const storedPath = getStoredRepoPath();
-      if (storedPath) {
+      if (storedPath !== null) {
+        if (storedPath === "") {
+          // User previously closed the repo — stay on welcome
+          setRepoStatus("welcome");
+          return;
+        }
         setRepoPath(storedPath);
         setLoggerRepoPath(storedPath);
         setRepoStatus("found");
@@ -252,10 +265,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
     setRepoPath(null);
-    setRepoStatus("not_found");
+    setRepoStatus("welcome");
     setRepoError(null);
     setComparisonReady(false);
-    sessionStorage.removeItem(REPO_PATH_KEY);
+    sessionStorage.setItem(REPO_PATH_KEY, "");
     navigateRef.current("/");
   }, [setRepoPath]);
 

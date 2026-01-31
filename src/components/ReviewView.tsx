@@ -14,7 +14,6 @@ import { useReviewStore } from "../stores/reviewStore";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
 import {
-  useWindowTitle,
   useSidebarResize,
   useMenuEvents,
   useFileWatcher,
@@ -118,8 +117,6 @@ export function ReviewView({
     };
     notifyCompletion();
   }, [classifying, classificationError]);
-
-  useWindowTitle(repoPath, comparison, comparisonReady);
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({
     sidebarPosition,

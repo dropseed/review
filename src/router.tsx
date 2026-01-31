@@ -15,6 +15,7 @@ import {
   useRepositoryInit,
   useGlobalShortcut,
   useComparisonLoader,
+  useWindowTitle,
 } from "./hooks";
 
 /** Returns the appropriate loading progress message based on current phase */
@@ -68,7 +69,11 @@ function AppShell() {
   useComparisonLoader(comparisonReady, setInitialLoading);
 
   const repoPath = useReviewStore((s) => s.repoPath);
+  const comparison = useReviewStore((s) => s.comparison);
   const loadingProgress = useReviewStore((s) => s.loadingProgress);
+
+  // Update window title on every route (welcome, start, review)
+  useWindowTitle(repoPath, comparison, comparisonReady);
 
   // Show loading state while determining repo status
   if (repoStatus === "loading") {
