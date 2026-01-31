@@ -154,8 +154,33 @@ export function ReviewView({
     <div className="flex h-screen flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        {/* Left: repo name + comparison refs */}
+        {/* Left: back button + repo name + comparison refs */}
         <div className="flex items-center gap-2">
+          {/* Back button */}
+          <SimpleTooltip content="Back to start">
+            <button
+              onClick={onBack}
+              className="flex items-center justify-center w-7 h-7 rounded-md
+                         text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
+                         transition-colors duration-100
+                         focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+              aria-label="Back to start screen"
+            >
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M19 12H5" />
+                <path d="M12 19l-7-7 7-7" />
+              </svg>
+            </button>
+          </SimpleTooltip>
+
           {remoteInfo && (
             <button
               onClick={() => {
@@ -181,7 +206,8 @@ export function ReviewView({
               </svg>
             </button>
           )}
-          <ComparisonHeader comparison={comparison} onBack={onBack} />
+
+          <ComparisonHeader comparison={comparison} />
         </div>
 
         {/* Right: review controls */}

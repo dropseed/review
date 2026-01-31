@@ -1,15 +1,10 @@
 import type { Comparison } from "../types";
-import { SimpleTooltip } from "./ui/tooltip";
 
 interface ComparisonHeaderProps {
   comparison: Comparison;
-  onBack: () => void;
 }
 
-export function ComparisonHeader({
-  comparison,
-  onBack,
-}: ComparisonHeaderProps) {
+export function ComparisonHeader({ comparison }: ComparisonHeaderProps) {
   const isPr = !!comparison.githubPr;
   const compareDisplay = comparison.workingTree
     ? "Working Tree"
@@ -19,32 +14,6 @@ export function ComparisonHeader({
 
   return (
     <div className="flex items-center gap-2 h-full">
-      {/* Back button */}
-      <SimpleTooltip content="Back to start">
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center w-7 h-7 rounded-md
-                     text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
-                     transition-colors duration-100
-                     focus:outline-none focus:ring-2 focus:ring-stone-500/50"
-          aria-label="Back to start screen"
-        >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M19 12H5" />
-            <path d="M12 19l-7-7 7-7" />
-          </svg>
-        </button>
-      </SimpleTooltip>
-
-      {/* Comparison display */}
       {isPr ? (
         <div className="flex items-center gap-2">
           <span

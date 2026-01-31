@@ -7,6 +7,7 @@ import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { SavedReviewList } from "./SavedReviewList";
 import { PullRequestList } from "./PullRequestList";
 import { NewComparisonForm } from "./NewComparisonForm";
+import { GitStatusBar } from "./GitStatusBar";
 
 interface StartScreenProps {
   repoPath: string;
@@ -63,6 +64,33 @@ export function StartScreen({
         }}
         aria-hidden="true"
       />
+
+      {/* Back button - top left */}
+      <div className="relative px-4 pt-4">
+        <SimpleTooltip content="Back to welcome">
+          <button
+            onClick={onCloseRepo}
+            className="flex items-center justify-center w-7 h-7 rounded-md
+                       text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
+                       transition-colors duration-100
+                       focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+            aria-label="Back to welcome screen"
+          >
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+        </SimpleTooltip>
+      </div>
 
       {/* Main content - vertically centered */}
       <main className="relative flex-1 flex flex-col justify-center mx-auto w-full max-w-xl px-6 py-10">
@@ -144,7 +172,7 @@ export function StartScreen({
           </div>
 
           {/* Repo path indicator */}
-          <div className="mt-6 inline-flex items-center gap-1">
+          <div className="mt-6">
             <button
               onClick={onOpenRepo}
               className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-900/50 border border-stone-800/50 transition-all duration-150 hover:bg-stone-800/50 hover:border-stone-700/50 focus:outline-none focus:ring-2 focus:ring-sage-500/50"
@@ -167,29 +195,9 @@ export function StartScreen({
                 {repoPath.replace(/^\/Users\/[^/]+/, "~")}
               </span>
             </button>
-            <SimpleTooltip content="Close repository">
-              <button
-                onClick={onCloseRepo}
-                className="p-1.5 rounded-lg text-stone-600 hover:text-stone-300 hover:bg-stone-800/50 transition-all focus:outline-none focus:ring-2 focus:ring-sage-500/50"
-                aria-label="Close repository"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </SimpleTooltip>
           </div>
+
+          <GitStatusBar repoPath={repoPath} />
         </header>
 
         {/* Recent Reviews */}

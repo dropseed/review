@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, memo } from "react";
 import { useReviewStore } from "../stores/reviewStore";
 import { getPlatformServices } from "../platform";
+import { getApiClient } from "../api";
+import type { GitStatusSummary } from "../types";
 import type { RecentRepo } from "../utils/preferences";
 
 interface WelcomePageProps {
@@ -21,6 +23,16 @@ const RecentRepoCard = memo(function RecentRepoCard({
   onRemove,
 }: RecentRepoCardProps) {
   const [isRemoving, setIsRemoving] = useState(false);
+  const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
+
+  useEffect(() => {
+    getApiClient()
+      .getGitStatus(repo.path)
+      .then(setGitStatus)
+      .catch(() => {
+        // Repo may no longer exist — silently ignore
+      });
+  }, [repo.path]);
 
   const handleRemove = useCallback(
     (e: React.MouseEvent) => {
@@ -66,6 +78,67 @@ const RecentRepoCard = memo(function RecentRepoCard({
         <p className="text-xs text-stone-500 truncate">
           {repo.path.replace(/^\/Users\/[^/]+/, "~")}
         </p>
+        {gitStatus && (
+          <p className="flex items-center gap-1.5 mt-1 font-mono text-xs tabular-nums text-stone-500">
+            <svg
+              className="h-3 w-3 text-stone-600 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            <span className="text-stone-400 truncate">
+              {gitStatus.currentBranch}
+            </span>
+            {gitStatus.staged.length === 0 &&
+            gitStatus.unstaged.length === 0 &&
+            gitStatus.untracked.length === 0 ? (
+              <span className="flex items-center gap-1 text-stone-600">
+                <span className="text-stone-700">&middot;</span>
+                <svg
+                  className="h-2.5 w-2.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                clean
+              </span>
+            ) : (
+              <>
+                <span className="text-stone-700">&middot;</span>
+                {gitStatus.staged.length > 0 && (
+                  <span className="text-emerald-500">
+                    +{gitStatus.staged.length}
+                  </span>
+                )}
+                {gitStatus.unstaged.length > 0 && (
+                  <span className="text-amber-500">
+                    ~{gitStatus.unstaged.length}
+                  </span>
+                )}
+                {gitStatus.untracked.length > 0 && (
+                  <span className="text-stone-500">
+                    ?{gitStatus.untracked.length}
+                  </span>
+                )}
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {/* Remove button */}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { makeComparison, type Comparison } from "../types";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
@@ -107,9 +107,22 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const [comparisonReady, setComparisonReady] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
+  // Keep a stable ref for navigate so the init effect doesn't re-run
+  // when the route changes (react-router v7 can change the navigate reference)
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  // Guard to ensure init only runs once
+  const hasInitializedRef = useRef(false);
+
   // Initialize repo path from URL or API, then navigate to clean route
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     const init = async () => {
+      const nav = navigateRef.current;
+
       // Check URL for repo path first (Tauri bootstrap)
       const urlRepoPath = getRepoPathFromUrl();
       if (urlRepoPath) {
@@ -124,9 +137,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         const prefix = await resolveRoutePrefix(urlRepoPath);
         const urlComparisonKey = getComparisonKeyFromUrl();
         if (urlComparisonKey) {
-          navigate(`/${prefix}/review/${urlComparisonKey}`, { replace: true });
+          nav(`/${prefix}/review/${urlComparisonKey}`, { replace: true });
         } else {
-          navigate(`/${prefix}`, { replace: true });
+          nav(`/${prefix}`, { replace: true });
         }
         return;
       }
@@ -154,7 +167,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
         // Resolve and navigate to clean route
         const prefix = await resolveRoutePrefix(path);
-        navigate(`/${prefix}`, { replace: true });
+        nav(`/${prefix}`, { replace: true });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (
@@ -172,7 +185,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     };
 
     init();
-  }, [setRepoPath, addRecentRepository, navigate]);
+  }, [setRepoPath, addRecentRepository]);
 
   // When repo path changes, always load a comparison
   useEffect(() => {
@@ -220,21 +233,21 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       // Navigate to the review route
       if (repoPath) {
         const prefix = await resolveRoutePrefix(repoPath);
-        navigate(`/${prefix}/review/${selectedComparison.key}`);
+        navigateRef.current(`/${prefix}/review/${selectedComparison.key}`);
       }
     },
-    [setComparison, saveCurrentComparison, repoPath, navigate],
+    [setComparison, saveCurrentComparison, repoPath],
   );
 
   // Navigate back to start screen
   const handleBackToStart = useCallback(async () => {
     if (repoPath) {
       const prefix = await resolveRoutePrefix(repoPath);
-      navigate(`/${prefix}`);
+      navigateRef.current(`/${prefix}`);
     } else {
-      navigate("/");
+      navigateRef.current("/");
     }
-  }, [repoPath, navigate]);
+  }, [repoPath]);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
@@ -243,8 +256,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     setRepoError(null);
     setComparisonReady(false);
     sessionStorage.removeItem(REPO_PATH_KEY);
-    navigate("/");
-  }, [setRepoPath, navigate]);
+    navigateRef.current("/");
+  }, [setRepoPath]);
 
   // Handle selecting a repo (from welcome page recent list)
   const handleSelectRepo = useCallback(
@@ -259,9 +272,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
       // Resolve and navigate
       const prefix = await resolveRoutePrefix(path);
-      navigate(`/${prefix}`);
+      navigateRef.current(`/${prefix}`);
     },
-    [setRepoPath, addRecentRepository, navigate],
+    [setRepoPath, addRecentRepository],
   );
 
   // Open a repository in the current window (standard Cmd+O behavior)
@@ -283,12 +296,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
         // Resolve and navigate
         const prefix = await resolveRoutePrefix(selected);
-        navigate(`/${prefix}`);
+        navigateRef.current(`/${prefix}`);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
     }
-  }, [setRepoPath, addRecentRepository, navigate]);
+  }, [setRepoPath, addRecentRepository]);
 
   // Open a new window (Cmd+N behavior)
   const handleNewWindow = useCallback(async () => {
