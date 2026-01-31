@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useReviewStore } from "../../../stores/reviewStore";
+import { useReviewStore } from "../../../stores";
 
 /**
  * Provides unified approval handlers for files and directories.

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { SimpleTooltip } from "./ui/tooltip";
 import { GitStatusModal } from "./GitStatusModal";
 

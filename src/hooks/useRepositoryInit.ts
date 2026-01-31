@@ -4,7 +4,7 @@ import { makeComparison, type Comparison } from "../types";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 
 // Session storage key for the local repo path
 const REPO_PATH_KEY = "repoPath";

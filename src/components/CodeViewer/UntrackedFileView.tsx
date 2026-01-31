@@ -1,6 +1,6 @@
 import { File as PierreFile } from "@pierre/diffs/react";
 import { SimpleTooltip } from "../ui/tooltip";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import type { DiffHunk } from "../../types";
 import { isHunkTrusted } from "../../types";
 import type { SupportedLanguages } from "./languageMap";

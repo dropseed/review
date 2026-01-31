@@ -336,11 +336,6 @@ pub fn get_file_content(
     let ext = file_path.rsplit('.').next().unwrap_or("");
     let mime_type = get_image_mime_type(ext);
 
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_file_content] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
     if content_type == "image" || content_type == "svg" {
         debug!("[get_file_content] handling as image/svg: {content_type}");
 

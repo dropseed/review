@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import type { FileSymbolDiff, SymbolDiff, DiffHunk } from "../../types";
 import {
   SymbolKindBadge,

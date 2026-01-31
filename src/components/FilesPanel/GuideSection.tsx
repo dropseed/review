@@ -6,7 +6,7 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "../ui/collapsible";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { SimpleTooltip } from "../ui/tooltip";
 import { getPlatformServices } from "../../platform";
 

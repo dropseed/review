@@ -1,36 +1,7 @@
 import type { StateCreator } from "zustand";
-import type {
-  Comparison,
-  FileEntry,
-  FileContent,
-  DiffHunk,
-  ReviewState,
-  ReviewSummary,
-  MovePair,
-  RejectionFeedback,
-  LineAnnotation,
-  GitStatusSummary,
-  CommitEntry,
-  FileSymbolDiff,
-} from "../types";
+import type { FileEntry } from "../types";
 import type { ApiClient } from "../api";
 import type { StorageService } from "../platform";
-
-// Re-export types used by slices
-export type {
-  Comparison,
-  FileEntry,
-  FileContent,
-  DiffHunk,
-  ReviewState,
-  ReviewSummary,
-  MovePair,
-  RejectionFeedback,
-  LineAnnotation,
-  GitStatusSummary,
-  CommitEntry,
-  FileSymbolDiff,
-};
 
 // Import all slice types
 import type { PreferencesSlice } from "./slices/preferencesSlice";

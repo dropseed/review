@@ -3,58 +3,16 @@ import type { ReviewStore } from "./types";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 
-import {
-  createPreferencesSlice,
-  type PreferencesSlice,
-} from "./slices/preferencesSlice";
-import {
-  createNavigationSlice,
-  type NavigationSlice,
-} from "./slices/navigationSlice";
-import { createGitSlice, type GitSlice } from "./slices/gitSlice";
-import {
-  createClassificationSlice,
-  type ClassificationSlice,
-} from "./slices/classificationSlice";
-import { createFilesSlice, type FilesSlice } from "./slices/filesSlice";
-import { createReviewSlice, type ReviewSlice } from "./slices/reviewSlice";
-import { createSearchSlice, type SearchSlice } from "./slices/searchSlice";
-import { createHistorySlice, type HistorySlice } from "./slices/historySlice";
-import { createSymbolsSlice, type SymbolsSlice } from "./slices/symbolsSlice";
-import {
-  createNarrativeSlice,
-  type NarrativeSlice,
-} from "./slices/narrativeSlice";
-
-// Re-export types
-export type { ReviewStore };
-export type {
-  PreferencesSlice,
-  NavigationSlice,
-  GitSlice,
-  ClassificationSlice,
-  FilesSlice,
-  ReviewSlice,
-  SearchSlice,
-  HistorySlice,
-  SymbolsSlice,
-  NarrativeSlice,
-};
-
-// Re-export types from main types file
-export type {
-  Comparison,
-  FileEntry,
-  DiffHunk,
-  ReviewState,
-  ReviewSummary,
-  MovePair,
-  RejectionFeedback,
-  LineAnnotation,
-  GitStatusSummary,
-  CommitEntry,
-  FileSymbolDiff,
-} from "./types";
+import { createPreferencesSlice } from "./slices/preferencesSlice";
+import { createNavigationSlice } from "./slices/navigationSlice";
+import { createGitSlice } from "./slices/gitSlice";
+import { createClassificationSlice } from "./slices/classificationSlice";
+import { createFilesSlice } from "./slices/filesSlice";
+import { createReviewSlice } from "./slices/reviewSlice";
+import { createSearchSlice } from "./slices/searchSlice";
+import { createHistorySlice } from "./slices/historySlice";
+import { createSymbolsSlice } from "./slices/symbolsSlice";
+import { createNarrativeSlice } from "./slices/narrativeSlice";
 
 // Get dependencies
 const apiClient = getApiClient();

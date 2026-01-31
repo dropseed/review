@@ -12,7 +12,7 @@ import {
   useFilePanelApproval,
   useFilePanelFeedback,
 } from "./hooks";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";

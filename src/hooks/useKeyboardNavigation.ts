@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,

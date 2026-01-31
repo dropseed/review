@@ -10,41 +10,6 @@ export { isTauriEnvironment } from "./client";
 export { TauriClient } from "./tauri-client";
 export { HttpClient } from "./http-client";
 
-// Re-export types
-export type {
-  BranchList,
-  StashEntry,
-  GitStatusSummary,
-  StatusEntry,
-  Comparison,
-  FileEntry,
-  DiffHunk,
-  DiffLine,
-  MovePair,
-  HunkState,
-  LineAnnotation,
-  RejectionFeedback,
-  ClassificationResult,
-  ClassifyResponse,
-  ReviewState,
-  ReviewSummary,
-  TrustPattern,
-  TrustCategory,
-  ContentType,
-  FileContent,
-  HunkInput,
-  ClassifyOptions,
-  DetectMovePairsResponse,
-  ExpandedContext,
-  SearchMatch,
-  SymbolKind,
-  SymbolChangeType,
-  LineRange,
-  SymbolDiff,
-  FileSymbolDiff,
-  RemoteInfo,
-} from "./types";
-
 import type { ApiClient } from "./client";
 import { isTauriEnvironment } from "./client";
 import { TauriClient } from "./tauri-client";

@@ -11,7 +11,7 @@ import { ClassificationsModal } from "./ClassificationsModal";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { ComparisonHeader } from "./ComparisonHeader";
 import { SimpleTooltip } from "./ui/tooltip";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
 import {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";

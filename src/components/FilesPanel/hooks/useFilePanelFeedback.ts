@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useReviewStore } from "../../../stores/reviewStore";
+import { useReviewStore } from "../../../stores";
 import type { ReviewState } from "../../../types";
 
 interface UseFilePanelFeedbackOptions {

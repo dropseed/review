@@ -11,7 +11,7 @@ import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { WelcomePage } from "./components/WelcomePage";
 import { ComparisonHeader } from "./components/ComparisonHeader";
 import { TooltipProvider, SimpleTooltip } from "./components/ui/tooltip";
-import { useReviewStore } from "./stores/reviewStore";
+import { useReviewStore } from "./stores";
 import { getPlatformServices } from "./platform";
 import { getApiClient } from "./api";
 import {

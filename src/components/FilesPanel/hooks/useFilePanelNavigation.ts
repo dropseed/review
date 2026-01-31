@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useReviewStore } from "../../../stores/reviewStore";
+import { useReviewStore } from "../../../stores";
 import type { ViewMode, ProcessedFileEntry } from "../types";
 
 interface UseFilePanelNavigationOptions {

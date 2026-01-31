@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { anyLabelMatchesPattern, type TrustCategory } from "../../types";
 import { SimpleTooltip } from "../ui/tooltip";

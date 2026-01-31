@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../ui/tooltip";
 

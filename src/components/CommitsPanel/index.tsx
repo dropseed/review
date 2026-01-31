@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from "react";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 

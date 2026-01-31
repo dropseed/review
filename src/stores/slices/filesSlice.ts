@@ -1,11 +1,6 @@
 import type { ApiClient } from "../../api";
-import type {
-  SliceCreatorWithClient,
-  Comparison,
-  FileEntry,
-  DiffHunk,
-  MovePair,
-} from "../types";
+import type { Comparison, FileEntry, DiffHunk, MovePair } from "../../types";
+import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { makeComparison } from "../../types";
 

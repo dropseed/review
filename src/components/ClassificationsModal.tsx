@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import type { DiffHunk, HunkState } from "../types";
 import {
   Dialog,

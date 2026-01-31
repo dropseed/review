@@ -409,6 +409,49 @@ export interface FileSymbolDiff {
   hasGrammar: boolean;
 }
 
+// API operation types
+
+export interface HunkInput {
+  id: string;
+  filePath: string;
+  content: string;
+}
+
+export interface NarrativeInput {
+  id: string;
+  filePath: string;
+  content: string;
+}
+
+export interface ClassifyOptions {
+  command?: string;
+  batchSize?: number;
+  maxConcurrent?: number;
+}
+
+export interface DetectMovePairsResponse {
+  pairs: MovePair[];
+  hunks: DiffHunk[];
+}
+
+export interface ExpandedContext {
+  lines: string[];
+  startLine: number;
+  endLine: number;
+}
+
+export interface SearchMatch {
+  filePath: string;
+  lineNumber: number;
+  column: number;
+  lineContent: string;
+}
+
+export interface RemoteInfo {
+  name: string;
+  browseUrl: string;
+}
+
 // File content from backend
 export type ContentType = "text" | "image" | "svg" | "binary";
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
 import type {
   FileSymbol,

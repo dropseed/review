@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { Breadcrumbs } from "../Breadcrumbs";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";

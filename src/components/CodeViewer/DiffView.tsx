@@ -8,7 +8,7 @@ import {
 } from "react";
 import { PatchDiff, MultiFileDiff } from "@pierre/diffs/react";
 import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { SimpleTooltip } from "../../components/ui/tooltip";

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 
 /**
  * Coordinates loading of files, review state, and commits when comparison is ready.

@@ -1,12 +1,12 @@
 import type { ApiClient } from "../../api";
 import type {
-  SliceCreatorWithClient,
   Comparison,
   ReviewState,
   ReviewSummary,
   RejectionFeedback,
   LineAnnotation,
-} from "../types";
+} from "../../types";
+import type { SliceCreatorWithClient } from "../types";
 import { createDebouncedFn } from "../types";
 
 // ========================================================================

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { isHunkTrusted } from "../types";
 
 export interface ReviewProgress {

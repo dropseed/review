@@ -28,7 +28,7 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
-} from "./types";
+} from "../types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
 
@@ -412,7 +412,7 @@ export class HttpClient implements ApiClient {
 
   async generateNarrative(
     _repoPath: string,
-    _hunks: import("./types").NarrativeInput[],
+    _hunks: import("../types").NarrativeInput[],
     _options?: { command?: string },
   ): Promise<string> {
     console.warn("[HttpClient] generateNarrative not implemented");

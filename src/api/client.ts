@@ -29,7 +29,7 @@ import type {
   FileSymbolDiff,
   RemoteInfo,
   NarrativeInput,
-} from "./types";
+} from "../types";
 
 export interface ApiClient {
   // ----- Git operations -----

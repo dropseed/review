@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 // Simple JSON syntax highlighting

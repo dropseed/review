@@ -10,7 +10,7 @@ import { WelcomePage } from "./components/WelcomePage";
 import { StartScreen } from "./components/StartScreen";
 import { ReviewView } from "./components/ReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { useReviewStore } from "./stores/reviewStore";
+import { useReviewStore } from "./stores";
 import {
   useRepositoryInit,
   useGlobalShortcut,

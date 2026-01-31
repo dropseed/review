@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { flattenFilesWithStatus } from "../../stores/types";
 import { isHunkTrusted } from "../../types";
 

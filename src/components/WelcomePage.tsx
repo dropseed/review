@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, memo } from "react";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
 import type { GitStatusSummary } from "../types";

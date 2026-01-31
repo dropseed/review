@@ -1,6 +1,6 @@
 import type { SliceCreatorWithClient } from "../types";
 import type { ApiClient } from "../../api";
-import type { SearchMatch } from "../../api/types";
+import type { SearchMatch } from "../../types";
 
 export interface SearchSlice {
   // Search state

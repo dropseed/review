@@ -31,7 +31,7 @@ import type {
   FileSymbolDiff,
   RemoteInfo,
   NarrativeInput,
-} from "./types";
+} from "../types";
 
 export class TauriClient implements ApiClient {
   // ----- Git operations -----

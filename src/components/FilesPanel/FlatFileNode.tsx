@@ -12,7 +12,7 @@ import {
   collectAllHunkIds,
   getHunkIdsStatus,
 } from "../symbols";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { useReviewData } from "../ReviewDataContext";
 
 // --- Props ---

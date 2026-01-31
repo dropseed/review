@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import type { Comparison } from "../../types";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../ui/tooltip";
 import { GitStatusIndicator } from "../GitStatusIndicator";

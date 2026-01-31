@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { shouldIgnoreReviewStateReload } from "../stores/slices/reviewSlice";
-import { useReviewStore } from "../stores/reviewStore";
+import { useReviewStore } from "../stores";
 
 /**
  * Manages file watcher lifecycle and listens for review state/git change events.

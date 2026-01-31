@@ -1,5 +1,6 @@
-import type { ApiClient, RemoteInfo } from "../../api";
-import type { SliceCreatorWithClient, GitStatusSummary } from "../types";
+import type { ApiClient } from "../../api";
+import type { GitStatusSummary, RemoteInfo } from "../../types";
+import type { SliceCreatorWithClient } from "../types";
 
 export interface GitSlice {
   // Git state

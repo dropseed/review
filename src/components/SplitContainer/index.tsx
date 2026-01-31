@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useReviewStore } from "../../stores/reviewStore";
+import { useReviewStore } from "../../stores";
 import { CodeViewer } from "../CodeViewer";
 import { OverviewView } from "../OverviewView";
 import { PrimaryPaneHeader, SecondaryPaneHeader } from "./PaneHeader";
