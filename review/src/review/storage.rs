@@ -196,6 +196,7 @@ mod tests {
             working_tree: true,
             staged_only: false,
             key: "main..HEAD+working-tree".to_string(),
+            github_pr: None,
         }
     }
 
@@ -290,6 +291,7 @@ mod tests {
             working_tree: false,
             staged_only: false,
             key: "main..feature-1".to_string(),
+            github_pr: None,
         };
         let comparison2 = Comparison {
             old: "main".to_string(),
@@ -297,6 +299,7 @@ mod tests {
             working_tree: false,
             staged_only: false,
             key: "main..feature-2".to_string(),
+            github_pr: None,
         };
 
         save_review_state(&repo_path, &ReviewState::new(comparison1)).unwrap();

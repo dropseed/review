@@ -199,11 +199,14 @@ const ReviewCard = memo(function ReviewCard({
     [onSelect],
   );
 
-  const compareDisplay = review.comparison.workingTree
-    ? "Working Tree"
-    : review.comparison.stagedOnly
-      ? "Staged"
-      : review.comparison.new;
+  const isPr = !!review.comparison.githubPr;
+  const compareDisplay = isPr
+    ? `PR #${review.comparison.githubPr!.number}: ${review.comparison.githubPr!.title}`
+    : review.comparison.workingTree
+      ? "Working Tree"
+      : review.comparison.stagedOnly
+        ? "Staged"
+        : review.comparison.new;
 
   // Ensure progress bar is visible even at tiny percentages
   const progressWidth = progress > 0 ? Math.max(progress, 5) : 0;
@@ -213,7 +216,8 @@ const ReviewCard = memo(function ReviewCard({
       className={`group relative rounded-xl border border-stone-800/80 bg-gradient-to-br from-stone-900/80 to-stone-900/40
                  backdrop-blur-sm shadow-lg shadow-black/20
                  transition-all duration-200
-                 hover:border-green-500/25 hover:from-stone-900 hover:to-stone-900/60 hover:shadow-xl hover:shadow-green-900/10
+                 ${isPr ? "hover:border-violet-500/25 hover:shadow-violet-900/10" : "hover:border-green-500/25 hover:shadow-green-900/10"}
+                 hover:from-stone-900 hover:to-stone-900/60 hover:shadow-xl
                  hover:-translate-y-0.5
                  ${prefersReducedMotion ? "" : "animate-fade-in"}`}
       style={
@@ -230,23 +234,42 @@ const ReviewCard = memo(function ReviewCard({
         {/* Main row: Comparison + Progress */}
         <div className="flex items-center gap-4">
           {/* Comparison display */}
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-mono text-sm text-stone-200 truncate font-medium">
-              {review.comparison.old}
-            </span>
-            <span className="text-stone-600 text-xs">..</span>
-            <span
-              className={`font-mono text-sm truncate font-medium ${
-                review.comparison.workingTree
-                  ? "text-green-400"
-                  : review.comparison.stagedOnly
-                    ? "text-green-500"
-                    : "text-stone-200"
-              }`}
-            >
-              {compareDisplay}
-            </span>
-          </div>
+          {isPr ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-flex items-center gap-1 shrink-0 font-mono text-xs text-violet-400 px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20">
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+                </svg>
+                #{review.comparison.githubPr!.number}
+              </span>
+              <span className="text-sm text-stone-200 truncate font-medium">
+                {review.comparison.githubPr!.title}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono text-sm text-stone-200 truncate font-medium">
+                {review.comparison.old}
+              </span>
+              <span className="text-stone-600 text-xs">..</span>
+              <span
+                className={`font-mono text-sm truncate font-medium ${
+                  review.comparison.workingTree
+                    ? "text-green-400"
+                    : review.comparison.stagedOnly
+                      ? "text-green-500"
+                      : "text-stone-200"
+                }`}
+              >
+                {compareDisplay}
+              </span>
+            </div>
+          )}
 
           {/* Spacer */}
           <div className="flex-1" />

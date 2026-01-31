@@ -107,6 +107,7 @@ fn parse_comparison_spec(
             working_tree: false,
             staged_only: true,
             key: "HEAD+staged".to_owned(),
+            github_pr: None,
         });
     }
 
@@ -141,5 +142,6 @@ fn parse_comparison_spec(
         working_tree,
         staged_only: false,
         key,
+        github_pr: None,
     })
 }

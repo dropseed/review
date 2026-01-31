@@ -12,6 +12,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  PullRequest,
   CommitEntry,
   CommitDetail,
   FileEntry,
@@ -76,6 +77,20 @@ export class TauriClient implements ApiClient {
 
   async getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail> {
     return invoke<CommitDetail>("get_commit_detail", { repoPath, hash });
+  }
+
+  // ----- GitHub -----
+
+  async checkGitHubAvailable(repoPath: string): Promise<boolean> {
+    try {
+      return await invoke<boolean>("check_github_available", { repoPath });
+    } catch {
+      return false;
+    }
+  }
+
+  async listPullRequests(repoPath: string): Promise<PullRequest[]> {
+    return invoke<PullRequest[]>("list_pull_requests", { repoPath });
   }
 
   // ----- File operations -----

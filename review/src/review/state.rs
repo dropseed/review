@@ -197,6 +197,7 @@ mod tests {
             working_tree: true,
             staged_only: false,
             key: "main..HEAD+working-tree".to_string(),
+            github_pr: None,
         };
         let state = ReviewState::new(comparison.clone());
 
@@ -215,6 +216,7 @@ mod tests {
             working_tree: false,
             staged_only: false,
             key: "main..HEAD".to_string(),
+            github_pr: None,
         };
         let state = ReviewState::new(comparison);
         let summary = state.to_summary();
@@ -231,6 +233,7 @@ mod tests {
             working_tree: false,
             staged_only: false,
             key: "main..HEAD".to_string(),
+            github_pr: None,
         };
         let mut state = ReviewState::new(comparison);
 
@@ -267,6 +270,7 @@ mod tests {
             working_tree: false,
             staged_only: false,
             key: "main..HEAD".to_string(),
+            github_pr: None,
         };
         let mut state = ReviewState::new(comparison);
         state.trust_list = vec!["imports:*".to_string()];

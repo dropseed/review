@@ -5,6 +5,7 @@ import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../ui/tooltip";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { SavedReviewList } from "./SavedReviewList";
+import { PullRequestList } from "./PullRequestList";
 import { NewComparisonForm } from "./NewComparisonForm";
 
 interface StartScreenProps {
@@ -197,6 +198,14 @@ export function StartScreen({
           savedReviewsLoading={savedReviewsLoading}
           onSelectReview={onSelectReview}
           onDeleteReview={deleteReview}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+
+        {/* Pull Requests */}
+        <PullRequestList
+          repoPath={repoPath}
+          onSelectReview={onSelectReview}
+          existingComparisonKeys={existingComparisonKeys}
           prefersReducedMotion={prefersReducedMotion}
         />
 

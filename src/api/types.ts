@@ -8,6 +8,8 @@ export type {
   GitStatusSummary,
   StatusEntry,
   Comparison,
+  GitHubPrRef,
+  PullRequest,
   CommitEntry,
   CommitDetail,
   CommitFileChange,

@@ -126,6 +126,10 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
         // Move detection
         ("POST", "/detect-moves") => handle_detect_moves(body.as_deref()),
 
+        // GitHub
+        ("GET", "/github/available") => handle_github_available(&query),
+        ("GET", "/github/prs") => handle_github_prs(&query),
+
         _ => {
             let body = r#"{"error": "Not found"}"#;
             Response::from_string(body)
@@ -192,8 +196,24 @@ fn get_comparison_from_query(
     let working_tree = params.get("workingTree").is_some_and(|v| v == "true");
     let staged_only = params.get("stagedOnly").is_some_and(|v| v == "true");
 
+    // Check for optional PR params
+    let github_pr = params
+        .get("prNumber")
+        .and_then(|n| n.parse::<u32>().ok())
+        .map(|number| {
+            let title = params.get("prTitle").cloned().unwrap_or_default();
+            review::sources::github::GitHubPrRef {
+                number,
+                title,
+                head_ref_name: new.clone(),
+                base_ref_name: old.clone(),
+            }
+        });
+
     // Build the key the same way the frontend does
-    let key = if working_tree {
+    let key = if github_pr.is_some() {
+        format!("pr-{}", github_pr.as_ref().unwrap().number)
+    } else if working_tree {
         format!("{old}..{new}+working-tree")
     } else if staged_only {
         format!("{old}..{new}+staged")
@@ -207,6 +227,7 @@ fn get_comparison_from_query(
         working_tree,
         staged_only,
         key,
+        github_pr,
     })
 }
 
@@ -552,6 +573,30 @@ fn handle_detect_moves(body: Option<&str>) -> Response<Cursor<Vec<u8>>> {
     json_response(&result)
 }
 
+fn handle_github_available(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let available = commands::check_github_available(repo_path);
+    json_response(&AvailableResponse { available })
+}
+
+fn handle_github_prs(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    match commands::list_pull_requests(repo_path) {
+        Ok(prs) => json_response(&prs),
+        Err(e) => error_response(500, &e),
+    }
+}
+
 // Helper to get repo path from params or default
 fn get_repo_path(
     params: &std::collections::HashMap<String, String>,
@@ -569,6 +614,11 @@ fn get_repo_path(
 }
 
 // Additional response types
+#[derive(Serialize)]
+struct AvailableResponse {
+    available: bool,
+}
+
 #[derive(Serialize)]
 struct BranchResponse {
     branch: String,

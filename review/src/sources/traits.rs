@@ -56,6 +56,8 @@ pub struct Comparison {
     #[serde(rename = "stagedOnly", default)]
     pub staged_only: bool, // Only show staged changes (index vs HEAD)
     pub key: String, // Unique key for storage, e.g., "main..HEAD+working-tree"
+    #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
+    pub github_pr: Option<super::github::GitHubPrRef>, // Optional GitHub PR reference
 }
 
 /// A file entry in the tree

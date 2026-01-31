@@ -279,6 +279,8 @@ pub fn run() {
     let app = builder
         .invoke_handler(tauri::generate_handler![
             commands::get_current_repo,
+            commands::check_github_available,
+            commands::list_pull_requests,
             commands::get_current_branch,
             commands::get_remote_info,
             commands::get_default_branch,

@@ -10,6 +10,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  PullRequest,
   CommitEntry,
   CommitDetail,
   FileEntry,
@@ -99,6 +100,10 @@ export class HttpClient implements ApiClient {
     if (comparison.stagedOnly) {
       parts.push("stagedOnly=true");
     }
+    if (comparison.githubPr) {
+      parts.push(`prNumber=${comparison.githubPr.number}`);
+      parts.push(`prTitle=${encodeURIComponent(comparison.githubPr.title)}`);
+    }
     return parts.join("&");
   }
 
@@ -186,6 +191,29 @@ export class HttpClient implements ApiClient {
     return this.fetchJson<CommitDetail>(
       `/commit?${this.buildRepoQuery(repoPath)}&hash=${encodeURIComponent(hash)}`,
     );
+  }
+
+  // ----- GitHub -----
+
+  async checkGitHubAvailable(repoPath: string): Promise<boolean> {
+    try {
+      const result = await this.fetchJson<{ available: boolean }>(
+        `/github/available?${this.buildRepoQuery(repoPath)}`,
+      );
+      return result.available;
+    } catch {
+      return false;
+    }
+  }
+
+  async listPullRequests(repoPath: string): Promise<PullRequest[]> {
+    try {
+      return await this.fetchJson<PullRequest[]>(
+        `/github/prs?${this.buildRepoQuery(repoPath)}`,
+      );
+    } catch {
+      return [];
+    }
   }
 
   // ----- File operations -----

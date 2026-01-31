@@ -216,6 +216,7 @@ pub fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> 
         working_tree: true,
         staged_only: false,
         key,
+        github_pr: None,
     })
 }
 

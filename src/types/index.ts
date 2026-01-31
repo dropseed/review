@@ -132,6 +132,25 @@ export interface StatusEntry {
   status: "modified" | "added" | "deleted" | "renamed" | "copied";
 }
 
+// GitHub PR types
+export interface GitHubPrRef {
+  number: number;
+  title: string;
+  headRefName: string;
+  baseRefName: string;
+}
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  headRefName: string;
+  baseRefName: string;
+  url: string;
+  author: { login: string };
+  state: string;
+  updatedAt: string;
+}
+
 // Comparison - what we're reviewing (VS Code model)
 export interface Comparison {
   old: string; // Base ref (e.g., "main")
@@ -139,6 +158,7 @@ export interface Comparison {
   workingTree: boolean; // Include uncommitted working tree changes
   stagedOnly?: boolean; // Only show staged changes (index vs HEAD)
   key: string; // Unique key for storage, e.g., "main..HEAD+working-tree"
+  githubPr?: GitHubPrRef; // Optional GitHub PR reference
 }
 
 // Helper to create a Comparison object
@@ -162,6 +182,23 @@ export function makeComparison(
     key += "+working-tree";
   }
   return { old, new: newRef, workingTree, stagedOnly, key };
+}
+
+// Helper to create a Comparison for a GitHub PR
+export function makePrComparison(pr: PullRequest): Comparison {
+  return {
+    old: pr.baseRefName,
+    new: pr.headRefName,
+    workingTree: false,
+    stagedOnly: false,
+    key: `pr-${pr.number}`,
+    githubPr: {
+      number: pr.number,
+      title: pr.title,
+      headRefName: pr.headRefName,
+      baseRefName: pr.baseRefName,
+    },
+  };
 }
 
 // File tree

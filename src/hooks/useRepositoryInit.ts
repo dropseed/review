@@ -35,14 +35,18 @@ function parseComparisonKey(key: string): Comparison | null {
 // Repository status for distinguishing loading states
 export type RepoStatus = "loading" | "found" | "not_found" | "error";
 
+type AppView = "start" | "review";
+
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
+  view: AppView;
   comparisonReady: boolean;
   setComparisonReady: (ready: boolean) => void;
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
   handleSelectReview: (comparison: Comparison) => void;
+  handleBackToStart: () => void;
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
@@ -65,6 +69,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
 
+  const [view, setView] = useState<AppView>("review");
   const [comparisonReady, setComparisonReady] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
@@ -140,16 +145,27 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     }
   }, [repoPath, setComparison, loadCurrentComparison]);
 
-  // Handle selecting a review from the reviews modal
+  // Handle selecting a review from the start screen or reviews list
   const handleSelectReview = useCallback(
     (selectedComparison: Comparison) => {
+      const currentKey = useReviewStore.getState().comparison.key;
       setComparison(selectedComparison);
       saveCurrentComparison();
       setComparisonReady(true);
-      setInitialLoading(true);
+      // Only show loading spinner if the comparison actually changed;
+      // if the same review is re-selected, data is already loaded.
+      if (selectedComparison.key !== currentKey) {
+        setInitialLoading(true);
+      }
+      setView("review");
     },
     [setComparison, saveCurrentComparison],
   );
+
+  // Navigate back to start screen
+  const handleBackToStart = useCallback(() => {
+    setView("start");
+  }, []);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
@@ -208,11 +224,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   return {
     repoStatus,
     repoError,
+    view,
     comparisonReady,
     setComparisonReady,
     initialLoading,
     setInitialLoading,
     handleSelectReview,
+    handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
     handleCloseRepo,

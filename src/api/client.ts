@@ -10,6 +10,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  PullRequest,
   CommitEntry,
   CommitDetail,
   FileEntry,
@@ -62,6 +63,14 @@ export interface ApiClient {
 
   /** Get detailed information about a specific commit */
   getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail>;
+
+  // ----- GitHub -----
+
+  /** Check if the gh CLI is available and authenticated */
+  checkGitHubAvailable(repoPath: string): Promise<boolean>;
+
+  /** List open pull requests for the repository */
+  listPullRequests(repoPath: string): Promise<PullRequest[]>;
 
   // ----- File operations -----
 

@@ -17,6 +17,7 @@ use review::diff::parser::{
 };
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage;
+use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
 use review::sources::local_git::{LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
@@ -100,6 +101,8 @@ pub struct ComparisonParam {
     #[serde(rename = "workingTree")]
     pub working_tree: bool,
     pub key: String,
+    #[serde(rename = "githubPr", default)]
+    pub github_pr: Option<review::sources::github::GitHubPrRef>,
 }
 
 // --- Helper Functions ---
@@ -174,8 +177,36 @@ pub fn get_current_repo() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn check_github_available(repo_path: String) -> bool {
+    let provider = GhCliProvider::new(PathBuf::from(&repo_path));
+    provider.is_available()
+}
+
+#[tauri::command]
+pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String> {
+    let provider = GhCliProvider::new(PathBuf::from(&repo_path));
+    provider.list_pull_requests().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
     debug!("[list_files] repo_path={repo_path}, comparison={comparison:?}");
+
+    // PR routing: use gh CLI to get file list
+    if let Some(ref pr) = comparison.github_pr {
+        let provider = GhCliProvider::new(PathBuf::from(&repo_path));
+        let files = provider
+            .get_pull_request_files(pr.number)
+            .map_err(|e| e.to_string())?;
+        let result = review::sources::github::pr_files_to_file_entries(files);
+        info!(
+            "[list_files] SUCCESS (PR #{}): {} entries",
+            pr.number,
+            result.len()
+        );
+        return Ok(result);
+    }
+
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
         error!("[list_files] ERROR creating source: {e}");
         e.to_string()
@@ -214,6 +245,11 @@ pub fn get_file_content(
     debug!(
         "[get_file_content] repo_path={repo_path}, file_path={file_path}, comparison={comparison:?}"
     );
+
+    // PR routing: get diff from gh CLI and content from local git refs
+    if let Some(ref pr) = comparison.github_pr {
+        return get_file_content_for_pr(&repo_path, &file_path, pr);
+    }
 
     let repo_path_buf = PathBuf::from(&repo_path);
     let full_path = repo_path_buf.join(&file_path);
@@ -474,8 +510,123 @@ pub fn get_file_content(
     })
 }
 
+/// Get file content for a PR by extracting the file's diff from `gh pr diff`
+/// and resolving old/new content from local git refs.
+fn get_file_content_for_pr(
+    repo_path: &str,
+    file_path: &str,
+    pr: &review::sources::github::GitHubPrRef,
+) -> Result<FileContent, String> {
+    let repo_path_buf = PathBuf::from(repo_path);
+    let provider = GhCliProvider::new(repo_path_buf.clone());
+
+    // Get the full PR diff and extract this file's portion
+    let full_diff = provider
+        .get_pull_request_diff(pr.number)
+        .map_err(|e| e.to_string())?;
+
+    // Extract the diff section for this specific file
+    let file_diff = extract_file_diff(&full_diff, file_path);
+
+    let hunks = if file_diff.is_empty() {
+        vec![]
+    } else {
+        parse_diff(&file_diff, file_path)
+    };
+
+    let content_type = get_content_type(file_path);
+
+    // For images, just return minimal info with the diff
+    if content_type == "image" {
+        return Ok(FileContent {
+            content: String::new(),
+            old_content: None,
+            diff_patch: file_diff,
+            hunks,
+            content_type,
+            image_data_url: None,
+            old_image_data_url: None,
+        });
+    }
+
+    // Try to get old/new content from local git refs
+    let source = LocalGitSource::new(repo_path_buf.clone()).map_err(|e| e.to_string())?;
+
+    let old_content = source
+        .get_file_bytes(file_path, &pr.base_ref_name)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok());
+
+    // Try the head ref first; if not available locally, try fetching
+    let new_content = source
+        .get_file_bytes(file_path, &pr.head_ref_name)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .or_else(|| {
+            // Try fetching the PR head ref
+            let fetch_ref = format!("pull/{}/head:refs/pr/{}", pr.number, pr.number);
+            let _ = std::process::Command::new("git")
+                .args(["fetch", "origin", &fetch_ref])
+                .current_dir(repo_path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+
+            let pr_ref = format!("refs/pr/{}", pr.number);
+            source
+                .get_file_bytes(file_path, &pr_ref)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+        });
+
+    let content = new_content.unwrap_or_default();
+
+    Ok(FileContent {
+        content,
+        old_content,
+        diff_patch: file_diff,
+        hunks,
+        content_type,
+        image_data_url: None,
+        old_image_data_url: None,
+    })
+}
+
+/// Extract the diff section for a specific file from a multi-file diff output.
+fn extract_file_diff(full_diff: &str, target_path: &str) -> String {
+    let mut result = String::new();
+    let mut capturing = false;
+
+    for line in full_diff.lines() {
+        if line.starts_with("diff --git ") {
+            if capturing {
+                break; // We've hit the next file's diff
+            }
+            // Check if this diff section is for our target file
+            // Format: "diff --git a/path b/path"
+            if line.contains(&format!(" b/{target_path}")) {
+                capturing = true;
+            }
+        }
+        if capturing {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    result
+}
+
 #[tauri::command]
 pub fn get_diff(repo_path: String, comparison: Comparison) -> Result<String, String> {
+    // PR routing: use gh CLI to get diff
+    if let Some(ref pr) = comparison.github_pr {
+        let provider = GhCliProvider::new(PathBuf::from(&repo_path));
+        return provider
+            .get_pull_request_diff(pr.number)
+            .map_err(|e| e.to_string());
+    }
+
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
     source
@@ -715,7 +866,10 @@ pub fn get_expanded_context(
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
-    let git_ref = if comparison.working_tree {
+    // For PRs, use the head ref name (best-effort)
+    let git_ref = if let Some(ref pr) = comparison.github_pr {
+        pr.head_ref_name.clone()
+    } else if comparison.working_tree {
         "HEAD".to_owned()
     } else {
         comparison.new.clone()
