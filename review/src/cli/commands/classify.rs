@@ -120,6 +120,7 @@ pub fn run(
             label: Vec::new(),
             reasoning: None,
             status: None,
+            classified_via: None,
         });
 
         hunk_state.label.clone_from(&classification.label);

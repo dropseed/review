@@ -80,12 +80,10 @@ export const createClassificationSlice: SliceCreatorWithClient<
       ? hunks.filter((h) => hunkIds.includes(h.id))
       : hunks;
 
-    // Filter out hunks that have already been classified
+    // Filter out hunks that have already been classified (have labels)
     let hunksToClassify = candidateHunks.filter((hunk) => {
       const state = reviewState.hunks[hunk.id];
-      const hasLabel = state?.label && state.label.length > 0;
-      const hasReasoning = !!state?.reasoning;
-      return !hasLabel && !hasReasoning;
+      return !state?.label || state.label.length === 0;
     });
 
     const alreadyClassifiedCount =
@@ -117,8 +115,61 @@ export const createClassificationSlice: SliceCreatorWithClient<
       return;
     }
 
+    // --- Static classification pre-pass ---
+    try {
+      const staticResponse = await client.classifyHunksStatic(hunksToClassify);
+      const staticCount = Object.keys(staticResponse.classifications).length;
+
+      if (staticCount > 0) {
+        console.log(
+          `[classifyUnlabeledHunks] Static classifier matched ${staticCount} hunks`,
+        );
+
+        // Apply static classifications to review state
+        const currentState = get().reviewState;
+        if (currentState) {
+          const updatedHunks = { ...currentState.hunks };
+          for (const [hunkId, classification] of Object.entries(
+            staticResponse.classifications,
+          )) {
+            updatedHunks[hunkId] = {
+              ...updatedHunks[hunkId],
+              label: classification.label,
+              reasoning: classification.reasoning,
+              classifiedVia: "static",
+            };
+          }
+
+          const updatedState = {
+            ...currentState,
+            hunks: updatedHunks,
+            updatedAt: new Date().toISOString(),
+          };
+
+          set({ reviewState: updatedState });
+          await saveReviewState();
+        }
+
+        // Remove statically classified hunks from the list
+        const staticIds = new Set(Object.keys(staticResponse.classifications));
+        hunksToClassify = hunksToClassify.filter((h) => !staticIds.has(h.id));
+
+        if (hunksToClassify.length === 0) {
+          console.log(
+            "[classifyUnlabeledHunks] All hunks classified by static rules",
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[classifyUnlabeledHunks] Static classification failed, falling through to AI:",
+        err,
+      );
+    }
+
     console.log(
-      `[classifyUnlabeledHunks] Classifying ${hunksToClassify.length} hunks`,
+      `[classifyUnlabeledHunks] Classifying ${hunksToClassify.length} hunks with AI`,
     );
 
     const newClassifyingIds = hunksToClassify.map((h) => h.id);
@@ -199,6 +250,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
           ...existingHunk,
           label: classification.label,
           reasoning: classification.reasoning,
+          classifiedVia: "ai",
         };
       }
 
@@ -273,6 +325,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
           ...newHunks[hunk.id],
           label: [],
           reasoning: undefined,
+          classifiedVia: undefined,
         };
       }
     }
@@ -319,9 +372,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     const unclassifiedHunks = hunks.filter((hunk) => {
       const state = reviewState.hunks[hunk.id];
-      const hasLabel = state?.label && state.label.length > 0;
-      const hasReasoning = !!state?.reasoning;
-      return !hasLabel && !hasReasoning;
+      return !state?.label || state.label.length === 0;
     });
 
     if (unclassifiedHunks.length === 0) {

@@ -22,7 +22,6 @@ export function TrustSection() {
   const setAutoClassifyEnabled = useReviewStore(
     (s) => s.setAutoClassifyEnabled,
   );
-  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
   const classifyUnlabeledHunks = useReviewStore(
@@ -198,7 +197,7 @@ export function TrustSection() {
                 Auto-classify
               </label>
 
-              {claudeAvailable && unlabeledCount > 0 && (
+              {unlabeledCount > 0 && (
                 <>
                   <span className="text-stone-600">·</span>
                   {classifying ? (
@@ -232,7 +231,7 @@ export function TrustSection() {
                 </>
               )}
 
-              {claudeAvailable && unlabeledCount === 0 && (
+              {unlabeledCount === 0 && (
                 <>
                   <span className="text-stone-600">·</span>
                   <span className="flex items-center gap-1 text-stone-500">
@@ -251,26 +250,9 @@ export function TrustSection() {
                   </span>
                 </>
               )}
-
-              {claudeAvailable === false && (
-                <>
-                  <span className="text-stone-600">·</span>
-                  <span className="text-stone-500">
-                    Install{" "}
-                    <a
-                      href="https://claude.ai/code"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-stone-400 hover:text-stone-300 underline decoration-stone-600"
-                    >
-                      Claude CLI
-                    </a>
-                  </span>
-                </>
-              )}
             </div>
 
-            {claudeAvailable && unlabeledCount > 0 && !classifying && (
+            {unlabeledCount > 0 && !classifying && (
               <button
                 onClick={() => classifyUnlabeledHunks()}
                 className="text-2xs text-stone-500 hover:text-stone-300 transition-colors whitespace-nowrap"
@@ -278,7 +260,7 @@ export function TrustSection() {
                 Classify now
               </button>
             )}
-            {claudeAvailable && unlabeledCount === 0 && (
+            {unlabeledCount === 0 && (
               <button
                 onClick={() => reclassifyHunks()}
                 disabled={classifying}

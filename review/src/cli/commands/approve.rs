@@ -30,6 +30,7 @@ pub fn run(
             label: Vec::new(),
             reasoning: None,
             status: None,
+            classified_via: None,
         });
 
     let action = if approve { "approved" } else { "rejected" };

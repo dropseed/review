@@ -253,6 +253,7 @@ mod tests {
                 label: vec!["imports:added".to_string()],
                 reasoning: Some("Added import".to_string()),
                 status: None,
+                classified_via: None,
             },
         );
 

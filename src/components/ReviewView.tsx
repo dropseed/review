@@ -7,6 +7,7 @@ import { CommitDetailModal } from "./CommitDetailModal";
 import { FileFinder } from "./FileFinder";
 import { ContentSearch } from "./ContentSearch";
 import { SymbolSearch } from "./SymbolSearch";
+import { ClassificationsModal } from "./ClassificationsModal";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { ComparisonHeader } from "./ComparisonHeader";
 import { SimpleTooltip } from "./ui/tooltip";
@@ -40,6 +41,8 @@ export function ReviewView({
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
   const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
+  const hunks = useReviewStore((s) => s.hunks);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
@@ -55,6 +58,8 @@ export function ReviewView({
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showContentSearch, setShowContentSearch] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
+  const [showClassificationsModal, setShowClassificationsModal] =
+    useState(false);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
@@ -98,6 +103,17 @@ export function ReviewView({
       console.error("Failed to open new tab:", err);
     }
   }, [repoPath]);
+
+  // Navigate to a hunk from the classifications modal
+  const handleClassificationSelectHunk = useCallback(
+    (filePath: string, hunkId: string) => {
+      setShowClassificationsModal(false);
+      navigateToBrowse(filePath);
+      const idx = hunks.findIndex((h) => h.id === hunkId);
+      if (idx >= 0) useReviewStore.setState({ focusedHunkIndex: idx });
+    },
+    [hunks, navigateToBrowse],
+  );
 
   // Send desktop notification when classification completes
   const wasClassifying = useRef(false);
@@ -234,6 +250,28 @@ export function ReviewView({
           ) : (
             <span className="text-xs text-stone-500">No changes to review</span>
           )}
+
+          {/* Classifications button */}
+          <SimpleTooltip content="Browse classifications">
+            <button
+              onClick={() => setShowClassificationsModal(true)}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
+              </svg>
+              <span>Classifications</span>
+            </button>
+          </SimpleTooltip>
 
           {/* Overview button */}
           <SimpleTooltip content="Overview (Esc)">
@@ -436,6 +474,13 @@ export function ReviewView({
       <SymbolSearch
         isOpen={showSymbolSearch}
         onClose={() => setShowSymbolSearch(false)}
+      />
+
+      {/* Classifications Modal */}
+      <ClassificationsModal
+        isOpen={showClassificationsModal}
+        onClose={() => setShowClassificationsModal(false)}
+        onSelectHunk={handleClassificationSelectHunk}
       />
     </div>
   );
