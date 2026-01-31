@@ -17,6 +17,7 @@ import {
 } from "../ui/dropdown-menu";
 import { SimpleTooltip } from "../ui/tooltip";
 import { FileContentRenderer } from "./FileContentRenderer";
+import { HunkNavigator } from "./HunkNavigator";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
   isMarkdownFile,
@@ -604,40 +605,43 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       </div>
 
       {/* Content area */}
-      <div className="relative flex-1 overflow-auto scrollbar-thin bg-stone-950">
-        {/* In-file search bar */}
-        {inFileSearchOpen && fileContent && (
-          <div className="sticky top-0 z-10 flex justify-end p-2">
-            <InFileSearchBar
-              content={fileContent.content}
-              onHighlightLine={handleSearchHighlightLine}
-              onClose={handleCloseSearch}
-            />
-          </div>
-        )}
-        <FileContentRenderer
-          filePath={filePath}
-          fileContent={fileContent}
-          viewMode={viewMode}
-          codeTheme={codeTheme}
-          fontSizeCSS={fontSizeCSS}
-          focusedHunkId={focusedHunkId}
-          effectiveLanguage={effectiveLanguage}
-          markdownViewMode={markdownViewMode}
-          svgViewMode={svgViewMode}
-          showImageViewer={!!showImageViewer}
-          isUntracked={isUntracked}
-          hasChanges={hasChanges}
-          highlightLine={highlightLine}
-          lineHeight={lineHeight}
-          onViewInFile={(line) => {
-            setHighlightLine(line);
-          }}
-          reviewState={reviewState}
-          addAnnotation={addAnnotation}
-          updateAnnotation={updateAnnotation}
-          deleteAnnotation={deleteAnnotation}
-        />
+      <div className="relative flex-1 overflow-hidden">
+        <div className="h-full overflow-auto scrollbar-thin bg-stone-950">
+          {/* In-file search bar */}
+          {inFileSearchOpen && fileContent && (
+            <div className="sticky top-0 z-10 flex justify-end p-2">
+              <InFileSearchBar
+                content={fileContent.content}
+                onHighlightLine={handleSearchHighlightLine}
+                onClose={handleCloseSearch}
+              />
+            </div>
+          )}
+          <FileContentRenderer
+            filePath={filePath}
+            fileContent={fileContent}
+            viewMode={viewMode}
+            codeTheme={codeTheme}
+            fontSizeCSS={fontSizeCSS}
+            focusedHunkId={focusedHunkId}
+            effectiveLanguage={effectiveLanguage}
+            markdownViewMode={markdownViewMode}
+            svgViewMode={svgViewMode}
+            showImageViewer={!!showImageViewer}
+            isUntracked={isUntracked}
+            hasChanges={hasChanges}
+            highlightLine={highlightLine}
+            lineHeight={lineHeight}
+            onViewInFile={(line) => {
+              setHighlightLine(line);
+            }}
+            reviewState={reviewState}
+            addAnnotation={addAnnotation}
+            updateAnnotation={updateAnnotation}
+            deleteAnnotation={deleteAnnotation}
+          />
+        </div>
+        {hasChanges && <HunkNavigator filePath={filePath} />}
       </div>
     </div>
   );
