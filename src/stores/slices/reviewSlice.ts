@@ -483,17 +483,23 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     refresh: async () => {
       const {
+        repoPath,
         loadFiles,
         loadReviewState,
         loadGitStatus,
+        refreshCommits,
         triggerAutoClassification,
       } = get();
 
       // Load review state FIRST to ensure labels are available before auto-classification
       await loadReviewState();
-      // Then load files and git status (skip auto-classify since we'll trigger it manually after)
+      // Then load files, git status, and commits (skip auto-classify since we'll trigger it manually after)
       // Pass isRefreshing=true to suppress loading progress indicators and batch state updates
-      await Promise.all([loadFiles(true, true), loadGitStatus()]);
+      await Promise.all([
+        loadFiles(true, true),
+        loadGitStatus(),
+        repoPath ? refreshCommits(repoPath) : Promise.resolve(),
+      ]);
       // Now trigger auto-classification with the fresh review state
       triggerAutoClassification();
     },

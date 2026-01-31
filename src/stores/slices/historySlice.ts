@@ -8,6 +8,7 @@ export interface HistorySlice {
   commitsLoaded: boolean;
 
   loadCommits: (repoPath: string, limit?: number) => Promise<void>;
+  refreshCommits: (repoPath: string, limit?: number) => Promise<void>;
 }
 
 export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
@@ -24,6 +25,15 @@ export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
       } catch (err) {
         console.error("Failed to load commits:", err);
         set({ historyLoading: false, commitsLoaded: true });
+      }
+    },
+
+    refreshCommits: async (repoPath: string, limit?: number) => {
+      try {
+        const commits = await client.listCommits(repoPath, limit);
+        set({ commits, commitsLoaded: true });
+      } catch (err) {
+        console.error("Failed to refresh commits:", err);
       }
     },
   });
