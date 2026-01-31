@@ -5,8 +5,8 @@ import path from "path";
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Use relative paths for Tauri compatibility with dynamic imports
-  base: "./",
+  // Use absolute paths for BrowserRouter compatibility
+  base: "/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

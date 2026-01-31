@@ -5,7 +5,7 @@ installMockTauri();
 
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { AppRouter } from "./router";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 import { initializeLogger } from "./utils/logger";
@@ -49,7 +49,7 @@ resolveLanguages([...commonLanguages])
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
         <ErrorBoundary>
-          <App />
+          <AppRouter />
         </ErrorBoundary>
       </React.StrictMode>,
     );

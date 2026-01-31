@@ -9,7 +9,6 @@ import { ContentSearch } from "./components/ContentSearch";
 import { SymbolSearch } from "./components/SymbolSearch";
 import { GitStatusIndicator } from "./components/GitStatusIndicator";
 import { WelcomePage } from "./components/WelcomePage";
-import { StartScreen } from "./components/StartScreen";
 import { ComparisonHeader } from "./components/ComparisonHeader";
 import { TooltipProvider, SimpleTooltip } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores/reviewStore";
@@ -145,15 +144,12 @@ function App() {
   const {
     repoStatus,
     repoError,
-    view,
     comparisonReady,
     initialLoading,
     setInitialLoading,
-    handleSelectReview,
     handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
-    handleCloseRepo,
     handleSelectRepo,
   } = useRepositoryInit();
 
@@ -252,20 +248,8 @@ function App() {
     return null;
   }
 
-  // Show start screen when user navigates back (or before first comparison load)
-  if (view === "start") {
-    return (
-      <TooltipProvider delayDuration={300}>
-        <StartScreen
-          repoPath={repoPath}
-          onSelectReview={handleSelectReview}
-          onOpenRepo={handleOpenRepo}
-          onCloseRepo={handleCloseRepo}
-          onOpenSettings={() => setShowSettingsModal(true)}
-        />
-      </TooltipProvider>
-    );
-  }
+  // Note: Start screen routing is now handled by react-router in router.tsx.
+  // This component is no longer the entry point — see AppRouter in router.tsx.
 
   // Show loading indicator during initial load
   if (initialLoading) {

@@ -1,17 +1,31 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { makeComparison, type Comparison } from "../types";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores/reviewStore";
 
-// Get repo path from URL query parameter (for multi-window support)
+// Session storage key for the local repo path
+const REPO_PATH_KEY = "repoPath";
+
+/** Store the local repo path in sessionStorage */
+function storeRepoPath(path: string) {
+  sessionStorage.setItem(REPO_PATH_KEY, path);
+}
+
+/** Get the local repo path from sessionStorage */
+export function getStoredRepoPath(): string | null {
+  return sessionStorage.getItem(REPO_PATH_KEY);
+}
+
+// Get repo path from URL query parameter (for multi-window bootstrap)
 function getRepoPathFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
   return params.get("repo");
 }
 
-// Get comparison key from URL query parameter (for multi-window support)
+// Get comparison key from URL query parameter (for multi-window bootstrap)
 function getComparisonKeyFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
   return params.get("comparison");
@@ -32,15 +46,32 @@ function parseComparisonKey(key: string): Comparison | null {
   return makeComparison(oldRef, newRef, workingTree);
 }
 
+/**
+ * Resolve the route prefix (owner/repo) from a repo path.
+ * Uses the git remote to get "owner/repo", falls back to "local/dirname".
+ */
+async function resolveRoutePrefix(repoPath: string): Promise<string> {
+  try {
+    const apiClient = getApiClient();
+    const info = await apiClient.getRemoteInfo(repoPath);
+    if (info?.name) {
+      return info.name; // e.g. "dropseed/plain"
+    }
+  } catch {
+    // Fall through to local fallback
+  }
+  // No remote — use directory name
+  const parts = repoPath.replace(/\/+$/, "").split("/");
+  const dirname = parts[parts.length - 1] || "repo";
+  return `local/${dirname}`;
+}
+
 // Repository status for distinguishing loading states
 export type RepoStatus = "loading" | "found" | "not_found" | "error";
-
-type AppView = "start" | "review";
 
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
-  view: AppView;
   comparisonReady: boolean;
   setComparisonReady: (ready: boolean) => void;
   initialLoading: boolean;
@@ -56,8 +87,12 @@ interface UseRepositoryInitReturn {
 /**
  * Handles repository initialization, URL parsing, and comparison setup.
  * Always loads a comparison on startup (from URL, last active, or default).
+ *
+ * On mount, reads ?repo= from URL (Tauri bootstrap), stores the local path
+ * in sessionStorage, resolves owner/repo, then navigates to the clean route.
  */
 export function useRepositoryInit(): UseRepositoryInitReturn {
+  const navigate = useNavigate();
   const repoPath = useReviewStore((s) => s.repoPath);
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const setComparison = useReviewStore((s) => s.setComparison);
@@ -69,37 +104,59 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
 
-  const [view, setView] = useState<AppView>("review");
   const [comparisonReady, setComparisonReady] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
-  // Initialize repo path from URL or API
+  // Initialize repo path from URL or API, then navigate to clean route
   useEffect(() => {
-    // Check URL for repo path first (multi-window support)
-    const urlRepoPath = getRepoPathFromUrl();
-    if (urlRepoPath) {
-      setRepoPath(urlRepoPath);
-      setLoggerRepoPath(urlRepoPath);
-      clearLog(); // Start fresh each session
-      setRepoStatus("found");
-      addRecentRepository(urlRepoPath);
-      return;
-    }
+    const init = async () => {
+      // Check URL for repo path first (Tauri bootstrap)
+      const urlRepoPath = getRepoPathFromUrl();
+      if (urlRepoPath) {
+        setRepoPath(urlRepoPath);
+        setLoggerRepoPath(urlRepoPath);
+        clearLog();
+        setRepoStatus("found");
+        addRecentRepository(urlRepoPath);
+        storeRepoPath(urlRepoPath);
 
-    // Fall back to getting current working directory from API
-    const apiClient = getApiClient();
-    apiClient
-      .getCurrentRepo()
-      .then((path) => {
+        // Resolve owner/repo and navigate to clean route
+        const prefix = await resolveRoutePrefix(urlRepoPath);
+        const urlComparisonKey = getComparisonKeyFromUrl();
+        if (urlComparisonKey) {
+          navigate(`/${prefix}/review/${urlComparisonKey}`, { replace: true });
+        } else {
+          navigate(`/${prefix}`, { replace: true });
+        }
+        return;
+      }
+
+      // Check sessionStorage (page refresh case)
+      const storedPath = getStoredRepoPath();
+      if (storedPath) {
+        setRepoPath(storedPath);
+        setLoggerRepoPath(storedPath);
+        setRepoStatus("found");
+        addRecentRepository(storedPath);
+        return;
+      }
+
+      // Fall back to getting current working directory from API
+      const apiClient = getApiClient();
+      try {
+        const path = await apiClient.getCurrentRepo();
         setRepoPath(path);
         setLoggerRepoPath(path);
-        clearLog(); // Start fresh each session
+        clearLog();
         setRepoStatus("found");
         addRecentRepository(path);
-      })
-      .catch((err) => {
+        storeRepoPath(path);
+
+        // Resolve and navigate to clean route
+        const prefix = await resolveRoutePrefix(path);
+        navigate(`/${prefix}`, { replace: true });
+      } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        // Distinguish "not a repo" from actual errors
         if (
           errorMessage.includes("Not a git repository") ||
           errorMessage.includes("not a git repository") ||
@@ -111,8 +168,11 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           setRepoError(errorMessage);
         }
         console.error("Repository init error:", err);
-      });
-  }, [setRepoPath, addRecentRepository]);
+      }
+    };
+
+    init();
+  }, [setRepoPath, addRecentRepository, navigate]);
 
   // When repo path changes, always load a comparison
   useEffect(() => {
@@ -147,25 +207,34 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
   // Handle selecting a review from the start screen or reviews list
   const handleSelectReview = useCallback(
-    (selectedComparison: Comparison) => {
+    async (selectedComparison: Comparison) => {
       const currentKey = useReviewStore.getState().comparison.key;
       setComparison(selectedComparison);
       saveCurrentComparison();
       setComparisonReady(true);
-      // Only show loading spinner if the comparison actually changed;
-      // if the same review is re-selected, data is already loaded.
+      // Only show loading spinner if the comparison actually changed
       if (selectedComparison.key !== currentKey) {
         setInitialLoading(true);
       }
-      setView("review");
+
+      // Navigate to the review route
+      if (repoPath) {
+        const prefix = await resolveRoutePrefix(repoPath);
+        navigate(`/${prefix}/review/${selectedComparison.key}`);
+      }
     },
-    [setComparison, saveCurrentComparison],
+    [setComparison, saveCurrentComparison, repoPath, navigate],
   );
 
   // Navigate back to start screen
-  const handleBackToStart = useCallback(() => {
-    setView("start");
-  }, []);
+  const handleBackToStart = useCallback(async () => {
+    if (repoPath) {
+      const prefix = await resolveRoutePrefix(repoPath);
+      navigate(`/${prefix}`);
+    } else {
+      navigate("/");
+    }
+  }, [repoPath, navigate]);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
@@ -173,19 +242,26 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     setRepoStatus("not_found");
     setRepoError(null);
     setComparisonReady(false);
-  }, [setRepoPath]);
+    sessionStorage.removeItem(REPO_PATH_KEY);
+    navigate("/");
+  }, [setRepoPath, navigate]);
 
   // Handle selecting a repo (from welcome page recent list)
   const handleSelectRepo = useCallback(
-    (path: string) => {
+    async (path: string) => {
       setRepoPath(path);
       setLoggerRepoPath(path);
       clearLog();
       setRepoStatus("found");
       setRepoError(null);
       addRecentRepository(path);
+      storeRepoPath(path);
+
+      // Resolve and navigate
+      const prefix = await resolveRoutePrefix(path);
+      navigate(`/${prefix}`);
     },
-    [setRepoPath, addRecentRepository],
+    [setRepoPath, addRecentRepository, navigate],
   );
 
   // Open a repository in the current window (standard Cmd+O behavior)
@@ -197,24 +273,27 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       });
 
       if (selected) {
-        // Open in current window
         setRepoPath(selected);
         setLoggerRepoPath(selected);
         clearLog();
         setRepoStatus("found");
         setRepoError(null);
         addRecentRepository(selected);
+        storeRepoPath(selected);
+
+        // Resolve and navigate
+        const prefix = await resolveRoutePrefix(selected);
+        navigate(`/${prefix}`);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
     }
-  }, [setRepoPath, addRecentRepository]);
+  }, [setRepoPath, addRecentRepository, navigate]);
 
   // Open a new window (Cmd+N behavior)
   const handleNewWindow = useCallback(async () => {
     const apiClient = getApiClient();
     try {
-      // Open a new window - pass empty string to get welcome page
       await apiClient.openRepoWindow("");
     } catch (err) {
       console.error("Failed to open new window:", err);
@@ -224,7 +303,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   return {
     repoStatus,
     repoError,
-    view,
     comparisonReady,
     setComparisonReady,
     initialLoading,
