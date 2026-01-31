@@ -25,8 +25,10 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       try {
         const status = await client.getGitStatus(repoPath);
         const newStagedPaths = status.staged.map((e) => e.path);
-        // Skip update if staged paths haven't changed
+        const currentGitStatus = get().gitStatus;
+        // Skip update if staged paths haven't changed (but always set on first load)
         if (
+          currentGitStatus !== null &&
           currentStaged.size === newStagedPaths.length &&
           newStagedPaths.every((p) => currentStaged.has(p))
         ) {

@@ -185,8 +185,7 @@ function WelcomeRoute() {
 
 /** Start screen — shown at /:owner/:repo */
 function StartRoute() {
-  const { repoPath, handleSelectReview, handleOpenRepo, handleCloseRepo } =
-    useAppContext();
+  const { repoPath, handleSelectReview, handleCloseRepo } = useAppContext();
 
   // If no repo path resolved yet, redirect to welcome
   if (!repoPath) {
@@ -197,7 +196,6 @@ function StartRoute() {
     <StartScreen
       repoPath={repoPath}
       onSelectReview={handleSelectReview}
-      onOpenRepo={handleOpenRepo}
       onCloseRepo={handleCloseRepo}
     />
   );
