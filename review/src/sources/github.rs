@@ -22,6 +22,8 @@ pub struct GitHubPrRef {
     pub title: String,
     pub head_ref_name: String,
     pub base_ref_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 /// Full pull request returned by listing endpoints.
@@ -36,6 +38,8 @@ pub struct PullRequest {
     pub author: PrAuthor,
     pub state: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub body: String,
 }
 
 /// Author of a pull request.
@@ -109,7 +113,7 @@ impl GitHubProvider for GhCliProvider {
                 "pr",
                 "list",
                 "--json",
-                "number,title,headRefName,baseRefName,url,author,state,updatedAt",
+                "number,title,headRefName,baseRefName,url,author,state,updatedAt,body",
             ])
             .current_dir(&self.repo_path)
             .output()

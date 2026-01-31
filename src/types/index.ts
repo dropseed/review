@@ -138,6 +138,7 @@ export interface GitHubPrRef {
   title: string;
   headRefName: string;
   baseRefName: string;
+  body?: string;
 }
 
 export interface PullRequest {
@@ -149,6 +150,7 @@ export interface PullRequest {
   author: { login: string };
   state: string;
   updatedAt: string;
+  body: string;
 }
 
 // Comparison - what we're reviewing (VS Code model)
@@ -197,6 +199,7 @@ export function makePrComparison(pr: PullRequest): Comparison {
       title: pr.title,
       headRefName: pr.headRefName,
       baseRefName: pr.baseRefName,
+      body: pr.body || undefined,
     },
   };
 }
@@ -254,6 +257,7 @@ export interface HunkState {
   label: string[]; // Classification labels, defaults to []
   reasoning?: string; // AI classification reasoning
   status?: "approved" | "rejected"; // Explicit human decision (undefined = pending, trust computed from labels)
+  classifiedVia?: "static" | "ai"; // Source of classification
 }
 
 // Helper to check if a hunk's labels match any trusted pattern
@@ -319,6 +323,12 @@ export interface ClassifyResponse {
   classifications: Record<string, ClassificationResult>;
 }
 
+export interface NarrativeState {
+  content: string;
+  hunkIds: string[];
+  generatedAt: string;
+}
+
 export interface ReviewState {
   comparison: Comparison;
   hunks: Record<string, HunkState>; // keyed by hunk id
@@ -329,6 +339,7 @@ export interface ReviewState {
   createdAt: string;
   updatedAt: string;
   version: number; // Version counter for optimistic concurrency control
+  narrative?: NarrativeState; // AI-generated narrative walkthrough
 }
 
 // Summary of a saved review (for start screen listing)

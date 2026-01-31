@@ -34,11 +34,18 @@ export type {
   FileSymbol,
   SymbolDiff,
   FileSymbolDiff,
+  NarrativeState,
 } from "../types";
 
 // Additional types for API operations
 
 export interface HunkInput {
+  id: string;
+  filePath: string;
+  content: string;
+}
+
+export interface NarrativeInput {
   id: string;
   filePath: string;
   content: string;

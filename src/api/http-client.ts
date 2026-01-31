@@ -381,6 +381,11 @@ export class HttpClient implements ApiClient {
     return false;
   }
 
+  async classifyHunksStatic(_hunks: DiffHunk[]): Promise<ClassifyResponse> {
+    // Static classification not available in browser yet
+    return { classifications: {} };
+  }
+
   async classifyHunks(
     _repoPath: string,
     _hunks: HunkInput[],
@@ -401,6 +406,17 @@ export class HttpClient implements ApiClient {
       // Fallback: return hunks as-is with no pairs
       return { pairs: [], hunks };
     }
+  }
+
+  // ----- Narrative -----
+
+  async generateNarrative(
+    _repoPath: string,
+    _hunks: import("./types").NarrativeInput[],
+    _options?: { command?: string },
+  ): Promise<string> {
+    console.warn("[HttpClient] generateNarrative not implemented");
+    return "";
   }
 
   // ----- Trust patterns -----

@@ -303,6 +303,7 @@ pub fn run() {
             commands::open_repo_window,
             commands::check_claude_available,
             commands::classify_hunks_with_claude,
+            commands::classify_hunks_static,
             commands::detect_hunks_move_pairs,
             commands::write_text_file,
             commands::append_to_file,
@@ -315,6 +316,7 @@ pub fn run() {
             commands::search_file_contents,
             commands::get_file_symbol_diffs,
             commands::get_file_symbols,
+            commands::generate_narrative,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

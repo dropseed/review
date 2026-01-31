@@ -40,7 +40,7 @@ pub fn check_claude_available() -> bool {
 }
 
 /// Find the claude executable in PATH
-fn find_claude_executable() -> Option<String> {
+pub(crate) fn find_claude_executable() -> Option<String> {
     // Try common locations
     let candidates = if cfg!(target_os = "windows") {
         vec!["claude.exe", "claude.cmd", "claude.bat"]
@@ -87,7 +87,7 @@ fn find_claude_executable() -> Option<String> {
 /// The prompt is passed as a final argument to the command, not through a shell,
 /// which provides some protection against injection, but the command itself
 /// is executed as specified.
-fn run_claude_with_model(
+pub(crate) fn run_claude_with_model(
     prompt: &str,
     cwd: &Path,
     model: &str,

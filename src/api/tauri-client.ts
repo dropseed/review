@@ -30,6 +30,7 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
+  NarrativeInput,
 } from "./types";
 
 export class TauriClient implements ApiClient {
@@ -189,6 +190,10 @@ export class TauriClient implements ApiClient {
     return invoke<boolean>("check_claude_available");
   }
 
+  async classifyHunksStatic(hunks: DiffHunk[]): Promise<ClassifyResponse> {
+    return invoke<ClassifyResponse>("classify_hunks_static", { hunks });
+  }
+
   async classifyHunks(
     repoPath: string,
     hunks: HunkInput[],
@@ -206,6 +211,20 @@ export class TauriClient implements ApiClient {
   async detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse> {
     return invoke<DetectMovePairsResponse>("detect_hunks_move_pairs", {
       hunks,
+    });
+  }
+
+  // ----- Narrative -----
+
+  async generateNarrative(
+    repoPath: string,
+    hunks: NarrativeInput[],
+    options?: { command?: string },
+  ): Promise<string> {
+    return invoke<string>("generate_narrative", {
+      repoPath,
+      hunks,
+      command: options?.command,
     });
   }
 

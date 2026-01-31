@@ -5,6 +5,7 @@ import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import { TrustBadges } from "./TrustBadges";
+import { GuideSection } from "./GuideSection";
 import {
   useFilePanelFileSystem,
   useFilePanelNavigation,
@@ -445,6 +446,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   </div>
                 ) : (
                   <>
+                    {/* Guide section - PR description and AI narrative */}
+                    <GuideSection />
+
                     {/* Symbol loading spinner for flat mode */}
                     {changesDisplayMode === "flat" &&
                       symbolsLoading &&

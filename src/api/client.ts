@@ -28,6 +28,7 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
+  NarrativeInput,
 } from "./types";
 
 export interface ApiClient {
@@ -132,6 +133,9 @@ export interface ApiClient {
   /** Check if Claude CLI is available */
   checkClaudeAvailable(): Promise<boolean>;
 
+  /** Classify hunks using static pattern matching (no AI) */
+  classifyHunksStatic(hunks: DiffHunk[]): Promise<ClassifyResponse>;
+
   /** Classify hunks using Claude */
   classifyHunks(
     repoPath: string,
@@ -141,6 +145,15 @@ export interface ApiClient {
 
   /** Detect move pairs in hunks */
   detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse>;
+
+  // ----- Narrative -----
+
+  /** Generate a narrative walkthrough of changes using Claude */
+  generateNarrative(
+    repoPath: string,
+    hunks: NarrativeInput[],
+    options?: { command?: string },
+  ): Promise<string>;
 
   // ----- Trust patterns -----
 

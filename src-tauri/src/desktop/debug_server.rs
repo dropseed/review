@@ -207,6 +207,7 @@ fn get_comparison_from_query(
                 title,
                 head_ref_name: new.clone(),
                 base_ref_name: old.clone(),
+                body: None,
             }
         });
 

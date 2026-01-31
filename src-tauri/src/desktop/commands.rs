@@ -15,6 +15,7 @@ use review::classify::{self, ClassifyResponse, HunkInput};
 use review::diff::parser::{
     create_untracked_hunk, detect_move_pairs, parse_diff, parse_multi_file_diff, DiffHunk, MovePair,
 };
+use review::narrative::NarrativeInput;
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage;
 use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
@@ -792,6 +793,21 @@ pub async fn classify_hunks_with_claude(
 }
 
 #[tauri::command]
+pub fn classify_hunks_static(hunks: Vec<DiffHunk>) -> ClassifyResponse {
+    debug!(
+        "[classify_hunks_static] Classifying {} hunks with static rules",
+        hunks.len()
+    );
+    let result = classify::classify_hunks_static(&hunks);
+    info!(
+        "[classify_hunks_static] Classified {} of {} hunks",
+        result.classifications.len(),
+        hunks.len()
+    );
+    result
+}
+
+#[tauri::command]
 pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsResponse {
     debug!(
         "[detect_hunks_move_pairs] Analyzing {} hunks for moves",
@@ -1157,4 +1173,49 @@ pub fn search_file_contents(
 
     info!("[search_file_contents] SUCCESS: {} matches", results.len());
     Ok(results)
+}
+
+/// Timeout for narrative generation (single Claude call for entire diff).
+const NARRATIVE_TIMEOUT_SECS: u64 = 120;
+
+#[tauri::command]
+pub async fn generate_narrative(
+    repo_path: String,
+    hunks: Vec<NarrativeInput>,
+    model: Option<String>,
+    command: Option<String>,
+) -> Result<String, String> {
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    let model = model.unwrap_or_else(|| "sonnet".to_owned());
+
+    debug!(
+        "[generate_narrative] repo_path={}, hunks={}, model={}, command={:?}",
+        repo_path,
+        hunks.len(),
+        model,
+        command
+    );
+
+    let repo_path_buf = PathBuf::from(&repo_path);
+
+    let result = timeout(
+        Duration::from_secs(NARRATIVE_TIMEOUT_SECS),
+        tokio::task::spawn_blocking(move || {
+            review::narrative::generate_narrative(
+                &hunks,
+                &repo_path_buf,
+                &model,
+                command.as_deref(),
+            )
+        }),
+    )
+    .await
+    .map_err(|_| format!("Narrative generation timed out after {NARRATIVE_TIMEOUT_SECS} seconds"))?
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    info!("[generate_narrative] SUCCESS: {} chars", result.len());
+    Ok(result)
 }

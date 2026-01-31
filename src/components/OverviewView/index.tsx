@@ -1,5 +1,6 @@
 import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SummaryStats } from "./SummaryStats";
+import { GuideOverviewSection } from "./GuideOverviewSection";
 import { QuickActionsSection } from "./QuickActionsSection";
 import { TrustSection } from "./TrustSection";
 import { DrillDownSection } from "./DrillDownSection";
@@ -24,6 +25,9 @@ export function OverviewView() {
           pendingHunks={pendingHunks}
           reviewedPercent={reviewedPercent}
         />
+
+        {/* Guide: PR Description + AI Narrative */}
+        <GuideOverviewSection />
 
         {/* Section 2: Quick Actions */}
         <QuickActionsSection />
