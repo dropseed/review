@@ -61,6 +61,7 @@ const CLASSIFY_BASE_TIMEOUT_SECS: u64 = 60;
 const CLASSIFY_SECS_PER_BATCH: u64 = 30;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::time::Instant;
 
 // --- Types ---
 
@@ -190,7 +191,21 @@ pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String>
 }
 
 #[tauri::command]
-pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
+pub async fn list_files(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || list_files_sync(repo_path, comparison))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Synchronous implementation of `list_files`, callable from blocking contexts.
+pub fn list_files_sync(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<Vec<FileEntry>, String> {
+    let t0 = Instant::now();
     debug!("[list_files] repo_path={repo_path}, comparison={comparison:?}");
 
     // PR routing: use gh CLI to get file list
@@ -201,9 +216,10 @@ pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileE
             .map_err(|e| e.to_string())?;
         let result = review::sources::github::pr_files_to_file_entries(files);
         info!(
-            "[list_files] SUCCESS (PR #{}): {} entries",
+            "[list_files] SUCCESS (PR #{}): {} entries in {:?}",
             pr.number,
-            result.len()
+            result.len(),
+            t0.elapsed()
         );
         return Ok(result);
     }
@@ -217,12 +233,30 @@ pub fn list_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileE
         error!("[list_files] ERROR listing files: {e}");
         e.to_string()
     })?;
-    info!("[list_files] SUCCESS: {} entries", result.len());
+    info!(
+        "[list_files] SUCCESS: {} entries in {:?}",
+        result.len(),
+        t0.elapsed()
+    );
     Ok(result)
 }
 
 #[tauri::command]
-pub fn list_all_files(repo_path: String, comparison: Comparison) -> Result<Vec<FileEntry>, String> {
+pub async fn list_all_files(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || list_all_files_sync(repo_path, comparison))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Synchronous implementation of `list_all_files`, callable from blocking contexts.
+pub fn list_all_files_sync(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<Vec<FileEntry>, String> {
+    let t0 = Instant::now();
     debug!("[list_all_files] repo_path={repo_path}, comparison={comparison:?}");
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
         error!("[list_all_files] ERROR creating source: {e}");
@@ -233,16 +267,32 @@ pub fn list_all_files(repo_path: String, comparison: Comparison) -> Result<Vec<F
         error!("[list_all_files] ERROR listing files: {e}");
         e.to_string()
     })?;
-    info!("[list_all_files] SUCCESS: {} entries", result.len());
+    info!(
+        "[list_all_files] SUCCESS: {} entries in {:?}",
+        result.len(),
+        t0.elapsed()
+    );
     Ok(result)
 }
 
 #[tauri::command]
-pub fn get_file_content(
+pub async fn get_file_content(
     repo_path: String,
     file_path: String,
     comparison: Comparison,
 ) -> Result<FileContent, String> {
+    tokio::task::spawn_blocking(move || get_file_content_sync(repo_path, file_path, comparison))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Synchronous implementation of `get_file_content`, callable from blocking contexts.
+pub fn get_file_content_sync(
+    repo_path: String,
+    file_path: String,
+    comparison: Comparison,
+) -> Result<FileContent, String> {
+    let t0 = Instant::now();
     debug!(
         "[get_file_content] repo_path={repo_path}, file_path={file_path}, comparison={comparison:?}"
     );
@@ -494,8 +544,7 @@ pub fn get_file_content(
         (old, new.unwrap_or_default())
     };
 
-    info!("[get_file_content] SUCCESS");
-    Ok(FileContent {
+    let result = FileContent {
         content: final_content,
         old_content,
         diff_patch: diff_output,
@@ -503,7 +552,17 @@ pub fn get_file_content(
         content_type,
         image_data_url: None,
         old_image_data_url: None,
-    })
+    };
+    let payload_estimate = result.content.len()
+        + result.old_content.as_ref().map_or(0, |s| s.len())
+        + result.diff_patch.len();
+    info!(
+        "[get_file_content] SUCCESS file={file_path} hunks={} payload≈{}KB in {:?}",
+        result.hunks.len(),
+        payload_estimate / 1024,
+        t0.elapsed()
+    );
+    Ok(result)
 }
 
 /// Get file content for a PR by extracting the file's diff from `gh pr diff`
@@ -611,6 +670,82 @@ fn extract_file_diff(full_diff: &str, target_path: &str) -> String {
     }
 
     result
+}
+
+/// Batch-load all hunks for multiple files in a single IPC call.
+///
+/// Instead of calling `get_file_content` N times (one per changed file),
+/// this command runs a single `git diff` for all files, parses all hunks,
+/// and handles untracked files—returning every hunk in one response.
+#[tauri::command]
+pub async fn get_all_hunks(
+    repo_path: String,
+    comparison: Comparison,
+    file_paths: Vec<String>,
+) -> Result<Vec<DiffHunk>, String> {
+    let t0 = Instant::now();
+    debug!(
+        "[get_all_hunks] repo_path={repo_path}, {} files",
+        file_paths.len()
+    );
+
+    tokio::task::spawn_blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+            error!("[get_all_hunks] ERROR creating source: {e}");
+            e.to_string()
+        })?;
+
+        // Single git diff call for all files at once
+        let diff_start = Instant::now();
+        let full_diff = source.get_diff(&comparison, None).map_err(|e| {
+            error!("[get_all_hunks] ERROR getting diff: {e}");
+            e.to_string()
+        })?;
+        debug!(
+            "[get_all_hunks] git diff: {}KB in {:?}",
+            full_diff.len() / 1024,
+            diff_start.elapsed()
+        );
+
+        // Parse all hunks from the combined diff
+        let parse_start = Instant::now();
+        let mut all_hunks = parse_multi_file_diff(&full_diff);
+        debug!(
+            "[get_all_hunks] parsed {} hunks in {:?}",
+            all_hunks.len(),
+            parse_start.elapsed()
+        );
+
+        // Build a set of file paths that got hunks from the diff
+        let files_with_hunks: std::collections::HashSet<String> =
+            all_hunks.iter().map(|h| h.file_path.clone()).collect();
+
+        // For requested files that have no diff hunks, check if they're
+        // untracked (new) and create untracked hunks for them
+        for file_path in &file_paths {
+            if !files_with_hunks.contains(file_path.as_str()) {
+                let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
+                if !is_tracked {
+                    all_hunks.push(create_untracked_hunk(file_path));
+                }
+            }
+        }
+
+        // Filter to only include hunks for the requested files
+        let requested: std::collections::HashSet<&str> =
+            file_paths.iter().map(|s| s.as_str()).collect();
+        all_hunks.retain(|h| requested.contains(h.file_path.as_str()));
+
+        info!(
+            "[get_all_hunks] SUCCESS: {} hunks from {} files in {:?}",
+            all_hunks.len(),
+            file_paths.len(),
+            t0.elapsed()
+        );
+        Ok(all_hunks)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -804,6 +939,7 @@ pub fn classify_hunks_static(hunks: Vec<DiffHunk>) -> ClassifyResponse {
 
 #[tauri::command]
 pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsResponse {
+    let t0 = Instant::now();
     debug!(
         "[detect_hunks_move_pairs] Analyzing {} hunks for moves",
         hunks.len()
@@ -811,7 +947,12 @@ pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsRespo
 
     let pairs = detect_move_pairs(&mut hunks);
 
-    debug!("[detect_hunks_move_pairs] Found {} move pairs", pairs.len());
+    info!(
+        "[detect_hunks_move_pairs] Found {} move pairs from {} hunks in {:?}",
+        pairs.len(),
+        hunks.len(),
+        t0.elapsed()
+    );
 
     DetectMovePairsResponse { pairs, hunks }
 }

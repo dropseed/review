@@ -292,6 +292,7 @@ pub fn run() {
             commands::list_files,
             commands::list_all_files,
             commands::get_file_content,
+            commands::get_all_hunks,
             commands::get_diff,
             commands::get_expanded_context,
             commands::load_review_state,

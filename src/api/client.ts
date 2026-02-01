@@ -88,6 +88,13 @@ export interface ApiClient {
     comparison: Comparison,
   ): Promise<FileContent>;
 
+  /** Batch-load all hunks for multiple files in a single call */
+  getAllHunks?(
+    repoPath: string,
+    comparison: Comparison,
+    filePaths: string[],
+  ): Promise<DiffHunk[]>;
+
   /** Get expanded context around a range of lines */
   getExpandedContext(
     repoPath: string,

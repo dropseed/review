@@ -288,7 +288,7 @@ fn handle_list_files(query: &str) -> Response<Cursor<Vec<u8>>> {
         return error_response(400, "Missing comparison params (old, new)");
     };
 
-    match commands::list_files(repo_path, comparison) {
+    match commands::list_files_sync(repo_path, comparison) {
         Ok(files) => json_response(&files),
         Err(e) => error_response(500, &e),
     }
@@ -358,7 +358,7 @@ fn handle_get_file(query: &str) -> Response<Cursor<Vec<u8>>> {
         return error_response(400, "Missing comparison params (old, new)");
     };
 
-    match commands::get_file_content(repo_path, file_path, comparison) {
+    match commands::get_file_content_sync(repo_path, file_path, comparison) {
         Ok(content) => json_response(&content),
         Err(e) => error_response(500, &e),
     }

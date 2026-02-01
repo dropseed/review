@@ -158,13 +158,19 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       // Clear symbols so they reload when the Symbols tab is next opened
       clearSymbols();
 
+      const loadStart = performance.now();
+
       try {
         // Phase 1: Get file list
         if (!isRefreshing) {
           set({ loadingProgress: { current: 0, total: 1, phase: "files" } });
         }
+        const phase1Start = performance.now();
         const files = await client.listFiles(repoPath, comparison);
         const flatFileList = flattenFiles(files);
+        console.log(
+          `[perf] Phase 1 (list files): ${(performance.now() - phase1Start).toFixed(0)}ms, ${flatFileList.length} files`,
+        );
 
         // During refresh, defer set() to batch with hunks/movePairs at the end
         if (!isRefreshing) {
@@ -202,34 +208,89 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           );
         }
 
-        // Phase 2: Load hunks for each changed file
+        // Phase 2: Load hunks for changed files
+        const phase2Start = performance.now();
         const allHunks: DiffHunk[] = [];
         const failedFiles: string[] = [];
         const total = changedPaths.length;
-        for (let i = 0; i < changedPaths.length; i++) {
-          const filePath = changedPaths[i];
+
+        if (changedPaths.length > 0 && client.getAllHunks) {
+          // Batch mode: single IPC call for all hunks
           if (!isRefreshing) {
             set({
-              loadingProgress: { current: i + 1, total, phase: "hunks" },
+              loadingProgress: { current: 0, total: 1, phase: "hunks" },
             });
           }
-
-          // Yield to event loop periodically to allow UI to update
-          if (i % 5 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 0));
-          }
-
           try {
-            const content = await client.getFileContent(
+            const batchHunks = await client.getAllHunks(
               repoPath,
-              filePath,
               comparison,
+              changedPaths,
             );
-            allHunks.push(...content.hunks);
+            allHunks.push(...batchHunks);
           } catch (err) {
-            failedFiles.push(filePath);
+            console.warn(
+              "[perf] Batch hunk loading failed, falling back to per-file:",
+              err,
+            );
+            // Fall back to per-file loading
+            for (let i = 0; i < changedPaths.length; i++) {
+              const filePath = changedPaths[i];
+              if (!isRefreshing) {
+                set({
+                  loadingProgress: {
+                    current: i + 1,
+                    total,
+                    phase: "hunks",
+                  },
+                });
+              }
+              if (i % 5 === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+              }
+              try {
+                const content = await client.getFileContent(
+                  repoPath,
+                  filePath,
+                  comparison,
+                );
+                allHunks.push(...content.hunks);
+              } catch {
+                failedFiles.push(filePath);
+              }
+            }
+          }
+        } else {
+          // Per-file mode (fallback for clients without getAllHunks)
+          for (let i = 0; i < changedPaths.length; i++) {
+            const filePath = changedPaths[i];
+            if (!isRefreshing) {
+              set({
+                loadingProgress: { current: i + 1, total, phase: "hunks" },
+              });
+            }
+
+            // Yield to event loop periodically to allow UI to update
+            if (i % 5 === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+
+            try {
+              const content = await client.getFileContent(
+                repoPath,
+                filePath,
+                comparison,
+              );
+              allHunks.push(...content.hunks);
+            } catch (err) {
+              failedFiles.push(filePath);
+            }
           }
         }
+
+        console.log(
+          `[perf] Phase 2 (load hunks): ${(performance.now() - phase2Start).toFixed(0)}ms, ${allHunks.length} hunks from ${changedPaths.length} files`,
+        );
 
         if (failedFiles.length > 0) {
           console.warn(
@@ -244,6 +305,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
 
         // Phase 3: Detect move pairs
+        const phase3Start = performance.now();
         if (!isRefreshing) {
           set({ loadingProgress: { current: 0, total: 1, phase: "moves" } });
         }
@@ -268,11 +330,18 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
             set({ hunks: allHunks, movePairs: [] });
           }
         }
+        console.log(
+          `[perf] Phase 3 (move detection): ${(performance.now() - phase3Start).toFixed(0)}ms`,
+        );
 
         // Clear progress
         if (!isRefreshing) {
           set({ loadingProgress: null });
         }
+
+        console.log(
+          `[perf] Total loadFiles: ${(performance.now() - loadStart).toFixed(0)}ms`,
+        );
 
         // Trigger auto-classification after files are loaded
         if (!skipAutoClassify) {

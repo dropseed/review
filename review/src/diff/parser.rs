@@ -97,6 +97,8 @@ pub fn parse_multi_file_diff(diff_output: &str) -> Vec<DiffHunk> {
     let mut hunks = Vec::new();
     let mut current_section = String::new();
     let mut current_file: Option<String> = None;
+    // Track the old-side path from "--- a/..." for deleted files
+    let mut old_file: Option<String> = None;
 
     for line in diff_output.lines() {
         if line.starts_with("diff --git ") {
@@ -108,15 +110,14 @@ pub fn parse_multi_file_diff(diff_output: &str) -> Vec<DiffHunk> {
             }
             current_section.clear();
             current_file = None;
+            old_file = None;
+        } else if let Some(path) = line.strip_prefix("--- a/") {
+            old_file = Some(path.to_owned());
         } else if let Some(path) = line.strip_prefix("+++ b/") {
             current_file = Some(path.to_owned());
         } else if line.starts_with("+++ /dev/null") {
-            // File was deleted — use the path from "--- a/" which we already skipped,
-            // but we can extract it from the "diff --git" line. For deleted files,
-            // the hunks won't match any requested file_path so they'll be filtered out.
-            // We still need a file path for parse_diff, so try to extract from --- line.
-            // Actually, we need to handle this: let's track the --- path too.
-            // For now, current_file stays None and we skip this section.
+            // File was deleted — use the path from "--- a/"
+            current_file = old_file.take();
         } else {
             current_section.push_str(line);
             current_section.push('\n');
@@ -634,7 +635,7 @@ diff --git a/bar.rs b/bar.rs
 
     #[test]
     fn test_parse_multi_file_diff_deleted_file() {
-        // Deleted files have "+++ /dev/null" — they should be skipped
+        // Deleted files have "+++ /dev/null" — hunks should use the "--- a/" path
         let diff = "\
 diff --git a/deleted.rs b/deleted.rs
 --- a/deleted.rs
@@ -649,8 +650,8 @@ diff --git a/kept.rs b/kept.rs
 -old
 +new";
         let hunks = parse_multi_file_diff(diff);
-        // Only the kept.rs hunk should be present
-        assert_eq!(hunks.len(), 1);
-        assert_eq!(hunks[0].file_path, "kept.rs");
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(hunks[0].file_path, "deleted.rs");
+        assert_eq!(hunks[1].file_path, "kept.rs");
     }
 }

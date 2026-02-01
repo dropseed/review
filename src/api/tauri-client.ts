@@ -122,6 +122,18 @@ export class TauriClient implements ApiClient {
     });
   }
 
+  async getAllHunks(
+    repoPath: string,
+    comparison: Comparison,
+    filePaths: string[],
+  ): Promise<DiffHunk[]> {
+    return invoke<DiffHunk[]>("get_all_hunks", {
+      repoPath,
+      comparison,
+      filePaths,
+    });
+  }
+
   async getExpandedContext(
     repoPath: string,
     filePath: string,

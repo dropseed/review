@@ -343,9 +343,17 @@ export function DiffView({
     fileName.endsWith("Cargo.lock") ||
     fileName.endsWith("Gemfile.lock") ||
     fileName.endsWith("composer.lock");
-  const totalLines =
-    (oldContent?.split("\n").length ?? 0) +
-    (newContent?.split("\n").length ?? 0);
+  // Count newlines without allocating split arrays
+  const totalLines = useMemo(() => {
+    const countLines = (s: string | undefined) => {
+      if (!s) return 0;
+      let count = 1;
+      let idx = -1;
+      while ((idx = s.indexOf("\n", idx + 1)) !== -1) count++;
+      return count;
+    };
+    return countLines(oldContent) + countLines(newContent);
+  }, [oldContent, newContent]);
   const isLargeFile = totalLines > 5000;
 
   // For lock files and very large files, disable word-level diffing entirely
@@ -356,25 +364,28 @@ export function DiffView({
       ? "none"
       : prefLineDiffType;
 
-  const diffOptions = {
-    diffStyle: viewMode,
-    theme: {
-      dark: theme,
-      light: theme,
-    },
-    themeType: "dark" as const,
-    diffIndicators: prefDiffIndicators,
-    disableBackground: false,
-    enableHoverUtility: true,
-    unsafeCSS: fontSizeCSS,
-    expandUnchanged: true,
-    expansionLineCount: 20,
-    hunkSeparators: "line-info" as const,
-    // Performance optimizations
-    tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
-    maxLineDiffLength: 500, // Skip word-level diff for long lines
-    lineDiffType, // Adaptive based on file type/size, user preference as default
-  };
+  const diffOptions = useMemo(
+    () => ({
+      diffStyle: viewMode,
+      theme: {
+        dark: theme,
+        light: theme,
+      },
+      themeType: "dark" as const,
+      diffIndicators: prefDiffIndicators,
+      disableBackground: false,
+      enableHoverUtility: true,
+      unsafeCSS: fontSizeCSS,
+      expandUnchanged: true,
+      expansionLineCount: 20,
+      hunkSeparators: "line-info" as const,
+      // Performance optimizations
+      tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
+      maxLineDiffLength: 500, // Skip word-level diff for long lines
+      lineDiffType, // Adaptive based on file type/size, user preference as default
+    }),
+    [viewMode, theme, prefDiffIndicators, fontSizeCSS, lineDiffType],
+  );
 
   const renderHoverUtility = (
     getHoveredLine: () =>
