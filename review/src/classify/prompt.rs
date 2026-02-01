@@ -1,13 +1,21 @@
 use crate::trust::patterns::get_trust_taxonomy;
 use std::fmt::Write;
 
-/// Build a flat list of all valid labels with descriptions
+/// Labels that are fully handled by the static classifier and should
+/// never be offered to the AI (to prevent hallucinated matches).
+const STATIC_ONLY_LABELS: &[&str] = &["formatting:whitespace", "generated:lockfile"];
+
+/// Build a flat list of all valid labels with descriptions,
+/// excluding labels that are handled entirely by the static classifier.
 fn build_taxonomy_string() -> String {
     let taxonomy = get_trust_taxonomy();
     let mut result = String::new();
 
     for category in taxonomy {
         for pattern in category.patterns {
+            if STATIC_ONLY_LABELS.contains(&pattern.id.as_str()) {
+                continue;
+            }
             let _ = writeln!(result, "- `{}`: {}", pattern.id, pattern.description);
         }
     }
@@ -40,9 +48,8 @@ pub fn build_single_hunk_prompt(hunk: &HunkInput) -> String {
 2. A label applies ONLY when the ENTIRE hunk matches its description exactly.
 3. Any change to values, logic, behavior, or configuration = empty labels.
 4. Mixed changes (e.g., import added + code changed) = empty labels.
-5. Template/markup tags (`{{% endif %}}`, `<div>`, `{{{{ }}}}`) are structural code, NOT whitespace. Removing or adding them is a code change.
-6. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = empty labels.
-7. Use ONLY the exact label strings listed above.
+5. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = empty labels.
+6. Use ONLY the exact label strings listed above.
 
 # Hunk
 
@@ -99,10 +106,9 @@ File: {}
 2. A label applies ONLY when the ENTIRE hunk matches its description exactly.
 3. Any change to values, logic, behavior, or configuration = empty labels.
 4. Mixed changes (e.g., import added + code changed) = empty labels.
-5. Template/markup tags (`{{% endif %}}`, `<div>`, `{{{{ }}}}`) are structural code, NOT whitespace. Removing or adding them is a code change.
-6. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = empty labels.
-7. Use ONLY the exact label strings listed above.
-8. You MUST classify EVERY hunk ID listed above.
+5. If a hunk changes code AND adds/modifies/removes a comment, it is mixed = empty labels.
+6. Use ONLY the exact label strings listed above.
+7. You MUST classify EVERY hunk ID listed above.
 
 # Hunks
 
@@ -120,4 +126,26 @@ After analyzing all hunks, return JSON on its own line:
   ...
 }}"#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_taxonomy_string_excludes_static_only_labels() {
+        let taxonomy = build_taxonomy_string();
+        assert!(
+            !taxonomy.contains("formatting:whitespace"),
+            "formatting:whitespace should be excluded from AI taxonomy"
+        );
+        assert!(
+            !taxonomy.contains("generated:lockfile"),
+            "generated:lockfile should be excluded from AI taxonomy"
+        );
+        // Other labels should still be present
+        assert!(taxonomy.contains("formatting:line-length"));
+        assert!(taxonomy.contains("formatting:style"));
+        assert!(taxonomy.contains("imports:added"));
+    }
 }

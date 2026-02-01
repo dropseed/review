@@ -31,6 +31,7 @@ export interface ClassificationSlice {
 
   // Actions
   checkClaudeAvailable: () => Promise<void>;
+  classifyStaticHunks: (hunkIds?: string[]) => Promise<void>;
   classifyUnlabeledHunks: (hunkIds?: string[]) => Promise<void>;
   reclassifyHunks: (hunkIds?: string[]) => Promise<void>;
   triggerAutoClassification: () => void;
@@ -52,6 +53,60 @@ export const createClassificationSlice: SliceCreatorWithClient<
     } catch (err) {
       console.error("Failed to check Claude availability:", err);
       set({ claudeAvailable: false });
+    }
+  },
+
+  classifyStaticHunks: async (hunkIds) => {
+    const { hunks, reviewState, saveReviewState } = get();
+    if (!reviewState) return;
+
+    // Find unlabeled hunks
+    let candidateHunks = hunkIds
+      ? hunks.filter((h) => hunkIds.includes(h.id))
+      : hunks;
+
+    const hunksToClassify = candidateHunks.filter((hunk) => {
+      const state = reviewState.hunks[hunk.id];
+      return !state?.label || state.label.length === 0;
+    });
+
+    if (hunksToClassify.length === 0) return;
+
+    try {
+      const staticResponse = await client.classifyHunksStatic(hunksToClassify);
+      const staticCount = Object.keys(staticResponse.classifications).length;
+
+      if (staticCount > 0) {
+        console.log(
+          `[classifyStaticHunks] Static classifier matched ${staticCount} hunks`,
+        );
+
+        const currentState = get().reviewState;
+        if (currentState) {
+          const updatedHunks = { ...currentState.hunks };
+          for (const [hunkId, classification] of Object.entries(
+            staticResponse.classifications,
+          )) {
+            updatedHunks[hunkId] = {
+              ...updatedHunks[hunkId],
+              label: classification.label,
+              reasoning: classification.reasoning,
+              classifiedVia: "static",
+            };
+          }
+
+          const updatedState = {
+            ...currentState,
+            hunks: updatedHunks,
+            updatedAt: new Date().toISOString(),
+          };
+
+          set({ reviewState: updatedState });
+          await saveReviewState();
+        }
+      }
+    } catch (err) {
+      console.warn("[classifyStaticHunks] Static classification failed:", err);
     }
   },
 
@@ -351,21 +406,27 @@ export const createClassificationSlice: SliceCreatorWithClient<
       hunks,
       reviewState,
       classifying,
+      classifyStaticHunks,
       classifyUnlabeledHunks,
     } = get();
+
+    if (!reviewState) {
+      return;
+    }
+
+    // Always run static classification (free, no API calls)
+    classifyStaticHunks();
 
     if (classifying) {
       console.log(
         "[triggerAutoClassification] Already classifying, will reschedule after completion",
       );
       // Don't return - let the debounce handle rescheduling
-      // The debounce will wait 3s after this call, by which time the current
-      // classification should be done (or the debounce will be called again)
     }
 
-    if (!claudeAvailable || !autoClassifyEnabled || !reviewState) {
+    if (!claudeAvailable || !autoClassifyEnabled) {
       console.log(
-        `[triggerAutoClassification] Skipped - claude: ${claudeAvailable}, autoClassify: ${autoClassifyEnabled}`,
+        `[triggerAutoClassification] AI skipped - claude: ${claudeAvailable}, autoClassify: ${autoClassifyEnabled}`,
       );
       return;
     }
@@ -377,13 +438,13 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     if (unclassifiedHunks.length === 0) {
       console.log(
-        "[triggerAutoClassification] No unclassified hunks, skipping",
+        "[triggerAutoClassification] No unclassified hunks, skipping AI",
       );
       return;
     }
 
     console.log(
-      `[triggerAutoClassification] Scheduling classification for ${unclassifiedHunks.length} hunks`,
+      `[triggerAutoClassification] Scheduling AI classification for ${unclassifiedHunks.length} hunks`,
     );
 
     debouncedAutoClassify(async () => {

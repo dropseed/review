@@ -5,6 +5,8 @@ export interface NarrativeSlice {
   narrativeGenerating: boolean;
   narrativeError: string | null;
   isNarrativeStale: () => boolean;
+  narrativeFileOverlap: () => number;
+  isNarrativeIrrelevant: () => boolean;
   generateNarrative: () => Promise<void>;
   clearNarrative: () => void;
 }
@@ -27,6 +29,34 @@ export const createNarrativeSlice: SliceCreatorWithClient<NarrativeSlice> =
         if (!currentIds.has(id)) return true;
       }
       return false;
+    },
+
+    narrativeFileOverlap: () => {
+      const { reviewState, hunks } = get();
+      const narrative = reviewState?.narrative;
+      if (!narrative) return 1;
+
+      const narrativeFilePaths = new Set(
+        narrative.hunkIds.map((id) => id.substring(0, id.lastIndexOf(":"))),
+      );
+      if (narrativeFilePaths.size === 0) return 1;
+
+      const currentFilePaths = new Set(hunks.map((h) => h.filePath));
+
+      let overlap = 0;
+      for (const fp of narrativeFilePaths) {
+        if (currentFilePaths.has(fp)) overlap++;
+      }
+
+      return overlap / narrativeFilePaths.size;
+    },
+
+    isNarrativeIrrelevant: () => {
+      const { reviewState, isNarrativeStale, narrativeFileOverlap } = get();
+      const narrative = reviewState?.narrative;
+      if (!narrative) return false;
+
+      return isNarrativeStale() && narrativeFileOverlap() < 0.5;
     },
 
     generateNarrative: async () => {

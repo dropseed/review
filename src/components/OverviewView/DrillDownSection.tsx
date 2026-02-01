@@ -426,16 +426,13 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
         <FileProgressBar status={fileHunkStatus} />
         {fileHunkStatus.pending > 0 ? (
           <span className="text-xxs text-amber-400/80 tabular-nums flex-shrink-0">
-            {fileHunkStatus.pending} pending
+            {fileHunkStatus.pending}/{totalHunks} pending
           </span>
         ) : fileHunkStatus.total > 0 ? (
           <span className="text-xxs text-lime-500 flex-shrink-0">
             {"\u2713"}
           </span>
         ) : null}
-        <span className="font-mono text-xxs tabular-nums text-stone-500 flex-shrink-0">
-          {totalHunks}
-        </span>
         {fileHunkStatus.pending > 0 && (
           <SimpleTooltip content="Approve all hunks in this file">
             <button
@@ -525,7 +522,6 @@ function ListTopLevelRow({
 export function DrillDownSection() {
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
-  const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
@@ -597,17 +593,6 @@ export function DrillDownSection() {
     <ReviewDataProvider value={contextValue}>
       <div className="px-4 mb-6">
         <DrillDownHeader />
-
-        {symbolsLoading && !symbolsLoaded && (
-          <div className="flex items-center justify-center py-8">
-            <div className="flex flex-col items-center gap-3">
-              <div className="h-6 w-6 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-              <span className="text-xs text-stone-500">
-                Extracting symbols...
-              </span>
-            </div>
-          </div>
-        )}
 
         {allChangedFiles.length > 0 && (
           <div className="rounded-lg border border-stone-800 overflow-hidden">

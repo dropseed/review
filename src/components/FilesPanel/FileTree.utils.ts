@@ -182,12 +182,12 @@ export function processTreeWithSections(
     compactTree(filterSection(processed, (status) => status.pending > 0)),
   );
 
-  // Reviewed: files with total > 0 but pending === 0
+  // Reviewed: files with any reviewed hunks (approved or trusted)
   const reviewed = annotateSiblingMax(
     compactTree(
       filterSection(
         processed,
-        (status) => status.total > 0 && status.pending === 0,
+        (status) => status.approved + status.trusted > 0,
       ),
     ),
   );

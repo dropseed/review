@@ -42,17 +42,19 @@ export function useFilePanelFileSystem() {
     [allFiles, hunkStatusMap],
   );
 
-  // Overall stats - count FILES not hunks for section badges
+  // Overall stats
   const stats = useMemo(() => {
     let needsReviewFiles = 0;
     let reviewedFiles = 0;
     let totalHunks = 0;
     let pendingHunks = 0;
+    let reviewedHunks = 0;
     let rejectedHunks = 0;
 
     for (const status of hunkStatusMap.values()) {
       totalHunks += status.total;
       pendingHunks += status.pending;
+      reviewedHunks += status.approved + status.trusted;
       rejectedHunks += status.rejected;
 
       if (status.total > 0) {
@@ -66,6 +68,7 @@ export function useFilePanelFileSystem() {
 
     return {
       pending: pendingHunks,
+      reviewed: reviewedHunks,
       total: totalHunks,
       rejected: rejectedHunks,
       needsReviewFiles,
@@ -74,13 +77,14 @@ export function useFilePanelFileSystem() {
   }, [hunkStatusMap]);
 
   // Flat file lists per section (for flat display mode)
+  // Files can appear in both sections if they have mixed hunk states
   const flatSectionedFiles = useMemo(() => {
     const needsReview: string[] = [];
     const reviewed: string[] = [];
     for (const [filePath, status] of hunkStatusMap.entries()) {
       if (status.total === 0) continue;
       if (status.pending > 0) needsReview.push(filePath);
-      else reviewed.push(filePath);
+      if (status.approved + status.trusted > 0) reviewed.push(filePath);
     }
     needsReview.sort((a, b) => a.localeCompare(b));
     reviewed.sort((a, b) => a.localeCompare(b));

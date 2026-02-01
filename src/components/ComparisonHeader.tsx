@@ -1,10 +1,25 @@
 import type { Comparison } from "../types";
+import { SimpleTooltip } from "./ui/tooltip";
+
+interface DiffStats {
+  fileCount: number;
+  additions: number;
+  deletions: number;
+}
 
 interface ComparisonHeaderProps {
   comparison: Comparison;
+  diffStats?: DiffStats;
+  onStatsClick?: () => void;
+  isOverviewActive?: boolean;
 }
 
-export function ComparisonHeader({ comparison }: ComparisonHeaderProps) {
+export function ComparisonHeader({
+  comparison,
+  diffStats,
+  onStatsClick,
+  isOverviewActive,
+}: ComparisonHeaderProps) {
   const isPr = !!comparison.githubPr;
   const compareDisplay = comparison.workingTree
     ? "Working Tree"
@@ -58,6 +73,26 @@ export function ComparisonHeader({ comparison }: ComparisonHeaderProps) {
             {compareDisplay}
           </span>
         </div>
+      )}
+
+      {diffStats && diffStats.fileCount > 0 && (
+        <SimpleTooltip content="Overview (Esc)">
+          <button
+            onClick={onStatsClick}
+            className={`flex items-center gap-2 font-mono text-xs tabular-nums px-2 py-1 rounded-md transition-colors ${
+              isOverviewActive
+                ? "bg-stone-800 text-stone-300"
+                : "text-stone-500 hover:bg-stone-800/60 hover:text-stone-400"
+            }`}
+          >
+            <span>
+              {diffStats.fileCount}{" "}
+              {diffStats.fileCount === 1 ? "file" : "files"}
+            </span>
+            <span className="text-green-500">+{diffStats.additions}</span>
+            <span className="text-red-500">-{diffStats.deletions}</span>
+          </button>
+        </SimpleTooltip>
       )}
     </div>
   );

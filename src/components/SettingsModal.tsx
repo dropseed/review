@@ -433,9 +433,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
               {/* Auto-classify toggle */}
               <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
-                <span className="text-xs text-stone-300">
-                  Auto-classify new hunks
-                </span>
+                <span className="text-xs text-stone-300">AI auto-classify</span>
                 <Switch
                   checked={autoClassifyEnabled}
                   onCheckedChange={setAutoClassifyEnabled}

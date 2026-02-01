@@ -143,6 +143,7 @@ export function UntrackedFileView({
             name: filePath,
             contents: content,
             lang: language,
+            cacheKey: `untracked:${filePath}`,
           }}
           options={{
             theme: {

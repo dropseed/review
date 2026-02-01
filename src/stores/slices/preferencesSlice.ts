@@ -33,7 +33,8 @@ const defaults = {
   recentRepositories: [] as RecentRepo[],
   diffLineDiffType: "word" as DiffLineDiffType,
   diffIndicators: "bars" as DiffIndicators,
-  changesDisplayMode: "tree" as ChangesDisplayMode,
+  needsReviewDisplayMode: "tree" as ChangesDisplayMode,
+  reviewedDisplayMode: "tree" as ChangesDisplayMode,
   diffViewMode: "split" as DiffViewMode,
 };
 
@@ -49,8 +50,9 @@ export interface PreferencesSlice {
   diffLineDiffType: DiffLineDiffType;
   diffIndicators: DiffIndicators;
 
-  // Changes panel display mode
-  changesDisplayMode: ChangesDisplayMode;
+  // Changes panel display mode (per section)
+  needsReviewDisplayMode: ChangesDisplayMode;
+  reviewedDisplayMode: ChangesDisplayMode;
 
   // Diff view mode
   diffViewMode: DiffViewMode;
@@ -70,7 +72,8 @@ export interface PreferencesSlice {
   setCodeTheme: (theme: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
   setDiffIndicators: (indicators: DiffIndicators) => void;
-  setChangesDisplayMode: (mode: ChangesDisplayMode) => void;
+  setNeedsReviewDisplayMode: (mode: ChangesDisplayMode) => void;
+  setReviewedDisplayMode: (mode: ChangesDisplayMode) => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
@@ -100,7 +103,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   directoryToReveal: null,
   diffLineDiffType: defaults.diffLineDiffType,
   diffIndicators: defaults.diffIndicators,
-  changesDisplayMode: defaults.changesDisplayMode,
+  needsReviewDisplayMode: defaults.needsReviewDisplayMode,
+  reviewedDisplayMode: defaults.reviewedDisplayMode,
   diffViewMode: defaults.diffViewMode,
   autoClassifyEnabled: defaults.autoClassifyEnabled,
   classifyCommand: defaults.classifyCommand,
@@ -139,9 +143,14 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("diffIndicators", indicators);
   },
 
-  setChangesDisplayMode: (mode) => {
-    set({ changesDisplayMode: mode });
-    storage.set("changesDisplayMode", mode);
+  setNeedsReviewDisplayMode: (mode) => {
+    set({ needsReviewDisplayMode: mode });
+    storage.set("needsReviewDisplayMode", mode);
+  },
+
+  setReviewedDisplayMode: (mode) => {
+    set({ reviewedDisplayMode: mode });
+    storage.set("reviewedDisplayMode", mode);
   },
 
   setDiffViewMode: (mode) => {
@@ -178,9 +187,15 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const diffIndicators =
       (await storage.get<DiffIndicators>("diffIndicators")) ??
       defaults.diffIndicators;
-    const changesDisplayMode =
+    const needsReviewDisplayMode =
+      (await storage.get<ChangesDisplayMode>("needsReviewDisplayMode")) ??
+      // Migrate from the old single key
       (await storage.get<ChangesDisplayMode>("changesDisplayMode")) ??
-      defaults.changesDisplayMode;
+      defaults.needsReviewDisplayMode;
+    const reviewedDisplayMode =
+      (await storage.get<ChangesDisplayMode>("reviewedDisplayMode")) ??
+      (await storage.get<ChangesDisplayMode>("changesDisplayMode")) ??
+      defaults.reviewedDisplayMode;
     let diffViewMode: DiffViewMode =
       ((await storage.get<string>("diffViewMode")) as DiffViewMode) ??
       defaults.diffViewMode;
@@ -193,7 +208,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       codeTheme: theme,
       diffLineDiffType,
       diffIndicators,
-      changesDisplayMode,
+      needsReviewDisplayMode,
+      reviewedDisplayMode,
       diffViewMode,
       autoClassifyEnabled: autoClassify,
       classifyCommand: classifyCmd,

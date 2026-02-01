@@ -64,6 +64,46 @@ type AnnotationMeta =
   | { type: "user"; data: UserAnnotationMeta }
   | { type: "new"; data: Record<string, never> };
 
+// Detects when @pierre/diffs finishes syntax highlighting by polling
+// for styled <span> elements inside the shadow DOM of the diffs-container
+// custom element. We poll because the shadow root is not observable via
+// MutationObserver from an ancestor outside the shadow boundary.
+function useSyntaxHighlightReady(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  contentKey: string,
+) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setReady(false);
+    const el = containerRef.current;
+    if (!el) return;
+
+    const isHighlighted = () => {
+      const shadow = el.querySelector("diffs-container")?.shadowRoot;
+      if (!shadow) return false;
+      const code = shadow.querySelector("code");
+      return code ? code.querySelector('span[style*="color"]') !== null : false;
+    };
+
+    if (isHighlighted()) {
+      setReady(true);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (isHighlighted()) {
+        setReady(true);
+        clearInterval(interval);
+      }
+    }, 150);
+
+    return () => clearInterval(interval);
+  }, [contentKey]);
+
+  return ready;
+}
+
 interface DiffViewProps {
   diffPatch: string;
   viewMode: "unified" | "split";
@@ -115,6 +155,10 @@ export function DiffView({
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
 
+  // Track when syntax highlighting finishes
+  const diffContainerRef = useRef<HTMLDivElement | null>(null);
+  const highlightReady = useSyntaxHighlightReady(diffContainerRef, fileName);
+
   // Scroll to focused hunk when it changes
   useEffect(() => {
     if (focusedHunkId && focusedHunkRef.current) {
@@ -149,86 +193,86 @@ export function DiffView({
     hunk.lines.every((l) => l.type === "removed" || l.type === "context") &&
     hunk.lines.some((l) => l.type === "removed");
 
+  const hunkStates = reviewState?.hunks;
+
   // Build line annotations for each hunk - position at last changed line
-  const hunkAnnotations: DiffLineAnnotation<AnnotationMeta>[] = hunks.map(
-    (hunk) => {
-      const hunkState = reviewState?.hunks[hunk.id];
-      const pairedHunk = hunk.movePairId
-        ? (allHunks.find((h) => h.id === hunk.movePairId) ?? null)
-        : null;
-      const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
+  // Memoized to preserve reference stability — @pierre/diffs uses reference
+  // equality on lineAnnotations to decide whether to re-render the diff.
+  const hunkAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
+    () =>
+      hunks.map((hunk) => {
+        const hunkState = hunkStates?.[hunk.id];
+        const pairedHunk = hunk.movePairId
+          ? (allHunks.find((h) => h.id === hunk.movePairId) ?? null)
+          : null;
+        const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
 
-      // Find the last changed line to position annotation after it
-      const changedLines = hunk.lines.filter(
-        (l) => l.type === "added" || l.type === "removed",
-      );
-      const lastChanged = changedLines[changedLines.length - 1];
+        const changedLines = hunk.lines.filter(
+          (l) => l.type === "added" || l.type === "removed",
+        );
+        const lastChanged = changedLines[changedLines.length - 1];
 
-      // Determine side and line number based on the last change type
-      // For deletions: use deletions side with oldLineNumber
-      // For additions: use additions side with newLineNumber
-      // This ensures the annotation appears right at the last change
-      let annotationSide: "additions" | "deletions";
-      let lineNumber: number;
+        let annotationSide: "additions" | "deletions";
+        let lineNumber: number;
 
-      if (!lastChanged) {
-        // No changes (shouldn't happen), fall back to defaults
-        annotationSide = isSource ? "deletions" : "additions";
-        lineNumber = isSource ? hunk.oldStart : hunk.newStart;
-      } else if (lastChanged.type === "removed") {
-        // Last change is a deletion - put annotation on deletions side
-        annotationSide = "deletions";
-        lineNumber = lastChanged.oldLineNumber ?? hunk.oldStart;
-      } else {
-        // Last change is an addition - put annotation on additions side
-        annotationSide = "additions";
-        lineNumber = lastChanged.newLineNumber ?? hunk.newStart;
-      }
+        if (!lastChanged) {
+          annotationSide = isSource ? "deletions" : "additions";
+          lineNumber = isSource ? hunk.oldStart : hunk.newStart;
+        } else if (lastChanged.type === "removed") {
+          annotationSide = "deletions";
+          lineNumber = lastChanged.oldLineNumber ?? hunk.oldStart;
+        } else {
+          annotationSide = "additions";
+          lineNumber = lastChanged.newLineNumber ?? hunk.newStart;
+        }
 
-      return {
-        side: annotationSide,
-        lineNumber,
-        metadata: {
-          type: "hunk" as const,
-          data: { hunk, hunkState, pairedHunk, isSource },
-        },
-      };
-    },
+        return {
+          side: annotationSide,
+          lineNumber,
+          metadata: {
+            type: "hunk" as const,
+            data: { hunk, hunkState, pairedHunk, isSource },
+          },
+        };
+      }),
+    [hunks, hunkStates, allHunks],
   );
 
   // Build annotations for user comments
   // Include "file" annotations as well - they map to the "additions" side (new/compare version)
-  const userAnnotations: DiffLineAnnotation<AnnotationMeta>[] =
-    fileAnnotations.map((annotation) => ({
-      side:
-        annotation.side === "old"
-          ? ("deletions" as const)
-          : ("additions" as const), // "new" and "file" both map to additions
-      lineNumber: annotation.lineNumber,
-      metadata: { type: "user" as const, data: { annotation } },
-    }));
+  const userAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
+    () =>
+      fileAnnotations.map((annotation) => ({
+        side:
+          annotation.side === "old"
+            ? ("deletions" as const)
+            : ("additions" as const),
+        lineNumber: annotation.lineNumber,
+        metadata: { type: "user" as const, data: { annotation } },
+      })),
+    [fileAnnotations],
+  );
 
-  // Add new annotation editor if active
-  const newAnnotationEditorItem: DiffLineAnnotation<AnnotationMeta>[] =
-    newAnnotationLine
-      ? [
-          {
-            side:
-              newAnnotationLine.side === "old"
-                ? ("deletions" as const)
-                : ("additions" as const),
-            lineNumber: newAnnotationLine.lineNumber,
-            metadata: { type: "new" as const, data: {} },
-          },
-        ]
-      : [];
-
-  // Combine all annotations
-  const lineAnnotations: DiffLineAnnotation<AnnotationMeta>[] = [
-    ...hunkAnnotations,
-    ...userAnnotations,
-    ...newAnnotationEditorItem,
-  ];
+  // Combine all annotations into a stable reference
+  const lineAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
+    () => [
+      ...hunkAnnotations,
+      ...userAnnotations,
+      ...(newAnnotationLine
+        ? [
+            {
+              side:
+                newAnnotationLine.side === "old"
+                  ? ("deletions" as const)
+                  : ("additions" as const),
+              lineNumber: newAnnotationLine.lineNumber,
+              metadata: { type: "new" as const, data: {} },
+            } satisfies DiffLineAnnotation<AnnotationMeta>,
+          ]
+        : []),
+    ],
+    [hunkAnnotations, userAnnotations, newAnnotationLine],
+  );
 
   // Handle jumping to paired hunk
   const handleJumpToPair = (movePairId: string) => {
@@ -326,12 +370,30 @@ export function DiffView({
   // For deleted files, newContent is null but we can use empty string
   const hasFileContents = oldContent != null || newContent != null;
 
-  const oldFile: FileContents | undefined = hasFileContents
-    ? { name: fileName, contents: oldContent ?? "", lang: language }
-    : undefined;
-  const newFile: FileContents | undefined = hasFileContents
-    ? { name: fileName, contents: newContent ?? "", lang: language }
-    : undefined;
+  const oldFile = useMemo<FileContents | undefined>(
+    () =>
+      hasFileContents
+        ? {
+            name: fileName,
+            contents: oldContent ?? "",
+            lang: language,
+            cacheKey: `old:${fileName}`,
+          }
+        : undefined,
+    [hasFileContents, fileName, oldContent, language],
+  );
+  const newFile = useMemo<FileContents | undefined>(
+    () =>
+      hasFileContents
+        ? {
+            name: fileName,
+            contents: newContent ?? "",
+            lang: language,
+            cacheKey: `new:${fileName}`,
+          }
+        : undefined,
+    [hasFileContents, fileName, newContent, language],
+  );
 
   // Performance optimization: detect large files and JSON files
   // JSON diffs are often noisy with word-level diffing; large files are slow to render
@@ -427,7 +489,12 @@ export function DiffView({
   };
 
   return (
-    <div className="diff-container">
+    <div className="diff-container relative" ref={diffContainerRef}>
+      {!highlightReady && (
+        <div className="absolute top-0 left-0 right-0 z-10 h-0.5 overflow-hidden">
+          <div className="h-full w-1/3 animate-[shimmer_1s_ease-in-out_infinite] bg-sky-500/50 rounded-full" />
+        </div>
+      )}
       <DiffErrorBoundary
         fallback={
           <div className="p-6">

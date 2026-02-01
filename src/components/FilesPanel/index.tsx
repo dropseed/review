@@ -21,10 +21,29 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "../../components/ui/collapsible";
-import type { CommitEntry, FileSymbolDiff } from "../../types";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "../../components/ui/dropdown-menu";
+import {
+  isHunkTrusted,
+  type CommitEntry,
+  type FileSymbolDiff,
+} from "../../types";
+import { flattenFilesWithStatus } from "../../stores/types";
+import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import { ReviewDataProvider } from "../ReviewDataContext";
 
-// Collapsible section header with icon
+interface QuickActionItem {
+  label: string;
+  count: number;
+  onAction: () => void;
+}
+
+// Collapsible section header with icon and overflow menu
 function SectionHeader({
   title,
   icon,
@@ -34,8 +53,12 @@ function SectionHeader({
   onToggle,
   onExpandAll,
   onCollapseAll,
-  showTreeControls,
   showTopBorder = true,
+  displayMode,
+  onSetDisplayMode,
+  onApproveAll,
+  onUnapproveAll,
+  quickActions,
   children,
 }: {
   title: string;
@@ -46,8 +69,12 @@ function SectionHeader({
   onToggle: () => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
-  showTreeControls?: boolean;
   showTopBorder?: boolean;
+  displayMode?: ChangesDisplayMode;
+  onSetDisplayMode?: (mode: ChangesDisplayMode) => void;
+  onApproveAll?: () => void;
+  onUnapproveAll?: () => void;
+  quickActions?: QuickActionItem[];
   children: React.ReactNode;
 }) {
   const badgeColors = {
@@ -55,6 +82,20 @@ function SectionHeader({
     lime: "bg-lime-500/20 text-lime-400",
     cyan: "bg-cyan-500/20 text-cyan-400",
   };
+
+  const checkIcon = (
+    <svg
+      className="ml-auto h-3.5 w-3.5 text-stone-400"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2.5}
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+
+  const hasMenuItems = displayMode && onSetDisplayMode;
 
   return (
     <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
@@ -82,43 +123,138 @@ function SectionHeader({
               )}
             </button>
           </CollapsibleTrigger>
-          {isOpen && showTreeControls && onExpandAll && onCollapseAll && (
-            <div className="flex items-center gap-0.5 pr-2">
-              <SimpleTooltip content="Expand all">
-                <button
-                  onClick={onExpandAll}
-                  className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-                >
+          {isOpen && hasMenuItems && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center justify-center w-6 h-6 mr-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
                   <svg
-                    className="h-3 w-3"
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <circle cx="12" cy="5" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
+                  </svg>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {/* Display mode */}
+                <DropdownMenuItem onClick={() => onSetDisplayMode!("tree")}>
+                  <svg
+                    className="h-3.5 w-3.5"
                     fill="none"
                     viewBox="0 0 16 16"
                     stroke="currentColor"
                     strokeWidth={1.5}
                   >
-                    <rect x="2" y="2" width="12" height="12" rx="1" />
-                    <path d="M8 5v6M5 8h6" />
+                    <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
                   </svg>
-                </button>
-              </SimpleTooltip>
-              <SimpleTooltip content="Collapse all">
-                <button
-                  onClick={onCollapseAll}
-                  className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
-                >
+                  Tree view
+                  {displayMode === "tree" && checkIcon}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onSetDisplayMode!("flat")}>
                   <svg
-                    className="h-3 w-3"
+                    className="h-3.5 w-3.5"
                     fill="none"
                     viewBox="0 0 16 16"
                     stroke="currentColor"
                     strokeWidth={1.5}
                   >
-                    <rect x="2" y="2" width="12" height="12" rx="1" />
-                    <path d="M5 8h6" />
+                    <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
                   </svg>
-                </button>
-              </SimpleTooltip>
-            </div>
+                  Flat view
+                  {displayMode === "flat" && checkIcon}
+                </DropdownMenuItem>
+
+                {/* Expand/collapse (tree mode only) */}
+                {displayMode === "tree" && onExpandAll && onCollapseAll && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onExpandAll}>
+                      <svg
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 16 16"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <rect x="2" y="2" width="12" height="12" rx="1" />
+                        <path d="M8 5v6M5 8h6" />
+                      </svg>
+                      Expand all
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onCollapseAll}>
+                      <svg
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 16 16"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <rect x="2" y="2" width="12" height="12" rx="1" />
+                        <path d="M5 8h6" />
+                      </svg>
+                      Collapse all
+                    </DropdownMenuItem>
+                  </>
+                )}
+
+                {/* Bulk approve/unapprove */}
+                {(onApproveAll || onUnapproveAll) && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {onApproveAll && (
+                      <DropdownMenuItem onClick={onApproveAll}>
+                        <svg
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M5 13l4 4L19 7" />
+                        </svg>
+                        Approve all
+                      </DropdownMenuItem>
+                    )}
+                    {onUnapproveAll && (
+                      <DropdownMenuItem onClick={onUnapproveAll}>
+                        <svg
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                        </svg>
+                        Unapprove all
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
+
+                {/* Quick actions */}
+                {quickActions && quickActions.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {quickActions.map((qa) => (
+                      <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
+                        <span className="flex-1">{qa.label}</span>
+                        <span className="ml-2 text-xxs tabular-nums text-stone-500">
+                          {qa.count}
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         <CollapsibleContent>{children}</CollapsibleContent>
@@ -216,9 +352,19 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Approval actions
   const { handleApproveAll, handleUnapproveAll } = useFilePanelApproval();
 
-  // Changes display mode (tree vs flat)
-  const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
-  const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
+  // Changes display mode (tree vs flat) — persisted per section
+  const needsReviewDisplayMode = useReviewStore(
+    (s) => s.needsReviewDisplayMode,
+  );
+  const setNeedsReviewDisplayMode = useReviewStore(
+    (s) => s.setNeedsReviewDisplayMode,
+  );
+  const reviewedDisplayMode = useReviewStore((s) => s.reviewedDisplayMode);
+  const setReviewedDisplayMode = useReviewStore(
+    (s) => s.setReviewedDisplayMode,
+  );
+  const anyFlatMode =
+    needsReviewDisplayMode === "flat" || reviewedDisplayMode === "flat";
 
   // Symbol data for flat mode
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
@@ -230,21 +376,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   // Trigger symbol loading when switching to flat mode
   useEffect(() => {
-    if (
-      changesDisplayMode === "flat" &&
-      !symbolsLoaded &&
-      !symbolsLoading &&
-      files.length > 0
-    ) {
+    if (anyFlatMode && !symbolsLoaded && !symbolsLoading && files.length > 0) {
       loadSymbols();
     }
-  }, [
-    changesDisplayMode,
-    symbolsLoaded,
-    symbolsLoading,
-    files.length,
-    loadSymbols,
-  ]);
+  }, [anyFlatMode, symbolsLoaded, symbolsLoading, files.length, loadSymbols]);
 
   // Symbol diff map for flat mode
   const symbolDiffMap = useMemo(() => {
@@ -281,6 +416,121 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     reviewState,
     rejectedCount: stats.rejected,
   });
+
+  // Section-level bulk approve/unapprove
+  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
+  const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
+
+  const pendingHunkIds = useMemo(() => {
+    return hunks
+      .filter((h) => {
+        const state = reviewState?.hunks[h.id];
+        if (state?.status === "approved" || state?.status === "rejected")
+          return false;
+        if (reviewState && isHunkTrusted(state, reviewState.trustList))
+          return false;
+        return true;
+      })
+      .map((h) => h.id);
+  }, [hunks, reviewState]);
+
+  const reviewedHunkIds = useMemo(() => {
+    return hunks
+      .filter((h) => {
+        const state = reviewState?.hunks[h.id];
+        // Only include explicitly approved hunks — trusted hunks can't be
+        // "unapproved" (they'd need their trust pattern removed instead)
+        return state?.status === "approved";
+      })
+      .map((h) => h.id);
+  }, [hunks, reviewState]);
+
+  const handleApproveAllHunks = useCallback(() => {
+    if (pendingHunkIds.length > 0) approveHunkIds(pendingHunkIds);
+  }, [pendingHunkIds, approveHunkIds]);
+
+  const handleUnapproveAllHunks = useCallback(() => {
+    if (reviewedHunkIds.length > 0) unapproveHunkIds(reviewedHunkIds);
+  }, [reviewedHunkIds, unapproveHunkIds]);
+
+  // Quick actions: approve/unapprove by file status (deleted, renamed, added)
+  const quickActionData = useMemo(() => {
+    const flatFiles = flattenFilesWithStatus(files);
+    const pathsByStatus: Record<string, Set<string>> = {
+      deleted: new Set(),
+      renamed: new Set(),
+      added: new Set(),
+    };
+    for (const file of flatFiles) {
+      if (file.status && file.status in pathsByStatus) {
+        pathsByStatus[file.status].add(file.path);
+      }
+    }
+
+    const result: Record<
+      string,
+      { pendingIds: string[]; approvedIds: string[] }
+    > = {};
+    for (const status of ["deleted", "renamed", "added"]) {
+      const matchingPaths = pathsByStatus[status];
+      const pendingIds: string[] = [];
+      const approvedIds: string[] = [];
+      for (const hunk of hunks) {
+        if (!matchingPaths.has(hunk.filePath)) continue;
+        const hunkState = reviewState?.hunks[hunk.id];
+        if (hunkState?.status === "approved") {
+          approvedIds.push(hunk.id);
+        } else if (
+          !hunkState?.status &&
+          !(reviewState && isHunkTrusted(hunkState, reviewState.trustList))
+        ) {
+          pendingIds.push(hunk.id);
+        }
+      }
+      result[status] = { pendingIds, approvedIds };
+    }
+    return result;
+  }, [files, hunks, reviewState]);
+
+  const needsReviewQuickActions = useMemo(() => {
+    const actions: QuickActionItem[] = [];
+    const labels: Record<string, string> = {
+      deleted: "Approve deleted files",
+      renamed: "Approve renamed files",
+      added: "Approve added files",
+    };
+    for (const [status, label] of Object.entries(labels)) {
+      const data = quickActionData[status];
+      if (data && data.pendingIds.length > 0) {
+        actions.push({
+          label,
+          count: data.pendingIds.length,
+          onAction: () => approveHunkIds(data.pendingIds),
+        });
+      }
+    }
+    return actions;
+  }, [quickActionData, approveHunkIds]);
+
+  const reviewedQuickActions = useMemo(() => {
+    const actions: QuickActionItem[] = [];
+    const labels: Record<string, string> = {
+      deleted: "Unapprove deleted files",
+      renamed: "Unapprove renamed files",
+      added: "Unapprove added files",
+    };
+    for (const [status, label] of Object.entries(labels)) {
+      const data = quickActionData[status];
+      if (data && data.approvedIds.length > 0) {
+        actions.push({
+          label,
+          count: data.approvedIds.length,
+          onAction: () => unapproveHunkIds(data.approvedIds),
+        });
+      }
+    }
+    return actions;
+  }, [quickActionData, unapproveHunkIds]);
 
   // Context menu support
   const { openInSplit } = useReviewStore();
@@ -365,54 +615,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         {/* Trust pattern badges - quick toggles in changes view */}
         {viewMode === "changes" && <TrustBadges />}
 
-        {/* Tree/Flat toggle for changes view */}
-        {viewMode === "changes" && hasChanges && (
-          <div className="flex items-center justify-end px-3 py-1 border-b border-stone-800">
-            <div className="flex items-center gap-0.5 rounded-md bg-stone-800/50 p-0.5">
-              <SimpleTooltip content="Tree view">
-                <button
-                  onClick={() => setChangesDisplayMode("tree")}
-                  className={`rounded p-1 transition-colors ${
-                    changesDisplayMode === "tree"
-                      ? "bg-stone-700 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 16 16"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
-                  </svg>
-                </button>
-              </SimpleTooltip>
-              <SimpleTooltip content="Flat view with symbols">
-                <button
-                  onClick={() => setChangesDisplayMode("flat")}
-                  className={`rounded p-1 transition-colors ${
-                    changesDisplayMode === "flat"
-                      ? "bg-stone-700 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 16 16"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
-                  </svg>
-                </button>
-              </SimpleTooltip>
-            </div>
-          </div>
-        )}
-
         {/* Panel content based on view mode */}
         {viewMode === "commits" ? (
           <CommitsPanel
@@ -449,20 +651,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     {/* Guide section - PR description and AI narrative */}
                     <GuideSection />
 
-                    {/* Symbol loading spinner for flat mode */}
-                    {changesDisplayMode === "flat" &&
-                      symbolsLoading &&
-                      !symbolsLoaded && (
-                        <div className="flex items-center justify-center py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="h-4 w-4 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-                            <span className="text-xs text-stone-500">
-                              Extracting symbols...
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
                     {/* Needs Review section */}
                     <SectionHeader
                       title="Needs Review"
@@ -480,19 +668,24 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           <circle cx="12" cy="12" r="3" />
                         </svg>
                       }
-                      badge={stats.needsReviewFiles}
+                      badge={stats.pending}
                       badgeColor="amber"
                       isOpen={needsReviewOpen}
                       onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
                       onExpandAll={() => expandAll(allDirPaths)}
                       onCollapseAll={collapseAll}
-                      showTreeControls={
-                        changesDisplayMode === "tree" && allDirPaths.size > 0
+                      displayMode={needsReviewDisplayMode}
+                      onSetDisplayMode={setNeedsReviewDisplayMode}
+                      onApproveAll={
+                        pendingHunkIds.length > 0
+                          ? handleApproveAllHunks
+                          : undefined
                       }
+                      quickActions={needsReviewQuickActions}
                       showTopBorder={false}
                     >
                       <div className="py-1">
-                        {changesDisplayMode === "tree" ? (
+                        {needsReviewDisplayMode === "tree" ? (
                           sectionedFiles.needsReview.length > 0 ? (
                             sectionedFiles.needsReview.map((entry) => (
                               <FileNode
@@ -595,18 +788,23 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           <polyline points="22 4 12 14.01 9 11.01" />
                         </svg>
                       }
-                      badge={stats.reviewedFiles}
+                      badge={stats.reviewed}
                       badgeColor="lime"
                       isOpen={reviewedOpen}
                       onToggle={() => setReviewedOpen(!reviewedOpen)}
                       onExpandAll={() => expandAll(allDirPaths)}
                       onCollapseAll={collapseAll}
-                      showTreeControls={
-                        changesDisplayMode === "tree" && allDirPaths.size > 0
+                      displayMode={reviewedDisplayMode}
+                      onSetDisplayMode={setReviewedDisplayMode}
+                      onUnapproveAll={
+                        reviewedHunkIds.length > 0
+                          ? handleUnapproveAllHunks
+                          : undefined
                       }
+                      quickActions={reviewedQuickActions}
                     >
                       <div className="py-1">
-                        {changesDisplayMode === "tree" ? (
+                        {reviewedDisplayMode === "tree" ? (
                           sectionedFiles.reviewed.length > 0 ? (
                             sectionedFiles.reviewed.map((entry) => (
                               <FileNode

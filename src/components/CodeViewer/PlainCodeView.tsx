@@ -218,6 +218,7 @@ export function PlainCodeView({
             name: filePath,
             contents: content,
             lang: language,
+            cacheKey: `file:${filePath}`,
           }}
           selectedLines={
             highlightLine

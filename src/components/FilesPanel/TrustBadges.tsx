@@ -8,12 +8,23 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "../ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "../ui/dropdown-menu";
 
 export function TrustBadges() {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
+  const setTrustList = useReviewStore((s) => s.setTrustList);
+  const setClassificationsModalOpen = useReviewStore(
+    (s) => s.setClassificationsModalOpen,
+  );
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
   const [isOpen, setIsOpen] = useState(true);
@@ -83,9 +94,17 @@ export function TrustBadges() {
     return result;
   }, [trustCategories, patternCounts, reviewState]);
 
+  const allPatternIds = useMemo(
+    () => trustCategories.flatMap((c) => c.patterns.map((p) => p.id)),
+    [trustCategories],
+  );
+
   if (patternsWithMatches.length === 0) return null;
 
   const trustedCount = patternsWithMatches.filter((p) => p.isTrusted).length;
+  const allTrusted =
+    allPatternIds.length > 0 &&
+    (reviewState?.trustList.length ?? 0) === allPatternIds.length;
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -119,6 +138,63 @@ export function TrustBadges() {
               )}
             </button>
           </CollapsibleTrigger>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center justify-center w-6 h-6 mr-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <circle cx="12" cy="5" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="19" r="1.5" />
+                </svg>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() =>
+                  allTrusted ? setTrustList([]) : setTrustList(allPatternIds)
+                }
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  {allTrusted ? (
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  ) : (
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  )}
+                </svg>
+                {allTrusted ? "Untrust all" : "Trust all"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setClassificationsModalOpen(true)}
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+                Browse Classifications
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <CollapsibleContent>
           <div className="flex flex-wrap gap-1 px-3 pb-2">

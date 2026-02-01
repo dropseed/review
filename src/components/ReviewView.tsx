@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useMemo, useState, useRef } from "react";
 import { FilesPanel } from "./FilesPanel";
 import { SplitContainer } from "./SplitContainer";
 import { DebugModal } from "./DebugModal";
@@ -51,6 +51,12 @@ export function ReviewView({
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const closeSplit = useReviewStore((s) => s.closeSplit);
   const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
+  const showClassificationsModal = useReviewStore(
+    (s) => s.classificationsModalOpen,
+  );
+  const setShowClassificationsModal = useReviewStore(
+    (s) => s.setClassificationsModalOpen,
+  );
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -58,8 +64,6 @@ export function ReviewView({
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showContentSearch, setShowContentSearch] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
-  const [showClassificationsModal, setShowClassificationsModal] =
-    useState(false);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
@@ -163,6 +167,20 @@ export function ReviewView({
   const { totalHunks, trustedHunks, approvedHunks, reviewedHunks } =
     useReviewProgress();
 
+  // Diff stats computed from hunks
+  const diffStats = useMemo(() => {
+    const filePaths = new Set(hunks.map((h) => h.filePath));
+    let additions = 0;
+    let deletions = 0;
+    for (const hunk of hunks) {
+      for (const line of hunk.lines) {
+        if (line.type === "added") additions++;
+        else if (line.type === "removed") deletions++;
+      }
+    }
+    return { fileCount: filePaths.size, additions, deletions };
+  }, [hunks]);
+
   return (
     <div className="flex h-screen flex-col bg-stone-950">
       {/* Header */}
@@ -200,7 +218,12 @@ export function ReviewView({
               "repo"}
           </span>
 
-          <ComparisonHeader comparison={comparison} />
+          <ComparisonHeader
+            comparison={comparison}
+            diffStats={diffStats}
+            onStatsClick={navigateToOverview}
+            isOverviewActive={topLevelView === "overview"}
+          />
         </div>
 
         {/* Right: review controls */}
@@ -208,7 +231,7 @@ export function ReviewView({
           {/* Review progress */}
           {totalHunks > 0 ? (
             <div className="group relative flex items-center gap-2">
-              <span className="text-xs text-stone-500">Reviewed</span>
+              <span className="text-xs text-stone-500">Hunks reviewed</span>
               <span className="font-mono text-xs tabular-nums text-stone-400">
                 {reviewedHunks}/{totalHunks}
               </span>
@@ -250,56 +273,6 @@ export function ReviewView({
           ) : (
             <span className="text-xs text-stone-500">No changes to review</span>
           )}
-
-          {/* Classifications button */}
-          <SimpleTooltip content="Browse classifications">
-            <button
-              onClick={() => setShowClassificationsModal(true)}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                <line x1="7" y1="7" x2="7.01" y2="7" />
-              </svg>
-              <span>Classifications</span>
-            </button>
-          </SimpleTooltip>
-
-          {/* Overview button */}
-          <SimpleTooltip content="Overview (Esc)">
-            <button
-              onClick={navigateToOverview}
-              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                topLevelView === "overview"
-                  ? "bg-stone-800 text-stone-200"
-                  : "text-stone-500 hover:bg-stone-800 hover:text-stone-300"
-              }`}
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              <span>Overview</span>
-            </button>
-          </SimpleTooltip>
         </div>
       </header>
 
@@ -410,19 +383,9 @@ export function ReviewView({
           )}
           <span>
             <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              j
-            </kbd>
-            <span className="mx-0.5">/</span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              k
-            </kbd>
-            <span className="ml-1">hunks</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
               {"\u2318"}P
             </kbd>
-            <span className="ml-1">find</span>
+            <span className="ml-1">find file</span>
           </span>
           <span>
             <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">

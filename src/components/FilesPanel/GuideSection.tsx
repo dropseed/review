@@ -21,6 +21,7 @@ export function GuideSection() {
   const narrativeGenerating = useReviewStore((s) => s.narrativeGenerating);
   const narrativeError = useReviewStore((s) => s.narrativeError);
   const isNarrativeStale = useReviewStore((s) => s.isNarrativeStale);
+  const isNarrativeIrrelevant = useReviewStore((s) => s.isNarrativeIrrelevant);
   const generateNarrative = useReviewStore((s) => s.generateNarrative);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
@@ -31,9 +32,11 @@ export function GuideSection() {
     () => (hasNarrative ? isNarrativeStale() : false),
     [hasNarrative, isNarrativeStale],
   );
-
-  // Default to expanded when narrative exists, collapsed otherwise
-  const defaultOpen = hasNarrative || !!prBody;
+  const irrelevant = useMemo(
+    () => (hasNarrative ? isNarrativeIrrelevant() : false),
+    [hasNarrative, isNarrativeIrrelevant],
+  );
+  const showNarrative = hasNarrative && !irrelevant;
 
   const handleNavigate = useCallback(
     (filePath: string, hunkId?: string) => {
@@ -89,7 +92,7 @@ export function GuideSection() {
   );
 
   return (
-    <Collapsible defaultOpen={defaultOpen}>
+    <Collapsible defaultOpen={false}>
       <div className="border-b border-stone-800">
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
@@ -113,8 +116,8 @@ export function GuideSection() {
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
                 <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
               </svg>
-              <span className="flex-1">Guide</span>
-              {stale && (
+              <span className="flex-1">Narrative</span>
+              {stale && !irrelevant && (
                 <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
                   outdated
                 </span>
@@ -147,12 +150,12 @@ export function GuideSection() {
             )}
 
             {/* Separator when both PR body and narrative exist */}
-            {prBody && hasNarrative && (
+            {prBody && showNarrative && (
               <div className="border-t border-stone-800" />
             )}
 
             {/* Narrative content */}
-            {hasNarrative && (
+            {showNarrative && (
               <div className="space-y-1.5">
                 <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
                   AI Walkthrough
@@ -193,7 +196,7 @@ export function GuideSection() {
             {/* Action buttons */}
             {!narrativeGenerating && (
               <div className="flex items-center gap-2">
-                {!hasNarrative ? (
+                {!showNarrative ? (
                   <SimpleTooltip
                     content={
                       claudeAvailable === false

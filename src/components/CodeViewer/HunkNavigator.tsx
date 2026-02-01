@@ -45,8 +45,11 @@ export function HunkNavigator({ filePath }: HunkNavigatorProps) {
   return (
     <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
       <div className="flex items-center gap-1 rounded-full bg-stone-800/90 backdrop-blur-sm border border-stone-700/80 px-1.5 py-1 shadow-xl shadow-black/30">
+        <kbd className="w-4 text-center font-mono text-xxs text-stone-500 select-none">
+          k
+        </kbd>
         {/* Previous hunk */}
-        <SimpleTooltip content="Previous hunk">
+        <SimpleTooltip content="Previous hunk (k)">
           <button
             onClick={goToPrev}
             disabled={!isInThisFile || isFirst}
@@ -77,7 +80,7 @@ export function HunkNavigator({ filePath }: HunkNavigatorProps) {
         </span>
 
         {/* Next hunk */}
-        <SimpleTooltip content="Next hunk">
+        <SimpleTooltip content="Next hunk (j)">
           <button
             onClick={goToNext}
             disabled={!isInThisFile || isLast}
@@ -99,6 +102,9 @@ export function HunkNavigator({ filePath }: HunkNavigatorProps) {
             </svg>
           </button>
         </SimpleTooltip>
+        <kbd className="w-4 text-center font-mono text-xxs text-stone-500 select-none">
+          j
+        </kbd>
       </div>
     </div>
   );

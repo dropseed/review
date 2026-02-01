@@ -411,150 +411,153 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogPortal>
-        <DialogOverlay />
-        <DialogPrimitive.Content
-          className="fixed left-[50%] top-[15vh] z-50 w-full max-w-xl translate-x-[-50%] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=open]:slide-in-from-left-1/2"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <VisuallyHidden.Root>
-            <DialogPrimitive.Title>Go to Symbol</DialogPrimitive.Title>
-          </VisuallyHidden.Root>
-          <div className="rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
-            {/* Search input */}
-            <div className="border-b border-stone-800 p-3">
-              <div className="flex items-center gap-3 px-2">
-                <svg
-                  className="h-4 w-4 text-stone-500 flex-shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Search symbols..."
-                  aria-label="Search symbols"
-                  className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none"
-                />
-                {query && (
-                  <button
-                    onClick={() => setQuery("")}
-                    className="text-stone-500 hover:text-stone-300 transition-colors"
-                    aria-label="Clear search"
+        <DialogOverlay className="items-start pt-[15vh]">
+          <DialogPrimitive.Content
+            className="w-full max-w-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <VisuallyHidden.Root>
+              <DialogPrimitive.Title>Go to Symbol</DialogPrimitive.Title>
+            </VisuallyHidden.Root>
+            <div className="rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+              {/* Search input */}
+              <div className="border-b border-stone-800 p-3">
+                <div className="flex items-center gap-3 px-2">
+                  <svg
+                    className="h-4 w-4 text-stone-500 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Search symbols..."
+                    aria-label="Search symbols"
+                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery("")}
+                      className="text-stone-500 hover:text-stone-300 transition-colors"
+                      aria-label="Clear search"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Results list */}
-            <div
-              ref={listRef}
-              className="max-h-80 overflow-y-auto scrollbar-thin"
-              role="listbox"
-              aria-label="Symbol search results"
-            >
-              {results.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-stone-500">
-                  {emptyMessage}
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  )}
                 </div>
-              ) : (
-                results.map((result, index) => (
-                  <button
-                    key={`${result.symbol.changeType ?? "none"}-${result.symbol.name}-${result.symbol.sortKey}`}
-                    data-index={index}
-                    role="option"
-                    aria-selected={index === selectedIndex}
-                    onClick={() => handleSelect(result.symbol)}
-                    className={`w-full flex items-center gap-2 px-4 py-2 text-left transition-colors ${
-                      index === selectedIndex
-                        ? "bg-stone-800"
-                        : "hover:bg-stone-800/50"
-                    }`}
-                  >
-                    {result.symbol.changeType ? (
-                      <ChangeIndicator changeType={result.symbol.changeType} />
-                    ) : (
-                      <span className="flex-shrink-0 w-3" />
-                    )}
-                    <SymbolKindBadge kind={result.symbol.kind} />
-                    <span
-                      className={`min-w-0 flex-1 truncate font-mono text-sm ${
-                        result.symbol.changeType
-                          ? "text-stone-300"
-                          : "text-stone-500"
+              </div>
+
+              {/* Results list */}
+              <div
+                ref={listRef}
+                className="max-h-80 overflow-y-auto scrollbar-thin"
+                role="listbox"
+                aria-label="Symbol search results"
+              >
+                {results.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-stone-500">
+                    {emptyMessage}
+                  </div>
+                ) : (
+                  results.map((result, index) => (
+                    <button
+                      key={`${result.symbol.changeType ?? "none"}-${result.symbol.name}-${result.symbol.sortKey}`}
+                      data-index={index}
+                      role="option"
+                      aria-selected={index === selectedIndex}
+                      onClick={() => handleSelect(result.symbol)}
+                      className={`w-full flex items-center gap-2 px-4 py-2 text-left transition-colors ${
+                        index === selectedIndex
+                          ? "bg-stone-800"
+                          : "hover:bg-stone-800/50"
                       }`}
                     >
-                      {result.matchIndices.length > 0 ? (
-                        <HighlightedText
-                          text={result.symbol.name}
-                          indices={result.matchIndices}
+                      {result.symbol.changeType ? (
+                        <ChangeIndicator
+                          changeType={result.symbol.changeType}
                         />
                       ) : (
-                        result.symbol.name
+                        <span className="flex-shrink-0 w-3" />
                       )}
-                    </span>
-                    {result.symbol.parentName && (
-                      <span className="flex-shrink-0 text-xs text-stone-600">
-                        in {result.symbol.parentName}
+                      <SymbolKindBadge kind={result.symbol.kind} />
+                      <span
+                        className={`min-w-0 flex-1 truncate font-mono text-sm ${
+                          result.symbol.changeType
+                            ? "text-stone-300"
+                            : "text-stone-500"
+                        }`}
+                      >
+                        {result.matchIndices.length > 0 ? (
+                          <HighlightedText
+                            text={result.symbol.name}
+                            indices={result.matchIndices}
+                          />
+                        ) : (
+                          result.symbol.name
+                        )}
                       </span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-
-            {/* Footer with keyboard hints */}
-            <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1">
-                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                    ↑
-                  </kbd>
-                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                    ↓
-                  </kbd>
-                  <span className="ml-0.5">navigate</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                    Enter
-                  </kbd>
-                  <span className="ml-0.5">select</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
-                    Esc
-                  </kbd>
-                  <span className="ml-0.5">close</span>
-                </span>
+                      {result.symbol.parentName && (
+                        <span className="flex-shrink-0 text-xs text-stone-600">
+                          in {result.symbol.parentName}
+                        </span>
+                      )}
+                    </button>
+                  ))
+                )}
               </div>
-              <span>{results.length} symbols</span>
+
+              {/* Footer with keyboard hints */}
+              <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1">
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                      ↑
+                    </kbd>
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                      ↓
+                    </kbd>
+                    <span className="ml-0.5">navigate</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                      Enter
+                    </kbd>
+                    <span className="ml-0.5">select</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                      Esc
+                    </kbd>
+                    <span className="ml-0.5">close</span>
+                  </span>
+                </div>
+                <span>{results.length} symbols</span>
+              </div>
             </div>
-          </div>
-        </DialogPrimitive.Content>
+          </DialogPrimitive.Content>
+        </DialogOverlay>
       </DialogPortal>
     </Dialog>
   );

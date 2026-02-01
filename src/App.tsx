@@ -51,6 +51,8 @@ function App() {
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
   const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
+  const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
+  const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
   const loadingProgress = useReviewStore((s) => s.loadingProgress);
@@ -485,6 +487,31 @@ function App() {
                 </span>
               </div>
             )}
+            {/* Symbol extraction progress indicator */}
+            {symbolsLoading && !symbolsLoaded && (
+              <div className="flex items-center gap-1.5 text-amber-400">
+                <svg
+                  className="h-3 w-3 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span>Extracting symbols...</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3 text-stone-600">
             <span>
@@ -511,7 +538,7 @@ function App() {
               <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
                 {"\u2318"}P
               </kbd>
-              <span className="ml-1">find</span>
+              <span className="ml-1">find file</span>
             </span>
             <span>
               <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">

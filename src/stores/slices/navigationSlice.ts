@@ -52,6 +52,10 @@ export interface NavigationSlice {
   openInSplit: (path: string) => void;
   closeSplit: () => void;
   swapPanes: () => void;
+
+  // Modal state
+  classificationsModalOpen: boolean;
+  setClassificationsModalOpen: (open: boolean) => void;
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -183,6 +187,11 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   },
 
   closeSplit: () => set({ secondaryFile: null, focusedPane: "primary" }),
+
+  // Modal state
+  classificationsModalOpen: false,
+  setClassificationsModalOpen: (open) =>
+    set({ classificationsModalOpen: open }),
 
   swapPanes: () => {
     const { selectedFile, secondaryFile } = get();

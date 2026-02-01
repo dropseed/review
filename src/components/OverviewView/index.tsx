@@ -1,7 +1,6 @@
 import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SummaryStats } from "./SummaryStats";
 import { GuideOverviewSection } from "./GuideOverviewSection";
-import { QuickActionsSection } from "./QuickActionsSection";
 import { TrustSection } from "./TrustSection";
 import { DrillDownSection } from "./DrillDownSection";
 
@@ -17,7 +16,10 @@ export function OverviewView() {
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin">
       <div className="max-w-5xl mx-auto py-4">
-        {/* Section 1: Summary Stats */}
+        {/* Narrative: PR Description + AI Walkthrough */}
+        <GuideOverviewSection />
+
+        {/* Review Progress */}
         <SummaryStats
           totalHunks={totalHunks}
           trustedHunks={trustedHunks}
@@ -26,16 +28,10 @@ export function OverviewView() {
           reviewedPercent={reviewedPercent}
         />
 
-        {/* Guide: PR Description + AI Narrative */}
-        <GuideOverviewSection />
-
-        {/* Section 2: Quick Actions */}
-        <QuickActionsSection />
-
-        {/* Section 3: Trust Patterns + Classification */}
+        {/* Trust Patterns + Classification */}
         <TrustSection />
 
-        {/* Section 4: Drill-Down — Files → Symbols → Hunks */}
+        {/* Changed Files — Files → Symbols → Hunks */}
         <DrillDownSection />
       </div>
     </div>

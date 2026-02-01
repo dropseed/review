@@ -9,9 +9,9 @@ function StatChip({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className={`h-2 w-2 rounded-full ${color}`} />
-      <span className="text-xs text-stone-400">{label}</span>
-      <span className="text-xs text-stone-300 font-medium tabular-nums">
+      <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
+      <span className="text-xxs text-stone-500">{label}</span>
+      <span className="text-xxs text-stone-400 font-medium tabular-nums">
         {count}
       </span>
     </div>
@@ -69,44 +69,36 @@ export function SummaryStats({
   }
 
   return (
-    <div className="px-4 pb-4 mb-4 border-b border-stone-800">
-      <div className="flex items-baseline gap-3 mb-3">
-        <span className="text-2xl font-semibold text-stone-100 tabular-nums">
+    <div className="px-4 mb-4">
+      <div className="flex items-center gap-3">
+        {/* Compact progress bar */}
+        <div className="h-1.5 flex-1 rounded-full bg-stone-800 overflow-hidden flex">
+          {trustedHunks > 0 && (
+            <div
+              className="bg-cyan-500 transition-all duration-300"
+              style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
+            />
+          )}
+          {approvedHunks > 0 && (
+            <div
+              className="bg-lime-500 transition-all duration-300"
+              style={{ width: `${(approvedHunks / totalHunks) * 100}%` }}
+            />
+          )}
+        </div>
+
+        <span className="text-xs font-medium text-stone-300 tabular-nums whitespace-nowrap">
           {reviewedPercent}%
         </span>
-        <span className="text-sm text-stone-400">reviewed</span>
-        <span className="text-xs text-stone-600 tabular-nums ml-auto">
-          {trustedHunks + approvedHunks}/{totalHunks} hunks
-        </span>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-2 rounded-full bg-stone-800 overflow-hidden flex">
-        {trustedHunks > 0 && (
-          <div
-            className="bg-cyan-500 transition-all duration-300"
-            style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
-          />
-        )}
-        {approvedHunks > 0 && (
-          <div
-            className="bg-lime-500 transition-all duration-300"
-            style={{ width: `${(approvedHunks / totalHunks) * 100}%` }}
-          />
-        )}
       </div>
 
       {/* Stat chips */}
-      <div className="flex items-center gap-4 mt-3">
+      <div className="flex items-center gap-4 mt-2">
         <StatChip color="bg-cyan-500" label="Trusted" count={trustedHunks} />
         <StatChip color="bg-lime-500" label="Approved" count={approvedHunks} />
-        <StatChip
-          color="bg-amber-500"
-          label="Needs Review"
-          count={pendingHunks}
-        />
+        <StatChip color="bg-amber-500" label="Pending" count={pendingHunks} />
         <span className="text-xxs text-stone-600 tabular-nums ml-auto">
-          {totalHunks} total
+          {trustedHunks + approvedHunks}/{totalHunks} hunks
         </span>
       </div>
     </div>

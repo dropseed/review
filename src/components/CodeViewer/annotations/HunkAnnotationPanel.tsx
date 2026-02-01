@@ -296,18 +296,45 @@ export function HunkAnnotationPanel({
         {/* Trust labels - click to toggle trust */}
         {hunkState?.label && hunkState.label.length > 0 && (
           <div className="flex items-center gap-1.5">
-            <svg
-              className="h-3 w-3 text-stone-500"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
+            <SimpleTooltip
+              content={
+                hunkState.classifiedVia === "ai"
+                  ? "Classified by AI"
+                  : hunkState.classifiedVia === "static"
+                    ? "Classified by rules"
+                    : "Classified"
+              }
             >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
+              <span className="flex items-center">
+                {hunkState.classifiedVia === "ai" ? (
+                  <svg
+                    className="h-3 w-3 text-violet-400/70"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.54 20 12 16.27 7.46 20l1.36-6.91L3.82 9l6.09-.74L12 2z" />
+                  </svg>
+                ) : (
+                  <svg
+                    className="h-3 w-3 text-stone-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
+                )}
+              </span>
+            </SimpleTooltip>
             {hunkState.label.map((lbl, i) => {
               const isTrustedLabel = trustList.includes(lbl);
               return (

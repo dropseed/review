@@ -207,5 +207,16 @@
       "reject": []
     },
     "tags": ["imports"]
+  },
+  {
+    "id": "needs-review-usememo-logic-01",
+    "description": "New useMemo with loops and conditionals is code logic, not whitespace",
+    "file_path": "src/components/ReviewView.tsx",
+    "content": "@@ -169,3 +169,15 @@\n \n+    // Diff stats computed from hunks\n+    const diffStats = useMemo(() => {\n+      const filePaths = new Set(hunks.map((h) => h.filePath));\n+      let additions = 0;\n+      let deletions = 0;\n+      for (const hunk of hunks) {\n+        for (const line of hunk.lines) {\n+          if (line.type === \"added\") additions++;\n+          else if (line.type === \"removed\") deletions++;\n+        }\n+      }\n+      return { fileCount: filePaths.size, additions, deletions };\n+    }, [hunks]);",
+    "expected": {
+      "accept": [],
+      "reject": ["formatting:whitespace", "comments:added"]
+    },
+    "tags": ["needs-review"]
   }
 ]

@@ -19,6 +19,11 @@
           "id": "imports:reordered",
           "name": "Reordered",
           "description": "Import statements reordered or sorted. The same imports exist before and after, just in different order or grouping."
+        },
+        {
+          "id": "imports:modified",
+          "name": "Modified",
+          "description": "Existing import/require/use statements changed. ONLY when the entire hunk is editing imports, with no other code changes. Includes expanding imports (adding named exports), narrowing imports, or changing import paths."
         }
       ]
     },

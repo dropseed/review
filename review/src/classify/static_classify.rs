@@ -219,8 +219,10 @@ fn classify_imports(hunk: &DiffHunk) -> Option<ClassificationResult> {
                     reasoning: "Import statements were reordered (same set of imports)".to_owned(),
                 })
             } else {
-                // Mixed add/remove of different imports - let AI handle
-                None
+                Some(ClassificationResult {
+                    label: vec!["imports:modified".to_owned()],
+                    reasoning: "All changed lines are import statements (modified)".to_owned(),
+                })
             }
         }
         (false, false) => None,
@@ -475,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn test_import_different_imports_fall_through() {
+    fn test_import_different_imports_modified() {
         let hunk = make_hunk(
             "index.js",
             vec![
@@ -484,8 +486,22 @@ mod tests {
             ],
         );
         let result = classify_imports(&hunk);
-        // Different imports added vs removed: fall through to AI
-        assert!(result.is_none());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:modified"]);
+    }
+
+    #[test]
+    fn test_import_modified_expanded() {
+        let hunk = make_hunk(
+            "src/main.tsx",
+            vec![
+                removed("import React from \"react\";"),
+                added("import React, { useEffect } from \"react\";"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:modified"]);
     }
 
     #[test]

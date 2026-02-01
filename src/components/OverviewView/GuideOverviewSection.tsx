@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReviewStore } from "../../stores";
@@ -12,20 +12,23 @@ export function GuideOverviewSection() {
   const narrativeGenerating = useReviewStore((s) => s.narrativeGenerating);
   const narrativeError = useReviewStore((s) => s.narrativeError);
   const isNarrativeStale = useReviewStore((s) => s.isNarrativeStale);
+  const isNarrativeIrrelevant = useReviewStore((s) => s.isNarrativeIrrelevant);
   const generateNarrative = useReviewStore((s) => s.generateNarrative);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const narrative = reviewState?.narrative;
   const prBody = reviewState?.comparison?.githubPr?.body;
   const hasNarrative = !!narrative?.content;
-  const hasContent = hasNarrative || !!prBody;
-
   const stale = useMemo(
     () => (hasNarrative ? isNarrativeStale() : false),
     [hasNarrative, isNarrativeStale],
   );
-
-  const [sectionExpanded, setSectionExpanded] = useState(hasContent);
+  const irrelevant = useMemo(
+    () => (hasNarrative ? isNarrativeIrrelevant() : false),
+    [hasNarrative, isNarrativeIrrelevant],
+  );
+  const showNarrative = hasNarrative && !irrelevant;
+  const hasContent = showNarrative || !!prBody;
 
   const handleNavigate = useCallback(
     (filePath: string, hunkId?: string) => {
@@ -85,64 +88,41 @@ export function GuideOverviewSection() {
 
   return (
     <div className="px-4 mb-4">
-      {/* Section header */}
-      <button
-        className="flex items-center gap-1.5 mb-2 group w-full text-left"
-        onClick={() => setSectionExpanded(!sectionExpanded)}
-        aria-expanded={sectionExpanded}
-      >
-        <svg
-          className={`h-3 w-3 text-stone-600 transition-transform ${sectionExpanded ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24"
-          fill="currentColor"
-        >
-          <path d="M10 6l6 6-6 6" />
-        </svg>
-        <h3 className="text-xs font-medium text-stone-400 uppercase tracking-wide">
-          Guide
-        </h3>
-        {stale && (
-          <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
-            outdated
-          </span>
-        )}
-      </button>
-
-      {sectionExpanded && (
+      {hasContent && (
         <div className="rounded-lg border border-stone-800 overflow-hidden">
           <div className="px-4 py-3 space-y-3">
             {/* PR Description */}
             {prBody && (
-              <div className="space-y-1.5">
-                <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
-                  PR Description
-                </div>
-                <div className="guide-prose text-stone-300">
-                  <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    urlTransform={(url) =>
-                      url.startsWith("review://")
-                        ? url
-                        : defaultUrlTransform(url)
-                    }
-                    components={markdownComponents}
-                  >
-                    {prBody}
-                  </Markdown>
-                </div>
+              <div className="guide-prose text-stone-300">
+                <Markdown
+                  remarkPlugins={[remarkGfm]}
+                  urlTransform={(url) =>
+                    url.startsWith("review://") ? url : defaultUrlTransform(url)
+                  }
+                  components={markdownComponents}
+                >
+                  {prBody}
+                </Markdown>
               </div>
             )}
 
             {/* Separator */}
-            {prBody && hasNarrative && (
+            {prBody && showNarrative && (
               <div className="border-t border-stone-800" />
             )}
 
             {/* Narrative content */}
-            {hasNarrative && (
+            {showNarrative && (
               <div className="space-y-1.5">
-                <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
-                  AI Walkthrough
+                <div className="flex items-center gap-2">
+                  <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
+                    AI Walkthrough
+                  </div>
+                  {stale && (
+                    <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
+                      outdated
+                    </span>
+                  )}
                 </div>
                 <div className="guide-prose text-stone-300">
                   <Markdown
@@ -159,56 +139,56 @@ export function GuideOverviewSection() {
                 </div>
               </div>
             )}
-
-            {/* Generating state */}
-            {narrativeGenerating && (
-              <div className="flex items-center gap-2 py-2">
-                <div className="h-3.5 w-3.5 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-                <span className="text-xs text-stone-500">
-                  Generating narrative...
-                </span>
-              </div>
-            )}
-
-            {/* Error state */}
-            {narrativeError && !narrativeGenerating && (
-              <div className="text-xs text-red-400 bg-red-500/10 rounded px-2 py-1.5">
-                {narrativeError}
-              </div>
-            )}
-
-            {/* Action buttons */}
-            {!narrativeGenerating && (
-              <div className="flex items-center gap-2">
-                {!hasNarrative ? (
-                  <SimpleTooltip
-                    content={
-                      claudeAvailable === false
-                        ? "Claude CLI not available"
-                        : "Generate a narrative walkthrough of the changes"
-                    }
-                  >
-                    <button
-                      onClick={generateNarrative}
-                      disabled={claudeAvailable === false}
-                      className="text-xs px-2.5 py-1 rounded bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-40 disabled:cursor-not-allowed border border-stone-700"
-                    >
-                      Generate Narrative
-                    </button>
-                  </SimpleTooltip>
-                ) : stale ? (
-                  <SimpleTooltip content="Changes have been updated since the narrative was generated">
-                    <button
-                      onClick={generateNarrative}
-                      className="text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
-                    >
-                      Regenerate
-                    </button>
-                  </SimpleTooltip>
-                ) : null}
-              </div>
-            )}
           </div>
+        </div>
+      )}
+
+      {/* Generating state */}
+      {narrativeGenerating && (
+        <div className="flex items-center gap-2 py-3 px-1">
+          <div className="h-3.5 w-3.5 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+          <span className="text-xs text-stone-500">
+            Generating narrative...
+          </span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {narrativeError && !narrativeGenerating && (
+        <div className="text-xs text-red-400 bg-red-500/10 rounded px-2 py-1.5 mt-2">
+          {narrativeError}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      {!narrativeGenerating && (
+        <div className="flex items-center gap-2 mt-2">
+          {!showNarrative ? (
+            <SimpleTooltip
+              content={
+                claudeAvailable === false
+                  ? "Claude CLI not available"
+                  : "Generate a narrative walkthrough of the changes"
+              }
+            >
+              <button
+                onClick={generateNarrative}
+                disabled={claudeAvailable === false}
+                className="text-xs px-2.5 py-1 rounded bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-40 disabled:cursor-not-allowed border border-stone-700"
+              >
+                Generate Narrative
+              </button>
+            </SimpleTooltip>
+          ) : stale ? (
+            <SimpleTooltip content="Changes have been updated since the narrative was generated">
+              <button
+                onClick={generateNarrative}
+                className="text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
+              >
+                Regenerate
+              </button>
+            </SimpleTooltip>
+          ) : null}
         </div>
       )}
     </div>

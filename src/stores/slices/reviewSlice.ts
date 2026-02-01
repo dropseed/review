@@ -88,6 +88,7 @@ export interface ReviewSlice {
   // Trust list actions
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
+  setTrustList: (patterns: string[]) => void;
 
   // Refresh all data
   refresh: () => Promise<void>;
@@ -454,6 +455,20 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       debouncedSave(saveReviewState);
     },
 
+    setTrustList: (patterns) => {
+      const { reviewState, saveReviewState } = get();
+      if (!reviewState) return;
+
+      const newState = {
+        ...reviewState,
+        trustList: patterns,
+        updatedAt: new Date().toISOString(),
+      };
+
+      set({ reviewState: newState });
+      debouncedSave(saveReviewState);
+    },
+
     exportRejectionFeedback: () => {
       const { reviewState, hunks } = get();
       if (!reviewState) return null;
@@ -485,6 +500,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const {
         repoPath,
         loadFiles,
+        loadAllFiles,
         loadReviewState,
         loadGitStatus,
         refreshCommits,
@@ -497,6 +513,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Pass isRefreshing=true to suppress loading progress indicators and batch state updates
       await Promise.all([
         loadFiles(true, true),
+        loadAllFiles(),
         loadGitStatus(),
         repoPath ? refreshCommits(repoPath) : Promise.resolve(),
       ]);
