@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+npx @tauri-apps/cli icon app-icon.svg -o src-tauri/icons
+
+echo ""
+echo "Icons generated in src-tauri/icons/"

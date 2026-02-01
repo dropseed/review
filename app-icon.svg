@@ -19,18 +19,4 @@
   <!-- Right panel (teal/green) -->
   <rect x="270" y="16" width="210" height="480" rx="48" fill="url(#greenGrad)"/>
   
-  <!-- Checkmark split across panels -->
-  <!-- Left side: short upstroke of checkmark -->
-  <path d="M120 256 L242 340" 
-        fill="none" 
-        stroke="#1a1a1a" 
-        stroke-width="32" 
-        stroke-linecap="round"/>
-  
-  <!-- Right side: long downstroke of checkmark going up-right -->
-  <path d="M270 340 L400 160" 
-        fill="none" 
-        stroke="#1a1a1a" 
-        stroke-width="32" 
-        stroke-linecap="round"/>
 </svg>
