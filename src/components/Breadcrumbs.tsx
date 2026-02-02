@@ -26,7 +26,7 @@ export function Breadcrumbs({
             ) : (
               <button
                 onClick={() => onNavigateToDirectory?.(path)}
-                className="font-mono text-stone-500 hover:text-stone-300 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded"
+                className="font-mono text-stone-500 hover:text-stone-300 hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded"
               >
                 {part}
               </button>

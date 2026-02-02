@@ -109,7 +109,7 @@ export function InFileSearchBar({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Find in file…"
-          className={`w-44 rounded bg-stone-900/80 border px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-none transition-colors focus:border-amber-500/50 ${
+          className={`w-44 rounded bg-stone-900/80 border px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-hidden transition-colors focus:border-amber-500/50 ${
             noResults
               ? "border-rose-500/50 bg-rose-500/5"
               : "border-stone-700/50"

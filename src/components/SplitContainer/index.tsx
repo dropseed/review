@@ -88,7 +88,9 @@ export function SplitContainer() {
       {/* Primary Pane */}
       <div
         className={`flex min-h-0 flex-col overflow-hidden ${
-          focusedPane === "primary" ? "ring-1 ring-inset ring-amber-500/30" : ""
+          focusedPane === "primary"
+            ? "inset-ring-1 inset-ring-amber-500/30"
+            : ""
         }`}
         style={isHorizontal ? { width: primarySize } : { height: primarySize }}
         onClick={handlePrimaryClick}
@@ -123,7 +125,7 @@ export function SplitContainer() {
       <div
         className={`flex min-h-0 flex-col overflow-hidden ${
           focusedPane === "secondary"
-            ? "ring-1 ring-inset ring-amber-500/30"
+            ? "inset-ring-1 inset-ring-amber-500/30"
             : ""
         }`}
         style={

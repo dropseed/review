@@ -54,7 +54,7 @@ export function UntrackedFileView({
       {/* Approval controls */}
       {hunk && (
         <div
-          className={`sticky top-0 z-10 mb-2 flex items-center gap-3 border-b border-stone-800/50 backdrop-blur-sm p-3 ${getHeaderBackgroundClass(isRejected, isApproved, isTrusted)}`}
+          className={`sticky top-0 z-10 mb-2 flex items-center gap-3 border-b border-stone-800/50 backdrop-blur-xs p-3 ${getHeaderBackgroundClass(isRejected, isApproved, isTrusted)}`}
         >
           <span className="font-mono text-xs text-emerald-500 tabular-nums">
             + {lineCount} lines (new file)

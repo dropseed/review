@@ -17,7 +17,7 @@ function AnnotationItem({
       <SimpleTooltip content="Go to this line">
         <button
           onClick={onGoTo}
-          className="w-full text-left p-2.5 pr-8 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset rounded-md"
+          className="w-full text-left p-2.5 pr-8 min-w-0 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50 rounded-md"
         >
           <div className="flex items-center gap-1.5 mb-1">
             <svg
@@ -45,7 +45,7 @@ function AnnotationItem({
       <SimpleTooltip content="Delete comment">
         <button
           onClick={onDelete}
-          className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-all duration-150 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
+          className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-all duration-150 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-500/50"
           aria-label="Delete comment"
         >
           <svg

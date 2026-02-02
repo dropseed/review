@@ -2,13 +2,17 @@ import { useMemo } from "react";
 import { useReviewStore } from "../stores";
 import { isHunkTrusted } from "../types";
 
+export type ReviewStateValue = "approved" | "changes_requested" | null;
+
 export interface ReviewProgress {
   totalHunks: number;
   trustedHunks: number;
   approvedHunks: number;
+  rejectedHunks: number;
   reviewedHunks: number;
   pendingHunks: number;
   reviewedPercent: number;
+  state: ReviewStateValue;
 }
 
 export function useReviewProgress(): ReviewProgress {
@@ -27,18 +31,31 @@ export function useReviewProgress(): ReviewProgress {
       ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "approved")
           .length
       : 0;
-    const reviewedHunks = trustedHunks + approvedHunks;
+    const rejectedHunks = reviewState
+      ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "rejected")
+          .length
+      : 0;
+    const reviewedHunks = trustedHunks + approvedHunks + rejectedHunks;
     const pendingHunks = totalHunks - reviewedHunks;
     const reviewedPercent =
       totalHunks > 0 ? Math.round((reviewedHunks / totalHunks) * 100) : 0;
+
+    let state: ReviewStateValue = null;
+    if (rejectedHunks > 0) {
+      state = "changes_requested";
+    } else if (reviewedHunks === totalHunks && totalHunks > 0) {
+      state = "approved";
+    }
 
     return {
       totalHunks,
       trustedHunks,
       approvedHunks,
+      rejectedHunks,
       reviewedHunks,
       pendingHunks,
       reviewedPercent,
+      state,
     };
   }, [hunks, reviewState]);
 }

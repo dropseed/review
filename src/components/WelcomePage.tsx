@@ -49,7 +49,7 @@ const RecentRepoCard = memo(function RecentRepoCard({
   return (
     <button
       onClick={onOpen}
-      className={`group relative w-full focus:outline-none
+      className={`group relative w-full focus:outline-hidden
                   ${isRemoving ? "opacity-50 scale-95" : ""}`}
     >
       <div
@@ -302,7 +302,7 @@ export function WelcomePage({ onOpenRepo, onSelectRepo }: WelcomePageProps) {
                          text-stone-950 font-semibold text-sm
                          transition-all duration-200
                          hover:from-sage-400 hover:to-sage-400 hover:shadow-lg hover:shadow-sage-500/30 hover:-translate-y-0.5
-                         focus:outline-none focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-stone-950
+                         focus:outline-hidden focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-stone-950
                          active:translate-y-0 active:shadow-none
                          ${recentRepositories.length > 0 ? "mt-4" : ""}`}
             >
@@ -338,7 +338,7 @@ export function WelcomePage({ onOpenRepo, onSelectRepo }: WelcomePageProps) {
             href="https://www.pullapprove.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500/50 rounded px-1 -mx-1 transition-colors"
+            className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-300 focus:outline-hidden focus:ring-2 focus:ring-green-500/50 rounded px-1 -mx-1 transition-colors"
           >
             <svg
               className="h-3 w-auto opacity-70"

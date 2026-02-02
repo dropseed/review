@@ -111,6 +111,11 @@ impl ReviewState {
     /// Create a summary of this review state
     pub fn to_summary(&self) -> ReviewSummary {
         let total_hunks = self.hunks.len();
+        let rejected_hunks = self
+            .hunks
+            .values()
+            .filter(|h| matches!(h.status, Some(HunkStatus::Rejected)))
+            .count();
         // Count hunks that are approved, rejected, or have labels matching trust list
         let reviewed_hunks = self
             .hunks
@@ -134,10 +139,20 @@ impl ReviewState {
             })
             .count();
 
+        let state = if rejected_hunks > 0 {
+            Some("changes_requested".to_string())
+        } else if reviewed_hunks == total_hunks && total_hunks > 0 {
+            Some("approved".to_string())
+        } else {
+            None
+        };
+
         ReviewSummary {
             comparison: self.comparison.clone(),
             total_hunks,
             reviewed_hunks,
+            rejected_hunks,
+            state,
             updated_at: self.updated_at.clone(),
         }
     }
@@ -204,6 +219,10 @@ pub struct ReviewSummary {
     pub total_hunks: usize,
     #[serde(rename = "reviewedHunks")]
     pub reviewed_hunks: usize,
+    #[serde(rename = "rejectedHunks")]
+    pub rejected_hunks: usize,
+    /// Review state: "approved", "changes_requested", or null (in progress)
+    pub state: Option<String>,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
 }

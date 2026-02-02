@@ -84,7 +84,8 @@ export function useFilePanelFileSystem() {
     for (const [filePath, status] of hunkStatusMap.entries()) {
       if (status.total === 0) continue;
       if (status.pending > 0) needsReview.push(filePath);
-      if (status.approved + status.trusted > 0) reviewed.push(filePath);
+      if (status.approved + status.trusted + status.rejected > 0)
+        reviewed.push(filePath);
     }
     needsReview.sort((a, b) => a.localeCompare(b));
     reviewed.sort((a, b) => a.localeCompare(b));

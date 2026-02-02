@@ -56,6 +56,14 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
     let pending = total_hunks - approved - rejected - trusted;
     let unclassified = state.hunks.values().filter(|h| h.label.is_empty()).count();
 
+    let review_state = if rejected > 0 {
+        Some("changes_requested")
+    } else if pending == 0 && total_hunks > 0 {
+        Some("approved")
+    } else {
+        None
+    };
+
     if format == OutputFormat::Json {
         let output = serde_json::json!({
             "comparison": {
@@ -74,6 +82,7 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
                 "pending": pending,
                 "unclassified": unclassified,
             },
+            "state": review_state,
             "trust_list": state.trust_list,
             "notes": state.notes,
             "updated_at": state.updated_at,
@@ -104,7 +113,7 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
     // Hunk summary
     println!("{}", "Hunks".bold());
     let progress = if total_hunks > 0 {
-        ((approved + trusted) as f64 / total_hunks as f64 * 100.0) as u32
+        ((approved + rejected + trusted) as f64 / total_hunks as f64 * 100.0) as u32
     } else {
         100
     };
@@ -114,6 +123,18 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
         format!("{progress}%").green(),
         total_hunks
     );
+
+    match review_state {
+        Some("approved") => {
+            println!("  {} {}", "State:".dimmed(), "Approved".green());
+        }
+        Some("changes_requested") => {
+            println!("  {} {}", "State:".dimmed(), "Changes Requested".red());
+        }
+        _ => {
+            println!("  {} {}", "State:".dimmed(), "In Progress".yellow());
+        }
+    }
 
     if approved > 0 {
         println!(

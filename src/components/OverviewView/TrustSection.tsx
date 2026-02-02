@@ -78,7 +78,6 @@ export function TrustSection() {
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
   const setTrustList = useReviewStore((s) => s.setTrustList);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const autoClassifyEnabled = useReviewStore((s) => s.autoClassifyEnabled);
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
   const classifyUnlabeledHunks = useReviewStore(
@@ -197,25 +196,19 @@ export function TrustSection() {
     setPreviewPatternId(null);
   };
 
-  // Determine overall status for the summary icon
   const allClassified = unlabeledCount === 0;
-  const hasTrusted = trustedCount > 0;
 
   return (
     <div className="px-4 mb-6">
       <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-        <div className="rounded-lg border border-cyan-500/20 overflow-hidden bg-cyan-950/20 shadow-[0_0_12px_-4px_rgba(6,182,212,0.1)]">
-          {/* ── Summary header (always visible) ── */}
+        <div className="rounded-lg border border-sage-500/[.15] overflow-hidden bg-stone-900">
+          {/* ── Filled header (always visible) ── */}
           <CollapsibleTrigger asChild>
-            <button className="group flex items-center w-full gap-3 px-3.5 py-3 text-left hover:bg-cyan-500/5 transition-colors border-l-[3px] border-l-cyan-500/40">
-              {/* Status icon */}
+            <button className="group flex items-center w-full gap-3 px-3.5 py-3 text-left bg-sage-500/[.12] hover:bg-sage-500/[.18] transition-colors border-b border-sage-500/10">
+              {/* Shield icon */}
               <div
-                className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
-                  classifying
-                    ? "bg-amber-500/15 text-amber-400"
-                    : allClassified && hasTrusted
-                      ? "bg-cyan-500/15 text-cyan-400"
-                      : "bg-cyan-500/10 text-cyan-500/70"
+                className={`flex items-center justify-center transition-colors ${
+                  classifying ? "text-amber-400" : "text-sage-400"
                 }`}
               >
                 {classifying ? (
@@ -228,27 +221,29 @@ export function TrustSection() {
               {/* Title + subtitle */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-cyan-200">
+                  <span className="text-sm font-medium text-sage-300">
                     Trust Patterns
                   </span>
                   {trustedCount > 0 && (
-                    <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xxs font-medium text-cyan-300 tabular-nums ring-1 ring-inset ring-cyan-500/20">
+                    <span className="rounded-full bg-sage-500/20 px-2 py-0.5 text-xxs font-medium text-sage-300 tabular-nums">
                       {trustedCount}/{totalPatterns}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-stone-500 mt-0.5">
+                <p className="text-xs mt-0.5">
                   {taxonomyLoading ? (
-                    "Loading patterns..."
+                    <span className="text-stone-500">Loading patterns...</span>
                   ) : classifying ? (
                     <span className="text-amber-400/70">
                       Classifying hunks...
                     </span>
                   ) : allClassified ? (
                     <>
-                      <span className="text-cyan-400/60">All classified</span>
+                      <span className="text-sage-400/[.55]">
+                        All classified
+                      </span>
                       {trustedHunkCount > 0 && (
-                        <span className="text-cyan-400/50">
+                        <span className="text-sage-400/[.45]">
                           {" "}
                           &middot; {trustedHunkCount} hunk
                           {trustedHunkCount !== 1 ? "s" : ""} auto-approved
@@ -256,23 +251,15 @@ export function TrustSection() {
                       )}
                     </>
                   ) : (
-                    <>
-                      <span className="text-amber-400/60">
-                        {unlabeledCount} unclassified hunk
-                        {unlabeledCount !== 1 ? "s" : ""}
-                      </span>
-                      {!autoClassifyEnabled && (
-                        <span className="text-stone-600">
-                          {" "}
-                          &middot; AI auto-classify off
-                        </span>
-                      )}
-                    </>
+                    <span className="text-amber-400/60">
+                      {unlabeledCount} unclassified hunk
+                      {unlabeledCount !== 1 ? "s" : ""}
+                    </span>
                   )}
                 </p>
               </div>
 
-              {/* Classification quick-action (stop propagation so it doesn't toggle) */}
+              {/* Classify quick-action */}
               <div
                 className="flex items-center gap-2"
                 onClick={(e) => e.stopPropagation()}
@@ -280,7 +267,7 @@ export function TrustSection() {
                 {unlabeledCount > 0 && !classifying && (
                   <button
                     onClick={() => classifyUnlabeledHunks()}
-                    className="rounded-md bg-cyan-500/15 px-2.5 py-1 text-xs text-cyan-300 ring-1 ring-inset ring-cyan-500/20 hover:bg-cyan-500/25 hover:text-cyan-200 transition-colors"
+                    className="rounded-md bg-sage-500/20 px-2.5 py-1 text-xs text-sage-300 hover:bg-sage-500/30 hover:text-sage-200 transition-colors"
                   >
                     Classify
                   </button>
@@ -289,7 +276,7 @@ export function TrustSection() {
 
               {/* Chevron */}
               <ChevronIcon
-                className={`h-4 w-4 text-cyan-500/40 transition-transform duration-200 group-hover:text-cyan-400/60 ${
+                className={`h-4 w-4 text-sage-500/40 transition-transform duration-200 group-hover:text-sage-500/60 ${
                   isExpanded ? "rotate-90" : ""
                 }`}
               />
@@ -298,190 +285,185 @@ export function TrustSection() {
 
           {/* Error banner (visible even when collapsed) */}
           {classificationError && (
-            <div className="mx-3 mb-2 rounded-md bg-rose-500/10 px-2.5 py-1.5 text-2xs text-rose-400 ring-1 ring-inset ring-rose-500/20">
+            <div className="mx-3 mt-2 mb-1 rounded-md bg-rose-500/10 px-2.5 py-1.5 text-2xs text-rose-400 inset-ring-1 inset-ring-rose-500/20">
               {classificationError}
             </div>
           )}
 
-          {/* ── Expanded content ── */}
+          {/* ── Expanded content (neutral interior) ── */}
           <CollapsibleContent>
-            <div className="border-t border-cyan-500/10">
-              {/* Classification controls strip */}
-              <div className="flex items-center gap-3 px-3.5 py-2.5 bg-cyan-950/30 border-b border-cyan-500/10">
-                <div className="flex items-center gap-2 flex-1 text-2xs">
-                  {classifying ? (
-                    <span className="flex items-center gap-1.5 text-amber-400/70">
-                      <SpinnerIcon className="h-3 w-3 animate-spin" />
-                      Classifying...
-                    </span>
-                  ) : allClassified ? (
-                    <span className="flex items-center gap-1 text-cyan-400/60">
-                      <CheckIcon className="h-3 w-3" />
-                      All classified
-                    </span>
-                  ) : (
-                    <span className="text-amber-400/60 tabular-nums">
-                      {unlabeledCount} unclassified
-                    </span>
-                  )}
-                </div>
-
-                {unlabeledCount > 0 && !classifying && (
-                  <button
-                    onClick={() => classifyUnlabeledHunks()}
-                    className="text-2xs text-cyan-400/50 hover:text-cyan-300 transition-colors whitespace-nowrap"
-                  >
-                    Classify now
-                  </button>
-                )}
-                {allClassified && (
-                  <button
-                    onClick={() => reclassifyHunks()}
-                    disabled={classifying}
-                    className="text-2xs text-cyan-400/50 hover:text-cyan-300 transition-colors disabled:opacity-50 whitespace-nowrap"
-                  >
-                    Reclassify
-                  </button>
+            {/* Classification controls strip */}
+            <div className="flex items-center gap-3 px-3.5 py-2.5 bg-stone-900/50 border-b border-stone-800/60">
+              <div className="flex items-center gap-2 flex-1 text-2xs">
+                {classifying ? (
+                  <span className="flex items-center gap-1.5 text-amber-400/70">
+                    <SpinnerIcon className="h-3 w-3 animate-spin" />
+                    Classifying...
+                  </span>
+                ) : allClassified ? (
+                  <span className="flex items-center gap-1 text-stone-500">
+                    <CheckIcon className="h-3 w-3" />
+                    All classified
+                  </span>
+                ) : (
+                  <span className="text-stone-500 tabular-nums">
+                    {unlabeledCount} unclassified
+                  </span>
                 )}
               </div>
 
-              {/* Loading state */}
-              {taxonomyLoading && (
-                <div className="flex items-center justify-center py-6 text-stone-500">
-                  <SpinnerIcon className="h-4 w-4 animate-spin mr-2" />
-                  <span className="text-xs">Loading patterns...</span>
-                </div>
-              )}
-
-              {/* Category grid */}
-              <div className="divide-y divide-cyan-500/[0.06]">
-                {trustCategories.map((category) => {
-                  const categoryTrustedCount = category.patterns.filter((p) =>
-                    reviewState?.trustList.includes(p.id),
-                  ).length;
-                  const categoryTotalCount = category.patterns.reduce(
-                    (sum, p) => sum + (patternCounts[p.id] || 0),
-                    0,
-                  );
-
-                  return (
-                    <div key={category.id} className="px-3.5 py-2.5">
-                      {/* Category label row */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xxs font-medium text-cyan-400/70 uppercase tracking-wider">
-                          {category.name}
-                        </span>
-                        {categoryTrustedCount > 0 && (
-                          <span className="text-xxs text-cyan-400/70 tabular-nums">
-                            {categoryTrustedCount} trusted
-                          </span>
-                        )}
-                        {categoryTotalCount > 0 && (
-                          <span className="text-xxs text-stone-600 tabular-nums">
-                            {categoryTotalCount} hunk
-                            {categoryTotalCount !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Pattern chips */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {category.patterns.map((pattern) => {
-                          const isTrusted =
-                            reviewState?.trustList.includes(pattern.id) ??
-                            false;
-                          const count = patternCounts[pattern.id] || 0;
-
-                          return (
-                            <SimpleTooltip
-                              key={pattern.id}
-                              content={pattern.description}
-                            >
-                              <button
-                                onClick={() =>
-                                  isTrusted
-                                    ? removeTrustPattern(pattern.id)
-                                    : addTrustPattern(pattern.id)
-                                }
-                                className={`group inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-all ${
-                                  isTrusted
-                                    ? "bg-cyan-500/10 text-cyan-300 ring-1 ring-inset ring-cyan-500/20 hover:bg-cyan-500/20"
-                                    : "bg-stone-800/60 text-stone-400 ring-1 ring-inset ring-stone-700/50 hover:bg-stone-800 hover:text-stone-300"
-                                }`}
-                              >
-                                <Checkbox
-                                  className="h-3 w-3 flex-shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-stone-500"
-                                  checked={isTrusted}
-                                  tabIndex={-1}
-                                />
-                                <span className="truncate max-w-[12rem]">
-                                  {pattern.name}
-                                </span>
-                                {count > 0 && (
-                                  <span
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPreviewPatternId(
-                                        previewPatternId === pattern.id
-                                          ? null
-                                          : pattern.id,
-                                      );
-                                    }}
-                                    className={`font-mono text-xxs tabular-nums rounded px-1 py-px transition-colors ${
-                                      previewPatternId === pattern.id
-                                        ? "bg-stone-600 text-stone-200"
-                                        : isTrusted
-                                          ? "text-cyan-400/60 hover:bg-cyan-500/20 hover:text-cyan-300"
-                                          : "text-stone-500 hover:bg-stone-700 hover:text-stone-400"
-                                    }`}
-                                  >
-                                    {count}
-                                  </span>
-                                )}
-                              </button>
-                            </SimpleTooltip>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Footer actions */}
-              <div className="flex items-center gap-2 px-3.5 py-2.5 border-t border-cyan-500/10 bg-cyan-950/20">
-                {totalPatterns > 0 && (
-                  <button
-                    onClick={() =>
-                      allTrusted
-                        ? setTrustList([])
-                        : setTrustList(allPatternIds)
-                    }
-                    className="text-2xs text-cyan-400/50 hover:text-cyan-300 transition-colors"
-                  >
-                    {allTrusted ? "Untrust all" : "Trust all"}
-                  </button>
-                )}
-                <div className="flex-1" />
+              {unlabeledCount > 0 && !classifying && (
                 <button
-                  onClick={() => setClassificationsModalOpen(true)}
-                  className="flex items-center gap-1.5 text-2xs text-cyan-400/50 hover:text-cyan-300 transition-colors"
+                  onClick={() => classifyUnlabeledHunks()}
+                  className="text-2xs text-stone-500 hover:text-stone-300 transition-colors whitespace-nowrap"
                 >
-                  <svg
-                    className="h-3 w-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                    <line x1="7" y1="7" x2="7.01" y2="7" />
-                  </svg>
-                  Browse Classifications
+                  Classify now
                 </button>
+              )}
+              {allClassified && (
+                <button
+                  onClick={() => reclassifyHunks()}
+                  disabled={classifying}
+                  className="text-2xs text-stone-500 hover:text-stone-300 transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  Reclassify
+                </button>
+              )}
+            </div>
+
+            {/* Loading state */}
+            {taxonomyLoading && (
+              <div className="flex items-center justify-center py-6 text-stone-500">
+                <SpinnerIcon className="h-4 w-4 animate-spin mr-2" />
+                <span className="text-xs">Loading patterns...</span>
               </div>
+            )}
+
+            {/* Category grid */}
+            <div className="divide-y divide-stone-800/60">
+              {trustCategories.map((category) => {
+                const categoryTrustedCount = category.patterns.filter((p) =>
+                  reviewState?.trustList.includes(p.id),
+                ).length;
+                const categoryTotalCount = category.patterns.reduce(
+                  (sum, p) => sum + (patternCounts[p.id] || 0),
+                  0,
+                );
+
+                return (
+                  <div key={category.id} className="px-3.5 py-2.5">
+                    {/* Category label row */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xxs font-medium text-stone-400 uppercase tracking-wider">
+                        {category.name}
+                      </span>
+                      {categoryTrustedCount > 0 && (
+                        <span className="text-xxs text-sage-400/70 tabular-nums">
+                          {categoryTrustedCount} trusted
+                        </span>
+                      )}
+                      {categoryTotalCount > 0 && (
+                        <span className="text-xxs text-stone-600 tabular-nums">
+                          {categoryTotalCount} hunk
+                          {categoryTotalCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Pattern chips */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {category.patterns.map((pattern) => {
+                        const isTrusted =
+                          reviewState?.trustList.includes(pattern.id) ?? false;
+                        const count = patternCounts[pattern.id] || 0;
+
+                        return (
+                          <SimpleTooltip
+                            key={pattern.id}
+                            content={pattern.description}
+                          >
+                            <button
+                              onClick={() =>
+                                isTrusted
+                                  ? removeTrustPattern(pattern.id)
+                                  : addTrustPattern(pattern.id)
+                              }
+                              className={`group inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-all ${
+                                isTrusted
+                                  ? "bg-sage-500/10 text-sage-300 inset-ring-1 inset-ring-sage-500/20 hover:bg-sage-500/[.18]"
+                                  : "bg-stone-800/60 text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-800 hover:text-stone-300"
+                              }`}
+                            >
+                              <Checkbox
+                                className="h-3 w-3 flex-shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-stone-500"
+                                checked={isTrusted}
+                                tabIndex={-1}
+                              />
+                              <span className="truncate max-w-[12rem]">
+                                {pattern.name}
+                              </span>
+                              {count > 0 && (
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewPatternId(
+                                      previewPatternId === pattern.id
+                                        ? null
+                                        : pattern.id,
+                                    );
+                                  }}
+                                  className={`font-mono text-xxs tabular-nums rounded px-1 py-px transition-colors ${
+                                    previewPatternId === pattern.id
+                                      ? "bg-stone-600 text-stone-200"
+                                      : isTrusted
+                                        ? "text-sage-400/60 hover:bg-sage-500/[.18] hover:text-sage-300"
+                                        : "text-stone-500 hover:bg-stone-700 hover:text-stone-400"
+                                  }`}
+                                >
+                                  {count}
+                                </span>
+                              )}
+                            </button>
+                          </SimpleTooltip>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer actions */}
+            <div className="flex items-center gap-2 px-3.5 py-2.5 border-t border-stone-800/60">
+              {totalPatterns > 0 && (
+                <button
+                  onClick={() =>
+                    allTrusted ? setTrustList([]) : setTrustList(allPatternIds)
+                  }
+                  className="text-2xs text-stone-500 hover:text-stone-300 transition-colors"
+                >
+                  {allTrusted ? "Untrust all" : "Trust all"}
+                </button>
+              )}
+              <div className="flex-1" />
+              <button
+                onClick={() => setClassificationsModalOpen(true)}
+                className="flex items-center gap-1.5 text-2xs text-stone-500 hover:text-stone-300 transition-colors"
+              >
+                <svg
+                  className="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+                Browse Classifications
+              </button>
             </div>
           </CollapsibleContent>
         </div>

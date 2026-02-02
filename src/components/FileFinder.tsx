@@ -430,7 +430,7 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
                     autoCorrect="off"
                     autoCapitalize="off"
                     autoComplete="off"
-                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none"
+                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden"
                   />
                   {query && (
                     <button

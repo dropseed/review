@@ -96,7 +96,7 @@ export function GuideSection() {
       <div className="border-b border-stone-800">
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
-            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset">
+            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50">
               <svg
                 className="h-3 w-3 text-stone-500 transition-transform [[data-state=open]>&]:rotate-90"
                 viewBox="0 0 24 24"

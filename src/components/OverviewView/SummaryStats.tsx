@@ -22,14 +22,18 @@ export function SummaryStats({
   totalHunks,
   trustedHunks,
   approvedHunks,
+  rejectedHunks,
   pendingHunks,
   reviewedPercent,
+  state,
 }: {
   totalHunks: number;
   trustedHunks: number;
   approvedHunks: number;
+  rejectedHunks: number;
   pendingHunks: number;
   reviewedPercent: number;
+  state: "approved" | "changes_requested" | null;
 }) {
   if (totalHunks === 0) {
     return (
@@ -85,20 +89,44 @@ export function SummaryStats({
               style={{ width: `${(approvedHunks / totalHunks) * 100}%` }}
             />
           )}
+          {rejectedHunks > 0 && (
+            <div
+              className="bg-rose-500 transition-all duration-300"
+              style={{ width: `${(rejectedHunks / totalHunks) * 100}%` }}
+            />
+          )}
         </div>
 
         <span className="text-xs font-medium text-stone-300 tabular-nums whitespace-nowrap">
           {reviewedPercent}%
         </span>
+
+        {state === "approved" && (
+          <span className="text-xxs font-medium text-lime-400 bg-lime-500/10 px-1.5 py-0.5 rounded">
+            Approved
+          </span>
+        )}
+        {state === "changes_requested" && (
+          <span className="text-xxs font-medium text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+            Changes Requested
+          </span>
+        )}
       </div>
 
       {/* Stat chips */}
       <div className="flex items-center gap-4 mt-2">
         <StatChip color="bg-cyan-500" label="Trusted" count={trustedHunks} />
         <StatChip color="bg-lime-500" label="Approved" count={approvedHunks} />
+        {rejectedHunks > 0 && (
+          <StatChip
+            color="bg-rose-500"
+            label="Rejected"
+            count={rejectedHunks}
+          />
+        )}
         <StatChip color="bg-amber-500" label="Pending" count={pendingHunks} />
         <span className="text-xxs text-stone-600 tabular-nums ml-auto">
-          {trustedHunks + approvedHunks}/{totalHunks} hunks
+          {trustedHunks + approvedHunks + rejectedHunks}/{totalHunks} hunks
         </span>
       </div>
     </div>

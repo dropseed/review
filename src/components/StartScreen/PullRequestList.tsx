@@ -51,7 +51,7 @@ const PrCard = memo(function PrCard({
   return (
     <article
       className={`group relative rounded-xl border
-                 backdrop-blur-sm shadow-lg shadow-black/20
+                 backdrop-blur-xs shadow-lg shadow-black/20
                  transition-all duration-200
                  ${
                    isExisting
@@ -70,7 +70,7 @@ const PrCard = memo(function PrCard({
         onKeyDown={isExisting ? undefined : handleKeyDown}
         disabled={isExisting}
         className={`w-full px-5 py-4 text-left rounded-xl
-                   focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:ring-inset
+                   focus:outline-hidden focus:inset-ring-2 focus:inset-ring-violet-500/50
                    ${isExisting ? "cursor-default" : ""}`}
         aria-label={
           isExisting

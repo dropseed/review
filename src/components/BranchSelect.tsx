@@ -352,7 +352,7 @@ export const BranchSelect = memo(function BranchSelect({
             transition-all duration-150
             ${variantClasses}
             ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-stone-800/70"}
-            focus:outline-none focus:ring-2
+            focus:outline-hidden focus:ring-2
           `}
           aria-haspopup="listbox"
           aria-expanded={isOpen}

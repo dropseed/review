@@ -1,8 +1,105 @@
+@import "tailwindcss";
+@import "tw-animate-css";
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@theme extend {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --text-xxs: 0.6875rem;
+  --text-xxs--line-height: 1.5;
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1.5;
+
+  --animate-fade-in: fade-in 0.2s ease-out forwards;
+  --animate-slide-in: slide-in 0.2s ease-out forwards;
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.267rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(-0.533rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+@theme extend inline {
+  /* Brand colors */
+  --color-terracotta-400: #c75d4a;
+  --color-terracotta-500: #a63d2f;
+  --color-terracotta-600: #8b3426;
+  --color-sage-200: #a5d4b0;
+  --color-sage-300: #8ab896;
+  --color-sage-400: #6b9b7a;
+  --color-sage-500: #4a7c59;
+  --color-sage-600: #3d6549;
+
+  /* Extended backgrounds */
+  --color-bg-primary: #0c0a09;
+  --color-bg-secondary: #1c1917;
+  --color-bg-tertiary: #292524;
+  --color-bg-elevated: #44403c;
+
+  /* shadcn/ui semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Border radii */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
 
 :root {
   /* Tailwind Stone palette */
@@ -27,14 +124,6 @@
   --accent-emerald: #10b981;
   --accent-violet: #8b5cf6;
 
-  /* Brand colors from logo */
-  --terracotta-400: #c75d4a;
-  --terracotta-500: #a63d2f;
-  --terracotta-600: #8b3426;
-  --sage-400: #6b9b7a;
-  --sage-500: #4a7c59;
-  --sage-600: #3d6549;
-
   /* Base theme */
   --bg-primary: #0c0a09;
   --bg-secondary: #1c1917;
@@ -51,25 +140,25 @@
   --border-strong: rgba(168, 162, 158, 0.3);
 
   /* shadcn/ui compatible tokens (dark only) */
-  --background: 20 6% 4%;
-  --foreground: 40 6% 97%;
-  --card: 24 6% 10%;
-  --card-foreground: 40 6% 97%;
-  --popover: 24 6% 10%;
-  --popover-foreground: 40 6% 97%;
-  --primary: 84 81% 44%;
-  --primary-foreground: 20 6% 4%;
-  --secondary: 25 6% 25%;
-  --secondary-foreground: 40 6% 96%;
-  --muted: 20 6% 15%;
-  --muted-foreground: 30 3% 60%;
-  --accent: 20 6% 15%;
-  --accent-foreground: 40 6% 97%;
-  --destructive: 347 77% 60%;
-  --destructive-foreground: 40 6% 97%;
-  --border: 25 6% 25%;
-  --input: 25 6% 25%;
-  --ring: 43 96% 56%;
+  --background: hsl(20 6% 4%);
+  --foreground: hsl(40 6% 97%);
+  --card: hsl(24 6% 10%);
+  --card-foreground: hsl(40 6% 97%);
+  --popover: hsl(24 6% 10%);
+  --popover-foreground: hsl(40 6% 97%);
+  --primary: hsl(84 81% 44%);
+  --primary-foreground: hsl(20 6% 4%);
+  --secondary: hsl(25 6% 25%);
+  --secondary-foreground: hsl(40 6% 96%);
+  --muted: hsl(20 6% 15%);
+  --muted-foreground: hsl(30 3% 60%);
+  --accent: hsl(20 6% 15%);
+  --accent-foreground: hsl(40 6% 97%);
+  --destructive: hsl(347 77% 60%);
+  --destructive-foreground: hsl(40 6% 97%);
+  --border: hsl(25 6% 25%);
+  --input: hsl(25 6% 25%);
+  --ring: hsl(43 96% 56%);
   --radius: 0.5rem;
 
   /* Typography - Inter with system fallback */
@@ -178,36 +267,6 @@ html {
   }
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.267rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slide-in {
-  from {
-    opacity: 0;
-    transform: translateX(-0.533rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.2s ease-out forwards;
-}
-
-.animate-slide-in {
-  animation: slide-in 0.2s ease-out forwards;
-}
-
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
@@ -279,6 +338,14 @@ html {
   transition: width 0.3s ease, left 0.3s ease;
 }
 
+.progress-bar-rejected {
+  position: absolute;
+  height: 100%;
+  background: var(--accent-rose);
+  border-radius: 0 0.125rem 0.125rem 0;
+  transition: width 0.3s ease, left 0.3s ease;
+}
+
 /* Keyboard shortcut styling */
 kbd {
   display: inline-flex;
@@ -297,48 +364,57 @@ kbd {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-/* Ensure form elements inherit font size for proper scaling */
-button, input, select, textarea {
-  font-size: inherit;
-}
+/* Element-level resets — must be in @layer base so Tailwind utilities can override */
+@layer base {
+  /* Ensure form elements inherit font size for proper scaling */
+  button, input, select, textarea {
+    font-size: inherit;
+  }
 
-/* Windows dark mode: ensure native form elements have proper colors */
-select, option, optgroup {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-}
+  /* Windows dark mode: ensure native form elements have proper colors */
+  select, option, optgroup {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
 
-option:checked {
-  background-color: var(--stone-600);
-}
+  option:checked {
+    background-color: var(--stone-600);
+  }
 
-optgroup {
-  font-weight: 600;
-  color: var(--text-secondary);
-}
+  optgroup {
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
 
-/* Accessibility: prevent double-tap zoom delay on interactive elements */
-button, a, [role="button"] {
-  touch-action: manipulation;
-}
+  /* Accessibility: prevent double-tap zoom delay on interactive elements */
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
 
-/* Ensure focus states are visible */
-:focus-visible {
-  outline: 2px solid var(--accent-amber);
-  outline-offset: 2px;
-}
+  /* Ensure focus states are visible */
+  :focus-visible {
+    outline: 2px solid var(--accent-amber);
+    outline-offset: 2px;
+  }
 
-/* Remove default focus outline when not using keyboard navigation */
-:focus:not(:focus-visible) {
-  outline: none;
+  /* Remove default focus outline when not using keyboard navigation */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
 }
 
 /* Accessibility: override stone text colors for better contrast */
-@layer utilities {
-  .text-stone-400 { color: #c7c4c0; }
-  .text-stone-500 { color: #a19d99; }
-  .text-stone-600 { color: #918d89; }
-  .text-violet-400 { color: #c4b5fd; }
+@utility text-stone-400 {
+  color: #c7c4c0;
+}
+@utility text-stone-500 {
+  color: #a19d99;
+}
+@utility text-stone-600 {
+  color: #918d89;
+}
+@utility text-violet-400 {
+  color: #c4b5fd;
 }
 
 /* Image viewer styles */

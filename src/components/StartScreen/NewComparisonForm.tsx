@@ -190,7 +190,7 @@ export function NewComparisonForm({
                      text-sm font-semibold text-stone-950
                      transition-all duration-200
                      hover:from-sage-400 hover:to-sage-400 hover:shadow-lg hover:shadow-sage-500/30 hover:-translate-y-0.5
-                     focus:outline-none focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-stone-900
+                     focus:outline-hidden focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-stone-900
                      disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none disabled:from-sage-600 disabled:to-sage-600
                      active:translate-y-0 active:shadow-none"
         >

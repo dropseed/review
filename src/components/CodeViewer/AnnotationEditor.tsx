@@ -47,7 +47,7 @@ export function AnnotationEditor({
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Add a comment…"
-        className="w-full h-16 bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-xs text-stone-200 placeholder-stone-500 resize-none focus:outline-none focus:border-amber-500/50"
+        className="w-full h-16 bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-xs text-stone-200 placeholder-stone-500 resize-none focus:outline-hidden focus:border-amber-500/50"
       />
       <div className="flex items-center justify-between mt-2">
         <span className="text-xxs text-stone-600">

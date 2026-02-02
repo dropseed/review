@@ -9,8 +9,10 @@ export function OverviewView() {
     totalHunks,
     trustedHunks,
     approvedHunks,
+    rejectedHunks,
     pendingHunks,
     reviewedPercent,
+    state,
   } = useReviewProgress();
 
   return (
@@ -24,8 +26,10 @@ export function OverviewView() {
           totalHunks={totalHunks}
           trustedHunks={trustedHunks}
           approvedHunks={approvedHunks}
+          rejectedHunks={rejectedHunks}
           pendingHunks={pendingHunks}
           reviewedPercent={reviewedPercent}
+          state={state}
         />
 
         {/* Trust Patterns + Classification */}

@@ -64,7 +64,7 @@ export function StartScreen({
               className="flex items-center justify-center w-7 h-7 rounded-md
                          text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
                          transition-colors duration-100
-                         focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+                         focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
               aria-label="Back to welcome screen"
             >
               <svg
@@ -93,7 +93,7 @@ export function StartScreen({
               className="flex items-center justify-center w-7 h-7 rounded-md
                          text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
                          transition-colors duration-100
-                         focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+                         focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
               aria-label="Open settings"
             >
               <svg

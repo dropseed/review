@@ -164,8 +164,14 @@ export function ReviewView({
   useFileWatcher(comparisonReady);
 
   // Review progress
-  const { totalHunks, trustedHunks, approvedHunks, reviewedHunks } =
-    useReviewProgress();
+  const {
+    totalHunks,
+    trustedHunks,
+    approvedHunks,
+    rejectedHunks,
+    reviewedHunks,
+    state,
+  } = useReviewProgress();
 
   // Diff stats computed from hunks
   const diffStats = useMemo(() => {
@@ -194,7 +200,7 @@ export function ReviewView({
               className="flex items-center justify-center w-7 h-7 rounded-md
                          text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
                          transition-colors duration-100
-                         focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+                         focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
               aria-label="Back to start screen"
             >
               <svg
@@ -249,7 +255,24 @@ export function ReviewView({
                     left: `${(trustedHunks / totalHunks) * 100}%`,
                   }}
                 />
+                <div
+                  className="progress-bar-rejected"
+                  style={{
+                    width: `${(rejectedHunks / totalHunks) * 100}%`,
+                    left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
+                  }}
+                />
               </div>
+              {state === "approved" && (
+                <span className="text-xxs font-medium text-lime-400">
+                  Approved
+                </span>
+              )}
+              {state === "changes_requested" && (
+                <span className="text-xxs font-medium text-rose-400">
+                  Changes Requested
+                </span>
+              )}
               {/* Hover tooltip */}
               <div
                 className="absolute top-full right-0 mt-1 hidden group-hover:block
@@ -262,12 +285,20 @@ export function ReviewView({
                     Trusted: {trustedHunks}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-1">
                   <span className="w-2 h-2 rounded-full bg-lime-500" />
                   <span className="text-stone-300">
                     Approved: {approvedHunks}
                   </span>
                 </div>
+                {rejectedHunks > 0 && (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span className="text-stone-300">
+                      Rejected: {rejectedHunks}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           ) : (

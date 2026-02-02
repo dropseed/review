@@ -347,6 +347,8 @@ export interface ReviewSummary {
   comparison: Comparison;
   totalHunks: number;
   reviewedHunks: number;
+  rejectedHunks: number;
+  state: "approved" | "changes_requested" | null;
   updatedAt: string;
 }
 

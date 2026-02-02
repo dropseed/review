@@ -44,7 +44,7 @@ export function HunkNavigator({ filePath }: HunkNavigatorProps) {
 
   return (
     <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
-      <div className="flex items-center gap-1 rounded-full bg-stone-800/90 backdrop-blur-sm border border-stone-700/80 px-1.5 py-1 shadow-xl shadow-black/30">
+      <div className="flex items-center gap-1 rounded-full bg-stone-800/90 backdrop-blur-xs border border-stone-700/80 px-1.5 py-1 shadow-xl shadow-black/30">
         <kbd className="w-4 text-center font-mono text-xxs text-stone-500 select-none">
           k
         </kbd>

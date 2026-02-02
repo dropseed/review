@@ -110,7 +110,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
             {/* Close button */}
             <button
               onClick={onClose}
-              className="rounded-md p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50"
+              className="rounded-md p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sky-500/50"
               aria-label="Close git status"
             >
               <svg

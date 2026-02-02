@@ -443,7 +443,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                     onKeyDown={handleKeyDown}
                     placeholder="Search symbols..."
                     aria-label="Search symbols"
-                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none"
+                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden"
                   />
                   {query && (
                     <button

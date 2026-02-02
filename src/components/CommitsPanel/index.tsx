@@ -115,7 +115,7 @@ export function CommitsPanel({
   return (
     <div
       ref={listRef}
-      className="flex-1 overflow-y-auto scrollbar-thin focus:outline-none"
+      className="flex-1 overflow-y-auto scrollbar-thin focus:outline-hidden"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >

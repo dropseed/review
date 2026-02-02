@@ -75,7 +75,7 @@ export function HunkAnnotationPanel({
     <div
       ref={isFocused ? focusedHunkRef : undefined}
       className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
-        isFocused ? "ring-2 ring-inset ring-amber-500/70" : ""
+        isFocused ? "inset-ring-2 inset-ring-amber-500/70" : ""
       } ${getHunkBackgroundClass(isRejected, isApproved, isTrusted)}`}
     >
       {/* Move indicator */}
@@ -122,7 +122,7 @@ export function HunkAnnotationPanel({
           <SimpleTooltip content="Click to unapprove">
             <button
               onClick={() => onUnapprove(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 ring-1 ring-inset ring-emerald-500/30"
+              className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -144,7 +144,7 @@ export function HunkAnnotationPanel({
           <SimpleTooltip content="Click to clear rejection">
             <button
               onClick={() => onUnreject(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 ring-1 ring-inset ring-rose-500/30"
+              className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -391,7 +391,7 @@ export function HunkAnnotationPanel({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+                className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50"
                 aria-label="More options"
               >
                 <svg

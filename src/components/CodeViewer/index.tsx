@@ -190,6 +190,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   useEffect(() => {
     if (!repoPath || !comparison) return;
 
+    let cancelled = false;
+
     const isFileSwitch = prevFilePathRef.current !== filePath;
     prevFilePathRef.current = filePath;
 
@@ -202,13 +204,21 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     getApiClient()
       .getFileContent(repoPath, filePath, comparison)
       .then((result) => {
-        setFileContent(result);
-        setLoading(false);
+        if (!cancelled) {
+          setFileContent(result);
+          setLoading(false);
+        }
       })
       .catch((err) => {
-        setError(String(err));
-        setLoading(false);
+        if (!cancelled) {
+          setError(String(err));
+          setLoading(false);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [repoPath, filePath, comparison, fileHunkKey]);
 
   if (loading) {
@@ -347,7 +357,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+                className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50"
                 aria-label="More options"
               >
                 <svg
@@ -420,7 +430,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             <div className="flex items-center rounded bg-stone-800/30 p-0.5">
               <button
                 onClick={() => setMarkdownViewMode("preview")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                   markdownViewMode === "preview"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -430,7 +440,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
               </button>
               <button
                 onClick={() => setMarkdownViewMode("code")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                   markdownViewMode === "code"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -445,7 +455,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             <div className="flex items-center rounded bg-stone-800/30 p-0.5">
               <button
                 onClick={() => setSvgViewMode("rendered")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                   svgViewMode === "rendered"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -455,7 +465,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
               </button>
               <button
                 onClick={() => setSvgViewMode("code")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                   svgViewMode === "code"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -474,7 +484,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
                     setViewMode("unified");
                     setHighlightLine(null);
                   }}
-                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                     viewMode === "unified"
                       ? "bg-stone-700/50 text-stone-200"
                       : "text-stone-500 hover:text-stone-300"
@@ -487,7 +497,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
                     setViewMode("split");
                     setHighlightLine(null);
                   }}
-                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
                     viewMode === "split"
                       ? "bg-stone-700/50 text-stone-200"
                       : "text-stone-500 hover:text-stone-300"

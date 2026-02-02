@@ -214,7 +214,7 @@ const ReviewCard = memo(function ReviewCard({
   return (
     <article
       className={`group relative rounded-xl border border-stone-800/80 bg-gradient-to-br from-stone-900/80 to-stone-900/40
-                 backdrop-blur-sm shadow-lg shadow-black/20
+                 backdrop-blur-xs shadow-lg shadow-black/20
                  transition-all duration-200
                  ${isPr ? "hover:border-violet-500/25 hover:shadow-violet-900/10" : "hover:border-green-500/25 hover:shadow-green-900/10"}
                  hover:from-stone-900 hover:to-stone-900/60 hover:shadow-xl
@@ -228,7 +228,7 @@ const ReviewCard = memo(function ReviewCard({
         onClick={onSelect}
         onKeyDown={handleKeyDown}
         className="w-full px-5 py-4 text-left rounded-xl
-                   focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:ring-inset"
+                   focus:outline-hidden focus:inset-ring-2 focus:inset-ring-green-500/50"
         aria-label={`Open review ${formatComparison(review.comparison)}, ${progress}% complete`}
       >
         {/* Main row: Comparison + Progress */}
@@ -320,7 +320,7 @@ const ReviewCard = memo(function ReviewCard({
               onClick={onDeleteCancel}
               className="rounded-md px-2 py-1 text-xs text-stone-400
                          hover:bg-stone-800
-                         focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+                         focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
             >
               Cancel
             </button>
@@ -328,7 +328,7 @@ const ReviewCard = memo(function ReviewCard({
               onClick={onDeleteConfirm}
               className="rounded-md px-2 py-1 text-xs font-medium text-red-400 bg-red-500/10
                          hover:bg-red-500/20
-                         focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                         focus:outline-hidden focus:ring-2 focus:ring-red-500/50"
             >
               Delete
             </button>
@@ -343,7 +343,7 @@ const ReviewCard = memo(function ReviewCard({
                        opacity-0 transition-all duration-150
                        hover:text-stone-300 hover:bg-stone-800
                        group-hover:opacity-100 group-focus-within:opacity-100
-                       focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-stone-500/50"
+                       focus:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
             aria-label={`More options for ${formatComparison(review.comparison)}`}
           >
             {/* Three dot icon */}

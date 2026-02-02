@@ -104,7 +104,7 @@ function SectionHeader({
       >
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
-            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset">
+            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50">
               <svg
                 className={`h-3 w-3 text-stone-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
                 viewBox="0 0 24 24"
@@ -282,7 +282,7 @@ function CollapsibleSection({
       <div className="border-t border-stone-800">
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
-            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-inset">
+            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50">
               <svg
                 className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
                 viewBox="0 0 24 24"
@@ -438,9 +438,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return hunks
       .filter((h) => {
         const state = reviewState?.hunks[h.id];
-        // Only include explicitly approved hunks — trusted hunks can't be
+        // Include explicitly approved or rejected hunks — trusted hunks can't be
         // "unapproved" (they'd need their trust pattern removed instead)
-        return state?.status === "approved";
+        return state?.status === "approved" || state?.status === "rejected";
       })
       .map((h) => h.id);
   }, [hunks, reviewState]);
@@ -877,7 +877,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         <SimpleTooltip content="Expand all">
                           <button
                             onClick={() => expandAll(allDirPaths)}
-                            className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
+                            className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
                           >
                             <svg
                               className="h-3 w-3"
@@ -894,7 +894,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         <SimpleTooltip content="Collapse all">
                           <button
                             onClick={collapseAll}
-                            className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
+                            className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
                           >
                             <svg
                               className="h-3 w-3"

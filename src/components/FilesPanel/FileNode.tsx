@@ -23,7 +23,7 @@ function directoryNameColor(
   if (hunkContext !== "all") return "text-stone-200";
   if (hasReviewableContent && !hasPending) return "text-lime-400";
   if (hasPending) return "text-amber-200";
-  return "text-stone-500";
+  return "text-stone-300";
 }
 
 function fileNameColor(

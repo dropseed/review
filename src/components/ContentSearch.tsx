@@ -221,7 +221,7 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded px-1 py-1"
+                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded px-1 py-1"
                   />
                   {searchLoading && (
                     <div className="h-4 w-4 rounded-full border-2 border-stone-600 border-t-stone-300 animate-spin" />
@@ -229,7 +229,7 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                   {query && !searchLoading && (
                     <button
                       onClick={() => setQuery("")}
-                      className="text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded"
+                      className="text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded"
                       aria-label="Clear search"
                     >
                       <svg
@@ -301,7 +301,7 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                             role="option"
                             aria-selected={currentIndex === selectedIndex}
                             onClick={() => handleSelect(currentIndex)}
-                            className={`w-full flex items-start gap-3 px-4 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/50 ${
+                            className={`w-full flex items-start gap-3 px-4 py-1.5 text-left transition-colors focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50 ${
                               currentIndex === selectedIndex
                                 ? "bg-stone-800"
                                 : "hover:bg-stone-800/50"
