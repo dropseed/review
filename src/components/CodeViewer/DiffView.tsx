@@ -119,6 +119,10 @@ interface DiffViewProps {
   focusedHunkId?: string | null;
   /** Language override for syntax highlighting */
   language?: SupportedLanguages;
+  /** Callback for Cmd+Click go-to-definition */
+  onGoToDefinition?: (event: PointerEvent) => void;
+  /** Whether Cmd key is held (for cursor styling) */
+  cmdKeyHeld?: boolean;
 }
 
 export function DiffView({
@@ -133,6 +137,8 @@ export function DiffView({
   newContent,
   focusedHunkId,
   language,
+  onGoToDefinition,
+  cmdKeyHeld,
 }: DiffViewProps) {
   const reviewState = useReviewStore((s) => s.reviewState);
   const approveHunk = useReviewStore((s) => s.approveHunk);
@@ -426,6 +432,10 @@ export function DiffView({
       ? "none"
       : prefLineDiffType;
 
+  const cmdHoverCSS = cmdKeyHeld
+    ? "code span { cursor: pointer; } code span:hover { text-decoration: underline; }"
+    : "";
+
   const diffOptions = useMemo(
     () => ({
       diffStyle: viewMode,
@@ -437,7 +447,7 @@ export function DiffView({
       diffIndicators: prefDiffIndicators,
       disableBackground: false,
       enableHoverUtility: true,
-      unsafeCSS: fontSizeCSS,
+      unsafeCSS: fontSizeCSS + cmdHoverCSS,
       expandUnchanged: true,
       expansionLineCount: 20,
       hunkSeparators: "line-info" as const,
@@ -445,8 +455,23 @@ export function DiffView({
       tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
       maxLineDiffLength: 500, // Skip word-level diff for long lines
       lineDiffType, // Adaptive based on file type/size, user preference as default
+      onLineClick: onGoToDefinition
+        ? (props: { event: PointerEvent }) => {
+            if (props.event.metaKey) {
+              onGoToDefinition(props.event);
+            }
+          }
+        : undefined,
     }),
-    [viewMode, theme, prefDiffIndicators, fontSizeCSS, lineDiffType],
+    [
+      viewMode,
+      theme,
+      prefDiffIndicators,
+      fontSizeCSS,
+      cmdHoverCSS,
+      lineDiffType,
+      onGoToDefinition,
+    ],
   );
 
   const renderHoverUtility = (

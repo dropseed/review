@@ -29,6 +29,10 @@ interface PlainCodeViewProps {
   onUpdateAnnotation?: (id: string, content: string) => void;
   /** Callback when deleting an annotation */
   onDeleteAnnotation?: (id: string) => void;
+  /** Callback for Cmd+Click go-to-definition */
+  onGoToDefinition?: (event: PointerEvent) => void;
+  /** Whether Cmd key is held (for cursor styling) */
+  cmdKeyHeld?: boolean;
 }
 
 export function PlainCodeView({
@@ -43,6 +47,8 @@ export function PlainCodeView({
   onAddAnnotation,
   onUpdateAnnotation,
   onDeleteAnnotation,
+  onGoToDefinition,
+  cmdKeyHeld,
 }: PlainCodeViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -210,6 +216,10 @@ export function PlainCodeView({
     );
   };
 
+  const cmdHoverCSS = cmdKeyHeld
+    ? "code span { cursor: pointer; } code span:hover { text-decoration: underline; }"
+    : "";
+
   return (
     <div ref={containerRef}>
       <div key={language}>
@@ -235,8 +245,15 @@ export function PlainCodeView({
             },
             themeType: "dark",
             disableFileHeader: true,
-            unsafeCSS: fontSizeCSS,
+            unsafeCSS: fontSizeCSS + cmdHoverCSS,
             enableHoverUtility: true,
+            onLineClick: onGoToDefinition
+              ? (props: { event: PointerEvent }) => {
+                  if (props.event.metaKey) {
+                    onGoToDefinition(props.event);
+                  }
+                }
+              : undefined,
           }}
         />
       </div>

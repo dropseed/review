@@ -20,12 +20,14 @@ import { FileContentRenderer } from "./FileContentRenderer";
 import { HunkNavigator } from "./HunkNavigator";
 import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
 import { InFileSearchBar } from "./InFileSearchBar";
+import { DefinitionPicker } from "./DefinitionPicker";
 import {
   isMarkdownFile,
   detectLanguage,
   type SupportedLanguages,
 } from "./languageMap";
 import { LanguageSelector } from "./LanguageSelector";
+import { useCmdKeyHeld, useGoToDefinition } from "../../hooks";
 
 interface CodeViewerProps {
   filePath: string;
@@ -81,6 +83,16 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const [languageOverride, setLanguageOverride] = useState<
     SupportedLanguages | undefined
   >(undefined);
+
+  // Go-to-definition
+  const cmdKeyHeld = useCmdKeyHeld();
+  const {
+    handleGoToDefinition,
+    definitions,
+    pickerOpen,
+    closePicker,
+    navigateToDefinition,
+  } = useGoToDefinition();
 
   // Diff options popover state
   const [showDiffOptions, setShowDiffOptions] = useState(false);
@@ -711,6 +723,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             addAnnotation={addAnnotation}
             updateAnnotation={updateAnnotation}
             deleteAnnotation={deleteAnnotation}
+            onGoToDefinition={handleGoToDefinition}
+            cmdKeyHeld={cmdKeyHeld}
           />
         </div>
         {hasChanges && !showImageViewer && (
@@ -722,6 +736,13 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
         )}
         {hasChanges && <HunkNavigator fileHunkIndices={fileHunkIndices} />}
       </div>
+
+      <DefinitionPicker
+        open={pickerOpen}
+        definitions={definitions}
+        onSelect={navigateToDefinition}
+        onClose={closePicker}
+      />
     </div>
   );
 }
