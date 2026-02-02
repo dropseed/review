@@ -18,3 +18,4 @@ export {
 } from "./useHighlighter";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";
+export { useFileRouteSync } from "./useFileRouteSync";

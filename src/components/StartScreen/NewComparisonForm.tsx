@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Comparison, BranchList } from "../../types";
 import { makeComparison } from "../../types";
 import { BranchSelect, WORKING_TREE, STAGED_ONLY } from "../BranchSelect";
@@ -120,12 +120,6 @@ export function NewComparisonForm({
     [baseRef, handleStartReview],
   );
 
-  // Memoize existing keys for BranchSelect filtering
-  const allExistingKeys = useMemo(
-    () => existingComparisonKeys,
-    [existingComparisonKeys],
-  );
-
   return (
     <section
       aria-labelledby="new-comparison-heading"
@@ -142,6 +136,10 @@ export function NewComparisonForm({
         />
         New Comparison
       </h2>
+      <p className="mb-4 text-xs text-stone-500 leading-relaxed">
+        A comparison shows changes between two git refs. Select a base branch
+        and what you want to compare it against.
+      </p>
 
       {/* Inline form with clear visual boundary */}
       <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-stone-800/60 bg-gradient-to-br from-stone-900/60 to-stone-950/80 px-5 py-4 shadow-inner shadow-black/20">
@@ -177,7 +175,7 @@ export function NewComparisonForm({
           excludeValue={baseRef}
           includeLocalState
           baseValue={baseRef}
-          existingComparisonKeys={allExistingKeys}
+          existingComparisonKeys={existingComparisonKeys}
           placeholder="Compare..."
         />
 

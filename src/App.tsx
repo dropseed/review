@@ -163,6 +163,7 @@ function App() {
 
   useKeyboardNavigation({
     handleOpenRepo,
+    onBack: () => {},
     setShowDebugModal,
     setShowSettingsModal,
     setShowFileFinder,

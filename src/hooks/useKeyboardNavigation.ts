@@ -9,6 +9,7 @@ import {
 
 interface UseKeyboardNavigationOptions {
   handleOpenRepo: () => void;
+  onBack: () => void;
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
@@ -22,6 +23,7 @@ interface UseKeyboardNavigationOptions {
  */
 export function useKeyboardNavigation({
   handleOpenRepo,
+  onBack,
   setShowDebugModal,
   setShowSettingsModal,
   setShowFileFinder,
@@ -120,7 +122,7 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Escape: close split if active, otherwise return to overview from browse
+      // Escape: close split → browse to overview → overview to start screen
       if (event.key === "Escape") {
         if (secondaryFile !== null) {
           event.preventDefault();
@@ -130,6 +132,11 @@ export function useKeyboardNavigation({
         if (topLevelView === "browse") {
           event.preventDefault();
           navigateToOverview();
+          return;
+        }
+        if (topLevelView === "overview") {
+          event.preventDefault();
+          onBack();
           return;
         }
       }
@@ -234,6 +241,7 @@ export function useKeyboardNavigation({
       approveHunk,
       rejectHunk,
       handleOpenRepo,
+      onBack,
       codeFontSize,
       setCodeFontSize,
       secondaryFile,

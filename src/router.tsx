@@ -5,7 +5,9 @@ import {
   Route,
   Navigate,
   Outlet,
+  useOutletContext,
 } from "react-router-dom";
+import type { Comparison } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { StartScreen } from "./components/StartScreen";
 import { getPlatformServices } from "./platform";
@@ -17,6 +19,8 @@ import {
   useGlobalShortcut,
   useComparisonLoader,
   useWindowTitle,
+  useFileRouteSync,
+  type RepoStatus,
 } from "./hooks";
 
 /** Returns the appropriate loading progress message based on current phase */
@@ -140,10 +144,6 @@ function AppShell() {
   );
 }
 
-// Type for the outlet context
-import type { Comparison } from "./types";
-import type { RepoStatus } from "./hooks";
-
 interface AppContext {
   repoStatus: RepoStatus;
   repoError: string | null;
@@ -159,8 +159,6 @@ interface AppContext {
   handleCloseRepo: () => void;
   handleSelectRepo: (path: string) => void;
 }
-
-import { useOutletContext } from "react-router-dom";
 
 function useAppContext() {
   return useOutletContext<AppContext>();
@@ -243,6 +241,9 @@ function ReviewRoute() {
     handleNewWindow,
   } = useAppContext();
 
+  // Bidirectional sync between URL file path and store
+  useFileRouteSync();
+
   // If no repo path, redirect to welcome
   if (!repoPath) {
     return <Navigate to="/" replace />;
@@ -293,7 +294,7 @@ export function AppRouter() {
           <Route path="/" element={<WelcomeRoute />} />
           <Route path="/:owner/:repo" element={<StartRoute />} />
           <Route
-            path="/:owner/:repo/review/:comparisonKey"
+            path="/:owner/:repo/review/:comparisonKey/*"
             element={<ReviewRoute />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />

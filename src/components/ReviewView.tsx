@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useState, useRef } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { FilesPanel } from "./FilesPanel";
 import { SplitContainer } from "./SplitContainer";
 import { DebugModal } from "./DebugModal";
@@ -9,8 +9,7 @@ import { ContentSearch } from "./ContentSearch";
 import { SymbolSearch } from "./SymbolSearch";
 import { ClassificationsModal } from "./ClassificationsModal";
 import { GitStatusIndicator } from "./GitStatusIndicator";
-import { ComparisonHeader } from "./ComparisonHeader";
-import { SimpleTooltip } from "./ui/tooltip";
+import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -50,7 +49,6 @@ export function ReviewView({
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const closeSplit = useReviewStore((s) => s.closeSplit);
-  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
   const showClassificationsModal = useReviewStore(
     (s) => s.classificationsModalOpen,
   );
@@ -79,24 +77,17 @@ export function ReviewView({
     }
   }, [refresh, isRefreshing]);
 
-  // Close handler: cascading close (split -> file -> window)
+  // Close handler: cascading close (split -> browse -> overview -> window)
   const handleClose = useCallback(async () => {
     if (secondaryFile !== null) {
       closeSplit();
-    } else if (selectedFile !== null) {
-      setSelectedFile(null);
+    } else if (topLevelView === "browse") {
       navigateToOverview();
     } else {
       const platform = getPlatformServices();
       await platform.window.close();
     }
-  }, [
-    secondaryFile,
-    selectedFile,
-    closeSplit,
-    setSelectedFile,
-    navigateToOverview,
-  ]);
+  }, [secondaryFile, topLevelView, closeSplit, navigateToOverview]);
 
   // New tab handler: open a new tab with the current repo
   const handleNewTab = useCallback(async () => {
@@ -144,6 +135,7 @@ export function ReviewView({
 
   useKeyboardNavigation({
     handleOpenRepo: onOpenRepo,
+    onBack,
     setShowDebugModal,
     setShowSettingsModal,
     setShowFileFinder,
@@ -173,136 +165,102 @@ export function ReviewView({
     state,
   } = useReviewProgress();
 
-  // Diff stats computed from hunks
-  const diffStats = useMemo(() => {
-    const filePaths = new Set(hunks.map((h) => h.filePath));
-    let additions = 0;
-    let deletions = 0;
-    for (const hunk of hunks) {
-      for (const line of hunk.lines) {
-        if (line.type === "added") additions++;
-        else if (line.type === "removed") deletions++;
-      }
-    }
-    return { fileCount: filePaths.size, additions, deletions };
-  }, [hunks]);
+  // Derive repo display name
+  const repoName =
+    remoteInfo?.name ||
+    repoPath?.replace(/\/+$/, "").split("/").pop() ||
+    "repo";
 
   return (
     <div className="flex h-screen flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        {/* Left: back button + repo name + comparison refs */}
-        <div className="flex items-center gap-2">
-          {/* Back button */}
-          <SimpleTooltip content="Back to start">
-            <button
-              onClick={onBack}
-              className="flex items-center justify-center w-7 h-7 rounded-md
-                         text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
-                         transition-colors duration-100
-                         focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
-              aria-label="Back to start screen"
-            >
-              <svg
-                className="w-4 h-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M19 12H5" />
-                <path d="M12 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </SimpleTooltip>
+        {/* Left: breadcrumb navigation */}
+        <ReviewBreadcrumb
+          repoName={repoName}
+          comparison={comparison}
+          topLevelView={topLevelView}
+          selectedFile={selectedFile}
+          onNavigateToStart={onBack}
+          onNavigateToOverview={navigateToOverview}
+        />
 
-          <span className="text-xs text-stone-500">
-            {remoteInfo?.name ||
-              repoPath?.replace(/\/+$/, "").split("/").pop() ||
-              "repo"}
-          </span>
-
-          <ComparisonHeader
-            comparison={comparison}
-            diffStats={diffStats}
-            onStatsClick={navigateToOverview}
-            isOverviewActive={topLevelView === "overview"}
-          />
-        </div>
-
-        {/* Right: review controls */}
+        {/* Right: review controls (only in browse view) */}
         <div className="flex items-center gap-3">
-          {/* Review progress */}
-          {totalHunks > 0 ? (
-            <div className="group relative flex items-center gap-2">
-              <span className="text-xs text-stone-500">Hunks reviewed</span>
-              <span className="font-mono text-xs tabular-nums text-stone-400">
-                {reviewedHunks}/{totalHunks}
-              </span>
-              <div className="progress-bar w-24">
-                <div
-                  className="progress-bar-trusted"
-                  style={{
-                    width: `${(trustedHunks / totalHunks) * 100}%`,
-                  }}
-                />
-                <div
-                  className="progress-bar-approved"
-                  style={{
-                    width: `${(approvedHunks / totalHunks) * 100}%`,
-                    left: `${(trustedHunks / totalHunks) * 100}%`,
-                  }}
-                />
-                <div
-                  className="progress-bar-rejected"
-                  style={{
-                    width: `${(rejectedHunks / totalHunks) * 100}%`,
-                    left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
-                  }}
-                />
-              </div>
-              {state === "approved" && (
-                <span className="text-xxs font-medium text-lime-400">
-                  Approved
-                </span>
-              )}
-              {state === "changes_requested" && (
-                <span className="text-xxs font-medium text-rose-400">
-                  Changes Requested
-                </span>
-              )}
-              {/* Hover tooltip */}
-              <div
-                className="absolute top-full right-0 mt-1 hidden group-hover:block
-                            bg-stone-900 border border-stone-700 rounded px-2 py-1.5
-                            text-xs whitespace-nowrap z-50 shadow-lg"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                  <span className="text-stone-300">
-                    Trusted: {trustedHunks}
+          {topLevelView === "browse" && (
+            <>
+              {totalHunks > 0 ? (
+                <div className="group relative flex items-center gap-2">
+                  <span className="text-xs text-stone-500">Hunks reviewed</span>
+                  <span className="font-mono text-xs tabular-nums text-stone-400">
+                    {reviewedHunks}/{totalHunks}
                   </span>
-                </div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-lime-500" />
-                  <span className="text-stone-300">
-                    Approved: {approvedHunks}
-                  </span>
-                </div>
-                {rejectedHunks > 0 && (
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    <span className="text-stone-300">
-                      Rejected: {rejectedHunks}
-                    </span>
+                  <div className="progress-bar w-24">
+                    <div
+                      className="progress-bar-trusted"
+                      style={{
+                        width: `${(trustedHunks / totalHunks) * 100}%`,
+                      }}
+                    />
+                    <div
+                      className="progress-bar-approved"
+                      style={{
+                        width: `${(approvedHunks / totalHunks) * 100}%`,
+                        left: `${(trustedHunks / totalHunks) * 100}%`,
+                      }}
+                    />
+                    <div
+                      className="progress-bar-rejected"
+                      style={{
+                        width: `${(rejectedHunks / totalHunks) * 100}%`,
+                        left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
+                      }}
+                    />
                   </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <span className="text-xs text-stone-500">No changes to review</span>
+                  {state === "approved" && (
+                    <span className="text-xxs font-medium text-lime-400">
+                      Approved
+                    </span>
+                  )}
+                  {state === "changes_requested" && (
+                    <span className="text-xxs font-medium text-rose-400">
+                      Changes Requested
+                    </span>
+                  )}
+                  {/* Hover tooltip */}
+                  <div
+                    className="absolute top-full right-0 mt-1 hidden group-hover:block
+                                bg-stone-900 border border-stone-700 rounded px-2 py-1.5
+                                text-xs whitespace-nowrap z-50 shadow-lg"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                      <span className="text-stone-300">
+                        Trusted: {trustedHunks}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-lime-500" />
+                      <span className="text-stone-300">
+                        Approved: {approvedHunks}
+                      </span>
+                    </div>
+                    {rejectedHunks > 0 && (
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        <span className="text-stone-300">
+                          Rejected: {rejectedHunks}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <span className="text-xs text-stone-500">
+                  No changes to review
+                </span>
+              )}
+            </>
           )}
         </div>
       </header>

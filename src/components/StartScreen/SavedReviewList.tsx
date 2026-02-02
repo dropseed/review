@@ -1,11 +1,8 @@
 import { useState, useCallback, memo } from "react";
-import type { Comparison } from "../../types";
-import type { ReviewSummary } from "../../types";
+import type { Comparison, ReviewSummary } from "../../types";
 
-// Intl.RelativeTimeFormat for proper i18n
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
-// Format relative time using Intl.RelativeTimeFormat for better i18n
 function formatRelativeTime(isoDate: string): string {
   const date = new Date(isoDate);
   const now = new Date();
@@ -23,7 +20,6 @@ function formatRelativeTime(isoDate: string): string {
   return date.toLocaleDateString();
 }
 
-// Format comparison for display
 function formatComparison(comparison: Comparison): string {
   let compareRef = comparison.new;
   if (comparison.stagedOnly) {
@@ -34,135 +30,16 @@ function formatComparison(comparison: Comparison): string {
   return `${comparison.old}..${compareRef}`;
 }
 
-// Empty state component with illustration
-const EmptyState = memo(function EmptyState() {
-  return (
-    <div className="rounded-xl border border-stone-800/40 bg-gradient-to-br from-stone-900/40 to-stone-950/60 px-6 py-8">
-      <div className="flex items-start gap-4">
-        {/* Illustration: split diff icon */}
-        <div className="shrink-0 w-14 h-14 rounded-xl bg-gradient-to-br from-terracotta-500/20 to-sage-500/20 flex items-center justify-center">
-          <svg
-            className="w-7 h-7"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            {/* Left half (old/terracotta) */}
-            <rect
-              x="3"
-              y="4"
-              width="7"
-              height="16"
-              rx="1.5"
-              fill="#a63d2f"
-              fillOpacity="0.7"
-            />
-            <line
-              x1="5"
-              y1="8"
-              x2="8"
-              y2="8"
-              stroke="#c75d4a"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <line
-              x1="5"
-              y1="12"
-              x2="8"
-              y2="12"
-              stroke="#c75d4a"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <line
-              x1="5"
-              y1="16"
-              x2="7"
-              y2="16"
-              stroke="#c75d4a"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            {/* Right half (new/sage) */}
-            <rect
-              x="14"
-              y="4"
-              width="7"
-              height="16"
-              rx="1.5"
-              fill="#4a7c59"
-              fillOpacity="0.7"
-            />
-            <line
-              x1="16"
-              y1="8"
-              x2="19"
-              y2="8"
-              stroke="#6b9b7a"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <line
-              x1="16"
-              y1="12"
-              x2="19"
-              y2="12"
-              stroke="#6b9b7a"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <line
-              x1="16"
-              y1="16"
-              x2="18"
-              y2="16"
-              stroke="#6b9b7a"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            {/* Arrow between */}
-            <path
-              d="M11 12h2"
-              stroke="#78716c"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </div>
+/** Returns a display label for the compare side of a review card */
+function getCompareDisplay(comparison: Comparison): string {
+  if (comparison.githubPr) {
+    return `PR #${comparison.githubPr.number}: ${comparison.githubPr.title}`;
+  }
+  if (comparison.workingTree) return "Working Tree";
+  if (comparison.stagedOnly) return "Staged";
+  return comparison.new;
+}
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-stone-300 font-medium">No reviews yet</p>
-          <p className="mt-1 text-xs text-stone-500 leading-relaxed">
-            A <span className="text-stone-400">comparison</span> shows changes
-            between two git refs. Start by selecting a base branch and what you
-            want to compare it against.
-          </p>
-
-          {/* Visual pointer to form */}
-          <div className="mt-4 flex items-center gap-2 text-xs text-stone-600">
-            <svg
-              className="w-4 h-4 animate-bounce"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span>Create your first comparison below</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// Review card component
 interface ReviewCardProps {
   review: ReviewSummary;
   index: number;
@@ -200,13 +77,7 @@ const ReviewCard = memo(function ReviewCard({
   );
 
   const isPr = !!review.comparison.githubPr;
-  const compareDisplay = isPr
-    ? `PR #${review.comparison.githubPr!.number}: ${review.comparison.githubPr!.title}`
-    : review.comparison.workingTree
-      ? "Working Tree"
-      : review.comparison.stagedOnly
-        ? "Staged"
-        : review.comparison.new;
+  const compareDisplay = getCompareDisplay(review.comparison);
 
   // Ensure progress bar is visible even at tiny percentages
   const progressWidth = progress > 0 ? Math.max(progress, 5) : 0;
@@ -391,6 +262,10 @@ export function SavedReviewList({
     [onDeleteReview],
   );
 
+  if (savedReviews.length === 0 && !savedReviewsLoading) {
+    return null;
+  }
+
   return (
     <section aria-labelledby="recent-reviews-heading">
       <div className="mb-4 flex items-center justify-between">
@@ -413,9 +288,7 @@ export function SavedReviewList({
         )}
       </div>
 
-      {savedReviews.length === 0 && !savedReviewsLoading ? (
-        <EmptyState />
-      ) : (
+      {savedReviews.length > 0 && (
         <div className="space-y-2" role="list">
           {savedReviews.map((review, index) => (
             <ReviewCard

@@ -8,7 +8,8 @@ import { SettingsModal } from "../SettingsModal";
 import { SavedReviewList } from "./SavedReviewList";
 import { PullRequestList } from "./PullRequestList";
 import { NewComparisonForm } from "./NewComparisonForm";
-import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { WorkingTreeCard } from "./WorkingTreeCard";
+import { usePrefersReducedMotion } from "../../hooks";
 
 interface StartScreenProps {
   repoPath: string;
@@ -24,6 +25,7 @@ export function StartScreen({
   const { savedReviews, savedReviewsLoading, loadSavedReviews, deleteReview } =
     useReviewStore();
   const loadGitStatus = useReviewStore((s) => s.loadGitStatus);
+  const gitStatus = useReviewStore((s) => s.gitStatus);
   const loadRemoteInfo = useReviewStore((s) => s.loadRemoteInfo);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
 
@@ -41,6 +43,13 @@ export function StartScreen({
   useEffect(() => {
     loadSavedReviews();
   }, [loadSavedReviews]);
+
+  // Filter out working tree reviews from the Continue list — those are
+  // handled by the WorkingTreeCard at the top of the page.
+  const nonWorkingTreeReviews = useMemo(
+    () => savedReviews.filter((r) => !r.comparison.workingTree),
+    [savedReviews],
+  );
 
   const existingComparisonKeys = useMemo(
     () => savedReviews.map((r) => r.comparison.key),
@@ -116,8 +125,15 @@ export function StartScreen({
       {/* Main content — scrollable, centered */}
       <main className="flex-1 overflow-auto">
         <div className="max-w-xl mx-auto px-6 py-8">
-          <SavedReviewList
+          <WorkingTreeCard
+            repoPath={repoPath}
+            gitStatus={gitStatus}
             savedReviews={savedReviews}
+            onSelectReview={onSelectReview}
+          />
+
+          <SavedReviewList
+            savedReviews={nonWorkingTreeReviews}
             savedReviewsLoading={savedReviewsLoading}
             onSelectReview={onSelectReview}
             onDeleteReview={deleteReview}
