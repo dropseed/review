@@ -18,6 +18,7 @@ import {
 import { SimpleTooltip } from "../ui/tooltip";
 import { FileContentRenderer } from "./FileContentRenderer";
 import { HunkNavigator } from "./HunkNavigator";
+import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
   isMarkdownFile,
@@ -51,6 +52,9 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const setDiffIndicators = useReviewStore((s) => s.setDiffIndicators);
   const viewMode = useReviewStore((s) => s.diffViewMode);
   const setViewMode = useReviewStore((s) => s.setDiffViewMode);
+  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
+
+  const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
 
   // Get the focused hunk ID if it's in this file
   const focusedHunk = allHunks[focusedHunkIndex];
@@ -220,6 +224,61 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       cancelled = true;
     };
   }, [repoPath, filePath, comparison, fileHunkKey]);
+
+  // Minimap hooks — must be before early returns
+  const fileHunkIndices = useMemo(
+    () =>
+      allHunks.reduce<number[]>((acc, h, i) => {
+        if (h.filePath === filePath) acc.push(i);
+        return acc;
+      }, []),
+    [allHunks, filePath],
+  );
+
+  const handleMinimapHunkClick = useCallback(
+    (localIndex: number) => {
+      const globalIndex = fileHunkIndices[localIndex];
+      if (globalIndex !== undefined) {
+        useReviewStore.setState({ focusedHunkIndex: globalIndex });
+      }
+    },
+    [fileHunkIndices],
+  );
+
+  const totalLineCount = useMemo(() => {
+    const s = fileContent?.content;
+    if (!s) return 0;
+    let count = 1;
+    for (let i = 0; i < s.length; i++) {
+      if (s.charCodeAt(i) === 10) count++;
+    }
+    return count;
+  }, [fileContent?.content]);
+
+  const trustList = reviewState?.trustList ?? [];
+
+  const minimapMarkers = useMemo<MinimapMarker[]>(() => {
+    if (!fileContent || totalLineCount === 0) return [];
+    return fileContent.hunks.map((hunk) => ({
+      id: hunk.id,
+      topFraction: (hunk.newStart - 1) / totalLineCount,
+      heightFraction: hunk.newCount / totalLineCount,
+      status: getHunkStatus(
+        hunk.id,
+        reviewState,
+        trustList,
+        classifyingHunkIds,
+      ),
+      isFocused: hunk.id === focusedHunkId,
+    }));
+  }, [
+    fileContent,
+    totalLineCount,
+    reviewState,
+    trustList,
+    classifyingHunkIds,
+    focusedHunkId,
+  ]);
 
   if (loading) {
     return (
@@ -615,8 +674,11 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       </div>
 
       {/* Content area */}
-      <div className="relative flex-1 overflow-hidden">
-        <div className="h-full overflow-auto scrollbar-thin bg-stone-950">
+      <div className="relative flex flex-1 overflow-hidden">
+        <div
+          ref={setScrollNode}
+          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-950 ${hasChanges && !showImageViewer ? "scrollbar-none" : "scrollbar-thin"}`}
+        >
           {/* In-file search bar */}
           {inFileSearchOpen && fileContent && (
             <div className="sticky top-0 z-10 flex justify-end p-2">
@@ -651,7 +713,14 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
             deleteAnnotation={deleteAnnotation}
           />
         </div>
-        {hasChanges && <HunkNavigator filePath={filePath} />}
+        {hasChanges && !showImageViewer && (
+          <DiffMinimap
+            markers={minimapMarkers}
+            scrollContainer={scrollNode}
+            onMarkerClick={handleMinimapHunkClick}
+          />
+        )}
+        {hasChanges && <HunkNavigator fileHunkIndices={fileHunkIndices} />}
       </div>
     </div>
   );
