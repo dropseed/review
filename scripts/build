@@ -2,6 +2,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
+./scripts/build-cli
 npm run tauri build -- --features symbols-all
 
 echo ""

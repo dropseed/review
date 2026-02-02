@@ -1,14 +1,17 @@
-import { useCallback, useMemo } from "react";
-import Markdown, { defaultUrlTransform } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
 } from "../ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "../ui/dropdown-menu";
 import { useReviewStore } from "../../stores";
 import { SimpleTooltip } from "../ui/tooltip";
-import { getPlatformServices } from "../../platform";
+import { NarrativeContent } from "../NarrativeContent";
 
 /**
  * Guide section shown at the top of the Changes panel.
@@ -16,20 +19,12 @@ import { getPlatformServices } from "../../platform";
  */
 export function GuideSection() {
   const reviewState = useReviewStore((s) => s.reviewState);
-  const hunks = useReviewStore((s) => s.hunks);
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const narrativeGenerating = useReviewStore((s) => s.narrativeGenerating);
   const narrativeError = useReviewStore((s) => s.narrativeError);
   const isNarrativeStale = useReviewStore((s) => s.isNarrativeStale);
   const isNarrativeIrrelevant = useReviewStore((s) => s.isNarrativeIrrelevant);
   const generateNarrative = useReviewStore((s) => s.generateNarrative);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const lastClickedNarrativeLinkOffset = useReviewStore(
-    (s) => s.lastClickedNarrativeLinkOffset,
-  );
-  const setLastClickedNarrativeLinkOffset = useReviewStore(
-    (s) => s.setLastClickedNarrativeLinkOffset,
-  );
   const narrativeSidebarOpen = useReviewStore((s) => s.narrativeSidebarOpen);
   const setNarrativeSidebarOpen = useReviewStore(
     (s) => s.setNarrativeSidebarOpen,
@@ -41,81 +36,6 @@ export function GuideSection() {
   const stale = hasNarrative ? isNarrativeStale() : false;
   const irrelevant = hasNarrative ? isNarrativeIrrelevant() : false;
   const showNarrative = hasNarrative && !irrelevant;
-
-  const handleNavigate = useCallback(
-    (offset: number, filePath: string, hunkId?: string) => {
-      setLastClickedNarrativeLinkOffset(offset);
-      navigateToBrowse(filePath);
-      if (hunkId) {
-        const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
-        if (hunkIndex >= 0) {
-          useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-        }
-      }
-    },
-    [navigateToBrowse, hunks, setLastClickedNarrativeLinkOffset],
-  );
-
-  // Custom markdown components for review:// link handling
-  // Highlights links that match the currently selected file
-  const markdownComponents = useMemo(
-    () => ({
-      a: ({
-        href,
-        children,
-        node,
-      }: {
-        href?: string;
-        children?: React.ReactNode;
-        node?: { position?: { start: { offset?: number } } };
-      }) => {
-        if (href?.startsWith("review://")) {
-          const url = new URL(href.replace("review://", "http://placeholder/"));
-          const filePath = url.pathname.slice(1); // remove leading /
-          const hunkId = url.searchParams.get("hunk") || undefined;
-          const offset = node?.position?.start?.offset ?? -1;
-          const isActive = lastClickedNarrativeLinkOffset === offset;
-          // Show tooltip with file path when the link text isn't the file name
-          const childText = typeof children === "string" ? children : "";
-          const fileName = filePath.split("/").pop() ?? "";
-          const needsTooltip = childText !== filePath && childText !== fileName;
-          const link = (
-            <button
-              onClick={() => handleNavigate(offset, filePath, hunkId)}
-              className={
-                isActive
-                  ? "text-blue-200 bg-blue-500/25 rounded-sm cursor-pointer"
-                  : "text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
-              }
-            >
-              {children}
-            </button>
-          );
-          if (needsTooltip) {
-            return (
-              <SimpleTooltip content={filePath} side="bottom">
-                {link}
-              </SimpleTooltip>
-            );
-          }
-          return link;
-        }
-        return (
-          <button
-            onClick={() => {
-              if (href) {
-                getPlatformServices().opener.openUrl(href);
-              }
-            }}
-            className="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
-          >
-            {children}
-          </button>
-        );
-      },
-    }),
-    [handleNavigate, lastClickedNarrativeLinkOffset],
-  );
 
   return (
     <Collapsible
@@ -153,28 +73,41 @@ export function GuideSection() {
               )}
             </button>
           </CollapsibleTrigger>
-          {showNarrative && !narrativeGenerating && (
-            <SimpleTooltip
-              content={stale ? "Regenerate narrative" : "Regenerate"}
-            >
-              <button
-                onClick={generateNarrative}
-                className="mr-1.5 p-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-700/50"
-              >
-                <svg
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
-                </svg>
-              </button>
-            </SimpleTooltip>
+          {narrativeSidebarOpen && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center justify-center w-6 h-6 mr-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <circle cx="12" cy="5" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
+                  </svg>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {showNarrative && !narrativeGenerating && (
+                  <DropdownMenuItem onClick={generateNarrative}>
+                    <svg
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                    </svg>
+                    {stale ? "Regenerate narrative" : "Regenerate"}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         <CollapsibleContent>
@@ -185,19 +118,10 @@ export function GuideSection() {
                 <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
                   PR Description
                 </div>
-                <div className="guide-prose text-xs text-stone-300">
-                  <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    urlTransform={(url) =>
-                      url.startsWith("review://")
-                        ? url
-                        : defaultUrlTransform(url)
-                    }
-                    components={markdownComponents}
-                  >
-                    {prBody}
-                  </Markdown>
-                </div>
+                <NarrativeContent
+                  content={prBody}
+                  className="guide-prose text-xs text-stone-300"
+                />
               </div>
             )}
 
@@ -208,24 +132,10 @@ export function GuideSection() {
 
             {/* Narrative content */}
             {showNarrative && (
-              <div className="space-y-1.5">
-                <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
-                  AI Walkthrough
-                </div>
-                <div className="guide-prose text-xs text-stone-300">
-                  <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    urlTransform={(url) =>
-                      url.startsWith("review://")
-                        ? url
-                        : defaultUrlTransform(url)
-                    }
-                    components={markdownComponents}
-                  >
-                    {narrative!.content}
-                  </Markdown>
-                </div>
-              </div>
+              <NarrativeContent
+                content={narrative!.content}
+                className="guide-prose text-xs text-stone-300"
+              />
             )}
 
             {/* Generating state */}

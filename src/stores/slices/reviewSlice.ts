@@ -184,12 +184,16 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const { repoPath, comparison, reviewState: currentState } = get();
       if (!repoPath) return;
 
+      const comparisonKey = comparison.key;
       try {
         const state = await client.loadReviewState(repoPath, comparison);
+        // Discard result if comparison changed while loading
+        if (get().comparison.key !== comparisonKey) return;
         // Skip update if the state hasn't changed (avoids unnecessary re-renders)
         if (currentState && state.updatedAt === currentState.updatedAt) return;
         set({ reviewState: state });
       } catch (err) {
+        if (get().comparison.key !== comparisonKey) return;
         console.error("Failed to load review state:", err);
         set({
           reviewState: {

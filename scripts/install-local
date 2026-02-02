@@ -2,21 +2,24 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# Install Review CLI and Tauri app for local use (separate from dev workflow)
+# Install Review app and CLI for local use (separate from dev workflow)
 
-echo "Installing CLI binaries to ~/.cargo/bin/..."
-cargo install --path review --features cli --force
+echo "Building CLI sidecar..."
+./scripts/build-cli
 
 echo ""
 echo "Building Tauri app..."
-npm run tauri build
+npm run tauri build -- --features symbols-all
 
 echo ""
 echo "Installing Review.app to /Applications/..."
 cp -r target/release/bundle/macos/Review.app /Applications/
 
 echo ""
+echo "Symlinking CLI to /usr/local/bin/review..."
+ln -sf "/Applications/Review.app/Contents/MacOS/review-cli" /usr/local/bin/review
+
+echo ""
 echo "Done! Installed:"
-echo "  - review (in ~/.cargo/bin/)"
-echo "  - git-review (in ~/.cargo/bin/, use as 'git review')"
+echo "  - review (symlinked to /usr/local/bin/review)"
 echo "  - Review.app (in /Applications/)"

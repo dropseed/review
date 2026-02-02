@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+# Build the review CLI binary and place it in src-tauri/binaries/ with
+# the target-triple suffix required by Tauri's externalBin (sidecar) feature.
+
+TARGET="${TAURI_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/host: //p')}"
+
+echo "Building review CLI for $TARGET..."
+cargo build --release --target "$TARGET" -p review --features "cli,symbols-all" --bin review
+
+mkdir -p src-tauri/binaries
+cp "target/$TARGET/release/review" "src-tauri/binaries/review-cli-$TARGET"
+
+echo "Sidecar binary ready: src-tauri/binaries/review-cli-$TARGET"

@@ -1,15 +1,12 @@
 import { useCallback, useMemo } from "react";
-import Markdown, { defaultUrlTransform } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useReviewStore } from "../../stores";
-import { getPlatformServices } from "../../platform";
-import { SimpleTooltip } from "../ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
+import { NarrativeContent } from "../NarrativeContent";
 
 export function GuideOverviewSection() {
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -20,7 +17,6 @@ export function GuideOverviewSection() {
   const isNarrativeStale = useReviewStore((s) => s.isNarrativeStale);
   const isNarrativeIrrelevant = useReviewStore((s) => s.isNarrativeIrrelevant);
   const generateNarrative = useReviewStore((s) => s.generateNarrative);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const narrative = reviewState?.narrative;
   const hasNarrative = !!narrative?.content;
@@ -51,81 +47,10 @@ export function GuideOverviewSection() {
   const setNarrativeSidebarOpen = useReviewStore(
     (s) => s.setNarrativeSidebarOpen,
   );
-  const setLastClickedNarrativeLinkOffset = useReviewStore(
-    (s) => s.setLastClickedNarrativeLinkOffset,
-  );
 
-  const handleNavigate = useCallback(
-    (offset: number, filePath: string, hunkId?: string) => {
-      setLastClickedNarrativeLinkOffset(offset);
-      setNarrativeSidebarOpen(true);
-      navigateToBrowse(filePath);
-      if (hunkId) {
-        const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
-        if (hunkIndex >= 0) {
-          useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-        }
-      }
-    },
-    [
-      navigateToBrowse,
-      hunks,
-      setNarrativeSidebarOpen,
-      setLastClickedNarrativeLinkOffset,
-    ],
-  );
-
-  const markdownComponents = useMemo(
-    () => ({
-      a: ({
-        href,
-        children,
-        node,
-      }: {
-        href?: string;
-        children?: React.ReactNode;
-        node?: { position?: { start: { offset?: number } } };
-      }) => {
-        if (href?.startsWith("review://")) {
-          const url = new URL(href.replace("review://", "http://placeholder/"));
-          const filePath = url.pathname.slice(1);
-          const hunkId = url.searchParams.get("hunk") || undefined;
-          const offset = node?.position?.start?.offset ?? -1;
-          const childText = typeof children === "string" ? children : "";
-          const fileName = filePath.split("/").pop() ?? "";
-          const needsTooltip = childText !== filePath && childText !== fileName;
-          const link = (
-            <button
-              onClick={() => handleNavigate(offset, filePath, hunkId)}
-              className="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
-            >
-              {children}
-            </button>
-          );
-          if (needsTooltip) {
-            return (
-              <SimpleTooltip content={filePath} side="bottom">
-                {link}
-              </SimpleTooltip>
-            );
-          }
-          return link;
-        }
-        return (
-          <button
-            onClick={() => {
-              if (href) {
-                getPlatformServices().opener.openUrl(href);
-              }
-            }}
-            className="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
-          >
-            {children}
-          </button>
-        );
-      },
-    }),
-    [handleNavigate],
+  const openSidebar = useCallback(
+    () => setNarrativeSidebarOpen(true),
+    [setNarrativeSidebarOpen],
   );
 
   const showNarrativeSection =
@@ -209,17 +134,11 @@ export function GuideOverviewSection() {
                   </DropdownMenu>
                 )}
               </div>
-              <div className="guide-prose text-stone-200 text-sm">
-                <Markdown
-                  remarkPlugins={[remarkGfm]}
-                  urlTransform={(url) =>
-                    url.startsWith("review://") ? url : defaultUrlTransform(url)
-                  }
-                  components={markdownComponents}
-                >
-                  {narrative!.content}
-                </Markdown>
-              </div>
+              <NarrativeContent
+                content={narrative!.content}
+                className="guide-prose text-stone-200 text-sm"
+                onBeforeNavigate={openSidebar}
+              />
             </div>
           </div>
         </div>

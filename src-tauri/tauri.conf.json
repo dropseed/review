@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "./scripts/start-vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && ./scripts/build-cli",
     "frontendDist": "../dist"
   },
   "app": {
@@ -33,6 +33,7 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.png"],
+    "externalBin": ["binaries/review-cli"],
     "createUpdaterArtifacts": "v1Compatible"
   },
   "plugins": {

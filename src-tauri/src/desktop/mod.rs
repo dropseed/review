@@ -216,7 +216,18 @@ pub fn run() {
                 .fullscreen()
                 .build()?;
 
-            let help_menu = SubmenuBuilder::new(app, "Help")
+            #[allow(unused_mut)]
+            let mut help_menu_builder = SubmenuBuilder::new(app, "Help");
+
+            #[cfg(not(debug_assertions))]
+            {
+                let install_cli = MenuItemBuilder::new("Install 'review' Command in PATH...")
+                    .id("install_cli")
+                    .build(app)?;
+                help_menu_builder = help_menu_builder.item(&install_cli).separator();
+            }
+
+            let help_menu = help_menu_builder
                 .item(&review_help)
                 .item(&report_issue)
                 .build()?;
@@ -267,6 +278,14 @@ pub fn run() {
                 "settings" => {
                     let _: Result<(), _> = app.emit("menu:open-settings", ());
                 }
+                "install_cli" => match commands::install_cli(app.clone()) {
+                    Ok(_) => {
+                        let _: Result<(), _> = app.emit("cli:installed", ());
+                    }
+                    Err(e) => {
+                        let _: Result<(), _> = app.emit("cli:install-error", e);
+                    }
+                },
                 "review_help" => {
                     let _ = app
                         .opener()
@@ -323,6 +342,10 @@ pub fn run() {
             commands::get_file_symbol_diffs,
             commands::get_file_symbols,
             commands::generate_narrative,
+            commands::is_dev_mode,
+            commands::get_cli_install_status,
+            commands::install_cli,
+            commands::uninstall_cli,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

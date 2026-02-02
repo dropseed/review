@@ -37,7 +37,7 @@ The project is organized as a Cargo workspace with two crates:
   - `src/sources/` - Git operations abstraction
   - `src/trust/` - Trust pattern matching and taxonomy
   - `src/cli/` - CLI commands (behind `cli` feature flag)
-  - `src/bin/` - CLI binaries (`review`, `git-review`)
+  - `src/bin/` - CLI binary (`review`)
 
 - **`src-tauri/`** - Desktop app (depends on `review`)
   - `src/desktop/` - Tauri-specific code (commands, watchers, debug server)

@@ -1311,6 +1311,137 @@ pub fn search_file_contents(
     Ok(results)
 }
 
+// --- Dev mode detection ---
+
+#[tauri::command]
+pub fn is_dev_mode() -> bool {
+    cfg!(debug_assertions)
+}
+
+// --- CLI sidecar install ---
+
+/// Well-known install location for the `review` CLI symlink.
+const CLI_SYMLINK_PATH: &str = "/usr/local/bin/review";
+
+#[derive(Debug, Serialize)]
+pub struct CliInstallStatus {
+    pub installed: bool,
+    pub symlink_target: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_cli_install_status() -> CliInstallStatus {
+    let path = std::path::Path::new(CLI_SYMLINK_PATH);
+    match std::fs::read_link(path) {
+        Ok(target) => CliInstallStatus {
+            installed: true,
+            symlink_target: Some(target.to_string_lossy().to_string()),
+        },
+        Err(_) => CliInstallStatus {
+            installed: false,
+            symlink_target: None,
+        },
+    }
+}
+
+#[tauri::command]
+pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+
+    // The sidecar binary lives next to the main binary inside the app bundle:
+    //   Review.app/Contents/MacOS/review-cli
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Could not determine resource dir: {e}"))?;
+
+    // resource_dir points to Contents/Resources; the binary is in Contents/MacOS
+    let sidecar_path = resource_dir
+        .parent()
+        .ok_or("Could not determine app bundle path")?
+        .join("MacOS")
+        .join("review-cli");
+
+    if !sidecar_path.exists() {
+        return Err(format!(
+            "Sidecar binary not found at {}",
+            sidecar_path.display()
+        ));
+    }
+
+    let symlink_path = std::path::Path::new(CLI_SYMLINK_PATH);
+
+    // Remove existing symlink if present
+    if symlink_path.exists() || symlink_path.symlink_metadata().is_ok() {
+        std::fs::remove_file(symlink_path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                format!(
+                    "Permission denied. Run manually:\n  sudo ln -sf \"{}\" {}",
+                    sidecar_path.display(),
+                    CLI_SYMLINK_PATH
+                )
+            } else {
+                format!("Failed to remove existing symlink: {e}")
+            }
+        })?;
+    }
+
+    // Create parent directory if needed
+    if let Some(parent) = symlink_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    format!(
+                        "Permission denied. Run manually:\n  sudo ln -sf \"{}\" {}",
+                        sidecar_path.display(),
+                        CLI_SYMLINK_PATH
+                    )
+                } else {
+                    format!("Failed to create directory: {e}")
+                }
+            })?;
+        }
+    }
+
+    std::os::unix::fs::symlink(&sidecar_path, symlink_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            format!(
+                "Permission denied. Run manually:\n  sudo ln -sf \"{}\" {}",
+                sidecar_path.display(),
+                CLI_SYMLINK_PATH
+            )
+        } else {
+            format!("Failed to create symlink: {e}")
+        }
+    })?;
+
+    info!(
+        "[install_cli] Symlinked {} -> {}",
+        CLI_SYMLINK_PATH,
+        sidecar_path.display()
+    );
+    Ok(sidecar_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn uninstall_cli() -> Result<(), String> {
+    let symlink_path = std::path::Path::new(CLI_SYMLINK_PATH);
+    if symlink_path.symlink_metadata().is_ok() {
+        std::fs::remove_file(symlink_path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                format!(
+                    "Permission denied. Run manually:\n  sudo rm {}",
+                    CLI_SYMLINK_PATH
+                )
+            } else {
+                format!("Failed to remove symlink: {e}")
+            }
+        })?;
+        info!("[uninstall_cli] Removed {CLI_SYMLINK_PATH}");
+    }
+    Ok(())
+}
+
 /// Timeout for narrative generation (single Claude call for entire diff).
 const NARRATIVE_TIMEOUT_SECS: u64 = 120;
 

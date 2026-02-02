@@ -25,12 +25,24 @@ pub fn build_narrative_prompt(hunks: &[NarrativeInput]) -> String {
         "- Then walk through the changes grouped by logical concern (not necessarily file order).\n",
     );
     prompt.push_str("- Use markdown headings, bullet points, and code references.\n");
-    prompt.push_str("- Link to files like this: [description](review://path/to/file.ts)\n");
     prompt.push_str(
         "- Link to specific hunks like this: [description](review://path/to/file.ts?hunk=HUNK_ID)\n",
     );
     prompt.push_str(
-        "- Use the actual filename as the link text sometimes (e.g. [`utils.ts`](review://src/utils.ts)) \
+        "- ALWAYS prefer hunk-specific links over bare file links. When you mention a specific change, \
+         link to the exact hunk that contains it. Multiple links to the same file should point to \
+         different hunks so the reader jumps to the right place.\n",
+    );
+    prompt.push_str(
+        "- You can also link to a specific line: [description](review://path/to/file.ts?line=42) \
+         Use this when referring to a particular line number visible in the diff.\n",
+    );
+    prompt.push_str(
+        "- Only use a bare file link [file](review://path/to/file.ts) when referring to the file \
+         as a whole, not a specific change within it.\n",
+    );
+    prompt.push_str(
+        "- Use the actual filename as the link text sometimes (e.g. [`utils.ts`](review://src/utils.ts?hunk=HUNK_ID)) \
          to help the reviewer become familiar with the file names in the change.\n",
     );
     prompt.push_str("- Do NOT judge code quality or suggest improvements.\n");

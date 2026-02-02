@@ -1,3 +1,5 @@
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "../stores";
 import {
   CODE_FONT_SIZE_DEFAULT,
@@ -75,6 +77,62 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const setClassifyMaxConcurrent = useReviewStore(
     (s) => s.setClassifyMaxConcurrent,
   );
+
+  // CLI install status (hidden in dev mode)
+  const [devMode, setDevMode] = useState(false);
+  const [cliInstalled, setCliInstalled] = useState(false);
+  const [cliSymlinkTarget, setCliSymlinkTarget] = useState<string | null>(null);
+  const [cliError, setCliError] = useState<string | null>(null);
+  const [cliLoading, setCliLoading] = useState(false);
+
+  const refreshCliStatus = useCallback(async () => {
+    try {
+      const isDev = await invoke<boolean>("is_dev_mode");
+      setDevMode(isDev);
+      if (isDev) return;
+
+      const status = await invoke<{
+        installed: boolean;
+        symlink_target: string | null;
+      }>("get_cli_install_status");
+      setCliInstalled(status.installed);
+      setCliSymlinkTarget(status.symlink_target);
+    } catch {
+      // Ignore errors checking status
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshCliStatus();
+    }
+  }, [isOpen, refreshCliStatus]);
+
+  const handleInstallCli = async () => {
+    setCliLoading(true);
+    setCliError(null);
+    try {
+      await invoke("install_cli");
+      await refreshCliStatus();
+    } catch (e) {
+      setCliError(String(e));
+    } finally {
+      setCliLoading(false);
+    }
+  };
+
+  const handleUninstallCli = async () => {
+    setCliLoading(true);
+    setCliError(null);
+    try {
+      await invoke("uninstall_cli");
+      await refreshCliStatus();
+    } catch (e) {
+      setCliError(String(e));
+    } finally {
+      setCliLoading(false);
+    }
+  };
 
   const decreaseFontSize = () => {
     setCodeFontSize(
@@ -503,6 +561,92 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   load.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Command Line (hidden in dev mode) */}
+          {!devMode && (
+            <div className="px-5 py-4">
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  className="h-4 w-4 text-stone-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" />
+                </svg>
+                <span className="text-xs font-medium text-stone-300">
+                  Command Line
+                </span>
+              </div>
+
+              {cliInstalled ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="text-xs text-stone-300">
+                          Installed at{" "}
+                          <code className="text-xxs text-stone-500">
+                            /usr/local/bin/review
+                          </code>
+                        </span>
+                      </div>
+                      {cliSymlinkTarget && (
+                        <p className="mt-1 truncate pl-3.5 text-xxs text-stone-600">
+                          {cliSymlinkTarget}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleUninstallCli}
+                      disabled={cliLoading}
+                      className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 disabled:opacity-50"
+                    >
+                      Uninstall
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
+                    <span className="text-xs text-stone-400">
+                      <code className="text-xxs">review</code> command not
+                      installed
+                    </span>
+                    <button
+                      onClick={handleInstallCli}
+                      disabled={cliLoading}
+                      className="ml-3 shrink-0 rounded-md bg-stone-700/50 px-2.5 py-1.5 text-xxs text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-50"
+                    >
+                      {cliLoading ? "Installing..." : "Install"}
+                    </button>
+                  </div>
+                  <p className="text-xxs text-stone-600 leading-relaxed">
+                    Creates a symlink at{" "}
+                    <code className="text-stone-500">
+                      /usr/local/bin/review
+                    </code>{" "}
+                    so you can run{" "}
+                    <code className="text-stone-500">review</code> from any
+                    terminal.
+                  </p>
+                </div>
+              )}
+
+              {cliError && (
+                <div className="mt-2 rounded-lg bg-red-950/30 px-3 py-2 ring-1 ring-red-900/30">
+                  <p className="whitespace-pre-wrap text-xxs text-red-400/90">
+                    {cliError}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -23,7 +23,6 @@ futures = "0.3"
 base64 = "0.22"
 ignore = "0.4"
 regex = "1"
-dirs = "5"
 
 # Tree-sitter for symbol extraction
 tree-sitter = "0.25"

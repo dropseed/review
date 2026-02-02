@@ -4,7 +4,6 @@ use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 use clap::{Parser, Subcommand};
-use commands::agent::AgentCommands;
 use std::path::Path;
 
 #[derive(Debug, Parser)]
@@ -135,12 +134,6 @@ pub enum Commands {
         split: bool,
     },
 
-    /// Manage AI agent integrations (e.g., Claude Code skills)
-    Agent {
-        #[command(subcommand)]
-        command: AgentCommands,
-    },
-
     /// Run classification eval to measure accuracy
     Eval {
         /// Model to use (e.g., sonnet, haiku, opus)
@@ -229,11 +222,6 @@ pub fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> 
 
 /// Run the CLI with parsed arguments
 pub fn run(cli: Cli) -> Result<(), String> {
-    // Agent doesn't require a git repo — handle it before resolving repo_path
-    if let Some(Commands::Agent { command }) = cli.command {
-        return commands::agent::run(command);
-    }
-
     // Eval doesn't require a git repo — handle it before resolving repo_path
     if let Some(Commands::Eval {
         model,
@@ -294,7 +282,6 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Symbols { file, split }) => {
             commands::symbols::run(&repo_path, file, split, cli.format)
         }
-        Some(Commands::Agent { .. }) => unreachable!("handled above"),
         Some(Commands::Eval { .. }) => unreachable!("handled above"),
     }
 }

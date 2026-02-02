@@ -24,4 +24,5 @@ npm-debug.log*
 
 # Tauri
 src-tauri/WixTools/
+src-tauri/binaries/
 

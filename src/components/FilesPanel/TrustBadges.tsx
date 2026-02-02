@@ -27,7 +27,7 @@ export function TrustBadges() {
   );
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     const loadTaxonomy = async () => {

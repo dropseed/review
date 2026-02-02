@@ -83,7 +83,7 @@ graph TB
         classify["classify/
         Claude API"]
         cli["cli/ (feature-gated)
-        review, git-review"]
+        review"]
     end
 
     subgraph Storage["Storage"]

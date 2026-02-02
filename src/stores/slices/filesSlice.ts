@@ -142,7 +142,18 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     setComparison: (comparison) => {
-      set({ comparison });
+      // Clear stale data immediately so the UI doesn't show files from
+      // the previous comparison while the new one loads.
+      set({
+        comparison,
+        files: [],
+        flatFileList: [],
+        hunks: [],
+        movePairs: [],
+        allFiles: [],
+        loadingProgress: null,
+        reviewState: null,
+      });
       get().saveCurrentComparison();
       get().loadReviewState();
     },
@@ -154,6 +165,11 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const { repoPath, comparison, triggerAutoClassification, clearSymbols } =
         get();
       if (!repoPath) return;
+
+      // Capture comparison key so we can detect if the user switched
+      // comparisons while this async operation was in-flight.
+      const comparisonKey = comparison.key;
+      const isStale = () => get().comparison.key !== comparisonKey;
 
       // Clear symbols so they reload when the Symbols tab is next opened
       clearSymbols();
@@ -167,6 +183,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
         const phase1Start = performance.now();
         const files = await client.listFiles(repoPath, comparison);
+        if (isStale()) {
+          set({ loadingProgress: null });
+          return;
+        }
         const flatFileList = flattenFiles(files);
         console.log(
           `[perf] Phase 1 (list files): ${(performance.now() - phase1Start).toFixed(0)}ms, ${flatFileList.length} files`,
@@ -304,6 +324,11 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           );
         }
 
+        if (isStale()) {
+          set({ loadingProgress: null });
+          return;
+        }
+
         // Phase 3: Detect move pairs
         const phase3Start = performance.now();
         if (!isRefreshing) {
@@ -311,6 +336,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
         try {
           const result = await client.detectMovePairs(allHunks);
+          if (isStale()) {
+            set({ loadingProgress: null });
+            return;
+          }
           if (isRefreshing) {
             // Single batched update: files + hunks + movePairs together
             set({
@@ -359,9 +388,14 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const { repoPath, comparison } = get();
       if (!repoPath) return;
 
+      const comparisonKey = comparison.key;
       set({ allFilesLoading: true });
       try {
         const allFiles = await client.listAllFiles(repoPath, comparison);
+        if (get().comparison.key !== comparisonKey) {
+          set({ allFilesLoading: false });
+          return;
+        }
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load all files:", err);
