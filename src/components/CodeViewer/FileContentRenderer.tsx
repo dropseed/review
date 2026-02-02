@@ -3,7 +3,7 @@ import type { SupportedLanguages } from "./languageMap";
 import { isMarkdownFile } from "./languageMap";
 import { PlainCodeView } from "./PlainCodeView";
 import { UntrackedFileView } from "./UntrackedFileView";
-import { DiffView } from "./DiffView";
+import { DiffView, DiffErrorBoundary } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
 
@@ -74,14 +74,19 @@ export function FileContentRenderer({
   // Untracked (new) file
   if (isUntracked) {
     return (
-      <UntrackedFileView
-        content={fileContent.content}
-        filePath={filePath}
-        hunks={fileContent.hunks}
-        theme={codeTheme}
-        fontSizeCSS={fontSizeCSS}
-        language={effectiveLanguage}
-      />
+      <DiffErrorBoundary
+        key={filePath}
+        fallback={<RenderErrorFallback filePath={filePath} />}
+      >
+        <UntrackedFileView
+          content={fileContent.content}
+          filePath={filePath}
+          hunks={fileContent.hunks}
+          theme={codeTheme}
+          fontSizeCSS={fontSizeCSS}
+          language={effectiveLanguage}
+        />
+      </DiffErrorBoundary>
     );
   }
 
@@ -106,22 +111,38 @@ export function FileContentRenderer({
 
   // Plain code view (file view mode, or files without changes)
   return (
-    <PlainCodeView
-      content={fileContent.content}
-      filePath={filePath}
-      highlightLine={highlightLine}
-      theme={codeTheme}
-      fontSizeCSS={fontSizeCSS}
-      language={effectiveLanguage}
-      lineHeight={lineHeight}
-      annotations={reviewState?.annotations?.filter(
-        (a) => a.filePath === filePath,
-      )}
-      onAddAnnotation={(lineNumber, content) =>
-        addAnnotation(filePath, lineNumber, "file", content)
-      }
-      onUpdateAnnotation={updateAnnotation}
-      onDeleteAnnotation={deleteAnnotation}
-    />
+    <DiffErrorBoundary
+      key={filePath}
+      fallback={<RenderErrorFallback filePath={filePath} />}
+    >
+      <PlainCodeView
+        content={fileContent.content}
+        filePath={filePath}
+        highlightLine={highlightLine}
+        theme={codeTheme}
+        fontSizeCSS={fontSizeCSS}
+        language={effectiveLanguage}
+        lineHeight={lineHeight}
+        annotations={reviewState?.annotations?.filter(
+          (a) => a.filePath === filePath,
+        )}
+        onAddAnnotation={(lineNumber, content) =>
+          addAnnotation(filePath, lineNumber, "file", content)
+        }
+        onUpdateAnnotation={updateAnnotation}
+        onDeleteAnnotation={deleteAnnotation}
+      />
+    </DiffErrorBoundary>
+  );
+}
+
+function RenderErrorFallback({ filePath }: { filePath: string }) {
+  return (
+    <div className="p-6">
+      <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-4">
+        <p className="text-rose-400">Failed to render file view</p>
+        <p className="mt-1 text-sm text-stone-500">{filePath}</p>
+      </div>
+    </div>
   );
 }
