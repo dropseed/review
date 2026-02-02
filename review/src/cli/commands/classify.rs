@@ -1,4 +1,4 @@
-use crate::classify::{check_claude_available, classify_hunks_batched, HunkInput};
+use crate::classify::{check_claude_available, classify_hunks_batched, should_skip_ai, HunkInput};
 use crate::cli::OutputFormat;
 use crate::diff::parser::parse_diff;
 use crate::review::state::HunkState;
@@ -52,6 +52,7 @@ pub fn run(
 
     // Parse all hunks and find unclassified ones
     let mut hunks_to_classify = Vec::new();
+    let mut skipped_count = 0;
 
     for file_diff in split_diff_by_file(&diff_output) {
         let file_path = extract_file_path(&file_diff).unwrap_or_default();
@@ -64,6 +65,12 @@ pub fn run(
                 continue;
             }
 
+            // Skip hunks that heuristics say won't match any AI label
+            if should_skip_ai(&hunk).is_some() {
+                skipped_count += 1;
+                continue;
+            }
+
             // Build hunk input for classification - use the content field
             hunks_to_classify.push(HunkInput {
                 id: hunk.id.clone(),
@@ -71,6 +78,13 @@ pub fn run(
                 content: hunk.content.clone(),
             });
         }
+    }
+
+    if skipped_count > 0 && format == OutputFormat::Text {
+        println!(
+            "Skipped {} hunk(s) unlikely to match any label",
+            skipped_count.to_string().dimmed()
+        );
     }
 
     if hunks_to_classify.is_empty() {

@@ -323,6 +323,8 @@ export interface ClassificationResult {
 
 export interface ClassifyResponse {
   classifications: Record<string, ClassificationResult>;
+  /** Hunk IDs that heuristics determined should skip AI classification */
+  skippedHunkIds?: string[];
 }
 
 export interface NarrativeState {

@@ -209,9 +209,20 @@ export const createClassificationSlice: SliceCreatorWithClient<
         const staticIds = new Set(Object.keys(staticResponse.classifications));
         hunksToClassify = hunksToClassify.filter((h) => !staticIds.has(h.id));
 
+        // Remove hunks that heuristics determined should skip AI
+        const skippedIds = new Set(staticResponse.skippedHunkIds ?? []);
+        if (skippedIds.size > 0) {
+          console.log(
+            `[classifyUnlabeledHunks] Skipping ${skippedIds.size} hunks (unlikely to match AI labels)`,
+          );
+          hunksToClassify = hunksToClassify.filter(
+            (h) => !skippedIds.has(h.id),
+          );
+        }
+
         if (hunksToClassify.length === 0) {
           console.log(
-            "[classifyUnlabeledHunks] All hunks classified by static rules",
+            "[classifyUnlabeledHunks] All hunks classified by static rules or skipped",
           );
           return;
         }

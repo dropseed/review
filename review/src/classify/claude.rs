@@ -32,6 +32,10 @@ pub struct ClassificationResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClassifyResponse {
     pub classifications: HashMap<String, ClassificationResult>,
+    /// Hunk IDs that were skipped (not sent to AI) because heuristics
+    /// determined they are very unlikely to match any taxonomy label.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_hunk_ids: Vec<String>,
 }
 
 /// Check if the claude CLI is available
@@ -337,6 +341,7 @@ where
     if hunks.is_empty() {
         return Ok(ClassifyResponse {
             classifications: HashMap::new(),
+            skipped_hunk_ids: Vec::new(),
         });
     }
 
@@ -416,11 +421,17 @@ where
                 errors
             );
         }
-        Ok(ClassifyResponse { classifications })
+        Ok(ClassifyResponse {
+            classifications,
+            skipped_hunk_ids: Vec::new(),
+        })
     } else if !errors.is_empty() {
         Err(ClassifyError::CommandFailed(errors.join("; ")))
     } else {
-        Ok(ClassifyResponse { classifications })
+        Ok(ClassifyResponse {
+            classifications,
+            skipped_hunk_ids: Vec::new(),
+        })
     }
 }
 

@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Comparison, BranchList, PullRequest } from "../../types";
 import { makeComparison, makePrComparison } from "../../types";
-import {
-  BranchSelect,
-  WORKING_TREE,
-  STAGED_ONLY,
-  PR_PREFIX,
-} from "../BranchSelect";
+import { BranchSelect, WORKING_TREE, PR_PREFIX } from "../BranchSelect";
 import { getApiClient } from "../../api";
 
 interface NewComparisonFormProps {
@@ -123,14 +118,8 @@ export function NewComparisonForm({
     }
 
     const isWorkingTree = compareRef === WORKING_TREE;
-    const isStagedOnly = compareRef === STAGED_ONLY;
-    const newRef = isWorkingTree || isStagedOnly ? currentBranch : compareRef;
-    const comparison = makeComparison(
-      baseRef,
-      newRef,
-      isWorkingTree,
-      isStagedOnly,
-    );
+    const newRef = isWorkingTree ? currentBranch : compareRef;
+    const comparison = makeComparison(baseRef, newRef, isWorkingTree);
     onSelectReview(comparison);
   }, [baseRef, compareRef, currentBranch, onSelectReview, pullRequests]);
 

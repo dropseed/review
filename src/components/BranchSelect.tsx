@@ -5,13 +5,12 @@ import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 
 // Special values for local state options
 const WORKING_TREE = "__WORKING_TREE__";
-const STAGED_ONLY = "__STAGED_ONLY__";
 
 interface BranchOption {
   value: string;
   label: string;
   group: string;
-  icon?: "branch" | "remote" | "stash" | "tree" | "staged" | "pr";
+  icon?: "branch" | "remote" | "stash" | "tree" | "pr";
   secondaryLabel?: string;
 }
 
@@ -50,21 +49,6 @@ const BranchIcon = memo(function BranchIcon({
           <path
             fillRule="evenodd"
             d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v8.5A2.25 2.25 0 0115.75 15h-3.105a3.501 3.501 0 001.1 1.677A.75.75 0 0113.26 18H6.74a.75.75 0 01-.484-1.323A3.501 3.501 0 007.355 15H4.25A2.25 2.25 0 012 12.75v-8.5z"
-            clipRule="evenodd"
-          />
-        </svg>
-      );
-    case "staged":
-      return (
-        <svg
-          className={`${baseClass} text-emerald-400`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fillRule="evenodd"
-            d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
             clipRule="evenodd"
           />
         </svg>
@@ -138,7 +122,6 @@ function getDisplayName(
   pullRequests?: PullRequest[],
 ): string {
   if (value === WORKING_TREE) return "Working Tree";
-  if (value === STAGED_ONLY) return "Staged";
 
   // Check if it's a PR
   if (value.startsWith(PR_PREFIX) && pullRequests) {
@@ -172,9 +155,6 @@ function getComparisonKey(base: string, compareValue: string): string {
   }
   if (compareValue === WORKING_TREE) {
     return `${base}..${base}+working-tree`;
-  }
-  if (compareValue === STAGED_ONLY) {
-    return `${base}..${base}+staged-only`;
   }
   return `${base}..${compareValue}`;
 }
@@ -223,15 +203,6 @@ export const BranchSelect = memo(function BranchSelect({
           icon: "tree",
         });
       }
-      if (!isExistingComparison(STAGED_ONLY)) {
-        opts.push({
-          value: STAGED_ONLY,
-          label: "Staged",
-          group: "Local State",
-          icon: "staged",
-        });
-      }
-
       // Add stashes (filter out existing)
       branches.stashes.forEach((stash: StashEntry) => {
         if (isExistingComparison(stash.ref)) return;
@@ -548,4 +519,4 @@ export const BranchSelect = memo(function BranchSelect({
   );
 });
 
-export { WORKING_TREE, STAGED_ONLY, PR_PREFIX };
+export { WORKING_TREE, PR_PREFIX };

@@ -6,4 +6,4 @@ pub mod static_classify;
 pub(crate) use claude::classify_single_hunk;
 pub use claude::{check_claude_available, classify_hunks_batched, ClassifyError, ClassifyResponse};
 pub use prompt::HunkInput;
-pub use static_classify::classify_hunks_static;
+pub use static_classify::{classify_hunks_static, should_skip_ai};

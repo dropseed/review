@@ -12,16 +12,24 @@ use std::collections::HashMap;
 ///
 /// Returns a `ClassifyResponse` containing only the hunks that were
 /// confidently classified. Unclassified hunks are omitted.
+/// Also populates `skipped_hunk_ids` for hunks that heuristics determine
+/// are very unlikely to match any taxonomy label (saves AI tokens).
 pub fn classify_hunks_static(hunks: &[DiffHunk]) -> ClassifyResponse {
     let mut classifications = HashMap::new();
+    let mut skipped_hunk_ids = Vec::new();
 
     for hunk in hunks {
         if let Some(result) = classify_single_hunk(hunk) {
             classifications.insert(hunk.id.clone(), result);
+        } else if should_skip_ai(hunk).is_some() {
+            skipped_hunk_ids.push(hunk.id.clone());
         }
     }
 
-    ClassifyResponse { classifications }
+    ClassifyResponse {
+        classifications,
+        skipped_hunk_ids,
+    }
 }
 
 /// Attempt to classify a single hunk. Returns `None` if no rule matches.
@@ -264,6 +272,75 @@ fn is_import_reorder(changed_lines: &[&DiffLine], prefixes: &[&str]) -> bool {
 /// Normalize an import line for comparison (trim, collapse whitespace).
 fn normalize_import(line: &str) -> String {
     line.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// --- Rule 5: Pre-AI skip heuristics ---
+
+/// Maximum number of changed lines (added + removed) before we skip AI.
+/// Hunks larger than this are very unlikely to match a single taxonomy label
+/// since every label requires the ENTIRE hunk to be one type of trivial change.
+const MAX_CHANGED_LINES_FOR_AI: usize = 50;
+
+/// Check if a hunk should be skipped for AI classification.
+/// Returns a reason string if the hunk should be skipped, `None` otherwise.
+///
+/// These are hunks that are very unlikely to match any taxonomy label,
+/// so sending them to the AI would just waste tokens.
+pub fn should_skip_ai(hunk: &DiffHunk) -> Option<&'static str> {
+    // 1. Too many changed lines — unlikely to be entirely one trivial pattern
+    let changed_lines = get_changed_lines(&hunk.lines);
+    if changed_lines.len() > MAX_CHANGED_LINES_FOR_AI {
+        return Some("too many changed lines for single-label match");
+    }
+
+    // 2. Generated/minified files (beyond lockfiles, which are caught by classify_lockfile)
+    if is_generated_file(&hunk.file_path) {
+        return Some("generated or minified file");
+    }
+
+    // 3. Pure deletion hunks (only removed lines, no additions).
+    //    No AI-classified taxonomy label applies to pure deletions.
+    //    (imports:removed and comments:removed are already handled by the static classifier.)
+    let has_added = changed_lines.iter().any(|l| l.line_type == LineType::Added);
+    let has_removed = changed_lines
+        .iter()
+        .any(|l| l.line_type == LineType::Removed);
+    if has_removed && !has_added {
+        return Some("pure deletion — no matching AI taxonomy label");
+    }
+
+    None
+}
+
+/// Check if a file path looks like a generated/minified file that
+/// should skip AI classification.
+fn is_generated_file(file_path: &str) -> bool {
+    let lower = file_path.to_lowercase();
+
+    // Minified bundles
+    if lower.ends_with(".min.js") || lower.ends_with(".min.css") || lower.ends_with(".min.mjs") {
+        return true;
+    }
+
+    // Source maps
+    if lower.ends_with(".js.map")
+        || lower.ends_with(".css.map")
+        || lower.ends_with(".mjs.map")
+        || lower.ends_with(".ts.map")
+    {
+        return true;
+    }
+
+    // Protobuf generated
+    if lower.ends_with(".pb.go")
+        || lower.ends_with(".pb.cc")
+        || lower.ends_with(".pb.h")
+        || lower.ends_with(".pb.rs")
+    {
+        return true;
+    }
+
+    false
 }
 
 // --- Helpers ---
@@ -578,5 +655,137 @@ mod tests {
         let result = classify_single_hunk(&hunk);
         assert!(result.is_some());
         assert_eq!(result.unwrap().label, vec!["generated:lockfile"]);
+    }
+
+    // --- should_skip_ai tests ---
+
+    #[test]
+    fn test_skip_ai_too_many_changed_lines() {
+        let mut lines = Vec::new();
+        for i in 0..60 {
+            lines.push(added(&format!("line {i}")));
+        }
+        let hunk = make_hunk("src/big_file.rs", lines);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_small_hunk_not_skipped() {
+        let hunk = make_hunk(
+            "src/main.rs",
+            vec![added("let x = 1;"), added("let y = 2;")],
+        );
+        assert!(should_skip_ai(&hunk).is_none());
+    }
+
+    #[test]
+    fn test_skip_ai_generated_minified_js() {
+        let hunk = make_hunk("dist/bundle.min.js", vec![added("var a=1;")]);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_generated_sourcemap() {
+        let hunk = make_hunk("dist/app.js.map", vec![added("{}")]);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_generated_protobuf() {
+        let hunk = make_hunk("proto/service.pb.go", vec![added("func init() {}")]);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_minified_css() {
+        let hunk = make_hunk("styles/app.min.css", vec![added(".a{color:red}")]);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_normal_js_not_skipped() {
+        let hunk = make_hunk("src/app.js", vec![added("const x = 1;")]);
+        assert!(should_skip_ai(&hunk).is_none());
+    }
+
+    #[test]
+    fn test_skip_ai_pure_deletion() {
+        let hunk = make_hunk(
+            "src/main.rs",
+            vec![
+                removed("fn old_function() {"),
+                removed("    println!(\"old\");"),
+                removed("}"),
+            ],
+        );
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_deletion_with_context_still_skipped() {
+        let hunk = make_hunk(
+            "src/main.rs",
+            vec![
+                context("fn main() {"),
+                removed("    old_line();"),
+                context("}"),
+            ],
+        );
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_modification_not_skipped() {
+        // Has both added and removed lines — this is a modification, don't skip
+        let hunk = make_hunk(
+            "src/main.rs",
+            vec![removed("let x = 1;"), added("let x = 2;")],
+        );
+        assert!(should_skip_ai(&hunk).is_none());
+    }
+
+    #[test]
+    fn test_skip_ai_lockfile_not_skipped() {
+        // Lockfiles are handled by classify_lockfile, not should_skip_ai.
+        // should_skip_ai should still return None for lockfiles since they
+        // will already be classified before reaching this check.
+        let hunk = make_hunk("Cargo.lock", vec![added("[[package]]")]);
+        // Lockfile has additions only, is a small hunk, and is not in the generated patterns
+        // (lockfiles are handled separately). So should_skip_ai returns None.
+        assert!(should_skip_ai(&hunk).is_none());
+    }
+
+    // --- Integration: skipped_hunk_ids in classify_hunks_static ---
+
+    #[test]
+    fn test_static_classify_populates_skipped_ids() {
+        let mut large_lines = Vec::new();
+        for i in 0..60 {
+            large_lines.push(added(&format!("line {i}")));
+        }
+
+        let hunks = vec![
+            make_hunk("package-lock.json", vec![added("{}")]), // classified: lockfile
+            make_hunk("src/main.rs", large_lines),             // skipped: too large
+            make_hunk("dist/app.min.js", vec![added("var a=1;")]), // skipped: generated
+            make_hunk("src/lib.rs", vec![added("let x = 1;")]), // neither: goes to AI
+        ];
+
+        let response = classify_hunks_static(&hunks);
+
+        // lockfile classified
+        assert_eq!(response.classifications.len(), 1);
+        assert!(response
+            .classifications
+            .contains_key("package-lock.json:testhash"));
+
+        // large hunk and minified file skipped
+        assert_eq!(response.skipped_hunk_ids.len(), 2);
+        assert!(response
+            .skipped_hunk_ids
+            .contains(&"src/main.rs:testhash".to_owned()));
+        assert!(response
+            .skipped_hunk_ids
+            .contains(&"dist/app.min.js:testhash".to_owned()));
     }
 }
