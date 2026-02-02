@@ -1,0 +1,66 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+BUMP="$1"
+
+if [ -z "$BUMP" ]; then
+    echo "Usage: scripts/version <minor|patch>"
+    echo "Example: scripts/version minor"
+    exit 1
+fi
+
+# Read current version from package.json
+CURRENT=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+case "$BUMP" in
+    minor)
+        MINOR=$((MINOR + 1))
+        PATCH=0
+        ;;
+    patch)
+        PATCH=$((PATCH + 1))
+        ;;
+    *)
+        echo "Error: Argument must be 'minor' or 'patch'"
+        exit 1
+        ;;
+esac
+
+VERSION="${MAJOR}.${MINOR}.${PATCH}"
+echo "Bumping version: $CURRENT -> $VERSION"
+
+# Update package.json
+sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' package.json
+
+# Update review/Cargo.toml (only the package version, not dependency versions)
+awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" ver "\""); done=1 } 1' review/Cargo.toml > review/Cargo.toml.tmp && mv review/Cargo.toml.tmp review/Cargo.toml
+
+# Update src-tauri/Cargo.toml (only the package version, not dependency versions)
+awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" ver "\""); done=1 } 1' src-tauri/Cargo.toml > src-tauri/Cargo.toml.tmp && mv src-tauri/Cargo.toml.tmp src-tauri/Cargo.toml
+
+# Update src-tauri/tauri.conf.json
+sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' src-tauri/tauri.conf.json
+
+# Update Cargo.lock
+echo "Running cargo check to update Cargo.lock..."
+cargo check --manifest-path src-tauri/Cargo.toml 2>/dev/null
+
+echo ""
+echo "Updated versions:"
+echo "  package.json:          $(grep '"version"' package.json | head -1 | xargs)"
+echo "  review/Cargo.toml:     $(grep '^version' review/Cargo.toml | head -1 | xargs)"
+echo "  src-tauri/Cargo.toml:  $(grep '^version' src-tauri/Cargo.toml | head -1 | xargs)"
+echo "  src-tauri/tauri.conf.json: $(grep '"version"' src-tauri/tauri.conf.json | xargs)"
+
+# Commit and tag
+git add package.json review/Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json Cargo.lock
+git commit -m "v$VERSION"
+git tag -m "v$VERSION" "v$VERSION"
+
+echo ""
+echo "Created commit and tag v$VERSION"
+echo ""
+echo "To publish the release:"
+echo "  git push && git push --tags"
