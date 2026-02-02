@@ -24,6 +24,7 @@ export interface NavigationSlice {
   // Navigation state
   selectedFile: string | null;
   focusedHunkIndex: number;
+  scrollDrivenNavigation: boolean;
 
   // View hierarchy: overview (home) vs browse
   topLevelView: TopLevelView;
@@ -64,6 +65,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 ) => ({
   selectedFile: null,
   focusedHunkIndex: 0,
+  scrollDrivenNavigation: false,
 
   // View hierarchy
   topLevelView: "overview" as TopLevelView,

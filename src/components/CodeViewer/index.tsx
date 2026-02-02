@@ -19,6 +19,7 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { FileContentRenderer } from "./FileContentRenderer";
 import { HunkNavigator } from "./HunkNavigator";
 import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
+import { useScrollHunkTracking } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
   isMarkdownFile,
@@ -279,6 +280,9 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     classifyingHunkIds,
     focusedHunkId,
   ]);
+
+  // Track scroll position to update HunkNavigator counter
+  useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);
 
   if (loading) {
     return (

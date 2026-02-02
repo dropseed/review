@@ -17,3 +17,4 @@ export {
   highlightCode,
 } from "./useHighlighter";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
+export { useScrollHunkTracking } from "./useScrollHunkTracking";

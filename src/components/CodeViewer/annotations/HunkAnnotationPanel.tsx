@@ -73,6 +73,7 @@ export function HunkAnnotationPanel({
 
   return (
     <div
+      data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
       className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
         isFocused ? "inset-ring-2 inset-ring-amber-500/70" : ""

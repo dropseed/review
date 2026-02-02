@@ -159,9 +159,14 @@ export function DiffView({
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, fileName);
 
-  // Scroll to focused hunk when it changes
+  // Scroll to focused hunk when it changes (skip if triggered by scroll tracking)
   useEffect(() => {
     if (focusedHunkId && focusedHunkRef.current) {
+      const { scrollDrivenNavigation } = useReviewStore.getState();
+      if (scrollDrivenNavigation) {
+        useReviewStore.setState({ scrollDrivenNavigation: false });
+        return;
+      }
       focusedHunkRef.current.scrollIntoView({
         behavior: "smooth",
         block: "center",
