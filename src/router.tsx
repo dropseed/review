@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { WelcomePage } from "./components/WelcomePage";
 import { StartScreen } from "./components/StartScreen";
+import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores";
@@ -65,6 +66,35 @@ function AppShell() {
     handleCloseRepo,
     handleSelectRepo,
   } = useRepositoryInit();
+
+  // Global Cmd+O and menu:open-repo listener so it works on every route
+  const handleOpenRepoRef = useRef(handleOpenRepo);
+  handleOpenRepoRef.current = handleOpenRepo;
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key === "o" &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement)
+      ) {
+        e.preventDefault();
+        handleOpenRepoRef.current();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+
+    const platform = getPlatformServices();
+    const unlistenMenu = platform.menuEvents.on("menu:open-repo", () => {
+      handleOpenRepoRef.current();
+    });
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      unlistenMenu();
+    };
+  }, []);
 
   useComparisonLoader(comparisonReady, setInitialLoading);
 
