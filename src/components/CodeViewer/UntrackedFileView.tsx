@@ -60,7 +60,7 @@ export function UntrackedFileView({
             + {lineCount} lines (new file)
           </span>
           {hunkState?.label && hunkState.label.length > 0 && (
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-400">
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
               {hunkState.label.join(", ")}
             </span>
           )}
@@ -70,7 +70,7 @@ export function UntrackedFileView({
             <SimpleTooltip content="Click to unapprove">
               <button
                 onClick={() => unapproveHunk(hunk.id)}
-                className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-400 transition-all hover:bg-lime-500/25"
+                className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-300 transition-all hover:bg-lime-500/25"
               >
                 <svg
                   className="h-3.5 w-3.5"
@@ -92,7 +92,7 @@ export function UntrackedFileView({
             <SimpleTooltip content="Click to clear rejection">
               <button
                 onClick={() => unrejectHunk(hunk.id)}
-                className="group flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/25"
+                className="group flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-xs font-medium text-rose-300 transition-all hover:bg-rose-500/25"
               >
                 <svg
                   className="h-3.5 w-3.5"

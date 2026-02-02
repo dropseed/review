@@ -55,22 +55,6 @@ function ChevronIcon({ className }: { className?: string }) {
   );
 }
 
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
-
 export function TrustSection() {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -87,6 +71,11 @@ export function TrustSection() {
   const setClassificationsModalOpen = useReviewStore(
     (s) => s.setClassificationsModalOpen,
   );
+  const autoClassifyEnabled = useReviewStore((s) => s.autoClassifyEnabled);
+  const setAutoClassifyEnabled = useReviewStore(
+    (s) => s.setAutoClassifyEnabled,
+  );
+  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
   const [taxonomyLoading, setTaxonomyLoading] = useState(false);
@@ -206,11 +195,7 @@ export function TrustSection() {
           <CollapsibleTrigger asChild>
             <button className="group flex items-center w-full gap-3 px-3.5 py-3 text-left bg-sage-500/[.12] hover:bg-sage-500/[.18] transition-colors border-b border-sage-500/10">
               {/* Shield icon */}
-              <div
-                className={`flex items-center justify-center transition-colors ${
-                  classifying ? "text-amber-400" : "text-sage-400"
-                }`}
-              >
+              <div className="flex items-center justify-center text-sage-400 transition-colors">
                 {classifying ? (
                   <SpinnerIcon className="h-4 w-4 animate-spin" />
                 ) : (
@@ -232,18 +217,14 @@ export function TrustSection() {
                 </div>
                 <p className="text-xs mt-0.5">
                   {taxonomyLoading ? (
-                    <span className="text-stone-500">Loading patterns...</span>
+                    <span className="text-stone-400">Loading patterns...</span>
                   ) : classifying ? (
-                    <span className="text-amber-400/70">
-                      Classifying hunks...
-                    </span>
+                    <span className="text-sage-400">Classifying hunks...</span>
                   ) : allClassified ? (
                     <>
-                      <span className="text-sage-400/[.55]">
-                        All classified
-                      </span>
+                      <span className="text-sage-400">All classified</span>
                       {trustedHunkCount > 0 && (
-                        <span className="text-sage-400/[.45]">
+                        <span className="text-sage-400/70">
                           {" "}
                           &middot; {trustedHunkCount} hunk
                           {trustedHunkCount !== 1 ? "s" : ""} auto-approved
@@ -251,7 +232,7 @@ export function TrustSection() {
                       )}
                     </>
                   ) : (
-                    <span className="text-amber-400/60">
+                    <span className="text-stone-400">
                       {unlabeledCount} unclassified hunk
                       {unlabeledCount !== 1 ? "s" : ""}
                     </span>
@@ -259,24 +240,9 @@ export function TrustSection() {
                 </p>
               </div>
 
-              {/* Classify quick-action */}
-              <div
-                className="flex items-center gap-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {unlabeledCount > 0 && !classifying && (
-                  <button
-                    onClick={() => classifyUnlabeledHunks()}
-                    className="rounded-md bg-sage-500/20 px-2.5 py-1 text-xs text-sage-300 hover:bg-sage-500/30 hover:text-sage-200 transition-colors"
-                  >
-                    Classify
-                  </button>
-                )}
-              </div>
-
               {/* Chevron */}
               <ChevronIcon
-                className={`h-4 w-4 text-sage-500/40 transition-transform duration-200 group-hover:text-sage-500/60 ${
+                className={`h-4 w-4 text-sage-500/50 transition-transform duration-200 group-hover:text-sage-500/70 ${
                   isExpanded ? "rotate-90" : ""
                 }`}
               />
@@ -292,45 +258,6 @@ export function TrustSection() {
 
           {/* ── Expanded content (neutral interior) ── */}
           <CollapsibleContent>
-            {/* Classification controls strip */}
-            <div className="flex items-center gap-3 px-3.5 py-2.5 bg-stone-900/50 border-b border-stone-800/60">
-              <div className="flex items-center gap-2 flex-1 text-2xs">
-                {classifying ? (
-                  <span className="flex items-center gap-1.5 text-amber-400/70">
-                    <SpinnerIcon className="h-3 w-3 animate-spin" />
-                    Classifying...
-                  </span>
-                ) : allClassified ? (
-                  <span className="flex items-center gap-1 text-stone-500">
-                    <CheckIcon className="h-3 w-3" />
-                    All classified
-                  </span>
-                ) : (
-                  <span className="text-stone-500 tabular-nums">
-                    {unlabeledCount} unclassified
-                  </span>
-                )}
-              </div>
-
-              {unlabeledCount > 0 && !classifying && (
-                <button
-                  onClick={() => classifyUnlabeledHunks()}
-                  className="text-2xs text-stone-500 hover:text-stone-300 transition-colors whitespace-nowrap"
-                >
-                  Classify now
-                </button>
-              )}
-              {allClassified && (
-                <button
-                  onClick={() => reclassifyHunks()}
-                  disabled={classifying}
-                  className="text-2xs text-stone-500 hover:text-stone-300 transition-colors disabled:opacity-50 whitespace-nowrap"
-                >
-                  Reclassify
-                </button>
-              )}
-            </div>
-
             {/* Loading state */}
             {taxonomyLoading && (
               <div className="flex items-center justify-center py-6 text-stone-500">
@@ -338,6 +265,77 @@ export function TrustSection() {
                 <span className="text-xs">Loading patterns...</span>
               </div>
             )}
+
+            {/* Actions toolbar */}
+            <div className="flex items-center flex-wrap gap-2 px-3.5 py-2.5 border-b border-stone-800/60">
+              {unlabeledCount > 0 && !classifying && (
+                <button
+                  onClick={() => classifyUnlabeledHunks()}
+                  className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
+                >
+                  Classify {unlabeledCount} unclassified
+                </button>
+              )}
+              {classifying && (
+                <span className="flex items-center gap-1.5 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50">
+                  <SpinnerIcon className="h-3 w-3 animate-spin" />
+                  Classifying...
+                </span>
+              )}
+              {allClassified && !classifying && (
+                <button
+                  onClick={() => reclassifyHunks()}
+                  className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
+                >
+                  Reclassify
+                </button>
+              )}
+              {totalPatterns > 0 && (
+                <button
+                  onClick={() =>
+                    allTrusted ? setTrustList([]) : setTrustList(allPatternIds)
+                  }
+                  className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+                >
+                  {allTrusted ? "Untrust all" : "Trust all"}
+                </button>
+              )}
+              <div className="flex-1" />
+              {!claudeAvailable ? (
+                <SimpleTooltip content="Claude CLI not found. Install it to enable AI classification.">
+                  <span className="flex items-center gap-1.5 rounded-md bg-stone-800/50 px-2.5 py-1 text-2xs text-stone-500 inset-ring-1 inset-ring-stone-700/40">
+                    Auto-classify unavailable
+                  </span>
+                </SimpleTooltip>
+              ) : !autoClassifyEnabled ? (
+                <SimpleTooltip content="Auto-classify is off. Click to enable.">
+                  <button
+                    onClick={() => setAutoClassifyEnabled(true)}
+                    className="flex items-center gap-1.5 rounded-md bg-stone-800/50 px-2.5 py-1 text-2xs text-stone-500 inset-ring-1 inset-ring-stone-700/40 hover:bg-stone-800/80 hover:text-stone-300 transition-colors"
+                  >
+                    Auto-classify off
+                  </button>
+                </SimpleTooltip>
+              ) : null}
+              <button
+                onClick={() => setClassificationsModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+              >
+                <svg
+                  className="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+                Browse Classifications
+              </button>
+            </div>
 
             {/* Category grid */}
             <div className="divide-y divide-stone-800/60">
@@ -363,7 +361,7 @@ export function TrustSection() {
                         </span>
                       )}
                       {categoryTotalCount > 0 && (
-                        <span className="text-xxs text-stone-600 tabular-nums">
+                        <span className="text-xxs text-stone-500 tabular-nums">
                           {categoryTotalCount} hunk
                           {categoryTotalCount !== 1 ? "s" : ""}
                         </span>
@@ -431,39 +429,6 @@ export function TrustSection() {
                   </div>
                 );
               })}
-            </div>
-
-            {/* Footer actions */}
-            <div className="flex items-center gap-2 px-3.5 py-2.5 border-t border-stone-800/60">
-              {totalPatterns > 0 && (
-                <button
-                  onClick={() =>
-                    allTrusted ? setTrustList([]) : setTrustList(allPatternIds)
-                  }
-                  className="text-2xs text-stone-500 hover:text-stone-300 transition-colors"
-                >
-                  {allTrusted ? "Untrust all" : "Trust all"}
-                </button>
-              )}
-              <div className="flex-1" />
-              <button
-                onClick={() => setClassificationsModalOpen(true)}
-                className="flex items-center gap-1.5 text-2xs text-stone-500 hover:text-stone-300 transition-colors"
-              >
-                <svg
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                  <line x1="7" y1="7" x2="7.01" y2="7" />
-                </svg>
-                Browse Classifications
-              </button>
             </div>
           </CollapsibleContent>
         </div>

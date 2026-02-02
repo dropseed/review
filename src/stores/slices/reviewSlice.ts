@@ -77,6 +77,7 @@ export interface ReviewSlice {
     lineNumber: number,
     side: "old" | "new" | "file",
     content: string,
+    endLineNumber?: number,
   ) => string;
   updateAnnotation: (annotationId: string, content: string) => void;
   deleteAnnotation: (annotationId: string) => void;
@@ -342,7 +343,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       debouncedSave(saveReviewState);
     },
 
-    addAnnotation: (filePath, lineNumber, side, content) => {
+    addAnnotation: (filePath, lineNumber, side, content, endLineNumber?) => {
       const { reviewState, saveReviewState } = get();
       if (!reviewState) return "";
 
@@ -351,6 +352,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         id,
         filePath,
         lineNumber,
+        ...(endLineNumber != null && endLineNumber !== lineNumber
+          ? { endLineNumber }
+          : {}),
         side,
         content,
         createdAt: new Date().toISOString(),

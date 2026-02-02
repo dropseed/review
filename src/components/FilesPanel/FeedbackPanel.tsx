@@ -1,6 +1,6 @@
 import type { LineAnnotation } from "../../types";
-import { Textarea } from "../ui/textarea";
 import { SimpleTooltip } from "../ui/tooltip";
+import { Textarea } from "../ui/textarea";
 
 // Annotation list item with refined hover states
 function AnnotationItem({
@@ -35,6 +35,7 @@ function AnnotationItem({
             </svg>
             <span className="text-xxs font-mono text-amber-400/90 truncate tabular-nums">
               {annotation.filePath}:{annotation.lineNumber}
+              {annotation.endLineNumber ? `-${annotation.endLineNumber}` : ""}
             </span>
           </div>
           <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
@@ -67,18 +68,28 @@ function AnnotationItem({
   );
 }
 
+interface RejectedHunkItem {
+  filePath: string;
+  lineRange: string;
+  hunkId: string;
+}
+
 interface FeedbackPanelProps {
   notes: string;
   onNotesChange: (notes: string) => void;
+  rejectedHunks: RejectedHunkItem[];
+  onGoToRejectedHunk: (filePath: string) => void;
   annotations: LineAnnotation[];
   onGoToAnnotation: (annotation: LineAnnotation) => void;
   onDeleteAnnotation: (annotationId: string) => void;
 }
 
-// Feedback panel - shows notes textarea and line annotations list
+// Feedback panel - shows notes textarea, rejected hunks, and line annotations list
 export function FeedbackPanel({
   notes,
   onNotesChange,
+  rejectedHunks,
+  onGoToRejectedHunk,
   annotations,
   onGoToAnnotation,
   onDeleteAnnotation,
@@ -124,6 +135,62 @@ export function FeedbackPanel({
         </div>
       </div>
 
+      {/* Rejected hunks section */}
+      {rejectedHunks.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <svg
+              className="h-3.5 w-3.5 text-rose-500/70"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+              />
+            </svg>
+            <label className="text-xxs font-medium text-stone-400 uppercase tracking-wide">
+              Changes Requested
+            </label>
+            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-rose-500/15 text-rose-300">
+              {rejectedHunks.length}
+            </span>
+          </div>
+          <div className="max-h-40 overflow-y-auto scrollbar-thin space-y-1.5 -mx-0.5 px-0.5">
+            {rejectedHunks.map((item) => (
+              <SimpleTooltip key={item.hunkId} content="Go to this change">
+                <button
+                  onClick={() => onGoToRejectedHunk(item.filePath)}
+                  className="w-full text-left p-2.5 min-w-0 rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-rose-500/30 hover:bg-stone-800/40 transition-all duration-150 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-rose-500/50"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <svg
+                      className="h-3 w-3 text-rose-500/70 flex-shrink-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                    <span className="text-xxs font-mono text-rose-400/90 truncate tabular-nums">
+                      {item.filePath}:{item.lineRange}
+                    </span>
+                  </div>
+                </button>
+              </SimpleTooltip>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Line comments section */}
       {annotations.length > 0 && (
         <div className="space-y-2">
@@ -144,7 +211,7 @@ export function FeedbackPanel({
             <label className="text-xxs font-medium text-stone-400 uppercase tracking-wide">
               Line Comments
             </label>
-            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-amber-500/15 text-amber-400/90">
+            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-amber-500/15 text-amber-300">
               {annotations.length}
             </span>
           </div>
@@ -162,7 +229,7 @@ export function FeedbackPanel({
       )}
 
       {/* Empty state when no feedback */}
-      {!notes && annotations.length === 0 && (
+      {!notes && rejectedHunks.length === 0 && annotations.length === 0 && (
         <div className="py-2 text-center">
           <p className="text-xxs text-stone-600 italic">
             Add notes or click lines in the diff to comment

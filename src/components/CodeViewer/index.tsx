@@ -379,8 +379,8 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
 
     const isComplete = reviewProgress.reviewed === reviewProgress.total;
     const badgeClass = isComplete
-      ? "bg-lime-500/15 text-lime-400"
-      : "bg-amber-500/15 text-amber-400";
+      ? "bg-lime-500/15 text-lime-300"
+      : "bg-amber-500/15 text-amber-300";
 
     return (
       <>
@@ -393,7 +393,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
           <SimpleTooltip content="Approve all hunks in this file">
             <button
               onClick={() => approveAllFileHunks(filePath)}
-              className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors"
+              className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-300 hover:bg-lime-500/20 transition-colors"
             >
               Approve All
             </button>

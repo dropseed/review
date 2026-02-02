@@ -21,6 +21,12 @@ pub struct LineAnnotation {
     pub file_path: String,
     #[serde(rename = "lineNumber")]
     pub line_number: u32,
+    #[serde(
+        rename = "endLineNumber",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub end_line_number: Option<u32>,
     pub side: AnnotationSide,
     pub content: String,
     #[serde(rename = "createdAt")]

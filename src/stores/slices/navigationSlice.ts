@@ -54,6 +54,13 @@ export interface NavigationSlice {
   closeSplit: () => void;
   swapPanes: () => void;
 
+  // Pending comment (set by reject, consumed by DiffView)
+  pendingCommentHunkId: string | null;
+  setPendingCommentHunkId: (hunkId: string | null) => void;
+
+  // Advance to next hunk within the same file
+  nextHunkInFile: () => void;
+
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
@@ -189,6 +196,23 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   },
 
   closeSplit: () => set({ secondaryFile: null, focusedPane: "primary" }),
+
+  // Pending comment
+  pendingCommentHunkId: null,
+  setPendingCommentHunkId: (hunkId) => set({ pendingCommentHunkId: hunkId }),
+
+  // Advance to next hunk within the same file
+  nextHunkInFile: () => {
+    const { hunks, focusedHunkIndex } = get();
+    if (hunks.length === 0) return;
+    const currentHunk = hunks[focusedHunkIndex];
+    if (!currentHunk) return;
+    const nextIndex = focusedHunkIndex + 1;
+    const nextHunk = hunks[nextIndex];
+    if (nextHunk && nextHunk.filePath === currentHunk.filePath) {
+      set({ focusedHunkIndex: nextIndex });
+    }
+  },
 
   // Modal state
   classificationsModalOpen: false,

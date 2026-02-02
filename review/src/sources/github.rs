@@ -37,6 +37,8 @@ pub struct PullRequest {
     pub url: String,
     pub author: PrAuthor,
     pub state: String,
+    #[serde(default)]
+    pub is_draft: bool,
     pub updated_at: String,
     #[serde(default)]
     pub body: String,
@@ -113,7 +115,7 @@ impl GitHubProvider for GhCliProvider {
                 "pr",
                 "list",
                 "--json",
-                "number,title,headRefName,baseRefName,url,author,state,updatedAt,body",
+                "number,title,headRefName,baseRefName,url,author,state,isDraft,updatedAt,body",
             ])
             .current_dir(&self.repo_path)
             .output()

@@ -9,6 +9,8 @@ import type {
 } from "../../types";
 import { isHunkTrusted } from "../../types";
 
+export { SymbolRow, StatusToggle } from "./SymbolRow";
+
 // --- Symbol kind icons ---
 
 const SYMBOL_ICONS: Record<SymbolKind, { label: string; color: string }> = {

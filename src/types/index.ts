@@ -149,6 +149,7 @@ export interface PullRequest {
   url: string;
   author: { login: string };
   state: string;
+  isDraft: boolean;
   updatedAt: string;
   body: string;
 }
@@ -297,6 +298,7 @@ export interface LineAnnotation {
   id: string;
   filePath: string;
   lineNumber: number;
+  endLineNumber?: number; // if set, annotation covers lineNumber..endLineNumber
   side: "old" | "new" | "file"; // which version of the file (old=deletion side, new=addition side, file=full file view)
   content: string;
   createdAt: string;

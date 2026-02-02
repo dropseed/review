@@ -38,6 +38,10 @@ export function useKeyboardNavigation({
   const prevHunk = useReviewStore((s) => s.prevHunk);
   const approveHunk = useReviewStore((s) => s.approveHunk);
   const rejectHunk = useReviewStore((s) => s.rejectHunk);
+  const setPendingCommentHunkId = useReviewStore(
+    (s) => s.setPendingCommentHunkId,
+  );
+  const nextHunkInFile = useReviewStore((s) => s.nextHunkInFile);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
@@ -90,11 +94,12 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Cmd/Ctrl+R to open symbol search
+      // Cmd/Ctrl+R to open symbol search (only when viewing a file)
       if (
         (event.metaKey || event.ctrlKey) &&
         !event.shiftKey &&
-        event.key === "r"
+        event.key === "r" &&
+        topLevelView === "browse"
       ) {
         event.preventDefault();
         setShowSymbolSearch(true);
@@ -204,19 +209,18 @@ export function useKeyboardNavigation({
           prevHunk();
           break;
         case "a":
-          // Approve focused hunk
-          if (hunks.length > 0 && focusedHunkIndex < hunks.length) {
-            const focusedHunk = hunks[focusedHunkIndex];
+        case "r": {
+          const focusedHunk = hunks[focusedHunkIndex];
+          if (!focusedHunk) break;
+          if (event.key === "a") {
             approveHunk(focusedHunk.id);
-          }
-          break;
-        case "r":
-          // Reject focused hunk
-          if (hunks.length > 0 && focusedHunkIndex < hunks.length) {
-            const focusedHunk = hunks[focusedHunkIndex];
+            nextHunkInFile();
+          } else {
             rejectHunk(focusedHunk.id);
+            setPendingCommentHunkId(focusedHunk.id);
           }
           break;
+        }
         case "ArrowDown":
           if (event.metaKey || event.ctrlKey) {
             nextFile();
@@ -240,6 +244,8 @@ export function useKeyboardNavigation({
       focusedHunkIndex,
       approveHunk,
       rejectHunk,
+      setPendingCommentHunkId,
+      nextHunkInFile,
       handleOpenRepo,
       onBack,
       codeFontSize,

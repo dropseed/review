@@ -2,6 +2,7 @@ import {
   useState,
   useMemo,
   useEffect,
+  useCallback,
   useRef,
   Component,
   ReactNode,
@@ -43,6 +44,33 @@ export class DiffErrorBoundary extends Component<
     }
     return this.props.children;
   }
+}
+
+/** Returns true if a hunk contains only deletions (source of a move). */
+function isDeletionOnly(hunk: DiffHunk): boolean {
+  return (
+    hunk.lines.every((l) => l.type === "removed" || l.type === "context") &&
+    hunk.lines.some((l) => l.type === "removed")
+  );
+}
+
+/**
+ * Returns the first changed line in a hunk with its side and line number.
+ * Used to position comment editors when rejecting or commenting on a hunk.
+ */
+function getFirstChangedLine(hunk: DiffHunk): {
+  lineNumber: number;
+  side: "old" | "new";
+} {
+  const firstChanged = hunk.lines.find(
+    (l) => l.type === "added" || l.type === "removed",
+  );
+  const side: "old" | "new" = firstChanged?.type === "removed" ? "old" : "new";
+  const lineNumber =
+    side === "old"
+      ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
+      : (firstChanged?.newLineNumber ?? hunk.newStart);
+  return { lineNumber, side };
 }
 
 // Metadata for hunk annotations
@@ -160,6 +188,11 @@ export function DiffView({
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
+  const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
+  const setPendingCommentHunkId = useReviewStore(
+    (s) => s.setPendingCommentHunkId,
+  );
+  const nextHunkInFile = useReviewStore((s) => s.nextHunkInFile);
 
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
@@ -189,23 +222,29 @@ export function DiffView({
   );
   const [newAnnotationLine, setNewAnnotationLine] = useState<{
     lineNumber: number;
+    endLineNumber?: number;
     side: "old" | "new";
     hunkId: string;
   } | null>(null);
 
-  // Get the file path from the first hunk
+  // Watch for pending comment requests (from keyboard reject)
+  useEffect(() => {
+    if (!pendingCommentHunkId) return;
+    const targetHunk = hunks.find((h) => h.id === pendingCommentHunkId);
+    if (!targetHunk) return;
+    if (newAnnotationLine) return;
+
+    const { lineNumber, side } = getFirstChangedLine(targetHunk);
+    setNewAnnotationLine({ lineNumber, side, hunkId: pendingCommentHunkId });
+    setPendingCommentHunkId(null);
+  }, [pendingCommentHunkId, hunks, newAnnotationLine, setPendingCommentHunkId]);
+
   const filePath = hunks[0]?.filePath ?? "";
 
-  // Get annotations for this file
-  const annotations = reviewState?.annotations ?? [];
   const fileAnnotations = useMemo(() => {
-    return annotations.filter((a) => a.filePath === filePath);
-  }, [annotations, filePath]);
-
-  // Helper to determine if hunk is deletion-only (source of move)
-  const isDeletionOnly = (hunk: DiffHunk) =>
-    hunk.lines.every((l) => l.type === "removed" || l.type === "context") &&
-    hunk.lines.some((l) => l.type === "removed");
+    const all = reviewState?.annotations ?? [];
+    return all.filter((a) => a.filePath === filePath);
+  }, [reviewState?.annotations, filePath]);
 
   const hunkStates = reviewState?.hunks;
 
@@ -261,7 +300,7 @@ export function DiffView({
           annotation.side === "old"
             ? ("deletions" as const)
             : ("additions" as const),
-        lineNumber: annotation.lineNumber,
+        lineNumber: annotation.endLineNumber ?? annotation.lineNumber,
         metadata: { type: "user" as const, data: { annotation } },
       })),
     [fileAnnotations],
@@ -279,7 +318,8 @@ export function DiffView({
                 newAnnotationLine.side === "old"
                   ? ("deletions" as const)
                   : ("additions" as const),
-              lineNumber: newAnnotationLine.lineNumber,
+              lineNumber:
+                newAnnotationLine.endLineNumber ?? newAnnotationLine.lineNumber,
               metadata: { type: "new" as const, data: {} },
             } satisfies DiffLineAnnotation<AnnotationMeta>,
           ]
@@ -309,8 +349,20 @@ export function DiffView({
       newAnnotationLine.lineNumber,
       newAnnotationLine.side,
       content,
+      newAnnotationLine.endLineNumber,
     );
+    const commentHunkId = newAnnotationLine.hunkId;
     setNewAnnotationLine(null);
+    // Auto-advance if this comment was attached to a rejected hunk
+    // (skip for hover/selection comments which aren't hunk-specific)
+    const isHunkComment =
+      commentHunkId !== "hover" && commentHunkId !== "selection";
+    if (
+      isHunkComment &&
+      reviewState?.hunks[commentHunkId]?.status === "rejected"
+    ) {
+      nextHunkInFile();
+    }
   };
 
   // Render annotation for each type
@@ -359,9 +411,19 @@ export function DiffView({
             trustList={reviewState?.trustList ?? []}
             classifyingHunkIds={classifyingHunkIds}
             claudeAvailable={claudeAvailable}
-            onApprove={approveHunk}
+            onApprove={(hunkId) => {
+              approveHunk(hunkId);
+              nextHunkInFile();
+            }}
             onUnapprove={unapproveHunk}
-            onReject={rejectHunk}
+            onReject={(hunkId) => {
+              rejectHunk(hunkId);
+              const targetHunk = hunks.find((h) => h.id === hunkId);
+              if (targetHunk && !newAnnotationLine) {
+                const { lineNumber, side } = getFirstChangedLine(targetHunk);
+                setNewAnnotationLine({ lineNumber, side, hunkId });
+              }
+            }}
             onUnreject={unrejectHunk}
             onJumpToPair={handleJumpToPair}
             onComment={(lineNumber, side, hunkId) =>
@@ -440,6 +502,52 @@ export function DiffView({
       ? "none"
       : prefLineDiffType;
 
+  // Generate CSS to subtly highlight lines covered by annotations.
+  // Injected into the shadow DOM via unsafeCSS so annotated line ranges
+  // stay visually connected to the comment rendered below them.
+  const annotationHighlightCSS = useMemo(() => {
+    if (fileAnnotations.length === 0) return "";
+    const lineSelectors: string[] = [];
+    for (const a of fileAnnotations) {
+      const end = a.endLineNumber ?? a.lineNumber;
+      for (let line = a.lineNumber; line <= end; line++) {
+        lineSelectors.push(`[data-line="${line}"]`);
+      }
+    }
+    if (lineSelectors.length === 0) return "";
+    const selector = [...new Set(lineSelectors)].join(", ");
+    return `
+      :is(${selector}) > [data-column-content] {
+        background-image: linear-gradient(to right, rgba(245, 158, 11, 0.07), rgba(245, 158, 11, 0.03)) !important;
+      }
+      :is(${selector}) > [data-column-number]:last-of-type {
+        box-shadow: inset -2px 0 0 rgba(245, 158, 11, 0.35);
+      }
+    `;
+  }, [fileAnnotations]);
+
+  // Track line selection for range commenting.
+  // Use onLineSelectionEnd (fires on pointerup) instead of onLineSelected
+  // (fires on every drag move) to avoid mid-drag re-renders that disrupt
+  // the selection. Only open the annotation editor for multi-line ranges —
+  // single-line comments are handled by the hover "+" button.
+  const handleLineSelectionEnd = useCallback(
+    (range: { start: number; end: number; side?: string } | null) => {
+      if (!range) return;
+      const start = Math.min(range.start, range.end);
+      const end = Math.max(range.start, range.end);
+      if (start === end) return; // single line — use hover button instead
+      const side: "old" | "new" = range.side === "deletions" ? "old" : "new";
+      setNewAnnotationLine({
+        lineNumber: start,
+        endLineNumber: end,
+        side,
+        hunkId: "selection",
+      });
+    },
+    [],
+  );
+
   const diffOptions = useMemo(
     () => ({
       diffStyle: viewMode,
@@ -451,7 +559,9 @@ export function DiffView({
       diffIndicators: prefDiffIndicators,
       disableBackground: false,
       enableHoverUtility: true,
-      unsafeCSS: fontSizeCSS,
+      enableLineSelection: true,
+      onLineSelectionEnd: handleLineSelectionEnd,
+      unsafeCSS: fontSizeCSS + annotationHighlightCSS,
       expandUnchanged: true,
       expansionLineCount: 20,
       hunkSeparators: "line-info" as const,
@@ -460,7 +570,15 @@ export function DiffView({
       maxLineDiffLength: 500, // Skip word-level diff for long lines
       lineDiffType, // Adaptive based on file type/size, user preference as default
     }),
-    [viewMode, theme, prefDiffIndicators, fontSizeCSS, lineDiffType],
+    [
+      viewMode,
+      theme,
+      prefDiffIndicators,
+      fontSizeCSS,
+      annotationHighlightCSS,
+      lineDiffType,
+      handleLineSelectionEnd,
+    ],
   );
 
   const renderHoverUtility = (
@@ -468,14 +586,16 @@ export function DiffView({
       | { lineNumber: number; side: "additions" | "deletions" }
       | undefined,
   ) => {
-    const hoveredLine = getHoveredLine();
-    if (!hoveredLine) return null;
-
+    // Always render the button — the shadow DOM controls visibility by
+    // moving the slot container to the hovered line. Call getHoveredLine()
+    // at click time (not render time) to get the current line.
     return (
       <SimpleTooltip content="Add comment">
         <button
           className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
           onClick={() => {
+            const hoveredLine = getHoveredLine();
+            if (!hoveredLine) return;
             setNewAnnotationLine({
               lineNumber: hoveredLine.lineNumber,
               side: hoveredLine.side === "additions" ? "new" : "old",

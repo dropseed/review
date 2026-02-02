@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { ExportModal } from "../ExportModal";
 import { CommitsPanel } from "../CommitsPanel";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
@@ -78,9 +77,9 @@ function SectionHeader({
   children: React.ReactNode;
 }) {
   const badgeColors = {
-    amber: "bg-amber-500/20 text-amber-400",
-    lime: "bg-lime-500/20 text-lime-400",
-    cyan: "bg-cyan-500/20 text-cyan-400",
+    amber: "bg-amber-500/20 text-amber-300",
+    lime: "bg-lime-500/20 text-lime-300",
+    cyan: "bg-cyan-500/20 text-cyan-300",
   };
 
   const checkIcon = (
@@ -292,7 +291,7 @@ function CollapsibleSection({
               </svg>
               <span className="flex-1">{title}</span>
               {badge !== undefined && badge > 0 && (
-                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400 tabular-nums">
+                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-300 tabular-nums">
                   {badge}
                 </span>
               )}
@@ -406,15 +405,17 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     annotations,
     setReviewNotes,
     deleteAnnotation,
-    notesOpen,
-    setNotesOpen,
-    showExportModal,
-    setShowExportModal,
+    feedbackOpen,
+    setFeedbackOpen,
     hasFeedbackToExport,
     handleGoToAnnotation,
+    rejectedHunks: feedbackRejectedHunks,
+    copied,
+    copyFeedbackToClipboard,
   } = useFilePanelFeedback({
     reviewState,
     rejectedCount: stats.rejected,
+    hunks,
   });
 
   // Section-level bulk approve/unapprove
@@ -585,18 +586,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   return (
     <ReviewDataProvider value={reviewDataContextValue}>
-      {reviewState && (
-        <ExportModal
-          isOpen={showExportModal}
-          onClose={() => setShowExportModal(false)}
-          comparison={reviewState.comparison}
-          hunks={hunks}
-          hunkStates={reviewState.hunks}
-          annotations={reviewState.annotations ?? []}
-          notes={reviewState.notes}
-        />
-      )}
-
       <div className="flex h-full flex-col">
         {/* View mode toggle - always show all three tabs */}
         <div className="border-b border-stone-800 px-3 py-2">
@@ -944,13 +933,17 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             {/* Feedback (Notes + Annotations) */}
             <CollapsibleSection
               title="Feedback"
-              badge={annotations.length}
-              isOpen={notesOpen}
-              onToggle={() => setNotesOpen(!notesOpen)}
+              badge={feedbackRejectedHunks.length + annotations.length}
+              isOpen={feedbackOpen}
+              onToggle={() => setFeedbackOpen(!feedbackOpen)}
             >
               <FeedbackPanel
                 notes={notes}
                 onNotesChange={setReviewNotes}
+                rejectedHunks={feedbackRejectedHunks}
+                onGoToRejectedHunk={(filePath) =>
+                  handleGoToAnnotation({ filePath })
+                }
                 annotations={annotations}
                 onGoToAnnotation={handleGoToAnnotation}
                 onDeleteAnnotation={deleteAnnotation}
@@ -961,23 +954,48 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             {hasFeedbackToExport && (
               <div className="border-t border-stone-800 p-3">
                 <button
-                  onClick={() => setShowExportModal(true)}
-                  className="btn w-full text-xs bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
+                  onClick={copyFeedbackToClipboard}
+                  className={`btn w-full text-xs transition-all ${
+                    copied
+                      ? "bg-lime-500/15 text-lime-400 border border-lime-500/25"
+                      : "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20"
+                  }`}
                 >
-                  <svg
-                    className="h-3.5 w-3.5 mr-1.5 inline-block"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                    />
-                  </svg>
-                  Export Feedback
+                  {copied ? (
+                    <>
+                      <svg
+                        className="h-3.5 w-3.5 mr-1.5 inline-block"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="h-3.5 w-3.5 mr-1.5 inline-block"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                      Copy Feedback
+                    </>
+                  )}
                 </button>
               </div>
             )}

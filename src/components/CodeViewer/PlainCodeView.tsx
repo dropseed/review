@@ -177,17 +177,20 @@ export function PlainCodeView({
 
   // Render hover utility for adding annotations
   // For file view, the callback returns { lineNumber } without side
+  // Always render the button — the shadow DOM controls visibility by
+  // moving the slot container to the hovered line.
   const renderHoverUtility = (
     getHoveredLine: () => { lineNumber: number } | undefined,
   ) => {
-    const hoveredLine = getHoveredLine();
-    if (!hoveredLine || !onAddAnnotation) return null;
+    if (!onAddAnnotation) return null;
 
     return (
       <SimpleTooltip content="Add comment">
         <button
           className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
           onClick={() => {
+            const hoveredLine = getHoveredLine();
+            if (!hoveredLine) return;
             setNewAnnotationLine(hoveredLine.lineNumber);
           }}
           aria-label="Add comment"

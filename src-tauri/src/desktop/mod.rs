@@ -127,7 +127,10 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?;
 
-            let refresh = MenuItemBuilder::new("Refresh").id("refresh").build(app)?;
+            let refresh = MenuItemBuilder::new("Refresh")
+                .id("refresh")
+                .accelerator("CmdOrCtrl+Shift+R")
+                .build(app)?;
 
             let actual_size = MenuItemBuilder::new("Actual Size")
                 .id("actual_size")

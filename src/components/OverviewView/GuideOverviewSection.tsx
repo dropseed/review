@@ -17,7 +17,6 @@ export function GuideOverviewSection() {
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const narrative = reviewState?.narrative;
-  const prBody = reviewState?.comparison?.githubPr?.body;
   const hasNarrative = !!narrative?.content;
   const stale = useMemo(
     () => (hasNarrative ? isNarrativeStale() : false),
@@ -28,7 +27,6 @@ export function GuideOverviewSection() {
     [hasNarrative, isNarrativeIrrelevant],
   );
   const showNarrative = hasNarrative && !irrelevant;
-  const hasContent = showNarrative || !!prBody;
 
   const handleNavigate = useCallback(
     (filePath: string, hunkId?: string) => {
@@ -82,17 +80,27 @@ export function GuideOverviewSection() {
     [handleNavigate],
   );
 
-  // Hide section if no content and no ability to generate
-  if (!hasContent && !narrativeGenerating && claudeAvailable === false)
-    return null;
+  const showNarrativeSection =
+    showNarrative || narrativeGenerating || claudeAvailable !== false;
+
+  if (!showNarrativeSection) return null;
 
   return (
-    <div className="px-4 mb-4">
-      {hasContent && (
+    <div className="px-4 mb-6">
+      {showNarrative ? (
         <div className="rounded-lg border border-stone-800 overflow-hidden">
-          <div className="px-4 py-3 space-y-3">
-            {/* PR Description */}
-            {prBody && (
+          <div className="px-4 py-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
+                  AI Walkthrough
+                </div>
+                {stale && (
+                  <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
+                    outdated
+                  </span>
+                )}
+              </div>
               <div className="guide-prose text-stone-300">
                 <Markdown
                   remarkPlugins={[remarkGfm]}
@@ -101,55 +109,92 @@ export function GuideOverviewSection() {
                   }
                   components={markdownComponents}
                 >
-                  {prBody}
+                  {narrative!.content}
                 </Markdown>
               </div>
-            )}
+            </div>
+          </div>
 
-            {/* Separator */}
-            {prBody && showNarrative && (
-              <div className="border-t border-stone-800" />
-            )}
+          {/* Regenerate bar when stale */}
+          {stale && !narrativeGenerating && (
+            <div className="flex items-center gap-2 px-4 py-2 border-t border-stone-800 bg-stone-900/50">
+              <SimpleTooltip content="Changes have been updated since the narrative was generated">
+                <button
+                  onClick={generateNarrative}
+                  className="text-2xs text-amber-400/70 hover:text-amber-400 transition-colors"
+                >
+                  Regenerate narrative
+                </button>
+              </SimpleTooltip>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Empty / generating state card */
+        <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
+          <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
+            {/* Icon */}
+            <div className="flex items-center justify-center text-stone-400">
+              {narrativeGenerating ? (
+                <svg
+                  className="h-4 w-4 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              )}
+            </div>
 
-            {/* Narrative content */}
-            {showNarrative && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
-                    AI Walkthrough
-                  </div>
-                  {stale && (
-                    <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
-                      outdated
-                    </span>
-                  )}
-                </div>
-                <div className="guide-prose text-stone-300">
-                  <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    urlTransform={(url) =>
-                      url.startsWith("review://")
-                        ? url
-                        : defaultUrlTransform(url)
-                    }
-                    components={markdownComponents}
-                  >
-                    {narrative!.content}
-                  </Markdown>
-                </div>
-              </div>
+            {/* Title + subtitle */}
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-stone-300">
+                Narrative
+              </span>
+              <p className="text-xs text-stone-500 mt-0.5">
+                {narrativeGenerating
+                  ? "Generating walkthrough..."
+                  : "Generate an AI walkthrough of the changes"}
+              </p>
+            </div>
+
+            {/* Action */}
+            {!narrativeGenerating && claudeAvailable !== false && (
+              <button
+                onClick={generateNarrative}
+                className="flex-shrink-0 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+              >
+                Generate
+              </button>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Generating state */}
-      {narrativeGenerating && (
-        <div className="flex items-center gap-2 py-3 px-1">
-          <div className="h-3.5 w-3.5 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <span className="text-xs text-stone-500">
-            Generating narrative...
-          </span>
         </div>
       )}
 
@@ -157,38 +202,6 @@ export function GuideOverviewSection() {
       {narrativeError && !narrativeGenerating && (
         <div className="text-xs text-red-400 bg-red-500/10 rounded px-2 py-1.5 mt-2">
           {narrativeError}
-        </div>
-      )}
-
-      {/* Action buttons */}
-      {!narrativeGenerating && (
-        <div className="flex items-center gap-2 mt-2">
-          {!showNarrative ? (
-            <SimpleTooltip
-              content={
-                claudeAvailable === false
-                  ? "Claude CLI not available"
-                  : "Generate a narrative walkthrough of the changes"
-              }
-            >
-              <button
-                onClick={generateNarrative}
-                disabled={claudeAvailable === false}
-                className="text-xs px-2.5 py-1 rounded bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-40 disabled:cursor-not-allowed border border-stone-700"
-              >
-                Generate Narrative
-              </button>
-            </SimpleTooltip>
-          ) : stale ? (
-            <SimpleTooltip content="Changes have been updated since the narrative was generated">
-              <button
-                onClick={generateNarrative}
-                className="text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
-              >
-                Regenerate
-              </button>
-            </SimpleTooltip>
-          ) : null}
         </div>
       )}
     </div>

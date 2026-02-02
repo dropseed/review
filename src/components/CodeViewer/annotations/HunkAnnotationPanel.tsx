@@ -9,6 +9,22 @@ import {
 } from "../../ui/dropdown-menu";
 import { SimpleTooltip } from "../../ui/tooltip";
 
+/** Returns the first changed line in a hunk with its side and line number. */
+function getFirstChangedLine(hunk: DiffHunk): {
+  lineNumber: number;
+  side: "old" | "new";
+} {
+  const firstChanged = hunk.lines.find(
+    (l) => l.type === "added" || l.type === "removed",
+  );
+  const side: "old" | "new" = firstChanged?.type === "removed" ? "old" : "new";
+  const lineNumber =
+    side === "old"
+      ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
+      : (firstChanged?.newLineNumber ?? hunk.newStart);
+  return { lineNumber, side };
+}
+
 /** Returns the appropriate background class for a hunk based on its state */
 function getHunkBackgroundClass(
   isRejected: boolean,
@@ -123,7 +139,7 @@ export function HunkAnnotationPanel({
           <SimpleTooltip content="Click to unapprove">
             <button
               onClick={() => onUnapprove(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30"
+              className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-all hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -145,7 +161,7 @@ export function HunkAnnotationPanel({
           <SimpleTooltip content="Click to clear rejection">
             <button
               onClick={() => onUnreject(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-400 transition-all hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30"
+              className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-300 transition-all hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -173,7 +189,7 @@ export function HunkAnnotationPanel({
                 className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
                   isTrusted
                     ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
-                    : "text-rose-400/70 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-400"
+                    : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
                 }`}
                 aria-label="Reject change"
               >
@@ -204,7 +220,7 @@ export function HunkAnnotationPanel({
                 className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
                   isTrusted
                     ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
-                    : "text-emerald-400/70 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-400"
+                    : "text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-300"
                 }`}
                 aria-label="Approve change"
               >
@@ -234,14 +250,8 @@ export function HunkAnnotationPanel({
         <SimpleTooltip content="Add comment">
           <button
             onClick={() => {
-              // Find first changed line to add comment at
-              const firstChanged = hunk.lines.find(
-                (l) => l.type === "added" || l.type === "removed",
-              );
-              const lineNumber = isSource
-                ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-                : (firstChanged?.newLineNumber ?? hunk.newStart);
-              onComment(lineNumber, isSource ? "old" : "new", hunk.id);
+              const { lineNumber, side } = getFirstChangedLine(hunk);
+              onComment(lineNumber, side, hunk.id);
             }}
             className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
           >

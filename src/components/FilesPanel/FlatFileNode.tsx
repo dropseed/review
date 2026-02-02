@@ -3,16 +3,15 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { StatusLetter, HunkCount } from "./StatusIndicators";
 import type { FileHunkStatus } from "./types";
 import type { HunkContext } from "./FileNode";
-import type { FileSymbolDiff, SymbolDiff } from "../../types";
+import type { FileSymbolDiff } from "../../types";
 import {
-  SymbolKindBadge,
   ChangeIndicator,
   ReviewStatusDot,
   sortSymbols,
   collectAllHunkIds,
   getHunkIdsStatus,
+  SymbolRow,
 } from "../symbols";
-import { useReviewStore } from "../../stores";
 import { useReviewData } from "../ReviewDataContext";
 
 // --- Props ---
@@ -28,144 +27,6 @@ interface FlatFileNodeProps {
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
 }
-
-// --- Compact symbol row (recursive, for sidebar) ---
-
-const CompactSymbolRow = memo(function CompactSymbolRow({
-  symbol,
-  depth,
-  filePath,
-}: {
-  symbol: SymbolDiff;
-  depth: number;
-  filePath: string;
-}) {
-  const { hunkStates, trustList, onNavigate } = useReviewData();
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const [expanded, setExpanded] = useState(true);
-
-  const allHunkIds = useMemo(() => collectAllHunkIds(symbol), [symbol]);
-  const status = useMemo(
-    () => getHunkIdsStatus(allHunkIds, hunkStates, trustList),
-    [allHunkIds, hunkStates, trustList],
-  );
-
-  const hasChildren = symbol.children.length > 0;
-  const sortedChildren = useMemo(
-    () => (hasChildren ? sortSymbols(symbol.children) : []),
-    [symbol.children, hasChildren],
-  );
-
-  const firstHunkId = symbol.hunkIds[0] ?? null;
-
-  const handleClick = useCallback(() => {
-    if (firstHunkId) {
-      onNavigate(filePath, firstHunkId);
-    } else if (hasChildren) {
-      for (const child of symbol.children) {
-        if (child.hunkIds.length > 0) {
-          onNavigate(filePath, child.hunkIds[0]);
-          return;
-        }
-      }
-    }
-  }, [firstHunkId, filePath, onNavigate, hasChildren, symbol.children]);
-
-  const handleApprove = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      approveHunkIds(allHunkIds);
-    },
-    [approveHunkIds, allHunkIds],
-  );
-
-  const paddingLeft = `${depth * 0.8 + 0.5}rem`;
-
-  return (
-    <div className="select-none">
-      <div
-        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
-        style={{ paddingLeft }}
-        onClick={hasChildren ? () => setExpanded(!expanded) : handleClick}
-      >
-        {hasChildren ? (
-          <button
-            className="flex-shrink-0"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-          >
-            <svg
-              className={`h-3 w-3 text-stone-600 transition-transform ${expanded ? "rotate-90" : ""}`}
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M10 6l6 6-6 6" />
-            </svg>
-          </button>
-        ) : (
-          <span className="w-3 flex-shrink-0" />
-        )}
-
-        <ChangeIndicator changeType={symbol.changeType} />
-        <SymbolKindBadge kind={symbol.kind} />
-
-        <SimpleTooltip content={symbol.name}>
-          <button
-            className="min-w-0 flex-1 truncate text-left text-xs text-stone-300"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClick();
-            }}
-          >
-            {symbol.name}
-          </button>
-        </SimpleTooltip>
-
-        <ReviewStatusDot status={status} />
-
-        {status.pending > 0 && (
-          <SimpleTooltip content="Approve all hunks">
-            <button
-              onClick={handleApprove}
-              className="flex items-center justify-center w-5 h-5 rounded
-                         text-stone-500 hover:text-lime-400 hover:bg-lime-500/20
-                         transition-colors opacity-0 group-hover:opacity-100"
-            >
-              <svg
-                className="w-3 h-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            </button>
-          </SimpleTooltip>
-        )}
-      </div>
-
-      {expanded && sortedChildren.length > 0 && (
-        <div>
-          {sortedChildren.map((child) => (
-            <CompactSymbolRow
-              key={`${child.changeType}-${child.name}-${child.newRange?.startLine ?? child.oldRange?.startLine ?? 0}`}
-              symbol={child}
-              depth={depth + 1}
-              filePath={filePath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-});
 
 // --- Flat file node ---
 
@@ -342,7 +203,7 @@ export const FlatFileNode = memo(function FlatFileNode({
           {hasGrammar && sortedSymbols.length > 0 ? (
             <>
               {sortedSymbols.map((symbol) => (
-                <CompactSymbolRow
+                <SymbolRow
                   key={`${symbol.changeType}-${symbol.name}-${symbol.newRange?.startLine ?? symbol.oldRange?.startLine ?? 0}`}
                   symbol={symbol}
                   depth={2}

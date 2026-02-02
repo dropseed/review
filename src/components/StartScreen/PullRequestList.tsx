@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, memo } from "react";
 import type { Comparison, PullRequest } from "../../types";
 import { makePrComparison } from "../../types";
 import { getApiClient } from "../../api";
+import { PrBadge, getPrState, getPrAccentClasses } from "./PrBadge";
 
 // Intl.RelativeTimeFormat for proper i18n
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -48,6 +49,9 @@ const PrCard = memo(function PrCard({
     [onSelect],
   );
 
+  const prState = getPrState(pr.state, pr.isDraft);
+  const accent = getPrAccentClasses(prState);
+
   return (
     <article
       className={`group relative rounded-xl border
@@ -57,7 +61,7 @@ const PrCard = memo(function PrCard({
                    isExisting
                      ? "border-stone-800/40 bg-stone-900/30 opacity-60"
                      : `border-stone-800/80 bg-gradient-to-br from-stone-900/80 to-stone-900/40
-                        hover:border-violet-500/25 hover:from-stone-900 hover:to-stone-900/60 hover:shadow-xl hover:shadow-violet-900/10
+                        ${accent.hover}
                         hover:-translate-y-0.5`
                  }
                  ${prefersReducedMotion ? "" : "animate-fade-in"}`}
@@ -70,7 +74,7 @@ const PrCard = memo(function PrCard({
         onKeyDown={isExisting ? undefined : handleKeyDown}
         disabled={isExisting}
         className={`w-full px-5 py-4 text-left rounded-xl
-                   focus:outline-hidden focus:inset-ring-2 focus:inset-ring-violet-500/50
+                   focus:outline-hidden focus:inset-ring-2 ${accent.focus}
                    ${isExisting ? "cursor-default" : ""}`}
         aria-label={
           isExisting
@@ -80,25 +84,7 @@ const PrCard = memo(function PrCard({
       >
         {/* Main row */}
         <div className="flex items-center gap-3">
-          {/* PR number badge */}
-          <span
-            className={`inline-flex items-center gap-1 shrink-0 font-mono text-xs px-2 py-0.5 rounded-md border
-                        ${
-                          isExisting
-                            ? "text-stone-500 bg-stone-800/30 border-stone-700/20"
-                            : "text-violet-400 bg-violet-500/10 border-violet-500/20"
-                        }`}
-          >
-            <svg
-              className="w-3 h-3"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
-            </svg>
-            #{pr.number}
-          </span>
+          <PrBadge number={pr.number} state={isExisting ? "muted" : prState} />
 
           {/* Title */}
           <span
@@ -235,14 +221,14 @@ export function PullRequestList({
           className="text-sm font-semibold text-stone-300 flex items-center gap-2"
         >
           <span
-            className="w-1.5 h-1.5 rounded-full bg-violet-400"
+            className="w-1.5 h-1.5 rounded-full bg-green-400"
             aria-hidden="true"
           />
           Pull Requests
         </h2>
         {loading && (
           <div
-            className="h-4 w-4 animate-spin rounded-full border-2 border-stone-700 border-t-violet-500"
+            className="h-4 w-4 animate-spin rounded-full border-2 border-stone-700 border-t-green-500"
             role="status"
             aria-label="Loading pull requests..."
           />

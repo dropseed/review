@@ -132,7 +132,7 @@ export function TrustBadges() {
               </svg>
               <span className="flex-1">Trust</span>
               {trustedCount > 0 && (
-                <span className="rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-xxs font-medium text-cyan-400 tabular-nums">
+                <span className="rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-xxs font-medium text-cyan-300 tabular-nums">
                   {trustedCount}
                 </span>
               )}
@@ -214,7 +214,7 @@ export function TrustBadges() {
                 >
                   <span className="truncate max-w-[10rem]">{pattern.id}</span>
                   <span
-                    className={`tabular-nums ${pattern.isTrusted ? "text-cyan-400/70" : "text-stone-500"}`}
+                    className={`tabular-nums ${pattern.isTrusted ? "text-cyan-300" : "text-stone-500"}`}
                   >
                     {pattern.count}
                   </span>

@@ -1,17 +1,15 @@
-import { useState, useMemo, useCallback, memo } from "react";
-import { SimpleTooltip } from "../ui/tooltip";
+import { useMemo, useCallback, memo } from "react";
 import { useReviewStore } from "../../stores";
 import type { FileSymbolDiff, SymbolDiff, DiffHunk } from "../../types";
 import {
-  SymbolKindBadge,
   ChangeIndicator,
   sortSymbols,
-  collectAllHunkIds,
   getHunkIdsStatus,
   StatusBadge,
   ReviewStatusDot,
+  SymbolRow,
+  StatusToggle,
 } from "../symbols";
-import type { SymbolHunkStatus } from "../symbols";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import type { FileHunkStatus } from "../FilesPanel/types";
 import { ReviewDataProvider, useReviewData } from "../ReviewDataContext";
@@ -102,18 +100,6 @@ function LineStatsBadge({ stats }: { stats: LineStats }) {
   );
 }
 
-function Chevron({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      className={`h-3 w-3 flex-shrink-0 text-stone-600 transition-transform ${expanded ? "rotate-90" : ""}`}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-    >
-      <path d="M10 6l6 6-6 6" />
-    </svg>
-  );
-}
-
 function FileProgressBar({ status }: { status: FileHunkStatus }) {
   if (status.total === 0) return null;
   return (
@@ -136,20 +122,6 @@ function FileProgressBar({ status }: { status: FileHunkStatus }) {
   );
 }
 
-function SymbolStatusDisplay({ status }: { status: SymbolHunkStatus }) {
-  if (status.total === 0) return null;
-
-  if (status.pending === 0) {
-    return <ReviewStatusDot status={status} />;
-  }
-
-  return (
-    <span className="text-xxs text-amber-400/80 tabular-nums flex-shrink-0">
-      {status.pending} pending
-    </span>
-  );
-}
-
 // ========================================================================
 // DrillDownHeader
 // ========================================================================
@@ -163,132 +135,6 @@ function DrillDownHeader() {
     </div>
   );
 }
-
-// ========================================================================
-// List layout — symbol row
-// ========================================================================
-
-const ListSymbolRow = memo(function ListSymbolRow({
-  symbol,
-  depth,
-  lineStatsMap,
-  filePath,
-}: {
-  symbol: SymbolDiff;
-  depth: number;
-  lineStatsMap: Map<string, LineStats>;
-  filePath: string;
-}) {
-  const { hunkStates, trustList, onNavigate } = useReviewData();
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const [expanded, setExpanded] = useState(true);
-
-  const allHunkIds = useMemo(() => collectAllHunkIds(symbol), [symbol]);
-  const status = useMemo(
-    () => getHunkIdsStatus(allHunkIds, hunkStates, trustList),
-    [allHunkIds, hunkStates, trustList],
-  );
-
-  const lineStats = useMemo(
-    () => getSymbolLineStats(symbol, lineStatsMap),
-    [symbol, lineStatsMap],
-  );
-
-  const hasChildren = symbol.children.length > 0;
-  const sortedChildren = useMemo(
-    () => (hasChildren ? sortSymbols(symbol.children) : []),
-    [symbol.children, hasChildren],
-  );
-
-  const firstHunkId = symbol.hunkIds[0] ?? null;
-
-  const handleClick = useCallback(() => {
-    if (firstHunkId) {
-      onNavigate(filePath, firstHunkId);
-    } else if (hasChildren) {
-      for (const child of symbol.children) {
-        if (child.hunkIds.length > 0) {
-          onNavigate(filePath, child.hunkIds[0]);
-          return;
-        }
-      }
-    }
-  }, [firstHunkId, filePath, onNavigate, hasChildren, symbol.children]);
-
-  const handleApprove = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      approveHunkIds(allHunkIds);
-    },
-    [approveHunkIds, allHunkIds],
-  );
-
-  const paddingLeft = `${depth * 0.8 + 0.5}rem`;
-
-  return (
-    <div className="select-none">
-      <div
-        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
-        style={{ paddingLeft }}
-        onClick={hasChildren ? () => setExpanded(!expanded) : handleClick}
-      >
-        {hasChildren ? (
-          <button
-            className="flex-shrink-0"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-          >
-            <Chevron expanded={expanded} />
-          </button>
-        ) : (
-          <span className="w-3 flex-shrink-0" />
-        )}
-        <ChangeIndicator changeType={symbol.changeType} />
-        <SymbolKindBadge kind={symbol.kind} />
-        <SimpleTooltip content={symbol.name}>
-          <button
-            className="min-w-0 flex-1 truncate text-left text-xs text-stone-300"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClick();
-            }}
-          >
-            {symbol.name}
-          </button>
-        </SimpleTooltip>
-        <LineStatsBadge stats={lineStats} />
-        <StatusBadge status={status} />
-        <ReviewStatusDot status={status} />
-        {status.pending > 0 && (
-          <SimpleTooltip content="Approve all hunks in this symbol">
-            <button
-              onClick={handleApprove}
-              className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors opacity-0 group-hover:opacity-100"
-            >
-              Approve
-            </button>
-          </SimpleTooltip>
-        )}
-      </div>
-
-      {expanded && sortedChildren.length > 0 && (
-        <div>
-          {sortedChildren.map((child) => (
-            <ListSymbolRow
-              key={`${child.changeType}-${child.name}-${child.newRange?.startLine ?? child.oldRange?.startLine ?? 0}`}
-              symbol={child}
-              depth={depth + 1}
-              lineStatsMap={lineStatsMap}
-              filePath={filePath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-});
 
 // ========================================================================
 // DrillDownFileRow
@@ -311,9 +157,8 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
 }) {
   const { hunkStates, trustList } = useReviewData();
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
+  const unapproveAllFileHunks = useReviewStore((s) => s.unapproveAllFileHunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-
-  const [isExpanded, setIsExpanded] = useState(true);
 
   const fileName = fileDiff.filePath.split("/").pop() || fileDiff.filePath;
   const dirPath = fileDiff.filePath.includes("/")
@@ -334,18 +179,6 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
       .map((h) => h.id);
   }, [allHunks, fileDiff.filePath]);
 
-  const totalHunks = useMemo(() => {
-    let count = fileDiff.topLevelHunkIds.length;
-    for (const sym of fileDiff.symbols) {
-      count += collectAllHunkIds(sym).length;
-    }
-    return count;
-  }, [fileDiff]);
-
-  const handleToggle = useCallback(() => {
-    setIsExpanded((v) => !v);
-  }, []);
-
   const handleFileClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -355,32 +188,39 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
   );
 
   const handleApproveAll = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      approveAllFileHunks(fileDiff.filePath);
-    },
+    () => approveAllFileHunks(fileDiff.filePath),
     [approveAllFileHunks, fileDiff.filePath],
   );
 
+  const handleUnapproveAll = useCallback(
+    () => unapproveAllFileHunks(fileDiff.filePath),
+    [unapproveAllFileHunks, fileDiff.filePath],
+  );
+
   const renderContent = () => {
+    if (fileStatus === "deleted") return null;
+
     if (hasSymbols) {
       return (
         <div className="pb-1">
-          {sortedSymbols.map((symbol) => (
-            <ListSymbolRow
-              key={`${symbol.changeType}-${symbol.name}-${symbol.newRange?.startLine ?? symbol.oldRange?.startLine ?? 0}`}
-              symbol={symbol}
-              depth={1}
-              lineStatsMap={lineStatsMap}
-              filePath={fileDiff.filePath}
-            />
-          ))}
           {fileDiff.topLevelHunkIds.length > 0 && (
             <ListTopLevelRow
               hunkIds={fileDiff.topLevelHunkIds}
               filePath={fileDiff.filePath}
             />
           )}
+          {sortedSymbols.map((symbol) => (
+            <SymbolRow
+              key={`${symbol.changeType}-${symbol.name}-${symbol.newRange?.startLine ?? symbol.oldRange?.startLine ?? 0}`}
+              symbol={symbol}
+              depth={1}
+              filePath={fileDiff.filePath}
+            >
+              {({ symbol: sym }) => (
+                <LineStatsBadge stats={getSymbolLineStats(sym, lineStatsMap)} />
+              )}
+            </SymbolRow>
+          ))}
         </div>
       );
     }
@@ -388,18 +228,18 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
     // No grammar — summary row
     const topStatus = getHunkIdsStatus(allFileHunkIds, hunkStates, trustList);
     return (
-      <div className="flex items-center gap-1.5 py-1 px-6 text-xs text-stone-400 italic">
+      <div
+        className="flex items-center gap-1 py-0.5 pr-2 text-xs text-stone-400 italic"
+        style={{ paddingLeft: "1.3rem" }}
+      >
+        <span className="w-3 flex-shrink-0" />
         <ChangeIndicator changeType="modified" />
         <span>
           {allFileHunkIds.length}{" "}
           {allFileHunkIds.length === 1 ? "hunk" : "hunks"}
         </span>
-        <SymbolStatusDisplay status={topStatus} />
-        {!fileDiff.hasGrammar && (
-          <span className="text-xxs text-stone-600 italic ml-1">
-            no grammar
-          </span>
-        )}
+        <StatusBadge status={topStatus} />
+        <ReviewStatusDot status={topStatus} />
       </div>
     );
   };
@@ -407,15 +247,11 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
   return (
     <div className="border-b border-stone-800/50 last:border-b-0">
       {/* File header row */}
-      <div
-        className="group flex w-full items-center gap-2 px-3 py-2 hover:bg-stone-800/30 transition-colors cursor-pointer"
-        onClick={handleToggle}
-      >
-        <Chevron expanded={isExpanded} />
+      <div className="group flex w-full items-center gap-1 pl-3 pr-2 py-2 hover:bg-stone-800/30 transition-colors">
         <StatusLetter status={fileStatus} />
         <div className="min-w-0 flex-1">
           <button
-            className={`truncate text-xs text-left hover:text-amber-400 transition-colors ${fileStatus === "deleted" ? "line-through text-rose-400/70" : ""}`}
+            className={`truncate text-xs text-left cursor-pointer hover:text-amber-400 transition-colors ${fileStatus === "deleted" ? "line-through text-rose-400/70" : ""}`}
             onClick={handleFileClick}
           >
             {dirPath && (
@@ -442,36 +278,16 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
             </span>
           </button>
         </div>
-        <LineStatsBadge stats={fileLineStats} />
-        {!fileDiff.hasGrammar && (
-          <span className="text-xxs text-stone-600 italic flex-shrink-0">
-            no grammar
-          </span>
-        )}
         <FileProgressBar status={fileHunkStatus} />
-        {fileHunkStatus.pending > 0 ? (
-          <span className="text-xxs text-amber-400/80 tabular-nums flex-shrink-0">
-            {fileHunkStatus.pending}/{totalHunks} pending
-          </span>
-        ) : fileHunkStatus.total > 0 ? (
-          <span className="text-xxs text-lime-500 flex-shrink-0">
-            {"\u2713"}
-          </span>
-        ) : null}
-        {fileHunkStatus.pending > 0 && (
-          <SimpleTooltip content="Approve all hunks in this file">
-            <button
-              onClick={handleApproveAll}
-              className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors opacity-0 group-hover:opacity-100"
-            >
-              Approve All
-            </button>
-          </SimpleTooltip>
-        )}
+        <LineStatsBadge stats={fileLineStats} />
+        <StatusToggle
+          status={fileHunkStatus}
+          onApprove={handleApproveAll}
+          onUnapprove={handleUnapproveAll}
+        />
       </div>
 
-      {/* Expanded content */}
-      {isExpanded && renderContent()}
+      {renderContent()}
     </div>
   );
 });
@@ -489,6 +305,7 @@ function ListTopLevelRow({
 }) {
   const { hunkStates, trustList, onNavigate } = useReviewData();
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
+  const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
 
   const status = useMemo(
     () => getHunkIdsStatus(hunkIds, hunkStates, trustList),
@@ -502,11 +319,13 @@ function ListTopLevelRow({
   }, [hunkIds, filePath, onNavigate]);
 
   const handleApprove = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      approveHunkIds(hunkIds);
-    },
+    () => approveHunkIds(hunkIds),
     [approveHunkIds, hunkIds],
+  );
+
+  const handleUnapprove = useCallback(
+    () => unapproveHunkIds(hunkIds),
+    [unapproveHunkIds, hunkIds],
   );
 
   return (
@@ -518,7 +337,7 @@ function ListTopLevelRow({
       <span className="w-3 flex-shrink-0" />
       <ChangeIndicator changeType="modified" />
       <button
-        className="min-w-0 flex-1 truncate text-left text-xs italic text-stone-400"
+        className="min-w-0 flex-1 truncate text-left text-xs italic text-stone-400 cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
           handleClick();
@@ -527,15 +346,11 @@ function ListTopLevelRow({
         top-level changes
       </button>
       <StatusBadge status={status} />
-      <ReviewStatusDot status={status} />
-      {status.pending > 0 && (
-        <button
-          onClick={handleApprove}
-          className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-400 hover:bg-lime-500/20 transition-colors opacity-0 group-hover:opacity-100"
-        >
-          Approve
-        </button>
-      )}
+      <StatusToggle
+        status={status}
+        onApprove={handleApprove}
+        onUnapprove={handleUnapprove}
+      />
     </div>
   );
 }

@@ -102,12 +102,12 @@ export function SummaryStats({
         </span>
 
         {state === "approved" && (
-          <span className="text-xxs font-medium text-lime-400 bg-lime-500/10 px-1.5 py-0.5 rounded">
+          <span className="text-xxs font-medium text-lime-300 bg-lime-500/10 px-1.5 py-0.5 rounded">
             Approved
           </span>
         )}
         {state === "changes_requested" && (
-          <span className="text-xxs font-medium text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+          <span className="text-xxs font-medium text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded">
             Changes Requested
           </span>
         )}
