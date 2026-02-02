@@ -69,6 +69,9 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
+  // Tracks which filePath the current fileContent belongs to, preventing
+  // one-frame stale renders where filePath has changed but content hasn't yet.
+  const [fileContentPath, setFileContentPath] = useState<string | null>(null);
   const [highlightLine, setHighlightLine] = useState<number | null>(null);
   // For SVG files: toggle between rendered image view and code diff view
   const [svgViewMode, setSvgViewMode] = useState<"rendered" | "code">(
@@ -204,6 +207,9 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
     if (isFileSwitch || !fileContent) {
       setLoading(true);
     }
+    if (isFileSwitch) {
+      setFileContentPath(null);
+    }
     setError(null);
 
     getApiClient()
@@ -211,6 +217,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
       .then((result) => {
         if (!cancelled) {
           setFileContent(result);
+          setFileContentPath(filePath);
           setLoading(false);
         }
       })
@@ -284,7 +291,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   // Track scroll position to update HunkNavigator counter
   useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);
 
-  if (loading) {
+  if (loading || fileContentPath !== filePath) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="flex flex-col items-center gap-3 animate-fade-in">

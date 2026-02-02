@@ -212,34 +212,32 @@ export function PlainCodeView({
 
   return (
     <div ref={containerRef}>
-      <div key={language}>
-        <PierreFile
-          file={{
-            name: filePath,
-            contents: content,
-            lang: language,
-            cacheKey: `file:${filePath}`,
-          }}
-          selectedLines={
-            highlightLine
-              ? { start: highlightLine, end: highlightLine, side: "additions" }
-              : null
-          }
-          lineAnnotations={lineAnnotations}
-          renderAnnotation={renderAnnotation}
-          renderHoverUtility={renderHoverUtility}
-          options={{
-            theme: {
-              dark: theme,
-              light: theme,
-            },
-            themeType: "dark",
-            disableFileHeader: true,
-            unsafeCSS: fontSizeCSS,
-            enableHoverUtility: true,
-          }}
-        />
-      </div>
+      <PierreFile
+        file={{
+          name: filePath,
+          contents: content,
+          lang: language,
+          cacheKey: `file:${filePath}:${content.length}`,
+        }}
+        selectedLines={
+          highlightLine
+            ? { start: highlightLine, end: highlightLine, side: "additions" }
+            : null
+        }
+        lineAnnotations={lineAnnotations}
+        renderAnnotation={renderAnnotation}
+        renderHoverUtility={renderHoverUtility}
+        options={{
+          theme: {
+            dark: theme,
+            light: theme,
+          },
+          themeType: "dark",
+          disableFileHeader: true,
+          unsafeCSS: fontSizeCSS,
+          enableHoverUtility: true,
+        }}
+      />
     </div>
   );
 }

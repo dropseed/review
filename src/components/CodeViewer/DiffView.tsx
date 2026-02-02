@@ -98,7 +98,16 @@ function useSyntaxHighlightReady(
       }
     }, 150);
 
-    return () => clearInterval(interval);
+    // Force ready after 5s to prevent infinite shimmer if highlighting never completes
+    const timeout = setTimeout(() => {
+      setReady(true);
+      clearInterval(interval);
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   }, [contentKey]);
 
   return ready;
@@ -382,7 +391,7 @@ export function DiffView({
             name: fileName,
             contents: oldContent ?? "",
             lang: language,
-            cacheKey: `old:${fileName}`,
+            cacheKey: `old:${fileName}:${(oldContent ?? "").length}`,
           }
         : undefined,
     [hasFileContents, fileName, oldContent, language],
@@ -394,7 +403,7 @@ export function DiffView({
             name: fileName,
             contents: newContent ?? "",
             lang: language,
-            cacheKey: `new:${fileName}`,
+            cacheKey: `new:${fileName}:${(newContent ?? "").length}`,
           }
         : undefined,
     [hasFileContents, fileName, newContent, language],
@@ -501,6 +510,7 @@ export function DiffView({
         </div>
       )}
       <DiffErrorBoundary
+        key={fileName}
         fallback={
           <div className="p-6">
             <div className="mb-4 rounded-lg bg-rose-500/10 border border-rose-500/20 p-4">

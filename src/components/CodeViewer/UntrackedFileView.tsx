@@ -137,25 +137,23 @@ export function UntrackedFileView({
       )}
 
       {/* File content using pierre/diffs */}
-      <div key={language}>
-        <PierreFile
-          file={{
-            name: filePath,
-            contents: content,
-            lang: language,
-            cacheKey: `untracked:${filePath}`,
-          }}
-          options={{
-            theme: {
-              dark: theme,
-              light: theme,
-            },
-            themeType: "dark",
-            disableFileHeader: true,
-            unsafeCSS: fontSizeCSS,
-          }}
-        />
-      </div>
+      <PierreFile
+        file={{
+          name: filePath,
+          contents: content,
+          lang: language,
+          cacheKey: `untracked:${filePath}:${content.length}`,
+        }}
+        options={{
+          theme: {
+            dark: theme,
+            light: theme,
+          },
+          themeType: "dark",
+          disableFileHeader: true,
+          unsafeCSS: fontSizeCSS,
+        }}
+      />
     </div>
   );
 }
