@@ -86,11 +86,6 @@ name = "review"
 path = "src/bin/review.rs"
 required-features = ["cli"]
 
-[[bin]]
-name = "git-review"
-path = "src/bin/git_review.rs"
-required-features = ["cli"]
-
 [lints]
 workspace = true
 

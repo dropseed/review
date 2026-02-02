@@ -6,7 +6,6 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { GitStatusIndicator } from "../GitStatusIndicator";
 import { SettingsModal } from "../SettingsModal";
 import { SavedReviewList } from "./SavedReviewList";
-import { PullRequestList } from "./PullRequestList";
 import { NewComparisonForm } from "./NewComparisonForm";
 import { WorkingTreeCard } from "./WorkingTreeCard";
 import { usePrefersReducedMotion } from "../../hooks";
@@ -137,13 +136,6 @@ export function StartScreen({
             savedReviewsLoading={savedReviewsLoading}
             onSelectReview={onSelectReview}
             onDeleteReview={deleteReview}
-            prefersReducedMotion={prefersReducedMotion}
-          />
-
-          <PullRequestList
-            repoPath={repoPath}
-            onSelectReview={onSelectReview}
-            existingComparisonKeys={existingComparisonKeys}
             prefersReducedMotion={prefersReducedMotion}
           />
 

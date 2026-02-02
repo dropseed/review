@@ -61,6 +61,14 @@ export interface NavigationSlice {
   // Advance to next hunk within the same file
   nextHunkInFile: () => void;
 
+  // Narrative sidebar
+  narrativeSidebarOpen: boolean;
+  setNarrativeSidebarOpen: (open: boolean) => void;
+
+  // Track the exact narrative link that was last clicked (by source offset)
+  lastClickedNarrativeLinkOffset: number | null;
+  setLastClickedNarrativeLinkOffset: (offset: number | null) => void;
+
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
@@ -213,6 +221,14 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       set({ focusedHunkIndex: nextIndex });
     }
   },
+
+  // Narrative sidebar
+  narrativeSidebarOpen: false,
+  setNarrativeSidebarOpen: (open) => set({ narrativeSidebarOpen: open }),
+
+  lastClickedNarrativeLinkOffset: null,
+  setLastClickedNarrativeLinkOffset: (offset) =>
+    set({ lastClickedNarrativeLinkOffset: offset }),
 
   // Modal state
   classificationsModalOpen: false,

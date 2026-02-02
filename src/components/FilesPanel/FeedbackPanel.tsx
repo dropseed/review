@@ -167,19 +167,7 @@ export function FeedbackPanel({
                   className="w-full text-left p-2.5 min-w-0 rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-rose-500/30 hover:bg-stone-800/40 transition-all duration-150 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-rose-500/50"
                 >
                   <div className="flex items-center gap-1.5">
-                    <svg
-                      className="h-3 w-3 text-rose-500/70 flex-shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500/70 flex-shrink-0" />
                     <span className="text-xxs font-mono text-rose-400/90 truncate tabular-nums">
                       {item.filePath}:{item.lineRange}
                     </span>

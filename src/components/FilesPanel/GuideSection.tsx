@@ -24,22 +24,27 @@ export function GuideSection() {
   const isNarrativeIrrelevant = useReviewStore((s) => s.isNarrativeIrrelevant);
   const generateNarrative = useReviewStore((s) => s.generateNarrative);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const lastClickedNarrativeLinkOffset = useReviewStore(
+    (s) => s.lastClickedNarrativeLinkOffset,
+  );
+  const setLastClickedNarrativeLinkOffset = useReviewStore(
+    (s) => s.setLastClickedNarrativeLinkOffset,
+  );
+  const narrativeSidebarOpen = useReviewStore((s) => s.narrativeSidebarOpen);
+  const setNarrativeSidebarOpen = useReviewStore(
+    (s) => s.setNarrativeSidebarOpen,
+  );
 
   const narrative = reviewState?.narrative;
   const prBody = reviewState?.comparison?.githubPr?.body;
   const hasNarrative = !!narrative?.content;
-  const stale = useMemo(
-    () => (hasNarrative ? isNarrativeStale() : false),
-    [hasNarrative, isNarrativeStale],
-  );
-  const irrelevant = useMemo(
-    () => (hasNarrative ? isNarrativeIrrelevant() : false),
-    [hasNarrative, isNarrativeIrrelevant],
-  );
+  const stale = hasNarrative ? isNarrativeStale() : false;
+  const irrelevant = hasNarrative ? isNarrativeIrrelevant() : false;
   const showNarrative = hasNarrative && !irrelevant;
 
   const handleNavigate = useCallback(
-    (filePath: string, hunkId?: string) => {
+    (offset: number, filePath: string, hunkId?: string) => {
+      setLastClickedNarrativeLinkOffset(offset);
       navigateToBrowse(filePath);
       if (hunkId) {
         const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
@@ -48,31 +53,52 @@ export function GuideSection() {
         }
       }
     },
-    [navigateToBrowse, hunks],
+    [navigateToBrowse, hunks, setLastClickedNarrativeLinkOffset],
   );
 
   // Custom markdown components for review:// link handling
+  // Highlights links that match the currently selected file
   const markdownComponents = useMemo(
     () => ({
       a: ({
         href,
         children,
+        node,
       }: {
         href?: string;
         children?: React.ReactNode;
+        node?: { position?: { start: { offset?: number } } };
       }) => {
         if (href?.startsWith("review://")) {
           const url = new URL(href.replace("review://", "http://placeholder/"));
           const filePath = url.pathname.slice(1); // remove leading /
           const hunkId = url.searchParams.get("hunk") || undefined;
-          return (
+          const offset = node?.position?.start?.offset ?? -1;
+          const isActive = lastClickedNarrativeLinkOffset === offset;
+          // Show tooltip with file path when the link text isn't the file name
+          const childText = typeof children === "string" ? children : "";
+          const fileName = filePath.split("/").pop() ?? "";
+          const needsTooltip = childText !== filePath && childText !== fileName;
+          const link = (
             <button
-              onClick={() => handleNavigate(filePath, hunkId)}
-              className="text-amber-400 hover:text-amber-300 underline underline-offset-2 decoration-amber-400/40 hover:decoration-amber-300/60 cursor-pointer"
+              onClick={() => handleNavigate(offset, filePath, hunkId)}
+              className={
+                isActive
+                  ? "text-blue-200 bg-blue-500/25 rounded-sm cursor-pointer"
+                  : "text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
+              }
             >
               {children}
             </button>
           );
+          if (needsTooltip) {
+            return (
+              <SimpleTooltip content={filePath} side="bottom">
+                {link}
+              </SimpleTooltip>
+            );
+          }
+          return link;
         }
         return (
           <button
@@ -81,18 +107,21 @@ export function GuideSection() {
                 getPlatformServices().opener.openUrl(href);
               }
             }}
-            className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 cursor-pointer"
+            className="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
           >
             {children}
           </button>
         );
       },
     }),
-    [handleNavigate],
+    [handleNavigate, lastClickedNarrativeLinkOffset],
   );
 
   return (
-    <Collapsible defaultOpen={false}>
+    <Collapsible
+      open={narrativeSidebarOpen}
+      onOpenChange={setNarrativeSidebarOpen}
+    >
       <div className="border-b border-stone-800">
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
@@ -124,6 +153,29 @@ export function GuideSection() {
               )}
             </button>
           </CollapsibleTrigger>
+          {showNarrative && !narrativeGenerating && (
+            <SimpleTooltip
+              content={stale ? "Regenerate narrative" : "Regenerate"}
+            >
+              <button
+                onClick={generateNarrative}
+                className="mr-1.5 p-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-700/50"
+              >
+                <svg
+                  className="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                </svg>
+              </button>
+            </SimpleTooltip>
+          )}
         </div>
         <CollapsibleContent>
           <div className="px-3 pb-3 space-y-3">
@@ -193,10 +245,17 @@ export function GuideSection() {
               </div>
             )}
 
-            {/* Action buttons */}
-            {!narrativeGenerating && (
+            {/* Action buttons (generate / retry only — regenerate is in the header) */}
+            {!narrativeGenerating && !showNarrative && (
               <div className="flex items-center gap-2">
-                {!showNarrative ? (
+                {narrativeError ? (
+                  <button
+                    onClick={generateNarrative}
+                    className="text-xs px-2 py-1 rounded bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-200 border border-stone-700"
+                  >
+                    Retry
+                  </button>
+                ) : (
                   <SimpleTooltip
                     content={
                       claudeAvailable === false
@@ -212,23 +271,7 @@ export function GuideSection() {
                       Generate Narrative
                     </button>
                   </SimpleTooltip>
-                ) : stale ? (
-                  <SimpleTooltip content="Changes have been updated since the narrative was generated">
-                    <button
-                      onClick={generateNarrative}
-                      className="text-xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
-                    >
-                      Regenerate
-                    </button>
-                  </SimpleTooltip>
-                ) : narrativeError ? (
-                  <button
-                    onClick={generateNarrative}
-                    className="text-xs px-2 py-1 rounded bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-200 border border-stone-700"
-                  >
-                    Retry
-                  </button>
-                ) : null}
+                )}
               </div>
             )}
           </div>

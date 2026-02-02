@@ -59,6 +59,7 @@ export interface ReviewSlice {
   unrejectHunk: (hunkId: string) => void;
   approveAllFileHunks: (filePath: string) => void;
   unapproveAllFileHunks: (filePath: string) => void;
+  rejectAllFileHunks: (filePath: string) => void;
   approveHunkIds: (hunkIds: string[]) => void;
   unapproveHunkIds: (hunkIds: string[]) => void;
   approveAllDirHunks: (dirPath: string) => void;
@@ -90,6 +91,9 @@ export interface ReviewSlice {
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
   setTrustList: (patterns: string[]) => void;
+
+  // Reset review
+  resetReview: () => Promise<void>;
 
   // Refresh all data
   refresh: () => Promise<void>;
@@ -273,6 +277,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const { hunks } = get();
       const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
       updateHunkStatuses(get, set, ids, undefined, { skipMissing: true });
+    },
+
+    rejectAllFileHunks: (filePath) => {
+      const { hunks } = get();
+      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      updateHunkStatuses(get, set, ids, "rejected");
     },
 
     approveHunkIds: (hunkIds) => {
@@ -471,6 +481,27 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       set({ reviewState: newState });
       debouncedSave(saveReviewState);
+    },
+
+    resetReview: async () => {
+      const { reviewState, saveReviewState, refresh } = get();
+      if (!reviewState) return;
+
+      const now = new Date().toISOString();
+      const newState: ReviewState = {
+        comparison: reviewState.comparison,
+        hunks: {},
+        trustList: reviewState.trustList,
+        notes: "",
+        annotations: [],
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+      };
+
+      set({ reviewState: newState });
+      await saveReviewState();
+      await refresh();
     },
 
     exportRejectionFeedback: () => {

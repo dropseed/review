@@ -191,6 +191,11 @@ export function useKeyboardNavigation({
         return;
       }
 
+      // Don't handle single-key shortcuts when modifier keys are held
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
       switch (event.key) {
         case "j":
           // In overview, switch to browse first

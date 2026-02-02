@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
-import type { BranchList, StashEntry } from "../types";
+import type { BranchList, StashEntry, PullRequest } from "../types";
 import { Input } from "./ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 
@@ -11,7 +11,8 @@ interface BranchOption {
   value: string;
   label: string;
   group: string;
-  icon?: "branch" | "remote" | "stash" | "tree" | "staged";
+  icon?: "branch" | "remote" | "stash" | "tree" | "staged" | "pr";
+  secondaryLabel?: string;
 }
 
 interface BranchSelectProps {
@@ -26,6 +27,7 @@ interface BranchSelectProps {
   baseValue?: string; // Current base value (for filtering existing comparisons)
   existingComparisonKeys?: string[]; // Keys of existing reviews to filter out
   placeholder?: string; // Placeholder text when value is empty
+  pullRequests?: PullRequest[]; // PRs to show in compare dropdown
 }
 
 // Icons for different branch types
@@ -98,6 +100,18 @@ const BranchIcon = memo(function BranchIcon({
           />
         </svg>
       );
+    case "pr":
+      // Pull request icon (GitHub Octicons style)
+      return (
+        <svg
+          className={`${baseClass} text-green-400`}
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+        </svg>
+      );
     case "branch":
     default:
       // Git branch icon (GitHub Octicons style)
@@ -114,10 +128,28 @@ const BranchIcon = memo(function BranchIcon({
   }
 });
 
+// PR value prefix
+const PR_PREFIX = "__PR_";
+
 // Get display name for special values
-function getDisplayName(value: string, branches: BranchList): string {
+function getDisplayName(
+  value: string,
+  branches: BranchList,
+  pullRequests?: PullRequest[],
+): string {
   if (value === WORKING_TREE) return "Working Tree";
   if (value === STAGED_ONLY) return "Staged";
+
+  // Check if it's a PR
+  if (value.startsWith(PR_PREFIX) && pullRequests) {
+    const prNumber = parseInt(value.slice(PR_PREFIX.length, -2), 10);
+    const pr = pullRequests.find((p) => p.number === prNumber);
+    if (pr) {
+      const shortTitle =
+        pr.title.length > 20 ? pr.title.slice(0, 20) + "..." : pr.title;
+      return `#${pr.number} ${shortTitle}`;
+    }
+  }
 
   // Check if it's a stash
   const stash = branches.stashes.find((s) => s.ref === value);
@@ -134,6 +166,10 @@ function getDisplayName(value: string, branches: BranchList): string {
 
 // Helper to generate comparison key (must match makeComparison logic)
 function getComparisonKey(base: string, compareValue: string): string {
+  if (compareValue.startsWith(PR_PREFIX)) {
+    const prNumber = parseInt(compareValue.slice(PR_PREFIX.length, -2), 10);
+    return `pr-${prNumber}`;
+  }
   if (compareValue === WORKING_TREE) {
     return `${base}..${base}+working-tree`;
   }
@@ -155,6 +191,7 @@ export const BranchSelect = memo(function BranchSelect({
   baseValue,
   existingComparisonKeys = [],
   placeholder,
+  pullRequests,
 }: BranchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -211,6 +248,23 @@ export const BranchSelect = memo(function BranchSelect({
       });
     }
 
+    // Add pull requests (filtered by base branch)
+    if (pullRequests && baseValue) {
+      pullRequests
+        .filter((pr) => pr.baseRefName === baseValue)
+        .filter((pr) => !isExistingComparison(`${PR_PREFIX}${pr.number}__`))
+        .forEach((pr) => {
+          const draftPrefix = pr.isDraft ? "[Draft] " : "";
+          opts.push({
+            value: `${PR_PREFIX}${pr.number}__`,
+            label: `${draftPrefix}#${pr.number} ${pr.title}`,
+            group: "Pull Requests",
+            icon: "pr",
+            secondaryLabel: pr.author.login,
+          });
+        });
+    }
+
     // Add local branches (filter out excluded and existing)
     branches.local
       .filter((b) => b !== excludeValue && !isExistingComparison(b))
@@ -236,7 +290,14 @@ export const BranchSelect = memo(function BranchSelect({
       });
 
     return opts;
-  }, [branches, excludeValue, includeLocalState, isExistingComparison]);
+  }, [
+    branches,
+    excludeValue,
+    includeLocalState,
+    isExistingComparison,
+    pullRequests,
+    baseValue,
+  ]);
 
   // Filter options based on search
   const filteredOptions = useMemo(() => {
@@ -326,7 +387,9 @@ export const BranchSelect = memo(function BranchSelect({
   }, []);
 
   // Get current display text
-  const displayText = value ? getDisplayName(value, branches) : null;
+  const displayText = value
+    ? getDisplayName(value, branches, pullRequests)
+    : null;
   const showPlaceholder = !value && placeholder;
 
   // Variant-specific colors
@@ -453,6 +516,11 @@ export const BranchSelect = memo(function BranchSelect({
                       >
                         <BranchIcon type={opt.icon} />
                         <span className="truncate font-mono">{opt.label}</span>
+                        {opt.secondaryLabel && (
+                          <span className="ml-auto text-xs text-stone-500 shrink-0">
+                            {opt.secondaryLabel}
+                          </span>
+                        )}
                         {isSelected && (
                           <svg
                             className={`ml-auto h-4 w-4 shrink-0 ${variant === "base" ? "text-terracotta-400" : "text-sage-400"}`}
@@ -480,4 +548,4 @@ export const BranchSelect = memo(function BranchSelect({
   );
 });
 
-export { WORKING_TREE, STAGED_ONLY };
+export { WORKING_TREE, STAGED_ONLY, PR_PREFIX };

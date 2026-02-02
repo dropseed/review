@@ -193,70 +193,47 @@ export function WelcomePage({ onOpenRepo, onSelectRepo }: WelcomePageProps) {
             {/* Logo */}
             <svg
               className="w-12 h-12 mb-5"
-              viewBox="0 0 256 256"
+              viewBox="0 0 512 512"
               fill="none"
               aria-hidden="true"
             >
               <defs>
                 <linearGradient
                   id="welcome-logo-red"
-                  x1="0"
-                  y1="1"
-                  x2="0"
-                  y2="0"
+                  x1="0%"
+                  y1="0%"
+                  x2="0%"
+                  y2="100%"
                 >
-                  <stop offset="0%" stopColor="#a63d2f" />
-                  <stop offset="100%" stopColor="#c75d4a" />
+                  <stop offset="0%" stopColor="#D4635A" />
+                  <stop offset="100%" stopColor="#B54A42" />
                 </linearGradient>
                 <linearGradient
                   id="welcome-logo-green"
-                  x1="0"
-                  y1="1"
-                  x2="0"
-                  y2="0"
+                  x1="0%"
+                  y1="0%"
+                  x2="0%"
+                  y2="100%"
                 >
-                  <stop offset="0%" stopColor="#4a7c59" />
-                  <stop offset="100%" stopColor="#6b9b7a" />
+                  <stop offset="0%" stopColor="#5A8A7A" />
+                  <stop offset="100%" stopColor="#3D6B5C" />
                 </linearGradient>
-                <clipPath id="welcome-logo-body">
-                  <rect x="28" y="28" width="200" height="200" rx="48" />
-                </clipPath>
-                <mask
-                  id="welcome-logo-mark"
-                  maskUnits="userSpaceOnUse"
-                  x="0"
-                  y="0"
-                  width="256"
-                  height="256"
-                >
-                  <rect width="256" height="256" fill="white" />
-                  <path
-                    d="M 68 138 L 108 178 L 188 82"
-                    stroke="black"
-                    strokeWidth="24"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </mask>
               </defs>
               <rect
-                x="28"
-                y="28"
-                width="88"
-                height="200"
+                x="32"
+                y="16"
+                width="210"
+                height="480"
+                rx="48"
                 fill="url(#welcome-logo-red)"
-                clipPath="url(#welcome-logo-body)"
-                mask="url(#welcome-logo-mark)"
               />
               <rect
-                x="140"
-                y="28"
-                width="88"
-                height="200"
+                x="270"
+                y="16"
+                width="210"
+                height="480"
+                rx="48"
                 fill="url(#welcome-logo-green)"
-                clipPath="url(#welcome-logo-body)"
-                mask="url(#welcome-logo-mark)"
               />
             </svg>
 

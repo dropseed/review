@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
 import { SimpleTooltip } from "../ui/tooltip";
 import { FileContentRenderer } from "./FileContentRenderer";
@@ -39,6 +40,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const reviewState = useReviewStore((s) => s.reviewState);
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
+  const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
   const allHunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
@@ -395,7 +397,7 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
               onClick={() => approveAllFileHunks(filePath)}
               className="rounded bg-lime-500/10 px-1.5 py-0.5 text-xxs font-medium text-lime-300 hover:bg-lime-500/20 transition-colors"
             >
-              Approve All
+              Approve
             </button>
           </SimpleTooltip>
         )}
@@ -491,6 +493,28 @@ export function CodeViewer({ filePath }: CodeViewerProps) {
                 </svg>
                 Open in editor
               </DropdownMenuItem>
+              {hasChanges && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => rejectAllFileHunks(filePath)}
+                  >
+                    <svg
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                      />
+                    </svg>
+                    Reject all hunks
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

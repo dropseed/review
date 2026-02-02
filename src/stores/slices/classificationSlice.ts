@@ -449,6 +449,10 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     debouncedAutoClassify(async () => {
       await classifyUnlabeledHunks();
+      // Don't show "All hunks already classified" for auto-triggered runs
+      if (get().classificationError === "All hunks already classified") {
+        set({ classificationError: null });
+      }
     });
   },
 });

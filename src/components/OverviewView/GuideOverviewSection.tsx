@@ -4,6 +4,12 @@ import remarkGfm from "remark-gfm";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { SimpleTooltip } from "../ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "../ui/dropdown-menu";
 
 export function GuideOverviewSection() {
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -18,18 +24,41 @@ export function GuideOverviewSection() {
 
   const narrative = reviewState?.narrative;
   const hasNarrative = !!narrative?.content;
-  const stale = useMemo(
-    () => (hasNarrative ? isNarrativeStale() : false),
-    [hasNarrative, isNarrativeStale],
-  );
-  const irrelevant = useMemo(
-    () => (hasNarrative ? isNarrativeIrrelevant() : false),
-    [hasNarrative, isNarrativeIrrelevant],
-  );
+  const stale = hasNarrative ? isNarrativeStale() : false;
+  const irrelevant = hasNarrative ? isNarrativeIrrelevant() : false;
   const showNarrative = hasNarrative && !irrelevant;
 
+  // Compute a short reason for why the narrative is stale
+  const staleReason = useMemo(() => {
+    if (!stale || !narrative) return "";
+    const storedIds = new Set(narrative.hunkIds);
+    const currentIds = new Set(hunks.map((h) => h.id));
+    let added = 0;
+    let removed = 0;
+    for (const id of currentIds) {
+      if (!storedIds.has(id)) added++;
+    }
+    for (const id of storedIds) {
+      if (!currentIds.has(id)) removed++;
+    }
+    const parts: string[] = [];
+    if (added > 0) parts.push(`${added} new`);
+    if (removed > 0) parts.push(`${removed} removed`);
+    if (parts.length === 0) return "";
+    return `${parts.join(", ")} hunk${added + removed === 1 ? "" : "s"} since generated`;
+  }, [stale, narrative, hunks]);
+
+  const setNarrativeSidebarOpen = useReviewStore(
+    (s) => s.setNarrativeSidebarOpen,
+  );
+  const setLastClickedNarrativeLinkOffset = useReviewStore(
+    (s) => s.setLastClickedNarrativeLinkOffset,
+  );
+
   const handleNavigate = useCallback(
-    (filePath: string, hunkId?: string) => {
+    (offset: number, filePath: string, hunkId?: string) => {
+      setLastClickedNarrativeLinkOffset(offset);
+      setNarrativeSidebarOpen(true);
       navigateToBrowse(filePath);
       if (hunkId) {
         const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
@@ -38,7 +67,12 @@ export function GuideOverviewSection() {
         }
       }
     },
-    [navigateToBrowse, hunks],
+    [
+      navigateToBrowse,
+      hunks,
+      setNarrativeSidebarOpen,
+      setLastClickedNarrativeLinkOffset,
+    ],
   );
 
   const markdownComponents = useMemo(
@@ -46,22 +80,36 @@ export function GuideOverviewSection() {
       a: ({
         href,
         children,
+        node,
       }: {
         href?: string;
         children?: React.ReactNode;
+        node?: { position?: { start: { offset?: number } } };
       }) => {
         if (href?.startsWith("review://")) {
           const url = new URL(href.replace("review://", "http://placeholder/"));
           const filePath = url.pathname.slice(1);
           const hunkId = url.searchParams.get("hunk") || undefined;
-          return (
+          const offset = node?.position?.start?.offset ?? -1;
+          const childText = typeof children === "string" ? children : "";
+          const fileName = filePath.split("/").pop() ?? "";
+          const needsTooltip = childText !== filePath && childText !== fileName;
+          const link = (
             <button
-              onClick={() => handleNavigate(filePath, hunkId)}
-              className="text-amber-400 hover:text-amber-300 underline underline-offset-2 decoration-amber-400/40 hover:decoration-amber-300/60 cursor-pointer"
+              onClick={() => handleNavigate(offset, filePath, hunkId)}
+              className="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
             >
               {children}
             </button>
           );
+          if (needsTooltip) {
+            return (
+              <SimpleTooltip content={filePath} side="bottom">
+                {link}
+              </SimpleTooltip>
+            );
+          }
+          return link;
         }
         return (
           <button
@@ -70,7 +118,7 @@ export function GuideOverviewSection() {
                 getPlatformServices().opener.openUrl(href);
               }
             }}
-            className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 cursor-pointer"
+            className="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
           >
             {children}
           </button>
@@ -88,20 +136,80 @@ export function GuideOverviewSection() {
   return (
     <div className="px-4 mb-6">
       {showNarrative ? (
-        <div className="rounded-lg border border-stone-800 overflow-hidden">
-          <div className="px-4 py-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <div className="text-xxs font-medium text-stone-500 uppercase tracking-wider">
-                  AI Walkthrough
+        <div className="rounded-lg border border-stone-700/40 bg-stone-800/30 overflow-hidden">
+          <div className="px-5 py-4">
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-1.5">
+                <div className="text-xxs font-medium text-stone-400 uppercase tracking-wider">
+                  Narrative
                 </div>
-                {stale && (
-                  <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
-                    outdated
-                  </span>
+                <svg
+                  className="h-3 w-3 text-purple-400/60"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                </svg>
+                <div className="flex-1" />
+                {narrativeGenerating && (
+                  <div className="flex items-center gap-1.5 text-purple-400">
+                    <svg
+                      className="h-3 w-3 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    <span className="text-xxs">Generating...</span>
+                  </div>
+                )}
+                {stale && !narrativeGenerating && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors">
+                        {staleReason || "outdated"}
+                        <svg
+                          className="h-2.5 w-2.5"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                        >
+                          <path d="M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z" />
+                        </svg>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={generateNarrative}>
+                        <svg
+                          className="h-3.5 w-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="23 4 23 10 17 10" />
+                          <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                        </svg>
+                        Regenerate
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
-              <div className="guide-prose text-stone-300">
+              <div className="guide-prose text-stone-200 text-sm">
                 <Markdown
                   remarkPlugins={[remarkGfm]}
                   urlTransform={(url) =>
@@ -114,30 +222,16 @@ export function GuideOverviewSection() {
               </div>
             </div>
           </div>
-
-          {/* Regenerate bar when stale */}
-          {stale && !narrativeGenerating && (
-            <div className="flex items-center gap-2 px-4 py-2 border-t border-stone-800 bg-stone-900/50">
-              <SimpleTooltip content="Changes have been updated since the narrative was generated">
-                <button
-                  onClick={generateNarrative}
-                  className="text-2xs text-amber-400/70 hover:text-amber-400 transition-colors"
-                >
-                  Regenerate narrative
-                </button>
-              </SimpleTooltip>
-            </div>
-          )}
         </div>
       ) : (
         /* Empty / generating state card */
         <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
           <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
             {/* Icon */}
-            <div className="flex items-center justify-center text-stone-400">
+            <div className="flex items-center justify-center">
               {narrativeGenerating ? (
                 <svg
-                  className="h-4 w-4 animate-spin"
+                  className="h-4 w-4 animate-spin text-purple-400"
                   viewBox="0 0 24 24"
                   fill="none"
                 >
@@ -157,18 +251,11 @@ export function GuideOverviewSection() {
                 </svg>
               ) : (
                 <svg
-                  className="h-4 w-4"
+                  className="h-4 w-4 text-purple-400"
                   viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                  fill="currentColor"
                 >
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
                 </svg>
               )}
             </div>

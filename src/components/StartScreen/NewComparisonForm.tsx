@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Comparison, BranchList } from "../../types";
-import { makeComparison } from "../../types";
-import { BranchSelect, WORKING_TREE, STAGED_ONLY } from "../BranchSelect";
+import type { Comparison, BranchList, PullRequest } from "../../types";
+import { makeComparison, makePrComparison } from "../../types";
+import {
+  BranchSelect,
+  WORKING_TREE,
+  STAGED_ONLY,
+  PR_PREFIX,
+} from "../BranchSelect";
 import { getApiClient } from "../../api";
 
 interface NewComparisonFormProps {
@@ -26,6 +31,7 @@ export function NewComparisonForm({
   const [baseRef, setBaseRef] = useState("");
   const [compareRef, setCompareRef] = useState("");
   const [currentBranch, setCurrentBranch] = useState("HEAD");
+  const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
 
   // Load branches on mount
   useEffect(() => {
@@ -93,11 +99,29 @@ export function NewComparisonForm({
         setBaseRef("main");
       })
       .finally(() => setBranchesLoading(false));
+
+    // Fetch PRs separately (non-blocking, optional)
+    client
+      .checkGitHubAvailable(repoPath)
+      .then((avail) => (avail ? client.listPullRequests(repoPath) : []))
+      .then((prs) => setPullRequests(prs))
+      .catch(() => setPullRequests([]));
   }, [repoPath]);
 
   // Handle starting a new review
   const handleStartReview = useCallback(() => {
     if (!baseRef || !compareRef) return;
+
+    // Handle PR selection
+    if (compareRef.startsWith(PR_PREFIX)) {
+      const prNumber = parseInt(compareRef.slice(PR_PREFIX.length, -2), 10);
+      const pr = pullRequests.find((p) => p.number === prNumber);
+      if (pr) {
+        onSelectReview(makePrComparison(pr));
+      }
+      return;
+    }
+
     const isWorkingTree = compareRef === WORKING_TREE;
     const isStagedOnly = compareRef === STAGED_ONLY;
     const newRef = isWorkingTree || isStagedOnly ? currentBranch : compareRef;
@@ -108,7 +132,7 @@ export function NewComparisonForm({
       isStagedOnly,
     );
     onSelectReview(comparison);
-  }, [baseRef, compareRef, currentBranch, onSelectReview]);
+  }, [baseRef, compareRef, currentBranch, onSelectReview, pullRequests]);
 
   // Handle keyboard submit for form
   const handleFormKeyDown = useCallback(
@@ -134,11 +158,11 @@ export function NewComparisonForm({
           className="w-1.5 h-1.5 rounded-full bg-terracotta-400"
           aria-hidden="true"
         />
-        New Comparison
+        New Review
       </h2>
       <p className="mb-4 text-xs text-stone-500 leading-relaxed">
-        A comparison shows changes between two git refs. Select a base branch
-        and what you want to compare it against.
+        Select a base branch and what you want to compare it against, or choose
+        a pull request.
       </p>
 
       {/* Inline form with clear visual boundary */}
@@ -147,9 +171,18 @@ export function NewComparisonForm({
           value={baseRef}
           onChange={(newBase) => {
             setBaseRef(newBase);
-            // Reset compare if it matches the new base or would be invalid
+            // Reset compare if it matches the new base or is a PR targeting a different base
             if (compareRef === newBase) {
               setCompareRef("");
+            } else if (compareRef.startsWith(PR_PREFIX)) {
+              const prNumber = parseInt(
+                compareRef.slice(PR_PREFIX.length, -2),
+                10,
+              );
+              const pr = pullRequests.find((p) => p.number === prNumber);
+              if (pr && pr.baseRefName !== newBase) {
+                setCompareRef("");
+              }
             }
           }}
           label="Base branch"
@@ -177,6 +210,7 @@ export function NewComparisonForm({
           baseValue={baseRef}
           existingComparisonKeys={existingComparisonKeys}
           placeholder="Compare..."
+          pullRequests={pullRequests}
         />
 
         <div className="flex-1" />

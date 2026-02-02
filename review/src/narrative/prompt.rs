@@ -29,6 +29,10 @@ pub fn build_narrative_prompt(hunks: &[NarrativeInput]) -> String {
     prompt.push_str(
         "- Link to specific hunks like this: [description](review://path/to/file.ts?hunk=HUNK_ID)\n",
     );
+    prompt.push_str(
+        "- Use the actual filename as the link text sometimes (e.g. [`utils.ts`](review://src/utils.ts)) \
+         to help the reviewer become familiar with the file names in the change.\n",
+    );
     prompt.push_str("- Do NOT judge code quality or suggest improvements.\n");
     prompt.push_str("- Do NOT include a title/heading at the very top — the UI provides one.\n");
     prompt.push_str(
@@ -36,6 +40,11 @@ pub fn build_narrative_prompt(hunks: &[NarrativeInput]) -> String {
     );
     prompt
         .push_str("- Keep it concise — aim for a quick orientation, not an exhaustive catalog.\n");
+    prompt.push_str(
+        "- The diff may contain multiple independent, unrelated changes (e.g. a feature and a \
+         separate refactor). If so, split them into separate sections with their own headings \
+         rather than forcing a single unified narrative.\n",
+    );
     prompt.push_str("- Output raw markdown only. No JSON wrapper, no code fences around the whole response.\n\n");
 
     prompt.push_str("## Hunks\n\n");

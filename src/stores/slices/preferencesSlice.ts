@@ -251,6 +251,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   setAutoClassifyEnabled: (enabled) => {
     set({ autoClassifyEnabled: enabled });
     storage.set("autoClassifyEnabled", enabled);
+    if (enabled) {
+      get().triggerAutoClassification();
+    }
   },
 
   setClassifyCommand: (command) => {
