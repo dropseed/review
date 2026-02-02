@@ -222,6 +222,17 @@ html {
   background: var(--stone-600);
 }
 
+/* Hide scrollbar while still allowing scroll */
+/* Firefox */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+/* Chrome/Safari/Edge */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Button base */
 .btn {
   padding: 0.5rem 1rem;

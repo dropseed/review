@@ -27,6 +27,7 @@ import type {
   SearchMatch,
   FileSymbol,
   FileSymbolDiff,
+  SymbolDefinition,
   RemoteInfo,
   NarrativeInput,
 } from "../types";
@@ -191,6 +192,12 @@ export interface ApiClient {
     filePath: string,
     gitRef?: string,
   ): Promise<FileSymbol[] | null>;
+
+  /** Find symbol definitions across the repository */
+  findSymbolDefinitions(
+    repoPath: string,
+    symbolName: string,
+  ): Promise<SymbolDefinition[]>;
 
   // ----- File watcher -----
 

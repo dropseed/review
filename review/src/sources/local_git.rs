@@ -423,7 +423,7 @@ impl LocalGitSource {
     }
 
     /// Get all tracked files from git (fast, uses index)
-    fn get_tracked_files(&self) -> Result<Vec<String>, LocalGitError> {
+    pub fn get_tracked_files(&self) -> Result<Vec<String>, LocalGitError> {
         let output = self.run_git(&["ls-files"])?;
         Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
     }

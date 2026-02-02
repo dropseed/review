@@ -27,6 +27,7 @@ import type {
   SearchMatch,
   FileSymbol,
   FileSymbolDiff,
+  SymbolDefinition,
   RemoteInfo,
 } from "../types";
 
@@ -489,6 +490,14 @@ export class HttpClient implements ApiClient {
   ): Promise<FileSymbol[] | null> {
     console.warn("[HttpClient] getFileSymbols not implemented");
     return null;
+  }
+
+  async findSymbolDefinitions(
+    _repoPath: string,
+    _symbolName: string,
+  ): Promise<SymbolDefinition[]> {
+    console.warn("[HttpClient] findSymbolDefinitions not implemented");
+    return [];
   }
 
   // ----- File watcher -----

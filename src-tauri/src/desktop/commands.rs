@@ -23,7 +23,7 @@ use review::sources::local_git::{LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
-use review::symbols::{self, FileSymbolDiff, Symbol};
+use review::symbols::{self, FileSymbolDiff, Symbol, SymbolDefinition};
 use review::trust::patterns::TrustCategory;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -1279,6 +1279,80 @@ pub async fn get_file_symbols(
         };
 
         Ok(symbols::extractor::extract_symbols(&content, &file_path))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn find_symbol_definitions(
+    repo_path: String,
+    symbol_name: String,
+) -> Result<Vec<SymbolDefinition>, String> {
+    debug!(
+        "[find_symbol_definitions] repo_path={}, symbol={}",
+        repo_path, symbol_name
+    );
+
+    tokio::task::spawn_blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+            error!("[find_symbol_definitions] ERROR creating source: {e}");
+            e.to_string()
+        })?;
+
+        // Use git grep to quickly find candidate files containing the symbol name
+        let grep_output = std::process::Command::new("git")
+            .args(["grep", "-l", "-F", "--", &symbol_name])
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        let candidates: Vec<String> = if grep_output.status.success() {
+            String::from_utf8_lossy(&grep_output.stdout)
+                .lines()
+                .filter(|line| !line.is_empty())
+                .filter(|line| symbols::extractor::get_language_for_file(line).is_some())
+                .map(|s| s.to_owned())
+                .collect()
+        } else {
+            // No matches or error — fall back to all tracked files with grammars
+            source
+                .get_tracked_files()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|f| symbols::extractor::get_language_for_file(f).is_some())
+                .collect()
+        };
+
+        // Process candidate files in parallel
+        let results: Vec<SymbolDefinition> = std::thread::scope(|s| {
+            let handles: Vec<_> = candidates
+                .iter()
+                .map(|file_path| {
+                    let repo_path = repo_path.as_str();
+                    let symbol_name = symbol_name.as_str();
+                    s.spawn(move || {
+                        let full_path = PathBuf::from(repo_path).join(file_path);
+                        let content = match std::fs::read_to_string(&full_path) {
+                            Ok(c) => c,
+                            Err(_) => return Vec::new(),
+                        };
+                        symbols::extractor::find_definitions(&content, file_path, symbol_name)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .filter_map(|h| h.join().ok())
+                .flatten()
+                .collect()
+        });
+
+        info!(
+            "[find_symbol_definitions] SUCCESS: {} definitions found",
+            results.len()
+        );
+        Ok(results)
     })
     .await
     .map_err(|e| e.to_string())?

@@ -32,6 +32,8 @@ interface FileContentRendererProps {
   ) => void;
   updateAnnotation: (id: string, content: string) => void;
   deleteAnnotation: (id: string) => void;
+  onGoToDefinition?: (event: PointerEvent) => void;
+  cmdKeyHeld?: boolean;
 }
 
 export function FileContentRenderer({
@@ -53,6 +55,8 @@ export function FileContentRenderer({
   addAnnotation,
   updateAnnotation,
   deleteAnnotation,
+  onGoToDefinition,
+  cmdKeyHeld,
 }: FileContentRendererProps) {
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
@@ -100,6 +104,8 @@ export function FileContentRenderer({
         newContent={fileContent.content}
         focusedHunkId={focusedHunkId}
         language={effectiveLanguage}
+        onGoToDefinition={onGoToDefinition}
+        cmdKeyHeld={cmdKeyHeld}
       />
     );
   }
@@ -122,6 +128,8 @@ export function FileContentRenderer({
       }
       onUpdateAnnotation={updateAnnotation}
       onDeleteAnnotation={deleteAnnotation}
+      onGoToDefinition={onGoToDefinition}
+      cmdKeyHeld={cmdKeyHeld}
     />
   );
 }

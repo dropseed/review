@@ -17,3 +17,5 @@ export {
   highlightCode,
 } from "./useHighlighter";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
+export { useCmdKeyHeld } from "./useCmdKeyHeld";
+export { useGoToDefinition } from "./useGoToDefinition";

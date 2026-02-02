@@ -411,6 +411,14 @@ export interface FileSymbolDiff {
   hasGrammar: boolean;
 }
 
+export interface SymbolDefinition {
+  filePath: string;
+  name: string;
+  kind: SymbolKind;
+  startLine: number;
+  endLine: number;
+}
+
 // API operation types
 
 export interface HunkInput {

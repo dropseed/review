@@ -1,6 +1,8 @@
 //! Tree-sitter based symbol extraction and hunk mapping.
 
-use super::{FileSymbolDiff, LineRange, Symbol, SymbolChangeType, SymbolDiff, SymbolKind};
+use super::{
+    FileSymbolDiff, LineRange, Symbol, SymbolChangeType, SymbolDefinition, SymbolDiff, SymbolKind,
+};
 use crate::diff::parser::DiffHunk;
 use std::collections::HashMap;
 use tree_sitter::{Language, Node, Parser};
@@ -54,6 +56,40 @@ pub fn extract_symbols(source: &str, file_path: &str) -> Option<Vec<Symbol>> {
 
     let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
     Some(extract_symbols_from_node(root, source, &ext))
+}
+
+/// Find all symbol definitions matching the given name in a file.
+///
+/// Searches the extracted symbols (including children) for exact name matches.
+pub fn find_definitions(source: &str, file_path: &str, symbol_name: &str) -> Vec<SymbolDefinition> {
+    let Some(symbols) = extract_symbols(source, file_path) else {
+        return Vec::new();
+    };
+
+    let mut results = Vec::new();
+    collect_matching_symbols(&symbols, file_path, symbol_name, &mut results);
+    results
+}
+
+/// Recursively collect symbols matching the given name.
+fn collect_matching_symbols(
+    symbols: &[Symbol],
+    file_path: &str,
+    symbol_name: &str,
+    results: &mut Vec<SymbolDefinition>,
+) {
+    for symbol in symbols {
+        if symbol.name == symbol_name {
+            results.push(SymbolDefinition {
+                file_path: file_path.to_owned(),
+                name: symbol.name.clone(),
+                kind: symbol.kind.clone(),
+                start_line: symbol.start_line,
+                end_line: symbol.end_line,
+            });
+        }
+        collect_matching_symbols(&symbol.children, file_path, symbol_name, results);
+    }
 }
 
 /// Recursively extract symbol definitions from a tree-sitter node.

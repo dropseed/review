@@ -29,6 +29,7 @@ import type {
   SearchMatch,
   FileSymbol,
   FileSymbolDiff,
+  SymbolDefinition,
   RemoteInfo,
   NarrativeInput,
 } from "../types";
@@ -283,6 +284,16 @@ export class TauriClient implements ApiClient {
       repoPath,
       filePath,
       gitRef: gitRef ?? null,
+    });
+  }
+
+  async findSymbolDefinitions(
+    repoPath: string,
+    symbolName: string,
+  ): Promise<SymbolDefinition[]> {
+    return invoke<SymbolDefinition[]>("find_symbol_definitions", {
+      repoPath,
+      symbolName,
     });
   }
 

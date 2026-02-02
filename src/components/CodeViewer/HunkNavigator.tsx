@@ -1,24 +1,12 @@
-import { useMemo } from "react";
 import { useReviewStore } from "../../stores";
 import { SimpleTooltip } from "../ui/tooltip";
 
 interface HunkNavigatorProps {
-  filePath: string;
+  fileHunkIndices: number[];
 }
 
-export function HunkNavigator({ filePath }: HunkNavigatorProps) {
-  const hunks = useReviewStore((s) => s.hunks);
+export function HunkNavigator({ fileHunkIndices }: HunkNavigatorProps) {
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
-
-  // Global indices of hunks belonging to this file
-  const fileHunkIndices = useMemo(
-    () =>
-      hunks.reduce<number[]>((acc, h, i) => {
-        if (h.filePath === filePath) acc.push(i);
-        return acc;
-      }, []),
-    [hunks, filePath],
-  );
 
   // Don't render when file has fewer than 2 hunks
   if (fileHunkIndices.length < 2) return null;
