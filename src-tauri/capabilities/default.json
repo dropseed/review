@@ -19,6 +19,8 @@
     "os:default",
     "global-shortcut:default",
     "log:default",
-    "window-state:default"
+    "window-state:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

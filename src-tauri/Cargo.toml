@@ -29,6 +29,8 @@ tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Desktop-specific dependencies
 log = "0.4"

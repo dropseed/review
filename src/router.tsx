@@ -10,6 +10,7 @@ import {
 import type { Comparison } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
 import { StartScreen } from "./components/StartScreen";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -123,6 +124,7 @@ function AppShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      <UpdateBanner />
       <Outlet
         context={{
           repoStatus,

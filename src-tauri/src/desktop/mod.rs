@@ -96,7 +96,9 @@ pub fn run() {
                 .level_for("notify_debouncer_mini", log::LevelFilter::Warn)
                 .build(),
         )
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
 
     // Desktop-only plugins and setup
     #[cfg(desktop)]
