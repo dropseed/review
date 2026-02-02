@@ -1,7 +1,7 @@
 import type { ApiClient } from "../../api";
 import type { FileSymbolDiff } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
-import { flattenFiles } from "../types";
+import { flattenFilesWithStatus } from "../types";
 
 export interface SymbolsSlice {
   symbolDiffs: FileSymbolDiff[];
@@ -24,7 +24,9 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
       set({ symbolsLoading: true });
 
       try {
-        const changedPaths = flattenFiles(files);
+        const changedPaths = flattenFilesWithStatus(files)
+          .filter((f) => f.status !== "deleted")
+          .map((f) => f.path);
 
         if (changedPaths.length === 0) {
           set({ symbolDiffs: [], symbolsLoading: false, symbolsLoaded: true });
