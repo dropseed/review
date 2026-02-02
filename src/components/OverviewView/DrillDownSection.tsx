@@ -15,6 +15,8 @@ import type { SymbolHunkStatus } from "../symbols";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import type { FileHunkStatus } from "../FilesPanel/types";
 import { ReviewDataProvider, useReviewData } from "../ReviewDataContext";
+import { StatusLetter } from "../FilesPanel/StatusIndicators";
+import { flattenFilesWithStatus } from "../../stores/types";
 
 // ========================================================================
 // Types
@@ -298,12 +300,14 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
   fileLineStats,
   lineStatsMap,
   allHunks,
+  fileStatus,
 }: {
   fileDiff: FileSymbolDiff;
   fileHunkStatus: FileHunkStatus;
   fileLineStats: LineStats;
   lineStatsMap: Map<string, LineStats>;
   allHunks: DiffHunk[];
+  fileStatus?: string;
 }) {
   const { hunkStates, trustList } = useReviewData();
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
@@ -408,13 +412,34 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
         onClick={handleToggle}
       >
         <Chevron expanded={isExpanded} />
+        <StatusLetter status={fileStatus} />
         <div className="min-w-0 flex-1">
           <button
-            className="truncate text-xs text-left hover:text-amber-400 transition-colors"
+            className={`truncate text-xs text-left hover:text-amber-400 transition-colors ${fileStatus === "deleted" ? "line-through text-rose-400/70" : ""}`}
             onClick={handleFileClick}
           >
-            {dirPath && <span className="text-stone-500">{dirPath}/</span>}
-            <span className="text-stone-200 font-medium">{fileName}</span>
+            {dirPath && (
+              <span
+                className={
+                  fileStatus === "deleted"
+                    ? "text-rose-400/50"
+                    : "text-stone-500"
+                }
+              >
+                {dirPath}/
+              </span>
+            )}
+            <span
+              className={
+                fileStatus === "deleted"
+                  ? "text-rose-400/70 font-medium"
+                  : fileStatus === "added" || fileStatus === "untracked"
+                    ? "text-lime-300 font-medium"
+                    : "text-stone-200 font-medium"
+              }
+            >
+              {fileName}
+            </span>
           </button>
         </div>
         <LineStatsBadge stats={fileLineStats} />
@@ -525,11 +550,20 @@ export function DrillDownSection() {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const files = useReviewStore((s) => s.files);
 
   const hunkStates = reviewState?.hunks ?? {};
   const trustList = reviewState?.trustList ?? [];
 
   const lineStatsMap = useMemo(() => buildLineStatsMap(hunks), [hunks]);
+
+  const fileStatusMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const { path, status } of flattenFilesWithStatus(files)) {
+      if (status) map.set(path, status);
+    }
+    return map;
+  }, [files]);
 
   const fileHunkStatusMap = useMemo(
     () => calculateFileHunkStatus(hunks, reviewState),
@@ -617,6 +651,7 @@ export function DrillDownSection() {
                   fileLineStats={fileLineStats}
                   lineStatsMap={lineStatsMap}
                   allHunks={hunks}
+                  fileStatus={fileStatusMap.get(fileDiff.filePath)}
                 />
               );
             })}
