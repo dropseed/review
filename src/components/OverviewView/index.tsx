@@ -1,4 +1,3 @@
-import { useState } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
@@ -21,8 +20,6 @@ export function OverviewView() {
   } = useReviewProgress();
 
   const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
-  const resetReview = useReviewStore((s) => s.resetReview);
-  const [confirmingReset, setConfirmingReset] = useState(false);
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -96,40 +93,6 @@ export function OverviewView() {
 
         {/* Changed Files — Files → Symbols → Hunks */}
         <DrillDownSection />
-
-        {/* Reset Review */}
-        <div className="px-4 pt-4 pb-8 flex justify-center">
-          {confirmingReset ? (
-            <div
-              className="flex items-center gap-2"
-              role="group"
-              aria-label="Confirm reset"
-            >
-              <button
-                onClick={() => setConfirmingReset(false)}
-                className="rounded-md px-2 py-1 text-xs text-stone-400 hover:bg-stone-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  await resetReview();
-                  setConfirmingReset(false);
-                }}
-                className="rounded-md px-2 py-1 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20"
-              >
-                Reset
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmingReset(true)}
-              className="text-xs text-stone-500 hover:text-red-400 transition-colors"
-            >
-              Reset Review
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );
