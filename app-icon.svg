@@ -13,10 +13,10 @@
     </linearGradient>
   </defs>
   
-  <!-- Left panel (red/coral) - outside r=90, inside r=20 -->
-  <path d="M 122,16 L 222,16 A 20,20 0 0,1 242,36 L 242,476 A 20,20 0 0,1 222,496 L 122,496 A 90,90 0 0,1 32,406 L 32,106 A 90,90 0 0,1 122,16 Z" fill="url(#redGrad)"/>
+  <!-- Left panel (red/coral) - all corners r=90 -->
+  <path d="M 122,16 L 152,16 A 90,90 0 0,1 242,106 L 242,406 A 90,90 0 0,1 152,496 L 122,496 A 90,90 0 0,1 32,406 L 32,106 A 90,90 0 0,1 122,16 Z" fill="url(#redGrad)"/>
 
-  <!-- Right panel (teal/green) - outside r=90, inside r=20 -->
-  <path d="M 290,16 L 390,16 A 90,90 0 0,1 480,106 L 480,406 A 90,90 0 0,1 390,496 L 290,496 A 20,20 0 0,1 270,476 L 270,36 A 20,20 0 0,1 290,16 Z" fill="url(#greenGrad)"/>
+  <!-- Right panel (teal/green) - all corners r=90 -->
+  <path d="M 360,16 L 390,16 A 90,90 0 0,1 480,106 L 480,406 A 90,90 0 0,1 390,496 L 360,496 A 90,90 0 0,1 270,406 L 270,106 A 90,90 0 0,1 360,16 Z" fill="url(#greenGrad)"/>
   
 </svg>
