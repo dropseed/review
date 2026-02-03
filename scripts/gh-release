@@ -26,9 +26,9 @@ trap 'rm -rf "$STAGING"' EXIT
 
 echo "Staging artifacts in $STAGING..."
 
-# Copy DMGs (already uniquely named)
-cp "$AARCH64_DIR/dmg/Review_${VERSION}_aarch64.dmg" "$STAGING/"
-cp "$X86_64_DIR/dmg/Review_${VERSION}_x64.dmg" "$STAGING/"
+# Copy DMGs with arch-specific names (strip version for stable download URLs)
+cp "$AARCH64_DIR/dmg/Review_${VERSION}_aarch64.dmg" "$STAGING/Review_aarch64.dmg"
+cp "$X86_64_DIR/dmg/Review_${VERSION}_x64.dmg" "$STAGING/Review_x64.dmg"
 
 # Copy .app.tar.gz and .sig with arch-specific names
 cp "$AARCH64_DIR/macos/Review.app.tar.gz" "$STAGING/Review_aarch64.app.tar.gz"
@@ -42,7 +42,7 @@ SIG_X86_64=$(cat "$STAGING/Review_x64.app.tar.gz.sig")
 
 # Generate latest.json (Tauri v1-compatible updater manifest)
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-BASE_URL="https://github.com/dropseed/review/releases/download/v${VERSION}"
+BASE_URL="https://github.com/dropseed/review/releases/latest/download"
 
 cat > "$STAGING/latest.json" <<EOF
 {
@@ -67,8 +67,8 @@ echo "Generated latest.json"
 echo ""
 echo "Creating draft GitHub release v$VERSION..."
 gh release create "v$VERSION" --draft --title "v$VERSION" --notes-file "$NOTES_FILE" \
-    "$STAGING/Review_${VERSION}_aarch64.dmg" \
-    "$STAGING/Review_${VERSION}_x64.dmg" \
+    "$STAGING/Review_aarch64.dmg" \
+    "$STAGING/Review_x64.dmg" \
     "$STAGING/Review_aarch64.app.tar.gz" \
     "$STAGING/Review_aarch64.app.tar.gz.sig" \
     "$STAGING/Review_x64.app.tar.gz" \
