@@ -1,12 +1,12 @@
-function StatChip({
-  color,
-  label,
-  count,
-}: {
+import type { ReviewProgress } from "../../hooks/useReviewProgress";
+
+interface StatChipProps {
   color: string;
   label: string;
   count: number;
-}) {
+}
+
+function StatChip({ color, label, count }: StatChipProps) {
   return (
     <div className="flex items-center gap-1.5">
       <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
@@ -18,6 +18,40 @@ function StatChip({
   );
 }
 
+interface ProgressSegmentProps {
+  count: number;
+  total: number;
+  className: string;
+}
+
+function ProgressSegment({ count, total, className }: ProgressSegmentProps) {
+  if (count === 0) return null;
+  return (
+    <div
+      className={`${className} transition-all duration-300`}
+      style={{ width: `${(count / total) * 100}%` }}
+    />
+  );
+}
+
+function StateBadge({ state }: { state: ReviewProgress["state"] }) {
+  if (state === "approved") {
+    return (
+      <span className="text-xxs font-medium text-lime-300 bg-lime-500/10 px-1.5 py-0.5 rounded">
+        Approved
+      </span>
+    );
+  }
+  if (state === "changes_requested") {
+    return (
+      <span className="text-xxs font-medium text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded">
+        Changes Requested
+      </span>
+    );
+  }
+  return null;
+}
+
 export function SummaryStats({
   totalHunks,
   trustedHunks,
@@ -26,94 +60,37 @@ export function SummaryStats({
   pendingHunks,
   reviewedPercent,
   state,
-}: {
-  totalHunks: number;
-  trustedHunks: number;
-  approvedHunks: number;
-  rejectedHunks: number;
-  pendingHunks: number;
-  reviewedPercent: number;
-  state: "approved" | "changes_requested" | null;
-}) {
-  if (totalHunks === 0) {
-    return (
-      <div className="px-4 pb-8 mb-4 border-b border-stone-800">
-        <div className="flex flex-col items-center py-8">
-          {/* Abstract diff lines — empty */}
-          <div className="mb-5 w-40 space-y-1.5 opacity-30">
-            <div className="flex gap-2 items-center">
-              <span className="w-4 text-right font-mono text-xxs text-stone-600">
-                1
-              </span>
-              <div className="h-px flex-1 bg-stone-700" />
-            </div>
-            <div className="flex gap-2 items-center">
-              <span className="w-4 text-right font-mono text-xxs text-stone-600">
-                2
-              </span>
-              <div className="h-px flex-1 bg-stone-700" />
-            </div>
-            <div className="flex gap-2 items-center">
-              <span className="w-4 text-right font-mono text-xxs text-stone-600">
-                3
-              </span>
-              <div className="h-px flex-1 bg-stone-700" />
-            </div>
-          </div>
-          <p className="text-sm font-medium text-stone-400 mb-1">
-            No changes to review
-          </p>
-          <p className="text-xs text-stone-600 text-center max-w-[220px]">
-            The base and compare refs are identical, or no diff hunks were
-            found.
-          </p>
-        </div>
-      </div>
-    );
-  }
+}: ReviewProgress) {
+  const reviewedCount = trustedHunks + approvedHunks + rejectedHunks;
 
   return (
     <div className="px-4 mb-4">
       <div className="flex items-center gap-3">
-        {/* Compact progress bar */}
         <div className="h-1.5 flex-1 rounded-full bg-stone-800 overflow-hidden flex">
-          {trustedHunks > 0 && (
-            <div
-              className="bg-cyan-500 transition-all duration-300"
-              style={{ width: `${(trustedHunks / totalHunks) * 100}%` }}
-            />
-          )}
-          {approvedHunks > 0 && (
-            <div
-              className="bg-lime-500 transition-all duration-300"
-              style={{ width: `${(approvedHunks / totalHunks) * 100}%` }}
-            />
-          )}
-          {rejectedHunks > 0 && (
-            <div
-              className="bg-rose-500 transition-all duration-300"
-              style={{ width: `${(rejectedHunks / totalHunks) * 100}%` }}
-            />
-          )}
+          <ProgressSegment
+            count={trustedHunks}
+            total={totalHunks}
+            className="bg-cyan-500"
+          />
+          <ProgressSegment
+            count={approvedHunks}
+            total={totalHunks}
+            className="bg-lime-500"
+          />
+          <ProgressSegment
+            count={rejectedHunks}
+            total={totalHunks}
+            className="bg-rose-500"
+          />
         </div>
 
         <span className="text-xs font-medium text-stone-300 tabular-nums whitespace-nowrap">
           {reviewedPercent}%
         </span>
 
-        {state === "approved" && (
-          <span className="text-xxs font-medium text-lime-300 bg-lime-500/10 px-1.5 py-0.5 rounded">
-            Approved
-          </span>
-        )}
-        {state === "changes_requested" && (
-          <span className="text-xxs font-medium text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded">
-            Changes Requested
-          </span>
-        )}
+        <StateBadge state={state} />
       </div>
 
-      {/* Stat chips */}
       <div className="flex items-center gap-4 mt-2">
         <StatChip color="bg-cyan-500" label="Trusted" count={trustedHunks} />
         <StatChip color="bg-lime-500" label="Approved" count={approvedHunks} />
@@ -126,7 +103,7 @@ export function SummaryStats({
         )}
         <StatChip color="bg-amber-500" label="Pending" count={pendingHunks} />
         <span className="text-xxs text-stone-600 tabular-nums ml-auto">
-          {trustedHunks + approvedHunks + rejectedHunks}/{totalHunks} hunks
+          {reviewedCount}/{totalHunks} hunks
         </span>
       </div>
     </div>

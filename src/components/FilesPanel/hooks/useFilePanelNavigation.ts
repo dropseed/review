@@ -9,9 +9,23 @@ interface UseFilePanelNavigationOptions {
   };
 }
 
+function directoryExistsInTree(
+  dirPath: string,
+  entries: ProcessedFileEntry[],
+): boolean {
+  for (const entry of entries) {
+    if (!entry.matchesFilter) continue;
+    if (entry.compactedPaths.includes(dirPath)) return true;
+    if (entry.path === dirPath) return true;
+    if (entry.isDirectory && entry.children) {
+      if (directoryExistsInTree(dirPath, entry.children)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Handles file selection and reveal logic in the FilesPanel.
- * Groups: selectedFile, fileToReveal, directoryToReveal, topLevelView
  */
 export function useFilePanelNavigation({
   sectionedFiles,
@@ -27,86 +41,60 @@ export function useFilePanelNavigation({
     navigateToBrowse,
   } = useReviewStore();
 
-  const [viewMode, setViewMode] = useState<ViewMode>("changes");
+  const hunks = useReviewStore((s) => s.hunks);
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    hunks.length === 0 ? "all" : "changes",
+  );
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const fileRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
-  // Helper to check if a directory path exists in the processed tree
-  const directoryExistsInTree = useCallback(
-    (dirPath: string, entries: ProcessedFileEntry[]): boolean => {
-      for (const entry of entries) {
-        if (!entry.matchesFilter) continue;
-        // Check if this entry's path or compacted paths include the directory
-        if (entry.compactedPaths.includes(dirPath)) return true;
-        if (entry.path === dirPath) return true;
-        if (entry.isDirectory && entry.children) {
-          if (directoryExistsInTree(dirPath, entry.children)) return true;
-        }
+  const expandAndScrollTo = useCallback(
+    (targetPath: string, includeTarget: boolean) => {
+      const parts = targetPath.split("/");
+      const pathsToExpand = new Set(expandedPaths);
+      const end = includeTarget ? parts.length : parts.length - 1;
+      for (let i = 1; i <= end; i++) {
+        pathsToExpand.add(parts.slice(0, i).join("/"));
       }
-      return false;
+      setExpandedPaths(pathsToExpand);
+
+      setTimeout(() => {
+        const ref = fileRefs.current.get(targetPath);
+        if (ref) {
+          ref.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
     },
-    [],
+    [expandedPaths],
   );
 
   // Reveal file in tree
   useEffect(() => {
-    if (fileToReveal) {
-      const parts = fileToReveal.split("/");
-      const pathsToExpand = new Set(expandedPaths);
-      for (let i = 1; i < parts.length; i++) {
-        pathsToExpand.add(parts.slice(0, i).join("/"));
-      }
-      setExpandedPaths(pathsToExpand);
-
-      setTimeout(() => {
-        const ref = fileRefs.current.get(fileToReveal);
-        if (ref) {
-          ref.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 100);
-
-      clearFileToReveal();
-    }
-  }, [fileToReveal, clearFileToReveal, expandedPaths]);
+    if (!fileToReveal) return;
+    expandAndScrollTo(fileToReveal, false);
+    clearFileToReveal();
+  }, [fileToReveal, clearFileToReveal, expandAndScrollTo]);
 
   // Reveal directory in tree (from breadcrumb clicks)
   useEffect(() => {
-    if (directoryToReveal) {
-      // Check if directory exists in changes sections
-      const existsInChanges =
-        directoryExistsInTree(directoryToReveal, sectionedFiles.needsReview) ||
-        directoryExistsInTree(directoryToReveal, sectionedFiles.reviewed);
+    if (!directoryToReveal) return;
 
-      // If not in changes sections, switch to All Files view
-      if (!existsInChanges && viewMode !== "all") {
-        setViewMode("all");
-      }
+    const existsInChanges =
+      directoryExistsInTree(directoryToReveal, sectionedFiles.needsReview) ||
+      directoryExistsInTree(directoryToReveal, sectionedFiles.reviewed);
 
-      // Expand parent paths
-      const parts = directoryToReveal.split("/");
-      const pathsToExpand = new Set(expandedPaths);
-      for (let i = 1; i <= parts.length; i++) {
-        pathsToExpand.add(parts.slice(0, i).join("/"));
-      }
-      setExpandedPaths(pathsToExpand);
-
-      // Scroll to directory after a short delay to allow expansion
-      setTimeout(() => {
-        const ref = fileRefs.current.get(directoryToReveal);
-        if (ref) {
-          ref.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 100);
-
-      clearDirectoryToReveal();
+    if (!existsInChanges && viewMode !== "all") {
+      setViewMode("all");
     }
+
+    expandAndScrollTo(directoryToReveal, true);
+    clearDirectoryToReveal();
   }, [
     directoryToReveal,
     clearDirectoryToReveal,
-    directoryExistsInTree,
     sectionedFiles,
     viewMode,
-    expandedPaths,
+    expandAndScrollTo,
   ]);
 
   const togglePath = useCallback((path: string) => {
