@@ -1,0 +1,80 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+VERSION="$1"
+NOTES_FILE="$2"
+
+if [ -z "$VERSION" ] || [ -z "$NOTES_FILE" ]; then
+    echo "Usage: scripts/gh-release <version> <notes-file>"
+    echo "Example: scripts/gh-release 0.0.4 /tmp/release-notes.md"
+    exit 1
+fi
+
+if [ ! -f "$NOTES_FILE" ]; then
+    echo "Error: notes file not found: $NOTES_FILE"
+    exit 1
+fi
+
+# Artifact source dirs
+AARCH64_DIR="target/aarch64-apple-darwin/release/bundle"
+X86_64_DIR="target/x86_64-apple-darwin/release/bundle"
+
+# Create temp staging dir
+STAGING=$(mktemp -d)
+trap 'rm -rf "$STAGING"' EXIT
+
+echo "Staging artifacts in $STAGING..."
+
+# Copy DMGs (already uniquely named)
+cp "$AARCH64_DIR/dmg/Review_${VERSION}_aarch64.dmg" "$STAGING/"
+cp "$X86_64_DIR/dmg/Review_${VERSION}_x64.dmg" "$STAGING/"
+
+# Copy .app.tar.gz and .sig with arch-specific names
+cp "$AARCH64_DIR/macos/Review.app.tar.gz" "$STAGING/Review_aarch64.app.tar.gz"
+cp "$AARCH64_DIR/macos/Review.app.tar.gz.sig" "$STAGING/Review_aarch64.app.tar.gz.sig"
+cp "$X86_64_DIR/macos/Review.app.tar.gz" "$STAGING/Review_x64.app.tar.gz"
+cp "$X86_64_DIR/macos/Review.app.tar.gz.sig" "$STAGING/Review_x64.app.tar.gz.sig"
+
+# Read signatures
+SIG_AARCH64=$(cat "$STAGING/Review_aarch64.app.tar.gz.sig")
+SIG_X86_64=$(cat "$STAGING/Review_x64.app.tar.gz.sig")
+
+# Generate latest.json (Tauri v1-compatible updater manifest)
+PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+BASE_URL="https://github.com/dropseed/review/releases/download/v${VERSION}"
+
+cat > "$STAGING/latest.json" <<EOF
+{
+  "version": "$VERSION",
+  "pub_date": "$PUB_DATE",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "$SIG_AARCH64",
+      "url": "$BASE_URL/Review_aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "$SIG_X86_64",
+      "url": "$BASE_URL/Review_x64.app.tar.gz"
+    }
+  }
+}
+EOF
+
+echo "Generated latest.json"
+
+# Create draft GitHub release with all staged artifacts
+echo ""
+echo "Creating draft GitHub release v$VERSION..."
+gh release create "v$VERSION" --draft --title "v$VERSION" --notes-file "$NOTES_FILE" \
+    "$STAGING/Review_${VERSION}_aarch64.dmg" \
+    "$STAGING/Review_${VERSION}_x64.dmg" \
+    "$STAGING/Review_aarch64.app.tar.gz" \
+    "$STAGING/Review_aarch64.app.tar.gz.sig" \
+    "$STAGING/Review_x64.app.tar.gz" \
+    "$STAGING/Review_x64.app.tar.gz.sig" \
+    "$STAGING/latest.json"
+
+echo ""
+RELEASE_URL="https://github.com/dropseed/review/releases/tag/v$VERSION"
+echo "Draft release created: $RELEASE_URL"

@@ -61,26 +61,36 @@ echo "  src-tauri/tauri.conf.json: $(grep '"version"' src-tauri/tauri.conf.json 
 # Fetch signing secrets from 1Password
 echo ""
 echo "Fetching signing secrets from 1Password..."
-TAURI_SIGNING_PRIVATE_KEY=$(op document get vzul5rmugullupaix5xmwrugni --vault Dropseed)
+TAURI_SIGNING_PRIVATE_KEY=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/review.key")
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/password")
 export TAURI_SIGNING_PRIVATE_KEY
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+
+# Pre-build sidecar binaries for both targets (Tauri's beforeBuildCommand
+# only runs once, so the second target would be missing its sidecar)
+echo ""
+echo "Building sidecar binaries..."
+TAURI_TARGET_TRIPLE=aarch64-apple-darwin ./scripts/build-cli
+TAURI_TARGET_TRIPLE=x86_64-apple-darwin ./scripts/build-cli
 
 # Build both targets
 echo ""
 echo "Building aarch64-apple-darwin..."
 npm run tauri build -- --target aarch64-apple-darwin --features symbols-all
+# Detach any auto-mounted DMGs to prevent Finder from opening
+hdiutil detach /Volumes/Review 2>/dev/null || true
 
 echo ""
 echo "Building x86_64-apple-darwin..."
 npm run tauri build -- --target x86_64-apple-darwin --features symbols-all
+hdiutil detach /Volumes/Review 2>/dev/null || true
 
 echo ""
 echo "Both builds succeeded!"
 
 # Commit, tag, and push (only after builds succeed)
 git add package.json review/Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json Cargo.lock
-git commit -m "v$VERSION"
+git commit -m "Release v$VERSION"
 git tag -m "v$VERSION" "v$VERSION"
 
 echo ""
@@ -90,20 +100,6 @@ git push && git push --tags
 
 echo ""
 echo "Pushed to remote."
-
-# Create GitHub release with artifacts
-AARCH64_DIR="target/aarch64-apple-darwin/release/bundle"
-X86_64_DIR="target/x86_64-apple-darwin/release/bundle"
-
-gh release create "v$VERSION" --draft --title "v$VERSION" \
-    "$AARCH64_DIR/dmg/Review_${VERSION}_aarch64.dmg" \
-    "$AARCH64_DIR/macos/Review.app.tar.gz" \
-    "$AARCH64_DIR/macos/Review.app.tar.gz.sig" \
-    "$X86_64_DIR/dmg/Review_${VERSION}_x86_64.dmg" \
-    "$X86_64_DIR/macos/Review.app.tar.gz" \
-    "$X86_64_DIR/macos/Review.app.tar.gz.sig" \
-    "$AARCH64_DIR/macos/latest.json"
-
 echo ""
-echo "Draft release created for v$VERSION"
-echo "Visit https://github.com/dropseed/review/releases to publish it."
+echo "Build, tag, and push complete for v$VERSION."
+echo "Run scripts/gh-release to create the GitHub release."
