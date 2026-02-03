@@ -92,6 +92,11 @@ type AnnotationMeta =
   | { type: "user"; data: UserAnnotationMeta }
   | { type: "new"; data: Record<string, never> };
 
+/** Validates that a line number is valid for @pierre/diffs (must be >= 1). */
+function isValidLineNumber(lineNumber: number): boolean {
+  return lineNumber >= 1;
+}
+
 // Detects when @pierre/diffs finishes syntax highlighting by polling
 // for styled <span> elements inside the shadow DOM of the diffs-container
 // custom element. We poll because the shadow root is not observable via
@@ -251,82 +256,101 @@ export function DiffView({
   // Build line annotations for each hunk - position at last changed line
   // Memoized to preserve reference stability — @pierre/diffs uses reference
   // equality on lineAnnotations to decide whether to re-render the diff.
-  const hunkAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
-    () =>
-      hunks.map((hunk) => {
-        const hunkState = hunkStates?.[hunk.id];
-        const pairedHunk = hunk.movePairId
-          ? (allHunks.find((h) => h.id === hunk.movePairId) ?? null)
-          : null;
-        const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
+  const hunkAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
+    return hunks.flatMap((hunk): DiffLineAnnotation<AnnotationMeta>[] => {
+      const hunkState = hunkStates?.[hunk.id];
+      const pairedHunk = hunk.movePairId
+        ? (allHunks.find((h) => h.id === hunk.movePairId) ?? null)
+        : null;
+      const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
 
-        const changedLines = hunk.lines.filter(
-          (l) => l.type === "added" || l.type === "removed",
+      const changedLines = hunk.lines.filter(
+        (l) => l.type === "added" || l.type === "removed",
+      );
+      const lastChanged = changedLines[changedLines.length - 1];
+
+      let side: "additions" | "deletions";
+      let lineNumber: number;
+
+      if (!lastChanged) {
+        side = isSource ? "deletions" : "additions";
+        lineNumber = isSource ? hunk.oldStart : hunk.newStart;
+      } else if (lastChanged.type === "removed") {
+        side = "deletions";
+        lineNumber = lastChanged.oldLineNumber ?? hunk.oldStart;
+      } else {
+        side = "additions";
+        lineNumber = lastChanged.newLineNumber ?? hunk.newStart;
+      }
+
+      if (!isValidLineNumber(lineNumber)) {
+        console.warn(
+          `[DiffView] Skipping hunk annotation with invalid lineNumber: ${lineNumber}`,
+          { hunkId: hunk.id, side },
         );
-        const lastChanged = changedLines[changedLines.length - 1];
+        return [];
+      }
 
-        let annotationSide: "additions" | "deletions";
-        let lineNumber: number;
-
-        if (!lastChanged) {
-          annotationSide = isSource ? "deletions" : "additions";
-          lineNumber = isSource ? hunk.oldStart : hunk.newStart;
-        } else if (lastChanged.type === "removed") {
-          annotationSide = "deletions";
-          lineNumber = lastChanged.oldLineNumber ?? hunk.oldStart;
-        } else {
-          annotationSide = "additions";
-          lineNumber = lastChanged.newLineNumber ?? hunk.newStart;
-        }
-
-        return {
-          side: annotationSide,
+      return [
+        {
+          side,
           lineNumber,
           metadata: {
             type: "hunk" as const,
             data: { hunk, hunkState, pairedHunk, isSource },
           },
-        };
-      }),
-    [hunks, hunkStates, allHunks],
-  );
+        },
+      ];
+    });
+  }, [hunks, hunkStates, allHunks]);
 
   // Build annotations for user comments
   // Include "file" annotations as well - they map to the "additions" side (new/compare version)
-  const userAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
-    () =>
-      fileAnnotations.map((annotation) => ({
-        side:
-          annotation.side === "old"
-            ? ("deletions" as const)
-            : ("additions" as const),
-        lineNumber: annotation.endLineNumber ?? annotation.lineNumber,
-        metadata: { type: "user" as const, data: { annotation } },
-      })),
-    [fileAnnotations],
-  );
+  const userAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
+    return fileAnnotations.flatMap(
+      (annotation): DiffLineAnnotation<AnnotationMeta>[] => {
+        const lineNumber = annotation.endLineNumber ?? annotation.lineNumber;
+
+        if (!isValidLineNumber(lineNumber)) {
+          console.warn(
+            `[DiffView] Skipping user annotation with invalid lineNumber: ${lineNumber}`,
+            { annotationId: annotation.id },
+          );
+          return [];
+        }
+
+        return [
+          {
+            side: annotation.side === "old" ? "deletions" : "additions",
+            lineNumber,
+            metadata: { type: "user" as const, data: { annotation } },
+          },
+        ];
+      },
+    );
+  }, [fileAnnotations]);
 
   // Combine all annotations into a stable reference
-  const lineAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
-    () => [
-      ...hunkAnnotations,
-      ...userAnnotations,
-      ...(newAnnotationLine
-        ? [
-            {
-              side:
-                newAnnotationLine.side === "old"
-                  ? ("deletions" as const)
-                  : ("additions" as const),
-              lineNumber:
-                newAnnotationLine.endLineNumber ?? newAnnotationLine.lineNumber,
-              metadata: { type: "new" as const, data: {} },
-            } satisfies DiffLineAnnotation<AnnotationMeta>,
-          ]
-        : []),
-    ],
-    [hunkAnnotations, userAnnotations, newAnnotationLine],
-  );
+  const lineAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
+    const newLineNumber =
+      newAnnotationLine?.endLineNumber ?? newAnnotationLine?.lineNumber;
+
+    if (
+      !newAnnotationLine ||
+      !newLineNumber ||
+      !isValidLineNumber(newLineNumber)
+    ) {
+      return [...hunkAnnotations, ...userAnnotations];
+    }
+
+    const newAnnotation: DiffLineAnnotation<AnnotationMeta> = {
+      side: newAnnotationLine.side === "old" ? "deletions" : "additions",
+      lineNumber: newLineNumber,
+      metadata: { type: "new" as const, data: {} },
+    };
+
+    return [...hunkAnnotations, ...userAnnotations, newAnnotation];
+  }, [hunkAnnotations, userAnnotations, newAnnotationLine]);
 
   // Handle jumping to paired hunk
   const handleJumpToPair = (movePairId: string) => {
@@ -534,14 +558,24 @@ export function DiffView({
   const handleLineSelectionEnd = useCallback(
     (range: { start: number; end: number; side?: string } | null) => {
       if (!range) return;
+
       const start = Math.min(range.start, range.end);
       const end = Math.max(range.start, range.end);
-      if (start === end) return; // single line — use hover button instead
-      const side: "old" | "new" = range.side === "deletions" ? "old" : "new";
+
+      if (!isValidLineNumber(start) || !isValidLineNumber(end)) {
+        console.warn(
+          `[DiffView] Ignoring selection with invalid line range: ${start}-${end}`,
+        );
+        return;
+      }
+
+      // Single line selections are handled by the hover "+" button
+      if (start === end) return;
+
       setNewAnnotationLine({
         lineNumber: start,
         endLineNumber: end,
-        side,
+        side: range.side === "deletions" ? "old" : "new",
         hunkId: "selection",
       });
     },
