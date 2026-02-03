@@ -14,12 +14,20 @@ pub mod debug_server;
 // Re-export commands for convenient access
 pub use commands::*;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 #[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 #[cfg(desktop)]
 use tauri::Emitter;
 #[cfg(desktop)]
 use tauri_plugin_opener::OpenerExt;
+
+/// Managed state that controls whether Sentry events are actually sent.
+/// Both the `before_send` callback and the `set_sentry_consent` command
+/// share this flag via `Arc`.
+pub struct SentryConsent(pub Arc<AtomicBool>);
 
 /// Path to the signal file used by the CLI to request opening a repo.
 /// Matches the path written by `review/src/cli/commands/open.rs`.
@@ -62,7 +70,31 @@ fn read_open_request() -> Option<String> {
 /// This sets up all plugins, menus, and command handlers, then starts
 /// the Tauri event loop.
 pub fn run() {
+    // Initialize Sentry early so it captures any panics during setup.
+    // Events are silently dropped until the user opts in via preferences.
+    let consent = Arc::new(AtomicBool::new(false));
+    let consent_for_hook = consent.clone();
+
+    let _sentry_guard = sentry::init(sentry::ClientOptions {
+        dsn:
+            "https://52bca0472a38bf2e0b5e0ef3bb100837@o113570.ingest.us.sentry.io/4508948368744448"
+                .parse()
+                .ok(),
+        release: sentry::release_name!(),
+        before_send: Some(Arc::new(move |mut event| {
+            if !consent_for_hook.load(Ordering::Relaxed) {
+                return None;
+            }
+            // Strip PII fields
+            event.user = None;
+            event.server_name = None;
+            Some(event)
+        })),
+        ..Default::default()
+    });
+
     let builder = tauri::Builder::default()
+        .manage(SentryConsent(consent.clone()))
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -105,9 +137,19 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(debug_assertions)]
             debug_server::start();
+
+            // Restore Sentry consent from persisted preferences
+            {
+                use tauri_plugin_store::StoreExt;
+                if let Ok(store) = app.handle().store("preferences.json") {
+                    if let Some(serde_json::Value::Bool(true)) = store.get("sentryEnabled") {
+                        consent.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
 
             let close = MenuItemBuilder::new("Close")
                 .id("close")
@@ -343,9 +385,11 @@ pub fn run() {
             commands::get_file_symbols,
             commands::generate_narrative,
             commands::is_dev_mode,
+            commands::is_git_repo,
             commands::get_cli_install_status,
             commands::install_cli,
             commands::uninstall_cli,
+            commands::set_sentry_consent,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

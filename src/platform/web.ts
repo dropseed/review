@@ -84,6 +84,14 @@ class WebDialogService implements DialogService {
   async alert(message: string, _title?: string): Promise<void> {
     window.alert(message);
   }
+
+  async message(
+    msg: string,
+    _options?: { title?: string; kind?: "info" | "warning" | "error" },
+  ): Promise<void> {
+    // In browser, just use alert
+    window.alert(msg);
+  }
 }
 
 // ----- Shortcuts -----

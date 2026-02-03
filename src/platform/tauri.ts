@@ -10,7 +10,10 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  open as openDialog,
+  message as showMessage,
+} from "@tauri-apps/plugin-dialog";
 import {
   register as registerShortcut,
   unregister as unregisterShortcut,
@@ -91,6 +94,16 @@ class TauriDialogService implements DialogService {
     // Tauri doesn't have a built-in alert dialog
     // Would need custom dialog component
     console.warn("[TauriDialogService] alert not fully implemented");
+  }
+
+  async message(
+    msg: string,
+    options?: { title?: string; kind?: "info" | "warning" | "error" },
+  ): Promise<void> {
+    await showMessage(msg, {
+      title: options?.title,
+      kind: options?.kind,
+    });
   }
 }
 

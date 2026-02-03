@@ -39,6 +39,12 @@ export interface DialogService {
 
   /** Show an alert dialog */
   alert(message: string, title?: string): Promise<void>;
+
+  /** Show a message dialog with configurable kind (info, warning, error) */
+  message(
+    message: string,
+    options?: { title?: string; kind?: "info" | "warning" | "error" },
+  ): Promise<void>;
 }
 
 /**

@@ -363,4 +363,8 @@ export class TauriClient implements ApiClient {
   async openRepoWindow(repoPath: string): Promise<void> {
     await invoke("open_repo_window", { repoPath });
   }
+
+  async isGitRepo(path: string): Promise<boolean> {
+    return invoke<boolean>("is_git_repo", { path });
+  }
 }

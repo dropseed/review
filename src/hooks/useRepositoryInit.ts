@@ -66,6 +66,25 @@ async function resolveRoutePrefix(repoPath: string): Promise<string> {
   return `local/${dirname}`;
 }
 
+/**
+ * Validate that a path is a git repository, showing an error dialog if not.
+ * Returns true if valid, false otherwise.
+ */
+async function validateGitRepo(path: string): Promise<boolean> {
+  const apiClient = getApiClient();
+  const platform = getPlatformServices();
+
+  const isRepo = await apiClient.isGitRepo(path);
+  if (!isRepo) {
+    await platform.dialogs.message(
+      "The selected directory is not a git repository.",
+      { title: "Not a Git Repository", kind: "error" },
+    );
+    return false;
+  }
+  return true;
+}
+
 // Repository status for distinguishing loading states
 export type RepoStatus =
   | "loading"
@@ -275,6 +294,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   // Handle selecting a repo (from welcome page recent list)
   const handleSelectRepo = useCallback(
     async (path: string) => {
+      if (!(await validateGitRepo(path))) return;
+
       setRepoPath(path);
       setLoggerRepoPath(path);
       clearLog();
@@ -299,6 +320,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       });
 
       if (selected) {
+        if (!(await validateGitRepo(selected))) return;
+
         setRepoPath(selected);
         setLoggerRepoPath(selected);
         clearLog();

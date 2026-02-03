@@ -525,4 +525,10 @@ export class HttpClient implements ApiClient {
     // Can't open windows from browser
     console.warn("[HttpClient] openRepoWindow not available in browser");
   }
+
+  async isGitRepo(_path: string): Promise<boolean> {
+    // In browser mode, assume it's a git repo (server validates)
+    console.warn("[HttpClient] isGitRepo not available in browser");
+    return true;
+  }
 }

@@ -215,6 +215,9 @@ export interface ApiClient {
 
   /** Open a new window for a repository */
   openRepoWindow(repoPath: string): Promise<void>;
+
+  /** Check if a path is a git repository */
+  isGitRepo(path: string): Promise<boolean>;
 }
 
 /**

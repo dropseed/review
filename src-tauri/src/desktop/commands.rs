@@ -1319,6 +1319,14 @@ pub fn is_dev_mode() -> bool {
     cfg!(debug_assertions)
 }
 
+#[tauri::command]
+pub fn is_git_repo(path: String) -> bool {
+    let git_path = PathBuf::from(&path).join(".git");
+    // Worktree: .git is a file pointing to the main repo
+    // Regular repo: .git/HEAD must exist
+    git_path.is_file() || git_path.join("HEAD").exists()
+}
+
 // --- CLI sidecar install ---
 
 /// Well-known install location for the `review` CLI symlink.
@@ -1441,6 +1449,13 @@ pub fn uninstall_cli() -> Result<(), String> {
         info!("[uninstall_cli] Removed {CLI_SYMLINK_PATH}");
     }
     Ok(())
+}
+
+// --- Sentry consent ---
+
+#[tauri::command]
+pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryConsent>) {
+    state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Timeout for narrative generation (single Claude call for entire diff).
