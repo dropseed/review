@@ -7,8 +7,6 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,14 +15,24 @@ use tauri::{AppHandle, Emitter};
 /// Debounce interval for file system events in milliseconds.
 const WATCHER_DEBOUNCE_MS: u64 = 200;
 
-/// Log a message to the app.log file (for debugging watcher events)
+/// Log a message to the app.log file (for debugging watcher events, dev only)
+#[cfg(debug_assertions)]
 fn log_to_file(repo_path: &Path, message: &str) {
+    use std::io::Write;
+
     let log_path = repo_path.join(".git/review/app.log");
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
         let _ = writeln!(file, "[{timestamp}] [WATCHER] {message}");
     }
 }
+
+#[cfg(not(debug_assertions))]
+fn log_to_file(_repo_path: &Path, _message: &str) {}
 
 // Global map of repo_path -> watcher handle (using thread for debouncer)
 static WATCHERS: Mutex<Option<HashMap<String, WatcherHandle>>> = Mutex::new(None);

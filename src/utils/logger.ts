@@ -47,8 +47,9 @@ const originalConsole = {
   debug: console.debug.bind(console),
 };
 
-// Patch console methods to also write to file
+// Patch console methods to also write to file (dev only)
 export function initializeLogger() {
+  if (!import.meta.env.DEV) return;
   console.log = (...args: unknown[]) => {
     originalConsole.log(...args);
     writeToFile(formatMessage("LOG", args));
@@ -78,8 +79,9 @@ export function initializeLogger() {
   console.log("Logger initialized");
 }
 
-// Clear the log file - only in Tauri environment
+// Clear the log file (dev only)
 export async function clearLog() {
+  if (!import.meta.env.DEV) return;
   if (!repoPath) return;
   if (!isTauriEnvironment()) return;
 
