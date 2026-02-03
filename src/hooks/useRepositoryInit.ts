@@ -102,7 +102,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const setComparison = useReviewStore((s) => s.setComparison);
   const loadCurrentComparison = useReviewStore((s) => s.loadCurrentComparison);
-  const saveCurrentComparison = useReviewStore((s) => s.saveCurrentComparison);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
 
   // Repository status tracking
@@ -235,11 +234,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const handleSelectReview = useCallback(
     async (selectedComparison: Comparison) => {
       const currentKey = useReviewStore.getState().comparison.key;
-      setComparison(selectedComparison);
-      saveCurrentComparison();
-      setComparisonReady(true);
-      // Only show loading spinner if the comparison actually changed
+
+      // Only reset state when switching to a different comparison.
+      // setComparison already persists via saveCurrentComparison internally.
       if (selectedComparison.key !== currentKey) {
+        setComparison(selectedComparison);
+        setComparisonReady(true);
         setInitialLoading(true);
       }
 
@@ -249,7 +249,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         navigateRef.current(`/${prefix}/review/${selectedComparison.key}`);
       }
     },
-    [setComparison, saveCurrentComparison, repoPath],
+    [setComparison, repoPath],
   );
 
   // Navigate back to start screen
