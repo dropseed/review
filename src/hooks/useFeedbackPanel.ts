@@ -1,13 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
-import { useReviewStore } from "../../../stores";
-import { getPlatformServices } from "../../../platform";
-import type { ReviewState, DiffHunk, LineAnnotation } from "../../../types";
-
-interface UseFilePanelFeedbackOptions {
-  reviewState: ReviewState | null;
-  rejectedCount: number;
-  hunks: DiffHunk[];
-}
+import { useReviewStore } from "../stores";
+import { getPlatformServices } from "../platform";
+import type { DiffHunk, LineAnnotation } from "../types";
 
 /** Returns a human-readable line range string for a hunk (e.g. "10" or "10-15"). */
 function hunkLineRange(hunk: DiffHunk): string {
@@ -44,7 +38,6 @@ function generateFeedbackMarkdown(
   lines.push("# Review Feedback");
   lines.push("");
 
-  // Changes Requested section
   if (rejectedHunks.length > 0) {
     lines.push("## Changes Requested");
     lines.push("");
@@ -62,7 +55,7 @@ function generateFeedbackMarkdown(
     lines.push("");
   }
 
-  // Annotations section (only those NOT already shown under a rejected hunk)
+  // Annotations not already shown under a rejected hunk
   const annotationIdsInRejectedHunks = new Set<string>();
   for (const hunk of rejectedHunks) {
     for (const a of annotations) {
@@ -90,7 +83,6 @@ function generateFeedbackMarkdown(
     lines.push("");
   }
 
-  // Review Notes section
   if (notes.trim()) {
     lines.push("## Review Notes");
     lines.push("");
@@ -101,36 +93,45 @@ function generateFeedbackMarkdown(
   return lines.join("\n");
 }
 
-/**
- * Manages feedback panel state (notes + annotations + copy to clipboard).
- */
-export function useFilePanelFeedback({
-  reviewState,
-  rejectedCount,
-  hunks,
-}: UseFilePanelFeedbackOptions) {
-  const { setReviewNotes, deleteAnnotation, revealFileInTree } =
-    useReviewStore();
+export interface RejectedHunkItem {
+  filePath: string;
+  lineRange: string;
+  hunkId: string;
+}
 
-  const [feedbackOpen, setFeedbackOpen] = useState(true);
+export interface FeedbackPanelState {
+  notes: string;
+  annotations: LineAnnotation[];
+  setReviewNotes: (notes: string) => void;
+  deleteAnnotation: (annotationId: string) => void;
+  isExpanded: boolean;
+  setIsExpanded: (expanded: boolean) => void;
+  hasFeedbackToExport: boolean;
+  goToFile: (filePath: string) => void;
+  rejectedHunks: RejectedHunkItem[];
+  feedbackCount: number;
+  copied: boolean;
+  copyFeedbackToClipboard: () => Promise<void>;
+}
+
+/**
+ * Self-contained hook for the floating feedback panel.
+ * Reads all data directly from the review store.
+ */
+export function useFeedbackPanel(): FeedbackPanelState {
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const hunks = useReviewStore((s) => s.hunks);
+  const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
+  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const revealFileInTree = useReviewStore((s) => s.revealFileInTree);
+
+  const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Check if there's feedback to export
-  const hasFeedbackToExport = useMemo(() => {
-    const hasRejections = rejectedCount > 0;
-    const hasAnnotations = (reviewState?.annotations ?? []).length > 0;
-    const hasNotes = (reviewState?.notes ?? "").trim().length > 0;
-    return hasRejections || hasAnnotations || hasNotes;
-  }, [rejectedCount, reviewState?.annotations, reviewState?.notes]);
+  const annotations = reviewState?.annotations ?? [];
+  const notes = reviewState?.notes || "";
 
-  const handleGoToAnnotation = useCallback(
-    (annotation: { filePath: string }) => {
-      revealFileInTree(annotation.filePath);
-    },
-    [revealFileInTree],
-  );
-
-  const rejectedHunks = useMemo(() => {
+  const rejectedHunks = useMemo((): RejectedHunkItem[] => {
     if (!reviewState) return [];
     return hunks
       .filter((h) => reviewState.hunks[h.id]?.status === "rejected")
@@ -140,6 +141,20 @@ export function useFilePanelFeedback({
         hunkId: h.id,
       }));
   }, [hunks, reviewState]);
+
+  const feedbackCount = rejectedHunks.length + annotations.length;
+
+  const hasFeedbackToExport =
+    rejectedHunks.length > 0 ||
+    annotations.length > 0 ||
+    notes.trim().length > 0;
+
+  const goToFile = useCallback(
+    (filePath: string) => {
+      revealFileInTree(filePath);
+    },
+    [revealFileInTree],
+  );
 
   const copyFeedbackToClipboard = useCallback(async () => {
     if (!reviewState) return;
@@ -156,15 +171,16 @@ export function useFilePanelFeedback({
   }, [reviewState, hunks]);
 
   return {
-    notes: reviewState?.notes || "",
-    annotations: reviewState?.annotations ?? [],
+    notes,
+    annotations,
     setReviewNotes,
     deleteAnnotation,
-    feedbackOpen,
-    setFeedbackOpen,
+    isExpanded,
+    setIsExpanded,
     hasFeedbackToExport,
-    handleGoToAnnotation,
+    goToFile,
     rejectedHunks,
+    feedbackCount,
     copied,
     copyFeedbackToClipboard,
   };

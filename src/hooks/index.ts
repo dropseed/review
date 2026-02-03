@@ -20,3 +20,4 @@ export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
+export { useFeedbackPanel } from "./useFeedbackPanel";

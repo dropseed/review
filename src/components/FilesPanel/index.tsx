@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { CommitsPanel } from "../CommitsPanel";
-import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import { GuideSection } from "./GuideSection";
@@ -8,7 +7,6 @@ import {
   useFilePanelFileSystem,
   useFilePanelNavigation,
   useFilePanelApproval,
-  useFilePanelFeedback,
 } from "./hooks";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
@@ -261,48 +259,6 @@ function SectionHeader({
   );
 }
 
-// Collapsible section container (for Feedback)
-function CollapsibleSection({
-  title,
-  badge,
-  isOpen,
-  onToggle,
-  children,
-}: {
-  title: string;
-  badge?: number;
-  isOpen: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
-      <div className="border-t border-stone-800">
-        <div className="flex items-center">
-          <CollapsibleTrigger asChild>
-            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50">
-              <svg
-                className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M9 6l6 6-6 6" />
-              </svg>
-              <span className="flex-1">{title}</span>
-              {badge !== undefined && badge > 0 && (
-                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-300 tabular-nums">
-                  {badge}
-                </span>
-              )}
-            </button>
-          </CollapsibleTrigger>
-        </div>
-        <CollapsibleContent>{children}</CollapsibleContent>
-      </div>
-    </Collapsible>
-  );
-}
-
 interface FilesPanelProps {
   onSelectCommit?: (commit: CommitEntry) => void;
 }
@@ -397,25 +353,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     },
     [navigateToBrowse, hunks],
   );
-
-  // Feedback panel
-  const {
-    notes,
-    annotations,
-    setReviewNotes,
-    deleteAnnotation,
-    feedbackOpen,
-    setFeedbackOpen,
-    hasFeedbackToExport,
-    handleGoToAnnotation,
-    rejectedHunks: feedbackRejectedHunks,
-    copied,
-    copyFeedbackToClipboard,
-  } = useFilePanelFeedback({
-    reviewState,
-    rejectedCount: stats.rejected,
-    hunks,
-  });
 
   // Section-level bulk approve/unapprove
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
@@ -925,76 +862,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 </>
               )}
             </div>
-
-            {/* Feedback (Notes + Annotations) */}
-            <CollapsibleSection
-              title="Feedback"
-              badge={feedbackRejectedHunks.length + annotations.length}
-              isOpen={feedbackOpen}
-              onToggle={() => setFeedbackOpen(!feedbackOpen)}
-            >
-              <FeedbackPanel
-                notes={notes}
-                onNotesChange={setReviewNotes}
-                rejectedHunks={feedbackRejectedHunks}
-                onGoToRejectedHunk={(filePath) =>
-                  handleGoToAnnotation({ filePath })
-                }
-                annotations={annotations}
-                onGoToAnnotation={handleGoToAnnotation}
-                onDeleteAnnotation={deleteAnnotation}
-              />
-            </CollapsibleSection>
-
-            {/* Actions */}
-            {hasFeedbackToExport && (
-              <div className="border-t border-stone-800 p-3">
-                <button
-                  onClick={copyFeedbackToClipboard}
-                  className={`btn w-full text-xs transition-all ${
-                    copied
-                      ? "bg-lime-500/15 text-lime-400 border border-lime-500/25"
-                      : "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20"
-                  }`}
-                >
-                  {copied ? (
-                    <>
-                      <svg
-                        className="h-3.5 w-3.5 mr-1.5 inline-block"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2.5}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        className="h-3.5 w-3.5 mr-1.5 inline-block"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Copy Feedback
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>
