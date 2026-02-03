@@ -3,7 +3,6 @@ import { CommitsPanel } from "../CommitsPanel";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
-import { TrustBadges } from "./TrustBadges";
 import { GuideSection } from "./GuideSection";
 import {
   useFilePanelFileSystem,
@@ -600,9 +599,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             </TabsList>
           </Tabs>
         </div>
-
-        {/* Trust pattern badges - quick toggles in changes view */}
-        {viewMode === "changes" && <TrustBadges />}
 
         {/* Panel content based on view mode */}
         {viewMode === "commits" ? (
