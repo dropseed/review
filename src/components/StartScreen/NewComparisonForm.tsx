@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Comparison, BranchList, PullRequest } from "../../types";
 import { makeComparison, makePrComparison } from "../../types";
-import { BranchSelect, WORKING_TREE, PR_PREFIX } from "../BranchSelect";
+import { BranchSelect, WORKING_TREE, PR_PREFIX } from "./BranchSelect";
 import { getApiClient } from "../../api";
 
 interface NewComparisonFormProps {

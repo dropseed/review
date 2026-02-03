@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import type { LineAnnotation } from "../../types";
-import { SimpleTooltip } from "../ui/tooltip";
+import type { LineAnnotation } from "../../../types";
+import { SimpleTooltip } from "../../ui/tooltip";
 
 interface AnnotationEditorProps {
   initialContent?: string;

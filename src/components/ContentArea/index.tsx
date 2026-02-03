@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react";
 import { useReviewStore } from "../../stores";
-import { CodeViewer } from "../CodeViewer";
+import { FileViewer } from "../FileViewer";
 import { OverviewView } from "../OverviewView";
 import { PrimaryPaneHeader, SecondaryPaneHeader } from "./PaneHeader";
 import { ResizeHandle } from "./ResizeHandle";
 
-export function SplitContainer() {
+export function ContentArea() {
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const focusedPane = useReviewStore((s) => s.focusedPane);
@@ -72,7 +72,7 @@ export function SplitContainer() {
   if (!isSplitActive) {
     return selectedFile ? (
       <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-        <CodeViewer filePath={selectedFile} />
+        <FileViewer filePath={selectedFile} />
       </div>
     ) : null;
   }
@@ -106,7 +106,7 @@ export function SplitContainer() {
         />
         <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
           {selectedFile ? (
-            <CodeViewer filePath={selectedFile} />
+            <FileViewer filePath={selectedFile} />
           ) : (
             <div className="flex h-full items-center justify-center text-stone-500 text-sm">
               No file selected
@@ -140,7 +140,7 @@ export function SplitContainer() {
           onClose={closeSplit}
         />
         <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
-          <CodeViewer filePath={secondaryFile} />
+          <FileViewer filePath={secondaryFile} />
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { AnnotationEditor } from "../AnnotationEditor";
+import { AnnotationEditor } from "./AnnotationEditor";
 
 interface NewAnnotationEditorProps {
   onSave: (content: string) => void;

@@ -2,7 +2,10 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { File as PierreFile } from "@pierre/diffs/react";
 import type { LineAnnotation as PierreLineAnnotation } from "@pierre/diffs/react";
 import type { LineAnnotation } from "../../types";
-import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
+import {
+  AnnotationEditor,
+  AnnotationDisplay,
+} from "./annotations/AnnotationEditor";
 import type { SupportedLanguages } from "./languageMap";
 import { SimpleTooltip } from "../ui/tooltip";
 

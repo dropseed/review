@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
-import type { BranchList, StashEntry, PullRequest } from "../types";
-import { Input } from "./ui/input";
-import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import type { BranchList, StashEntry, PullRequest } from "../../types";
+import { Input } from "../ui/input";
+import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 
 // Special values for local state options
 const WORKING_TREE = "__WORKING_TREE__";

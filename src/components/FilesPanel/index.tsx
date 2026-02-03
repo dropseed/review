@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { CommitsPanel } from "../CommitsPanel";
+import { CommitsPanel } from "./CommitsPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import { GuideSection } from "./GuideSection";

@@ -29,11 +29,11 @@ import {
 } from "./languageMap";
 import { LanguageSelector } from "./LanguageSelector";
 
-interface CodeViewerProps {
+interface FileViewerProps {
   filePath: string;
 }
 
-export function CodeViewer({ filePath }: CodeViewerProps) {
+export function FileViewer({ filePath }: FileViewerProps) {
   const comparison = useReviewStore((s) => s.comparison);
   const repoPath = useReviewStore((s) => s.repoPath);
   const codeTheme = useReviewStore((s) => s.codeTheme);

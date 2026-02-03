@@ -1,6 +1,6 @@
-import type { LineAnnotation } from "../../types";
-import { SimpleTooltip } from "../ui/tooltip";
-import { Textarea } from "../ui/textarea";
+import type { LineAnnotation } from "../types";
+import { SimpleTooltip } from "./ui/tooltip";
+import { Textarea } from "./ui/textarea";
 
 // Annotation list item with refined hover states
 function AnnotationItem({
@@ -85,7 +85,7 @@ interface FeedbackPanelProps {
 }
 
 // Feedback panel - shows notes textarea, rejected hunks, and line annotations list
-export function FeedbackPanel({
+export function FeedbackPanelContent({
   notes,
   onNotesChange,
   rejectedHunks,

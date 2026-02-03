@@ -106,7 +106,7 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Cmd/Ctrl+F to block browser find (in-file search handled by CodeViewer)
+      // Cmd/Ctrl+F to block browser find (in-file search handled by FileViewer)
       if (
         (event.metaKey || event.ctrlKey) &&
         !event.shiftKey &&

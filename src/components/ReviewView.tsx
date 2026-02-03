@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from "react";
 import { FilesPanel } from "./FilesPanel";
-import { SplitContainer } from "./SplitContainer";
+import { ContentArea } from "./ContentArea";
 import { DebugModal } from "./DebugModal";
 import { SettingsModal } from "./SettingsModal";
 import { CommitDetailModal } from "./CommitDetailModal";
@@ -8,7 +8,7 @@ import { FileFinder } from "./FileFinder";
 import { ContentSearch } from "./ContentSearch";
 import { SymbolSearch } from "./SymbolSearch";
 import { ClassificationsModal } from "./ClassificationsModal";
-import { FloatingFeedbackPanel } from "./FloatingFeedbackPanel";
+import { FeedbackPanel } from "./FeedbackPanel";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
 import { useReviewStore } from "../stores";
@@ -297,8 +297,8 @@ export function ReviewView({
 
         {/* Code viewer */}
         <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
-          <SplitContainer />
-          <FloatingFeedbackPanel />
+          <ContentArea />
+          <FeedbackPanel />
         </main>
       </div>
 

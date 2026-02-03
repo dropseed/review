@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useFeedbackPanel } from "../hooks";
 import { useReviewStore } from "../stores";
-import { FeedbackPanel } from "./FilesPanel/FeedbackPanel";
+import { FeedbackPanelContent } from "./FeedbackPanelContent";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -72,7 +72,7 @@ function FeedbackCountBadge({ count }: { count: number }) {
   );
 }
 
-export function FloatingFeedbackPanel() {
+export function FeedbackPanel() {
   const {
     notes,
     annotations,
@@ -177,7 +177,7 @@ export function FloatingFeedbackPanel() {
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <FeedbackPanel
+        <FeedbackPanelContent
           notes={notes}
           onNotesChange={setReviewNotes}
           rejectedHunks={rejectedHunks}

@@ -1,5 +1,5 @@
 import type { LineAnnotation } from "../../../types";
-import { AnnotationEditor, AnnotationDisplay } from "../AnnotationEditor";
+import { AnnotationEditor, AnnotationDisplay } from "./AnnotationEditor";
 
 interface UserAnnotationDisplayProps {
   annotation: LineAnnotation;
