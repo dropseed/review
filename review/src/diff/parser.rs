@@ -118,6 +118,13 @@ pub fn parse_multi_file_diff(diff_output: &str) -> Vec<DiffHunk> {
         } else if line.starts_with("+++ /dev/null") {
             // File was deleted — use the path from "--- a/"
             current_file = old_file.take();
+        } else if line.starts_with("Binary files ") {
+            // Binary diffs have no @@ headers, so create a synthetic hunk.
+            if let Some(path) = parse_binary_diff_path(line) {
+                hunks.push(create_binary_hunk(&path));
+                // Prevent the flush logic from re-processing this section
+                current_file = Some(path);
+            }
         } else {
             current_section.push_str(line);
             current_section.push('\n');
@@ -228,10 +235,38 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
     }
 }
 
-/// Create a hunk for an untracked (new) file.
-/// The hunk ID is based on the filepath for stability.
-pub fn create_untracked_hunk(file_path: &str) -> DiffHunk {
-    let content = "(untracked file)".to_owned();
+/// Extract the file path from a "Binary files ..." line in git diff output.
+///
+/// Possible formats:
+/// - `Binary files a/<path> and b/<path> differ` (modified)
+/// - `Binary files /dev/null and b/<path> differ` (added)
+/// - `Binary files a/<path> and /dev/null differ` (deleted)
+fn parse_binary_diff_path(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("Binary files ")?;
+    let rest = rest.strip_suffix(" differ")?;
+    let (left, right) = rest.split_once(" and ")?;
+
+    if let Some(path) = right.strip_prefix("b/") {
+        // Modified or added: use the "b/" path
+        Some(path.to_owned())
+    } else if right == "/dev/null" {
+        // Deleted: use the "a/" path
+        left.strip_prefix("a/").map(|p| p.to_owned())
+    } else {
+        None
+    }
+}
+
+/// Build a synthetic hunk with a single descriptive line.
+///
+/// Used for files that have no real diff content (untracked or binary).
+fn create_synthetic_hunk(
+    file_path: &str,
+    content: &str,
+    new_start: u32,
+    new_count: u32,
+    line: DiffLine,
+) -> DiffHunk {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     let content_hash = hex::encode(&hasher.finalize()[..8]);
@@ -241,18 +276,48 @@ pub fn create_untracked_hunk(file_path: &str) -> DiffHunk {
         file_path: file_path.to_owned(),
         old_start: 0,
         old_count: 0,
-        new_start: 1,
-        new_count: 1,
-        content,
-        lines: vec![DiffLine {
+        new_start,
+        new_count,
+        content: content.to_owned(),
+        lines: vec![line],
+        content_hash,
+        move_pair_id: None,
+    }
+}
+
+/// Create a hunk for an untracked (new) file.
+/// The hunk ID is based on the filepath for stability.
+pub fn create_untracked_hunk(file_path: &str) -> DiffHunk {
+    create_synthetic_hunk(
+        file_path,
+        "(untracked file)",
+        1,
+        1,
+        DiffLine {
             line_type: LineType::Added,
             content: "(new file)".to_owned(),
             old_line_number: None,
             new_line_number: Some(1),
-        }],
-        content_hash,
-        move_pair_id: None,
-    }
+        },
+    )
+}
+
+/// Create a hunk for a binary file change.
+/// Binary diffs from git have no `@@` hunk headers, so we create a synthetic
+/// hunk so the file appears in the review.
+pub fn create_binary_hunk(file_path: &str) -> DiffHunk {
+    create_synthetic_hunk(
+        file_path,
+        "(binary file)",
+        0,
+        0,
+        DiffLine {
+            line_type: LineType::Context,
+            content: "(binary file changed)".to_owned(),
+            old_line_number: None,
+            new_line_number: None,
+        },
+    )
 }
 
 /// Represents a detected move pair
@@ -653,5 +718,132 @@ diff --git a/kept.rs b/kept.rs
         assert_eq!(hunks.len(), 2);
         assert_eq!(hunks[0].file_path, "deleted.rs");
         assert_eq!(hunks[1].file_path, "kept.rs");
+    }
+
+    #[test]
+    fn test_create_binary_hunk() {
+        let hunk = create_binary_hunk("icons/128x128.png");
+        assert_eq!(hunk.file_path, "icons/128x128.png");
+        assert!(hunk.id.starts_with("icons/128x128.png:"));
+        assert_eq!(hunk.content, "(binary file)");
+        assert_eq!(hunk.lines.len(), 1);
+        assert_eq!(hunk.lines[0].content, "(binary file changed)");
+        assert!(hunk.move_pair_id.is_none());
+    }
+
+    #[test]
+    fn test_create_binary_hunk_deterministic() {
+        let h1 = create_binary_hunk("a.png");
+        let h2 = create_binary_hunk("a.png");
+        assert_eq!(h1.id, h2.id);
+        assert_eq!(h1.content_hash, h2.content_hash);
+    }
+
+    #[test]
+    fn test_parse_binary_diff_path_modified() {
+        let line = "Binary files a/icons/128x128.png and b/icons/128x128.png differ";
+        assert_eq!(
+            parse_binary_diff_path(line),
+            Some("icons/128x128.png".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_parse_binary_diff_path_added() {
+        let line = "Binary files /dev/null and b/icons/new.png differ";
+        assert_eq!(
+            parse_binary_diff_path(line),
+            Some("icons/new.png".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_parse_binary_diff_path_deleted() {
+        let line = "Binary files a/icons/old.png and /dev/null differ";
+        assert_eq!(
+            parse_binary_diff_path(line),
+            Some("icons/old.png".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_parse_binary_diff_path_invalid() {
+        assert_eq!(parse_binary_diff_path("not a binary line"), None);
+        assert_eq!(parse_binary_diff_path("Binary files "), None);
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_binary_modified() {
+        let diff = "\
+diff --git a/icons/128x128.png b/icons/128x128.png
+index 5de0bad..39df1e1 100644
+Binary files a/icons/128x128.png and b/icons/128x128.png differ";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].file_path, "icons/128x128.png");
+        assert_eq!(hunks[0].content, "(binary file)");
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_binary_mixed_with_text() {
+        let diff = "\
+diff --git a/icons/icon.png b/icons/icon.png
+index abc1234..def5678 100644
+Binary files a/icons/icon.png and b/icons/icon.png differ
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,1 +1,2 @@
+ fn main() {
++    println!(\"hello\");";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(hunks[0].file_path, "icons/icon.png");
+        assert_eq!(hunks[0].content, "(binary file)");
+        assert_eq!(hunks[1].file_path, "src/main.rs");
+        assert_eq!(hunks[1].lines.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_multiple_binaries() {
+        let diff = "\
+diff --git a/a.png b/a.png
+index 1111111..2222222 100644
+Binary files a/a.png and b/a.png differ
+diff --git a/b.ico b/b.ico
+index 3333333..4444444 100644
+Binary files a/b.ico and b/b.ico differ
+diff --git a/c.icns b/c.icns
+index 5555555..6666666 100644
+Binary files a/c.icns and b/c.icns differ";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 3);
+        assert_eq!(hunks[0].file_path, "a.png");
+        assert_eq!(hunks[1].file_path, "b.ico");
+        assert_eq!(hunks[2].file_path, "c.icns");
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_binary_added() {
+        let diff = "\
+diff --git a/new.png b/new.png
+new file mode 100644
+index 0000000..abc1234
+Binary files /dev/null and b/new.png differ";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].file_path, "new.png");
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_binary_deleted() {
+        let diff = "\
+diff --git a/old.png b/old.png
+deleted file mode 100644
+index abc1234..0000000
+Binary files a/old.png and /dev/null differ";
+        let hunks = parse_multi_file_diff(diff);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].file_path, "old.png");
     }
 }

@@ -13,7 +13,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
 use review::classify::{self, ClassifyResponse, HunkInput};
 use review::diff::parser::{
-    create_untracked_hunk, detect_move_pairs, parse_diff, parse_multi_file_diff, DiffHunk, MovePair,
+    create_binary_hunk, create_untracked_hunk, detect_move_pairs, parse_diff,
+    parse_multi_file_diff, DiffHunk, MovePair,
 };
 use review::narrative::NarrativeInput;
 use review::review::state::{ReviewState, ReviewSummary};
@@ -438,7 +439,7 @@ pub fn get_file_content_sync(
         } else if content_type == "svg" {
             parse_diff(&diff_output, &file_path)
         } else {
-            vec![create_untracked_hunk(&file_path)]
+            vec![create_binary_hunk(&file_path)]
         };
 
         info!("[get_file_content] SUCCESS (image)");
