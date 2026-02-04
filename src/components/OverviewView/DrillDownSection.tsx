@@ -113,7 +113,7 @@ function FileProgressBar({ status }: { status: FileHunkStatus }) {
         )}
         {status.approved > 0 && (
           <div
-            className="bg-lime-500"
+            className="bg-emerald-500"
             style={{ width: `${(status.approved / status.total) * 100}%` }}
           />
         )}
@@ -270,7 +270,7 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
                 fileStatus === "deleted"
                   ? "text-rose-400/70 font-medium"
                   : fileStatus === "added" || fileStatus === "untracked"
-                    ? "text-lime-300 font-medium"
+                    ? "text-emerald-300 font-medium"
                     : "text-stone-200 font-medium"
               }
             >

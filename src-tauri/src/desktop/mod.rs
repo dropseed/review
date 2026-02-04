@@ -76,10 +76,9 @@ pub fn run() {
     let consent_for_hook = consent.clone();
 
     let _sentry_guard = sentry::init(sentry::ClientOptions {
-        dsn:
-            "https://52bca0472a38bf2e0b5e0ef3bb100837@o113570.ingest.us.sentry.io/4508948368744448"
-                .parse()
-                .ok(),
+        dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336"
+            .parse()
+            .ok(),
         release: sentry::release_name!(),
         before_send: Some(Arc::new(move |mut event| {
             if !consent_for_hook.load(Ordering::Relaxed) {

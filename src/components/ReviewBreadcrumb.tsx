@@ -10,34 +10,26 @@ interface ReviewBreadcrumbProps {
   onNavigateToOverview: () => void;
 }
 
-interface BackButtonProps {
-  onClick: () => void;
-  tooltip: string;
-  label: string;
-}
-
-function BackButton({ onClick, tooltip, label }: BackButtonProps) {
+function LogoButton({ onClick }: { onClick: () => void }) {
   return (
-    <SimpleTooltip content={tooltip}>
+    <SimpleTooltip content="Back to start">
       <button
         onClick={onClick}
         className="flex items-center justify-center w-7 h-7 rounded-md
-                   text-stone-500 hover:text-stone-200 hover:bg-stone-800/60
-                   transition-colors duration-100
+                   hover:bg-stone-800/60 transition-colors duration-100
                    focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
-        aria-label={label}
+        aria-label="Back to start screen"
       >
-        <svg
-          className="w-4 h-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M19 12H5" />
-          <path d="M12 19l-7-7 7-7" />
+        <svg className="w-4 h-4" viewBox="0 0 512 512" fill="none">
+          <rect x="32" y="16" width="210" height="480" rx="90" fill="#C45850" />
+          <rect
+            x="270"
+            y="16"
+            width="210"
+            height="480"
+            rx="90"
+            fill="#4D7C6B"
+          />
         </svg>
       </button>
     </SimpleTooltip>
@@ -65,20 +57,8 @@ export function ReviewBreadcrumb({
 
   return (
     <div className="flex items-center gap-2">
-      {/* Back button */}
-      {isOverview ? (
-        <BackButton
-          onClick={onNavigateToStart}
-          tooltip="Back to start"
-          label="Back to start screen"
-        />
-      ) : (
-        <BackButton
-          onClick={onNavigateToOverview}
-          tooltip="Back to overview"
-          label="Back to overview"
-        />
-      )}
+      {/* Logo as home button */}
+      <LogoButton onClick={onNavigateToStart} />
 
       {/* Repo name */}
       <button

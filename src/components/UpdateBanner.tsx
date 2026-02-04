@@ -23,14 +23,14 @@ export function UpdateBanner() {
       <div className="ml-auto flex items-center gap-2">
         {installing ? (
           <span className="flex items-center gap-2 text-stone-400">
-            <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-stone-600 border-t-lime-500 animate-spin" />
+            <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-stone-600 border-t-amber-500 animate-spin" />
             Installing...
           </span>
         ) : (
           <>
             <button
               onClick={installUpdate}
-              className="rounded-md bg-lime-600 px-3 py-1 text-xs font-medium text-white hover:bg-lime-500 transition-colors"
+              className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-500 transition-colors"
             >
               Update and restart
             </button>

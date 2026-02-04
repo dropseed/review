@@ -47,9 +47,17 @@ const RecentRepoCard = memo(function RecentRepoCard({
   );
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className={`group relative w-full focus:outline-hidden
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={`group relative w-full focus:outline-hidden cursor-pointer
                   ${isRemoving ? "opacity-50 scale-95" : ""}`}
     >
       <div
@@ -126,7 +134,7 @@ const RecentRepoCard = memo(function RecentRepoCard({
           />
         </svg>
       </button>
-    </button>
+    </div>
   );
 });
 

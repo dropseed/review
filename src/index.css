@@ -15,6 +15,8 @@
   --animate-slide-in: slide-in 0.2s ease-out forwards;
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-sidebar-slide-in: sidebar-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-sidebar-slide-out: sidebar-slide-out 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 
   @keyframes fade-in {
     from {
@@ -55,6 +57,28 @@
       height: 0;
     }
   }
+
+  @keyframes sidebar-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes sidebar-slide-out {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
 }
 
 @theme extend inline {
@@ -67,6 +91,32 @@
   --color-sage-400: #6b9b7a;
   --color-sage-500: #4a7c59;
   --color-sage-600: #3d6549;
+
+  /* Semantic status colors - review states */
+  --color-status-approved: oklch(0.765 0.177 162.73);  /* emerald-500 */
+  --color-status-trusted: oklch(0.704 0.14 182.503);   /* teal-500 */
+  --color-status-rejected: oklch(0.712 0.194 13.428);  /* rose-500 */
+  --color-status-pending: oklch(0.553 0.013 58.071);   /* stone-500 */
+  --color-status-classifying: oklch(0.702 0.183 293.541); /* violet-400 */
+  --color-status-ai: oklch(0.702 0.183 293.541);       /* violet-400 - AI-driven behaviors */
+
+  /* Semantic status colors - file/change states */
+  --color-status-added: oklch(0.765 0.177 162.73);     /* emerald-500 (same as approved) */
+  --color-status-modified: oklch(0.769 0.189 70.08);   /* amber-500 */
+  --color-status-deleted: oklch(0.712 0.194 13.428);   /* rose-500 (same as rejected) */
+  --color-status-renamed: oklch(0.685 0.169 237.323);  /* sky-500 */
+  --color-status-untracked: oklch(0.765 0.177 162.73); /* emerald-500 */
+  --color-status-moved: oklch(0.685 0.169 237.323);    /* sky-500 */
+
+  /* Semantic UI states */
+  --color-status-focus: oklch(0.769 0.189 70.08);      /* amber-500 - focus rings, selection */
+  --color-status-accent: oklch(0.769 0.189 70.08);     /* amber-500 - brand accent */
+  --color-status-warning: oklch(0.769 0.189 70.08);    /* amber-500 - caution states */
+  --color-status-info: oklch(0.685 0.169 237.323);     /* sky-500 - informational */
+
+  /* Diff highlighting */
+  --color-diff-added: oklch(0.765 0.177 162.73);       /* emerald-500 */
+  --color-diff-removed: oklch(0.712 0.194 13.428);     /* rose-500 */
 
   /* Extended backgrounds */
   --color-bg-primary: #0c0a09;
@@ -115,14 +165,14 @@
   --stone-900: #1c1917;
   --stone-950: #0c0a09;
 
-  /* Accent colors */
-  --accent-amber: #f59e0b;
-  --accent-lime: #84cc16;
-  --accent-rose: #f43f5e;
-  --accent-sky: #0ea5e9;
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-violet: #8b5cf6;
+  /* Accent colors - organic palette */
+  --accent-amber: #d9923a;
+  --accent-lime: #9cb43a;
+  --accent-rose: #d95a52;
+  --accent-sky: #4a9da8;
+  --accent-cyan: #3aad9e;
+  --accent-emerald: #4a9b70;
+  --accent-violet: #9272c4;
 
   /* Base theme */
   --bg-primary: #0c0a09;
@@ -400,6 +450,7 @@ kbd {
   /* Accessibility: prevent double-tap zoom delay on interactive elements */
   button, a, [role="button"] {
     touch-action: manipulation;
+    cursor: pointer;
   }
 
   /* Ensure focus states are visible */

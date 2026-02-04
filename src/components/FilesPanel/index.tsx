@@ -60,7 +60,7 @@ function SectionHeader({
   title: string;
   icon?: React.ReactNode;
   badge?: number;
-  badgeColor?: "amber" | "lime" | "cyan";
+  badgeColor?: "amber" | "emerald" | "cyan";
   isOpen: boolean;
   onToggle: () => void;
   onExpandAll?: () => void;
@@ -75,7 +75,7 @@ function SectionHeader({
 }) {
   const badgeColors = {
     amber: "bg-amber-500/20 text-amber-300",
-    lime: "bg-lime-500/20 text-lime-300",
+    emerald: "bg-emerald-500/20 text-emerald-300",
     cyan: "bg-cyan-500/20 text-cyan-300",
   };
 
@@ -630,7 +630,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           ) : (
                             <div className="py-4 text-center">
                               <svg
-                                className="mx-auto mb-2 h-6 w-6 text-lime-500"
+                                className="mx-auto mb-2 h-6 w-6 text-emerald-500"
                                 fill="none"
                                 viewBox="0 0 24 24"
                                 stroke="currentColor"
@@ -673,7 +673,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         ) : (
                           <div className="py-4 text-center">
                             <svg
-                              className="mx-auto mb-2 h-6 w-6 text-lime-500"
+                              className="mx-auto mb-2 h-6 w-6 text-emerald-500"
                               fill="none"
                               viewBox="0 0 24 24"
                               stroke="currentColor"
@@ -711,7 +711,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         </svg>
                       }
                       badge={stats.reviewed}
-                      badgeColor="lime"
+                      badgeColor="emerald"
                       isOpen={reviewedOpen}
                       onToggle={() => setReviewedOpen(!reviewedOpen)}
                       onExpandAll={() => expandAll(allDirPaths)}

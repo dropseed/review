@@ -285,21 +285,36 @@ fn create_synthetic_hunk(
     }
 }
 
+/// Compute a SHA256 hash of bytes, returning the first 16 hex chars (8 bytes).
+/// This matches the format used for hunk IDs throughout the codebase.
+pub fn compute_content_hash(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(&hasher.finalize()[..8])
+}
+
 /// Create a hunk for an untracked (new) file.
-/// The hunk ID is based on the filepath for stability.
-pub fn create_untracked_hunk(file_path: &str) -> DiffHunk {
-    create_synthetic_hunk(
-        file_path,
-        "(untracked file)",
-        1,
-        1,
-        DiffLine {
+/// The `content_hash` should be a hash of the file's actual content so that
+/// modifications to the file produce different hunk IDs (invalidating approvals).
+pub fn create_untracked_hunk(file_path: &str, content_hash: &str) -> DiffHunk {
+    // Use the provided content hash directly for the hunk ID
+    DiffHunk {
+        id: format!("{file_path}:{content_hash}"),
+        file_path: file_path.to_owned(),
+        old_start: 0,
+        old_count: 0,
+        new_start: 1,
+        new_count: 1,
+        content: "(untracked file)".to_owned(),
+        lines: vec![DiffLine {
             line_type: LineType::Added,
             content: "(new file)".to_owned(),
             old_line_number: None,
             new_line_number: Some(1),
-        },
-    )
+        }],
+        content_hash: content_hash.to_owned(),
+        move_pair_id: None,
+    }
 }
 
 /// Create a hunk for a binary file change.
@@ -465,15 +480,24 @@ mod tests {
 
     #[test]
     fn test_create_untracked_hunk() {
-        let hunk = create_untracked_hunk("src/new_file.rs");
+        let hunk = create_untracked_hunk("src/new_file.rs", "abc12345");
         assert_eq!(hunk.file_path, "src/new_file.rs");
-        assert!(hunk.id.starts_with("src/new_file.rs:"));
+        assert_eq!(hunk.id, "src/new_file.rs:abc12345");
+        assert_eq!(hunk.content_hash, "abc12345");
         assert_eq!(hunk.old_start, 0);
         assert_eq!(hunk.old_count, 0);
         assert_eq!(hunk.new_start, 1);
         assert_eq!(hunk.new_count, 1);
         assert_eq!(hunk.lines.len(), 1);
         assert!(hunk.move_pair_id.is_none());
+    }
+
+    #[test]
+    fn test_create_untracked_hunk_different_content_produces_different_id() {
+        let hunk1 = create_untracked_hunk("foo.rs", "hash1111");
+        let hunk2 = create_untracked_hunk("foo.rs", "hash2222");
+        assert_ne!(hunk1.id, hunk2.id);
+        assert_ne!(hunk1.content_hash, hunk2.content_hash);
     }
 
     #[test]

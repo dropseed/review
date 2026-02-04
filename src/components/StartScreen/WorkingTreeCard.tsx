@@ -8,6 +8,8 @@ interface WorkingTreeCardProps {
   gitStatus: GitStatusSummary | null;
   savedReviews: ReviewSummary[];
   onSelectReview: (comparison: Comparison) => void;
+  /** Optional - if provided, skips fetching defaultBranch */
+  defaultBranch?: string | null;
 }
 
 export function WorkingTreeCard({
@@ -15,25 +17,35 @@ export function WorkingTreeCard({
   gitStatus,
   savedReviews,
   onSelectReview,
+  defaultBranch: defaultBranchProp,
 }: WorkingTreeCardProps) {
-  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
+  const [defaultBranchLocal, setDefaultBranchLocal] = useState<string | null>(
+    null,
+  );
 
-  // Fetch default branch on mount
+  // Only fetch default branch if not provided as prop
   useEffect(() => {
+    // If prop is provided (even if null during loading), don't fetch
+    if (defaultBranchProp !== undefined) return;
+
     let cancelled = false;
     const apiClient = getApiClient();
     apiClient
       .getDefaultBranch(repoPath)
       .then((branch) => {
-        if (!cancelled) setDefaultBranch(branch);
+        if (!cancelled) setDefaultBranchLocal(branch);
       })
       .catch(() => {
-        if (!cancelled) setDefaultBranch("main");
+        if (!cancelled) setDefaultBranchLocal("main");
       });
     return () => {
       cancelled = true;
     };
-  }, [repoPath]);
+  }, [repoPath, defaultBranchProp]);
+
+  // Use prop if provided, otherwise use local state
+  const defaultBranch =
+    defaultBranchProp !== undefined ? defaultBranchProp : defaultBranchLocal;
 
   const handleClick = useCallback(() => {
     if (!defaultBranch || !gitStatus) return;
@@ -46,8 +58,24 @@ export function WorkingTreeCard({
     onSelectReview(comparison);
   }, [defaultBranch, gitStatus, savedReviews, onSelectReview]);
 
-  // Don't render until we have both defaultBranch and gitStatus
-  if (!defaultBranch || !gitStatus) return null;
+  // Show skeleton while loading
+  if (!defaultBranch || !gitStatus) {
+    return (
+      <section className="mb-6" aria-label="Local changes loading">
+        <div className="w-full rounded-xl border border-stone-800/80 bg-gradient-to-br from-stone-900/80 to-stone-900/40 px-5 py-4">
+          <div className="flex items-center gap-3">
+            {/* Icon skeleton */}
+            <div className="shrink-0 w-8 h-8 rounded-lg bg-stone-800 animate-pulse" />
+            {/* Content skeleton */}
+            <div className="flex-1 min-w-0 space-y-2">
+              <div className="h-4 w-28 bg-stone-800 rounded animate-pulse" />
+              <div className="h-3 w-40 bg-stone-800/60 rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const { currentBranch } = gitStatus;
   const stagedCount = gitStatus.staged.length;

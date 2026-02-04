@@ -124,7 +124,7 @@ export const FlatFileNode = memo(function FlatFileNode({
               isSelected
                 ? "text-stone-100"
                 : isComplete
-                  ? "text-lime-400"
+                  ? "text-emerald-400"
                   : "text-stone-300"
             }`}
           >
@@ -144,7 +144,7 @@ export const FlatFileNode = memo(function FlatFileNode({
                     onApproveAll(filePath, false);
                   }}
                   className="flex items-center justify-center w-5 h-5 rounded
-                             text-stone-500 hover:text-lime-400 hover:bg-lime-500/20
+                             text-stone-500 hover:text-emerald-400 hover:bg-emerald-500/20
                              transition-colors"
                 >
                   <svg
@@ -171,7 +171,7 @@ export const FlatFileNode = memo(function FlatFileNode({
                     onUnapproveAll(filePath, false);
                   }}
                   className="flex items-center justify-center w-5 h-5 rounded
-                             text-lime-400 hover:text-stone-400 hover:bg-stone-700/50
+                             text-emerald-400 hover:text-stone-400 hover:bg-stone-700/50
                              transition-colors"
                 >
                   <svg

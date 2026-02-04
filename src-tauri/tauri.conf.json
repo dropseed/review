@@ -34,7 +34,10 @@
     "targets": "all",
     "icon": ["icons/icon.png"],
     "externalBin": ["binaries/review-cli"],
-    "createUpdaterArtifacts": "v1Compatible"
+    "createUpdaterArtifacts": "v1Compatible",
+    "macOS": {
+      "entitlements": "Entitlements.plist"
+    }
   },
   "plugins": {
     "updater": {

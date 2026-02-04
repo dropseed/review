@@ -12,7 +12,7 @@ function getHeaderBackgroundClass(
   isTrusted: boolean,
 ): string {
   if (isRejected) return "bg-rose-500/10";
-  if (isApproved) return "bg-lime-500/5 bg-stone-900/95";
+  if (isApproved) return "bg-emerald-500/5 bg-stone-900/95";
   if (isTrusted) return "bg-sky-500/5 bg-stone-900/95";
   return "bg-stone-900/95";
 }
@@ -70,7 +70,7 @@ export function UntrackedFileView({
             <SimpleTooltip content="Click to unapprove">
               <button
                 onClick={() => unapproveHunk(hunk.id)}
-                className="group flex items-center gap-1.5 rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-medium text-lime-300 transition-all hover:bg-lime-500/25"
+                className="group flex items-center gap-1.5 rounded-md bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-all hover:bg-emerald-500/25"
               >
                 <svg
                   className="h-3.5 w-3.5"
@@ -125,7 +125,7 @@ export function UntrackedFileView({
               <SimpleTooltip content="Approve this change">
                 <button
                   onClick={() => approveHunk(hunk.id)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-lime-500/15 hover:text-lime-400"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-stone-300 transition-all hover:bg-emerald-500/15 hover:text-emerald-400"
                   aria-label="Approve change"
                 >
                   <span>Approve</span>

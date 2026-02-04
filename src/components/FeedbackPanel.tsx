@@ -105,7 +105,7 @@ export function FeedbackPanel() {
   }
 
   const copyButtonClass = copied
-    ? "btn w-full text-xs transition-all bg-lime-500/15 text-lime-400 border border-lime-500/25"
+    ? "btn w-full text-xs transition-all bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
     : "btn w-full text-xs transition-all bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20";
 
   return (

@@ -23,6 +23,12 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[ErrorBoundary] Caught error:", error, errorInfo);
     this.setState({ errorInfo });
+
+    import("../utils/sentry").then(({ captureException }) => {
+      captureException(error, {
+        componentStack: errorInfo.componentStack ?? undefined,
+      });
+    });
   }
 
   handleReload = () => {
@@ -56,7 +62,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <button
                 onClick={this.handleReload}
-                className="rounded-md bg-lime-600 px-4 py-2 text-sm font-medium text-white hover:bg-lime-500 transition-colors"
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 transition-colors"
               >
                 Reload Application
               </button>

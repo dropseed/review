@@ -251,6 +251,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     approveHunk: (hunkId) => {
       updateHunkStatuses(get, set, [hunkId], "approved");
+      get().advanceToNextUnreviewedFile();
     },
 
     unapproveHunk: (hunkId) => {
@@ -262,6 +263,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     rejectHunk: (hunkId) => {
       updateHunkStatuses(get, set, [hunkId], "rejected");
+      get().advanceToNextUnreviewedFile();
     },
 
     unrejectHunk: (hunkId) => {
@@ -275,6 +277,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const { hunks } = get();
       const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
       updateHunkStatuses(get, set, ids, "approved");
+      get().advanceToNextUnreviewedFile();
     },
 
     unapproveAllFileHunks: (filePath) => {
@@ -287,6 +290,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const { hunks } = get();
       const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
       updateHunkStatuses(get, set, ids, "rejected");
+      get().advanceToNextUnreviewedFile();
     },
 
     approveHunkIds: (hunkIds) => {

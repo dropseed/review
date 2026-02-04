@@ -15,6 +15,7 @@ interface UseKeyboardNavigationOptions {
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
   setShowSymbolSearch: (show: boolean) => void;
+  toggleReviewsSidebar?: () => void;
 }
 
 /**
@@ -29,6 +30,7 @@ export function useKeyboardNavigation({
   setShowFileFinder,
   setShowContentSearch,
   setShowSymbolSearch,
+  toggleReviewsSidebar,
 }: UseKeyboardNavigationOptions) {
   const hunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
@@ -84,6 +86,13 @@ export function useKeyboardNavigation({
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault();
         setShowSettingsModal(true);
+        return;
+      }
+
+      // Cmd/Ctrl+E to toggle reviews sidebar
+      if ((event.metaKey || event.ctrlKey) && event.key === "e") {
+        event.preventDefault();
+        toggleReviewsSidebar?.();
         return;
       }
 
@@ -264,6 +273,7 @@ export function useKeyboardNavigation({
       setShowFileFinder,
       setShowContentSearch,
       setShowSymbolSearch,
+      toggleReviewsSidebar,
       topLevelView,
       navigateToBrowse,
       navigateToOverview,

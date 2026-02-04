@@ -67,6 +67,19 @@ async function resolveRoutePrefix(repoPath: string): Promise<string> {
 }
 
 /**
+ * Get the working tree comparison key for a repo.
+ * Returns `defaultBranch..currentBranch+working-tree`
+ */
+async function getWorkingTreeComparisonKey(repoPath: string): Promise<string> {
+  const apiClient = getApiClient();
+  const [defaultBranch, currentBranch] = await Promise.all([
+    apiClient.getDefaultBranch(repoPath).catch(() => "main"),
+    apiClient.getCurrentBranch(repoPath).catch(() => "HEAD"),
+  ]);
+  return `${defaultBranch}..${currentBranch}+working-tree`;
+}
+
+/**
  * Validate that a path is a git repository, showing an error dialog if not.
  * Returns true if valid, false otherwise.
  */
@@ -156,13 +169,15 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         addRecentRepository(urlRepoPath);
         storeRepoPath(urlRepoPath);
 
-        // Resolve owner/repo and navigate to clean route
+        // Resolve owner/repo and navigate to review route
         const prefix = await resolveRoutePrefix(urlRepoPath);
         const urlComparisonKey = getComparisonKeyFromUrl();
         if (urlComparisonKey) {
           nav(`/${prefix}/review/${urlComparisonKey}`, { replace: true });
         } else {
-          nav(`/${prefix}`, { replace: true });
+          // Default to working tree comparison
+          const workingTreeKey = await getWorkingTreeComparisonKey(urlRepoPath);
+          nav(`/${prefix}/review/${workingTreeKey}`, { replace: true });
         }
         return;
       }
@@ -196,9 +211,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         addRecentRepository(path);
         storeRepoPath(path);
 
-        // Resolve and navigate to clean route
+        // Resolve and navigate to review route (working tree by default)
         const prefix = await resolveRoutePrefix(path);
-        nav(`/${prefix}`, { replace: true });
+        const workingTreeKey = await getWorkingTreeComparisonKey(path);
+        nav(`/${prefix}/review/${workingTreeKey}`, { replace: true });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (
@@ -304,9 +320,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       addRecentRepository(path);
       storeRepoPath(path);
 
-      // Resolve and navigate
+      // Resolve and navigate directly to review (working tree by default)
       const prefix = await resolveRoutePrefix(path);
-      navigateRef.current(`/${prefix}`);
+      const workingTreeKey = await getWorkingTreeComparisonKey(path);
+      navigateRef.current(`/${prefix}/review/${workingTreeKey}`);
     },
     [setRepoPath, addRecentRepository],
   );
@@ -330,9 +347,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         addRecentRepository(selected);
         storeRepoPath(selected);
 
-        // Resolve and navigate
+        // Resolve and navigate directly to review (working tree by default)
         const prefix = await resolveRoutePrefix(selected);
-        navigateRef.current(`/${prefix}`);
+        const workingTreeKey = await getWorkingTreeComparisonKey(selected);
+        navigateRef.current(`/${prefix}/review/${workingTreeKey}`);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);

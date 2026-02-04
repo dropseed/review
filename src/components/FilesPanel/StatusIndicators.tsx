@@ -3,7 +3,7 @@ import type { FileHunkStatus } from "./types";
 // Git status configuration
 export const STATUS_CONFIG: Record<string, { letter: string; color: string }> =
   {
-    added: { letter: "A", color: "text-lime-400" },
+    added: { letter: "A", color: "text-emerald-400" },
     modified: { letter: "M", color: "text-amber-400" },
     deleted: { letter: "D", color: "text-rose-400" },
     renamed: { letter: "R", color: "text-sky-400" },
@@ -37,7 +37,7 @@ export function HunkCount({
   if (context === "reviewed") {
     // Show reviewed count
     return (
-      <span className="font-mono text-xxs tabular-nums text-lime-500">
+      <span className="font-mono text-xxs tabular-nums text-emerald-500">
         {reviewed}
       </span>
     );
@@ -47,7 +47,7 @@ export function HunkCount({
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-lime-500" : "text-stone-500"}`}
+      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-emerald-500" : "text-stone-500"}`}
     >
       {reviewed}/{status.total}
     </span>

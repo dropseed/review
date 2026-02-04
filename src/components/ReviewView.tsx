@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from "react";
+import type { Comparison } from "../types";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { DebugModal } from "./DebugModal";
@@ -11,6 +12,7 @@ import { ClassificationsModal } from "./ClassificationsModal";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
+import { ReviewsSidebar, ReviewsSidebarToggle } from "./ReviewsSidebar";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -26,6 +28,7 @@ interface ReviewViewProps {
   onBack: () => void;
   onOpenRepo: () => Promise<void>;
   onNewWindow: () => Promise<void>;
+  onSelectReview: (comparison: Comparison) => void;
   comparisonReady: boolean;
 }
 
@@ -33,11 +36,11 @@ export function ReviewView({
   onBack,
   onOpenRepo,
   onNewWindow,
+  onSelectReview,
   comparisonReady,
 }: ReviewViewProps) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
-  const sidebarPosition = useReviewStore((s) => s.sidebarPosition);
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
   const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
@@ -57,6 +60,10 @@ export function ReviewView({
     (s) => s.setClassificationsModalOpen,
   );
 
+  // Reviews sidebar state from store (allows OverviewView to control it too)
+  const showReviewsSidebar = useReviewStore((s) => s.reviewsSidebarOpen);
+  const setShowReviewsSidebar = useReviewStore((s) => s.setReviewsSidebarOpen);
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -66,6 +73,11 @@ export function ReviewView({
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
+
+  // Toggle reviews sidebar with keyboard shortcut (Cmd+E)
+  const toggleReviewsSidebar = useCallback(() => {
+    setShowReviewsSidebar(!showReviewsSidebar);
+  }, [showReviewsSidebar, setShowReviewsSidebar]);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -131,7 +143,7 @@ export function ReviewView({
   }, [classifying, classificationError]);
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({
-    sidebarPosition,
+    sidebarPosition: "left",
   });
 
   useKeyboardNavigation({
@@ -142,6 +154,7 @@ export function ReviewView({
     setShowFileFinder,
     setShowContentSearch,
     setShowSymbolSearch,
+    toggleReviewsSidebar,
   });
 
   useMenuEvents({
@@ -186,97 +199,94 @@ export function ReviewView({
           onNavigateToOverview={navigateToOverview}
         />
 
-        {/* Right: review controls (only in browse view) */}
+        {/* Right: review controls and sidebar toggle */}
         <div className="flex items-center gap-3">
-          {topLevelView === "browse" && (
-            <>
-              {totalHunks > 0 ? (
-                <div className="group relative flex items-center gap-2">
-                  <span className="text-xs text-stone-500">Hunks reviewed</span>
-                  <span className="font-mono text-xs tabular-nums text-stone-400">
-                    {reviewedHunks}/{totalHunks}
-                  </span>
-                  <div className="progress-bar w-24">
-                    <div
-                      className="progress-bar-trusted"
-                      style={{
-                        width: `${(trustedHunks / totalHunks) * 100}%`,
-                      }}
-                    />
-                    <div
-                      className="progress-bar-approved"
-                      style={{
-                        width: `${(approvedHunks / totalHunks) * 100}%`,
-                        left: `${(trustedHunks / totalHunks) * 100}%`,
-                      }}
-                    />
-                    <div
-                      className="progress-bar-rejected"
-                      style={{
-                        width: `${(rejectedHunks / totalHunks) * 100}%`,
-                        left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  {state === "approved" && (
-                    <span className="text-xxs font-medium text-lime-400">
-                      Approved
-                    </span>
-                  )}
-                  {state === "changes_requested" && (
-                    <span className="text-xxs font-medium text-rose-400">
-                      Changes Requested
-                    </span>
-                  )}
-                  {/* Hover tooltip */}
-                  <div
-                    className="absolute top-full right-0 mt-1 hidden group-hover:block
-                                bg-stone-900 border border-stone-700 rounded px-2 py-1.5
-                                text-xs whitespace-nowrap z-50 shadow-lg"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                      <span className="text-stone-300">
-                        Trusted: {trustedHunks}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="w-2 h-2 rounded-full bg-lime-500" />
-                      <span className="text-stone-300">
-                        Approved: {approvedHunks}
-                      </span>
-                    </div>
-                    {rejectedHunks > 0 && (
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="w-2 h-2 rounded-full bg-rose-500" />
-                        <span className="text-stone-300">
-                          Rejected: {rejectedHunks}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <span className="text-xs text-stone-500">
-                  No changes to review
+          {totalHunks > 0 ? (
+            <button
+              onClick={navigateToOverview}
+              className="group relative flex cursor-pointer items-center gap-2 rounded px-2 py-1 -mx-2 -my-1 hover:bg-stone-800 transition-colors"
+            >
+              <span className="text-xs text-stone-500">Hunks reviewed</span>
+              <span className="font-mono text-xs tabular-nums text-stone-400">
+                {reviewedHunks}/{totalHunks}
+              </span>
+              <div className="progress-bar w-24">
+                <div
+                  className="progress-bar-trusted"
+                  style={{
+                    width: `${(trustedHunks / totalHunks) * 100}%`,
+                  }}
+                />
+                <div
+                  className="progress-bar-approved"
+                  style={{
+                    width: `${(approvedHunks / totalHunks) * 100}%`,
+                    left: `${(trustedHunks / totalHunks) * 100}%`,
+                  }}
+                />
+                <div
+                  className="progress-bar-rejected"
+                  style={{
+                    width: `${(rejectedHunks / totalHunks) * 100}%`,
+                    left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
+                  }}
+                />
+              </div>
+              {state === "approved" && (
+                <span className="text-xxs font-medium text-emerald-400">
+                  Approved
                 </span>
               )}
-            </>
+              {state === "changes_requested" && (
+                <span className="text-xxs font-medium text-rose-400">
+                  Changes Requested
+                </span>
+              )}
+              {/* Hover tooltip */}
+              <div
+                className="absolute top-full right-0 mt-1 hidden group-hover:block
+                                bg-stone-900 border border-stone-700 rounded px-2 py-1.5
+                                text-xs whitespace-nowrap z-50 shadow-lg"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                  <span className="text-stone-300">
+                    Trusted: {trustedHunks}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-stone-300">
+                    Approved: {approvedHunks}
+                  </span>
+                </div>
+                {rejectedHunks > 0 && (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span className="text-stone-300">
+                      Rejected: {rejectedHunks}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </button>
+          ) : (
+            <span className="text-xs text-stone-500">No changes to review</span>
           )}
+
+          {/* Reviews sidebar toggle */}
+          <ReviewsSidebarToggle
+            isOpen={showReviewsSidebar}
+            onClick={toggleReviewsSidebar}
+          />
         </div>
       </header>
 
       {/* Main content */}
-      <div
-        className={`flex flex-1 overflow-hidden ${sidebarPosition === "right" ? "flex-row-reverse" : "flex-row"}`}
-      >
-        {/* Sidebar */}
+      <div className="flex flex-1 flex-row overflow-hidden">
+        {/* Sidebar (always on left) */}
         <aside
-          className={`relative flex flex-shrink-0 flex-col bg-stone-900 ${
-            sidebarPosition === "right"
-              ? "border-l border-stone-800"
-              : "border-r border-stone-800"
-          }`}
+          className="relative flex flex-shrink-0 flex-col border-r border-stone-800 bg-stone-900"
           style={{ width: `${sidebarWidth}rem` }}
         >
           {/* Sidebar content */}
@@ -289,9 +299,7 @@ export function ReviewView({
           {/* Resize handle */}
           <div
             onMouseDown={handleResizeStart}
-            className={`absolute top-0 h-full w-1 cursor-col-resize hover:bg-lime-500/50 active:bg-lime-500 ${
-              sidebarPosition === "right" ? "left-0" : "right-0"
-            }`}
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
           />
         </aside>
 
@@ -304,8 +312,27 @@ export function ReviewView({
 
       {/* Status Bar */}
       <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
+        <div className="flex items-center gap-3 text-stone-600">
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}P
+            </kbd>
+            <span className="ml-1">find file</span>
+          </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}R
+            </kbd>
+            <span className="ml-1">symbols</span>
+          </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}⇧F
+            </kbd>
+            <span className="ml-1">search</span>
+          </span>
+        </div>
         <div className="flex items-center gap-3">
-          <GitStatusIndicator />
           {/* Classification progress indicator */}
           {classifyingHunkIds.size > 0 && (
             <div className="flex items-center gap-1.5 text-violet-400">
@@ -334,8 +361,6 @@ export function ReviewView({
               </span>
             </div>
           )}
-        </div>
-        <div className="flex items-center gap-3 text-stone-600">
           {remoteInfo && (
             <button
               onClick={() => {
@@ -372,24 +397,7 @@ export function ReviewView({
               <span>{remoteInfo.name}</span>
             </button>
           )}
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}P
-            </kbd>
-            <span className="ml-1">find file</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}R
-            </kbd>
-            <span className="ml-1">symbols</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}⇧F
-            </kbd>
-            <span className="ml-1">search</span>
-          </span>
+          <GitStatusIndicator />
         </div>
       </footer>
 
@@ -436,6 +444,16 @@ export function ReviewView({
         onClose={() => setShowClassificationsModal(false)}
         onSelectHunk={handleClassificationSelectHunk}
       />
+
+      {/* Reviews Sidebar */}
+      {repoPath && (
+        <ReviewsSidebar
+          isOpen={showReviewsSidebar}
+          onClose={() => setShowReviewsSidebar(false)}
+          onSelectReview={onSelectReview}
+          repoPath={repoPath}
+        />
+      )}
     </div>
   );
 }

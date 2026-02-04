@@ -8,6 +8,7 @@ import ReactDOM from "react-dom/client";
 import { AppRouter } from "./router";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
+import { initSentry } from "./utils/sentry";
 import { initializeLogger } from "./utils/logger";
 import { useReviewStore } from "./stores";
 
@@ -48,6 +49,9 @@ function WorkerPoolThemeSync() {
 
   return null;
 }
+
+// Initialize Sentry early (events are dropped until user opts in)
+initSentry();
 
 // Initialize file logging (patches console.*)
 initializeLogger();

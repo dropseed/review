@@ -41,8 +41,8 @@ export function StatusToggle({
         }}
         className={`flex-shrink-0 text-xxs w-4 h-4 flex items-center justify-center rounded transition-colors ${
           isComplete
-            ? "text-lime-500 hover:text-stone-500"
-            : "text-stone-600 hover:text-lime-500"
+            ? "text-emerald-500 hover:text-stone-500"
+            : "text-stone-600 hover:text-emerald-500"
         }`}
       >
         {isComplete ? "\u2713" : "\u25CB"}
@@ -142,7 +142,7 @@ export const SymbolRow = memo(function SymbolRow({
         <ChangeIndicator changeType={symbol.changeType} />
         <SymbolKindBadge kind={symbol.kind} />
         <button
-          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbol.changeType === "removed" ? "line-through text-rose-400/70" : symbol.changeType === "added" ? "text-lime-300" : "text-stone-300"}`}
+          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbol.changeType === "removed" ? "line-through text-rose-400/70" : symbol.changeType === "added" ? "text-emerald-300" : "text-stone-300"}`}
           onClick={(e) => {
             e.stopPropagation();
             handleClick();

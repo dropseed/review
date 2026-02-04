@@ -1,6 +1,8 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { StorageService } from "../../platform";
 import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
+import { setSentryConsent } from "../../utils/sentry";
 
 // Font size constants
 export const CODE_FONT_SIZE_DEFAULT = 11;
@@ -36,6 +38,7 @@ const defaults = {
   needsReviewDisplayMode: "tree" as ChangesDisplayMode,
   reviewedDisplayMode: "tree" as ChangesDisplayMode,
   diffViewMode: "split" as DiffViewMode,
+  sentryEnabled: false,
 };
 
 export interface PreferencesSlice {
@@ -66,6 +69,9 @@ export interface PreferencesSlice {
   // Recent repositories
   recentRepositories: RecentRepo[];
 
+  // Crash reporting
+  sentryEnabled: boolean;
+
   // Actions
   setSidebarPosition: (position: "left" | "right") => void;
   setCodeFontSize: (size: number) => void;
@@ -90,6 +96,9 @@ export interface PreferencesSlice {
   // Recent repositories actions
   addRecentRepository: (path: string) => void;
   removeRecentRepository: (path: string) => void;
+
+  // Crash reporting actions
+  setSentryEnabled: (enabled: boolean) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -111,6 +120,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   classifyBatchSize: defaults.classifyBatchSize,
   classifyMaxConcurrent: defaults.classifyMaxConcurrent,
   recentRepositories: defaults.recentRepositories,
+  sentryEnabled: defaults.sentryEnabled,
 
   setSidebarPosition: (position) => {
     set({ sidebarPosition: position });
@@ -181,6 +191,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const recentRepos =
       (await storage.get<RecentRepo[]>("recentRepositories")) ??
       defaults.recentRepositories;
+    const sentryEnabled =
+      (await storage.get<boolean>("sentryEnabled")) ?? defaults.sentryEnabled;
     const diffLineDiffType =
       (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
       defaults.diffLineDiffType;
@@ -216,7 +228,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       classifyBatchSize: batchSize,
       classifyMaxConcurrent: maxConcurrent,
       recentRepositories: recentRepos,
+      sentryEnabled,
     });
+
+    // Propagate Sentry consent to both JS and Rust SDKs
+    setSentryConsent(sentryEnabled);
+    invoke("set_sentry_consent", { enabled: sentryEnabled }).catch(() => {});
 
     // Apply font size CSS variables
     document.documentElement.style.setProperty(
@@ -295,5 +312,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const updated = current.filter((r) => r.path !== path);
     set({ recentRepositories: updated });
     storage.set("recentRepositories", updated);
+  },
+
+  setSentryEnabled: (enabled) => {
+    set({ sentryEnabled: enabled });
+    storage.set("sentryEnabled", enabled);
+    setSentryConsent(enabled);
+    invoke("set_sentry_consent", { enabled }).catch(() => {});
   },
 });

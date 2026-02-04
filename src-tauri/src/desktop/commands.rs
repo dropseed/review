@@ -13,7 +13,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
 use review::classify::{self, ClassifyResponse, HunkInput};
 use review::diff::parser::{
-    create_binary_hunk, create_untracked_hunk, detect_move_pairs, parse_diff,
+    compute_content_hash, create_binary_hunk, create_untracked_hunk, detect_move_pairs, parse_diff,
     parse_multi_file_diff, DiffHunk, MovePair,
 };
 use review::narrative::NarrativeInput;
@@ -435,7 +435,8 @@ pub fn get_file_content_sync(
         };
 
         let hunks = if diff_output.is_empty() {
-            vec![create_untracked_hunk(&file_path)]
+            let content_hash = compute_content_hash(&current_bytes);
+            vec![create_untracked_hunk(&file_path, &content_hash)]
         } else if content_type == "svg" {
             parse_diff(&diff_output, &file_path)
         } else {
@@ -481,7 +482,8 @@ pub fn get_file_content_sync(
             vec![]
         } else {
             debug!("[get_file_content] no diff, file is untracked (new)");
-            vec![create_untracked_hunk(&file_path)]
+            let content_hash = compute_content_hash(content.as_bytes());
+            vec![create_untracked_hunk(&file_path, &content_hash)]
         }
     } else {
         debug!("[get_file_content] parsing diff...");
@@ -723,11 +725,16 @@ pub async fn get_all_hunks(
 
         // For requested files that have no diff hunks, check if they're
         // untracked (new) and create untracked hunks for them
+        let repo_path_buf = PathBuf::from(&repo_path);
         for file_path in &file_paths {
             if !files_with_hunks.contains(file_path.as_str()) {
                 let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
                 if !is_tracked {
-                    all_hunks.push(create_untracked_hunk(file_path));
+                    let full_path = repo_path_buf.join(file_path);
+                    let content_hash = std::fs::read(&full_path)
+                        .map(|bytes| compute_content_hash(&bytes))
+                        .unwrap_or_else(|_| "00000000".to_owned());
+                    all_hunks.push(create_untracked_hunk(file_path, &content_hash));
                 }
             }
         }

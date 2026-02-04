@@ -37,7 +37,7 @@ function ProgressSegment({ count, total, className }: ProgressSegmentProps) {
 function StateBadge({ state }: { state: ReviewProgress["state"] }) {
   if (state === "approved") {
     return (
-      <span className="text-xxs font-medium text-lime-300 bg-lime-500/10 px-1.5 py-0.5 rounded">
+      <span className="text-xxs font-medium text-emerald-300 bg-emerald-500/10 px-1.5 py-0.5 rounded">
         Approved
       </span>
     );
@@ -75,7 +75,7 @@ export function SummaryStats({
           <ProgressSegment
             count={approvedHunks}
             total={totalHunks}
-            className="bg-lime-500"
+            className="bg-emerald-500"
           />
           <ProgressSegment
             count={rejectedHunks}
@@ -93,7 +93,11 @@ export function SummaryStats({
 
       <div className="flex items-center gap-4 mt-2">
         <StatChip color="bg-cyan-500" label="Trusted" count={trustedHunks} />
-        <StatChip color="bg-lime-500" label="Approved" count={approvedHunks} />
+        <StatChip
+          color="bg-emerald-500"
+          label="Approved"
+          count={approvedHunks}
+        />
         {rejectedHunks > 0 && (
           <StatChip
             color="bg-rose-500"

@@ -74,7 +74,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
                 className="rounded px-2 py-1 text-xxs font-medium text-stone-400 hover:bg-stone-700 hover:text-stone-200 transition-colors"
               >
                 {copied ? (
-                  <span className="flex items-center gap-1 text-lime-400">
+                  <span className="flex items-center gap-1 text-emerald-400">
                     <svg
                       className="h-3 w-3"
                       viewBox="0 0 24 24"

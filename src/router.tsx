@@ -6,12 +6,14 @@ import {
   Navigate,
   Outlet,
   useOutletContext,
+  useParams,
+  useNavigate,
 } from "react-router-dom";
 import type { Comparison } from "./types";
 import { WelcomePage } from "./components/WelcomePage";
-import { StartScreen } from "./components/StartScreen";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { getPlatformServices } from "./platform";
+import { getApiClient } from "./api";
 import { ReviewView } from "./components/ReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores";
@@ -115,7 +117,7 @@ function AppShell() {
     return (
       <div className="flex h-screen items-center justify-center bg-stone-950">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-lime-500 animate-spin" />
+          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
           <p className="text-stone-400">Loading repository...</p>
         </div>
       </div>
@@ -213,21 +215,53 @@ function WelcomeRoute() {
   );
 }
 
-/** Start screen — shown at /:owner/:repo */
+/**
+ * Start screen route — redirects to working tree review.
+ * This maintains backwards compatibility with old URLs that land on /:owner/:repo
+ */
 function StartRoute() {
-  const { repoPath, handleSelectReview, handleCloseRepo } = useAppContext();
+  const { repoPath } = useAppContext();
+  const { owner, repo } = useParams<{ owner: string; repo: string }>();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!repoPath) return;
+
+    const redirectToWorkingTree = async () => {
+      const apiClient = getApiClient();
+      try {
+        const [defaultBranch, currentBranch] = await Promise.all([
+          apiClient.getDefaultBranch(repoPath).catch(() => "main"),
+          apiClient.getCurrentBranch(repoPath).catch(() => "HEAD"),
+        ]);
+        const workingTreeKey = `${defaultBranch}..${currentBranch}+working-tree`;
+        navigate(`/${owner}/${repo}/review/${workingTreeKey}`, {
+          replace: true,
+        });
+      } catch {
+        // Fallback: use main..HEAD+working-tree
+        navigate(`/${owner}/${repo}/review/main..HEAD+working-tree`, {
+          replace: true,
+        });
+      }
+    };
+
+    redirectToWorkingTree();
+  }, [repoPath, owner, repo, navigate]);
 
   // If no repo path resolved yet, redirect to welcome
   if (!repoPath) {
     return <Navigate to="/" replace />;
   }
 
+  // Show loading state while redirecting
   return (
-    <StartScreen
-      repoPath={repoPath}
-      onSelectReview={handleSelectReview}
-      onCloseRepo={handleCloseRepo}
-    />
+    <div className="flex h-screen items-center justify-center bg-stone-950">
+      <div className="flex flex-col items-center gap-4 animate-fade-in">
+        <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+        <p className="text-stone-400">Loading repository...</p>
+      </div>
+    </div>
   );
 }
 
@@ -238,6 +272,7 @@ function ReviewRoute() {
     comparisonReady,
     initialLoading,
     loadingProgress,
+    handleSelectReview,
     handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
@@ -258,13 +293,13 @@ function ReviewRoute() {
     return (
       <div className="flex h-screen items-center justify-center bg-stone-950">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-lime-500 animate-spin" />
+          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
           <p className="text-stone-400">{progressText}</p>
           {loadingProgress?.phase === "hunks" && loadingProgress.total > 0 && (
             <div className="w-48">
               <div className="h-1.5 w-full rounded-full bg-stone-800">
                 <div
-                  className="h-1.5 rounded-full bg-lime-500"
+                  className="h-1.5 rounded-full bg-amber-500"
                   style={{
                     width: `${Math.round((loadingProgress.current / loadingProgress.total) * 100)}%`,
                   }}
@@ -282,6 +317,7 @@ function ReviewRoute() {
       onBack={handleBackToStart}
       onOpenRepo={handleOpenRepo}
       onNewWindow={handleNewWindow}
+      onSelectReview={handleSelectReview}
       comparisonReady={comparisonReady}
     />
   );

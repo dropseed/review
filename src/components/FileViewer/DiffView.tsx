@@ -7,8 +7,9 @@ import {
   Component,
   ReactNode,
 } from "react";
-import { PatchDiff, MultiFileDiff } from "@pierre/diffs/react";
+import { MultiFileDiff, FileDiff } from "@pierre/diffs/react";
 import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
+import { getSingularPatch, setLanguageOverride } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
@@ -424,6 +425,7 @@ export function DiffView({
 
       case "hunk": {
         const { hunk, hunkState, pairedHunk, isSource } = meta.data;
+        const hunkIndex = hunks.findIndex((h) => h.id === hunk.id);
         return (
           <HunkAnnotationPanel
             hunk={hunk}
@@ -435,6 +437,8 @@ export function DiffView({
             trustList={reviewState?.trustList ?? []}
             classifyingHunkIds={classifyingHunkIds}
             claudeAvailable={claudeAvailable}
+            hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
+            totalHunksInFile={hunks.length}
             onApprove={(hunkId) => {
               approveHunk(hunkId);
               nextHunkInFile();
@@ -494,6 +498,14 @@ export function DiffView({
         : undefined,
     [hasFileContents, fileName, newContent, language],
   );
+
+  // Parse patch for FileDiff when no file contents available (patch-only path)
+  // This allows us to override language for syntax highlighting (e.g., shebang detection)
+  const parsedFileDiff = useMemo(() => {
+    if (hasFileContents) return null;
+    const fileDiff = getSingularPatch(diffPatch);
+    return language ? setLanguageOverride(fileDiff, language) : fileDiff;
+  }, [hasFileContents, diffPatch, language]);
 
   // Performance optimization: detect large files and JSON files
   // JSON diffs are often noisy with word-level diffing; large files are slow to render
@@ -689,8 +701,8 @@ export function DiffView({
             options={diffOptions}
           />
         ) : (
-          <PatchDiff
-            patch={diffPatch}
+          <FileDiff
+            fileDiff={parsedFileDiff!}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
             renderHoverUtility={renderHoverUtility}

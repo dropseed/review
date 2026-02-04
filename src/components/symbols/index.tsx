@@ -110,7 +110,7 @@ export function StatusBadge({ status }: { status: SymbolHunkStatus }) {
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-lime-500" : "text-stone-500"}`}
+      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-emerald-500" : "text-stone-500"}`}
     >
       {status.total === 1 ? `${status.total} hunk` : `${status.total} hunks`}
     </span>
@@ -123,7 +123,7 @@ export function ReviewStatusDot({ status }: { status: SymbolHunkStatus }) {
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`text-xxs ${isComplete ? "text-lime-500" : "text-stone-600"}`}
+      className={`text-xxs ${isComplete ? "text-emerald-500" : "text-stone-600"}`}
     >
       {isComplete ? "\u2713" : "\u25CB"}
     </span>

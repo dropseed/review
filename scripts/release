@@ -66,6 +66,17 @@ TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym
 export TAURI_SIGNING_PRIVATE_KEY
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 
+# Fetch Apple code signing and notarization credentials from 1Password
+echo "Fetching Apple signing credentials from 1Password..."
+APPLE_SIGNING_IDENTITY=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_SIGNING_IDENTITY")
+APPLE_ID=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_ID")
+APPLE_PASSWORD=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_PASSWORD")
+APPLE_TEAM_ID=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_TEAM_ID")
+export APPLE_SIGNING_IDENTITY
+export APPLE_ID
+export APPLE_PASSWORD
+export APPLE_TEAM_ID
+
 # Pre-build sidecar binaries for both targets (Tauri's beforeBuildCommand
 # only runs once, so the second target would be missing its sidecar)
 echo ""

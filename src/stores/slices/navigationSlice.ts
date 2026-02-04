@@ -1,3 +1,4 @@
+import { isHunkReviewed } from "../../types";
 import type { SliceCreator } from "../types";
 
 // ========================================================================
@@ -61,6 +62,9 @@ export interface NavigationSlice {
   // Advance to next hunk within the same file
   nextHunkInFile: () => void;
 
+  // Advance to next file if current file is fully reviewed
+  advanceToNextUnreviewedFile: () => void;
+
   // Narrative sidebar
   narrativeSidebarOpen: boolean;
   setNarrativeSidebarOpen: (open: boolean) => void;
@@ -72,6 +76,10 @@ export interface NavigationSlice {
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
+
+  // Reviews sidebar (right sidebar for switching comparisons)
+  reviewsSidebarOpen: boolean;
+  setReviewsSidebarOpen: (open: boolean) => void;
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -91,12 +99,33 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   splitOrientation: "horizontal" as SplitOrientation,
 
   setSelectedFile: (path) => {
-    const { secondaryFile, focusedPane, hunks } = get();
-    // Find the index of the first hunk in the selected file
-    const firstHunkIndex = path
-      ? hunks.findIndex((h) => h.filePath === path)
-      : -1;
-    const newFocusedHunkIndex = firstHunkIndex >= 0 ? firstHunkIndex : 0;
+    const { secondaryFile, focusedPane, hunks, reviewState, stagedFilePaths } =
+      get();
+
+    // Find the index of the first unreviewed hunk in the selected file,
+    // falling back to the first hunk if all are reviewed
+    let targetHunkIndex = -1;
+    if (path) {
+      const trustList = reviewState?.trustList ?? [];
+      const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+
+      // First, try to find an unreviewed hunk
+      targetHunkIndex = hunks.findIndex((h) => {
+        if (h.filePath !== path) return false;
+        const hunkState = reviewState?.hunks[h.id];
+        return !isHunkReviewed(hunkState, trustList, {
+          autoApproveStaged,
+          stagedFilePaths,
+          filePath: h.filePath,
+        });
+      });
+
+      // Fall back to the first hunk in the file if all are reviewed
+      if (targetHunkIndex < 0) {
+        targetHunkIndex = hunks.findIndex((h) => h.filePath === path);
+      }
+    }
+    const newFocusedHunkIndex = targetHunkIndex >= 0 ? targetHunkIndex : 0;
 
     // If split is active and secondary pane is focused, update secondary instead
     if (secondaryFile !== null && focusedPane === "secondary") {
@@ -170,11 +199,28 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     const updates: Partial<NavigationSlice> = { topLevelView: "browse" };
     if (filePath !== undefined) {
       updates.selectedFile = filePath;
-      // Find the index of the first hunk in the selected file
-      const { hunks } = get();
-      const firstHunkIndex = hunks.findIndex((h) => h.filePath === filePath);
-      if (firstHunkIndex >= 0) {
-        updates.focusedHunkIndex = firstHunkIndex;
+      const { hunks, reviewState, stagedFilePaths } = get();
+      const trustList = reviewState?.trustList ?? [];
+      const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+
+      // Find the first unreviewed hunk in the file
+      let targetHunkIndex = hunks.findIndex((h) => {
+        if (h.filePath !== filePath) return false;
+        const hunkState = reviewState?.hunks[h.id];
+        return !isHunkReviewed(hunkState, trustList, {
+          autoApproveStaged,
+          stagedFilePaths,
+          filePath: h.filePath,
+        });
+      });
+
+      // Fall back to the first hunk if all are reviewed
+      if (targetHunkIndex < 0) {
+        targetHunkIndex = hunks.findIndex((h) => h.filePath === filePath);
+      }
+
+      if (targetHunkIndex >= 0) {
+        updates.focusedHunkIndex = targetHunkIndex;
       }
     }
     set(updates);
@@ -222,6 +268,59 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     }
   },
 
+  // Advance to next file if current file is fully reviewed
+  advanceToNextUnreviewedFile: () => {
+    const {
+      selectedFile,
+      hunks,
+      flatFileList,
+      reviewState,
+      stagedFilePaths,
+      setSelectedFile,
+    } = get();
+    if (!selectedFile || flatFileList.length === 0) return;
+
+    const trustList = reviewState?.trustList ?? [];
+    const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+
+    // Check if current file has any unreviewed hunks
+    const currentFileHasUnreviewed = hunks.some((h) => {
+      if (h.filePath !== selectedFile) return false;
+      const hunkState = reviewState?.hunks[h.id];
+      return !isHunkReviewed(hunkState, trustList, {
+        autoApproveStaged,
+        stagedFilePaths,
+        filePath: h.filePath,
+      });
+    });
+
+    // If current file still has unreviewed hunks, don't advance
+    if (currentFileHasUnreviewed) return;
+
+    // Find the next file with unreviewed hunks
+    const currentIndex = flatFileList.indexOf(selectedFile);
+    for (let i = 1; i < flatFileList.length; i++) {
+      const nextIndex = (currentIndex + i) % flatFileList.length;
+      const nextFile = flatFileList[nextIndex];
+
+      const hasUnreviewed = hunks.some((h) => {
+        if (h.filePath !== nextFile) return false;
+        const hunkState = reviewState?.hunks[h.id];
+        return !isHunkReviewed(hunkState, trustList, {
+          autoApproveStaged,
+          stagedFilePaths,
+          filePath: h.filePath,
+        });
+      });
+
+      if (hasUnreviewed) {
+        setSelectedFile(nextFile);
+        return;
+      }
+    }
+    // All files are fully reviewed - stay on current file
+  },
+
   // Narrative sidebar
   narrativeSidebarOpen: false,
   setNarrativeSidebarOpen: (open) => set({ narrativeSidebarOpen: open }),
@@ -234,6 +333,10 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   classificationsModalOpen: false,
   setClassificationsModalOpen: (open) =>
     set({ classificationsModalOpen: open }),
+
+  // Reviews sidebar
+  reviewsSidebarOpen: false,
+  setReviewsSidebarOpen: (open) => set({ reviewsSidebarOpen: open }),
 
   swapPanes: () => {
     const { selectedFile, secondaryFile } = get();

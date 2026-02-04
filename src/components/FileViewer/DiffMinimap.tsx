@@ -43,12 +43,13 @@ export function getHunkStatus(
   return "pending";
 }
 
+// Semantic status colors
 const STATUS_COLORS: Record<HunkStatus, string> = {
-  pending: "bg-stone-500",
-  trusted: "bg-cyan-400",
-  approved: "bg-lime-400",
-  rejected: "bg-rose-400",
-  classifying: "bg-violet-400",
+  pending: "bg-status-pending",
+  trusted: "bg-status-trusted",
+  approved: "bg-status-approved",
+  rejected: "bg-status-rejected",
+  classifying: "bg-status-classifying",
 };
 
 // --- Component ---
@@ -62,8 +63,7 @@ export function DiffMinimap({
   const rafId = useRef(0);
   const prefersReducedMotion = usePrefersReducedMotion();
 
-  // Self-manage scroll tracking: attach passive scroll listener + ResizeObserver
-  // on the scrollContainer and directly mutate the viewport indicator div.
+  // Self-manage scroll tracking
   useEffect(() => {
     if (!scrollContainer) return;
 
@@ -84,7 +84,6 @@ export function DiffMinimap({
       rafId.current = requestAnimationFrame(update);
     };
 
-    // Initial measurement
     update();
 
     scrollContainer.addEventListener("scroll", scheduleUpdate, {
@@ -103,7 +102,6 @@ export function DiffMinimap({
 
   const handleTrackClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      // Only respond to clicks directly on the track (not on markers)
       if (e.target !== e.currentTarget) return;
       if (!scrollContainer) return;
 
@@ -121,14 +119,17 @@ export function DiffMinimap({
 
   return (
     <div
-      className="relative w-2 shrink-0 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
+      className="relative w-3 shrink-0 cursor-pointer group border-l border-stone-800/50"
       onClick={handleTrackClick}
       aria-hidden="true"
     >
-      {/* Viewport indicator — positioned via internal scroll tracking */}
+      {/* Track background - subtle on hover */}
+      <div className="absolute inset-0 bg-gradient-to-b from-stone-900/0 via-stone-800/20 to-stone-900/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+      {/* Viewport indicator */}
       <div
         ref={viewportRef}
-        className="absolute left-0 right-0 bg-stone-400/25 border-y border-stone-400/50 pointer-events-none"
+        className="absolute left-0 right-0 bg-stone-500/15 border-y border-stone-500/25 pointer-events-none transition-colors group-hover:bg-stone-500/25 group-hover:border-stone-500/40"
         style={{ top: "0%", height: "100%" }}
       />
 
@@ -139,16 +140,18 @@ export function DiffMinimap({
           marker.status === "classifying" && !prefersReducedMotion
             ? " animate-pulse"
             : "";
-        const focusClass = marker.isFocused ? " ring-1 ring-amber-400" : "";
+        const focusRing = marker.isFocused
+          ? " ring-1 ring-amber-400/80 ring-offset-1 ring-offset-stone-900"
+          : "";
 
         return (
           <div
             key={marker.id}
-            className={`absolute left-0 right-0 rounded-sm ${colorClass}${pulseClass}${focusClass}`}
+            className={`absolute left-0.5 right-0.5 rounded-[2px] transition-all cursor-pointer hover:left-0 hover:right-0 ${colorClass}${pulseClass}${focusRing}`}
             style={{
               top: `${marker.topFraction * 100}%`,
               height: `${marker.heightFraction * 100}%`,
-              minHeight: "2px",
+              minHeight: "3px",
             }}
             onClick={(e) => {
               e.stopPropagation();

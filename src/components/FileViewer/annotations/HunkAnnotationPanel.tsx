@@ -32,7 +32,7 @@ function getHunkBackgroundClass(
   isTrusted: boolean,
 ): string {
   if (isRejected) return "bg-rose-500/10";
-  if (isApproved) return "bg-lime-500/5";
+  if (isApproved) return "bg-emerald-500/5";
   if (isTrusted) return "bg-sky-500/5";
   return "bg-stone-800/80";
 }
@@ -47,6 +47,8 @@ interface HunkAnnotationPanelProps {
   trustList: string[];
   classifyingHunkIds: Set<string>;
   claudeAvailable: boolean | null;
+  hunkPosition?: number; // 1-indexed position in file
+  totalHunksInFile?: number;
   onApprove: (hunkId: string) => void;
   onUnapprove: (hunkId: string) => void;
   onReject: (hunkId: string) => void;
@@ -70,6 +72,8 @@ export function HunkAnnotationPanel({
   trustList,
   classifyingHunkIds,
   claudeAvailable,
+  hunkPosition,
+  totalHunksInFile,
   onApprove,
   onUnapprove,
   onReject,
@@ -483,6 +487,19 @@ export function HunkAnnotationPanel({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        {/* Hunk position with j/k hints */}
+        {hunkPosition !== undefined &&
+          totalHunksInFile !== undefined &&
+          totalHunksInFile > 1 && (
+            <div className="flex items-center gap-1 text-stone-600 select-none">
+              {isFocused && <kbd className="text-stone-600">k</kbd>}
+              <span className="text-xxs tabular-nums">
+                {hunkPosition}/{totalHunksInFile}
+              </span>
+              {isFocused && <kbd className="text-stone-600">j</kbd>}
+            </div>
+          )}
       </div>
     </div>
   );

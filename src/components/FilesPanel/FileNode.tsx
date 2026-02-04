@@ -21,7 +21,7 @@ function directoryNameColor(
 ): string {
   if (isGitignored) return "text-stone-500";
   if (hunkContext !== "all") return "text-stone-200";
-  if (hasReviewableContent && !hasPending) return "text-lime-400";
+  if (hasReviewableContent && !hasPending) return "text-emerald-400";
   if (hasPending) return "text-amber-200";
   return "text-stone-300";
 }
@@ -34,7 +34,7 @@ function fileNameColor(
   hasReviewableContent: boolean,
 ): string {
   if (isSelected) return "text-stone-100";
-  if (isComplete) return "text-lime-400";
+  if (isComplete) return "text-emerald-400";
   if (isGitignored) return "text-stone-500";
   if (hunkContext === "all" && hasReviewableContent) return "text-amber-400";
   return "text-stone-300";
@@ -83,7 +83,7 @@ function ApprovalButtons({
               onApprove();
             }}
             className="flex items-center justify-center w-5 h-5 rounded
-                       text-stone-500 hover:text-lime-400 hover:bg-lime-500/20
+                       text-stone-500 hover:text-emerald-400 hover:bg-emerald-500/20
                        transition-colors"
           >
             <svg
@@ -112,7 +112,7 @@ function ApprovalButtons({
               onUnapprove();
             }}
             className="flex items-center justify-center w-5 h-5 rounded
-                       text-lime-400 hover:text-stone-400 hover:bg-stone-700/50
+                       text-emerald-400 hover:text-stone-400 hover:bg-stone-700/50
                        transition-colors"
           >
             <svg
