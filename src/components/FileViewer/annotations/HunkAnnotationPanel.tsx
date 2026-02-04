@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
 } from "../../ui/dropdown-menu";
 import { SimpleTooltip } from "../../ui/tooltip";
+import { SimilarHunksModal } from "./SimilarHunksModal";
 
 /** Returns the first changed line in a hunk with its side and line number. */
 function getFirstChangedLine(hunk: DiffHunk): {
@@ -49,6 +50,9 @@ interface HunkAnnotationPanelProps {
   claudeAvailable: boolean | null;
   hunkPosition?: number; // 1-indexed position in file
   totalHunksInFile?: number;
+  // Similar hunks data for "N like this" modal
+  similarHunks: DiffHunk[];
+  allHunkStates: Record<string, HunkState | undefined>;
   onApprove: (hunkId: string) => void;
   onUnapprove: (hunkId: string) => void;
   onReject: (hunkId: string) => void;
@@ -60,6 +64,9 @@ interface HunkAnnotationPanelProps {
   onReclassifyHunks: (hunkIds: string[]) => void;
   onCopyHunk: (hunk: DiffHunk) => void;
   onViewInFile?: (line: number) => void;
+  onApproveAllSimilar: (hunkIds: string[]) => void;
+  onRejectAllSimilar: (hunkIds: string[]) => void;
+  onNavigateToHunk?: (hunkId: string) => void;
 }
 
 export function HunkAnnotationPanel({
@@ -74,6 +81,8 @@ export function HunkAnnotationPanel({
   claudeAvailable,
   hunkPosition,
   totalHunksInFile,
+  similarHunks,
+  allHunkStates,
   onApprove,
   onUnapprove,
   onReject,
@@ -85,6 +94,9 @@ export function HunkAnnotationPanel({
   onReclassifyHunks,
   onCopyHunk,
   onViewInFile,
+  onApproveAllSimilar,
+  onRejectAllSimilar,
+  onNavigateToHunk,
 }: HunkAnnotationPanelProps) {
   const isApproved = hunkState?.status === "approved";
   const isRejected = hunkState?.status === "rejected";
@@ -96,7 +108,9 @@ export function HunkAnnotationPanel({
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
       className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
-        isFocused ? "inset-ring-2 inset-ring-amber-500/70" : ""
+        isFocused
+          ? "border-l-[2px] border-l-white/50 border-b-[1px] border-b-white/30"
+          : ""
       } ${getHunkBackgroundClass(isRejected, isApproved, isTrusted)}`}
     >
       {/* Move indicator */}
@@ -247,6 +261,15 @@ export function HunkAnnotationPanel({
                 )}
               </button>
             </SimpleTooltip>
+            {/* Similar hunks modal trigger - "N like this" */}
+            <SimilarHunksModal
+              currentHunk={hunk}
+              similarHunks={similarHunks}
+              hunkStates={allHunkStates}
+              onApproveAll={onApproveAllSimilar}
+              onRejectAll={onRejectAllSimilar}
+              onNavigateToHunk={onNavigateToHunk}
+            />
           </div>
         )}
 

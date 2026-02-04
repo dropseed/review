@@ -62,6 +62,7 @@ export interface ReviewSlice {
   rejectAllFileHunks: (filePath: string) => void;
   approveHunkIds: (hunkIds: string[]) => void;
   unapproveHunkIds: (hunkIds: string[]) => void;
+  rejectHunkIds: (hunkIds: string[]) => void;
   approveAllDirHunks: (dirPath: string) => void;
   unapproveAllDirHunks: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
@@ -302,6 +303,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         movePairOnlyIfStatus: "approved",
         skipMissing: true,
       });
+    },
+
+    rejectHunkIds: (hunkIds) => {
+      updateHunkStatuses(get, set, hunkIds, "rejected");
     },
 
     approveAllDirHunks: (dirPath) => {

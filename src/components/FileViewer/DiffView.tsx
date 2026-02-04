@@ -179,6 +179,8 @@ export function DiffView({
 }: DiffViewProps) {
   const reviewState = useReviewStore((s) => s.reviewState);
   const approveHunk = useReviewStore((s) => s.approveHunk);
+  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
+  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
   const unapproveHunk = useReviewStore((s) => s.unapproveHunk);
   const rejectHunk = useReviewStore((s) => s.rejectHunk);
   const unrejectHunk = useReviewStore((s) => s.unrejectHunk);
@@ -305,6 +307,49 @@ export function DiffView({
     });
   }, [hunks, hunkStates, allHunks]);
 
+  // Compute a content key for a hunk based on its changed lines (ignoring context).
+  // Used to group identical changes across different files for batch operations.
+  const getChangedLinesKey = useCallback((hunk: DiffHunk): string => {
+    return hunk.lines
+      .filter((l) => l.type === "added" || l.type === "removed")
+      .map((l) => `${l.type}:${l.content}`)
+      .join("\n");
+  }, []);
+
+  // Build lookup from changed-lines key to hunk IDs for batch operations.
+  // Groups identical changes across different files for "approve all identical" feature.
+  const changedLinesKeyToHunkIds = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const h of allHunks) {
+      const key = getChangedLinesKey(h);
+      if (!key) continue;
+      const ids = map.get(key) ?? [];
+      ids.push(h.id);
+      map.set(key, ids);
+    }
+    return map;
+  }, [allHunks, getChangedLinesKey]);
+
+  // Build lookup from hunk ID to hunk object for similar hunks modal
+  const hunkById = useMemo(() => {
+    const map = new Map<string, DiffHunk>();
+    for (const h of allHunks) {
+      map.set(h.id, h);
+    }
+    return map;
+  }, [allHunks]);
+
+  // Get similar hunks for a given hunk (same changed lines, different context/files)
+  const getSimilarHunks = useCallback(
+    (hunk: DiffHunk): DiffHunk[] => {
+      const key = getChangedLinesKey(hunk);
+      if (!key) return [hunk];
+      const ids = changedLinesKeyToHunkIds.get(key) ?? [hunk.id];
+      return ids.map((id) => hunkById.get(id)).filter(Boolean) as DiffHunk[];
+    },
+    [getChangedLinesKey, changedLinesKeyToHunkIds, hunkById],
+  );
+
   // Build annotations for user comments
   // Include "file" annotations as well - they map to the "additions" side (new/compare version)
   const userAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
@@ -426,6 +471,7 @@ export function DiffView({
       case "hunk": {
         const { hunk, hunkState, pairedHunk, isSource } = meta.data;
         const hunkIndex = hunks.findIndex((h) => h.id === hunk.id);
+        const similarHunks = getSimilarHunks(hunk);
         return (
           <HunkAnnotationPanel
             hunk={hunk}
@@ -439,6 +485,8 @@ export function DiffView({
             claudeAvailable={claudeAvailable}
             hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
             totalHunksInFile={hunks.length}
+            similarHunks={similarHunks}
+            allHunkStates={hunkStates ?? {}}
             onApprove={(hunkId) => {
               approveHunk(hunkId);
               nextHunkInFile();
@@ -462,6 +510,20 @@ export function DiffView({
             onReclassifyHunks={reclassifyHunks}
             onCopyHunk={handleCopyHunk}
             onViewInFile={onViewInFile}
+            onApproveAllSimilar={(hunkIds) => {
+              approveHunkIds(hunkIds);
+              nextHunkInFile();
+            }}
+            onRejectAllSimilar={(hunkIds) => {
+              rejectHunkIds(hunkIds);
+              nextHunkInFile();
+            }}
+            onNavigateToHunk={(hunkId) => {
+              const targetHunk = hunkById.get(hunkId);
+              if (targetHunk) {
+                setSelectedFile(targetHunk.filePath);
+              }
+            }}
           />
         );
       }
