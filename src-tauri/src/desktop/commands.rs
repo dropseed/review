@@ -1328,10 +1328,17 @@ pub fn is_dev_mode() -> bool {
 
 #[tauri::command]
 pub fn is_git_repo(path: String) -> bool {
-    let git_path = PathBuf::from(&path).join(".git");
-    // Worktree: .git is a file pointing to the main repo
-    // Regular repo: .git/HEAD must exist
-    git_path.is_file() || git_path.join("HEAD").exists()
+    // Use git itself to check if this is a valid repository.
+    // This handles all edge cases: regular repos, worktrees, submodules,
+    // bare repos, and repos with external git directories.
+    std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(&path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 // --- CLI sidecar install ---
