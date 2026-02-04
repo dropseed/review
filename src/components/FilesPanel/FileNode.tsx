@@ -44,7 +44,7 @@ interface FileNodeProps {
   entry: ProcessedFileEntry;
   depth: number;
   expandedPaths: Set<string>;
-  onToggle: (path: string) => void;
+  onToggle: (path: string, isGitignored?: boolean) => void;
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
   repoPath: string | null;
@@ -184,7 +184,7 @@ export const FileNode = memo(
           >
             <button
               className="flex flex-1 items-center gap-1.5 text-left min-w-0"
-              onClick={() => onToggle(entry.path)}
+              onClick={() => onToggle(entry.path, isGitignored)}
               aria-expanded={isExpanded}
             >
               {/* Chevron */}

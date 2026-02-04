@@ -64,6 +64,8 @@ export interface FilesSlice {
   loadingProgress: LoadingProgress | null;
   // Cached flattened file paths (computed when files change)
   flatFileList: string[];
+  // Tracks which gitignored directories have been loaded
+  loadedGitIgnoredDirs: Set<string>;
 
   // Actions
   setRepoPath: (path: string | null) => void;
@@ -79,6 +81,8 @@ export interface FilesSlice {
   loadAllFiles: () => Promise<void>;
   loadCurrentComparison: () => Promise<void>;
   saveCurrentComparison: () => Promise<void>;
+  /** Load contents of a gitignored directory and merge into allFiles */
+  loadDirectoryContents: (dirPath: string) => Promise<void>;
 }
 
 export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
@@ -92,6 +96,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     movePairs: [],
     loadingProgress: null,
     flatFileList: [],
+    loadedGitIgnoredDirs: new Set<string>(),
 
     setRepoPath: (path) => {
       const currentPath = get().repoPath;
@@ -109,6 +114,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         movePairs: [],
         flatFileList: [],
         loadingProgress: null,
+        loadedGitIgnoredDirs: new Set<string>(),
         // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
@@ -442,6 +448,52 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         await client.setCurrentComparison(repoPath, comparison);
       } catch (err) {
         console.error("Failed to save current comparison:", err);
+      }
+    },
+
+    loadDirectoryContents: async (dirPath: string) => {
+      const { repoPath, allFiles, loadedGitIgnoredDirs } = get();
+      if (!repoPath) return;
+
+      // Skip if already loaded
+      if (loadedGitIgnoredDirs.has(dirPath)) return;
+
+      try {
+        const contents = await client.listDirectoryContents(repoPath, dirPath);
+
+        // Mark as loaded
+        const newLoadedDirs = new Set(loadedGitIgnoredDirs);
+        newLoadedDirs.add(dirPath);
+
+        // Merge contents into allFiles tree by finding the target directory
+        // and replacing its children with the newly loaded contents
+        function mergeIntoTree(
+          entries: FileEntry[],
+          targetPath: string,
+          newChildren: FileEntry[],
+        ): FileEntry[] {
+          return entries.map((entry) => {
+            if (entry.path === targetPath) {
+              return { ...entry, children: newChildren };
+            }
+            if (entry.children && targetPath.startsWith(entry.path + "/")) {
+              return {
+                ...entry,
+                children: mergeIntoTree(
+                  entry.children,
+                  targetPath,
+                  newChildren,
+                ),
+              };
+            }
+            return entry;
+          });
+        }
+
+        const updatedAllFiles = mergeIntoTree(allFiles, dirPath, contents);
+        set({ allFiles: updatedAllFiles, loadedGitIgnoredDirs: newLoadedDirs });
+      } catch (err) {
+        console.error(`Failed to load directory contents for ${dirPath}:`, err);
       }
     },
   });

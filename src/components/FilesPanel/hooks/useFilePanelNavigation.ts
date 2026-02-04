@@ -97,17 +97,27 @@ export function useFilePanelNavigation({
     expandAndScrollTo,
   ]);
 
-  const togglePath = useCallback((path: string) => {
-    setExpandedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
+  const loadDirectoryContents = useReviewStore((s) => s.loadDirectoryContents);
+  const loadedGitIgnoredDirs = useReviewStore((s) => s.loadedGitIgnoredDirs);
+
+  const togglePath = useCallback(
+    (path: string, isGitignored?: boolean) => {
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+          // Load contents of gitignored directories when expanding
+          if (isGitignored && !loadedGitIgnoredDirs.has(path)) {
+            loadDirectoryContents(path);
+          }
+        }
+        return next;
+      });
+    },
+    [loadDirectoryContents, loadedGitIgnoredDirs],
+  );
 
   const handleSelectFile = useCallback(
     (path: string) => {

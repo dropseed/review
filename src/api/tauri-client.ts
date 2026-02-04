@@ -110,6 +110,16 @@ export class TauriClient implements ApiClient {
     return invoke<FileEntry[]>("list_all_files", { repoPath, comparison });
   }
 
+  async listDirectoryContents(
+    repoPath: string,
+    dirPath: string,
+  ): Promise<FileEntry[]> {
+    return invoke<FileEntry[]>("list_directory_contents", {
+      repoPath,
+      dirPath,
+    });
+  }
+
   async getFileContent(
     repoPath: string,
     filePath: string,

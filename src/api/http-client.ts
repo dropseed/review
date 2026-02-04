@@ -236,6 +236,15 @@ export class HttpClient implements ApiClient {
     );
   }
 
+  async listDirectoryContents(
+    repoPath: string,
+    dirPath: string,
+  ): Promise<FileEntry[]> {
+    return this.fetchJson<FileEntry[]>(
+      `/directory?${this.buildRepoQuery(repoPath)}&path=${encodeURIComponent(dirPath)}`,
+    );
+  }
+
   async getFileContent(
     repoPath: string,
     filePath: string,

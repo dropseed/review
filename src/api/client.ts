@@ -81,6 +81,12 @@ export interface ApiClient {
   /** List all files in the repository (for file finder) */
   listAllFiles(repoPath: string, comparison: Comparison): Promise<FileEntry[]>;
 
+  /** List contents of a directory (for lazy-loading gitignored directories) */
+  listDirectoryContents(
+    repoPath: string,
+    dirPath: string,
+  ): Promise<FileEntry[]>;
+
   /** Get file content and diff hunks */
   getFileContent(
     repoPath: string,

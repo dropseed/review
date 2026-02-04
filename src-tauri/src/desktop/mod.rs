@@ -356,6 +356,7 @@ pub fn run() {
             commands::get_commit_detail,
             commands::list_files,
             commands::list_all_files,
+            commands::list_directory_contents,
             commands::get_file_content,
             commands::get_all_hunks,
             commands::get_diff,

@@ -568,6 +568,65 @@ impl LocalGitSource {
         Ok(build_file_tree(all_files, &file_status, &gitignored_dirs))
     }
 
+    /// List contents of a directory (used for lazy-loading gitignored directories).
+    ///
+    /// Returns a flat list of FileEntry items for the immediate children of the
+    /// specified directory. Subdirectories are returned as collapsed entries.
+    pub fn list_directory_contents(&self, dir_path: &str) -> Result<Vec<FileEntry>, LocalGitError> {
+        use std::fs;
+
+        let full_path = self.repo_path.join(dir_path);
+        if !full_path.is_dir() {
+            return Err(LocalGitError::Git(format!("Not a directory: {dir_path}")));
+        }
+
+        let mut entries = Vec::new();
+
+        let read_dir = fs::read_dir(&full_path)
+            .map_err(|e| LocalGitError::Git(format!("Failed to read directory {dir_path}: {e}")))?;
+
+        for entry in read_dir {
+            let entry = entry
+                .map_err(|e| LocalGitError::Git(format!("Failed to read directory entry: {e}")))?;
+
+            let file_name = entry.file_name().to_string_lossy().to_string();
+
+            // Skip hidden files/directories (starting with .)
+            if file_name.starts_with('.') {
+                continue;
+            }
+
+            let file_type = entry
+                .file_type()
+                .map_err(|e| LocalGitError::Git(format!("Failed to get file type: {e}")))?;
+
+            let relative_path = if dir_path.is_empty() {
+                file_name.clone()
+            } else {
+                format!("{dir_path}/{file_name}")
+            };
+
+            let is_directory = file_type.is_dir();
+
+            entries.push(FileEntry {
+                name: file_name,
+                path: relative_path,
+                is_directory,
+                children: if is_directory { Some(vec![]) } else { None },
+                status: Some(FileStatus::Gitignored),
+            });
+        }
+
+        // Sort: directories first, then alphabetically (case-insensitive)
+        entries.sort_by(|a, b| {
+            b.is_directory
+                .cmp(&a.is_directory)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        Ok(entries)
+    }
+
     /// Search file contents using git grep
     ///
     /// Returns matches from tracked files in the repository.

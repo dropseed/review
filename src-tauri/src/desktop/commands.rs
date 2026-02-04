@@ -277,6 +277,32 @@ pub fn list_all_files_sync(
 }
 
 #[tauri::command]
+pub async fn list_directory_contents(
+    repo_path: String,
+    dir_path: String,
+) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        debug!("[list_directory_contents] repo_path={repo_path}, dir_path={dir_path}");
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+            error!("[list_directory_contents] ERROR creating source: {e}");
+            e.to_string()
+        })?;
+
+        let result = source.list_directory_contents(&dir_path).map_err(|e| {
+            error!("[list_directory_contents] ERROR listing directory: {e}");
+            e.to_string()
+        })?;
+        info!(
+            "[list_directory_contents] SUCCESS: {} entries in {dir_path}",
+            result.len()
+        );
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn get_file_content(
     repo_path: String,
     file_path: String,
