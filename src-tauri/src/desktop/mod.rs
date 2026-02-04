@@ -195,6 +195,10 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+Shift+D")
                 .build(app)?;
 
+            let check_for_updates = MenuItemBuilder::new("Check for Updates...")
+                .id("check_for_updates")
+                .build(app)?;
+
             let settings = MenuItemBuilder::new("Settings...")
                 .id("settings")
                 .accelerator("CmdOrCtrl+,")
@@ -210,6 +214,7 @@ pub fn run() {
 
             let app_menu = SubmenuBuilder::new(app, &app.package_info().name)
                 .about(None)
+                .item(&check_for_updates)
                 .separator()
                 .item(&settings)
                 .separator()
@@ -318,6 +323,9 @@ pub fn run() {
                 }
                 "settings" => {
                     let _: Result<(), _> = app.emit("menu:open-settings", ());
+                }
+                "check_for_updates" => {
+                    let _: Result<(), _> = app.emit("menu:check-for-updates", ());
                 }
                 "install_cli" => match commands::install_cli(app.clone()) {
                     Ok(_) => {
