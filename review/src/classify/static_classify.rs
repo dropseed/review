@@ -161,25 +161,27 @@ fn classify_comments(hunk: &DiffHunk) -> Option<ClassificationResult> {
 
 // --- Rule 4: Import-only changes ---
 
-/// Maps file extension to import statement prefixes.
-fn import_prefixes(ext: &str) -> Option<&'static [&'static str]> {
+/// Returns (prefixes, bracket_char) for import multi-line handling.
+/// bracket_char is '\0' for languages that don't support multi-line imports.
+fn import_config(ext: &str) -> Option<(&'static [&'static str], char)> {
     match ext {
         "js" | "jsx" | "ts" | "tsx" | "mjs" | "mts" | "cjs" | "cts" => {
-            Some(&["import ", "import{", "export { ", "export {"])
+            Some((&["import ", "import{", "export { ", "export {"], '{'))
         }
-        "py" => Some(&["import ", "from "]),
-        "go" => Some(&["import "]),
-        "rs" => Some(&["use "]),
-        "java" | "kt" | "kts" | "scala" | "groovy" | "gradle" => Some(&["import "]),
-        "c" | "cc" | "cpp" | "cxx" | "h" | "hpp" | "m" | "mm" => Some(&["#include"]),
-        "rb" => Some(&["require ", "require_relative "]),
-        "cs" => Some(&["using "]),
-        "swift" => Some(&["import "]),
-        "dart" => Some(&["import ", "export "]),
+        "py" => Some((&["import ", "from "], '(')),
+        "go" => Some((&["import "], '(')),
+        "rs" => Some((&["use "], '{')),
+        // Languages that use simple single-line detection only
+        "java" | "kt" | "kts" | "scala" | "groovy" | "gradle" => Some((&["import "], '\0')),
+        "c" | "cc" | "cpp" | "cxx" | "h" | "hpp" | "m" | "mm" => Some((&["#include"], '\0')),
+        "rb" => Some((&["require ", "require_relative "], '\0')),
+        "cs" => Some((&["using "], '\0')),
+        "swift" | "dart" => Some((&["import "], '\0')),
         _ => None,
     }
 }
 
+/// Legacy function for simple single-line import check.
 fn is_import_line(content: &str, prefixes: &[&str]) -> bool {
     let trimmed = content.trim();
     if trimmed.is_empty() {
@@ -188,20 +190,99 @@ fn is_import_line(content: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| trimmed.starts_with(prefix))
 }
 
+/// Check if all changed lines are import statements (including multi-line).
+fn are_all_import_lines(lines: &[&DiffLine], prefixes: &[&str], bracket: char) -> bool {
+    // For languages without multi-line support, use simple check
+    if bracket == '\0' {
+        return lines
+            .iter()
+            .all(|line| is_import_line(&line.content, prefixes));
+    }
+
+    let mut depth = 0i32;
+
+    for line in lines {
+        let trimmed = line.content.trim();
+
+        // Empty lines are OK between imports
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let starts_import = prefixes.iter().any(|p| trimmed.starts_with(p));
+
+        if starts_import {
+            // New import statement - track brackets
+            depth += count_char(trimmed, bracket);
+            depth -= count_char(trimmed, closing_bracket(bracket));
+        } else if depth > 0 {
+            // Inside multi-line import - validate continuation
+            if !is_import_continuation(trimmed, bracket) {
+                return false;
+            }
+            depth += count_char(trimmed, bracket);
+            depth -= count_char(trimmed, closing_bracket(bracket));
+        } else {
+            // Not an import and not in multi-line context
+            return false;
+        }
+    }
+
+    true
+}
+
+fn closing_bracket(open: char) -> char {
+    match open {
+        '(' => ')',
+        '{' => '}',
+        _ => '\0',
+    }
+}
+
+fn count_char(s: &str, c: char) -> i32 {
+    s.chars().filter(|&ch| ch == c).count() as i32
+}
+
+/// Validate that a line looks like an import continuation.
+/// Accepts: closing brackets (with optional semicolon/comma), "} from" patterns,
+/// identifiers, and quoted strings (for Go imports).
+fn is_import_continuation(trimmed: &str, bracket: char) -> bool {
+    let close = closing_bracket(bracket);
+
+    // Closing bracket alone or with semicolon/comma (e.g., "}", "};", "},")
+    if trimmed == format!("{close}")
+        || trimmed == format!("{close};")
+        || trimmed == format!("{close},")
+    {
+        return true;
+    }
+
+    // Destructured import endings: "} from '...'" or ") from '...'"
+    if trimmed.starts_with("} from ")
+        || trimmed.starts_with("}from ")
+        || trimmed.starts_with(") from ")
+        || trimmed.starts_with(")from ")
+    {
+        return true;
+    }
+
+    // Identifier or quoted string (letter, underscore, or quote)
+    matches!(
+        trimmed.chars().next(),
+        Some('a'..='z' | 'A'..='Z' | '_' | '"' | '\'')
+    )
+}
+
 fn classify_imports(hunk: &DiffHunk) -> Option<ClassificationResult> {
     let ext = hunk.file_path.rsplit('.').next()?;
-    let prefixes = import_prefixes(ext)?;
+    let (prefixes, bracket) = import_config(ext)?;
 
     let changed_lines = get_changed_lines(&hunk.lines);
     if changed_lines.is_empty() {
         return None;
     }
 
-    let all_imports = changed_lines
-        .iter()
-        .all(|line| is_import_line(&line.content, prefixes));
-
-    if !all_imports {
+    if !are_all_import_lines(&changed_lines, prefixes, bracket) {
         return None;
     }
 
@@ -604,6 +685,107 @@ mod tests {
             vec![
                 added("import { Foo } from './foo';"),
                 added("const x = new Foo();"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_none());
+    }
+
+    // --- Multi-line import tests ---
+
+    #[test]
+    fn test_import_python_multiline() {
+        let hunk = make_hunk(
+            "main.py",
+            vec![
+                added("from plain.models import ("),
+                added("    query_utils,"),
+                added("    sql,"),
+                added(")"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:added"]);
+    }
+
+    #[test]
+    fn test_import_ts_multiline() {
+        let hunk = make_hunk(
+            "app.tsx",
+            vec![
+                added("import {"),
+                added("  useState,"),
+                added("  useEffect,"),
+                added("} from \"react\";"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:added"]);
+    }
+
+    #[test]
+    fn test_import_rust_multiline() {
+        let hunk = make_hunk(
+            "lib.rs",
+            vec![
+                added("use std::collections::{"),
+                added("    HashMap,"),
+                added("    HashSet,"),
+                added("};"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:added"]);
+    }
+
+    #[test]
+    fn test_import_python_multiline_modified() {
+        // User's exact case: multi-line reformatted to single-line
+        let hunk = make_hunk(
+            "main.py",
+            vec![
+                removed("from plain.models import ("),
+                removed("    query_utils,"),
+                removed("    sql,"),
+                removed("    transaction,"),
+                removed(")"),
+                added("from plain.models import query_utils, transaction"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:modified"]);
+    }
+
+    #[test]
+    fn test_import_go_multiline() {
+        let hunk = make_hunk(
+            "main.go",
+            vec![
+                added("import ("),
+                added("    \"fmt\""),
+                added("    \"os\""),
+                added(")"),
+            ],
+        );
+        let result = classify_imports(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["imports:added"]);
+    }
+
+    #[test]
+    fn test_import_multiline_not_mixed_with_code() {
+        // Multi-line import followed by code should NOT match
+        let hunk = make_hunk(
+            "main.py",
+            vec![
+                added("from os import ("),
+                added("    path,"),
+                added(")"),
+                added("x = path.join('a', 'b')"),
             ],
         );
         let result = classify_imports(&hunk);
