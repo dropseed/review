@@ -254,7 +254,7 @@ class WebWindowService implements WindowService {
 // ----- Menu Events -----
 
 class WebMenuEventService implements MenuEventService {
-  on(_event: string, _callback: () => void): () => void {
+  on(_event: string, _callback: (payload?: unknown) => void): () => void {
     // No menu events in browser - return no-op unlisten
     return () => {};
   }

@@ -64,77 +64,71 @@ export function useMenuEvents({
   // Listen for menu events (setup once, use refs for current values)
   useEffect(() => {
     const platform = getPlatformServices();
-    const unlistenFns: (() => void)[] = [];
+    const { on } = platform.menuEvents;
 
-    unlistenFns.push(
-      platform.menuEvents.on("menu:close", () => {
-        handleCloseRef.current();
-      }),
-    );
+    // Define all menu event handlers
+    const listeners: [string, (payload?: unknown) => void][] = [
+      // CLI install events (from Help menu)
+      [
+        "cli:installed",
+        () => {
+          platform.dialogs.message(
+            "The 'review' command has been installed to /usr/local/bin/review",
+            { title: "CLI Installed", kind: "info" },
+          );
+        },
+      ],
+      [
+        "cli:install-error",
+        (payload) => {
+          const errorMsg =
+            typeof payload === "string"
+              ? payload
+              : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Review.app/Contents/MacOS/review-cli /usr/local/bin/review";
+          platform.dialogs.message(errorMsg, {
+            title: "CLI Install Failed",
+            kind: "error",
+          });
+        },
+      ],
+      // Menu actions
+      ["menu:close", () => handleCloseRef.current()],
+      ["menu:new-tab", () => handleNewTabRef.current()],
+      ["menu:open-repo", () => handleOpenRepoRef.current()],
+      ["menu:new-window", () => handleNewWindowRef.current()],
+      ["menu:show-debug", () => setShowDebugModal(true)],
+      ["menu:open-settings", () => setShowSettingsModal(true)],
+      ["menu:refresh", () => handleRefreshRef.current()],
+      // Zoom controls
+      [
+        "menu:zoom-in",
+        () => {
+          setCodeFontSizeRef.current(
+            Math.min(
+              codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
+              CODE_FONT_SIZE_MAX,
+            ),
+          );
+        },
+      ],
+      [
+        "menu:zoom-out",
+        () => {
+          setCodeFontSizeRef.current(
+            Math.max(
+              codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
+              CODE_FONT_SIZE_MIN,
+            ),
+          );
+        },
+      ],
+      [
+        "menu:zoom-reset",
+        () => setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT),
+      ],
+    ];
 
-    unlistenFns.push(
-      platform.menuEvents.on("menu:new-tab", () => {
-        handleNewTabRef.current();
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:open-repo", () => {
-        handleOpenRepoRef.current();
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:new-window", () => {
-        handleNewWindowRef.current();
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:show-debug", () => {
-        setShowDebugModal(true);
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:open-settings", () => {
-        setShowSettingsModal(true);
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:refresh", () => {
-        handleRefreshRef.current();
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:zoom-in", () => {
-        setCodeFontSizeRef.current(
-          Math.min(
-            codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
-            CODE_FONT_SIZE_MAX,
-          ),
-        );
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:zoom-out", () => {
-        setCodeFontSizeRef.current(
-          Math.max(
-            codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
-            CODE_FONT_SIZE_MIN,
-          ),
-        );
-      }),
-    );
-
-    unlistenFns.push(
-      platform.menuEvents.on("menu:zoom-reset", () => {
-        setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT);
-      }),
-    );
+    const unlistenFns = listeners.map(([event, handler]) => on(event, handler));
 
     return () => {
       unlistenFns.forEach((fn) => fn());

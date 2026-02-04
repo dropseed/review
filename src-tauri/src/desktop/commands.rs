@@ -1367,6 +1367,30 @@ pub fn get_cli_install_status() -> CliInstallStatus {
     }
 }
 
+/// Run a shell command with administrator privileges via osascript.
+/// Returns an error if the user cancels or the command fails.
+fn run_admin_shell_command(shell_command: &str, cancel_message: &str) -> Result<(), String> {
+    let script = format!(
+        "do shell script \"{}\" with administrator privileges",
+        shell_command
+    );
+
+    let output = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| format!("Failed to run osascript: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("User canceled") || stderr.contains("(-128)") {
+            return Err(cancel_message.to_string());
+        }
+        return Err(stderr.trim().to_string());
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
     use tauri::Manager;
@@ -1392,51 +1416,9 @@ pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
         ));
     }
 
-    let symlink_path = std::path::Path::new(CLI_SYMLINK_PATH);
-
-    // Remove existing symlink if present
-    if symlink_path.exists() || symlink_path.symlink_metadata().is_ok() {
-        std::fs::remove_file(symlink_path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                format!(
-                    "Permission denied. Run manually:\n  sudo ln -sf \"{}\" {}",
-                    sidecar_path.display(),
-                    CLI_SYMLINK_PATH
-                )
-            } else {
-                format!("Failed to remove existing symlink: {e}")
-            }
-        })?;
-    }
-
-    // Create parent directory if needed
-    if let Some(parent) = symlink_path.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    format!(
-                        "Permission denied. Run manually:\n  sudo ln -sf \"{}\" {}",
-                        sidecar_path.display(),
-                        CLI_SYMLINK_PATH
-                    )
-                } else {
-                    format!("Failed to create directory: {e}")
-                }
-            })?;
-        }
-    }
-
-    std::os::unix::fs::symlink(&sidecar_path, symlink_path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            format!(
-                "Permission denied. Run manually:\n  sudo ln -sf \"{}\" {}",
-                sidecar_path.display(),
-                CLI_SYMLINK_PATH
-            )
-        } else {
-            format!("Failed to create symlink: {e}")
-        }
-    })?;
+    let shell_command = format!("ln -sf '{}' '{}'", sidecar_path.display(), CLI_SYMLINK_PATH);
+    run_admin_shell_command(&shell_command, "Installation cancelled")
+        .map_err(|e| format!("Failed to create symlink: {e}"))?;
 
     info!(
         "[install_cli] Symlinked {} -> {}",
@@ -1450,16 +1432,10 @@ pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
 pub fn uninstall_cli() -> Result<(), String> {
     let symlink_path = std::path::Path::new(CLI_SYMLINK_PATH);
     if symlink_path.symlink_metadata().is_ok() {
-        std::fs::remove_file(symlink_path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                format!(
-                    "Permission denied. Run manually:\n  sudo rm {}",
-                    CLI_SYMLINK_PATH
-                )
-            } else {
-                format!("Failed to remove symlink: {e}")
-            }
-        })?;
+        let shell_command = format!("rm '{}'", CLI_SYMLINK_PATH);
+        run_admin_shell_command(&shell_command, "Uninstall cancelled")
+            .map_err(|e| format!("Failed to remove symlink: {e}"))?;
+
         info!("[uninstall_cli] Removed {CLI_SYMLINK_PATH}");
     }
     Ok(())

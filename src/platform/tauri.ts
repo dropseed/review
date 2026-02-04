@@ -259,13 +259,13 @@ class TauriWindowService implements WindowService {
 // ----- Menu Events -----
 
 class TauriMenuEventService implements MenuEventService {
-  on(event: string, callback: () => void): () => void {
+  on(event: string, callback: (payload?: unknown) => void): () => void {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
 
-    listen(event, () => {
+    listen(event, (e) => {
       if (!cancelled) {
-        callback();
+        callback(e.payload);
       }
     })
       .then((fn) => {

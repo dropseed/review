@@ -129,8 +129,8 @@ export interface WindowHandle {
  * Menu event service for listening to menu actions
  */
 export interface MenuEventService {
-  /** Subscribe to a menu event */
-  on(event: string, callback: () => void): () => void;
+  /** Subscribe to a menu event. Callback receives event payload if present. */
+  on(event: string, callback: (payload?: unknown) => void): () => void;
 }
 
 /**
