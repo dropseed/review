@@ -73,31 +73,30 @@ pub fn run() {
     // Initialize Sentry early so it captures any panics during setup.
     // Events are silently dropped until the user opts in via preferences.
     let consent = Arc::new(AtomicBool::new(false));
-    let consent_for_hook = consent.clone();
 
-    let environment = if cfg!(debug_assertions) {
-        "development"
+    // Only initialize Sentry in release builds
+    let _sentry_guard = if cfg!(debug_assertions) {
+        None
     } else {
-        "production"
+        let consent_for_hook = consent.clone();
+        Some(sentry::init(sentry::ClientOptions {
+            dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336"
+                .parse()
+                .ok(),
+            release: sentry::release_name!(),
+            environment: Some("production".into()),
+            before_send: Some(Arc::new(move |mut event| {
+                if !consent_for_hook.load(Ordering::Relaxed) {
+                    return None;
+                }
+                // Strip PII fields
+                event.user = None;
+                event.server_name = None;
+                Some(event)
+            })),
+            ..Default::default()
+        }))
     };
-
-    let _sentry_guard = sentry::init(sentry::ClientOptions {
-        dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336"
-            .parse()
-            .ok(),
-        release: sentry::release_name!(),
-        environment: Some(environment.into()),
-        before_send: Some(Arc::new(move |mut event| {
-            if !consent_for_hook.load(Ordering::Relaxed) {
-                return None;
-            }
-            // Strip PII fields
-            event.user = None;
-            event.server_name = None;
-            Some(event)
-        })),
-        ..Default::default()
-    });
 
     let builder = tauri::Builder::default()
         .manage(SentryConsent(consent.clone()))

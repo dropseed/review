@@ -11,11 +11,14 @@ export async function initSentry(): Promise<void> {
     getVersion(),
   ]);
 
-  const environment = isDev ? "development" : "production";
+  // Skip Sentry in development
+  if (isDev) {
+    return;
+  }
 
   Sentry.init({
     dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336",
-    environment,
+    environment: "production",
     release: `review@${appVersion}`,
     tracesSampleRate: 0,
     beforeSend(event) {
