@@ -74,6 +74,9 @@ export function CommitDetailModal({
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
+  // Commit diffs always use unified or split (old/new modes don't apply)
+  const effectiveDiffStyle =
+    diffViewMode === "old" || diffViewMode === "new" ? "split" : diffViewMode;
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,7 +276,7 @@ export function CommitDetailModal({
                   <PatchDiff
                     patch={patch}
                     options={{
-                      diffStyle: diffViewMode,
+                      diffStyle: effectiveDiffStyle,
                       theme: {
                         dark: codeTheme,
                         light: codeTheme,

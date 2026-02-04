@@ -10,7 +10,7 @@ import { MarkdownViewer } from "./MarkdownViewer";
 interface FileContentRendererProps {
   filePath: string;
   fileContent: FileContent;
-  viewMode: "unified" | "split";
+  viewMode: "unified" | "split" | "old" | "new";
   codeTheme: string;
   fontSizeCSS: string;
   focusedHunkId: string | null;
@@ -90,12 +90,65 @@ export function FileContentRenderer({
     );
   }
 
+  // Old/New file view modes - show file content without diff highlighting
+  if ((viewMode === "old" || viewMode === "new") && hasChanges) {
+    const isOldMode = viewMode === "old";
+    const content = isOldMode ? fileContent.oldContent : fileContent.content;
+
+    // Handle missing content (new file in old mode, deleted file in new mode)
+    if (!content) {
+      const message = isOldMode
+        ? {
+            title: "No previous version",
+            detail: "This file was added in this change",
+          }
+        : {
+            title: "File deleted",
+            detail: "This file was removed in this change",
+          };
+
+      return (
+        <div className="flex flex-1 items-center justify-center p-8">
+          <div className="text-center">
+            <p className="text-stone-500">{message.title}</p>
+            <p className="mt-1 text-sm text-stone-600">{message.detail}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <DiffErrorBoundary
+        key={filePath}
+        fallback={<RenderErrorFallback filePath={filePath} />}
+      >
+        <PlainCodeView
+          content={content}
+          filePath={filePath}
+          highlightLine={highlightLine}
+          theme={codeTheme}
+          fontSizeCSS={fontSizeCSS}
+          language={effectiveLanguage}
+          lineHeight={lineHeight}
+          annotations={reviewState?.annotations?.filter(
+            (a) => a.filePath === filePath,
+          )}
+          onAddAnnotation={(lineNumber, content) =>
+            addAnnotation(filePath, lineNumber, "file", content)
+          }
+          onUpdateAnnotation={updateAnnotation}
+          onDeleteAnnotation={deleteAnnotation}
+        />
+      </DiffErrorBoundary>
+    );
+  }
+
   // Diff view (unified or split) for files with changes
   if (hasChanges) {
     return (
       <DiffView
         diffPatch={fileContent.diffPatch}
-        viewMode={viewMode}
+        viewMode={viewMode as "unified" | "split"}
         hunks={fileContent.hunks}
         theme={codeTheme}
         fontSizeCSS={fontSizeCSS}

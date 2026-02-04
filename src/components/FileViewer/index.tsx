@@ -572,32 +572,29 @@ export function FileViewer({ filePath }: FileViewerProps) {
           {!isImage && !showImageViewer && !isUntracked && hasChanges && (
             <>
               <div className="flex items-center rounded bg-stone-800/30 p-0.5">
-                <button
-                  onClick={() => {
-                    setViewMode("unified");
-                    setHighlightLine(null);
-                  }}
-                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                    viewMode === "unified"
-                      ? "bg-stone-700/50 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  Unified
-                </button>
-                <button
-                  onClick={() => {
-                    setViewMode("split");
-                    setHighlightLine(null);
-                  }}
-                  className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
-                    viewMode === "split"
-                      ? "bg-stone-700/50 text-stone-200"
-                      : "text-stone-500 hover:text-stone-300"
-                  }`}
-                >
-                  Split
-                </button>
+                {(
+                  [
+                    ["unified", "Unified"],
+                    ["split", "Split"],
+                    ["old", "Old"],
+                    ["new", "New"],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setViewMode(mode);
+                      setHighlightLine(null);
+                    }}
+                    className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                      viewMode === mode
+                        ? "bg-stone-700/50 text-stone-200"
+                        : "text-stone-500 hover:text-stone-300"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               {/* Diff display options */}
               <div className="relative" ref={diffOptionsRef}>
