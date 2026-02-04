@@ -75,11 +75,18 @@ pub fn run() {
     let consent = Arc::new(AtomicBool::new(false));
     let consent_for_hook = consent.clone();
 
+    let environment = if cfg!(debug_assertions) {
+        "development"
+    } else {
+        "production"
+    };
+
     let _sentry_guard = sentry::init(sentry::ClientOptions {
         dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336"
             .parse()
             .ok(),
         release: sentry::release_name!(),
+        environment: Some(environment.into()),
         before_send: Some(Arc::new(move |mut event| {
             if !consent_for_hook.load(Ordering::Relaxed) {
                 return None;
