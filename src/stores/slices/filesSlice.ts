@@ -138,6 +138,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         classifyGeneration: get().classifyGeneration + 1,
         // Review
         reviewState: null,
+        // Undo
+        undoStack: [],
         // Git
         gitStatus: null,
         stagedFilePaths: new Set<string>(),
@@ -163,6 +165,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         allFiles: [],
         loadingProgress: null,
         reviewState: null,
+        undoStack: [],
       });
       get().saveCurrentComparison();
       get().loadReviewState();

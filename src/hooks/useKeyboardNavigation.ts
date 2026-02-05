@@ -53,6 +53,7 @@ export function useKeyboardNavigation({
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
+  const undo = useReviewStore((s) => s.undo);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -235,6 +236,9 @@ export function useKeyboardNavigation({
           }
           break;
         }
+        case "z":
+          undo();
+          break;
         case "ArrowDown":
           if (event.metaKey || event.ctrlKey) {
             nextFile();
@@ -277,6 +281,7 @@ export function useKeyboardNavigation({
       topLevelView,
       navigateToBrowse,
       navigateToOverview,
+      undo,
     ],
   );
 

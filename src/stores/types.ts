@@ -14,6 +14,7 @@ import type { SearchSlice } from "./slices/searchSlice";
 import type { HistorySlice } from "./slices/historySlice";
 import type { SymbolsSlice } from "./slices/symbolsSlice";
 import type { NarrativeSlice } from "./slices/narrativeSlice";
+import type { UndoSlice } from "./slices/undoSlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -25,7 +26,8 @@ export type ReviewStore = PreferencesSlice &
   SearchSlice &
   HistorySlice &
   SymbolsSlice &
-  NarrativeSlice;
+  NarrativeSlice &
+  UndoSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

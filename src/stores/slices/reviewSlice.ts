@@ -251,6 +251,29 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveHunk: (hunkId) => {
+      const { reviewState, hunks, focusedHunkIndex, selectedFile, pushUndo } =
+        get();
+      if (reviewState) {
+        // Collect all hunk IDs that will be affected (including move pair)
+        const affectedIds = [hunkId];
+        const hunk = hunks.find((h) => h.id === hunkId);
+        if (hunk?.movePairId) {
+          affectedIds.push(hunk.movePairId);
+        }
+        const previousStatuses: Record<
+          string,
+          (typeof reviewState.hunks)[string] | undefined
+        > = {};
+        for (const id of affectedIds) {
+          previousStatuses[id] = reviewState.hunks[id];
+        }
+        pushUndo({
+          hunkIds: affectedIds,
+          previousStatuses,
+          focusedHunkIndex,
+          selectedFile,
+        });
+      }
       updateHunkStatuses(get, set, [hunkId], "approved");
       get().advanceToNextUnreviewedFile();
     },
@@ -263,6 +286,28 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     rejectHunk: (hunkId) => {
+      const { reviewState, hunks, focusedHunkIndex, selectedFile, pushUndo } =
+        get();
+      if (reviewState) {
+        const affectedIds = [hunkId];
+        const hunk = hunks.find((h) => h.id === hunkId);
+        if (hunk?.movePairId) {
+          affectedIds.push(hunk.movePairId);
+        }
+        const previousStatuses: Record<
+          string,
+          (typeof reviewState.hunks)[string] | undefined
+        > = {};
+        for (const id of affectedIds) {
+          previousStatuses[id] = reviewState.hunks[id];
+        }
+        pushUndo({
+          hunkIds: affectedIds,
+          previousStatuses,
+          focusedHunkIndex,
+          selectedFile,
+        });
+      }
       updateHunkStatuses(get, set, [hunkId], "rejected");
       get().advanceToNextUnreviewedFile();
     },

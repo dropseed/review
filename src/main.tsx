@@ -7,6 +7,7 @@ import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { AppRouter } from "./router";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { Toaster } from "sonner";
 import "./index.css";
 import { initSentry } from "./utils/sentry";
 import { initializeLogger } from "./utils/logger";
@@ -90,6 +91,7 @@ resolveLanguages([...commonLanguages])
           >
             <WorkerPoolThemeSync />
             <AppRouter />
+            <Toaster theme="dark" position="top-right" />
           </WorkerPoolContextProvider>
         </ErrorBoundary>
       </React.StrictMode>,

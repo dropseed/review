@@ -13,6 +13,7 @@ import { createSearchSlice } from "./slices/searchSlice";
 import { createHistorySlice } from "./slices/historySlice";
 import { createSymbolsSlice } from "./slices/symbolsSlice";
 import { createNarrativeSlice } from "./slices/narrativeSlice";
+import { createUndoSlice } from "./slices/undoSlice";
 
 // Get dependencies
 const apiClient = getApiClient();
@@ -30,4 +31,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createHistorySlice(apiClient)(...args),
   ...createSymbolsSlice(apiClient)(...args),
   ...createNarrativeSlice(apiClient)(...args),
+  ...createUndoSlice(...args),
 }));
