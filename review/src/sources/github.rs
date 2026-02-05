@@ -231,6 +231,8 @@ pub fn pr_files_to_file_entries(files: Vec<PrFile>) -> Vec<FileEntry> {
             is_directory: false,
             children: None,
             status,
+            is_symlink: false,
+            symlink_target: None,
         };
 
         if let Some(parent) = Path::new(&file.path).parent() {
@@ -290,6 +292,8 @@ pub fn pr_files_to_file_entries(files: Vec<PrFile>) -> Vec<FileEntry> {
                 is_directory: true,
                 children: Some(children),
                 status: None,
+                is_symlink: false,
+                symlink_target: None,
             },
         );
     }

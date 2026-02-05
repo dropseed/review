@@ -2,6 +2,28 @@ import type { FileEntry, ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import type { FileHunkStatus, ProcessedFileEntry, ViewMode } from "./types";
 
+// Default empty hunk status (no hunks, no reviews)
+const EMPTY_HUNK_STATUS: FileHunkStatus = {
+  pending: 0,
+  approved: 0,
+  trusted: 0,
+  rejected: 0,
+  total: 0,
+};
+
+// Check if an entry has a meaningful change status (not just gitignored or unchanged)
+export function hasChangeStatus(
+  status: FileEntry["status"] | undefined,
+): boolean {
+  return (
+    status === "added" ||
+    status === "modified" ||
+    status === "deleted" ||
+    status === "renamed" ||
+    status === "untracked"
+  );
+}
+
 // Calculate hunk status for each file
 export function calculateFileHunkStatus(
   hunks: Array<{ id: string; filePath: string }>,
@@ -14,13 +36,7 @@ export function calculateFileHunkStatus(
   const statusMap = new Map<string, FileHunkStatus>();
 
   for (const hunk of hunks) {
-    const current = statusMap.get(hunk.filePath) ?? {
-      pending: 0,
-      approved: 0,
-      trusted: 0,
-      rejected: 0,
-      total: 0,
-    };
+    const current = statusMap.get(hunk.filePath) ?? { ...EMPTY_HUNK_STATUS };
 
     const hunkState = reviewState?.hunks[hunk.id];
     const trustList = reviewState?.trustList ?? [];
@@ -56,17 +72,15 @@ export function processTree(
   function process(entry: FileEntry): ProcessedFileEntry {
     const fileStatus = hunkStatusMap.get(entry.path);
 
-    if (entry.isDirectory && entry.children) {
+    // Symlink directories are leaf entries in "changes" mode
+    // (in git, a symlink is a single committable entry regardless of target type)
+    const isSymlinkInChanges = entry.isSymlink && viewMode === "changes";
+
+    if (entry.isDirectory && entry.children && !isSymlinkInChanges) {
       const processedChildren = entry.children.map(process);
 
       // Aggregate hunk status from children
-      const aggregateStatus: FileHunkStatus = {
-        pending: 0,
-        approved: 0,
-        trusted: 0,
-        rejected: 0,
-        total: 0,
-      };
+      const aggregateStatus: FileHunkStatus = { ...EMPTY_HUNK_STATUS };
       for (const child of processedChildren) {
         aggregateStatus.pending += child.hunkStatus.pending;
         aggregateStatus.approved += child.hunkStatus.approved;
@@ -75,10 +89,13 @@ export function processTree(
         aggregateStatus.total += child.hunkStatus.total;
       }
 
-      // Directory matches filter if any child matches
+      const ownStatusChanged = hasChangeStatus(entry.status);
+
+      // Directory matches filter if any child matches OR it has its own status change
       const anyChildMatches = processedChildren.some((c) => c.matchesFilter);
       const matchesFilter =
-        viewMode === "all" || (viewMode === "changes" && anyChildMatches);
+        viewMode === "all" ||
+        (viewMode === "changes" && (anyChildMatches || ownStatusChanged));
 
       const fileCount = processedChildren.reduce(
         (sum, child) => sum + (child.isDirectory ? child.fileCount : 1),
@@ -89,7 +106,7 @@ export function processTree(
         ...entry,
         children: processedChildren,
         hunkStatus: aggregateStatus,
-        hasChanges: aggregateStatus.total > 0,
+        hasChanges: aggregateStatus.total > 0 || ownStatusChanged,
         matchesFilter,
         displayName: entry.name,
         compactedPaths: [entry.path],
@@ -99,16 +116,8 @@ export function processTree(
     }
 
     // File node
-    const hunkStatus = fileStatus ?? {
-      pending: 0,
-      approved: 0,
-      trusted: 0,
-      rejected: 0,
-      total: 0,
-    };
-
-    // File has changes if it has hunks to review
-    const hasChanges = hunkStatus.total > 0;
+    const hunkStatus = fileStatus ?? { ...EMPTY_HUNK_STATUS };
+    const hasChanges = hunkStatus.total > 0 || hasChangeStatus(entry.status);
 
     // Filter based on view mode
     // In "all" mode, exclude deleted files since they don't exist in the current state
@@ -153,7 +162,7 @@ export function processTreeWithSections(
   // Helper to filter tree by section
   function filterSection(
     entries: ProcessedFileEntry[],
-    filterFn: (status: FileHunkStatus) => boolean,
+    filterFn: (status: FileHunkStatus, entry: ProcessedFileEntry) => boolean,
   ): ProcessedFileEntry[] {
     return entries
       .map((entry) => {
@@ -161,8 +170,10 @@ export function processTreeWithSections(
 
         if (entry.isDirectory && entry.children) {
           const filteredChildren = filterSection(entry.children, filterFn);
-          // Directory should be included if any children remain
-          if (filteredChildren.length === 0) return null;
+
+          // Directory should be included if any children remain OR it has its own status change
+          if (filteredChildren.length === 0 && !hasChangeStatus(entry.status))
+            return null;
 
           return {
             ...entry,
@@ -171,15 +182,22 @@ export function processTreeWithSections(
         }
 
         // File node - check if it belongs in this section
-        if (!filterFn(entry.hunkStatus)) return null;
+        if (!filterFn(entry.hunkStatus, entry)) return null;
         return entry;
       })
       .filter((e): e is ProcessedFileEntry => e !== null);
   }
 
-  // Needs review: files with pending > 0
+  // Needs review: files with pending hunks, or status changes with no hunks (e.g., symlinks)
   const needsReview = annotateSiblingMax(
-    compactTree(filterSection(processed, (status) => status.pending > 0)),
+    compactTree(
+      filterSection(processed, (status, entry) => {
+        if (status.pending > 0) return true;
+        // Entries with status changes but no hunks are implicitly pending
+        if (status.total === 0 && entry.hasChanges) return true;
+        return false;
+      }),
+    ),
   );
 
   // Reviewed: files with any reviewed hunks (approved, trusted, or rejected)
@@ -236,7 +254,10 @@ export function compactTree(
     while (
       compacted.children &&
       compacted.children.length === 1 &&
-      compacted.children[0].isDirectory
+      compacted.children[0].isDirectory &&
+      // Don't compact symlinks or directories with their own status (preserve visual indicators)
+      !compacted.children[0].isSymlink &&
+      !compacted.children[0].status
     ) {
       const onlyChild = compacted.children[0];
       compacted = {

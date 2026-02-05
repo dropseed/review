@@ -281,25 +281,31 @@ pub async fn list_directory_contents(
     repo_path: String,
     dir_path: String,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || {
-        debug!("[list_directory_contents] repo_path={repo_path}, dir_path={dir_path}");
-        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-            error!("[list_directory_contents] ERROR creating source: {e}");
-            e.to_string()
-        })?;
+    tokio::task::spawn_blocking(move || list_directory_contents_sync(repo_path, dir_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
-        let result = source.list_directory_contents(&dir_path).map_err(|e| {
-            error!("[list_directory_contents] ERROR listing directory: {e}");
-            e.to_string()
-        })?;
-        info!(
-            "[list_directory_contents] SUCCESS: {} entries in {dir_path}",
-            result.len()
-        );
-        Ok(result)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+/// Synchronous implementation of `list_directory_contents`, callable from blocking contexts.
+pub fn list_directory_contents_sync(
+    repo_path: String,
+    dir_path: String,
+) -> Result<Vec<FileEntry>, String> {
+    debug!("[list_directory_contents] repo_path={repo_path}, dir_path={dir_path}");
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+        error!("[list_directory_contents] ERROR creating source: {e}");
+        e.to_string()
+    })?;
+
+    let result = source.list_directory_contents(&dir_path).map_err(|e| {
+        error!("[list_directory_contents] ERROR listing directory: {e}");
+        e.to_string()
+    })?;
+    info!(
+        "[list_directory_contents] SUCCESS: {} entries in {dir_path}",
+        result.len()
+    );
+    Ok(result)
 }
 
 #[tauri::command]
@@ -340,13 +346,12 @@ pub fn get_file_content_sync(
     );
 
     if file_exists {
-        let canonical_repo = repo_path_buf
-            .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize repo path: {e}"))?;
-        let canonical_full = full_path
-            .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize file path: {e}"))?;
-        if !canonical_full.starts_with(&canonical_repo) {
+        // Validate the logical path doesn't escape the repo.
+        // We check the un-canonicalized relative path for traversal rather than
+        // canonicalizing, because symlinks inside the repo may resolve to targets
+        // outside it (e.g., .claude/skills/my-skill -> /other/repo/skill).
+        // Those are safe to read as long as the relative path itself is clean.
+        if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
             return Err("Path traversal detected: file path escapes repository".to_owned());
         }
     } else {
@@ -403,6 +408,33 @@ pub fn get_file_content_sync(
             old_content,
             diff_patch: diff_output,
             hunks,
+            content_type: "text".to_owned(),
+            image_data_url: None,
+            old_image_data_url: None,
+        });
+    }
+
+    // Symlink directories: return the link target as content (like git stores them)
+    if full_path.is_dir() {
+        let is_symlink = full_path
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink());
+
+        if !is_symlink {
+            return Err(format!("Path is a directory: {file_path}"));
+        }
+
+        let target = std::fs::read_link(&full_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let content = format!("{target}\n");
+        let content_hash = compute_content_hash(content.as_bytes());
+
+        return Ok(FileContent {
+            content,
+            old_content: None,
+            diff_patch: String::new(),
+            hunks: vec![create_untracked_hunk(&file_path, &content_hash)],
             content_type: "text".to_owned(),
             image_data_url: None,
             old_image_data_url: None,

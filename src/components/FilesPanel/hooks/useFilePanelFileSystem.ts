@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import {
   calculateFileHunkStatus,
+  hasChangeStatus,
   processTree,
   processTreeWithSections,
 } from "../FileTree.utils";
@@ -81,23 +82,47 @@ export function useFilePanelFileSystem() {
   const flatSectionedFiles = useMemo(() => {
     const needsReview: string[] = [];
     const reviewed: string[] = [];
+    const seenPaths = new Set<string>();
+
+    // First, add files with hunks
     for (const [filePath, status] of hunkStatusMap.entries()) {
       if (status.total === 0) continue;
+      seenPaths.add(filePath);
       if (status.pending > 0) needsReview.push(filePath);
       if (status.approved + status.trusted + status.rejected > 0)
         reviewed.push(filePath);
     }
+
+    // Also add entries with status changes but no hunks (e.g., symlink directories)
+    function collectStatusChanges(entries: typeof allFiles) {
+      for (const e of entries) {
+        if (
+          hasChangeStatus(e.status) &&
+          !seenPaths.has(e.path) &&
+          (!e.isDirectory || e.isSymlink)
+        ) {
+          needsReview.push(e.path);
+          seenPaths.add(e.path);
+        }
+        if (e.children) collectStatusChanges(e.children);
+      }
+    }
+    collectStatusChanges(allFiles);
+
     needsReview.sort((a, b) => a.localeCompare(b));
     reviewed.sort((a, b) => a.localeCompare(b));
     return { needsReview, reviewed };
-  }, [hunkStatusMap]);
+  }, [hunkStatusMap, allFiles]);
 
   // Git status letter per file path (derived from allFiles tree)
   const fileStatusMap = useMemo(() => {
     const map = new Map<string, string>();
     function collect(entries: typeof allFiles) {
       for (const e of entries) {
-        if (e.status && !e.isDirectory) map.set(e.path, e.status);
+        // Include files and symlink directories with status
+        if (e.status && (!e.isDirectory || e.isSymlink)) {
+          map.set(e.path, e.status);
+        }
         if (e.children) collect(e.children);
       }
     }

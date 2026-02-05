@@ -219,6 +219,9 @@ export interface FileEntry {
     | "renamed"
     | "untracked"
     | "gitignored";
+  // Symlink info
+  isSymlink?: boolean;
+  symlinkTarget?: string;
 }
 
 // Diff hunks

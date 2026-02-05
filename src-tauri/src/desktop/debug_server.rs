@@ -107,6 +107,7 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
         // Files and content
         ("GET", "/files") => handle_list_files(&query),
         ("GET", "/file") => handle_get_file(&query),
+        ("GET", "/directory") => handle_list_directory(&query),
 
         // Review state
         ("GET", "/state") => handle_get_state(&query),
@@ -360,6 +361,24 @@ fn handle_get_file(query: &str) -> Response<Cursor<Vec<u8>>> {
 
     match commands::get_file_content_sync(repo_path, file_path, comparison) {
         Ok(content) => json_response(&content),
+        Err(e) => error_response(500, &e),
+    }
+}
+
+fn handle_list_directory(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let dir_path = match params.get("path") {
+        Some(p) => p.clone(),
+        None => return error_response(400, "Missing 'path' parameter"),
+    };
+
+    match commands::list_directory_contents_sync(repo_path, dir_path) {
+        Ok(entries) => json_response(&entries),
         Err(e) => error_response(500, &e),
     }
 }

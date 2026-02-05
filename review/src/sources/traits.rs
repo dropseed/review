@@ -69,6 +69,10 @@ pub struct FileEntry {
     pub is_directory: bool,
     pub children: Option<Vec<FileEntry>>,
     pub status: Option<FileStatus>,
+    #[serde(rename = "isSymlink", default)]
+    pub is_symlink: bool,
+    #[serde(rename = "symlinkTarget", skip_serializing_if = "Option::is_none")]
+    pub symlink_target: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

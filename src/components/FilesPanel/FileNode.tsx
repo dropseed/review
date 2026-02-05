@@ -9,7 +9,7 @@ import {
 } from "../ui/context-menu";
 import { SimpleTooltip } from "../ui/tooltip";
 import type { ProcessedFileEntry } from "./types";
-import { HunkCount, StatusLetter } from "./StatusIndicators";
+import { HunkCount, StatusLetter, SymlinkIndicator } from "./StatusIndicators";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
@@ -166,6 +166,8 @@ export const FileNode = memo(
       const hasReviewableContent = entry.hunkStatus.total > 0;
       const hasPending = entry.hunkStatus.pending > 0;
       const hasApproved = entry.hunkStatus.approved > 0;
+      // Symlink directories pointing outside repo need lazy loading like gitignored dirs
+      const needsLazyLoad = isGitignored || entry.isSymlink;
 
       const barPct =
         hunkContext === "all" && entry.siblingMaxFileCount > 0
@@ -184,7 +186,7 @@ export const FileNode = memo(
           >
             <button
               className="flex flex-1 items-center gap-1.5 text-left min-w-0"
-              onClick={() => onToggle(entry.path, isGitignored)}
+              onClick={() => onToggle(entry.path, needsLazyLoad)}
               aria-expanded={isExpanded}
             >
               {/* Chevron */}
@@ -196,12 +198,22 @@ export const FileNode = memo(
                 <path d="M10 6l6 6-6 6" />
               </svg>
 
+              {/* Git status for symlink directories */}
+              {entry.isSymlink && entry.status && !isGitignored && (
+                <StatusLetter status={entry.status} />
+              )}
+
               {/* Directory name */}
               <span
                 className={`min-w-0 flex-1 truncate text-xs ${directoryNameColor(isGitignored, hunkContext, hasReviewableContent, hasPending)}`}
               >
                 {entry.displayName}
               </span>
+
+              {/* Symlink indicator */}
+              {entry.isSymlink && (
+                <SymlinkIndicator target={entry.symlinkTarget} />
+              )}
             </button>
 
             {/* Relative size bar + file count on hover (Browse only) */}
@@ -299,6 +311,11 @@ export const FileNode = memo(
               >
                 {entry.name}
               </span>
+
+              {/* Symlink indicator */}
+              {entry.isSymlink && (
+                <SymlinkIndicator target={entry.symlinkTarget} />
+              )}
             </button>
 
             {/* Approval button */}

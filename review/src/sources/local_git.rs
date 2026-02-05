@@ -565,13 +565,19 @@ impl LocalGitSource {
             }
         }
 
-        Ok(build_file_tree(all_files, &file_status, &gitignored_dirs))
+        Ok(build_file_tree(
+            all_files,
+            &file_status,
+            &gitignored_dirs,
+            Some(&self.repo_path),
+        ))
     }
 
     /// List contents of a directory (used for lazy-loading gitignored directories).
     ///
     /// Returns a flat list of FileEntry items for the immediate children of the
     /// specified directory. Subdirectories are returned as collapsed entries.
+    /// Broken symlinks are hidden (VS Code behavior).
     pub fn list_directory_contents(&self, dir_path: &str) -> Result<Vec<FileEntry>, LocalGitError> {
         use std::fs;
 
@@ -596,9 +602,38 @@ impl LocalGitSource {
                 continue;
             }
 
-            let file_type = entry
-                .file_type()
-                .map_err(|e| LocalGitError::Git(format!("Failed to get file type: {e}")))?;
+            let entry_path = entry.path();
+
+            // Use symlink_metadata to detect symlinks (doesn't follow the link)
+            let metadata = match fs::symlink_metadata(&entry_path) {
+                Ok(m) => m,
+                Err(_) => continue, // Skip entries we can't stat
+            };
+
+            let is_symlink = metadata.file_type().is_symlink();
+            let mut symlink_target = None;
+            let is_directory;
+
+            if is_symlink {
+                // Get the symlink target path
+                symlink_target = fs::read_link(&entry_path)
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
+
+                // Check if target exists (follow the link)
+                match fs::metadata(&entry_path) {
+                    Ok(target_meta) => {
+                        // Symlink target exists - use its type
+                        is_directory = target_meta.is_dir();
+                    }
+                    Err(_) => {
+                        // Broken symlink - skip it (VS Code behavior)
+                        continue;
+                    }
+                }
+            } else {
+                is_directory = metadata.is_dir();
+            }
 
             let relative_path = if dir_path.is_empty() {
                 file_name.clone()
@@ -606,14 +641,14 @@ impl LocalGitSource {
                 format!("{dir_path}/{file_name}")
             };
 
-            let is_directory = file_type.is_dir();
-
             entries.push(FileEntry {
                 name: file_name,
                 path: relative_path,
                 is_directory,
                 children: if is_directory { Some(vec![]) } else { None },
                 status: Some(FileStatus::Gitignored),
+                is_symlink,
+                symlink_target,
             });
         }
 
@@ -697,8 +732,17 @@ impl LocalGitSource {
     }
 }
 
+/// Symlink info for a file path
+struct SymlinkInfo {
+    is_symlink: bool,
+    target: Option<String>,
+    /// If symlink, whether the target is a directory
+    target_is_dir: bool,
+}
+
 /// Build a file tree from file paths and statuses.
 /// Shared helper used by both `list_files()` and `list_all_files()`.
+/// When repo_path is provided, symlinks are detected and broken symlinks are filtered out.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "takes ownership for consistency with callers that build and pass the set"
@@ -707,12 +751,70 @@ fn build_file_tree(
     all_files: HashSet<String>,
     file_status: &HashMap<String, FileStatus>,
     gitignored_dirs: &HashSet<String>,
+    repo_path: Option<&std::path::Path>,
 ) -> Vec<FileEntry> {
+    use std::fs;
+
     let mut entries: HashMap<String, FileEntry> = HashMap::new();
+
+    // Pre-compute symlink info for all files if repo_path is provided
+    let symlink_info: HashMap<String, SymlinkInfo> = if let Some(repo) = repo_path {
+        all_files
+            .iter()
+            .filter_map(|path| {
+                let full_path = repo.join(path);
+                let metadata = fs::symlink_metadata(&full_path).ok()?;
+                let is_symlink = metadata.file_type().is_symlink();
+
+                if is_symlink {
+                    // Check if target exists and get its type
+                    let target_meta = fs::metadata(&full_path).ok()?;
+                    let target = fs::read_link(&full_path)
+                        .ok()
+                        .map(|p| p.to_string_lossy().to_string());
+                    Some((
+                        path.clone(),
+                        SymlinkInfo {
+                            is_symlink: true,
+                            target,
+                            target_is_dir: target_meta.is_dir(),
+                        },
+                    ))
+                } else {
+                    Some((
+                        path.clone(),
+                        SymlinkInfo {
+                            is_symlink: false,
+                            target: None,
+                            target_is_dir: false,
+                        },
+                    ))
+                }
+            })
+            .collect()
+    } else {
+        // No repo path - no symlink detection
+        all_files
+            .iter()
+            .map(|path| {
+                (
+                    path.clone(),
+                    SymlinkInfo {
+                        is_symlink: false,
+                        target: None,
+                        target_is_dir: false,
+                    },
+                )
+            })
+            .collect()
+    };
+
+    // Filter all_files to only include files that passed symlink check
+    let valid_files: HashSet<String> = symlink_info.keys().cloned().collect();
 
     // Collect all directories (from file paths + gitignored directories)
     let mut all_dirs: HashSet<String> = HashSet::new();
-    for path in &all_files {
+    for path in &valid_files {
         let mut current = PathBuf::from(path);
         while let Some(parent) = current.parent() {
             let parent_str = parent.to_string_lossy().to_string();
@@ -737,8 +839,65 @@ fn build_file_tree(
         }
     }
 
+    // Pre-compute symlink info for directories if repo_path is provided
+    let dir_symlink_info: HashMap<String, SymlinkInfo> = if let Some(repo) = repo_path {
+        all_dirs
+            .iter()
+            .filter_map(|path| {
+                let full_path = repo.join(path);
+                let metadata = fs::symlink_metadata(&full_path).ok()?;
+                let is_symlink = metadata.file_type().is_symlink();
+
+                if is_symlink {
+                    // Check if target exists
+                    if fs::metadata(&full_path).is_err() {
+                        // Broken symlink - return None to filter it out
+                        return None;
+                    }
+                    let target = fs::read_link(&full_path)
+                        .ok()
+                        .map(|p| p.to_string_lossy().to_string());
+                    Some((
+                        path.clone(),
+                        SymlinkInfo {
+                            is_symlink: true,
+                            target,
+                            target_is_dir: true, // Directories are always directories
+                        },
+                    ))
+                } else {
+                    Some((
+                        path.clone(),
+                        SymlinkInfo {
+                            is_symlink: false,
+                            target: None,
+                            target_is_dir: false,
+                        },
+                    ))
+                }
+            })
+            .collect()
+    } else {
+        all_dirs
+            .iter()
+            .map(|path| {
+                (
+                    path.clone(),
+                    SymlinkInfo {
+                        is_symlink: false,
+                        target: None,
+                        target_is_dir: false,
+                    },
+                )
+            })
+            .collect()
+    };
+
+    // Filter directories to only include those that passed symlink check
+    let valid_dirs: HashSet<String> = dir_symlink_info.keys().cloned().collect();
+
     // Create directory entries
-    for dir_path in &all_dirs {
+    for dir_path in &valid_dirs {
         let name = PathBuf::from(dir_path)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -750,6 +909,8 @@ fn build_file_tree(
             None
         };
 
+        let symlink = dir_symlink_info.get(dir_path);
+
         entries.insert(
             dir_path.clone(),
             FileEntry {
@@ -758,27 +919,35 @@ fn build_file_tree(
                 is_directory: true,
                 children: Some(vec![]),
                 status,
+                is_symlink: symlink.is_some_and(|s| s.is_symlink),
+                symlink_target: symlink.and_then(|s| s.target.clone()),
             },
         );
     }
 
     // Create file entries
-    for file_path in &all_files {
+    for file_path in &valid_files {
         let name = PathBuf::from(file_path)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
         let status = file_status.get(file_path).cloned();
+        let symlink = symlink_info.get(file_path);
+
+        // If symlink points to a directory, treat it as a directory
+        let is_dir_symlink = symlink.is_some_and(|s| s.is_symlink && s.target_is_dir);
 
         entries.insert(
             file_path.clone(),
             FileEntry {
                 name,
                 path: file_path.clone(),
-                is_directory: false,
-                children: None,
+                is_directory: is_dir_symlink,
+                children: if is_dir_symlink { Some(vec![]) } else { None },
                 status,
+                is_symlink: symlink.is_some_and(|s| s.is_symlink),
+                symlink_target: symlink.and_then(|s| s.target.clone()),
             },
         );
     }
@@ -881,7 +1050,12 @@ impl DiffSource for LocalGitSource {
             all_files.insert(path.clone());
         }
 
-        Ok(build_file_tree(all_files, &file_status, &HashSet::new()))
+        Ok(build_file_tree(
+            all_files,
+            &file_status,
+            &HashSet::new(),
+            Some(&self.repo_path),
+        ))
     }
 
     fn get_diff(
