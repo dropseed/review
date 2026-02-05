@@ -9,7 +9,12 @@ import {
 } from "react";
 import { MultiFileDiff, FileDiff } from "@pierre/diffs/react";
 import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
-import { getSingularPatch, setLanguageOverride } from "@pierre/diffs";
+import {
+  getSingularPatch,
+  setLanguageOverride,
+  areFilesEqual,
+  areOptionsEqual,
+} from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
@@ -435,100 +440,170 @@ export function DiffView({
     }
   };
 
-  // Render annotation for each type
-  const renderAnnotation = (annotation: DiffLineAnnotation<AnnotationMeta>) => {
-    const meta = annotation.metadata!;
-
-    switch (meta.type) {
-      case "new":
-        return (
-          <NewAnnotationEditor
-            onSave={handleSaveNewAnnotation}
-            onCancel={() => setNewAnnotationLine(null)}
-          />
-        );
-
-      case "user": {
-        const { annotation: userAnnotation } = meta.data;
-        return (
-          <UserAnnotationDisplay
-            annotation={userAnnotation}
-            isEditing={editingAnnotationId === userAnnotation.id}
-            onEdit={() => setEditingAnnotationId(userAnnotation.id)}
-            onSave={(content) => {
-              updateAnnotation(userAnnotation.id, content);
-              setEditingAnnotationId(null);
-            }}
-            onCancel={() => setEditingAnnotationId(null)}
-            onDelete={() => {
-              deleteAnnotation(userAnnotation.id);
-              setEditingAnnotationId(null);
-            }}
-          />
-        );
-      }
-
-      case "hunk": {
-        const { hunk, hunkState, pairedHunk, isSource } = meta.data;
-        const hunkIndex = hunks.findIndex((h) => h.id === hunk.id);
-        const similarHunks = getSimilarHunks(hunk);
-        return (
-          <HunkAnnotationPanel
-            hunk={hunk}
-            hunkState={hunkState}
-            pairedHunk={pairedHunk}
-            isSource={isSource}
-            focusedHunkId={focusedHunkId}
-            focusedHunkRef={focusedHunkRef}
-            trustList={reviewState?.trustList ?? []}
-            classifyingHunkIds={classifyingHunkIds}
-            claudeAvailable={claudeAvailable}
-            hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
-            totalHunksInFile={hunks.length}
-            similarHunks={similarHunks}
-            allHunkStates={hunkStates ?? {}}
-            onApprove={(hunkId) => {
-              approveHunk(hunkId);
-              nextHunkInFile();
-            }}
-            onUnapprove={unapproveHunk}
-            onReject={(hunkId) => {
-              rejectHunk(hunkId);
-              const targetHunk = hunks.find((h) => h.id === hunkId);
-              if (targetHunk && !newAnnotationLine) {
-                const { lineNumber, side } = getFirstChangedLine(targetHunk);
-                setNewAnnotationLine({ lineNumber, side, hunkId });
-              }
-            }}
-            onUnreject={unrejectHunk}
-            onJumpToPair={handleJumpToPair}
-            onComment={(lineNumber, side, hunkId) =>
-              setNewAnnotationLine({ lineNumber, side, hunkId })
-            }
-            onAddTrustPattern={addTrustPattern}
-            onRemoveTrustPattern={removeTrustPattern}
-            onReclassifyHunks={reclassifyHunks}
-            onCopyHunk={handleCopyHunk}
-            onViewInFile={onViewInFile}
-            onApproveAllSimilar={(hunkIds) => {
-              approveHunkIds(hunkIds);
-              nextHunkInFile();
-            }}
-            onRejectAllSimilar={(hunkIds) => {
-              rejectHunkIds(hunkIds);
-              nextHunkInFile();
-            }}
-            onNavigateToHunk={(hunkId) => {
-              const targetHunk = hunkById.get(hunkId);
-              if (targetHunk) {
-                setSelectedFile(targetHunk.filePath);
-              }
-            }}
-          />
-        );
-      }
-    }
+  // Render annotation for each type - use ref pattern for stable function reference
+  // Store all dependencies in a ref so the callback can access latest values
+  const renderAnnotationDepsRef = useRef<{
+    handleSaveNewAnnotation: typeof handleSaveNewAnnotation;
+    setNewAnnotationLine: typeof setNewAnnotationLine;
+    editingAnnotationId: typeof editingAnnotationId;
+    setEditingAnnotationId: typeof setEditingAnnotationId;
+    updateAnnotation: typeof updateAnnotation;
+    deleteAnnotation: typeof deleteAnnotation;
+    hunks: typeof hunks;
+    getSimilarHunks: typeof getSimilarHunks;
+    focusedHunkId: typeof focusedHunkId;
+    focusedHunkRef: typeof focusedHunkRef;
+    reviewState: typeof reviewState;
+    classifyingHunkIds: typeof classifyingHunkIds;
+    claudeAvailable: typeof claudeAvailable;
+    hunkStates: typeof hunkStates;
+    approveHunk: typeof approveHunk;
+    nextHunkInFile: typeof nextHunkInFile;
+    unapproveHunk: typeof unapproveHunk;
+    rejectHunk: typeof rejectHunk;
+    unrejectHunk: typeof unrejectHunk;
+    handleJumpToPair: typeof handleJumpToPair;
+    addTrustPattern: typeof addTrustPattern;
+    removeTrustPattern: typeof removeTrustPattern;
+    reclassifyHunks: typeof reclassifyHunks;
+    handleCopyHunk: typeof handleCopyHunk;
+    onViewInFile: typeof onViewInFile;
+    approveHunkIds: typeof approveHunkIds;
+    rejectHunkIds: typeof rejectHunkIds;
+    hunkById: typeof hunkById;
+    setSelectedFile: typeof setSelectedFile;
+    newAnnotationLine: typeof newAnnotationLine;
+  }>(null!);
+  renderAnnotationDepsRef.current = {
+    handleSaveNewAnnotation,
+    setNewAnnotationLine,
+    editingAnnotationId,
+    setEditingAnnotationId,
+    updateAnnotation,
+    deleteAnnotation,
+    hunks,
+    getSimilarHunks,
+    focusedHunkId,
+    focusedHunkRef,
+    reviewState,
+    classifyingHunkIds,
+    claudeAvailable,
+    hunkStates,
+    approveHunk,
+    nextHunkInFile,
+    unapproveHunk,
+    rejectHunk,
+    unrejectHunk,
+    handleJumpToPair,
+    addTrustPattern,
+    removeTrustPattern,
+    reclassifyHunks,
+    handleCopyHunk,
+    onViewInFile,
+    approveHunkIds,
+    rejectHunkIds,
+    hunkById,
+    setSelectedFile,
+    newAnnotationLine,
   };
+
+  const renderAnnotation = useCallback(
+    (annotation: DiffLineAnnotation<AnnotationMeta>) => {
+      const deps = renderAnnotationDepsRef.current;
+      const meta = annotation.metadata!;
+
+      switch (meta.type) {
+        case "new":
+          return (
+            <NewAnnotationEditor
+              onSave={deps.handleSaveNewAnnotation}
+              onCancel={() => deps.setNewAnnotationLine(null)}
+            />
+          );
+
+        case "user": {
+          const { annotation: userAnnotation } = meta.data;
+          return (
+            <UserAnnotationDisplay
+              annotation={userAnnotation}
+              isEditing={deps.editingAnnotationId === userAnnotation.id}
+              onEdit={() => deps.setEditingAnnotationId(userAnnotation.id)}
+              onSave={(content) => {
+                deps.updateAnnotation(userAnnotation.id, content);
+                deps.setEditingAnnotationId(null);
+              }}
+              onCancel={() => deps.setEditingAnnotationId(null)}
+              onDelete={() => {
+                deps.deleteAnnotation(userAnnotation.id);
+                deps.setEditingAnnotationId(null);
+              }}
+            />
+          );
+        }
+
+        case "hunk": {
+          const { hunk, hunkState, pairedHunk, isSource } = meta.data;
+          const hunkIndex = deps.hunks.findIndex((h) => h.id === hunk.id);
+          const similarHunks = deps.getSimilarHunks(hunk);
+          return (
+            <HunkAnnotationPanel
+              hunk={hunk}
+              hunkState={hunkState}
+              pairedHunk={pairedHunk}
+              isSource={isSource}
+              focusedHunkId={deps.focusedHunkId}
+              focusedHunkRef={deps.focusedHunkRef}
+              trustList={deps.reviewState?.trustList ?? []}
+              classifyingHunkIds={deps.classifyingHunkIds}
+              claudeAvailable={deps.claudeAvailable}
+              hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
+              totalHunksInFile={deps.hunks.length}
+              similarHunks={similarHunks}
+              allHunkStates={deps.hunkStates ?? {}}
+              onApprove={(hunkId) => {
+                deps.approveHunk(hunkId);
+                deps.nextHunkInFile();
+              }}
+              onUnapprove={deps.unapproveHunk}
+              onReject={(hunkId) => {
+                deps.rejectHunk(hunkId);
+                const targetHunk = deps.hunks.find((h) => h.id === hunkId);
+                if (targetHunk && !deps.newAnnotationLine) {
+                  const { lineNumber, side } = getFirstChangedLine(targetHunk);
+                  deps.setNewAnnotationLine({ lineNumber, side, hunkId });
+                }
+              }}
+              onUnreject={deps.unrejectHunk}
+              onJumpToPair={deps.handleJumpToPair}
+              onComment={(lineNumber, side, hunkId) =>
+                deps.setNewAnnotationLine({ lineNumber, side, hunkId })
+              }
+              onAddTrustPattern={deps.addTrustPattern}
+              onRemoveTrustPattern={deps.removeTrustPattern}
+              onReclassifyHunks={deps.reclassifyHunks}
+              onCopyHunk={deps.handleCopyHunk}
+              onViewInFile={deps.onViewInFile}
+              onApproveAllSimilar={(hunkIds) => {
+                deps.approveHunkIds(hunkIds);
+                deps.nextHunkInFile();
+              }}
+              onRejectAllSimilar={(hunkIds) => {
+                deps.rejectHunkIds(hunkIds);
+                deps.nextHunkInFile();
+              }}
+              onNavigateToHunk={(hunkId) => {
+                const targetHunk = deps.hunkById.get(hunkId);
+                if (targetHunk) {
+                  deps.setSelectedFile(targetHunk.filePath);
+                }
+              }}
+            />
+          );
+        }
+      }
+    },
+    [],
+  );
 
   // Create file contents for MultiFileDiff when available
   // Use != null to catch both null and undefined (Rust None serializes to null)
@@ -536,30 +611,40 @@ export function DiffView({
   // For deleted files, newContent is null but we can use empty string
   const hasFileContents = oldContent != null || newContent != null;
 
-  const oldFile = useMemo<FileContents | undefined>(
-    () =>
-      hasFileContents
-        ? {
-            name: fileName,
-            contents: oldContent ?? "",
-            lang: language,
-            cacheKey: `old:${fileName}:${(oldContent ?? "").length}`,
-          }
-        : undefined,
-    [hasFileContents, fileName, oldContent, language],
-  );
-  const newFile = useMemo<FileContents | undefined>(
-    () =>
-      hasFileContents
-        ? {
-            name: fileName,
-            contents: newContent ?? "",
-            lang: language,
-            cacheKey: `new:${fileName}:${(newContent ?? "").length}`,
-          }
-        : undefined,
-    [hasFileContents, fileName, newContent, language],
-  );
+  // Use areFilesEqual to prevent unnecessary re-renders when file contents haven't changed
+  const oldFileRef = useRef<FileContents | undefined>();
+  const oldFile = useMemo<FileContents | undefined>(() => {
+    const nextFile = hasFileContents
+      ? {
+          name: fileName,
+          contents: oldContent ?? "",
+          lang: language,
+          cacheKey: `old:${fileName}:${(oldContent ?? "").length}`,
+        }
+      : undefined;
+    if (areFilesEqual(oldFileRef.current, nextFile)) {
+      return oldFileRef.current;
+    }
+    oldFileRef.current = nextFile;
+    return nextFile;
+  }, [hasFileContents, fileName, oldContent, language]);
+
+  const newFileRef = useRef<FileContents | undefined>();
+  const newFile = useMemo<FileContents | undefined>(() => {
+    const nextFile = hasFileContents
+      ? {
+          name: fileName,
+          contents: newContent ?? "",
+          lang: language,
+          cacheKey: `new:${fileName}:${(newContent ?? "").length}`,
+        }
+      : undefined;
+    if (areFilesEqual(newFileRef.current, nextFile)) {
+      return newFileRef.current;
+    }
+    newFileRef.current = nextFile;
+    return nextFile;
+  }, [hasFileContents, fileName, newContent, language]);
 
   // Parse patch for FileDiff when no file contents available (patch-only path)
   // This allows us to override language for syntax highlighting (e.g., shebang detection)
@@ -656,8 +741,29 @@ export function DiffView({
     [],
   );
 
-  const diffOptions = useMemo(
-    () => ({
+  // Define diff options type inline to avoid type mismatch between FileOptions and FileDiffOptions
+  type DiffOptionsType = {
+    diffStyle: "unified" | "split";
+    theme: { dark: string; light: string };
+    themeType: "dark";
+    diffIndicators: "classic" | "bars" | "none";
+    disableBackground: boolean;
+    enableHoverUtility: boolean;
+    enableLineSelection: boolean;
+    onLineSelectionEnd: typeof handleLineSelectionEnd;
+    unsafeCSS: string;
+    expandUnchanged: boolean;
+    expansionLineCount: number;
+    hunkSeparators: "line-info";
+    tokenizeMaxLineLength: number;
+    maxLineDiffLength: number;
+    lineDiffType: "word" | "word-alt" | "char" | "none";
+  };
+
+  // Memoize diffOptions with custom equality check to prevent unnecessary re-renders
+  const diffOptionsRef = useRef<DiffOptionsType>();
+  const diffOptions = useMemo<DiffOptionsType>(() => {
+    const nextOptions: DiffOptionsType = {
       diffStyle: viewMode,
       theme: {
         dark: theme,
@@ -677,58 +783,73 @@ export function DiffView({
       tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
       maxLineDiffLength: 500, // Skip word-level diff for long lines
       lineDiffType, // Adaptive based on file type/size, user preference as default
-    }),
-    [
-      viewMode,
-      theme,
-      prefDiffIndicators,
-      fontSizeCSS,
-      annotationHighlightCSS,
-      lineDiffType,
-      handleLineSelectionEnd,
-    ],
-  );
+    };
+    // Use areOptionsEqual from @pierre/diffs to avoid unnecessary re-renders
+    if (
+      diffOptionsRef.current &&
+      areOptionsEqual(diffOptionsRef.current, nextOptions)
+    ) {
+      return diffOptionsRef.current;
+    }
+    diffOptionsRef.current = nextOptions;
+    return nextOptions;
+  }, [
+    viewMode,
+    theme,
+    prefDiffIndicators,
+    fontSizeCSS,
+    annotationHighlightCSS,
+    lineDiffType,
+    handleLineSelectionEnd,
+  ]);
 
-  const renderHoverUtility = (
-    getHoveredLine: () =>
-      | { lineNumber: number; side: "additions" | "deletions" }
-      | undefined,
-  ) => {
-    // Always render the button — the shadow DOM controls visibility by
-    // moving the slot container to the hovered line. Call getHoveredLine()
-    // at click time (not render time) to get the current line.
-    return (
-      <SimpleTooltip content="Add comment">
-        <button
-          className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
-          onClick={() => {
-            const hoveredLine = getHoveredLine();
-            if (!hoveredLine) return;
-            setNewAnnotationLine({
-              lineNumber: hoveredLine.lineNumber,
-              side: hoveredLine.side === "additions" ? "new" : "old",
-              hunkId: "hover",
-            });
-          }}
-          aria-label="Add comment"
-        >
-          <svg
-            className="h-3 w-3"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2.5}
+  // Stable renderHoverUtility using ref pattern to avoid re-renders
+  const setNewAnnotationLineRef = useRef(setNewAnnotationLine);
+  setNewAnnotationLineRef.current = setNewAnnotationLine;
+
+  const renderHoverUtility = useCallback(
+    (
+      getHoveredLine: () =>
+        | { lineNumber: number; side: "additions" | "deletions" }
+        | undefined,
+    ) => {
+      // Always render the button — the shadow DOM controls visibility by
+      // moving the slot container to the hovered line. Call getHoveredLine()
+      // at click time (not render time) to get the current line.
+      return (
+        <SimpleTooltip content="Add comment">
+          <button
+            className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
+            onClick={() => {
+              const hoveredLine = getHoveredLine();
+              if (!hoveredLine) return;
+              setNewAnnotationLineRef.current({
+                lineNumber: hoveredLine.lineNumber,
+                side: hoveredLine.side === "additions" ? "new" : "old",
+                hunkId: "hover",
+              });
+            }}
+            aria-label="Add comment"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 4.5v15m7.5-7.5h-15"
-            />
-          </svg>
-        </button>
-      </SimpleTooltip>
-    );
-  };
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 4.5v15m7.5-7.5h-15"
+              />
+            </svg>
+          </button>
+        </SimpleTooltip>
+      );
+    },
+    [],
+  );
 
   return (
     <div className="diff-container relative" ref={diffContainerRef}>
