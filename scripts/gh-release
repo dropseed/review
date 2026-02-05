@@ -63,10 +63,10 @@ EOF
 
 echo "Generated latest.json"
 
-# Create draft GitHub release with all staged artifacts
+# Create GitHub release with all staged artifacts
 echo ""
-echo "Creating draft GitHub release v$VERSION..."
-gh release create "v$VERSION" --draft --title "v$VERSION" --notes-file "$NOTES_FILE" \
+echo "Creating GitHub release v$VERSION..."
+gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES_FILE" \
     "$STAGING/Review_aarch64.dmg" \
     "$STAGING/Review_x64.dmg" \
     "$STAGING/Review_aarch64.app.tar.gz" \
@@ -76,5 +76,5 @@ gh release create "v$VERSION" --draft --title "v$VERSION" --notes-file "$NOTES_F
     "$STAGING/latest.json"
 
 echo ""
-RELEASE_URL="https://github.com/dropseed/review/releases/tag/v$VERSION"
-echo "Draft release created: $RELEASE_URL"
+RELEASE_URL="https://github.com/dropseed/review/releases/v$VERSION"
+echo "Release published: $RELEASE_URL"
