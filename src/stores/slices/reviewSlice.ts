@@ -555,6 +555,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         triggerAutoClassification,
       } = get();
 
+      // Increment refresh generation to trigger re-fetches in components like FileViewer
+      set({ refreshGeneration: get().refreshGeneration + 1 });
+
       // Load review state FIRST to ensure labels are available before auto-classification
       await loadReviewState();
       // Then load files, git status, and commits (skip auto-classify since we'll trigger it manually after)

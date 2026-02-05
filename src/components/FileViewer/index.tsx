@@ -42,6 +42,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
   const allHunks = useReviewStore((s) => s.hunks);
+  const refreshGeneration = useReviewStore((s) => s.refreshGeneration);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
   const scrollToLine = useReviewStore((s) => s.scrollToLine);
   const clearScrollToLine = useReviewStore((s) => s.clearScrollToLine);
@@ -232,7 +233,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [repoPath, filePath, comparison, fileHunkKey]);
+  }, [repoPath, filePath, comparison, fileHunkKey, refreshGeneration]);
 
   // Minimap hooks — must be before early returns
   const fileHunkIndices = useMemo(

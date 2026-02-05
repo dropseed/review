@@ -66,6 +66,8 @@ export interface FilesSlice {
   flatFileList: string[];
   // Tracks which gitignored directories have been loaded
   loadedGitIgnoredDirs: Set<string>;
+  // Incremented on each refresh() to trigger re-fetches in components
+  refreshGeneration: number;
 
   // Actions
   setRepoPath: (path: string | null) => void;
@@ -97,6 +99,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     loadingProgress: null,
     flatFileList: [],
     loadedGitIgnoredDirs: new Set<string>(),
+    refreshGeneration: 0,
 
     setRepoPath: (path) => {
       const currentPath = get().repoPath;
@@ -115,6 +118,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         flatFileList: [],
         loadingProgress: null,
         loadedGitIgnoredDirs: new Set<string>(),
+        refreshGeneration: 0,
         // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
