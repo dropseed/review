@@ -296,22 +296,42 @@ pub fn compute_content_hash(bytes: &[u8]) -> String {
 /// Create a hunk for an untracked (new) file.
 /// The `content_hash` should be a hash of the file's actual content so that
 /// modifications to the file produce different hunk IDs (invalidating approvals).
-pub fn create_untracked_hunk(file_path: &str, content_hash: &str) -> DiffHunk {
-    // Use the provided content hash directly for the hunk ID
+/// If `content` is provided, real Added lines are generated so move detection can
+/// match this hunk against deletion hunks in other files.
+pub fn create_untracked_hunk(
+    file_path: &str,
+    content_hash: &str,
+    content: Option<&str>,
+) -> DiffHunk {
+    let lines: Vec<DiffLine> = match content {
+        Some(text) => text
+            .lines()
+            .enumerate()
+            .map(|(i, line)| DiffLine {
+                line_type: LineType::Added,
+                content: line.to_owned(),
+                old_line_number: None,
+                new_line_number: Some((i + 1) as u32),
+            })
+            .collect(),
+        None => vec![DiffLine {
+            line_type: LineType::Added,
+            content: "(new file)".to_owned(),
+            old_line_number: None,
+            new_line_number: Some(1),
+        }],
+    };
+    let new_count = lines.len() as u32;
+
     DiffHunk {
         id: format!("{file_path}:{content_hash}"),
         file_path: file_path.to_owned(),
         old_start: 0,
         old_count: 0,
         new_start: 1,
-        new_count: 1,
+        new_count,
         content: "(untracked file)".to_owned(),
-        lines: vec![DiffLine {
-            line_type: LineType::Added,
-            content: "(new file)".to_owned(),
-            old_line_number: None,
-            new_line_number: Some(1),
-        }],
+        lines,
         content_hash: content_hash.to_owned(),
         move_pair_id: None,
     }
@@ -370,14 +390,18 @@ fn is_additions_only(hunk: &DiffHunk) -> bool {
             .any(|line| matches!(line.line_type, LineType::Added))
 }
 
-/// Extract only the changed content (without context) from a hunk for move comparison
+/// Extract only the changed content (without context) from a hunk for move comparison.
+/// Leading/trailing blank lines are stripped so that minor whitespace differences
+/// (e.g. a separator blank line removed alongside moved code) don't prevent matches.
 fn extract_changed_content(hunk: &DiffHunk) -> String {
-    hunk.lines
+    let content = hunk
+        .lines
         .iter()
         .filter(|line| matches!(line.line_type, LineType::Added | LineType::Removed))
         .map(|line| line.content.as_str())
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    content.trim().to_owned()
 }
 
 /// Compute a hash of only the changed content (without context lines)
@@ -479,8 +503,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_untracked_hunk() {
-        let hunk = create_untracked_hunk("src/new_file.rs", "abc12345");
+    fn test_create_untracked_hunk_no_content() {
+        let hunk = create_untracked_hunk("src/new_file.rs", "abc12345", None);
         assert_eq!(hunk.file_path, "src/new_file.rs");
         assert_eq!(hunk.id, "src/new_file.rs:abc12345");
         assert_eq!(hunk.content_hash, "abc12345");
@@ -489,13 +513,33 @@ mod tests {
         assert_eq!(hunk.new_start, 1);
         assert_eq!(hunk.new_count, 1);
         assert_eq!(hunk.lines.len(), 1);
+        assert_eq!(hunk.lines[0].content, "(new file)");
         assert!(hunk.move_pair_id.is_none());
     }
 
     #[test]
+    fn test_create_untracked_hunk_with_content() {
+        let hunk = create_untracked_hunk(
+            "src/new_file.rs",
+            "abc12345",
+            Some("line one\nline two\nline three"),
+        );
+        assert_eq!(hunk.lines.len(), 3);
+        assert_eq!(hunk.new_count, 3);
+        assert_eq!(hunk.lines[0].content, "line one");
+        assert_eq!(hunk.lines[0].new_line_number, Some(1));
+        assert_eq!(hunk.lines[2].content, "line three");
+        assert_eq!(hunk.lines[2].new_line_number, Some(3));
+        for line in &hunk.lines {
+            assert!(matches!(line.line_type, LineType::Added));
+            assert!(line.old_line_number.is_none());
+        }
+    }
+
+    #[test]
     fn test_create_untracked_hunk_different_content_produces_different_id() {
-        let hunk1 = create_untracked_hunk("foo.rs", "hash1111");
-        let hunk2 = create_untracked_hunk("foo.rs", "hash2222");
+        let hunk1 = create_untracked_hunk("foo.rs", "hash1111", None);
+        let hunk2 = create_untracked_hunk("foo.rs", "hash2222", None);
         assert_ne!(hunk1.id, hunk2.id);
         assert_ne!(hunk1.content_hash, hunk2.content_hash);
     }

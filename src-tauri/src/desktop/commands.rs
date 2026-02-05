@@ -429,12 +429,17 @@ pub fn get_file_content_sync(
             .unwrap_or_default();
         let content = format!("{target}\n");
         let content_hash = compute_content_hash(content.as_bytes());
+        let hunks = vec![create_untracked_hunk(
+            &file_path,
+            &content_hash,
+            Some(&content),
+        )];
 
         return Ok(FileContent {
             content,
             old_content: None,
             diff_patch: String::new(),
-            hunks: vec![create_untracked_hunk(&file_path, &content_hash)],
+            hunks,
             content_type: "text".to_owned(),
             image_data_url: None,
             old_image_data_url: None,
@@ -494,7 +499,7 @@ pub fn get_file_content_sync(
 
         let hunks = if diff_output.is_empty() {
             let content_hash = compute_content_hash(&current_bytes);
-            vec![create_untracked_hunk(&file_path, &content_hash)]
+            vec![create_untracked_hunk(&file_path, &content_hash, None)]
         } else if content_type == "svg" {
             parse_diff(&diff_output, &file_path)
         } else {
@@ -541,7 +546,11 @@ pub fn get_file_content_sync(
         } else {
             debug!("[get_file_content] no diff, file is untracked (new)");
             let content_hash = compute_content_hash(content.as_bytes());
-            vec![create_untracked_hunk(&file_path, &content_hash)]
+            vec![create_untracked_hunk(
+                &file_path,
+                &content_hash,
+                Some(&content),
+            )]
         }
     } else {
         debug!("[get_file_content] parsing diff...");
@@ -789,10 +798,18 @@ pub async fn get_all_hunks(
                 let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
                 if !is_tracked {
                     let full_path = repo_path_buf.join(file_path);
-                    let content_hash = std::fs::read(&full_path)
-                        .map(|bytes| compute_content_hash(&bytes))
-                        .unwrap_or_else(|_| "00000000".to_owned());
-                    all_hunks.push(create_untracked_hunk(file_path, &content_hash));
+                    let (content_hash, text_content) = std::fs::read(&full_path)
+                        .map(|bytes| {
+                            let hash = compute_content_hash(&bytes);
+                            let text = String::from_utf8(bytes).ok();
+                            (hash, text)
+                        })
+                        .unwrap_or_else(|_| ("00000000".to_owned(), None));
+                    all_hunks.push(create_untracked_hunk(
+                        file_path,
+                        &content_hash,
+                        text_content.as_deref(),
+                    ));
                 }
             }
         }

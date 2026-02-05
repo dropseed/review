@@ -35,8 +35,15 @@ export function UntrackedFileView({
   fontSizeCSS,
   language,
 }: UntrackedFileViewProps) {
-  const { reviewState, approveHunk, unapproveHunk, rejectHunk, unrejectHunk } =
-    useReviewStore();
+  const {
+    reviewState,
+    approveHunk,
+    unapproveHunk,
+    rejectHunk,
+    unrejectHunk,
+    hunks: allHunks,
+    setSelectedFile,
+  } = useReviewStore();
 
   // Get the synthetic hunk for this untracked file
   const hunk = hunks[0];
@@ -48,6 +55,13 @@ export function UntrackedFileView({
     isHunkTrusted(hunkState, reviewState?.trustList ?? []);
 
   const lineCount = content.split("\n").length;
+
+  // Move pair detection — use the store hunk (which has movePairId set
+  // by batch detect_move_pairs) rather than the per-file response hunk
+  const storeHunk = hunk ? allHunks.find((h) => h.id === hunk.id) : undefined;
+  const pairedHunk = storeHunk?.movePairId
+    ? allHunks.find((h) => h.id === storeHunk.movePairId)
+    : undefined;
 
   return (
     <div>
@@ -63,6 +77,32 @@ export function UntrackedFileView({
             <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
               {hunkState.label.join(", ")}
             </span>
+          )}
+          {pairedHunk && (
+            <SimpleTooltip content={`Jump to source in ${pairedHunk.filePath}`}>
+              <button
+                onClick={() => setSelectedFile(pairedHunk.filePath)}
+                className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-all hover:bg-sky-500/25"
+              >
+                <svg
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
+                  />
+                </svg>
+                <span>Moved from</span>
+                <span className="opacity-60">
+                  {pairedHunk.filePath.split("/").pop()}
+                </span>
+              </button>
+            </SimpleTooltip>
           )}
 
           {/* Action buttons - matching DiffView hunk style */}
