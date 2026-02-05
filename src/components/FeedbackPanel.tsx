@@ -145,6 +145,7 @@ export function FeedbackPanel() {
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem
+                onSelect={(e) => e.preventDefault()}
                 onClick={() => setConfirmingReset(true)}
                 className="text-red-400 focus:text-red-400"
               >
