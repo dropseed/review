@@ -36,6 +36,7 @@ pub fn classify_hunks_static(hunks: &[DiffHunk]) -> ClassifyResponse {
 fn classify_single_hunk(hunk: &DiffHunk) -> Option<ClassificationResult> {
     // Priority order: cheapest checks first
     classify_lockfile(hunk)
+        .or_else(|| classify_empty_file(hunk))
         .or_else(|| classify_whitespace(hunk))
         .or_else(|| classify_comments(hunk))
         .or_else(|| classify_imports(hunk))
@@ -75,7 +76,30 @@ fn classify_lockfile(hunk: &DiffHunk) -> Option<ClassificationResult> {
     }
 }
 
-// --- Rule 2: Whitespace-only changes ---
+// --- Rule 2: New empty file detection ---
+
+fn classify_empty_file(hunk: &DiffHunk) -> Option<ClassificationResult> {
+    // Must be a new file (no old content)
+    if hunk.old_count != 0 {
+        return None;
+    }
+
+    // New file = only added lines (no context or removed lines)
+    // Empty = no lines or all whitespace
+    let all_added_or_empty = hunk.lines.iter().all(|l| l.line_type == LineType::Added);
+    let all_whitespace = hunk.lines.iter().all(|l| l.content.trim().is_empty());
+
+    if all_added_or_empty && all_whitespace {
+        Some(ClassificationResult {
+            label: vec!["file:added-empty".to_owned()],
+            reasoning: "New empty file (no content or whitespace only)".to_owned(),
+        })
+    } else {
+        None
+    }
+}
+
+// --- Rule 3: Whitespace-only changes ---
 
 fn classify_whitespace(hunk: &DiffHunk) -> Option<ClassificationResult> {
     let changed_lines = get_changed_lines(&hunk.lines);
@@ -97,7 +121,7 @@ fn classify_whitespace(hunk: &DiffHunk) -> Option<ClassificationResult> {
     }
 }
 
-// --- Rule 3: Comment-only changes ---
+// --- Rule 4: Comment-only changes ---
 
 /// Maps file extension to line-comment prefixes.
 fn comment_prefixes(ext: &str) -> Option<&'static [&'static str]> {
@@ -159,7 +183,7 @@ fn classify_comments(hunk: &DiffHunk) -> Option<ClassificationResult> {
     })
 }
 
-// --- Rule 4: Import-only changes ---
+// --- Rule 5: Import-only changes ---
 
 /// Returns (prefixes, bracket_char) for import multi-line handling.
 /// bracket_char is '\0' for languages that don't support multi-line imports.
@@ -355,7 +379,7 @@ fn normalize_import(line: &str) -> String {
     line.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-// --- Rule 5: Pre-AI skip heuristics ---
+// --- Rule 6: Pre-AI skip heuristics ---
 
 /// Maximum number of changed lines (added + removed) before we skip AI.
 /// Hunks larger than this are very unlikely to match a single taxonomy label
@@ -509,6 +533,45 @@ mod tests {
     fn test_not_lockfile() {
         let hunk = make_hunk("src/main.rs", vec![added("fn main() {}")]);
         let result = classify_lockfile(&hunk);
+        assert!(result.is_none());
+    }
+
+    // --- Empty file tests ---
+
+    #[test]
+    fn test_empty_file_completely_empty() {
+        // New file with no lines at all
+        let hunk = make_hunk("__init__.py", vec![]);
+        let result = classify_empty_file(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["file:added-empty"]);
+    }
+
+    #[test]
+    fn test_empty_file_whitespace_only() {
+        // New file with only blank lines
+        let mut hunk = make_hunk("__init__.py", vec![added(""), added("   "), added("")]);
+        hunk.old_count = 0; // Ensure it's treated as a new file
+        let result = classify_empty_file(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["file:added-empty"]);
+    }
+
+    #[test]
+    fn test_empty_file_not_new() {
+        // Existing file modified to be empty should NOT match
+        let mut hunk = make_hunk("some_file.py", vec![removed("old content")]);
+        hunk.old_count = 1; // Had content before
+        let result = classify_empty_file(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_empty_file_with_content() {
+        // New file with actual content should NOT match
+        let mut hunk = make_hunk("__init__.py", vec![added("# some comment")]);
+        hunk.old_count = 0;
+        let result = classify_empty_file(&hunk);
         assert!(result.is_none());
     }
 

@@ -107,6 +107,11 @@
           "id": "file:moved",
           "name": "Moved",
           "description": "File moved to a different directory. Content is identical or nearly identical."
+        },
+        {
+          "id": "file:added-empty",
+          "name": "Added empty",
+          "description": "New empty file added. Contains no code, or only whitespace/blank lines. Common for Python __init__.py, placeholder files, or directory markers."
         }
       ]
     },
