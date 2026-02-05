@@ -4,4 +4,4 @@
 set -e
 cd "$(dirname "$0")/.."
 
-CARGO_WATCH_DEBOUNCE=3 npm run tauri dev
+CARGO_WATCH_DEBOUNCE=3 npm run tauri dev -- --config src-tauri/tauri.conf.dev.json
