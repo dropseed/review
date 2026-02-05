@@ -1,6 +1,6 @@
 [package]
 name = "review-desktop"
-version = "0.0.8"
+version = "0.0.9"
 description = "A diff review desktop app"
 edition = "2021"
 default-run = "review-desktop"
