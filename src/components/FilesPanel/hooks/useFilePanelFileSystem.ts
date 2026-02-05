@@ -135,7 +135,11 @@ export function useFilePanelFileSystem() {
     const paths = new Set<string>();
     function collect(entries: typeof allFilesTree) {
       for (const entry of entries) {
-        if (entry.isDirectory && entry.matchesFilter) {
+        if (
+          entry.isDirectory &&
+          entry.matchesFilter &&
+          entry.status !== "gitignored"
+        ) {
           for (const p of entry.compactedPaths) {
             paths.add(p);
           }
