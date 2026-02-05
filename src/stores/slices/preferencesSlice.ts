@@ -94,7 +94,7 @@ export interface PreferencesSlice {
   setClassifyMaxConcurrent: (count: number) => void;
 
   // Recent repositories actions
-  addRecentRepository: (path: string) => void;
+  addRecentRepository: (path: string) => Promise<void>;
   removeRecentRepository: (path: string) => void;
 
   // Crash reporting actions
@@ -288,16 +288,14 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("classifyMaxConcurrent", count);
   },
 
-  addRecentRepository: (path) => {
-    const current = get().recentRepositories;
-    // Extract directory name from path
+  addRecentRepository: async (path) => {
+    // Read directly from storage to avoid race with loadPreferences
+    const stored =
+      (await storage.get<RecentRepo[]>("recentRepositories")) ?? [];
     const name = path.split("/").pop() || path;
     const now = new Date().toISOString();
 
-    // Remove existing entry for this path (to move it to front)
-    const filtered = current.filter((r) => r.path !== path);
-
-    // Add to front and limit to MAX_RECENT_REPOS
+    const filtered = stored.filter((r) => r.path !== path);
     const updated: RecentRepo[] = [
       { path, name, lastOpened: now },
       ...filtered,
