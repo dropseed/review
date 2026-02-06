@@ -3,24 +3,6 @@ import { getApiClient } from "../api";
 import { shouldIgnoreReviewStateReload } from "../stores/slices/reviewSlice";
 import { useReviewStore } from "../stores";
 
-/** Refresh diff stats for all open reviews matching the given repo path. */
-function refreshDiffStatsForRepo(repoPath: string) {
-  const apiClient = getApiClient();
-  const { openReviews, updateReviewMetadata } = useReviewStore.getState();
-
-  openReviews.forEach((review, index) => {
-    if (review.repoPath !== repoPath) return;
-    apiClient
-      .getDiffShortStat(review.repoPath, review.comparison)
-      .then((diffStats) => {
-        updateReviewMetadata(index, { diffStats });
-      })
-      .catch((err) => {
-        console.warn("[watcher] Failed to refresh diff stats:", err);
-      });
-  });
-}
-
 /**
  * Manages file watcher lifecycle and listens for review state/git change events.
  */
@@ -28,11 +10,13 @@ export function useFileWatcher(comparisonReady: boolean) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const loadReviewState = useReviewStore((s) => s.loadReviewState);
   const refresh = useReviewStore((s) => s.refresh);
+  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
 
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
   const loadReviewStateRef = useRef(loadReviewState);
   const refreshRef = useRef(refresh);
+  const loadGlobalReviewsRef = useRef(loadGlobalReviews);
   const comparisonReadyRef = useRef(comparisonReady);
   const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -40,8 +24,9 @@ export function useFileWatcher(comparisonReady: boolean) {
     repoPathRef.current = repoPath;
     loadReviewStateRef.current = loadReviewState;
     refreshRef.current = refresh;
+    loadGlobalReviewsRef.current = loadGlobalReviews;
     comparisonReadyRef.current = comparisonReady;
-  }, [repoPath, loadReviewState, refresh, comparisonReady]);
+  }, [repoPath, loadReviewState, refresh, loadGlobalReviews, comparisonReady]);
 
   // Start file watcher when repo is loaded
   useEffect(() => {
@@ -87,6 +72,8 @@ export function useFileWatcher(comparisonReady: boolean) {
           console.log("[watcher] Reloading review state...");
           loadReviewStateRef.current();
         }
+        // Refresh sidebar for any review state change
+        loadGlobalReviewsRef.current();
       }),
     );
     console.log("[watcher] Listening for review-state-changed");
@@ -113,9 +100,6 @@ export function useFileWatcher(comparisonReady: boolean) {
             refreshRef.current();
           }, 2000);
         }
-
-        // Always refresh diff stats for the changed repo's tabs (fast, <10ms each)
-        refreshDiffStatsForRepo(eventRepoPath);
       }),
     );
     console.log("[watcher] Listening for git-changed");

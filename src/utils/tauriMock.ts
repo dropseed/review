@@ -143,8 +143,6 @@ function buildComparisonQuery(comparison: unknown): string {
     new: string;
     working_tree?: boolean;
     workingTree?: boolean;
-    staged_only?: boolean;
-    stagedOnly?: boolean;
   };
   const parts = [
     `old=${encodeURIComponent(c.old)}`,
@@ -152,9 +150,6 @@ function buildComparisonQuery(comparison: unknown): string {
   ];
   if (c.working_tree || c.workingTree) {
     parts.push("workingTree=true");
-  }
-  if (c.staged_only || c.stagedOnly) {
-    parts.push("stagedOnly=true");
   }
   return parts.join("&");
 }

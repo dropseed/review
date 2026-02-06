@@ -256,13 +256,12 @@ mod tests {
             old: "main".to_string(),
             new: "HEAD".to_string(),
             working_tree: true,
-            staged_only: false,
-            key: "main..HEAD+working-tree".to_string(),
+            key: "main..HEAD".to_string(),
             github_pr: None,
         };
         let state = ReviewState::new(comparison.clone());
 
-        assert_eq!(state.comparison.key, "main..HEAD+working-tree");
+        assert_eq!(state.comparison.key, "main..HEAD");
         assert!(state.hunks.is_empty());
         assert!(state.trust_list.is_empty());
         assert!(state.notes.is_empty());
@@ -275,7 +274,6 @@ mod tests {
             old: "main".to_string(),
             new: "HEAD".to_string(),
             working_tree: false,
-            staged_only: false,
             key: "main..HEAD".to_string(),
             github_pr: None,
         };
@@ -292,7 +290,6 @@ mod tests {
             old: "main".to_string(),
             new: "HEAD".to_string(),
             working_tree: false,
-            staged_only: false,
             key: "main..HEAD".to_string(),
             github_pr: None,
         };
@@ -331,7 +328,6 @@ mod tests {
             old: "main".to_string(),
             new: "HEAD".to_string(),
             working_tree: false,
-            staged_only: false,
             key: "main..HEAD".to_string(),
             github_pr: None,
         };

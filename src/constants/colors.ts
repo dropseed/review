@@ -6,8 +6,6 @@
  * - Approve (manual): lime
  * - Reject: rose
  * - Classifying (AI): violet
- * - Working Tree: amber
- * - Staged: emerald
  * - Focus/UI accent: amber
  *
  * Git file status:
@@ -19,8 +17,6 @@ export const SEMANTIC_COLORS = {
   approve: "lime",
   reject: "rose",
   classifying: "violet",
-  workingTree: "amber",
-  staged: "emerald",
   focus: "amber",
 } as const;
 
@@ -40,18 +36,6 @@ export const TRUST_CLASSES = {
   borderHover: "hover:border-cyan-500/50",
   ring: "ring-cyan-500/30",
   shadow: "shadow-[0_0_8px_rgba(6,182,212,0.3)]",
-} as const;
-
-export const STAGED_CLASSES = {
-  text: "text-emerald-400",
-  textMuted: "text-emerald-300",
-  textSubtle: "text-emerald-500/70",
-  bg: "bg-emerald-500",
-  bgSubtle: "bg-emerald-500/10",
-  bgHover: "hover:bg-emerald-500/15",
-  border: "border-emerald-500",
-  borderSubtle: "border-emerald-500/20",
-  ring: "ring-emerald-500/30",
 } as const;
 
 // Brand colors from logo - terracotta for base/old, sage for compare/new

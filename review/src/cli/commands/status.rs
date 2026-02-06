@@ -70,7 +70,6 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
                 "old": comparison.old,
                 "new": comparison.new,
                 "working_tree": comparison.working_tree,
-                "staged_only": comparison.staged_only,
                 "key": comparison.key,
             },
             "files": changed_files,
@@ -99,13 +98,7 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
     println!();
 
     // Comparison info
-    let compare_display = if comparison.working_tree && comparison.new == "HEAD" {
-        format!("{}..{}", comparison.old, "Working Tree".cyan())
-    } else if comparison.staged_only {
-        format!("{}..{}", comparison.old, "Staged".cyan())
-    } else {
-        format!("{}..{}", comparison.old, comparison.new)
-    };
+    let compare_display = format!("{}..{}", comparison.old, comparison.new);
     println!("  {} {}", "Comparison:".dimmed(), compare_display);
     println!("  {} {}", "Files:".dimmed(), changed_files);
     println!();

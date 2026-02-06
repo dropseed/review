@@ -154,13 +154,12 @@ export interface PullRequest {
   body: string;
 }
 
-// Comparison - what we're reviewing (VS Code model)
+// Comparison - what we're reviewing
 export interface Comparison {
   old: string; // Base ref (e.g., "main")
   new: string; // Compare ref (e.g., "HEAD")
-  workingTree: boolean; // Include uncommitted working tree changes
-  stagedOnly?: boolean; // Only show staged changes (index vs HEAD)
-  key: string; // Unique key for storage, e.g., "main..HEAD+working-tree"
+  workingTree: boolean; // Include uncommitted working tree changes (auto-detected)
+  key: string; // Unique key for storage, e.g., "main..HEAD"
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
 }
 
@@ -169,22 +168,9 @@ export function makeComparison(
   old: string,
   newRef: string,
   workingTree: boolean,
-  stagedOnly?: boolean,
 ): Comparison {
-  // Validate that old and new refs are different (unless comparing with working tree)
-  if (old === newRef && !workingTree && !stagedOnly) {
-    console.warn(
-      `[makeComparison] Identical refs without working tree changes: ${old}..${newRef}`,
-    );
-  }
-
-  let key = `${old}..${newRef}`;
-  if (stagedOnly) {
-    key += "+staged-only";
-  } else if (workingTree) {
-    key += "+working-tree";
-  }
-  return { old, new: newRef, workingTree, stagedOnly, key };
+  const key = `${old}..${newRef}`;
+  return { old, new: newRef, workingTree, key };
 }
 
 // Helper to create a Comparison for a GitHub PR
@@ -193,7 +179,6 @@ export function makePrComparison(pr: PullRequest): Comparison {
     old: pr.baseRefName,
     new: pr.headRefName,
     workingTree: false,
-    stagedOnly: false,
     key: `pr-${pr.number}`,
     githubPr: {
       number: pr.number,

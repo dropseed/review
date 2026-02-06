@@ -28,15 +28,15 @@ import {
  */
 function AppShell() {
   const loadPreferences = useReviewStore((s) => s.loadPreferences);
-  const loadOpenReviews = useReviewStore((s) => s.loadOpenReviews);
+  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
 
-  // Load preferences and tab state on mount
+  // Load preferences and global reviews on mount
   useEffect(() => {
     loadPreferences();
-    loadOpenReviews();
+    loadGlobalReviews();
     checkClaudeAvailable();
-  }, [loadPreferences, loadOpenReviews, checkClaudeAvailable]);
+  }, [loadPreferences, loadGlobalReviews, checkClaudeAvailable]);
 
   const {
     repoStatus,
@@ -47,6 +47,7 @@ function AppShell() {
     handleNewWindow,
     handleCloseRepo,
     handleSelectRepo,
+    handleActivateReview,
   } = useRepositoryInit();
 
   // Global Cmd+O and menu:open-repo listener so it works on every route
@@ -97,7 +98,10 @@ function AppShell() {
     <TooltipProvider delayDuration={300}>
       <UpdateBanner />
       <div className="flex h-screen">
-        <TabRail onOpenRepo={handleOpenRepo} />
+        <TabRail
+          onOpenRepo={handleOpenRepo}
+          onActivateReview={handleActivateReview}
+        />
         <div className="flex flex-1 flex-col overflow-hidden bg-stone-900">
           <Outlet
             context={{

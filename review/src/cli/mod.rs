@@ -105,10 +105,6 @@ pub enum Commands {
         /// Include working tree changes
         #[arg(short, long)]
         working_tree: bool,
-
-        /// Only show staged changes
-        #[arg(long)]
-        staged: bool,
     },
 
     /// Open the GUI for the current comparison
@@ -193,7 +189,7 @@ impl Cli {
 
 /// Get the current comparison, or auto-detect one from the repo's default and current branches.
 ///
-/// Falls back to `<default_branch>..<current_branch>+working-tree`, matching the desktop app behavior.
+/// Falls back to `<default_branch>..<current_branch>` with working tree auto-included.
 pub fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> {
     // Try saved comparison first
     if let Some(comparison) =
@@ -209,12 +205,11 @@ pub fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> 
         .unwrap_or_else(|_| "main".to_owned());
     let current_branch = source.get_current_branch().map_err(|e| e.to_string())?;
 
-    let key = format!("{default_branch}..{current_branch}+working-tree");
+    let key = format!("{default_branch}..{current_branch}");
     Ok(Comparison {
         old: default_branch,
         new: current_branch,
         working_tree: true,
-        staged_only: false,
         key,
         github_pr: None,
     })
@@ -270,11 +265,9 @@ pub fn run(cli: Cli) -> Result<(), String> {
             commands::approve::run(&repo_path, &hunk_id, false, cli.format)
         }
         Some(Commands::Reset { hard }) => commands::reset::run(&repo_path, hard, cli.format),
-        Some(Commands::Compare {
-            spec,
-            working_tree,
-            staged,
-        }) => commands::compare::run(&repo_path, spec, working_tree, staged, cli.format),
+        Some(Commands::Compare { spec, working_tree }) => {
+            commands::compare::run(&repo_path, spec, working_tree, cli.format)
+        }
         Some(Commands::Open { spec }) => commands::open::run(&repo_path, spec),
         Some(Commands::Taxonomy { category }) => {
             commands::taxonomy::run(&repo_path, category, cli.format)

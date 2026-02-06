@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Comparison, BranchList, PullRequest } from "../../types";
 import { makeComparison, makePrComparison } from "../../types";
-import { BranchSelect, WORKING_TREE, PR_PREFIX } from "./BranchSelect";
+import { BranchSelect, PR_PREFIX } from "./BranchSelect";
 import { getApiClient } from "../../api";
 
 interface NewComparisonFormProps {
@@ -54,10 +54,9 @@ export function NewComparisonForm({
 
       Promise.all([
         client.getCurrentBranch(repoPath),
-        client.getGitStatus(repoPath),
         client.listSavedReviews(repoPath),
       ])
-        .then(([curBranch, gitStatus, reviews]) => {
+        .then(([curBranch, reviews]) => {
           setCurrentBranch(curBranch);
 
           // Smart default logic (only run once)
@@ -65,22 +64,11 @@ export function NewComparisonForm({
             const defBranch = defaultBranchProp;
             const branchList = branchesProp;
 
-            const hasUncommittedChanges =
-              gitStatus.staged.length > 0 ||
-              gitStatus.unstaged.length > 0 ||
-              gitStatus.untracked.length > 0;
-
             const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
             let smartDefault: string | null = null;
 
-            if (hasUncommittedChanges) {
-              const workingTreeKey = `${defBranch}..${curBranch}+working-tree`;
-              if (!reviewKeys.has(workingTreeKey)) {
-                smartDefault = WORKING_TREE;
-              }
-            }
-
-            if (!smartDefault && curBranch !== defBranch) {
+            // Default to current branch if it differs from base or has uncommitted changes
+            if (curBranch) {
               const branchKey = `${defBranch}..${curBranch}`;
               if (!reviewKeys.has(branchKey)) {
                 smartDefault = curBranch;
@@ -125,35 +113,21 @@ export function NewComparisonForm({
       client.listBranches(repoPath),
       client.getDefaultBranch(repoPath),
       client.getCurrentBranch(repoPath),
-      client.getGitStatus(repoPath),
       client.listSavedReviews(repoPath),
     ])
-      .then(([branchList, defBranch, curBranch, gitStatus, reviews]) => {
+      .then(([branchList, defBranch, curBranch, reviews]) => {
         setBranchesLocal(branchList);
         setBaseRef(defBranch);
         setCurrentBranch(curBranch);
 
         // Smart default for compare branch (only if not already in review):
-        // 1. If there are uncommitted changes, default to Working Tree
-        // 2. Else if current branch is different from base, use current branch
-        // 3. Else use the most recently edited branch that doesn't have a review
-        const hasUncommittedChanges =
-          gitStatus.staged.length > 0 ||
-          gitStatus.unstaged.length > 0 ||
-          gitStatus.untracked.length > 0;
-
+        // 1. Default to current branch
+        // 2. Else use the most recently edited branch that doesn't have a review
         const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
 
         let smartDefault: string | null = null;
 
-        if (hasUncommittedChanges) {
-          const workingTreeKey = `${defBranch}..${curBranch}+working-tree`;
-          if (!reviewKeys.has(workingTreeKey)) {
-            smartDefault = WORKING_TREE;
-          }
-        }
-
-        if (!smartDefault && curBranch !== defBranch) {
+        if (curBranch) {
           const branchKey = `${defBranch}..${curBranch}`;
           if (!reviewKeys.has(branchKey)) {
             smartDefault = curBranch;
@@ -210,9 +184,10 @@ export function NewComparisonForm({
       return;
     }
 
-    const isWorkingTree = compareRef === WORKING_TREE;
-    const newRef = isWorkingTree ? currentBranch : compareRef;
-    const comparison = makeComparison(baseRef, newRef, isWorkingTree);
+    // Auto-detect working tree: include uncommitted changes when
+    // the compare branch is the current branch
+    const isWorkingTree = compareRef === currentBranch;
+    const comparison = makeComparison(baseRef, compareRef, isWorkingTree);
     onSelectReview(comparison);
   }, [baseRef, compareRef, currentBranch, onSelectReview, pullRequests]);
 
@@ -302,8 +277,6 @@ export function NewComparisonForm({
             branches={branches}
             variant="compare"
             disabled={branchesLoading}
-            excludeValue={baseRef}
-            includeLocalState
             baseValue={baseRef}
             existingComparisonKeys={existingComparisonKeys}
             placeholder="Compare..."

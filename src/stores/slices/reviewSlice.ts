@@ -13,7 +13,6 @@ import {
   playRejectSound,
   playBulkSound,
 } from "../../utils/sounds";
-import { computeReviewProgress } from "../../hooks/useReviewProgress";
 
 // ========================================================================
 // Review Slice
@@ -207,22 +206,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         // Record save time so file watcher can ignore our own writes
         lastSaveTimestamp = Date.now();
 
-        // Snapshot progress to active tab
-        const { hunks, activeTabIndex, updateReviewMetadata } = get();
-        if (activeTabIndex !== null) {
-          const progress = computeReviewProgress(hunks, reviewState);
-          updateReviewMetadata(activeTabIndex, {
-            reviewProgress: {
-              totalHunks: progress.totalHunks,
-              trustedHunks: progress.trustedHunks,
-              approvedHunks: progress.approvedHunks,
-              rejectedHunks: progress.rejectedHunks,
-              reviewedHunks: progress.reviewedHunks,
-              reviewedPercent: progress.reviewedPercent,
-              state: progress.state,
-            },
-          });
-        }
+        // Refresh sidebar so it reflects updated progress
+        get().loadGlobalReviews();
       } catch (err) {
         console.error("Failed to save review state:", err);
       }

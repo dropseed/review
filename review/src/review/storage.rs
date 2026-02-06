@@ -100,7 +100,7 @@ pub fn load_review_state(
         let state: ReviewState = serde_json::from_str(&content)?;
         Ok(state)
     } else {
-        // Return a new empty state
+        // Return a new empty state (not persisted — call ensure_review_exists for that)
         Ok(ReviewState::new(comparison.clone()))
     }
 }
@@ -223,6 +223,21 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
     Ok(summaries)
 }
 
+/// Create a review file on disk if it doesn't already exist.
+/// Used to make new reviews immediately visible in the sidebar.
+pub fn ensure_review_exists(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
+    let storage_dir = get_storage_dir(repo_path)?;
+    let filename = comparison_filename(comparison);
+    let path = storage_dir.join(&filename);
+
+    if !path.exists() {
+        let state = ReviewState::new(comparison.clone());
+        save_review_state(repo_path, &state)?;
+    }
+
+    Ok(())
+}
+
 /// Delete a saved review
 pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
@@ -248,8 +263,7 @@ mod tests {
             old: "main".to_string(),
             new: "HEAD".to_string(),
             working_tree: true,
-            staged_only: false,
-            key: "main..HEAD+working-tree".to_string(),
+            key: "main..HEAD".to_string(),
             github_pr: None,
         }
     }
@@ -271,10 +285,7 @@ mod tests {
     fn test_sanitize_key() {
         assert_eq!(sanitize_key("main..HEAD"), "main..HEAD");
         assert_eq!(sanitize_key("origin/main..HEAD"), "origin_main..HEAD");
-        assert_eq!(
-            sanitize_key("main..HEAD+working-tree"),
-            "main..HEAD+working-tree"
-        );
+        assert_eq!(sanitize_key("main..HEAD"), "main..HEAD");
         assert_eq!(sanitize_key("a:b*c?d"), "a_b_c_d");
     }
 
@@ -282,7 +293,7 @@ mod tests {
     fn test_comparison_filename() {
         let comparison = create_test_comparison();
         let filename = comparison_filename(&comparison);
-        assert_eq!(filename, "main..HEAD+working-tree.json");
+        assert_eq!(filename, "main..HEAD.json");
     }
 
     #[test]
@@ -354,7 +365,6 @@ mod tests {
             old: "main".to_string(),
             new: "feature-1".to_string(),
             working_tree: false,
-            staged_only: false,
             key: "main..feature-1".to_string(),
             github_pr: None,
         };
@@ -362,7 +372,6 @@ mod tests {
             old: "main".to_string(),
             new: "feature-2".to_string(),
             working_tree: false,
-            staged_only: false,
             key: "main..feature-2".to_string(),
             github_pr: None,
         };

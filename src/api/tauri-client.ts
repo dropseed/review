@@ -207,6 +207,13 @@ export class TauriClient implements ApiClient {
     await invoke("delete_review", { repoPath, comparison });
   }
 
+  async ensureReviewExists(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<void> {
+    await invoke("ensure_review_exists", { repoPath, comparison });
+  }
+
   async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {
     return invoke<GlobalReviewSummary[]>("list_all_reviews_global");
   }
@@ -330,61 +337,73 @@ export class TauriClient implements ApiClient {
 
   onClassifyProgress(callback: (completedIds: string[]) => void): () => void {
     let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
 
     listen<string[]>("classify:batch-complete", (event) => {
-      callback(event.payload);
+      if (!cancelled) callback(event.payload);
     })
       .then((fn) => {
-        unlisten = fn;
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
       })
       .catch((err) => {
         console.error("Failed to listen for classify progress:", err);
       });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      cancelled = true;
+      if (unlisten) unlisten();
     };
   }
 
   onReviewStateChanged(callback: (repoPath: string) => void): () => void {
     let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
 
     listen<string>("review-state-changed", (event) => {
-      callback(event.payload);
+      if (!cancelled) callback(event.payload);
     })
       .then((fn) => {
-        unlisten = fn;
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
       })
       .catch((err) => {
         console.error("Failed to listen for review state changes:", err);
       });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      cancelled = true;
+      if (unlisten) unlisten();
     };
   }
 
   onGitChanged(callback: (repoPath: string) => void): () => void {
     let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
 
     listen<string>("git-changed", (event) => {
-      callback(event.payload);
+      if (!cancelled) callback(event.payload);
     })
       .then((fn) => {
-        unlisten = fn;
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
       })
       .catch((err) => {
         console.error("Failed to listen for git changes:", err);
       });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      cancelled = true;
+      if (unlisten) unlisten();
     };
   }
 

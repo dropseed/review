@@ -391,11 +391,7 @@ pub fn get_file_content_sync(
             parse_diff(&diff_output, &file_path)
         };
 
-        let old_ref = if comparison.working_tree {
-            "HEAD"
-        } else {
-            &comparison.old
-        };
+        let old_ref = &comparison.old;
         let old_content = match source.get_file_bytes(&file_path, old_ref) {
             Ok(bytes) => String::from_utf8(bytes).ok(),
             Err(_) => None,
@@ -560,16 +556,21 @@ pub fn get_file_content_sync(
     let (old_content, final_content) = if diff_output.is_empty() {
         (None, content)
     } else if comparison.working_tree {
-        let old = match source.get_file_bytes(&file_path, "HEAD") {
+        // Use comparison.old (the base ref) for old content, not HEAD.
+        // When comparing e.g. main..feature+working-tree, HEAD points to the
+        // feature branch, so using HEAD would make old == new (both from feature),
+        // causing MultiFileDiff to show zero changes.
+        let old_ref = &comparison.old;
+        let old = match source.get_file_bytes(&file_path, old_ref) {
             Ok(bytes) => {
                 debug!(
-                    "[get_file_content] got old content from HEAD: {} bytes",
+                    "[get_file_content] got old content from {old_ref}: {} bytes",
                     bytes.len()
                 );
                 String::from_utf8(bytes).ok()
             }
             Err(e) => {
-                debug!("[get_file_content] no old version available: {e}");
+                debug!("[get_file_content] no old version available from {old_ref}: {e}");
                 None
             }
         };
@@ -875,6 +876,12 @@ pub fn list_saved_reviews(repo_path: String) -> Result<Vec<ReviewSummary>, Strin
 #[tauri::command]
 pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), String> {
     storage::delete_review(&PathBuf::from(&repo_path), &comparison).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn ensure_review_exists(repo_path: String, comparison: Comparison) -> Result<(), String> {
+    storage::ensure_review_exists(&PathBuf::from(&repo_path), &comparison)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

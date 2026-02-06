@@ -43,15 +43,9 @@ function SidebarToggle() {
   );
 }
 
-function getCompareLabel(comparison: Comparison): string {
-  if (comparison.workingTree) return "Working Tree";
-  if (comparison.stagedOnly) return "Staged";
-  return comparison.new;
-}
-
 function getOverviewLabel(comparison: Comparison): string {
   if (comparison.githubPr) return `PR #${comparison.githubPr.number}`;
-  return `${comparison.old}..${getCompareLabel(comparison)}`;
+  return `${comparison.old}..${comparison.new}`;
 }
 
 export function ReviewBreadcrumb({

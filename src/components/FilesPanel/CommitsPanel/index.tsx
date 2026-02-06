@@ -106,11 +106,7 @@ export function CommitsPanel({
     );
   }
 
-  const compareRefColor = comparison.stagedOnly
-    ? "text-emerald-400"
-    : comparison.workingTree
-      ? "text-violet-400"
-      : "text-stone-300";
+  const compareRefColor = "text-stone-300";
 
   return (
     <div
@@ -125,11 +121,7 @@ export function CommitsPanel({
           <span className="text-stone-400 truncate">{comparison.old}</span>
           <span className="text-stone-600 flex-shrink-0">..</span>
           <span className={`${compareRefColor} truncate`}>
-            {comparison.stagedOnly
-              ? "Staged"
-              : comparison.workingTree
-                ? "Working Tree"
-                : comparison.new}
+            {comparison.new}
           </span>
         </div>
         <span className="text-xxs text-stone-600 tabular-nums flex-shrink-0 ml-2">

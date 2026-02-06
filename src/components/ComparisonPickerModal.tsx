@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Comparison } from "../types";
 import { useReviewStore } from "../stores";
-import { getApiClient } from "../api";
 import { initLogPath, clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
 import { NewComparisonForm } from "./ComparisonPicker/NewComparisonForm";
@@ -24,10 +23,11 @@ export function ComparisonPickerModal({
   const navigate = useNavigate();
   const savedReviews = useReviewStore((s) => s.savedReviews);
   const recentRepositories = useReviewStore((s) => s.recentRepositories);
-  const addOpenReview = useReviewStore((s) => s.addOpenReview);
-  const updateReviewMetadata = useReviewStore((s) => s.updateReviewMetadata);
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
+  const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
+  const ensureReviewExists = useReviewStore((s) => s.ensureReviewExists);
+  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
 
   const existingComparisonKeys = savedReviews.map((r) => r.comparison.key);
 
@@ -52,11 +52,7 @@ export function ComparisonPickerModal({
     async (comparison: Comparison) => {
       if (!selectedRepoPath) return;
 
-      const apiClient = getApiClient();
-      const [{ routePrefix, repoName }, defaultBranch] = await Promise.all([
-        resolveRepoIdentity(selectedRepoPath),
-        apiClient.getDefaultBranch(selectedRepoPath).catch(() => undefined),
-      ]);
+      const { routePrefix } = await resolveRepoIdentity(selectedRepoPath);
 
       // Activate the repo in the store
       setRepoPath(selectedRepoPath);
@@ -64,43 +60,27 @@ export function ComparisonPickerModal({
       clearLog();
       addRecentRepository(selectedRepoPath);
 
-      // Create the tab (dedup handles exact matches)
-      addOpenReview({
+      // Set the active review and create the review file on disk
+      setActiveReviewKey({
         repoPath: selectedRepoPath,
-        repoName,
-        comparison,
-        routePrefix,
-        defaultBranch,
+        comparisonKey: comparison.key,
       });
-
-      // Fetch diff stats asynchronously
-      apiClient
-        .getDiffShortStat(selectedRepoPath, comparison)
-        .then((diffStats) => {
-          const { openReviews } = useReviewStore.getState();
-          const idx = openReviews.findIndex(
-            (r) =>
-              r.repoPath === selectedRepoPath &&
-              r.comparison.key === comparison.key,
-          );
-          if (idx >= 0) {
-            updateReviewMetadata(idx, { diffStats });
-          }
-        })
-        .catch((err) => {
-          console.warn("[picker] Failed to fetch diff stats:", err);
-        });
+      await ensureReviewExists(selectedRepoPath, comparison);
 
       // Navigate to the review route
       navigate(`/${routePrefix}/review/${comparison.key}`);
       onClose();
+
+      // Refresh global reviews so the new review appears in the sidebar
+      loadGlobalReviews();
     },
     [
       selectedRepoPath,
       setRepoPath,
       addRecentRepository,
-      addOpenReview,
-      updateReviewMetadata,
+      setActiveReviewKey,
+      ensureReviewExists,
+      loadGlobalReviews,
       navigate,
       onClose,
     ],

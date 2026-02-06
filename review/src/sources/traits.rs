@@ -52,10 +52,8 @@ pub struct Comparison {
     pub old: String, // Base ref (e.g., "main")
     pub new: String, // Compare ref (e.g., "HEAD")
     #[serde(rename = "workingTree")]
-    pub working_tree: bool, // Include uncommitted working tree changes
-    #[serde(rename = "stagedOnly", default)]
-    pub staged_only: bool, // Only show staged changes (index vs HEAD)
-    pub key: String, // Unique key for storage, e.g., "main..HEAD+working-tree"
+    pub working_tree: bool, // Include uncommitted working tree changes (auto-detected)
+    pub key: String, // Unique key for storage, e.g., "main..HEAD"
     #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
     pub github_pr: Option<super::github::GitHubPrRef>, // Optional GitHub PR reference
 }

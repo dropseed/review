@@ -29,7 +29,6 @@ fn main() {
         old: old_ref.clone(),
         new: new_ref.clone(),
         working_tree: false,
-        staged_only: false,
         key: format!("{old_ref}..{new_ref}"),
         github_pr: None,
     };

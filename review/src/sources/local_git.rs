@@ -112,8 +112,7 @@ impl LocalGitSource {
 
     /// Get lightweight diff statistics (file count, additions, deletions) via `--shortstat`.
     ///
-    /// Mirrors the three modes used by `get_diff()`:
-    /// - `staged_only`: only staged changes
+    /// Mirrors the two modes used by `get_diff()`:
     /// - Committed: diff between old..new refs
     /// - Working tree: committed changes + uncommitted changes
     pub fn get_diff_shortstat(
@@ -123,19 +122,6 @@ impl LocalGitSource {
         let mut total_files: u32 = 0;
         let mut total_add: u32 = 0;
         let mut total_del: u32 = 0;
-
-        if comparison.staged_only {
-            let output = self.run_git(&["diff", "--shortstat", "--cached"])?;
-            let (f, a, d) = parse_shortstat(&output);
-            total_files += f;
-            total_add += a;
-            total_del += d;
-            return Ok(DiffShortStat {
-                file_count: total_files,
-                additions: total_add,
-                deletions: total_del,
-            });
-        }
 
         // Committed diff
         if comparison.old != comparison.new || !comparison.working_tree {
@@ -514,13 +500,6 @@ impl LocalGitSource {
             Ok(base) => base,
             Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
         };
-
-        // Handle staged_only mode (only show staged changes)
-        if comparison.staged_only {
-            let staged_output = self.run_git(&["diff", "--name-status", "--cached"])?;
-            self.parse_name_status(&staged_output, &mut changes);
-            return Ok(changes);
-        }
 
         // Get committed changes
         if comparison.old != comparison.new || !comparison.working_tree {
@@ -1132,21 +1111,6 @@ impl DiffSource for LocalGitSource {
         file_path: Option<&str>,
     ) -> Result<String, Self::Error> {
         let mut all_diffs = String::new();
-
-        // Handle staged_only mode (only show staged changes)
-        if comparison.staged_only {
-            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", "--cached"];
-
-            if let Some(path) = file_path {
-                args.push("--");
-                args.push(path);
-            }
-
-            if let Ok(output) = self.run_git(&args) {
-                all_diffs.push_str(&output);
-            }
-            return Ok(all_diffs);
-        }
 
         // Get committed diff between old and new refs
         if comparison.old != comparison.new || !comparison.working_tree {

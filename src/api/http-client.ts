@@ -30,6 +30,7 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
+  NarrativeInput,
 } from "../types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -98,9 +99,6 @@ export class HttpClient implements ApiClient {
     ];
     if (comparison.workingTree) {
       parts.push("workingTree=true");
-    }
-    if (comparison.stagedOnly) {
-      parts.push("stagedOnly=true");
     }
     if (comparison.githubPr) {
       parts.push(`prNumber=${comparison.githubPr.number}`);
@@ -363,6 +361,13 @@ export class HttpClient implements ApiClient {
     }
   }
 
+  async ensureReviewExists(
+    _repoPath: string,
+    _comparison: Comparison,
+  ): Promise<void> {
+    // In HTTP mode, review state is managed in-memory; no-op
+  }
+
   async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {
     console.warn("[HttpClient] listAllReviewsGlobal not implemented");
     return [];
@@ -441,7 +446,7 @@ export class HttpClient implements ApiClient {
 
   async generateNarrative(
     _repoPath: string,
-    _hunks: import("../types").NarrativeInput[],
+    _hunks: NarrativeInput[],
     _options?: { command?: string },
   ): Promise<string> {
     console.warn("[HttpClient] generateNarrative not implemented");

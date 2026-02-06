@@ -9,7 +9,6 @@ pub fn run(
     repo_path: &str,
     spec: Option<String>,
     working_tree: bool,
-    staged: bool,
     format: OutputFormat,
 ) -> Result<(), String> {
     let path = PathBuf::from(repo_path);
@@ -26,7 +25,6 @@ pub fn run(
                             "old": c.old,
                             "new": c.new,
                             "working_tree": c.working_tree,
-                            "staged_only": c.staged_only,
                             "key": c.key,
                         });
                         println!(
@@ -35,13 +33,7 @@ pub fn run(
                                 .expect("failed to serialize JSON output")
                         );
                     } else {
-                        let compare_display = if c.working_tree && c.new == "HEAD" {
-                            format!("{}..{}", c.old, "Working Tree".cyan())
-                        } else if c.staged_only {
-                            format!("{}..{}", c.old, "Staged".cyan())
-                        } else {
-                            format!("{}..{}", c.old, c.new)
-                        };
+                        let compare_display = format!("{}..{}", c.old, c.new);
                         println!("{compare_display}");
                     }
                 }
@@ -55,14 +47,13 @@ pub fn run(
                         println!("  Examples:");
                         println!("    compare compare main..HEAD -w");
                         println!("    compare compare main..feature-branch");
-                        println!("    compare compare HEAD --staged");
                     }
                 }
             }
         }
         Some(spec) => {
             // Parse and set comparison
-            let comparison = parse_comparison_spec(&path, &spec, working_tree, staged)?;
+            let comparison = parse_comparison_spec(&path, &spec, working_tree)?;
 
             storage::set_current_comparison(&path, &comparison).map_err(|e| e.to_string())?;
 
@@ -72,18 +63,11 @@ pub fn run(
                     "old": comparison.old,
                     "new": comparison.new,
                     "working_tree": comparison.working_tree,
-                    "staged_only": comparison.staged_only,
                     "key": comparison.key,
                 });
                 println!("{}", serde_json::to_string_pretty(&output).unwrap());
             } else {
-                let compare_display = if comparison.working_tree && comparison.new == "HEAD" {
-                    format!("{}..{}", comparison.old, "Working Tree".cyan())
-                } else if comparison.staged_only {
-                    format!("{}..{}", comparison.old, "Staged".cyan())
-                } else {
-                    format!("{}..{}", comparison.old, comparison.new)
-                };
+                let compare_display = format!("{}..{}", comparison.old, comparison.new);
                 println!("{} Set comparison: {}", "✓".green(), compare_display);
             }
         }
@@ -96,21 +80,7 @@ fn parse_comparison_spec(
     repo_path: &Path,
     spec: &str,
     working_tree: bool,
-    staged: bool,
 ) -> Result<Comparison, String> {
-    // Handle special cases
-    if staged {
-        // Staged changes: compare HEAD to index
-        return Ok(Comparison {
-            old: "HEAD".to_owned(),
-            new: "HEAD".to_owned(),
-            working_tree: false,
-            staged_only: true,
-            key: "HEAD+staged".to_owned(),
-            github_pr: None,
-        });
-    }
-
     // Parse base..head format
     let (base, head) = if spec.contains("..") {
         let parts: Vec<&str> = spec.splitn(2, "..").collect();
@@ -129,18 +99,12 @@ fn parse_comparison_spec(
         }
     };
 
-    // Build key
-    let key = if working_tree {
-        format!("{base}..{head}+working-tree")
-    } else {
-        format!("{base}..{head}")
-    };
+    let key = format!("{base}..{head}");
 
     Ok(Comparison {
         old: base,
         new: head,
         working_tree,
-        staged_only: false,
         key,
         github_pr: None,
     })

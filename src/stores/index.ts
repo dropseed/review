@@ -14,7 +14,7 @@ import { createHistorySlice } from "./slices/historySlice";
 import { createSymbolsSlice } from "./slices/symbolsSlice";
 import { createNarrativeSlice } from "./slices/narrativeSlice";
 import { createUndoSlice } from "./slices/undoSlice";
-import { createTabRailSlice } from "./slices/tabRailSlice";
+import { createGlobalReviewsSlice } from "./slices/tabRailSlice";
 
 // Get dependencies
 const apiClient = getApiClient();
@@ -33,5 +33,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createSymbolsSlice(apiClient)(...args),
   ...createNarrativeSlice(apiClient)(...args),
   ...createUndoSlice(...args),
-  ...createTabRailSlice(platform.storage)(...args),
+  ...createGlobalReviewsSlice(apiClient)(...args),
 }));

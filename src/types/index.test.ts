@@ -13,7 +13,6 @@ describe("makeComparison", () => {
       old: "main",
       new: "HEAD",
       workingTree: false,
-      stagedOnly: undefined,
       key: "main..HEAD",
     });
   });
@@ -24,26 +23,13 @@ describe("makeComparison", () => {
       old: "main",
       new: "HEAD",
       workingTree: true,
-      stagedOnly: undefined,
-      key: "main..HEAD+working-tree",
+      key: "main..HEAD",
     });
   });
 
-  it("creates a staged-only comparison", () => {
-    const result = makeComparison("HEAD", "HEAD", false, true);
-    expect(result).toEqual({
-      old: "HEAD",
-      new: "HEAD",
-      workingTree: false,
-      stagedOnly: true,
-      key: "HEAD..HEAD+staged-only",
-    });
-  });
-
-  it("staged-only takes precedence over working-tree in key", () => {
-    // When stagedOnly is true, key should show +staged-only even if workingTree is true
-    const result = makeComparison("HEAD", "HEAD", true, true);
-    expect(result.key).toBe("HEAD..HEAD+staged-only");
+  it("same-branch comparison produces correct key", () => {
+    const result = makeComparison("main", "main", true);
+    expect(result.key).toBe("main..main");
   });
 
   it("handles branch names with slashes", () => {

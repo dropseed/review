@@ -22,10 +22,7 @@ export function useWindowTitle(
     } else {
       const repoName = repoPath.split("/").pop() || "Repository";
       if (isReviewRoute && comparisonReady) {
-        const compareDisplay = comparison.workingTree
-          ? "Working Tree"
-          : comparison.new;
-        const title = `${repoName} — ${comparison.old}..${compareDisplay}`;
+        const title = `${repoName} — ${comparison.old}..${comparison.new}`;
         platform.window.setTitle(title).catch(console.error);
       } else {
         platform.window.setTitle(repoName).catch(console.error);

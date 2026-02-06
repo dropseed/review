@@ -15,7 +15,7 @@ import type { HistorySlice } from "./slices/historySlice";
 import type { SymbolsSlice } from "./slices/symbolsSlice";
 import type { NarrativeSlice } from "./slices/narrativeSlice";
 import type { UndoSlice } from "./slices/undoSlice";
-import type { TabRailSlice } from "./slices/tabRailSlice";
+import type { GlobalReviewsSlice } from "./slices/tabRailSlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -29,7 +29,7 @@ export type ReviewStore = PreferencesSlice &
   SymbolsSlice &
   NarrativeSlice &
   UndoSlice &
-  TabRailSlice;
+  GlobalReviewsSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

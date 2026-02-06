@@ -195,7 +195,6 @@ fn get_comparison_from_query(
     let old = params.get("old")?.clone();
     let new = params.get("new")?.clone();
     let working_tree = params.get("workingTree").is_some_and(|v| v == "true");
-    let staged_only = params.get("stagedOnly").is_some_and(|v| v == "true");
 
     // Check for optional PR params
     let github_pr = params
@@ -215,10 +214,6 @@ fn get_comparison_from_query(
     // Build the key the same way the frontend does
     let key = if github_pr.is_some() {
         format!("pr-{}", github_pr.as_ref().unwrap().number)
-    } else if working_tree {
-        format!("{old}..{new}+working-tree")
-    } else if staged_only {
-        format!("{old}..{new}+staged")
     } else {
         format!("{old}..{new}")
     };
@@ -227,7 +222,6 @@ fn get_comparison_from_query(
         old,
         new,
         working_tree,
-        staged_only,
         key,
         github_pr,
     })

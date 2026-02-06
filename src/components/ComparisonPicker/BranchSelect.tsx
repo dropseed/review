@@ -3,14 +3,11 @@ import type { BranchList, StashEntry, PullRequest } from "../../types";
 import { Input } from "../ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 
-// Special values for local state options
-const WORKING_TREE = "__WORKING_TREE__";
-
 interface BranchOption {
   value: string;
   label: string;
   group: string;
-  icon?: "branch" | "remote" | "stash" | "tree" | "pr";
+  icon?: "branch" | "remote" | "stash" | "pr";
   secondaryLabel?: string;
 }
 
@@ -22,7 +19,6 @@ interface BranchSelectProps {
   variant: "base" | "compare";
   disabled?: boolean;
   excludeValue?: string; // For compare selector to exclude base branch
-  includeLocalState?: boolean; // Include Working Tree / Staged options
   baseValue?: string; // Current base value (for filtering existing comparisons)
   existingComparisonKeys?: string[]; // Keys of existing reviews to filter out
   placeholder?: string; // Placeholder text when value is empty
@@ -38,21 +34,6 @@ const BranchIcon = memo(function BranchIcon({
   const baseClass = "w-4 h-4 shrink-0";
 
   switch (type) {
-    case "tree":
-      return (
-        <svg
-          className={`${baseClass} text-amber-400`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fillRule="evenodd"
-            d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v8.5A2.25 2.25 0 0115.75 15h-3.105a3.501 3.501 0 001.1 1.677A.75.75 0 0113.26 18H6.74a.75.75 0 01-.484-1.323A3.501 3.501 0 007.355 15H4.25A2.25 2.25 0 012 12.75v-8.5z"
-            clipRule="evenodd"
-          />
-        </svg>
-      );
     case "stash":
       return (
         <svg
@@ -121,8 +102,6 @@ function getDisplayName(
   branches: BranchList,
   pullRequests?: PullRequest[],
 ): string {
-  if (value === WORKING_TREE) return "Working Tree";
-
   // Check if it's a PR
   if (value.startsWith(PR_PREFIX) && pullRequests) {
     const prNumber = parseInt(value.slice(PR_PREFIX.length, -2), 10);
@@ -153,9 +132,6 @@ function getComparisonKey(base: string, compareValue: string): string {
     const prNumber = parseInt(compareValue.slice(PR_PREFIX.length, -2), 10);
     return `pr-${prNumber}`;
   }
-  if (compareValue === WORKING_TREE) {
-    return `${base}..${base}+working-tree`;
-  }
   return `${base}..${compareValue}`;
 }
 
@@ -167,7 +143,6 @@ export const BranchSelect = memo(function BranchSelect({
   variant,
   disabled = false,
   excludeValue,
-  includeLocalState = false,
   baseValue,
   existingComparisonKeys = [],
   placeholder,
@@ -193,31 +168,20 @@ export const BranchSelect = memo(function BranchSelect({
   const options = useMemo(() => {
     const opts: BranchOption[] = [];
 
-    if (includeLocalState) {
-      // Only add Working Tree if not already in progress
-      if (!isExistingComparison(WORKING_TREE)) {
-        opts.push({
-          value: WORKING_TREE,
-          label: "Working Tree",
-          group: "Local State",
-          icon: "tree",
-        });
-      }
-      // Add stashes (filter out existing)
-      branches.stashes.forEach((stash: StashEntry) => {
-        if (isExistingComparison(stash.ref)) return;
-        const shortMessage =
-          stash.message.length > 20
-            ? stash.message.slice(0, 20) + "..."
-            : stash.message;
-        opts.push({
-          value: stash.ref,
-          label: `${stash.ref}: ${shortMessage}`,
-          group: "Local State",
-          icon: "stash",
-        });
+    // Add stashes (filter out existing)
+    branches.stashes.forEach((stash: StashEntry) => {
+      if (isExistingComparison(stash.ref)) return;
+      const shortMessage =
+        stash.message.length > 20
+          ? stash.message.slice(0, 20) + "..."
+          : stash.message;
+      opts.push({
+        value: stash.ref,
+        label: `${stash.ref}: ${shortMessage}`,
+        group: "Stashes",
+        icon: "stash",
       });
-    }
+    });
 
     // Add pull requests (filtered by base branch)
     if (pullRequests && baseValue) {
@@ -261,14 +225,7 @@ export const BranchSelect = memo(function BranchSelect({
       });
 
     return opts;
-  }, [
-    branches,
-    excludeValue,
-    includeLocalState,
-    isExistingComparison,
-    pullRequests,
-    baseValue,
-  ]);
+  }, [branches, excludeValue, isExistingComparison, pullRequests, baseValue]);
 
   // Filter options based on search
   const filteredOptions = useMemo(() => {
@@ -519,4 +476,4 @@ export const BranchSelect = memo(function BranchSelect({
   );
 });
 
-export { WORKING_TREE, PR_PREFIX };
+export { PR_PREFIX };

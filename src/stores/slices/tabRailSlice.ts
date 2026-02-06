@@ -1,130 +1,161 @@
-import type { Comparison, DiffShortStat } from "../../types";
-import type { StorageService } from "../../platform";
-import type { SliceCreatorWithStorage } from "../types";
+import type {
+  Comparison,
+  DiffShortStat,
+  GlobalReviewSummary,
+} from "../../types";
+import type { ApiClient } from "../../api";
+import type { SliceCreatorWithClient } from "../types";
+import { resolveRepoIdentity } from "../../utils/repo-identity";
 
-export interface TabReviewProgress {
-  totalHunks: number;
-  trustedHunks: number;
-  approvedHunks: number;
-  rejectedHunks: number;
-  reviewedHunks: number;
-  reviewedPercent: number;
-  state: "approved" | "changes_requested" | null;
-}
-
-export interface OpenReview {
+export interface ActiveReviewKey {
   repoPath: string;
-  repoName: string; // display name (remote name or dirname)
-  comparison: Comparison;
-  routePrefix: string; // e.g. "dropseed/review" for URL construction
-  defaultBranch?: string; // for simplified comparison display
-  diffStats?: DiffShortStat; // cached stats for the tab
-  reviewProgress?: TabReviewProgress; // cached review progress for the tab
+  comparisonKey: string;
 }
 
-export interface TabRailSlice {
-  openReviews: OpenReview[];
-  activeTabIndex: number | null;
-
-  loadOpenReviews: () => Promise<void>;
-  addOpenReview: (review: OpenReview) => void;
-  removeOpenReview: (index: number) => void;
-  setActiveTab: (index: number) => void;
-  updateReviewMetadata: (
-    index: number,
-    metadata: {
-      defaultBranch?: string;
-      diffStats?: DiffShortStat;
-      reviewProgress?: TabReviewProgress;
-    },
-  ) => void;
+export interface RepoMetadata {
+  routePrefix: string;
+  defaultBranch: string;
+  avatarUrl: string | null;
 }
 
-const STORAGE_KEY = "openReviews";
+export interface GlobalReviewsSlice {
+  globalReviews: GlobalReviewSummary[];
+  globalReviewsLoading: boolean;
+  activeReviewKey: ActiveReviewKey | null;
+  repoMetadata: Record<string, RepoMetadata>;
+  reviewDiffStats: Record<string, DiffShortStat>;
 
-export const createTabRailSlice: SliceCreatorWithStorage<TabRailSlice> =
-  (storage: StorageService) => (set, get) => ({
-    openReviews: [],
-    activeTabIndex: null,
+  loadGlobalReviews: () => Promise<void>;
+  setActiveReviewKey: (key: ActiveReviewKey | null) => void;
+  ensureReviewExists: (
+    repoPath: string,
+    comparison: Comparison,
+  ) => Promise<void>;
+  deleteGlobalReview: (
+    repoPath: string,
+    comparison: Comparison,
+  ) => Promise<void>;
+}
 
-    loadOpenReviews: async () => {
-      const stored = (await storage.get<OpenReview[]>(STORAGE_KEY)) ?? [];
-      set({ openReviews: stored });
-    },
+export const createGlobalReviewsSlice: SliceCreatorWithClient<
+  GlobalReviewsSlice
+> = (client: ApiClient) => (set, get) => ({
+  globalReviews: [],
+  globalReviewsLoading: false,
+  activeReviewKey: null,
+  repoMetadata: {},
+  reviewDiffStats: {},
 
-    addOpenReview: (review) => {
-      const { openReviews } = get();
-
-      // Check if this repo+comparison already has a tab
-      const existingIndex = openReviews.findIndex(
-        (r) =>
-          r.repoPath === review.repoPath &&
-          r.comparison.key === review.comparison.key,
+  loadGlobalReviews: async () => {
+    set({ globalReviewsLoading: true });
+    try {
+      const reviews = await client.listAllReviewsGlobal();
+      // Sort by updatedAt descending
+      reviews.sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       );
 
-      if (existingIndex >= 0) {
-        // Tab already exists — just activate it
-        set({ activeTabIndex: existingIndex });
-        return;
-      }
+      // Resolve metadata for any new repos
+      const { repoMetadata } = get();
+      const uniqueRepoPaths = [...new Set(reviews.map((r) => r.repoPath))];
+      const newMetadata = { ...repoMetadata };
+      const toResolve = uniqueRepoPaths.filter((p) => !newMetadata[p]);
 
-      const updated = [...openReviews, review];
-      set({ openReviews: updated, activeTabIndex: updated.length - 1 });
-      storage.set(STORAGE_KEY, updated);
-    },
+      if (toResolve.length > 0) {
+        const results = await Promise.allSettled(
+          toResolve.map(async (repoPath) => {
+            const [identity, defaultBranch] = await Promise.all([
+              resolveRepoIdentity(repoPath),
+              client.getDefaultBranch(repoPath).catch(() => "main"),
+            ]);
+            // Derive org avatar from browse URL (e.g. https://github.com/org/repo → https://github.com/org.png)
+            let avatarUrl: string | null = null;
+            if (identity.browseUrl) {
+              try {
+                const url = new URL(identity.browseUrl);
+                const org = url.pathname.split("/")[1];
+                if (org) {
+                  avatarUrl = `${url.origin}/${org}.png?size=64`;
+                }
+              } catch {
+                // Invalid URL, skip avatar
+              }
+            }
+            return {
+              repoPath,
+              routePrefix: identity.routePrefix,
+              defaultBranch,
+              avatarUrl,
+            };
+          }),
+        );
 
-    removeOpenReview: (index) => {
-      const { openReviews, activeTabIndex } = get();
-      if (index < 0 || index >= openReviews.length) return;
-
-      const updated = openReviews.filter((_, i) => i !== index);
-
-      // Adjust active tab
-      let newActiveIndex: number | null = activeTabIndex;
-      if (updated.length === 0) {
-        newActiveIndex = null;
-      } else if (activeTabIndex !== null) {
-        if (index === activeTabIndex) {
-          // Removed the active tab — activate the nearest one
-          newActiveIndex = Math.min(index, updated.length - 1);
-        } else if (index < activeTabIndex) {
-          // Removed a tab before the active one — shift index down
-          newActiveIndex = activeTabIndex - 1;
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            const { repoPath, routePrefix, defaultBranch, avatarUrl } =
+              result.value;
+            newMetadata[repoPath] = { routePrefix, defaultBranch, avatarUrl };
+          }
         }
       }
 
-      set({ openReviews: updated, activeTabIndex: newActiveIndex });
-      storage.set(STORAGE_KEY, updated);
-    },
-
-    setActiveTab: (index) => {
-      const { openReviews } = get();
-      if (index >= 0 && index < openReviews.length) {
-        set({ activeTabIndex: index });
-      }
-    },
-
-    updateReviewMetadata: (index, metadata) => {
-      const { openReviews } = get();
-      if (index < 0 || index >= openReviews.length) return;
-
-      const updated = openReviews.map((review, i) => {
-        if (i !== index) return review;
-        return {
-          ...review,
-          ...(metadata.defaultBranch !== undefined && {
-            defaultBranch: metadata.defaultBranch,
-          }),
-          ...(metadata.diffStats !== undefined && {
-            diffStats: metadata.diffStats,
-          }),
-          ...(metadata.reviewProgress !== undefined && {
-            reviewProgress: metadata.reviewProgress,
-          }),
-        };
+      set({
+        globalReviews: reviews,
+        globalReviewsLoading: false,
+        repoMetadata: newMetadata,
       });
 
-      set({ openReviews: updated });
-      storage.set(STORAGE_KEY, updated);
-    },
-  });
+      // Fetch diff stats in parallel (fire-and-forget, non-blocking)
+      const statsResults = await Promise.allSettled(
+        reviews.map(async (review) => {
+          const stat = await client.getDiffShortStat(
+            review.repoPath,
+            review.comparison,
+          );
+          return { key: `${review.repoPath}:${review.comparison.key}`, stat };
+        }),
+      );
+      const newStats: Record<string, DiffShortStat> = {};
+      for (const result of statsResults) {
+        if (result.status === "fulfilled") {
+          newStats[result.value.key] = result.value.stat;
+        }
+      }
+      set({ reviewDiffStats: newStats });
+    } catch (err) {
+      console.error("Failed to load global reviews:", err);
+      set({ globalReviewsLoading: false });
+    }
+  },
+
+  setActiveReviewKey: (key) => {
+    set({ activeReviewKey: key });
+  },
+
+  ensureReviewExists: async (repoPath, comparison) => {
+    try {
+      await client.ensureReviewExists(repoPath, comparison);
+    } catch (err) {
+      console.error("Failed to ensure review exists:", err);
+    }
+  },
+
+  deleteGlobalReview: async (repoPath, comparison) => {
+    try {
+      await client.deleteReview(repoPath, comparison);
+      // If the deleted review was active, clear the active key
+      const { activeReviewKey } = get();
+      if (
+        activeReviewKey?.repoPath === repoPath &&
+        activeReviewKey?.comparisonKey === comparison.key
+      ) {
+        set({ activeReviewKey: null });
+      }
+      // Refresh sidebar
+      await get().loadGlobalReviews();
+    } catch (err) {
+      console.error("Failed to delete review:", err);
+    }
+  },
+});

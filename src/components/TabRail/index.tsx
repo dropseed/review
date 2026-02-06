@@ -4,18 +4,21 @@ import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { TabRailItem } from "./TabRailItem";
 import { ComparisonPickerModal } from "../ComparisonPickerModal";
+import type { GlobalReviewSummary } from "../../types";
 
 interface TabRailProps {
   onOpenRepo: () => Promise<void>;
+  onActivateReview: (review: GlobalReviewSummary) => void;
 }
 
-export function TabRail({ onOpenRepo }: TabRailProps) {
+export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
   const navigate = useNavigate();
-  const openReviews = useReviewStore((s) => s.openReviews);
-  const activeTabIndex = useReviewStore((s) => s.activeTabIndex);
-  const setActiveTab = useReviewStore((s) => s.setActiveTab);
-  const removeOpenReview = useReviewStore((s) => s.removeOpenReview);
-  const setRepoPath = useReviewStore((s) => s.setRepoPath);
+  const globalReviews = useReviewStore((s) => s.globalReviews);
+  const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
+  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+  const repoMetadata = useReviewStore((s) => s.repoMetadata);
+  const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
+  const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
 
   const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
@@ -36,51 +39,18 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
     maxWidth: 24,
   });
 
-  const handleActivateTab = useCallback(
-    (index: number) => {
-      const review = openReviews[index];
-      if (!review) return;
-
-      setActiveTab(index);
-      navigate(`/${review.routePrefix}/review/${review.comparison.key}`);
-
-      const currentRepoPath = useReviewStore.getState().repoPath;
-      if (review.repoPath !== currentRepoPath) {
-        setRepoPath(review.repoPath);
-      }
-    },
-    [openReviews, setActiveTab, navigate, setRepoPath],
-  );
-
-  const handleCloseTab = useCallback(
-    (index: number) => {
-      const isLast = openReviews.length === 1;
-      removeOpenReview(index);
-
-      if (isLast) {
+  const handleDeleteReview = useCallback(
+    (review: GlobalReviewSummary) => {
+      deleteGlobalReview(review.repoPath, review.comparison);
+      // If the deleted review was the active one, navigate home
+      if (
+        activeReviewKey?.repoPath === review.repoPath &&
+        activeReviewKey?.comparisonKey === review.comparison.key
+      ) {
         navigate("/");
-      } else {
-        const state = useReviewStore.getState();
-        const newIndex = state.activeTabIndex;
-        if (newIndex !== null && state.openReviews[newIndex]) {
-          const review = state.openReviews[newIndex];
-          navigate(`/${review.routePrefix}/review/${review.comparison.key}`);
-          if (review.repoPath !== state.repoPath) {
-            setRepoPath(review.repoPath);
-          }
-        }
       }
     },
-    [openReviews.length, removeOpenReview, navigate, setRepoPath],
-  );
-
-  // Context menu: "New Review in This Repo..." — pre-fill with that tab's repo
-  const handleNewReviewInRepo = useCallback(
-    (repoPath: string) => {
-      setComparisonPickerRepoPath(repoPath);
-      setComparisonPickerOpen(true);
-    },
-    [setComparisonPickerRepoPath, setComparisonPickerOpen],
+    [deleteGlobalReview, activeReviewKey, navigate],
   );
 
   // "+" button: open modal with no pre-filled repo (step 1)
@@ -99,13 +69,13 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
       {/* Rail panel */}
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
-                   bg-black/5 border-r border-white/[0.08] overflow-hidden
+                   bg-stone-950/80 backdrop-blur-md border-r border-white/[0.06] overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{
           width: collapsed ? 0 : `${sidebarWidth}rem`,
           opacity: collapsed ? 0 : 1,
         }}
-        aria-label="Open reviews"
+        aria-label="Reviews"
         aria-hidden={collapsed}
       >
         <div
@@ -114,31 +84,53 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
         >
           {/* Header — matches h-12 main header */}
           <div
-            className="shrink-0 flex items-center h-12 px-3"
+            className="shrink-0 flex items-center justify-between h-12 pl-3.5 pr-3"
             data-tauri-drag-region
           >
             <span className="text-[10px] font-medium uppercase tracking-widest text-stone-500">
               Reviews
             </span>
+            <button
+              type="button"
+              onClick={handleAddReview}
+              className="p-1 rounded text-stone-500 hover:text-stone-300 hover:bg-white/[0.08]
+                         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50
+                         transition-colors duration-100"
+              aria-label="New review"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
           </div>
 
-          {/* Scrollable tab list */}
+          {/* Scrollable review list — flat, sorted by recency */}
           <div
             className="flex-1 overflow-y-auto scrollbar-thin px-1.5 py-1"
             role="tablist"
           >
-            {openReviews.map((review, index) => (
-              <TabRailItem
-                key={`${review.repoPath}:${review.comparison.key}`}
-                review={review}
-                isActive={index === activeTabIndex}
-                onActivate={() => handleActivateTab(index)}
-                onClose={() => handleCloseTab(index)}
-                onNewReviewInRepo={() => handleNewReviewInRepo(review.repoPath)}
-              />
-            ))}
+            {globalReviewsLoading && globalReviews.length === 0 && (
+              <div className="space-y-2 px-2 py-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse space-y-1">
+                    <div className="h-2.5 w-16 rounded bg-white/[0.06]" />
+                    <div className="h-8 rounded bg-white/[0.04]" />
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {openReviews.length === 0 && (
+            {!globalReviewsLoading && globalReviews.length === 0 && (
               <div className="px-2 py-8 text-center">
                 <svg
                   className="h-6 w-6 mx-auto mb-2 text-stone-600"
@@ -153,40 +145,34 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
-                <p className="text-2xs text-stone-500">No reviews open</p>
+                <p className="text-2xs text-stone-500">No reviews yet</p>
                 <p className="text-xxs text-stone-600 mt-1">
                   Press &ldquo;+&rdquo; to start
                 </p>
               </div>
             )}
-          </div>
 
-          {/* Add button */}
-          <div className="shrink-0 px-1.5 pb-2 pt-1">
-            <button
-              type="button"
-              onClick={handleAddReview}
-              className="flex items-center gap-1.5 w-full px-2.5 py-1.5 rounded-md
-                         text-stone-500 hover:text-stone-300 hover:bg-white/[0.06]
-                         focus-visible:text-stone-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50
-                         transition-colors duration-100 text-2xs"
-              aria-label="Add review"
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              <span>New Review</span>
-            </button>
+            {globalReviews.map((review) => {
+              const meta = repoMetadata[review.repoPath];
+              const displayName = meta?.routePrefix ?? review.repoName;
+              const isActive =
+                activeReviewKey?.repoPath === review.repoPath &&
+                activeReviewKey?.comparisonKey === review.comparison.key;
+              const statsKey = `${review.repoPath}:${review.comparison.key}`;
+              return (
+                <TabRailItem
+                  key={statsKey}
+                  review={review}
+                  repoName={displayName}
+                  defaultBranch={meta?.defaultBranch}
+                  isActive={isActive}
+                  diffStats={reviewDiffStats[statsKey]}
+                  avatarUrl={meta?.avatarUrl}
+                  onActivate={() => onActivateReview(review)}
+                  onDelete={() => handleDeleteReview(review)}
+                />
+              );
+            })}
           </div>
         </div>
 

@@ -143,6 +143,9 @@ export interface ApiClient {
   /** Delete a saved review */
   deleteReview(repoPath: string, comparison: Comparison): Promise<void>;
 
+  /** Create an empty review file on disk if it doesn't already exist */
+  ensureReviewExists(repoPath: string, comparison: Comparison): Promise<void>;
+
   /** List all reviews across all registered repos */
   listAllReviewsGlobal(): Promise<GlobalReviewSummary[]>;
 

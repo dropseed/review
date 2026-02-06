@@ -148,11 +148,8 @@ export function useMenuEvents({
         "menu:new-review",
         () => {
           const state = useReviewStore.getState();
-          const activeReview =
-            state.activeTabIndex !== null
-              ? state.openReviews[state.activeTabIndex]
-              : null;
-          setComparisonPickerRepoPath(activeReview?.repoPath ?? null);
+          const activeKey = state.activeReviewKey;
+          setComparisonPickerRepoPath(activeKey?.repoPath ?? null);
           setComparisonPickerOpen(true);
         },
       ],
