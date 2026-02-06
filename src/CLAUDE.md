@@ -42,7 +42,7 @@ Organized by feature area:
 - `FileViewer/` — Diff view, code view, annotations, minimap, in-file search
 - `FilesPanel/` — File tree sidebar, flat file list, commit panel
 - `OverviewView/` — Summary stats, trust section, drill-down
-- `StartScreen/` — Comparison form sub-components (NewComparisonForm, BranchSelect, SavedReviewList, WorkingTreeCard)
+- `ComparisonPicker/` — Comparison form sub-components (NewComparisonForm, BranchSelect)
 - `TabRail/` — Tab navigation sidebar
 - `ui/` — Shared primitives (dialog, popover, tooltip, tabs, etc.)
 

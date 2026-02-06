@@ -5,7 +5,7 @@ import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
-import { NewComparisonForm } from "./StartScreen/NewComparisonForm";
+import { NewComparisonForm } from "./ComparisonPicker/NewComparisonForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface ComparisonPickerModalProps {
