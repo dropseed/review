@@ -168,7 +168,7 @@ export function ReviewView({
     "repo";
 
   return (
-    <div className="flex h-full flex-col bg-stone-950">
+    <div className="flex h-full flex-col bg-stone-900">
       {/* Header */}
       <header className="flex h-12 items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] px-4">
         {/* Left: breadcrumb + status indicators */}
@@ -303,14 +303,14 @@ export function ReviewView({
       {/* Main content */}
       <div className="flex flex-1 flex-row overflow-hidden">
         {/* Code viewer */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-900">
           <ContentArea />
           <FeedbackPanel />
         </main>
 
         {/* FilesPanel (right side) */}
         <aside
-          className="relative flex flex-shrink-0 flex-col bg-stone-950 shadow-[-1px_0_0_0_rgba(255,255,255,0.04)]"
+          className="relative flex flex-shrink-0 flex-col bg-stone-900 shadow-[-1px_0_0_0_rgba(255,255,255,0.04)]"
           style={{ width: `${sidebarWidth}rem` }}
         >
           {/* Sidebar content */}

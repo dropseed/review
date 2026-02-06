@@ -719,7 +719,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
         )}
         <div
           ref={setScrollNode}
-          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-950 ${hasChanges && !showImageViewer ? "scrollbar-none" : "scrollbar-thin"}`}
+          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-900 ${hasChanges && !showImageViewer ? "scrollbar-none" : "scrollbar-thin"}`}
         >
           <FileContentRenderer
             filePath={filePath}

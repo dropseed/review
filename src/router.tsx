@@ -98,7 +98,7 @@ function AppShell() {
       <UpdateBanner />
       <div className="flex h-screen">
         <TabRail onOpenRepo={handleOpenRepo} />
-        <div className="flex flex-1 flex-col overflow-hidden bg-stone-950">
+        <div className="flex flex-1 flex-col overflow-hidden bg-stone-900">
           <Outlet
             context={{
               repoStatus,
