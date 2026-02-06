@@ -93,7 +93,35 @@ When working on frontend code, use these skills:
 
 - `/frontend-design` - For building UI components and interfaces with high design quality
 - `/web-design-guidelines` - To review UI code for accessibility and best practices
-- `/vercel-react-best-practices` - For React/Next.js performance patterns when writing or refactoring components
+
+## Key Files
+
+Note: `src/` is the frontend (React/TypeScript), `review/src/` is the Rust core library.
+
+- `src/stores/index.ts` - Combined Zustand store (12 slices)
+- `src/stores/slices/reviewSlice.ts` - Review state (approvals, trust labels, notes)
+- `src/stores/slices/classificationSlice.ts` - Hunk classification state
+- `src/stores/slices/navigationSlice.ts` - File/hunk navigation
+- `src/stores/slices/preferencesSlice.ts` - UI preferences (persisted via Tauri Store)
+- `src-tauri/src/desktop/commands.rs` - All Tauri commands (frontend ↔ Rust bridge)
+- `src-tauri/src/desktop/mod.rs` - App setup, menus, plugin registration
+- `review/src/classify/mod.rs` - Classification entry point
+- `review/src/trust/mod.rs` - Trust pattern matching
+- `review/src/diff/mod.rs` - Diff parsing entry point
+- `review/src/review/mod.rs` - Review state types and persistence
+- `review/resources/taxonomy.json` - Trust pattern taxonomy definition
+
+## Conventions
+
+- **Frontend state**: Zustand store slices in `src/stores/slices/`, combined in `src/stores/index.ts`, accessed via `useReviewStore` hook
+- **Tauri IPC**: Commands defined in `commands.rs` as `#[tauri::command]` fns, called from frontend via `invoke("command_name", { args })`
+- **API abstraction**: `src/api/` provides an `ApiClient` interface; `tauri-client.ts` wraps `invoke()` calls, `http-client.ts` is for web/debug
+- **Platform abstraction**: `src/platform/` abstracts Tauri vs web (storage, file paths)
+- **Error handling**: Rust uses `anyhow::Result`, Tauri commands return `Result<T, String>`, frontend uses try/catch on `invoke()`
+- **Styling**: Tailwind CSS v4, utility classes with `tailwind-merge`
+- **File naming**: kebab-case for utilities, PascalCase for React components
+- **Components**: Feature-organized under `src/components/` (e.g., `FileViewer/`, `FilesPanel/`, `OverviewView/`, `StartScreen/`)
+- **Hooks**: Custom hooks in `src/hooks/` for lifecycle concerns (file watching, keyboard nav, scroll tracking)
 
 ## Trust Patterns Taxonomy
 

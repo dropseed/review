@@ -1,0 +1,6 @@
+# Lock files (16K+ lines combined — Claude never needs these)
+Cargo.lock
+package-lock.json
+
+# Eval data (only relevant when working on classifier)
+review/resources/eval/
