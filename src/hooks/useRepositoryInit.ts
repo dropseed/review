@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { makeComparison, type Comparison } from "../types";
-import { setLoggerRepoPath, clearLog } from "../utils/logger";
+import { initLogPath, clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
@@ -168,7 +168,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const urlRepoPath = getRepoPathFromUrl();
       if (urlRepoPath) {
         setRepoPath(urlRepoPath);
-        setLoggerRepoPath(urlRepoPath);
+        initLogPath(urlRepoPath);
         clearLog();
         setRepoStatus("found");
         addRecentRepository(urlRepoPath);
@@ -219,7 +219,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           return;
         }
         setRepoPath(storedPath);
-        setLoggerRepoPath(storedPath);
+        initLogPath(storedPath);
         setRepoStatus("found");
         addRecentRepository(storedPath);
         return;
@@ -230,7 +230,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       try {
         const path = await apiClient.getCurrentRepo();
         setRepoPath(path);
-        setLoggerRepoPath(path);
+        initLogPath(path);
         clearLog();
         setRepoStatus("found");
         addRecentRepository(path);
@@ -315,7 +315,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       if (!(await validateGitRepo(path))) return;
 
       setRepoPath(path);
-      setLoggerRepoPath(path);
+      initLogPath(path);
       clearLog();
       setRepoStatus("found");
       setRepoError(null);

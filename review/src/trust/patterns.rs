@@ -23,27 +23,27 @@ struct TaxonomyFile {
     categories: Vec<TrustCategory>,
 }
 
+/// Fill in empty `category` fields on each pattern from the parent category ID.
+fn fill_pattern_categories(categories: Vec<TrustCategory>) -> Vec<TrustCategory> {
+    categories
+        .into_iter()
+        .map(|mut cat| {
+            for pattern in &mut cat.patterns {
+                if pattern.category.is_empty() {
+                    pattern.category.clone_from(&cat.id);
+                }
+            }
+            cat
+        })
+        .collect()
+}
+
 /// Load the trust taxonomy from JSON.
 /// First tries to load from bundled resources, then falls back to hardcoded.
 pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
-    // Try to load from bundled resource
     let json_str = include_str!("../../resources/taxonomy.json");
     match serde_json::from_str::<TaxonomyFile>(json_str) {
-        Ok(taxonomy) => {
-            // Fill in category field for each pattern
-            taxonomy
-                .categories
-                .into_iter()
-                .map(|mut cat| {
-                    for pattern in &mut cat.patterns {
-                        if pattern.category.is_empty() {
-                            pattern.category.clone_from(&cat.id);
-                        }
-                    }
-                    cat
-                })
-                .collect()
-        }
+        Ok(taxonomy) => fill_pattern_categories(taxonomy.categories),
         Err(e) => {
             eprintln!("[load_taxonomy_from_json] Failed to parse bundled taxonomy: {e}");
             get_default_taxonomy()
@@ -51,16 +51,19 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
     }
 }
 
-/// Load custom patterns from a repository's .git/review/custom-patterns.json
+/// Load custom patterns from a repository's central storage directory.
 /// Returns an empty vec if the file doesn't exist or can't be parsed.
 ///
 /// Note: This function returns an empty vec on errors to allow graceful degradation.
 /// Errors are logged for debugging but don't prevent the app from working.
 pub fn load_custom_patterns(repo_path: &Path) -> Vec<TrustCategory> {
-    let custom_path = repo_path
-        .join(".git")
-        .join("review")
-        .join("custom-patterns.json");
+    let custom_path = match crate::review::central::get_repo_storage_dir(repo_path) {
+        Ok(dir) => dir.join("custom-patterns.json"),
+        Err(e) => {
+            eprintln!("[load_custom_patterns] Could not resolve central storage dir: {e}");
+            return vec![];
+        }
+    };
 
     if !custom_path.exists() {
         return vec![];
@@ -69,28 +72,15 @@ pub fn load_custom_patterns(repo_path: &Path) -> Vec<TrustCategory> {
     match std::fs::read_to_string(&custom_path) {
         Ok(content) => match serde_json::from_str::<TaxonomyFile>(&content) {
             Ok(taxonomy) => {
-                // Log successful load for debugging
                 #[cfg(debug_assertions)]
                 eprintln!(
                     "[load_custom_patterns] Loaded {} custom categories from {}",
                     taxonomy.categories.len(),
                     custom_path.display()
                 );
-                taxonomy
-                    .categories
-                    .into_iter()
-                    .map(|mut cat| {
-                        for pattern in &mut cat.patterns {
-                            if pattern.category.is_empty() {
-                                pattern.category.clone_from(&cat.id);
-                            }
-                        }
-                        cat
-                    })
-                    .collect()
+                fill_pattern_categories(taxonomy.categories)
             }
             Err(e) => {
-                // Log parse errors - user should fix their custom-patterns.json
                 eprintln!(
                     "[load_custom_patterns] Warning: Failed to parse custom patterns at {}: {e}",
                     custom_path.display()
@@ -99,7 +89,6 @@ pub fn load_custom_patterns(repo_path: &Path) -> Vec<TrustCategory> {
             }
         },
         Err(e) => {
-            // Log read errors - could be permissions or corruption
             eprintln!(
                 "[load_custom_patterns] Warning: Failed to read custom patterns at {}: {e}",
                 custom_path.display()

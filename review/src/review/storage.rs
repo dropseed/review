@@ -1,5 +1,7 @@
+use super::central;
 use super::state::{ReviewState, ReviewSummary};
 use crate::sources::traits::Comparison;
+use serde::Serialize;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,16 +15,64 @@ pub enum StorageError {
     Json(#[from] serde_json::Error),
     #[error("Version conflict: expected version {expected}, found {found}. Another process modified the file.")]
     VersionConflict { expected: u64, found: u64 },
+    #[error("Central storage error: {0}")]
+    Central(#[from] central::CentralError),
 }
 
-/// Get the storage directory for review state
-fn get_storage_dir(repo_path: &Path) -> PathBuf {
-    repo_path.join(".git").join("review").join("reviews")
+/// Get the storage directory for review state (centralized).
+fn get_storage_dir(repo_path: &Path) -> Result<PathBuf, StorageError> {
+    Ok(central::get_repo_storage_dir(repo_path)?.join("reviews"))
 }
 
-/// Get the file path for storing the current comparison
-fn get_current_comparison_path(repo_path: &Path) -> PathBuf {
-    repo_path.join(".git").join("review").join("current")
+/// Get the file path for storing the current comparison (centralized).
+fn get_current_comparison_path(repo_path: &Path) -> Result<PathBuf, StorageError> {
+    Ok(central::get_repo_storage_dir(repo_path)?.join("current"))
+}
+
+/// A review summary tagged with repo information (for cross-repo listing).
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobalReviewSummary {
+    #[serde(flatten)]
+    pub summary: ReviewSummary,
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "repoName")]
+    pub repo_name: String,
+}
+
+/// List all reviews across all registered repos.
+pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageError> {
+    let repos = central::list_registered_repos()?;
+    let mut all = Vec::new();
+
+    for entry in repos {
+        let repo_path = PathBuf::from(&entry.path);
+        // Skip repos whose paths no longer exist
+        if !repo_path.exists() {
+            continue;
+        }
+        match list_saved_reviews(&repo_path) {
+            Ok(summaries) => {
+                for summary in summaries {
+                    all.push(GlobalReviewSummary {
+                        summary,
+                        repo_path: entry.path.clone(),
+                        repo_name: entry.name.clone(),
+                    });
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "[list_all_reviews_global] Error listing reviews for {}: {}",
+                    entry.path, e
+                );
+            }
+        }
+    }
+
+    // Sort by updated_at descending (most recent first)
+    all.sort_by(|a, b| b.summary.updated_at.cmp(&a.summary.updated_at));
+    Ok(all)
 }
 
 /// Sanitize a comparison key for use as a filename
@@ -41,7 +91,7 @@ pub fn load_review_state(
     repo_path: &Path,
     comparison: &Comparison,
 ) -> Result<ReviewState, StorageError> {
-    let storage_dir = get_storage_dir(repo_path);
+    let storage_dir = get_storage_dir(repo_path)?;
     let filename = comparison_filename(comparison);
     let path = storage_dir.join(&filename);
 
@@ -63,7 +113,10 @@ pub fn load_review_state(
 ///
 /// Call `state.prepare_for_save()` before saving to increment the version.
 pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), StorageError> {
-    let storage_dir = get_storage_dir(repo_path);
+    // Register repo in central index on first save
+    central::register_repo(repo_path)?;
+
+    let storage_dir = get_storage_dir(repo_path)?;
     fs::create_dir_all(&storage_dir)?;
 
     let filename = comparison_filename(&state.comparison);
@@ -95,7 +148,7 @@ pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), St
 
 /// Get the current comparison (persisted across sessions)
 pub fn get_current_comparison(repo_path: &Path) -> Result<Option<Comparison>, StorageError> {
-    let path = get_current_comparison_path(repo_path);
+    let path = get_current_comparison_path(repo_path)?;
 
     if path.exists() {
         let content = fs::read_to_string(&path)?;
@@ -111,7 +164,7 @@ pub fn set_current_comparison(
     repo_path: &Path,
     comparison: &Comparison,
 ) -> Result<(), StorageError> {
-    let path = get_current_comparison_path(repo_path);
+    let path = get_current_comparison_path(repo_path)?;
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
@@ -126,7 +179,7 @@ pub fn set_current_comparison(
 
 /// List all saved reviews in the repository
 pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, StorageError> {
-    let storage_dir = get_storage_dir(repo_path);
+    let storage_dir = get_storage_dir(repo_path)?;
 
     if !storage_dir.exists() {
         return Ok(Vec::new());
@@ -172,7 +225,7 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
 
 /// Delete a saved review
 pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
-    let storage_dir = get_storage_dir(repo_path);
+    let storage_dir = get_storage_dir(repo_path)?;
     let filename = comparison_filename(comparison);
     let path = storage_dir.join(&filename);
 
@@ -186,6 +239,7 @@ pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::review::central::tests::ENV_LOCK;
     use crate::review::state::HunkState;
     use tempfile::TempDir;
 
@@ -200,11 +254,17 @@ mod tests {
         }
     }
 
-    fn create_test_repo() -> TempDir {
+    /// Create a test repo and set REVIEW_HOME to a temp dir.
+    /// Returns (repo_dir, review_home_dir) — both TempDirs kept alive.
+    fn create_test_repo() -> (TempDir, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         // Create .git directory to simulate a git repo
         fs::create_dir(temp_dir.path().join(".git")).unwrap();
-        temp_dir
+
+        let review_home = TempDir::new().unwrap();
+        std::env::set_var("REVIEW_HOME", review_home.path());
+
+        (temp_dir, review_home)
     }
 
     #[test]
@@ -227,7 +287,8 @@ mod tests {
 
     #[test]
     fn test_load_review_state_creates_new_if_not_exists() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
         let comparison = create_test_comparison();
 
@@ -239,7 +300,8 @@ mod tests {
 
     #[test]
     fn test_save_and_load_review_state_roundtrip() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
         let comparison = create_test_comparison();
 
@@ -273,7 +335,8 @@ mod tests {
 
     #[test]
     fn test_list_saved_reviews_empty() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let reviews = list_saved_reviews(&repo_path).unwrap();
@@ -282,7 +345,8 @@ mod tests {
 
     #[test]
     fn test_list_saved_reviews_with_reviews() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Create and save two reviews
@@ -312,7 +376,8 @@ mod tests {
 
     #[test]
     fn test_delete_review() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
         let comparison = create_test_comparison();
 
@@ -333,7 +398,8 @@ mod tests {
 
     #[test]
     fn test_delete_review_nonexistent() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
         let comparison = create_test_comparison();
 
@@ -344,7 +410,8 @@ mod tests {
 
     #[test]
     fn test_current_comparison_roundtrip() {
-        let temp_dir = create_test_repo();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
         let comparison = create_test_comparison();
 

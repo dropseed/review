@@ -18,7 +18,7 @@ use review::diff::parser::{
 };
 use review::narrative::NarrativeInput;
 use review::review::state::{ReviewState, ReviewSummary};
-use review::review::storage;
+use review::review::storage::{self, GlobalReviewSummary};
 use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
 use review::sources::local_git::{DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
@@ -878,6 +878,18 @@ pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), St
 }
 
 #[tauri::command]
+pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, String> {
+    storage::list_all_reviews_global().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_review_storage_path(repo_path: String) -> Result<String, String> {
+    review::review::central::get_repo_storage_dir(&PathBuf::from(&repo_path))
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_current_branch(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_current_branch().map_err(|e| e.to_string())
@@ -1049,7 +1061,7 @@ pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsRespo
     DetectMovePairsResponse { pairs, hunks }
 }
 
-/// Validate that a path is within .git/review/ for security
+/// Validate that a path is within .git/review/ or ~/.review/ for security
 fn validate_review_path(path: &str) -> Result<PathBuf, String> {
     let path_buf = PathBuf::from(path);
 
@@ -1058,13 +1070,22 @@ fn validate_review_path(path: &str) -> Result<PathBuf, String> {
         return Err("Path traversal detected: path contains '..'".to_owned());
     }
 
-    // The path must contain .git/review/ to be valid
     let path_str = path.replace('\\', "/");
-    if !path_str.contains("/.git/review/") && !path_str.contains(".git/review/") {
-        return Err("Security error: writes are only allowed to .git/review/ directory".to_owned());
+
+    // Allow writes to .git/review/ (legacy log path)
+    if path_str.contains("/.git/review/") || path_str.contains(".git/review/") {
+        return Ok(path_buf);
     }
 
-    Ok(path_buf)
+    // Allow writes to the central ~/.review/ directory
+    if path_str.contains("/.review/repos/") || path_str.contains(".review/repos/") {
+        return Ok(path_buf);
+    }
+
+    Err(
+        "Security error: writes are only allowed to .git/review/ or ~/.review/ directory"
+            .to_owned(),
+    )
 }
 
 #[tauri::command]

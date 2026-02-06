@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { Comparison } from "../types";
 import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
-import { setLoggerRepoPath, clearLog } from "../utils/logger";
+import { initLogPath, clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
 import { NewComparisonForm } from "./ComparisonPicker/NewComparisonForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -60,7 +60,7 @@ export function ComparisonPickerModal({
 
       // Activate the repo in the store
       setRepoPath(selectedRepoPath);
-      setLoggerRepoPath(selectedRepoPath);
+      initLogPath(selectedRepoPath);
       clearLog();
       addRecentRepository(selectedRepoPath);
 

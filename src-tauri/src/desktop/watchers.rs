@@ -20,7 +20,11 @@ const WATCHER_DEBOUNCE_MS: u64 = 200;
 fn log_to_file(repo_path: &Path, message: &str) {
     use std::io::Write;
 
-    let log_path = repo_path.join(".git/review/app.log");
+    let log_path = if let Ok(dir) = review::review::central::get_repo_storage_dir(repo_path) {
+        dir.join("app.log")
+    } else {
+        return;
+    };
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -157,18 +161,27 @@ enum ChangeKind {
     Ignored,
 }
 
+/// Check if a path has a `.log` extension (case-insensitive).
+fn is_log_file(path_str: &str) -> bool {
+    std::path::Path::new(path_str)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("log"))
+}
+
 fn categorize_change(path_str: &str) -> ChangeKind {
     if should_ignore_path(path_str) {
         return ChangeKind::Ignored;
     }
 
-    // Review state files (inside .git/review/) - but not log files
-    if path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\") {
+    // Review state files in central storage (~/.review/) or legacy (.git/review/)
+    let is_central_review =
+        path_str.contains("/.review/repos/") || path_str.contains("\\.review\\repos\\");
+    let is_legacy_review =
+        path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\");
+
+    if is_central_review || is_legacy_review {
         // Ignore log files to prevent feedback loops with our own logging
-        if std::path::Path::new(path_str)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("log"))
-        {
+        if is_log_file(path_str) {
             return ChangeKind::Ignored;
         }
         return ChangeKind::ReviewState;
@@ -197,12 +210,6 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
 
     if !git_dir.exists() {
         return Err(format!("Not a git repository: {repo_path}"));
-    }
-
-    // Create review directory if it doesn't exist (so we can watch it)
-    let human_review_dir = git_dir.join("review");
-    if !human_review_dir.exists() {
-        std::fs::create_dir_all(&human_review_dir).ok();
     }
 
     // Build gitignore matcher for this repo
@@ -298,6 +305,16 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         .watcher()
         .watch(&repo_path_buf, RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch repository: {e}"))?;
+
+    // Also watch the repo's central storage dir for review state changes
+    if let Ok(central_dir) = review::review::central::get_repo_storage_dir(&repo_path_buf) {
+        if central_dir.exists() {
+            debouncer
+                .watcher()
+                .watch(&central_dir, RecursiveMode::Recursive)
+                .ok();
+        }
+    }
 
     // Store the watcher handle
     let handle = WatcherHandle {

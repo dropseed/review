@@ -19,6 +19,7 @@ import type {
   FileContent,
   ReviewState,
   ReviewSummary,
+  GlobalReviewSummary,
   TrustCategory,
   DiffHunk,
   DiffShortStat,
@@ -204,6 +205,14 @@ export class TauriClient implements ApiClient {
 
   async deleteReview(repoPath: string, comparison: Comparison): Promise<void> {
     await invoke("delete_review", { repoPath, comparison });
+  }
+
+  async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {
+    return invoke<GlobalReviewSummary[]>("list_all_reviews_global");
+  }
+
+  async getReviewStoragePath(repoPath: string): Promise<string> {
+    return invoke<string>("get_review_storage_path", { repoPath });
   }
 
   async getCurrentComparison(repoPath: string): Promise<Comparison | null> {

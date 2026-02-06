@@ -18,6 +18,7 @@ import type {
   FileContent,
   ReviewState,
   ReviewSummary,
+  GlobalReviewSummary,
   TrustCategory,
   DiffHunk,
   ClassifyResponse,
@@ -360,6 +361,16 @@ export class HttpClient implements ApiClient {
     } catch (err) {
       console.warn("[HttpClient] Failed to delete state from server:", err);
     }
+  }
+
+  async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {
+    console.warn("[HttpClient] listAllReviewsGlobal not implemented");
+    return [];
+  }
+
+  async getReviewStoragePath(_repoPath: string): Promise<string> {
+    console.warn("[HttpClient] getReviewStoragePath not implemented");
+    return "";
   }
 
   async getCurrentComparison(repoPath: string): Promise<Comparison | null> {

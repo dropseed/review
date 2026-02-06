@@ -1,11 +1,25 @@
+import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
 
-const LOG_FILE = ".git/review/app.log";
-let repoPath: string | null = null;
+let logFilePath: string | null = null;
 
-// Set the repo path for logging (call this once app knows the repo)
-export function setLoggerRepoPath(path: string | null) {
-  repoPath = path;
+// Set the log file path directly (call once central storage path is known)
+export function setLogFilePath(path: string | null) {
+  logFilePath = path;
+}
+
+// Resolve the central storage path for a repo and set the log file path.
+export function initLogPath(repoPath: string): void {
+  getApiClient()
+    .getReviewStoragePath(repoPath)
+    .then((storagePath) => {
+      if (storagePath) {
+        setLogFilePath(`${storagePath}/app.log`);
+      }
+    })
+    .catch(() => {
+      // Silently fall back -- no log file
+    });
 }
 
 // Format a log message with timestamp and level
@@ -26,15 +40,16 @@ function formatMessage(level: string, args: unknown[]): string {
 
 // Write to log file (fire and forget) - only in Tauri environment
 function writeToFile(line: string) {
-  if (!repoPath) return;
+  if (!logFilePath) return;
   if (!isTauriEnvironment()) return;
 
-  const fullPath = `${repoPath}/${LOG_FILE}`;
   // Dynamically import to avoid loading Tauri in browser
   import("@tauri-apps/api/core").then(({ invoke }) => {
-    invoke("append_to_file", { path: fullPath, contents: line }).catch(() => {
-      // Silently fail
-    });
+    invoke("append_to_file", { path: logFilePath, contents: line }).catch(
+      () => {
+        // Silently fail
+      },
+    );
   });
 }
 
@@ -82,13 +97,12 @@ export function initializeLogger() {
 // Clear the log file (dev only)
 export async function clearLog() {
   if (!import.meta.env.DEV) return;
-  if (!repoPath) return;
+  if (!logFilePath) return;
   if (!isTauriEnvironment()) return;
 
-  const fullPath = `${repoPath}/${LOG_FILE}`;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("write_text_file", { path: fullPath, contents: "" });
+    await invoke("write_text_file", { path: logFilePath, contents: "" });
   } catch {
     // Silently fail
   }

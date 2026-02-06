@@ -120,6 +120,7 @@ impl From<crate::review::storage::StorageError> for AppError {
             StorageError::VersionConflict { expected, found } => AppError::storage(format!(
                 "Version conflict: expected version {expected}, found {found}. Another process modified the file."
             )),
+            StorageError::Central(e) => AppError::storage(format!("Central storage: {e}")),
         }
     }
 }

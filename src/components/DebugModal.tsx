@@ -70,11 +70,11 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
     [inMemoryJsonString],
   );
 
-  // Construct the review state file path
+  // Construct the review state file path (centralized in ~/.review/)
   const reviewStatePath = useMemo(() => {
     if (!repoPath || !comparison) return null;
     const comparisonKey = comparison.key || "unknown";
-    return `${repoPath}/.git/review/reviews/${comparisonKey}.json`;
+    return `~/.review/repos/<repo-id>/reviews/${comparisonKey}.json`;
   }, [repoPath, comparison]);
 
   const handleCopy = useCallback(() => {

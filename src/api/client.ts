@@ -17,6 +17,7 @@ import type {
   FileContent,
   ReviewState,
   ReviewSummary,
+  GlobalReviewSummary,
   TrustCategory,
   DiffHunk,
   DiffShortStat,
@@ -141,6 +142,12 @@ export interface ApiClient {
 
   /** Delete a saved review */
   deleteReview(repoPath: string, comparison: Comparison): Promise<void>;
+
+  /** List all reviews across all registered repos */
+  listAllReviewsGlobal(): Promise<GlobalReviewSummary[]>;
+
+  /** Get the central storage path for a repo */
+  getReviewStoragePath(repoPath: string): Promise<string>;
 
   /** Get the current (last active) comparison for a repo */
   getCurrentComparison(repoPath: string): Promise<Comparison | null>;

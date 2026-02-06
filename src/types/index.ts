@@ -349,6 +349,12 @@ export interface ReviewState {
   narrative?: NarrativeState; // AI-generated narrative walkthrough
 }
 
+// Summary of a saved review tagged with repo info (for cross-repo listing)
+export interface GlobalReviewSummary extends ReviewSummary {
+  repoPath: string;
+  repoName: string;
+}
+
 // Summary of a saved review (for start screen listing)
 export interface ReviewSummary {
   comparison: Comparison;
