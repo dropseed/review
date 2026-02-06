@@ -99,7 +99,7 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
       {/* Rail panel */}
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
-                   bg-white/[0.03] backdrop-blur-xl border-r border-white/[0.06] overflow-hidden
+                   bg-black/10 border-r border-white/[0.08] overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{
           width: collapsed ? 0 : `${sidebarWidth}rem`,
@@ -154,7 +154,9 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
                 <p className="text-2xs text-stone-500">No reviews open</p>
-                <p className="text-xxs text-stone-600 mt-1">Press + to start</p>
+                <p className="text-xxs text-stone-600 mt-1">
+                  Press &ldquo;+&rdquo; to start
+                </p>
               </div>
             )}
           </div>
@@ -166,6 +168,7 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
               onClick={handleAddReview}
               className="flex items-center gap-1.5 w-full px-2.5 py-1.5 rounded-md
                          text-stone-500 hover:text-stone-300 hover:bg-white/[0.06]
+                         focus-visible:text-stone-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50
                          transition-colors duration-100 text-2xs"
               aria-label="Add review"
             >
@@ -190,6 +193,9 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
         {/* Resize handle (right edge) */}
         {!collapsed && (
           <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
             onMouseDown={handleResizeStart}
             className="absolute top-0 right-0 h-full w-1 cursor-col-resize
                        hover:bg-amber-500/50 active:bg-amber-500"

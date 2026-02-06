@@ -223,7 +223,7 @@
 
 /* Base styles */
 body {
-  background: var(--bg-primary);
+  background: transparent;
   color: var(--text-primary);
 }
 

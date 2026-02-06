@@ -12,6 +12,7 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Loading...",
@@ -22,7 +23,7 @@
         "minWidth": 800,
         "minHeight": 600,
         "tabbingIdentifier": "review-main",
-        "backgroundColor": "#0c0a09"
+        "transparent": true
       }
     ],
     "security": {

@@ -154,6 +154,40 @@ export const TabRailItem = memo(function TabRailItem({
             </span>
           )}
         </div>
+        {/* Review progress bar */}
+        {review.reviewProgress && review.reviewProgress.totalHunks > 0 && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className="flex-1 h-[2px] rounded-full bg-white/[0.06] overflow-hidden flex">
+              {review.reviewProgress.trustedHunks > 0 && (
+                <div
+                  className="h-full bg-cyan-500 transition-all duration-300"
+                  style={{
+                    width: `${(review.reviewProgress.trustedHunks / review.reviewProgress.totalHunks) * 100}%`,
+                  }}
+                />
+              )}
+              {review.reviewProgress.approvedHunks > 0 && (
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                  style={{
+                    width: `${(review.reviewProgress.approvedHunks / review.reviewProgress.totalHunks) * 100}%`,
+                  }}
+                />
+              )}
+              {review.reviewProgress.rejectedHunks > 0 && (
+                <div
+                  className="h-full bg-rose-500 transition-all duration-300"
+                  style={{
+                    width: `${(review.reviewProgress.rejectedHunks / review.reviewProgress.totalHunks) * 100}%`,
+                  }}
+                />
+              )}
+            </div>
+            <span className="text-xxs tabular-nums text-stone-600 shrink-0">
+              {review.reviewProgress.reviewedPercent}%
+            </span>
+          </div>
+        )}
       </button>
 
       {/* Context menu */}
