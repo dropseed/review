@@ -8,10 +8,33 @@ interface NewComparisonFormProps {
   repoPath: string;
   onSelectReview: (comparison: Comparison) => void;
   existingComparisonKeys: string[];
-  /** Optional - if provided, skips fetching branches */
   branches?: BranchList | null;
-  /** Optional - if provided, skips fetching defaultBranch */
   defaultBranch?: string | null;
+}
+
+/**
+ * Pick the best default compare branch: prefer the current branch if it
+ * doesn't already have a review, otherwise pick the first local branch
+ * (sorted by most recent commit) without an existing review.
+ */
+function pickSmartDefault(
+  defaultBranch: string,
+  localBranches: string[],
+  currentBranch: string | null,
+  reviewKeys: Set<string>,
+): string | null {
+  if (currentBranch) {
+    const key = `${defaultBranch}..${currentBranch}`;
+    if (!reviewKeys.has(key)) return currentBranch;
+  }
+
+  for (const branch of localBranches) {
+    if (branch === defaultBranch) continue;
+    const key = `${defaultBranch}..${branch}`;
+    if (!reviewKeys.has(key)) return branch;
+  }
+
+  return null;
 }
 
 export function NewComparisonForm({
@@ -28,30 +51,43 @@ export function NewComparisonForm({
   });
   const [branchesLoading, setBranchesLoading] = useState(false);
 
-  // New comparison form state
   const [baseRef, setBaseRef] = useState("");
   const [compareRef, setCompareRef] = useState("");
   const [currentBranch, setCurrentBranch] = useState("HEAD");
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
   const [smartDefaultSet, setSmartDefaultSet] = useState(false);
 
-  // Use props if provided, otherwise use local state
   const branches = branchesProp ?? branchesLocal;
 
-  // Set baseRef from prop when it arrives
+  // Reset state when repoPath changes (component stays mounted in the modal)
+  useEffect(() => {
+    setSmartDefaultSet(false);
+    setBaseRef("");
+    setCompareRef("");
+    setPullRequests([]);
+    setBranchesLocal({ local: [], remote: [], stashes: [] });
+    setCurrentBranch("HEAD");
+  }, [repoPath]);
+
   useEffect(() => {
     if (defaultBranchProp && !baseRef) {
       setBaseRef(defaultBranchProp);
     }
   }, [defaultBranchProp, baseRef]);
 
-  // Load branches on mount (only if not provided as prop)
   useEffect(() => {
-    // If branches are provided as prop, only fetch what we still need
-    if (branchesProp !== undefined && defaultBranchProp !== undefined) {
-      // Both provided - just need current branch, git status for smart default, and PRs
-      const client = getApiClient();
+    const client = getApiClient();
 
+    // Fetch PRs (non-blocking, shared by both paths)
+    client
+      .checkGitHubAvailable(repoPath)
+      .then((avail) => (avail ? client.listPullRequests(repoPath) : []))
+      .then((prs) => setPullRequests(prs))
+      .catch(() => setPullRequests([]));
+
+    // When branches and defaultBranch are provided as props, only fetch
+    // the current branch and saved reviews for smart-default selection.
+    if (branchesProp !== undefined && defaultBranchProp !== undefined) {
       Promise.all([
         client.getCurrentBranch(repoPath),
         client.listSavedReviews(repoPath),
@@ -59,36 +95,15 @@ export function NewComparisonForm({
         .then(([curBranch, reviews]) => {
           setCurrentBranch(curBranch);
 
-          // Smart default logic (only run once)
           if (!smartDefaultSet && defaultBranchProp && branchesProp) {
-            const defBranch = defaultBranchProp;
-            const branchList = branchesProp;
-
             const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
-            let smartDefault: string | null = null;
-
-            // Default to current branch if it differs from base or has uncommitted changes
-            if (curBranch) {
-              const branchKey = `${defBranch}..${curBranch}`;
-              if (!reviewKeys.has(branchKey)) {
-                smartDefault = curBranch;
-              }
-            }
-
-            if (!smartDefault) {
-              for (const branch of branchList.local) {
-                if (branch === defBranch) continue;
-                const branchKey = `${defBranch}..${branch}`;
-                if (!reviewKeys.has(branchKey)) {
-                  smartDefault = branch;
-                  break;
-                }
-              }
-            }
-
-            if (smartDefault) {
-              setCompareRef(smartDefault);
-            }
+            const smartDefault = pickSmartDefault(
+              defaultBranchProp,
+              branchesProp.local,
+              curBranch,
+              reviewKeys,
+            );
+            if (smartDefault) setCompareRef(smartDefault);
             setSmartDefaultSet(true);
           }
         })
@@ -96,19 +111,11 @@ export function NewComparisonForm({
           console.error("Failed to load branch context:", err);
         });
 
-      // Fetch PRs separately (non-blocking)
-      client
-        .checkGitHubAvailable(repoPath)
-        .then((avail) => (avail ? client.listPullRequests(repoPath) : []))
-        .then((prs) => setPullRequests(prs))
-        .catch(() => setPullRequests([]));
-
       return;
     }
 
-    // Fallback: fetch everything (original behavior for standalone usage)
+    // Fallback: fetch everything (standalone usage without props)
     setBranchesLoading(true);
-    const client = getApiClient();
     Promise.all([
       client.listBranches(repoPath),
       client.getDefaultBranch(repoPath),
@@ -120,36 +127,14 @@ export function NewComparisonForm({
         setBaseRef(defBranch);
         setCurrentBranch(curBranch);
 
-        // Smart default for compare branch (only if not already in review):
-        // 1. Default to current branch
-        // 2. Else use the most recently edited branch that doesn't have a review
         const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
-
-        let smartDefault: string | null = null;
-
-        if (curBranch) {
-          const branchKey = `${defBranch}..${curBranch}`;
-          if (!reviewKeys.has(branchKey)) {
-            smartDefault = curBranch;
-          }
-        }
-
-        // Fallback: find the most recently edited branch without a review
-        // (branchList.local is sorted by most recent commit date)
-        if (!smartDefault) {
-          for (const branch of branchList.local) {
-            if (branch === defBranch) continue; // Skip the base branch
-            const branchKey = `${defBranch}..${branch}`;
-            if (!reviewKeys.has(branchKey)) {
-              smartDefault = branch;
-              break;
-            }
-          }
-        }
-
-        if (smartDefault) {
-          setCompareRef(smartDefault);
-        }
+        const smartDefault = pickSmartDefault(
+          defBranch,
+          branchList.local,
+          curBranch,
+          reviewKeys,
+        );
+        if (smartDefault) setCompareRef(smartDefault);
       })
       .catch((err) => {
         console.error("Failed to load branches:", err);
@@ -161,20 +146,11 @@ export function NewComparisonForm({
         setBaseRef("main");
       })
       .finally(() => setBranchesLoading(false));
-
-    // Fetch PRs separately (non-blocking, optional)
-    client
-      .checkGitHubAvailable(repoPath)
-      .then((avail) => (avail ? client.listPullRequests(repoPath) : []))
-      .then((prs) => setPullRequests(prs))
-      .catch(() => setPullRequests([]));
   }, [repoPath, branchesProp, defaultBranchProp, smartDefaultSet]);
 
-  // Handle starting a new review
   const handleStartReview = useCallback(() => {
     if (!baseRef || !compareRef) return;
 
-    // Handle PR selection
     if (compareRef.startsWith(PR_PREFIX)) {
       const prNumber = parseInt(compareRef.slice(PR_PREFIX.length, -2), 10);
       const pr = pullRequests.find((p) => p.number === prNumber);
@@ -184,14 +160,12 @@ export function NewComparisonForm({
       return;
     }
 
-    // Auto-detect working tree: include uncommitted changes when
-    // the compare branch is the current branch
+    // Include uncommitted changes when comparing the current branch
     const isWorkingTree = compareRef === currentBranch;
     const comparison = makeComparison(baseRef, compareRef, isWorkingTree);
     onSelectReview(comparison);
   }, [baseRef, compareRef, currentBranch, onSelectReview, pullRequests]);
 
-  // Handle keyboard submit for form
   const handleFormKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && baseRef) {
@@ -201,31 +175,10 @@ export function NewComparisonForm({
     [baseRef, handleStartReview],
   );
 
-  // Show skeleton during initial load
   const isInitialLoad = branchesLoading && !baseRef;
 
   return (
-    <section
-      aria-labelledby="new-comparison-heading"
-      className="mt-10"
-      onKeyDown={handleFormKeyDown}
-    >
-      <h2
-        id="new-comparison-heading"
-        className="mb-4 text-sm font-semibold text-stone-300 flex items-center gap-2"
-      >
-        <span
-          className="w-1.5 h-1.5 rounded-full bg-terracotta-400"
-          aria-hidden="true"
-        />
-        New Review
-      </h2>
-      <p className="mb-4 text-xs text-stone-500 leading-relaxed">
-        Select a base branch and what you want to compare it against, or choose
-        a pull request.
-      </p>
-
-      {/* Loading skeleton */}
+    <div onKeyDown={handleFormKeyDown}>
       {isInitialLoad ? (
         <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-stone-800/60 bg-gradient-to-br from-stone-900/60 to-stone-950/80 px-5 py-4 shadow-inner shadow-black/20">
           <div className="h-9 w-[180px] bg-stone-800 rounded-lg animate-pulse" />
@@ -237,13 +190,11 @@ export function NewComparisonForm({
           <div className="h-9 w-20 bg-stone-800 rounded-lg animate-pulse" />
         </div>
       ) : (
-        /* Inline form with clear visual boundary */
         <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-stone-800/60 bg-gradient-to-br from-stone-900/60 to-stone-950/80 px-5 py-4 shadow-inner shadow-black/20">
           <BranchSelect
             value={baseRef}
             onChange={(newBase) => {
               setBaseRef(newBase);
-              // Reset compare if it matches the new base or is a PR targeting a different base
               if (compareRef === newBase) {
                 setCompareRef("");
               } else if (compareRef.startsWith(PR_PREFIX)) {
@@ -314,6 +265,6 @@ export function NewComparisonForm({
           </button>
         </div>
       )}
-    </section>
+    </div>
   );
 }

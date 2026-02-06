@@ -7,11 +7,10 @@ import { ComparisonPickerModal } from "../ComparisonPickerModal";
 import type { GlobalReviewSummary } from "../../types";
 
 interface TabRailProps {
-  onOpenRepo: () => Promise<void>;
   onActivateReview: (review: GlobalReviewSummary) => void;
 }
 
-export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
+export function TabRail({ onActivateReview }: TabRailProps) {
   const navigate = useNavigate();
   const globalReviews = useReviewStore((s) => s.globalReviews);
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
@@ -42,7 +41,6 @@ export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
   const handleDeleteReview = useCallback(
     (review: GlobalReviewSummary) => {
       deleteGlobalReview(review.repoPath, review.comparison);
-      // If the deleted review was the active one, navigate home
       if (
         activeReviewKey?.repoPath === review.repoPath &&
         activeReviewKey?.comparisonKey === review.comparison.key
@@ -53,7 +51,6 @@ export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
     [deleteGlobalReview, activeReviewKey, navigate],
   );
 
-  // "+" button: open modal with no pre-filled repo (step 1)
   const handleAddReview = useCallback(() => {
     setComparisonPickerRepoPath(null);
     setComparisonPickerOpen(true);
@@ -66,7 +63,6 @@ export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
 
   return (
     <div className="relative flex shrink-0" data-tauri-drag-region>
-      {/* Rail panel */}
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
                    bg-stone-950/80 backdrop-blur-md border-r border-white/[0.06] overflow-hidden
@@ -114,7 +110,6 @@ export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
             </button>
           </div>
 
-          {/* Scrollable review list — flat, sorted by recency */}
           <div
             className="flex-1 overflow-y-auto scrollbar-thin px-1.5 py-1"
             role="tablist"
@@ -176,7 +171,6 @@ export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
           </div>
         </div>
 
-        {/* Resize handle (right edge) */}
         {!collapsed && (
           <div
             role="separator"
@@ -189,12 +183,10 @@ export function TabRail({ onOpenRepo, onActivateReview }: TabRailProps) {
         )}
       </nav>
 
-      {/* Comparison Picker Modal */}
       <ComparisonPickerModal
         isOpen={comparisonPickerOpen}
         onClose={handleCloseModal}
         prefilledRepoPath={comparisonPickerRepoPath}
-        onOpenRepo={onOpenRepo}
       />
     </div>
   );

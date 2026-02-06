@@ -31,7 +31,6 @@ function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
 
-  // Load preferences and global reviews on mount
   useEffect(() => {
     loadPreferences();
     loadGlobalReviews();
@@ -50,7 +49,7 @@ function AppShell() {
     handleActivateReview,
   } = useRepositoryInit();
 
-  // Global Cmd+O and menu:open-repo listener so it works on every route
+  // Stable ref so the effect doesn't re-register on every render
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
 
@@ -63,11 +62,9 @@ function AppShell() {
         return;
       }
 
-      // Cmd/Ctrl+O to open repo
       if ((e.metaKey || e.ctrlKey) && e.key === "o") {
         e.preventDefault();
         handleOpenRepoRef.current();
-        return;
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -83,7 +80,6 @@ function AppShell() {
     };
   }, []);
 
-  // Keep native menu item enabled/disabled state in sync with the app view
   useMenuState();
 
   useComparisonLoader(comparisonReady, setInitialLoading);
@@ -91,17 +87,13 @@ function AppShell() {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
 
-  // Update window title on every route (welcome, start, review)
   useWindowTitle(repoPath, comparison, comparisonReady);
 
   return (
     <TooltipProvider delayDuration={300}>
       <UpdateBanner />
       <div className="flex h-screen">
-        <TabRail
-          onOpenRepo={handleOpenRepo}
-          onActivateReview={handleActivateReview}
-        />
+        <TabRail onActivateReview={handleActivateReview} />
         <div className="flex flex-1 flex-col overflow-hidden bg-stone-900">
           <Outlet
             context={{
@@ -196,10 +188,8 @@ function ReviewRoute() {
   const { repoPath, comparisonReady, handleOpenRepo, handleNewWindow } =
     useAppContext();
 
-  // Bidirectional sync between URL file path and store
   useFileRouteSync();
 
-  // If no repo path, redirect to welcome
   if (!repoPath) {
     return <Navigate to="/" replace />;
   }
