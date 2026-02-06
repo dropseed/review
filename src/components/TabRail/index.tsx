@@ -99,7 +99,7 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
       {/* Rail panel */}
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
-                   bg-black/10 border-r border-white/[0.08] overflow-hidden
+                   bg-black/5 border-r border-white/[0.08] overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{
           width: collapsed ? 0 : `${sidebarWidth}rem`,
