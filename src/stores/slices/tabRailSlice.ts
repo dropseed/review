@@ -2,6 +2,16 @@ import type { Comparison, DiffShortStat } from "../../types";
 import type { StorageService } from "../../platform";
 import type { SliceCreatorWithStorage } from "../types";
 
+export interface TabReviewProgress {
+  totalHunks: number;
+  trustedHunks: number;
+  approvedHunks: number;
+  rejectedHunks: number;
+  reviewedHunks: number;
+  reviewedPercent: number;
+  state: "approved" | "changes_requested" | null;
+}
+
 export interface OpenReview {
   repoPath: string;
   repoName: string; // display name (remote name or dirname)
@@ -9,6 +19,7 @@ export interface OpenReview {
   routePrefix: string; // e.g. "dropseed/review" for URL construction
   defaultBranch?: string; // for simplified comparison display
   diffStats?: DiffShortStat; // cached stats for the tab
+  reviewProgress?: TabReviewProgress; // cached review progress for the tab
 }
 
 export interface TabRailSlice {
@@ -21,7 +32,11 @@ export interface TabRailSlice {
   setActiveTab: (index: number) => void;
   updateReviewMetadata: (
     index: number,
-    metadata: { defaultBranch?: string; diffStats?: DiffShortStat },
+    metadata: {
+      defaultBranch?: string;
+      diffStats?: DiffShortStat;
+      reviewProgress?: TabReviewProgress;
+    },
   ) => void;
 }
 
@@ -102,6 +117,9 @@ export const createTabRailSlice: SliceCreatorWithStorage<TabRailSlice> =
           }),
           ...(metadata.diffStats !== undefined && {
             diffStats: metadata.diffStats,
+          }),
+          ...(metadata.reviewProgress !== undefined && {
+            reviewProgress: metadata.reviewProgress,
           }),
         };
       });

@@ -117,21 +117,24 @@ impl ReviewState {
     /// Create a summary of this review state
     pub fn to_summary(&self) -> ReviewSummary {
         let total_hunks = self.hunks.len();
+        let approved_hunks = self
+            .hunks
+            .values()
+            .filter(|h| matches!(h.status, Some(HunkStatus::Approved)))
+            .count();
         let rejected_hunks = self
             .hunks
             .values()
             .filter(|h| matches!(h.status, Some(HunkStatus::Rejected)))
             .count();
-        // Count hunks that are approved, rejected, or have labels matching trust list
-        let reviewed_hunks = self
+        // Count hunks with no explicit status but labels matching trust list
+        let trusted_hunks = self
             .hunks
             .values()
             .filter(|h| {
-                // Explicitly approved or rejected
                 if h.status.is_some() {
-                    return true;
+                    return false;
                 }
-                // Has a label that matches a trust pattern
                 if !h.label.is_empty() {
                     for label in &h.label {
                         for pattern in &self.trust_list {
@@ -144,6 +147,7 @@ impl ReviewState {
                 false
             })
             .count();
+        let reviewed_hunks = trusted_hunks + approved_hunks + rejected_hunks;
 
         let state = if rejected_hunks > 0 {
             Some("changes_requested".to_string())
@@ -156,6 +160,8 @@ impl ReviewState {
         ReviewSummary {
             comparison: self.comparison.clone(),
             total_hunks,
+            trusted_hunks,
+            approved_hunks,
             reviewed_hunks,
             rejected_hunks,
             state,
@@ -223,6 +229,10 @@ pub struct ReviewSummary {
     pub comparison: Comparison,
     #[serde(rename = "totalHunks")]
     pub total_hunks: usize,
+    #[serde(rename = "trustedHunks")]
+    pub trusted_hunks: usize,
+    #[serde(rename = "approvedHunks")]
+    pub approved_hunks: usize,
     #[serde(rename = "reviewedHunks")]
     pub reviewed_hunks: usize,
     #[serde(rename = "rejectedHunks")]

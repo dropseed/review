@@ -353,6 +353,8 @@ export interface ReviewState {
 export interface ReviewSummary {
   comparison: Comparison;
   totalHunks: number;
+  trustedHunks: number;
+  approvedHunks: number;
   reviewedHunks: number;
   rejectedHunks: number;
   state: "approved" | "changes_requested" | null;
