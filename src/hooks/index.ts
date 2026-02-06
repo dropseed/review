@@ -21,3 +21,4 @@ export { useScrollHunkTracking } from "./useScrollHunkTracking";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
 export { useFeedbackPanel } from "./useFeedbackPanel";
+export { useMenuState } from "./useMenuState";

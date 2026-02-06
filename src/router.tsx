@@ -18,6 +18,7 @@ import {
   useComparisonLoader,
   useWindowTitle,
   useFileRouteSync,
+  useMenuState,
   type RepoStatus,
 } from "./hooks";
 
@@ -48,10 +49,9 @@ function AppShell() {
     handleSelectRepo,
   } = useRepositoryInit();
 
-  // Global Cmd+O / Cmd+B and menu:open-repo listener so it works on every route
+  // Global Cmd+O and menu:open-repo listener so it works on every route
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
-  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,13 +68,6 @@ function AppShell() {
         handleOpenRepoRef.current();
         return;
       }
-
-      // Cmd/Ctrl+B to toggle tab rail
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "b") {
-        e.preventDefault();
-        toggleTabRail();
-        return;
-      }
     };
     window.addEventListener("keydown", handleKeyDown);
 
@@ -89,6 +82,9 @@ function AppShell() {
     };
   }, []);
 
+  // Keep native menu item enabled/disabled state in sync with the app view
+  useMenuState();
+
   useComparisonLoader(comparisonReady, setInitialLoading);
 
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -100,9 +96,9 @@ function AppShell() {
   return (
     <TooltipProvider delayDuration={300}>
       <UpdateBanner />
-      <div className="flex h-screen bg-stone-950">
+      <div className="flex h-screen">
         <TabRail onOpenRepo={handleOpenRepo} />
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden bg-stone-950">
           <Outlet
             context={{
               repoStatus,
@@ -142,7 +138,7 @@ function EmptyTabState() {
 
   if (repoStatus === "error") {
     return (
-      <div className="flex h-full items-center justify-center bg-stone-950">
+      <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
           <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
             <svg
@@ -165,7 +161,7 @@ function EmptyTabState() {
           <p className="text-sm text-stone-400">{repoError}</p>
           <button
             onClick={handleOpenRepo}
-            className="mt-4 px-4 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm font-medium hover:bg-stone-700 transition-colors"
+            className="mt-4 px-4 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm font-medium hover:bg-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 transition-colors duration-150"
           >
             Open a Repository
           </button>
@@ -175,7 +171,7 @@ function EmptyTabState() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center bg-stone-950">
+    <div className="flex h-full items-center justify-center">
       <div className="flex flex-col items-center gap-3 text-center px-6">
         <p className="text-sm text-stone-500">
           Open a repository to start reviewing

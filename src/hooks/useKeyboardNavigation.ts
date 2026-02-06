@@ -1,31 +1,16 @@
 import { useEffect, useCallback } from "react";
 import { useReviewStore } from "../stores";
-import {
-  CODE_FONT_SIZE_DEFAULT,
-  CODE_FONT_SIZE_MIN,
-  CODE_FONT_SIZE_MAX,
-  CODE_FONT_SIZE_STEP,
-} from "../utils/preferences";
-
-interface UseKeyboardNavigationOptions {
-  setShowDebugModal: (show: boolean) => void;
-  setShowSettingsModal: (show: boolean) => void;
-  setShowFileFinder: (show: boolean) => void;
-  setShowContentSearch: (show: boolean) => void;
-  setShowSymbolSearch: (show: boolean) => void;
-}
 
 /**
  * Handles keyboard navigation and shortcuts.
- * j/k for hunk navigation, a/r for approve/reject, modal toggles, font size, split view.
+ * j/k for hunk navigation, a/r for approve/reject, split view, escape.
+ *
+ * Note: Shortcuts that have Tauri menu accelerators (Cmd+P, Cmd+R,
+ * Cmd+Shift+F, Cmd+Shift+N, Cmd+B, Cmd+Shift+D, Cmd+,,
+ * Cmd+0, Cmd+=, Cmd+-) are handled exclusively via useMenuEvents to avoid
+ * double-firing.
  */
-export function useKeyboardNavigation({
-  setShowDebugModal,
-  setShowSettingsModal,
-  setShowFileFinder,
-  setShowContentSearch,
-  setShowSymbolSearch,
-}: UseKeyboardNavigationOptions) {
+export function useKeyboardNavigation() {
   const hunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
   const nextHunk = useReviewStore((s) => s.nextHunk);
@@ -36,8 +21,6 @@ export function useKeyboardNavigation({
     (s) => s.setPendingCommentHunkId,
   );
   const nextHunkInFile = useReviewStore((s) => s.nextHunkInFile);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const closeSplit = useReviewStore((s) => s.closeSplit);
   const setSplitOrientation = useReviewStore((s) => s.setSplitOrientation);
@@ -46,12 +29,6 @@ export function useKeyboardNavigation({
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
   const undo = useReviewStore((s) => s.undo);
-  const setComparisonPickerOpen = useReviewStore(
-    (s) => s.setComparisonPickerOpen,
-  );
-  const setComparisonPickerRepoPath = useReviewStore(
-    (s) => s.setComparisonPickerRepoPath,
-  );
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -64,60 +41,9 @@ export function useKeyboardNavigation({
       }
 
       // Cmd/Ctrl+O is handled globally by AppShell
-
-      // Cmd/Ctrl+Shift+D to open debug modal
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key === "d"
-      ) {
-        event.preventDefault();
-        setShowDebugModal(true);
-        return;
-      }
-
-      // Cmd/Ctrl+, to open settings modal
-      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
-        event.preventDefault();
-        setShowSettingsModal(true);
-        return;
-      }
-
-      // Cmd/Ctrl+P to open file finder
-      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
-        event.preventDefault();
-        setShowFileFinder(true);
-        return;
-      }
-
-      // Cmd/Ctrl+R to open symbol search (only when viewing a file)
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        event.key === "r" &&
-        topLevelView === "browse"
-      ) {
-        event.preventDefault();
-        setShowSymbolSearch(true);
-        return;
-      }
-
-      // Cmd/Ctrl+Shift+N to open comparison picker (pre-fill active tab's repo)
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key === "n"
-      ) {
-        event.preventDefault();
-        const state = useReviewStore.getState();
-        const activeReview =
-          state.activeTabIndex !== null
-            ? state.openReviews[state.activeTabIndex]
-            : null;
-        setComparisonPickerRepoPath(activeReview?.repoPath ?? null);
-        setComparisonPickerOpen(true);
-        return;
-      }
+      // Cmd/Ctrl+P, Cmd/Ctrl+R, Cmd/Ctrl+Shift+F, Cmd/Ctrl+Shift+N, Cmd/Ctrl+B
+      // are handled via Tauri menu accelerators + useMenuEvents
+      // Cmd/Ctrl+Shift+D, Cmd/Ctrl+, are handled via Tauri menu accelerators + useMenuEvents
 
       // Cmd/Ctrl+F to block browser find (in-file search handled by FileViewer)
       if (
@@ -126,17 +52,6 @@ export function useKeyboardNavigation({
         event.key === "f"
       ) {
         event.preventDefault();
-        return;
-      }
-
-      // Cmd/Ctrl+Shift+F to open content search
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key === "f"
-      ) {
-        event.preventDefault();
-        setShowContentSearch(true);
         return;
       }
 
@@ -168,37 +83,7 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Cmd/Ctrl++ to increase font size
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        (event.key === "=" || event.key === "+")
-      ) {
-        event.preventDefault();
-        const newSize = Math.min(
-          codeFontSize + CODE_FONT_SIZE_STEP,
-          CODE_FONT_SIZE_MAX,
-        );
-        setCodeFontSize(newSize);
-        return;
-      }
-
-      // Cmd/Ctrl+- to decrease font size
-      if ((event.metaKey || event.ctrlKey) && event.key === "-") {
-        event.preventDefault();
-        const newSize = Math.max(
-          codeFontSize - CODE_FONT_SIZE_STEP,
-          CODE_FONT_SIZE_MIN,
-        );
-        setCodeFontSize(newSize);
-        return;
-      }
-
-      // Cmd/Ctrl+0 to reset font size to default
-      if ((event.metaKey || event.ctrlKey) && event.key === "0") {
-        event.preventDefault();
-        setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
-        return;
-      }
+      // Cmd/Ctrl+0, Cmd/Ctrl+=, Cmd/Ctrl+- are handled via Tauri menu accelerators + useMenuEvents
 
       // Don't handle single-key shortcuts when modifier keys are held
       if (event.metaKey || event.ctrlKey || event.altKey) {
@@ -249,23 +134,14 @@ export function useKeyboardNavigation({
       rejectHunk,
       setPendingCommentHunkId,
       nextHunkInFile,
-      codeFontSize,
-      setCodeFontSize,
       secondaryFile,
       closeSplit,
       setSplitOrientation,
       splitOrientation,
-      setShowDebugModal,
-      setShowSettingsModal,
-      setShowFileFinder,
-      setShowContentSearch,
-      setShowSymbolSearch,
       topLevelView,
       navigateToBrowse,
       navigateToOverview,
       undo,
-      setComparisonPickerOpen,
-      setComparisonPickerRepoPath,
     ],
   );
 

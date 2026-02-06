@@ -39,8 +39,6 @@ const DEFAULT_WINDOW_HEIGHT: f64 = 750.0;
 const MIN_WINDOW_WIDTH: f64 = 800.0;
 /// Minimum window height in logical pixels.
 const MIN_WINDOW_HEIGHT: f64 = 600.0;
-/// Background color for new windows (dark neutral).
-const WINDOW_BG_COLOR: tauri::window::Color = tauri::window::Color(0x0c, 0x0a, 0x09, 0xff);
 
 // --- Classification defaults ---
 
@@ -1173,6 +1171,7 @@ pub async fn open_repo_window(
     comparison: Option<ComparisonParam>,
 ) -> Result<(), String> {
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri_plugin_liquid_glass::{GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt};
 
     // Handle empty repo_path for creating a new blank window (welcome page)
     if repo_path.is_empty() {
@@ -1189,14 +1188,23 @@ pub async fn open_repo_window(
         .hash(&mut hasher);
         let label = format!("repo-{:x}", hasher.finish());
 
-        WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
+        let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
             .title("Review")
             .inner_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
             .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
             .tabbing_identifier("review-main")
-            .background_color(WINDOW_BG_COLOR)
+            .transparent(true)
             .build()
             .map_err(|e: tauri::Error| e.to_string())?;
+
+        let _ = app.liquid_glass().set_effect(
+            &window,
+            LiquidGlassConfig {
+                enabled: true,
+                variant: GlassMaterialVariant::Sidebar,
+                ..Default::default()
+            },
+        );
 
         return Ok(());
     }
@@ -1250,9 +1258,18 @@ pub async fn open_repo_window(
         .inner_size(1100.0, 750.0)
         .min_inner_size(800.0, 600.0)
         .tabbing_identifier("review-main")
-        .background_color(WINDOW_BG_COLOR)
+        .transparent(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+
+    let _ = app.liquid_glass().set_effect(
+        &window,
+        LiquidGlassConfig {
+            enabled: true,
+            variant: GlassMaterialVariant::Sidebar,
+            ..Default::default()
+        },
+    );
 
     let _ = window.set_focus();
 
@@ -1524,6 +1541,43 @@ pub fn uninstall_cli() -> Result<(), String> {
 
         info!("[uninstall_cli] Removed {CLI_SYMLINK_PATH}");
     }
+    Ok(())
+}
+
+// --- Menu state ---
+
+#[tauri::command]
+pub fn update_menu_state(
+    app: tauri::AppHandle,
+    has_repo: bool,
+    view: String,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    let items: tauri::State<'_, super::MenuItems> = app.state();
+    let in_review = has_repo && view != "none";
+
+    items
+        .refresh
+        .set_enabled(has_repo)
+        .map_err(|e| e.to_string())?;
+    items
+        .find_file
+        .set_enabled(in_review)
+        .map_err(|e| e.to_string())?;
+    items
+        .search_in_files
+        .set_enabled(in_review)
+        .map_err(|e| e.to_string())?;
+    items
+        .find_symbols
+        .set_enabled(in_review && view == "browse")
+        .map_err(|e| e.to_string())?;
+    items
+        .toggle_sidebar
+        .set_enabled(in_review)
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 

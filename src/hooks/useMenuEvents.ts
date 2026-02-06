@@ -16,6 +16,9 @@ interface UseMenuEventsOptions {
   handleRefresh: () => void;
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
+  setShowFileFinder: (show: boolean) => void;
+  setShowContentSearch: (show: boolean) => void;
+  setShowSymbolSearch: (show: boolean) => void;
 }
 
 /**
@@ -30,9 +33,19 @@ export function useMenuEvents({
   handleRefresh,
   setShowDebugModal,
   setShowSettingsModal,
+  setShowFileFinder,
+  setShowContentSearch,
+  setShowSymbolSearch,
 }: UseMenuEventsOptions) {
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
+  const setComparisonPickerOpen = useReviewStore(
+    (s) => s.setComparisonPickerOpen,
+  );
+  const setComparisonPickerRepoPath = useReviewStore(
+    (s) => s.setComparisonPickerRepoPath,
+  );
 
   // Refs to avoid stale closures
   const handleCloseRef = useRef(handleClose);
@@ -126,6 +139,23 @@ export function useMenuEvents({
         "menu:zoom-reset",
         () => setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT),
       ],
+      // View menu actions
+      ["menu:find-file", () => setShowFileFinder(true)],
+      ["menu:find-symbols", () => setShowSymbolSearch(true)],
+      ["menu:search-in-files", () => setShowContentSearch(true)],
+      ["menu:toggle-sidebar", () => toggleTabRail()],
+      [
+        "menu:new-review",
+        () => {
+          const state = useReviewStore.getState();
+          const activeReview =
+            state.activeTabIndex !== null
+              ? state.openReviews[state.activeTabIndex]
+              : null;
+          setComparisonPickerRepoPath(activeReview?.repoPath ?? null);
+          setComparisonPickerOpen(true);
+        },
+      ],
     ];
 
     const unlistenFns = listeners.map(([event, handler]) => on(event, handler));
@@ -133,5 +163,14 @@ export function useMenuEvents({
     return () => {
       unlistenFns.forEach((fn) => fn());
     };
-  }, [setShowDebugModal, setShowSettingsModal]); // Modal setters are stable
+  }, [
+    setShowDebugModal,
+    setShowSettingsModal,
+    setShowFileFinder,
+    setShowContentSearch,
+    setShowSymbolSearch,
+    toggleTabRail,
+    setComparisonPickerOpen,
+    setComparisonPickerRepoPath,
+  ]);
 }

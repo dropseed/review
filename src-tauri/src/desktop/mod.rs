@@ -18,11 +18,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 #[cfg(desktop)]
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 #[cfg(desktop)]
 use tauri::Emitter;
 #[cfg(desktop)]
 use tauri_plugin_opener::OpenerExt;
+
+/// Managed state holding references to menu items whose enabled state
+/// changes dynamically based on the current app view.
+#[cfg(desktop)]
+pub struct MenuItems {
+    pub refresh: MenuItem<tauri::Wry>,
+    pub find_file: MenuItem<tauri::Wry>,
+    pub find_symbols: MenuItem<tauri::Wry>,
+    pub search_in_files: MenuItem<tauri::Wry>,
+    pub toggle_sidebar: MenuItem<tauri::Wry>,
+}
 
 /// Managed state that controls whether Sentry events are actually sent.
 /// Both the `before_send` callback and the `set_sentry_consent` command
@@ -100,6 +111,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(SentryConsent(consent.clone()))
+        .plugin(tauri_plugin_liquid_glass::init())
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -156,6 +168,24 @@ pub fn run() {
                 }
             }
 
+            // Apply Liquid Glass effect to the main window
+            {
+                use tauri::Manager;
+                use tauri_plugin_liquid_glass::{
+                    GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt,
+                };
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = app.liquid_glass().set_effect(
+                        &window,
+                        LiquidGlassConfig {
+                            enabled: true,
+                            variant: GlassMaterialVariant::Sidebar,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+
             let close = MenuItemBuilder::new("Close")
                 .id("close")
                 .accelerator("CmdOrCtrl+W")
@@ -179,6 +209,7 @@ pub fn run() {
             let refresh = MenuItemBuilder::new("Refresh")
                 .id("refresh")
                 .accelerator("CmdOrCtrl+Shift+R")
+                .enabled(false)
                 .build(app)?;
 
             let actual_size = MenuItemBuilder::new("Actual Size")
@@ -218,6 +249,35 @@ pub fn run() {
                 .id("report_issue")
                 .build(app)?;
 
+            let find_file = MenuItemBuilder::new("Find File")
+                .id("find_file")
+                .accelerator("CmdOrCtrl+P")
+                .enabled(false)
+                .build(app)?;
+
+            let find_symbols = MenuItemBuilder::new("Find Symbols")
+                .id("find_symbols")
+                .accelerator("CmdOrCtrl+R")
+                .enabled(false)
+                .build(app)?;
+
+            let search_in_files = MenuItemBuilder::new("Search in Files")
+                .id("search_in_files")
+                .accelerator("CmdOrCtrl+Shift+F")
+                .enabled(false)
+                .build(app)?;
+
+            let toggle_sidebar = MenuItemBuilder::new("Toggle Sidebar")
+                .id("toggle_sidebar")
+                .accelerator("CmdOrCtrl+B")
+                .enabled(false)
+                .build(app)?;
+
+            let new_review = MenuItemBuilder::new("New Review")
+                .id("new_review")
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(app)?;
+
             let app_menu = SubmenuBuilder::new(app, &app.package_info().name)
                 .about(None)
                 .item(&check_for_updates)
@@ -238,6 +298,8 @@ pub fn run() {
                 .item(&new_window)
                 .item(&open_repo)
                 .separator()
+                .item(&new_review)
+                .separator()
                 .item(&close)
                 .build()?;
 
@@ -253,6 +315,12 @@ pub fn run() {
 
             let view_menu = SubmenuBuilder::new(app, "View")
                 .item(&refresh)
+                .separator()
+                .item(&find_file)
+                .item(&find_symbols)
+                .item(&search_in_files)
+                .separator()
+                .item(&toggle_sidebar)
                 .separator()
                 .item(&actual_size)
                 .item(&zoom_in)
@@ -294,6 +362,15 @@ pub fn run() {
                 .build()?;
 
             app.set_menu(menu)?;
+
+            use tauri::Manager;
+            app.manage(MenuItems {
+                refresh,
+                find_file,
+                find_symbols,
+                search_in_files,
+                toggle_sidebar,
+            });
 
             Ok(())
         })
@@ -351,6 +428,21 @@ pub fn run() {
                         .opener()
                         .open_url("https://github.com/dropseed/review/issues", None::<&str>);
                 }
+                "find_file" => {
+                    let _: Result<(), _> = app.emit("menu:find-file", ());
+                }
+                "find_symbols" => {
+                    let _: Result<(), _> = app.emit("menu:find-symbols", ());
+                }
+                "search_in_files" => {
+                    let _: Result<(), _> = app.emit("menu:search-in-files", ());
+                }
+                "toggle_sidebar" => {
+                    let _: Result<(), _> = app.emit("menu:toggle-sidebar", ());
+                }
+                "new_review" => {
+                    let _: Result<(), _> = app.emit("menu:new-review", ());
+                }
                 _ => {}
             }
         });
@@ -405,6 +497,7 @@ pub fn run() {
             commands::install_cli,
             commands::uninstall_cli,
             commands::set_sentry_consent,
+            commands::update_menu_state,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
