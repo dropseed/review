@@ -3,6 +3,7 @@ import { CommitsPanel } from "./CommitsPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import { GuideSection } from "./GuideSection";
+import { EMPTY_HUNK_STATUS } from "./FileTree.utils";
 import {
   useFilePanelFileSystem,
   useFilePanelNavigation,
@@ -283,6 +284,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     sectionedFiles,
     flatSectionedFiles,
     fileStatusMap,
+    movedFilePaths,
     allFilesTree,
     stats,
     allDirPaths,
@@ -625,6 +627,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                 hunkContext="needs-review"
                                 onApproveAll={handleApproveAll}
                                 onUnapproveAll={handleUnapproveAll}
+                                movedFilePaths={movedFilePaths}
                               />
                             ))
                           ) : (
@@ -654,13 +657,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               filePath={filePath}
                               fileStatus={fileStatusMap.get(filePath)}
                               hunkStatus={
-                                hunkStatusMap.get(filePath) ?? {
-                                  pending: 0,
-                                  approved: 0,
-                                  trusted: 0,
-                                  rejected: 0,
-                                  total: 0,
-                                }
+                                hunkStatusMap.get(filePath) ?? EMPTY_HUNK_STATUS
                               }
                               symbolDiff={symbolDiffMap.get(filePath) ?? null}
                               selectedFile={selectedFile}
@@ -668,6 +665,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               hunkContext="needs-review"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
+                              movedFilePaths={movedFilePaths}
                             />
                           ))
                         ) : (
@@ -744,6 +742,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                 hunkContext="reviewed"
                                 onApproveAll={handleApproveAll}
                                 onUnapproveAll={handleUnapproveAll}
+                                movedFilePaths={movedFilePaths}
                               />
                             ))
                           ) : (
@@ -760,13 +759,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               filePath={filePath}
                               fileStatus={fileStatusMap.get(filePath)}
                               hunkStatus={
-                                hunkStatusMap.get(filePath) ?? {
-                                  pending: 0,
-                                  approved: 0,
-                                  trusted: 0,
-                                  rejected: 0,
-                                  total: 0,
-                                }
+                                hunkStatusMap.get(filePath) ?? EMPTY_HUNK_STATUS
                               }
                               symbolDiff={symbolDiffMap.get(filePath) ?? null}
                               selectedFile={selectedFile}
@@ -774,6 +767,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               hunkContext="reviewed"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
+                              movedFilePaths={movedFilePaths}
                             />
                           ))
                         ) : (
@@ -851,6 +845,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           onOpenInSplit={openInSplit}
                           registerRef={registerRef}
                           hunkContext="all"
+                          movedFilePaths={movedFilePaths}
                         />
                       ))
                     ) : (

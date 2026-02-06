@@ -1,6 +1,15 @@
 import { SimpleTooltip } from "../ui/tooltip";
 import type { FileHunkStatus } from "./types";
 
+// Git status configuration
+const STATUS_CONFIG: Record<string, { letter: string; color: string }> = {
+  added: { letter: "A", color: "text-emerald-400" },
+  modified: { letter: "M", color: "text-amber-400" },
+  deleted: { letter: "D", color: "text-rose-400" },
+  renamed: { letter: "R", color: "text-sky-400" },
+  untracked: { letter: "U", color: "text-emerald-400" },
+};
+
 // Symlink indicator with arrow icon and tooltip
 export function SymlinkIndicator({ target }: { target?: string }) {
   return (
@@ -23,16 +32,6 @@ export function SymlinkIndicator({ target }: { target?: string }) {
     </SimpleTooltip>
   );
 }
-
-// Git status configuration
-export const STATUS_CONFIG: Record<string, { letter: string; color: string }> =
-  {
-    added: { letter: "A", color: "text-emerald-400" },
-    modified: { letter: "M", color: "text-amber-400" },
-    deleted: { letter: "D", color: "text-rose-400" },
-    renamed: { letter: "R", color: "text-sky-400" },
-    untracked: { letter: "U", color: "text-emerald-400" },
-  };
 
 // Hunk count indicator - context-aware
 // "needs-review": shows pending count

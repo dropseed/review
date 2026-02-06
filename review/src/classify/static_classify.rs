@@ -35,11 +35,26 @@ pub fn classify_hunks_static(hunks: &[DiffHunk]) -> ClassifyResponse {
 /// Attempt to classify a single hunk. Returns `None` if no rule matches.
 fn classify_single_hunk(hunk: &DiffHunk) -> Option<ClassificationResult> {
     // Priority order: cheapest checks first
-    classify_lockfile(hunk)
+    classify_moved(hunk)
+        .or_else(|| classify_lockfile(hunk))
         .or_else(|| classify_empty_file(hunk))
         .or_else(|| classify_whitespace(hunk))
         .or_else(|| classify_comments(hunk))
         .or_else(|| classify_imports(hunk))
+}
+
+// --- Rule 0: Move pair detection (cheapest: single field check) ---
+
+fn classify_moved(hunk: &DiffHunk) -> Option<ClassificationResult> {
+    if hunk.move_pair_id.is_some() {
+        Some(ClassificationResult {
+            label: vec!["hunk:moved".to_owned()],
+            reasoning: "Hunk is part of a move pair (identical content moved between files)"
+                .to_owned(),
+        })
+    } else {
+        None
+    }
 }
 
 // --- Rule 1: Lockfile detection (path-based) ---
@@ -501,6 +516,34 @@ mod tests {
             old_line_number: Some(1),
             new_line_number: Some(1),
         }
+    }
+
+    // --- Move pair tests ---
+
+    #[test]
+    fn test_moved_hunk_with_move_pair_id() {
+        let mut hunk = make_hunk("src/old.rs", vec![removed("fn foo() {}")]);
+        hunk.move_pair_id = Some("src/new.rs:somehash".to_owned());
+        let result = classify_single_hunk(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["hunk:moved"]);
+    }
+
+    #[test]
+    fn test_hunk_without_move_pair_id_not_moved() {
+        let hunk = make_hunk("src/main.rs", vec![added("fn foo() {}")]);
+        let result = classify_moved(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_moved_takes_priority_over_other_rules() {
+        // A lockfile hunk with a move_pair_id should be classified as moved
+        let mut hunk = make_hunk("package-lock.json", vec![added("{}")]);
+        hunk.move_pair_id = Some("other:hash".to_owned());
+        let result = classify_single_hunk(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["hunk:moved"]);
     }
 
     // --- Lockfile tests ---

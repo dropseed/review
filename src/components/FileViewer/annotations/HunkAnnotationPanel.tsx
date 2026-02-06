@@ -8,23 +8,9 @@ import {
   DropdownMenuItem,
 } from "../../ui/dropdown-menu";
 import { SimpleTooltip } from "../../ui/tooltip";
+import { getFirstChangedLine } from "../hunkUtils";
+import { MovePairModal } from "./MovePairModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
-
-/** Returns the first changed line in a hunk with its side and line number. */
-function getFirstChangedLine(hunk: DiffHunk): {
-  lineNumber: number;
-  side: "old" | "new";
-} {
-  const firstChanged = hunk.lines.find(
-    (l) => l.type === "added" || l.type === "removed",
-  );
-  const side: "old" | "new" = firstChanged?.type === "removed" ? "old" : "new";
-  const lineNumber =
-    side === "old"
-      ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-      : (firstChanged?.newLineNumber ?? hunk.newStart);
-  return { lineNumber, side };
-}
 
 /** Returns the appropriate background class for a hunk based on its state */
 function getHunkBackgroundClass(
@@ -57,7 +43,8 @@ interface HunkAnnotationPanelProps {
   onUnapprove: (hunkId: string) => void;
   onReject: (hunkId: string) => void;
   onUnreject: (hunkId: string) => void;
-  onJumpToPair: (movePairId: string) => void;
+  onApprovePair: (hunkIds: string[]) => void;
+  onRejectPair: (hunkIds: string[]) => void;
   onComment: (lineNumber: number, side: "old" | "new", hunkId: string) => void;
   onAddTrustPattern: (pattern: string) => void;
   onRemoveTrustPattern: (pattern: string) => void;
@@ -87,7 +74,8 @@ export function HunkAnnotationPanel({
   onUnapprove,
   onReject,
   onUnreject,
-  onJumpToPair,
+  onApprovePair,
+  onRejectPair,
   onComment,
   onAddTrustPattern,
   onRemoveTrustPattern,
@@ -113,76 +101,80 @@ export function HunkAnnotationPanel({
           : ""
       } ${getHunkBackgroundClass(isRejected, isApproved, isTrusted)}`}
     >
-      {/* Move indicator */}
+      {/* Move pair indicator */}
       {pairedHunk && (
-        <SimpleTooltip
-          content={`Jump to ${isSource ? "destination" : "source"} in ${pairedHunk.filePath}`}
-        >
-          <button
-            onClick={() => onJumpToPair(hunk.movePairId!)}
-            className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-all hover:bg-sky-500/25"
-          >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              {isSource ? (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
-                />
-              ) : (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-                />
-              )}
-            </svg>
-            <span>{isSource ? "Moved to" : "Moved from"}</span>
-            <span className="opacity-60">
-              {pairedHunk.filePath.split("/").pop()}
-            </span>
-          </button>
-        </SimpleTooltip>
+        <MovePairModal
+          currentHunk={hunk}
+          pairedHunk={pairedHunk}
+          isSource={isSource}
+          hunkStates={allHunkStates}
+          onApprovePair={onApprovePair}
+          onRejectPair={onRejectPair}
+          onNavigateToHunk={onNavigateToHunk}
+        />
       )}
 
       {/* Action buttons - grouped with keyboard shortcuts */}
-      <>
-        {isApproved ? (
-          <SimpleTooltip content="Click to unapprove">
+      {isApproved ? (
+        <SimpleTooltip content="Click to unapprove">
+          <button
+            onClick={() => onUnapprove(hunk.id)}
+            className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-all hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+            <span>Approved</span>
+          </button>
+        </SimpleTooltip>
+      ) : isRejected ? (
+        <SimpleTooltip content="Click to clear rejection">
+          <button
+            onClick={() => onUnreject(hunk.id)}
+            className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-300 transition-all hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+            <span>Rejected</span>
+          </button>
+        </SimpleTooltip>
+      ) : (
+        <div className="flex items-center gap-1">
+          <SimpleTooltip
+            content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
+          >
             <button
-              onClick={() => onUnapprove(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-all hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30"
+              onClick={() => onReject(hunk.id)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                isTrusted
+                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
+                  : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
+              }`}
+              aria-label="Reject change"
             >
               <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              <span>Approved</span>
-            </button>
-          </SimpleTooltip>
-        ) : isRejected ? (
-          <SimpleTooltip content="Click to clear rejection">
-            <button
-              onClick={() => onUnreject(hunk.id)}
-              className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-300 transition-all hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30"
-            >
-              <svg
-                className="h-3.5 w-3.5"
+                className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -194,111 +186,76 @@ export function HunkAnnotationPanel({
                   d="M6 18L18 6M6 6l12 12"
                 />
               </svg>
-              <span>Rejected</span>
+              <span>Reject</span>
+              {isFocused && <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>}
             </button>
           </SimpleTooltip>
-        ) : (
-          <div className="flex items-center gap-1">
-            <SimpleTooltip
-              content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
-            >
-              <button
-                onClick={() => onReject(hunk.id)}
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
-                  isTrusted
-                    ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
-                    : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
-                }`}
-                aria-label="Reject change"
-              >
-                <svg
-                  className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-                <span>Reject</span>
-                {isFocused && (
-                  <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>
-                )}
-              </button>
-            </SimpleTooltip>
-            <SimpleTooltip
-              content={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
-            >
-              <button
-                onClick={() => onApprove(hunk.id)}
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
-                  isTrusted
-                    ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
-                    : "text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-300"
-                }`}
-                aria-label="Approve change"
-              >
-                <svg
-                  className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                <span>Approve</span>
-                {isFocused && (
-                  <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>
-                )}
-              </button>
-            </SimpleTooltip>
-            {/* Similar hunks modal trigger - "N like this" */}
-            <SimilarHunksModal
-              currentHunk={hunk}
-              similarHunks={similarHunks}
-              hunkStates={allHunkStates}
-              onApproveAll={onApproveAllSimilar}
-              onRejectAll={onRejectAllSimilar}
-              onNavigateToHunk={onNavigateToHunk}
-            />
-          </div>
-        )}
-
-        {/* Comment button - inline after approve/reject */}
-        <SimpleTooltip content="Add comment">
-          <button
-            onClick={() => {
-              const { lineNumber, side } = getFirstChangedLine(hunk);
-              onComment(lineNumber, side, hunk.id);
-            }}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
+          <SimpleTooltip
+            content={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
           >
-            <svg
-              className="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+            <button
+              onClick={() => onApprove(hunk.id)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                isTrusted
+                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
+                  : "text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-300"
+              }`}
+              aria-label="Approve change"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-              />
-            </svg>
-            <span className="hidden sm:inline">Comment</span>
-          </button>
-        </SimpleTooltip>
-      </>
+              <svg
+                className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              <span>Approve</span>
+              {isFocused && <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>}
+            </button>
+          </SimpleTooltip>
+          {/* Similar hunks modal trigger - "N like this" */}
+          <SimilarHunksModal
+            currentHunk={hunk}
+            similarHunks={similarHunks}
+            hunkStates={allHunkStates}
+            onApproveAll={onApproveAllSimilar}
+            onRejectAll={onRejectAllSimilar}
+            onNavigateToHunk={onNavigateToHunk}
+          />
+        </div>
+      )}
+
+      {/* Comment button - inline after approve/reject */}
+      <SimpleTooltip content="Add comment">
+        <button
+          onClick={() => {
+            const { lineNumber, side } = getFirstChangedLine(hunk);
+            onComment(lineNumber, side, hunk.id);
+          }}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+            />
+          </svg>
+          <span className="hidden sm:inline">Comment</span>
+        </button>
+      </SimpleTooltip>
 
       {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
       <div className="ml-auto flex items-center gap-2">

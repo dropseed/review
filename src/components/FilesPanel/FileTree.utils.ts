@@ -2,8 +2,7 @@ import type { FileEntry, ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import type { FileHunkStatus, ProcessedFileEntry, ViewMode } from "./types";
 
-// Default empty hunk status (no hunks, no reviews)
-const EMPTY_HUNK_STATUS: FileHunkStatus = {
+export const EMPTY_HUNK_STATUS: FileHunkStatus = {
   pending: 0,
   approved: 0,
   trusted: 0,
@@ -56,7 +55,6 @@ export function calculateFileHunkStatus(
       current.pending++;
     }
     current.total++;
-
     statusMap.set(hunk.filePath, current);
   }
 

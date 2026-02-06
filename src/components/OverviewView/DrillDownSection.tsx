@@ -10,7 +10,10 @@ import {
   SymbolRow,
   StatusToggle,
 } from "../symbols";
-import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
+import {
+  calculateFileHunkStatus,
+  EMPTY_HUNK_STATUS,
+} from "../FilesPanel/FileTree.utils";
 import type { FileHunkStatus } from "../FilesPanel/types";
 import { ReviewDataProvider, useReviewData } from "../ReviewDataContext";
 import { StatusLetter } from "../FilesPanel/StatusIndicators";
@@ -446,13 +449,8 @@ export function DrillDownSection() {
         {allChangedFiles.length > 0 && (
           <div className="rounded-lg border border-stone-800 overflow-hidden">
             {allChangedFiles.map((fileDiff) => {
-              const status = fileHunkStatusMap.get(fileDiff.filePath) ?? {
-                pending: 0,
-                approved: 0,
-                trusted: 0,
-                rejected: 0,
-                total: 0,
-              };
+              const status =
+                fileHunkStatusMap.get(fileDiff.filePath) ?? EMPTY_HUNK_STATUS;
               const fileLineStats = getFileLineStats(
                 fileDiff.filePath,
                 hunks,

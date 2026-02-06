@@ -13,16 +13,9 @@ import { createDebouncedFn } from "../types";
 // Review Slice
 // ========================================================================
 //
-// This slice manages review state (approvals, rejections, trust list, etc.)
-// and intentionally accesses data from other slices via get():
-//
-// - `hunks` from FilesSlice: to find movePairId for paired move hunks
-//   When approving/rejecting a hunk that's part of a move pair, both
-//   hunks are updated together for consistency.
-//
-// This cross-slice access is the standard Zustand pattern for combined
-// stores. All slices are merged into a single store, so get() returns
-// the complete state including all slices.
+// This slice manages review state (approvals, rejections, trust list, etc.).
+// Move pair approval is handled explicitly via approveHunkIds/rejectHunkIds
+// called from the MovePairModal, which passes both hunk IDs directly.
 //
 // ========================================================================
 
@@ -102,13 +95,12 @@ export interface ReviewSlice {
 
 interface HunkStatusGetter {
   reviewState: ReviewState | null;
-  hunks: { id: string; movePairId?: string; filePath: string }[];
   saveReviewState: () => Promise<void>;
 }
 
 /**
  * Shared helper to update hunk statuses (approve/unapprove/reject/unreject).
- * Handles move pair propagation and debounced save.
+ * Applies status changes and triggers a debounced save.
  */
 function updateHunkStatuses(
   get: () => HunkStatusGetter,
@@ -116,36 +108,16 @@ function updateHunkStatuses(
   hunkIds: string[],
   status: "approved" | "rejected" | undefined,
   options?: {
-    /** Only update move pairs if they currently have this status */
-    movePairOnlyIfStatus?: "approved" | "rejected";
     /** Skip hunks that don't already exist in reviewState.hunks */
     skipMissing?: boolean;
   },
 ): void {
-  const { reviewState, hunks, saveReviewState } = get();
+  const { reviewState, saveReviewState } = get();
   if (!reviewState || hunkIds.length === 0) return;
 
   const newHunks = { ...reviewState.hunks };
-  const idsToUpdate = new Set(hunkIds);
 
-  // Collect move pairs
-  for (const hunkId of hunkIds) {
-    const hunk = hunks.find((h) => h.id === hunkId);
-    if (hunk?.movePairId) {
-      if (options?.movePairOnlyIfStatus) {
-        if (
-          reviewState.hunks[hunk.movePairId]?.status ===
-          options.movePairOnlyIfStatus
-        ) {
-          idsToUpdate.add(hunk.movePairId);
-        }
-      } else {
-        idsToUpdate.add(hunk.movePairId);
-      }
-    }
-  }
-
-  for (const id of idsToUpdate) {
+  for (const id of hunkIds) {
     if (options?.skipMissing && !newHunks[id]) continue;
     if (status) {
       newHunks[id] = {
@@ -251,24 +223,15 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveHunk: (hunkId) => {
-      const { reviewState, hunks, focusedHunkIndex, selectedFile, pushUndo } =
-        get();
+      const { reviewState, focusedHunkIndex, selectedFile, pushUndo } = get();
       if (reviewState) {
-        // Collect all hunk IDs that will be affected (including move pair)
-        const affectedIds = [hunkId];
-        const hunk = hunks.find((h) => h.id === hunkId);
-        if (hunk?.movePairId) {
-          affectedIds.push(hunk.movePairId);
-        }
         const previousStatuses: Record<
           string,
           (typeof reviewState.hunks)[string] | undefined
         > = {};
-        for (const id of affectedIds) {
-          previousStatuses[id] = reviewState.hunks[id];
-        }
+        previousStatuses[hunkId] = reviewState.hunks[hunkId];
         pushUndo({
-          hunkIds: affectedIds,
+          hunkIds: [hunkId],
           previousStatuses,
           focusedHunkIndex,
           selectedFile,
@@ -280,29 +243,20 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     unapproveHunk: (hunkId) => {
       updateHunkStatuses(get, set, [hunkId], undefined, {
-        movePairOnlyIfStatus: "approved",
         skipMissing: true,
       });
     },
 
     rejectHunk: (hunkId) => {
-      const { reviewState, hunks, focusedHunkIndex, selectedFile, pushUndo } =
-        get();
+      const { reviewState, focusedHunkIndex, selectedFile, pushUndo } = get();
       if (reviewState) {
-        const affectedIds = [hunkId];
-        const hunk = hunks.find((h) => h.id === hunkId);
-        if (hunk?.movePairId) {
-          affectedIds.push(hunk.movePairId);
-        }
         const previousStatuses: Record<
           string,
           (typeof reviewState.hunks)[string] | undefined
         > = {};
-        for (const id of affectedIds) {
-          previousStatuses[id] = reviewState.hunks[id];
-        }
+        previousStatuses[hunkId] = reviewState.hunks[hunkId];
         pushUndo({
-          hunkIds: affectedIds,
+          hunkIds: [hunkId],
           previousStatuses,
           focusedHunkIndex,
           selectedFile,
@@ -314,7 +268,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     unrejectHunk: (hunkId) => {
       updateHunkStatuses(get, set, [hunkId], undefined, {
-        movePairOnlyIfStatus: "rejected",
         skipMissing: true,
       });
     },
@@ -345,7 +298,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     unapproveHunkIds: (hunkIds) => {
       updateHunkStatuses(get, set, hunkIds, undefined, {
-        movePairOnlyIfStatus: "approved",
         skipMissing: true,
       });
     },

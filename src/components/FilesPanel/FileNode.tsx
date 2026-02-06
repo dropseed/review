@@ -54,10 +54,10 @@ interface FileNodeProps {
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
+  movedFilePaths?: Set<string>;
 }
 
-// Approve/Unapprove buttons that show on hover
-function ApprovalButtons({
+export function ApprovalButtons({
   hasPending,
   hasApproved,
   onApprove,
@@ -150,6 +150,7 @@ export const FileNode = memo(
     hunkContext,
     onApproveAll,
     onUnapproveAll,
+    movedFilePaths,
   }: FileNodeProps) {
     if (!entry.matchesFilter) {
       return null;
@@ -265,6 +266,7 @@ export const FileNode = memo(
                   hunkContext={hunkContext}
                   onApproveAll={onApproveAll}
                   onUnapproveAll={onUnapproveAll}
+                  movedFilePaths={movedFilePaths}
                 />
               ))}
             </div>
@@ -311,6 +313,13 @@ export const FileNode = memo(
               >
                 {entry.name}
               </span>
+
+              {/* Move indicator */}
+              {movedFilePaths?.has(entry.path) && (
+                <span className="flex-shrink-0 rounded bg-sky-500/15 px-1 py-0.5 text-xxs font-medium text-sky-400">
+                  Moved
+                </span>
+              )}
 
               {/* Symlink indicator */}
               {entry.isSymlink && (
@@ -429,6 +438,7 @@ export const FileNode = memo(
       prev.hunkContext === next.hunkContext &&
       prev.onApproveAll === next.onApproveAll &&
       prev.onUnapproveAll === next.onUnapproveAll &&
+      prev.movedFilePaths === next.movedFilePaths &&
       prev.repoPath === next.repoPath &&
       prev.revealLabel === next.revealLabel &&
       prev.onOpenInSplit === next.onOpenInSplit

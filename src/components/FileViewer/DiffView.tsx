@@ -24,6 +24,7 @@ import {
   UserAnnotationDisplay,
   HunkAnnotationPanel,
 } from "./annotations";
+import { getFirstChangedLine } from "./hunkUtils";
 import type { SupportedLanguages } from "./languageMap";
 
 // Error boundary to catch rendering errors
@@ -58,25 +59,6 @@ function isDeletionOnly(hunk: DiffHunk): boolean {
     hunk.lines.every((l) => l.type === "removed" || l.type === "context") &&
     hunk.lines.some((l) => l.type === "removed")
   );
-}
-
-/**
- * Returns the first changed line in a hunk with its side and line number.
- * Used to position comment editors when rejecting or commenting on a hunk.
- */
-function getFirstChangedLine(hunk: DiffHunk): {
-  lineNumber: number;
-  side: "old" | "new";
-} {
-  const firstChanged = hunk.lines.find(
-    (l) => l.type === "added" || l.type === "removed",
-  );
-  const side: "old" | "new" = firstChanged?.type === "removed" ? "old" : "new";
-  const lineNumber =
-    side === "old"
-      ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-      : (firstChanged?.newLineNumber ?? hunk.newStart);
-  return { lineNumber, side };
 }
 
 // Metadata for hunk annotations
@@ -261,15 +243,25 @@ export function DiffView({
 
   const hunkStates = reviewState?.hunks;
 
+  // Build lookup from hunk ID to hunk object (from store, which has movePairId set)
+  const hunkById = useMemo(() => {
+    const map = new Map<string, DiffHunk>();
+    for (const h of allHunks) {
+      map.set(h.id, h);
+    }
+    return map;
+  }, [allHunks]);
+
   // Build line annotations for each hunk - position at last changed line
   // Memoized to preserve reference stability — @pierre/diffs uses reference
   // equality on lineAnnotations to decide whether to re-render the diff.
   const hunkAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
     return hunks.flatMap((hunk): DiffLineAnnotation<AnnotationMeta>[] => {
       const hunkState = hunkStates?.[hunk.id];
-      const pairedHunk = hunk.movePairId
-        ? (allHunks.find((h) => h.id === hunk.movePairId) ?? null)
-        : null;
+      // Prop hunks come from getFileContent (per-file, no movePairId).
+      // Store hunks have movePairId set by detect_move_pairs. Use hunkById for O(1) lookup.
+      const movePairId = hunkById.get(hunk.id)?.movePairId;
+      const pairedHunk = movePairId ? (hunkById.get(movePairId) ?? null) : null;
       const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
 
       const changedLines = hunk.lines.filter(
@@ -310,7 +302,7 @@ export function DiffView({
         },
       ];
     });
-  }, [hunks, hunkStates, allHunks]);
+  }, [hunks, hunkStates, hunkById]);
 
   // Compute a content key for a hunk based on its changed lines (ignoring context).
   // Used to group identical changes across different files for batch operations.
@@ -334,15 +326,6 @@ export function DiffView({
     }
     return map;
   }, [allHunks, getChangedLinesKey]);
-
-  // Build lookup from hunk ID to hunk object for similar hunks modal
-  const hunkById = useMemo(() => {
-    const map = new Map<string, DiffHunk>();
-    for (const h of allHunks) {
-      map.set(h.id, h);
-    }
-    return map;
-  }, [allHunks]);
 
   // Get similar hunks for a given hunk (same changed lines, different context/files)
   const getSimilarHunks = useCallback(
@@ -403,14 +386,6 @@ export function DiffView({
     return [...hunkAnnotations, ...userAnnotations, newAnnotation];
   }, [hunkAnnotations, userAnnotations, newAnnotationLine]);
 
-  // Handle jumping to paired hunk
-  const handleJumpToPair = (movePairId: string) => {
-    const pairedHunk = allHunks.find((h) => h.id === movePairId);
-    if (pairedHunk) {
-      setSelectedFile(pairedHunk.filePath);
-    }
-  };
-
   const handleCopyHunk = async (hunk: DiffHunk) => {
     const platform = getPlatformServices();
     await platform.clipboard.writeText(hunk.content);
@@ -462,7 +437,7 @@ export function DiffView({
     unapproveHunk: typeof unapproveHunk;
     rejectHunk: typeof rejectHunk;
     unrejectHunk: typeof unrejectHunk;
-    handleJumpToPair: typeof handleJumpToPair;
+
     addTrustPattern: typeof addTrustPattern;
     removeTrustPattern: typeof removeTrustPattern;
     reclassifyHunks: typeof reclassifyHunks;
@@ -494,7 +469,7 @@ export function DiffView({
     unapproveHunk,
     rejectHunk,
     unrejectHunk,
-    handleJumpToPair,
+
     addTrustPattern,
     removeTrustPattern,
     reclassifyHunks,
@@ -574,7 +549,14 @@ export function DiffView({
                 }
               }}
               onUnreject={deps.unrejectHunk}
-              onJumpToPair={deps.handleJumpToPair}
+              onApprovePair={(hunkIds) => {
+                deps.approveHunkIds(hunkIds);
+                deps.nextHunkInFile();
+              }}
+              onRejectPair={(hunkIds) => {
+                deps.rejectHunkIds(hunkIds);
+                deps.nextHunkInFile();
+              }}
               onComment={(lineNumber, side, hunkId) =>
                 deps.setNewAnnotationLine({ lineNumber, side, hunkId })
               }

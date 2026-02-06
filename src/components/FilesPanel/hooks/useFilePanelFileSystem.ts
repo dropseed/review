@@ -31,6 +31,20 @@ export function useFilePanelFileSystem() {
     [hunks, reviewState, stagedFilePaths],
   );
 
+  // Files where ALL hunks are part of a move pair
+  const movedFilePaths = useMemo(() => {
+    const allPaths = new Set<string>();
+    const hasNonMoved = new Set<string>();
+    for (const h of hunks) {
+      allPaths.add(h.filePath);
+      if (!h.movePairId) hasNonMoved.add(h.filePath);
+    }
+    for (const p of hasNonMoved) {
+      allPaths.delete(p);
+    }
+    return allPaths;
+  }, [hunks]);
+
   // Process sectioned tree for Changes sections (Needs Review vs Reviewed)
   const sectionedFiles = useMemo(
     () => processTreeWithSections(allFiles, hunkStatusMap),
@@ -159,6 +173,7 @@ export function useFilePanelFileSystem() {
     repoPath,
     allFilesLoading,
     hunkStatusMap,
+    movedFilePaths,
     sectionedFiles,
     flatSectionedFiles,
     fileStatusMap,

@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, memo } from "react";
-import { SimpleTooltip } from "../ui/tooltip";
 import { StatusLetter, HunkCount } from "./StatusIndicators";
 import type { FileHunkStatus } from "./types";
-import type { HunkContext } from "./FileNode";
+import { ApprovalButtons, type HunkContext } from "./FileNode";
 import type { FileSymbolDiff } from "../../types";
 import {
   ChangeIndicator,
@@ -26,6 +25,7 @@ interface FlatFileNodeProps {
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
+  movedFilePaths?: Set<string>;
 }
 
 // --- Flat file node ---
@@ -40,6 +40,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   hunkContext,
   onApproveAll,
   onUnapproveAll,
+  movedFilePaths,
 }: FlatFileNodeProps) {
   const {
     hunkStates,
@@ -131,66 +132,21 @@ export const FlatFileNode = memo(function FlatFileNode({
             {dirPath && <span className="text-stone-500">{dirPath}</span>}
             {fileName}
           </span>
+          {movedFilePaths?.has(filePath) && (
+            <span className="flex-shrink-0 rounded bg-sky-500/15 px-1 py-0.5 text-xxs font-medium text-sky-400">
+              Moved
+            </span>
+          )}
         </button>
 
         {/* Approval buttons on hover */}
         {onApproveAll && onUnapproveAll && hasReviewableContent && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            {hasPending && (
-              <SimpleTooltip content="Approve all">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApproveAll(filePath, false);
-                  }}
-                  className="flex items-center justify-center w-5 h-5 rounded
-                             text-stone-500 hover:text-emerald-400 hover:bg-emerald-500/20
-                             transition-colors"
-                >
-                  <svg
-                    className="w-3 h-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </button>
-              </SimpleTooltip>
-            )}
-            {hasApproved && (
-              <SimpleTooltip content="Unapprove all">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUnapproveAll(filePath, false);
-                  }}
-                  className="flex items-center justify-center w-5 h-5 rounded
-                             text-emerald-400 hover:text-stone-400 hover:bg-stone-700/50
-                             transition-colors"
-                >
-                  <svg
-                    className="w-3 h-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-                    />
-                  </svg>
-                </button>
-              </SimpleTooltip>
-            )}
-          </div>
+          <ApprovalButtons
+            hasPending={hasPending}
+            hasApproved={hasApproved}
+            onApprove={() => onApproveAll(filePath, false)}
+            onUnapprove={() => onUnapproveAll(filePath, false)}
+          />
         )}
 
         {/* Hunk count */}
