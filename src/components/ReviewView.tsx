@@ -22,6 +22,7 @@ import {
   useFileWatcher,
   useKeyboardNavigation,
   useReviewProgress,
+  useCelebration,
 } from "../hooks";
 
 interface ReviewViewProps {
@@ -178,6 +179,9 @@ export function ReviewView({
     reviewedHunks,
     state,
   } = useReviewProgress();
+
+  // Celebration on 100% reviewed
+  useCelebration();
 
   // Derive repo display name
   const repoName =

@@ -8,6 +8,11 @@ import type {
 } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { createDebouncedFn } from "../types";
+import {
+  playApproveSound,
+  playRejectSound,
+  playBulkSound,
+} from "../../utils/sounds";
 
 // ========================================================================
 // Review Slice
@@ -143,6 +148,15 @@ function updateHunkStatuses(
     },
   });
   debouncedSave(saveReviewState);
+
+  // Sound feedback
+  if (status === "approved" && hunkIds.length > 1) {
+    playBulkSound();
+  } else if (status === "approved") {
+    playApproveSound();
+  } else if (status === "rejected") {
+    playRejectSound();
+  }
 }
 
 export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =

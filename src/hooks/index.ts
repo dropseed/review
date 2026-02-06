@@ -17,6 +17,7 @@ export {
   highlightCode,
 } from "./useHighlighter";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
+export { useCelebration } from "./useCelebration";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";

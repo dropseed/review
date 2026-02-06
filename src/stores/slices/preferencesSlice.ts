@@ -3,6 +3,7 @@ import type { StorageService } from "../../platform";
 import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
+import { setSoundEnabled } from "../../utils/sounds";
 
 // Font size constants
 export const CODE_FONT_SIZE_DEFAULT = 11;
@@ -39,6 +40,7 @@ const defaults = {
   reviewedDisplayMode: "tree" as ChangesDisplayMode,
   diffViewMode: "split" as DiffViewMode,
   sentryEnabled: false,
+  soundEffectsEnabled: true,
 };
 
 export interface PreferencesSlice {
@@ -72,6 +74,9 @@ export interface PreferencesSlice {
   // Crash reporting
   sentryEnabled: boolean;
 
+  // Sound effects
+  soundEffectsEnabled: boolean;
+
   // Actions
   setSidebarPosition: (position: "left" | "right") => void;
   setCodeFontSize: (size: number) => void;
@@ -99,6 +104,9 @@ export interface PreferencesSlice {
 
   // Crash reporting actions
   setSentryEnabled: (enabled: boolean) => void;
+
+  // Sound effects actions
+  setSoundEffectsEnabled: (enabled: boolean) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -121,6 +129,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   classifyMaxConcurrent: defaults.classifyMaxConcurrent,
   recentRepositories: defaults.recentRepositories,
   sentryEnabled: defaults.sentryEnabled,
+  soundEffectsEnabled: defaults.soundEffectsEnabled,
 
   setSidebarPosition: (position) => {
     set({ sidebarPosition: position });
@@ -193,6 +202,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       defaults.recentRepositories;
     const sentryEnabled =
       (await storage.get<boolean>("sentryEnabled")) ?? defaults.sentryEnabled;
+    const soundEffectsEnabled =
+      (await storage.get<boolean>("soundEffectsEnabled")) ??
+      defaults.soundEffectsEnabled;
     const diffLineDiffType =
       (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
       defaults.diffLineDiffType;
@@ -229,11 +241,15 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       classifyMaxConcurrent: maxConcurrent,
       recentRepositories: recentRepos,
       sentryEnabled,
+      soundEffectsEnabled,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
     setSentryConsent(sentryEnabled);
     invoke("set_sentry_consent", { enabled: sentryEnabled }).catch(() => {});
+
+    // Propagate sound setting
+    setSoundEnabled(soundEffectsEnabled);
 
     // Apply font size CSS variables
     document.documentElement.style.setProperty(
@@ -317,5 +333,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("sentryEnabled", enabled);
     setSentryConsent(enabled);
     invoke("set_sentry_consent", { enabled }).catch(() => {});
+  },
+
+  setSoundEffectsEnabled: (enabled) => {
+    set({ soundEffectsEnabled: enabled });
+    storage.set("soundEffectsEnabled", enabled);
+    setSoundEnabled(enabled);
   },
 });
