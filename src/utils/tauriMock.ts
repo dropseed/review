@@ -121,6 +121,13 @@ export async function mockInvoke<T>(cmd: string, args?: unknown): Promise<T> {
       }
       return (label === pattern) as T;
 
+    case "is_dev_mode":
+      return true as T;
+
+    case "update_menu_state":
+    case "set_sentry_consent":
+      return undefined as T;
+
     default:
       console.warn(`[tauriMock] Unhandled command: ${cmd}`);
       throw new Error(`Mock not implemented for command: ${cmd}`);
