@@ -320,7 +320,7 @@ export function ReviewView({
                 const platform = getPlatformServices();
                 platform.opener.openUrl(remoteInfo.browseUrl);
               }}
-              className="flex items-center gap-1 text-stone-500 hover:text-stone-300 transition-colors"
+              className="text-stone-500 hover:text-stone-300 transition-colors"
               title={remoteInfo.browseUrl}
             >
               {remoteInfo.browseUrl.includes("github.com") ? (
@@ -347,7 +347,6 @@ export function ReviewView({
                   <line x1="10" y1="14" x2="21" y2="3" />
                 </svg>
               )}
-              <span>{remoteInfo.name}</span>
             </button>
           )}
           <GitStatusIndicator />
