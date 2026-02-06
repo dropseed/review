@@ -4111,7 +4111,7 @@ dependencies = [
 
 [[package]]
 name = "review"
-version = "0.0.11"
+version = "0.0.12"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -4150,7 +4150,7 @@ dependencies = [
 
 [[package]]
 name = "review-desktop"
-version = "0.0.11"
+version = "0.0.12"
 dependencies = [
  "base64 0.22.1",
  "chrono",
