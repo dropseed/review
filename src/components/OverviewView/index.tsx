@@ -58,16 +58,19 @@ function ExternalLink({
   children?: ReactNode;
 }) {
   return (
-    <button
-      onClick={() => {
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
         if (href) {
           getPlatformServices().opener.openUrl(href);
         }
       }}
-      className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 cursor-pointer"
+      className="text-cyan-400 hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/50 rounded underline underline-offset-2 cursor-pointer"
+      rel="noopener noreferrer"
     >
       {children}
-    </button>
+    </a>
   );
 }
 

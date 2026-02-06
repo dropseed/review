@@ -9,8 +9,8 @@ import { ContentSearch } from "./ContentSearch";
 import { SymbolSearch } from "./SymbolSearch";
 import { ClassificationsModal } from "./ClassificationsModal";
 import { FeedbackPanel } from "./FeedbackPanel";
-import { GitStatusIndicator } from "./GitStatusIndicator";
 import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
+import { SimpleTooltip } from "./ui/tooltip";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -132,13 +132,7 @@ export function ReviewView({
     sidebarPosition: "right",
   });
 
-  useKeyboardNavigation({
-    setShowDebugModal,
-    setShowSettingsModal,
-    setShowFileFinder,
-    setShowContentSearch,
-    setShowSymbolSearch,
-  });
+  useKeyboardNavigation();
 
   useMenuEvents({
     handleClose,
@@ -148,6 +142,9 @@ export function ReviewView({
     handleRefresh,
     setShowDebugModal,
     setShowSettingsModal,
+    setShowFileFinder,
+    setShowContentSearch,
+    setShowSymbolSearch,
   });
 
   useFileWatcher(comparisonReady);
@@ -173,14 +170,43 @@ export function ReviewView({
   return (
     <div className="flex h-full flex-col bg-stone-950">
       {/* Header */}
-      <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        {/* Left: sidebar toggle + overview link */}
-        <ReviewBreadcrumb
-          repoName={repoName}
-          comparison={comparison}
-          topLevelView={topLevelView}
-          onNavigateToOverview={navigateToOverview}
-        />
+      <header className="flex h-12 items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] px-4">
+        {/* Left: breadcrumb + status indicators */}
+        <div className="flex items-center gap-3 min-w-0">
+          <ReviewBreadcrumb
+            repoName={repoName}
+            comparison={comparison}
+            topLevelView={topLevelView}
+            onNavigateToOverview={navigateToOverview}
+          />
+          {classifyingHunkIds.size > 0 && (
+            <div className="flex items-center gap-1.5 text-violet-400 text-2xs shrink-0">
+              <svg
+                className="h-3 w-3 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <span className="tabular-nums" aria-live="polite">
+                Classifying {classifyingHunkIds.size} hunk
+                {classifyingHunkIds.size !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Right: review progress */}
         <div className="flex items-center gap-3">
@@ -200,55 +226,57 @@ export function ReviewView({
               <span className="font-mono text-xs tabular-nums text-stone-400">
                 {reviewedHunks}/{totalHunks}
               </span>
-              <div className="progress-bar w-24">
-                <div
-                  className="progress-bar-trusted"
-                  style={{
-                    width: `${(trustedHunks / totalHunks) * 100}%`,
-                  }}
-                />
-                <div
-                  className="progress-bar-approved"
-                  style={{
-                    width: `${(approvedHunks / totalHunks) * 100}%`,
-                    left: `${(trustedHunks / totalHunks) * 100}%`,
-                  }}
-                />
-                <div
-                  className="progress-bar-rejected"
-                  style={{
-                    width: `${(rejectedHunks / totalHunks) * 100}%`,
-                    left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
-                  }}
-                />
-              </div>
-              {/* Hover tooltip */}
-              <div
-                className="absolute top-full right-0 mt-1 hidden group-hover:block
-                            bg-stone-900 border border-stone-700 rounded px-2 py-1.5
-                            text-xs whitespace-nowrap z-50 shadow-lg"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                  <span className="text-stone-300">
-                    Trusted: {trustedHunks}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-stone-300">
-                    Approved: {approvedHunks}
-                  </span>
-                </div>
-                {rejectedHunks > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    <span className="text-stone-300">
-                      Rejected: {rejectedHunks}
-                    </span>
+              <SimpleTooltip
+                content={
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                      <span>Trusted: {trustedHunks}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span>Approved: {approvedHunks}</span>
+                    </div>
+                    {rejectedHunks > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        <span>Rejected: {rejectedHunks}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                }
+              >
+                <div
+                  className="progress-bar w-24"
+                  tabIndex={0}
+                  role="progressbar"
+                  aria-valuenow={reviewedHunks}
+                  aria-valuemin={0}
+                  aria-valuemax={totalHunks}
+                  aria-label={`${reviewedHunks} of ${totalHunks} hunks reviewed`}
+                >
+                  <div
+                    className="progress-bar-trusted"
+                    style={{
+                      width: `${(trustedHunks / totalHunks) * 100}%`,
+                    }}
+                  />
+                  <div
+                    className="progress-bar-approved"
+                    style={{
+                      width: `${(approvedHunks / totalHunks) * 100}%`,
+                      left: `${(trustedHunks / totalHunks) * 100}%`,
+                    }}
+                  />
+                  <div
+                    className="progress-bar-rejected"
+                    style={{
+                      width: `${(rejectedHunks / totalHunks) * 100}%`,
+                      left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
+                    }}
+                  />
+                </div>
+              </SimpleTooltip>
             </div>
           ) : (
             <span className="text-xs text-stone-500">No changes to review</span>
@@ -282,7 +310,7 @@ export function ReviewView({
 
         {/* FilesPanel (right side) */}
         <aside
-          className="relative flex flex-shrink-0 flex-col border-l border-stone-800 bg-stone-900"
+          className="relative flex flex-shrink-0 flex-col bg-stone-950 shadow-[-1px_0_0_0_rgba(255,255,255,0.04)]"
           style={{ width: `${sidebarWidth}rem` }}
         >
           {/* Sidebar content */}
@@ -294,101 +322,14 @@ export function ReviewView({
 
           {/* Resize handle (on left edge of right sidebar) */}
           <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
             onMouseDown={handleResizeStart}
             className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
           />
         </aside>
       </div>
-
-      {/* Status Bar */}
-      <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
-        <div className="flex items-center gap-3">
-          {/* Classification progress indicator */}
-          {classifyingHunkIds.size > 0 && (
-            <div className="flex items-center gap-1.5 text-violet-400">
-              <svg
-                className="h-3 w-3 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              <span className="tabular-nums">
-                Classifying {classifyingHunkIds.size} hunk
-                {classifyingHunkIds.size !== 1 ? "s" : ""}
-              </span>
-            </div>
-          )}
-          {remoteInfo && (
-            <button
-              onClick={() => {
-                const platform = getPlatformServices();
-                platform.opener.openUrl(remoteInfo.browseUrl);
-              }}
-              className="text-stone-500 hover:text-stone-300 transition-colors"
-              title={remoteInfo.browseUrl}
-            >
-              {remoteInfo.browseUrl.includes("github.com") ? (
-                <svg
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-              ) : (
-                <svg
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              )}
-            </button>
-          )}
-          <GitStatusIndicator />
-        </div>
-        <div className="flex items-center gap-3 text-stone-600">
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}P
-            </kbd>
-            <span className="ml-1">find file</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}R
-            </kbd>
-            <span className="ml-1">symbols</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}⇧F
-            </kbd>
-            <span className="ml-1">search</span>
-          </span>
-        </div>
-      </footer>
 
       {/* Debug Modal */}
       <DebugModal

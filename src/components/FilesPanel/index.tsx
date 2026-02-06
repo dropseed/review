@@ -97,7 +97,7 @@ function SectionHeader({
   return (
     <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
       <div
-        className={`border-b border-stone-800 ${showTopBorder ? "border-t" : ""}`}
+        className={`border-b border-stone-800/50 ${showTopBorder ? "border-t border-t-stone-800/50" : ""}`}
       >
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
@@ -526,7 +526,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     <ReviewDataProvider value={reviewDataContextValue}>
       <div className="flex h-full flex-col">
         {/* View mode toggle - always show all three tabs */}
-        <div className="border-b border-stone-800 px-3 py-2">
+        <div className="border-b border-stone-800/50 px-3 py-2">
           <Tabs
             value={viewMode}
             onValueChange={(v) => setViewMode(v as typeof viewMode)}
@@ -784,7 +784,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               ) : (
                 <>
                   {/* All Files header with expand/collapse */}
-                  <div className="flex items-center border-b border-stone-800">
+                  <div className="flex items-center border-b border-stone-800/50">
                     <div className="flex-1 px-3 py-2 text-xs font-medium text-stone-300">
                       {repoPath?.split("/").pop() || "All Files"}
                     </div>
