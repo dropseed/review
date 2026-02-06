@@ -1,4 +1,5 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
+import { createPortal } from "react-dom";
 import type { Comparison, DiffShortStat } from "../../types";
 import type { GlobalReviewSummary } from "../../types";
 
@@ -146,7 +147,7 @@ export const TabRailItem = memo(function TabRailItem({
   const handleOverflowClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setContextMenuPos({ x: rect.right, y: rect.bottom + 2 });
+    setContextMenuPos({ x: rect.left, y: rect.bottom + 2 });
     setShowContextMenu(true);
   }, []);
 
@@ -230,7 +231,7 @@ export const TabRailItem = memo(function TabRailItem({
             <span className="relative grid shrink-0 justify-items-end items-center">
               <span
                 className="col-start-1 row-start-1 flex items-center gap-1.5
-                               transition-opacity duration-100 group-hover:opacity-0"
+                               transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
               >
                 <span className="text-2xs tabular-nums text-stone-600">
                   {age}
@@ -244,7 +245,8 @@ export const TabRailItem = memo(function TabRailItem({
                 onClick={handleOverflowClick}
                 className="col-start-1 row-start-1 flex items-center justify-center
                            h-5 w-5 rounded text-stone-500 hover:text-stone-300
-                           hover:bg-white/[0.08] opacity-0 group-hover:opacity-100
+                           hover:bg-white/[0.08] opacity-0 pointer-events-none
+                           group-hover:opacity-100 group-hover:pointer-events-auto
                            transition-opacity duration-100"
                 aria-label="Review options"
               >
@@ -294,24 +296,26 @@ export const TabRailItem = memo(function TabRailItem({
         </div>
       </div>
 
-      {/* Context menu */}
-      {showContextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="fixed z-50 min-w-[160px] rounded-lg border border-white/[0.08] bg-stone-800/90 backdrop-blur-xl py-1 shadow-xl"
-          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-        >
-          <button
-            onClick={() => {
-              setShowContextMenu(false);
-              onDelete();
-            }}
-            className="w-full px-3 py-1.5 text-left text-xs text-rose-400 hover:bg-white/[0.08] transition-colors"
+      {/* Context menu — portaled to body to escape backdrop-blur containing block */}
+      {showContextMenu &&
+        createPortal(
+          <div
+            ref={contextMenuRef}
+            className="fixed z-50 min-w-[160px] rounded-lg border border-white/[0.08] bg-stone-800/90 backdrop-blur-xl py-1 shadow-xl"
+            style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
-            Delete Review
-          </button>
-        </div>
-      )}
+            <button
+              onClick={() => {
+                setShowContextMenu(false);
+                onDelete();
+              }}
+              className="w-full px-3 py-1.5 text-left text-xs text-rose-400 hover:bg-white/[0.08] transition-colors"
+            >
+              Delete Review
+            </button>
+          </div>,
+          document.body,
+        )}
     </>
   );
 });
