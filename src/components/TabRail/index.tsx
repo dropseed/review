@@ -98,8 +98,8 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
     <div className="relative flex shrink-0" data-tauri-drag-region>
       {/* Rail panel */}
       <nav
-        className={`tab-rail flex h-full shrink-0 flex-col bg-stone-900/70
-                   backdrop-blur-sm border-r border-stone-800/60 overflow-hidden
+        className={`tab-rail flex h-full shrink-0 flex-col
+                   bg-white/[0.03] backdrop-blur-xl border-r border-white/[0.06] overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{
           width: collapsed ? 0 : `${sidebarWidth}rem`,
@@ -112,8 +112,15 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
           className="flex flex-col h-full min-w-0"
           style={{ width: `${sidebarWidth}rem` }}
         >
-          {/* Top padding for macOS traffic lights */}
-          <div className="h-12 shrink-0" data-tauri-drag-region />
+          {/* Header — matches h-12 main header */}
+          <div
+            className="shrink-0 flex items-center h-12 px-3"
+            data-tauri-drag-region
+          >
+            <span className="text-[10px] font-medium uppercase tracking-widest text-stone-500">
+              Reviews
+            </span>
+          </div>
 
           {/* Scrollable tab list */}
           <div
@@ -132,24 +139,38 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
             ))}
 
             {openReviews.length === 0 && (
-              <div className="px-2 py-4 text-center">
-                <p className="text-2xs text-stone-600">No reviews open</p>
+              <div className="px-2 py-8 text-center">
+                <svg
+                  className="h-6 w-6 mx-auto mb-2 text-stone-600"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <p className="text-2xs text-stone-500">No reviews open</p>
+                <p className="text-xxs text-stone-600 mt-1">Press + to start</p>
               </div>
             )}
           </div>
 
           {/* Add button */}
-          <div className="shrink-0 px-1.5 pb-1.5">
+          <div className="shrink-0 px-1.5 pb-2 pt-1">
             <button
               type="button"
               onClick={handleAddReview}
-              className="flex items-center justify-center w-full py-2 rounded-lg
-                         text-stone-500 hover:text-stone-300 hover:bg-stone-800/50
-                         transition-colors duration-100"
+              className="flex items-center gap-1.5 w-full px-2.5 py-1.5 rounded-md
+                         text-stone-500 hover:text-stone-300 hover:bg-white/[0.06]
+                         transition-colors duration-100 text-2xs"
               aria-label="Add review"
             >
               <svg
-                className="h-4 w-4"
+                className="h-3 w-3"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -161,6 +182,7 @@ export function TabRail({ onOpenRepo }: TabRailProps) {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
+              <span>New Review</span>
             </button>
           </div>
         </div>

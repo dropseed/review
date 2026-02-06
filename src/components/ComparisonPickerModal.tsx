@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Comparison } from "../types";
 import { useReviewStore } from "../stores";
+import { getApiClient } from "../api";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
 import { NewComparisonForm } from "./StartScreen/NewComparisonForm";
@@ -24,6 +25,7 @@ export function ComparisonPickerModal({
   const savedReviews = useReviewStore((s) => s.savedReviews);
   const recentRepositories = useReviewStore((s) => s.recentRepositories);
   const addOpenReview = useReviewStore((s) => s.addOpenReview);
+  const updateReviewMetadata = useReviewStore((s) => s.updateReviewMetadata);
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
 
@@ -50,8 +52,11 @@ export function ComparisonPickerModal({
     async (comparison: Comparison) => {
       if (!selectedRepoPath) return;
 
-      const { routePrefix, repoName } =
-        await resolveRepoIdentity(selectedRepoPath);
+      const apiClient = getApiClient();
+      const [{ routePrefix, repoName }, defaultBranch] = await Promise.all([
+        resolveRepoIdentity(selectedRepoPath),
+        apiClient.getDefaultBranch(selectedRepoPath).catch(() => undefined),
+      ]);
 
       // Activate the repo in the store
       setRepoPath(selectedRepoPath);
@@ -65,7 +70,26 @@ export function ComparisonPickerModal({
         repoName,
         comparison,
         routePrefix,
+        defaultBranch,
       });
+
+      // Fetch diff stats asynchronously
+      apiClient
+        .getDiffShortStat(selectedRepoPath, comparison)
+        .then((diffStats) => {
+          const { openReviews } = useReviewStore.getState();
+          const idx = openReviews.findIndex(
+            (r) =>
+              r.repoPath === selectedRepoPath &&
+              r.comparison.key === comparison.key,
+          );
+          if (idx >= 0) {
+            updateReviewMetadata(idx, { diffStats });
+          }
+        })
+        .catch((err) => {
+          console.warn("[picker] Failed to fetch diff stats:", err);
+        });
 
       // Navigate to the review route
       navigate(`/${routePrefix}/review/${comparison.key}`);
@@ -76,6 +100,7 @@ export function ComparisonPickerModal({
       setRepoPath,
       addRecentRepository,
       addOpenReview,
+      updateReviewMetadata,
       navigate,
       onClose,
     ],

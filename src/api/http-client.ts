@@ -13,6 +13,7 @@ import type {
   PullRequest,
   CommitEntry,
   CommitDetail,
+  DiffShortStat,
   FileEntry,
   FileContent,
   ReviewState,
@@ -174,6 +175,14 @@ export class HttpClient implements ApiClient {
     } catch {
       return "Raw git status not available";
     }
+  }
+
+  async getDiffShortStat(
+    _repoPath: string,
+    _comparison: Comparison,
+  ): Promise<DiffShortStat> {
+    console.warn("[HttpClient] getDiffShortStat not implemented");
+    return { fileCount: 0, additions: 0, deletions: 0 };
   }
 
   async listCommits(

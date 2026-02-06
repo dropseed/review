@@ -49,11 +49,11 @@ function parseComparisonKey(key: string): Comparison | null {
 
 /**
  * Get the working tree comparison for a repo.
- * Returns both the key and the Comparison object.
+ * Returns the key, Comparison object, and default branch name.
  */
 async function getWorkingTreeComparison(
   repoPath: string,
-): Promise<{ key: string; comparison: Comparison }> {
+): Promise<{ key: string; comparison: Comparison; defaultBranch: string }> {
   const apiClient = getApiClient();
   const [defaultBranch, currentBranch] = await Promise.all([
     apiClient.getDefaultBranch(repoPath).catch(() => "main"),
@@ -61,7 +61,28 @@ async function getWorkingTreeComparison(
   ]);
   const key = `${defaultBranch}..${currentBranch}+working-tree`;
   const comparison = makeComparison(defaultBranch, currentBranch, true);
-  return { key, comparison };
+  return { key, comparison, defaultBranch };
+}
+
+/**
+ * Fetch diff shortstat for a review and update its metadata in the store.
+ */
+function fetchAndUpdateDiffStats(repoPath: string, comparison: Comparison) {
+  const apiClient = getApiClient();
+  apiClient
+    .getDiffShortStat(repoPath, comparison)
+    .then((diffStats) => {
+      const { openReviews, updateReviewMetadata } = useReviewStore.getState();
+      const idx = openReviews.findIndex(
+        (r) => r.repoPath === repoPath && r.comparison.key === comparison.key,
+      );
+      if (idx >= 0) {
+        updateReviewMetadata(idx, { diffStats });
+      }
+    })
+    .catch((err) => {
+      console.warn("[repo-init] Failed to fetch diff stats:", err);
+    });
 }
 
 /**
@@ -166,18 +187,21 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
               comparison,
               routePrefix,
             });
+            fetchAndUpdateDiffStats(urlRepoPath, comparison);
           }
           nav(`/${routePrefix}/review/${urlComparisonKey}`, { replace: true });
         } else {
           // Default to working tree comparison
-          const { key, comparison } =
+          const { key, comparison, defaultBranch } =
             await getWorkingTreeComparison(urlRepoPath);
           addOpenReview({
             repoPath: urlRepoPath,
             repoName,
             comparison,
             routePrefix,
+            defaultBranch,
           });
+          fetchAndUpdateDiffStats(urlRepoPath, comparison);
           nav(`/${routePrefix}/review/${key}`, { replace: true });
         }
         return;
@@ -214,13 +238,16 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
         // Resolve and navigate to review route (working tree by default)
         const { routePrefix, repoName } = await resolveRepoIdentity(path);
-        const { key, comparison } = await getWorkingTreeComparison(path);
+        const { key, comparison, defaultBranch } =
+          await getWorkingTreeComparison(path);
         addOpenReview({
           repoPath: path,
           repoName,
           comparison,
           routePrefix,
+          defaultBranch,
         });
+        fetchAndUpdateDiffStats(path, comparison);
         nav(`/${routePrefix}/review/${key}`, { replace: true });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -296,13 +323,16 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       storeRepoPath(path);
 
       const { routePrefix, repoName } = await resolveRepoIdentity(path);
-      const { key, comparison } = await getWorkingTreeComparison(path);
+      const { key, comparison, defaultBranch } =
+        await getWorkingTreeComparison(path);
       addOpenReview({
         repoPath: path,
         repoName,
         comparison,
         routePrefix,
+        defaultBranch,
       });
+      fetchAndUpdateDiffStats(path, comparison);
       navigateRef.current(`/${routePrefix}/review/${key}`);
     },
     [setRepoPath, addRecentRepository, addOpenReview],

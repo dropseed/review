@@ -285,26 +285,6 @@ export function ReviewView({
 
       {/* Status Bar */}
       <footer className="flex h-8 items-center justify-between border-t border-stone-800 bg-stone-900 px-4 text-2xs">
-        <div className="flex items-center gap-3 text-stone-600">
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}P
-            </kbd>
-            <span className="ml-1">find file</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}R
-            </kbd>
-            <span className="ml-1">symbols</span>
-          </span>
-          <span>
-            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
-              {"\u2318"}⇧F
-            </kbd>
-            <span className="ml-1">search</span>
-          </span>
-        </div>
         <div className="flex items-center gap-3">
           {/* Classification progress indicator */}
           {classifyingHunkIds.size > 0 && (
@@ -371,6 +351,26 @@ export function ReviewView({
             </button>
           )}
           <GitStatusIndicator />
+        </div>
+        <div className="flex items-center gap-3 text-stone-600">
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}P
+            </kbd>
+            <span className="ml-1">find file</span>
+          </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}R
+            </kbd>
+            <span className="ml-1">symbols</span>
+          </span>
+          <span>
+            <kbd className="rounded bg-stone-800 px-1 py-0.5 text-xxs text-stone-500">
+              {"\u2318"}⇧F
+            </kbd>
+            <span className="ml-1">search</span>
+          </span>
         </div>
       </footer>
 

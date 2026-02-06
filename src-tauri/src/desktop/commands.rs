@@ -20,7 +20,7 @@ use review::narrative::NarrativeInput;
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage;
 use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
-use review::sources::local_git::{LocalGitSource, RemoteInfo, SearchMatch};
+use review::sources::local_git::{DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
@@ -845,6 +845,17 @@ pub fn get_diff(repo_path: String, comparison: Comparison) -> Result<String, Str
 
     source
         .get_diff(&comparison, None)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_diff_shortstat(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<DiffShortStat, String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source
+        .get_diff_shortstat(&comparison)
         .map_err(|e| e.to_string())
 }
 

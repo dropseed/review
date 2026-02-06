@@ -461,6 +461,13 @@ export interface RemoteInfo {
   browseUrl: string;
 }
 
+// Lightweight diff statistics from git diff --shortstat
+export interface DiffShortStat {
+  fileCount: number;
+  additions: number;
+  deletions: number;
+}
+
 // File content from backend
 export type ContentType = "text" | "image" | "svg" | "binary";
 

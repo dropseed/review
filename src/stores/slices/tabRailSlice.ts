@@ -1,4 +1,4 @@
-import type { Comparison } from "../../types";
+import type { Comparison, DiffShortStat } from "../../types";
 import type { StorageService } from "../../platform";
 import type { SliceCreatorWithStorage } from "../types";
 
@@ -7,6 +7,8 @@ export interface OpenReview {
   repoName: string; // display name (remote name or dirname)
   comparison: Comparison;
   routePrefix: string; // e.g. "dropseed/review" for URL construction
+  defaultBranch?: string; // for simplified comparison display
+  diffStats?: DiffShortStat; // cached stats for the tab
 }
 
 export interface TabRailSlice {
@@ -17,6 +19,10 @@ export interface TabRailSlice {
   addOpenReview: (review: OpenReview) => void;
   removeOpenReview: (index: number) => void;
   setActiveTab: (index: number) => void;
+  updateReviewMetadata: (
+    index: number,
+    metadata: { defaultBranch?: string; diffStats?: DiffShortStat },
+  ) => void;
 }
 
 const STORAGE_KEY = "openReviews";
@@ -81,5 +87,26 @@ export const createTabRailSlice: SliceCreatorWithStorage<TabRailSlice> =
       if (index >= 0 && index < openReviews.length) {
         set({ activeTabIndex: index });
       }
+    },
+
+    updateReviewMetadata: (index, metadata) => {
+      const { openReviews } = get();
+      if (index < 0 || index >= openReviews.length) return;
+
+      const updated = openReviews.map((review, i) => {
+        if (i !== index) return review;
+        return {
+          ...review,
+          ...(metadata.defaultBranch !== undefined && {
+            defaultBranch: metadata.defaultBranch,
+          }),
+          ...(metadata.diffStats !== undefined && {
+            diffStats: metadata.diffStats,
+          }),
+        };
+      });
+
+      set({ openReviews: updated });
+      storage.set(STORAGE_KEY, updated);
     },
   });

@@ -18,6 +18,15 @@ pub struct RemoteInfo {
     pub browse_url: String,
 }
 
+/// Lightweight diff statistics from `git diff --shortstat`
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffShortStat {
+    pub file_count: u32,
+    pub additions: u32,
+    pub deletions: u32,
+}
+
 /// A single search match from git grep
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +108,65 @@ impl LocalGitSource {
         }
         // Last resort: use HEAD
         Ok("HEAD".to_owned())
+    }
+
+    /// Get lightweight diff statistics (file count, additions, deletions) via `--shortstat`.
+    ///
+    /// Mirrors the three modes used by `get_diff()`:
+    /// - `staged_only`: only staged changes
+    /// - Committed: diff between old..new refs
+    /// - Working tree: committed changes + uncommitted changes
+    pub fn get_diff_shortstat(
+        &self,
+        comparison: &Comparison,
+    ) -> Result<DiffShortStat, LocalGitError> {
+        let mut total_files: u32 = 0;
+        let mut total_add: u32 = 0;
+        let mut total_del: u32 = 0;
+
+        if comparison.staged_only {
+            let output = self.run_git(&["diff", "--shortstat", "--cached"])?;
+            let (f, a, d) = parse_shortstat(&output);
+            total_files += f;
+            total_add += a;
+            total_del += d;
+            return Ok(DiffShortStat {
+                file_count: total_files,
+                additions: total_add,
+                deletions: total_del,
+            });
+        }
+
+        // Committed diff
+        if comparison.old != comparison.new || !comparison.working_tree {
+            let base = match self.get_merge_base(&comparison.old, &comparison.new) {
+                Ok(base) => base,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
+            };
+            let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
+            let range = format!("{base}..{resolved_new}");
+            let output = self.run_git(&["diff", "--shortstat", &range])?;
+            let (f, a, d) = parse_shortstat(&output);
+            total_files += f;
+            total_add += a;
+            total_del += d;
+        }
+
+        // Working tree changes
+        if comparison.working_tree {
+            let head = self.resolve_ref_or_empty_tree("HEAD");
+            let output = self.run_git(&["diff", "--shortstat", &head])?;
+            let (f, a, d) = parse_shortstat(&output);
+            total_files += f;
+            total_add += a;
+            total_del += d;
+        }
+
+        Ok(DiffShortStat {
+            file_count: total_files,
+            additions: total_add,
+            deletions: total_del,
+        })
     }
 
     /// List all local and remote branches, separated, plus stashes
@@ -1182,4 +1250,39 @@ fn parse_remote_url(url: &str) -> Result<RemoteInfo, LocalGitError> {
     Err(LocalGitError::Git(format!(
         "Could not parse remote URL: {url}"
     )))
+}
+
+/// Parse `git diff --shortstat` output into (files_changed, insertions, deletions).
+///
+/// Typical output: ` 3 files changed, 10 insertions(+), 5 deletions(-)\n`
+/// Some parts may be absent (e.g., no insertions or no deletions).
+fn parse_shortstat(output: &str) -> (u32, u32, u32) {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return (0, 0, 0);
+    }
+
+    let mut files: u32 = 0;
+    let mut insertions: u32 = 0;
+    let mut deletions: u32 = 0;
+
+    // Split on commas: ["3 files changed", " 10 insertions(+)", " 5 deletions(-)"]
+    for part in trimmed.split(',') {
+        let part = part.trim();
+        if part.contains("file") {
+            if let Some(n) = part.split_whitespace().next() {
+                files = n.parse().unwrap_or(0);
+            }
+        } else if part.contains("insertion") {
+            if let Some(n) = part.split_whitespace().next() {
+                insertions = n.parse().unwrap_or(0);
+            }
+        } else if part.contains("deletion") {
+            if let Some(n) = part.split_whitespace().next() {
+                deletions = n.parse().unwrap_or(0);
+            }
+        }
+    }
+
+    (files, insertions, deletions)
 }

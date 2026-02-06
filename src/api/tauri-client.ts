@@ -21,6 +21,7 @@ import type {
   ReviewSummary,
   TrustCategory,
   DiffHunk,
+  DiffShortStat,
   ClassifyResponse,
   HunkInput,
   ClassifyOptions,
@@ -66,6 +67,16 @@ export class TauriClient implements ApiClient {
 
   async getGitStatusRaw(repoPath: string): Promise<string> {
     return invoke<string>("get_git_status_raw", { repoPath });
+  }
+
+  async getDiffShortStat(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<DiffShortStat> {
+    return invoke<DiffShortStat>("get_diff_shortstat", {
+      repoPath,
+      comparison,
+    });
   }
 
   async listCommits(

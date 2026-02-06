@@ -3,15 +3,27 @@ import type { Comparison } from "../../types";
 import type { OpenReview } from "../../stores/slices/tabRailSlice";
 
 /** Format a comparison for display in the tab rail. */
-function formatComparison(comparison: Comparison): string {
-  if (comparison.workingTree) {
-    return `${comparison.old}..Working Tree`;
-  }
-  if (comparison.stagedOnly) {
-    return `${comparison.old}..Staged`;
-  }
+function formatComparison(
+  comparison: Comparison,
+  defaultBranch?: string,
+): string {
   if (comparison.githubPr) {
     return `PR #${comparison.githubPr.number}`;
+  }
+
+  const baseIsDefault =
+    defaultBranch !== undefined && comparison.old === defaultBranch;
+
+  if (comparison.workingTree) {
+    return baseIsDefault ? "Working Tree" : `${comparison.old}..Working Tree`;
+  }
+  if (comparison.stagedOnly) {
+    return baseIsDefault ? "Staged" : `${comparison.old}..Staged`;
+  }
+
+  // Branch comparison
+  if (baseIsDefault) {
+    return comparison.new;
   }
   return `${comparison.old}..${comparison.new}`;
 }
@@ -35,7 +47,10 @@ export const TabRailItem = memo(function TabRailItem({
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  const comparisonDisplay = formatComparison(review.comparison);
+  const comparisonDisplay = formatComparison(
+    review.comparison,
+    review.defaultBranch,
+  );
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -66,30 +81,30 @@ export const TabRailItem = memo(function TabRailItem({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showContextMenu]);
 
+  const stats = review.diffStats;
+
   return (
     <>
       <button
         onClick={onActivate}
         onContextMenu={handleContextMenu}
-        className={`group relative w-full text-left px-2.5 py-2 rounded-lg mb-0.5
-                    transition-all duration-100
-                    ${
-                      isActive
-                        ? "bg-stone-800/90 shadow-sm shadow-black/20 ring-1 ring-stone-700/50"
-                        : "hover:bg-stone-800/40"
-                    }`}
+        className={`group relative w-full text-left px-3 py-2 rounded-md mb-px
+                    transition-colors duration-100
+                    ${isActive ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"}`}
         aria-current={isActive ? "true" : undefined}
         title={`${review.repoName} - ${comparisonDisplay}`}
       >
-        {/* Active indicator dot */}
+        {/* Active indicator bar */}
         {isActive && (
-          <span className="absolute left-0.5 top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-amber-500" />
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-amber-500/80" />
         )}
         {/* Repo name */}
         <div className="flex items-center justify-between gap-1 min-w-0">
           <span
-            className={`text-xs font-semibold truncate ${
-              isActive ? "text-stone-200" : "text-stone-400"
+            className={`text-xs font-medium truncate ${
+              isActive
+                ? "text-stone-100"
+                : "text-stone-300 group-hover:text-stone-200"
             }`}
           >
             {review.repoName}
@@ -100,7 +115,7 @@ export const TabRailItem = memo(function TabRailItem({
             tabIndex={-1}
             onClick={handleCloseClick}
             className="shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100
-                       text-stone-600 hover:text-stone-300 hover:bg-stone-700/50
+                       text-stone-500 hover:text-stone-200 hover:bg-white/[0.08]
                        transition-opacity duration-75"
             aria-label={`Close ${review.repoName}`}
           >
@@ -119,21 +134,33 @@ export const TabRailItem = memo(function TabRailItem({
             </svg>
           </span>
         </div>
-        {/* Comparison key */}
-        <span
-          className={`text-2xs truncate block mt-0.5 ${
-            isActive ? "text-stone-500" : "text-stone-600"
-          }`}
-        >
-          {comparisonDisplay}
-        </span>
+        {/* Comparison + stats */}
+        <div className="flex items-center justify-between gap-1.5 mt-0.5 min-w-0">
+          <span
+            className={`text-2xs truncate ${
+              isActive ? "text-stone-400" : "text-stone-500"
+            }`}
+          >
+            {comparisonDisplay}
+          </span>
+          {stats && (stats.additions > 0 || stats.deletions > 0) && (
+            <span className="flex items-center gap-1 font-mono text-xxs tabular-nums shrink-0">
+              {stats.additions > 0 && (
+                <span className="text-emerald-500/70">+{stats.additions}</span>
+              )}
+              {stats.deletions > 0 && (
+                <span className="text-red-400/60">-{stats.deletions}</span>
+              )}
+            </span>
+          )}
+        </div>
       </button>
 
       {/* Context menu */}
       {showContextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[160px] rounded-lg border border-stone-700 bg-stone-800 py-1 shadow-xl"
+          className="fixed z-50 min-w-[160px] rounded-lg border border-white/[0.08] bg-stone-800/90 backdrop-blur-xl py-1 shadow-xl"
           style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
         >
           <button
@@ -141,7 +168,7 @@ export const TabRailItem = memo(function TabRailItem({
               setShowContextMenu(false);
               onNewReviewInRepo();
             }}
-            className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+            className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-white/[0.08] transition-colors"
           >
             New Review in This Repo...
           </button>
@@ -150,7 +177,7 @@ export const TabRailItem = memo(function TabRailItem({
               setShowContextMenu(false);
               onClose();
             }}
-            className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+            className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-white/[0.08] transition-colors"
           >
             Close Tab
           </button>

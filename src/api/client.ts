@@ -19,6 +19,7 @@ import type {
   ReviewSummary,
   TrustCategory,
   DiffHunk,
+  DiffShortStat,
   ClassifyResponse,
   HunkInput,
   ClassifyOptions,
@@ -54,6 +55,12 @@ export interface ApiClient {
 
   /** Get raw git status output */
   getGitStatusRaw(repoPath: string): Promise<string>;
+
+  /** Get lightweight diff statistics (file count, additions, deletions) */
+  getDiffShortStat(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<DiffShortStat>;
 
   /** List recent commits */
   listCommits(
