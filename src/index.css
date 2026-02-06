@@ -83,14 +83,14 @@
 
 @theme extend inline {
   /* Brand colors */
-  --color-terracotta-400: #c75d4a;
-  --color-terracotta-500: #a63d2f;
-  --color-terracotta-600: #8b3426;
-  --color-sage-200: #a5d4b0;
-  --color-sage-300: #8ab896;
-  --color-sage-400: #6b9b7a;
-  --color-sage-500: #4a7c59;
-  --color-sage-600: #3d6549;
+  --color-terracotta-400: #e0776b;
+  --color-terracotta-500: #d45a52;
+  --color-terracotta-600: #b54a42;
+  --color-sage-200: #b5e0c2;
+  --color-sage-300: #96c9a5;
+  --color-sage-400: #7aad8a;
+  --color-sage-500: #5a8f6d;
+  --color-sage-600: #4a7459;
 
   /* Semantic status colors - review states */
   --color-status-approved: oklch(0.765 0.177 162.73);  /* emerald-500 */
@@ -602,11 +602,11 @@ kbd {
 
 /* Glow effects */
 .glow-sage {
-  box-shadow: 0 0 1rem rgba(74, 124, 89, 0.3);
+  box-shadow: 0 0 1rem rgba(90, 143, 109, 0.3);
 }
 
 .glow-terracotta {
-  box-shadow: 0 0 1rem rgba(166, 61, 47, 0.3);
+  box-shadow: 0 0 1rem rgba(212, 90, 82, 0.3);
 }
 
 /* Interactive button affordance */
