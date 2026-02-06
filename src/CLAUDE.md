@@ -42,11 +42,11 @@ Organized by feature area:
 - `FileViewer/` — Diff view, code view, annotations, minimap, in-file search
 - `FilesPanel/` — File tree sidebar, flat file list, commit panel
 - `OverviewView/` — Summary stats, trust section, drill-down
-- `StartScreen/` — Repo picker, comparison form, saved reviews
+- `StartScreen/` — Comparison form sub-components (NewComparisonForm, BranchSelect, SavedReviewList, WorkingTreeCard)
 - `TabRail/` — Tab navigation sidebar
 - `ui/` — Shared primitives (dialog, popover, tooltip, tabs, etc.)
 
-Top-level components: `ReviewView.tsx` (main review screen), `WelcomePage.tsx`, `SettingsModal.tsx`, `DebugModal.tsx`.
+Top-level components: `ReviewView.tsx` (main review screen), `ComparisonPickerModal.tsx`, `SettingsModal.tsx`, `DebugModal.tsx`.
 
 ## Hooks
 

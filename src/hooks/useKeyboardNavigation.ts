@@ -8,7 +8,6 @@ import {
 } from "../utils/preferences";
 
 interface UseKeyboardNavigationOptions {
-  onBack: () => void;
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
@@ -21,7 +20,6 @@ interface UseKeyboardNavigationOptions {
  * j/k for hunk navigation, a/r for approve/reject, modal toggles, font size, split view.
  */
 export function useKeyboardNavigation({
-  onBack,
   setShowDebugModal,
   setShowSettingsModal,
   setShowFileFinder,
@@ -30,8 +28,6 @@ export function useKeyboardNavigation({
 }: UseKeyboardNavigationOptions) {
   const hunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
-  const nextFile = useReviewStore((s) => s.nextFile);
-  const prevFile = useReviewStore((s) => s.prevFile);
   const nextHunk = useReviewStore((s) => s.nextHunk);
   const prevHunk = useReviewStore((s) => s.prevHunk);
   const approveHunk = useReviewStore((s) => s.approveHunk);
@@ -50,6 +46,12 @@ export function useKeyboardNavigation({
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
   const undo = useReviewStore((s) => s.undo);
+  const setComparisonPickerOpen = useReviewStore(
+    (s) => s.setComparisonPickerOpen,
+  );
+  const setComparisonPickerRepoPath = useReviewStore(
+    (s) => s.setComparisonPickerRepoPath,
+  );
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -100,6 +102,23 @@ export function useKeyboardNavigation({
         return;
       }
 
+      // Cmd/Ctrl+Shift+N to open comparison picker (pre-fill active tab's repo)
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key === "n"
+      ) {
+        event.preventDefault();
+        const state = useReviewStore.getState();
+        const activeReview =
+          state.activeTabIndex !== null
+            ? state.openReviews[state.activeTabIndex]
+            : null;
+        setComparisonPickerRepoPath(activeReview?.repoPath ?? null);
+        setComparisonPickerOpen(true);
+        return;
+      }
+
       // Cmd/Ctrl+F to block browser find (in-file search handled by FileViewer)
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -121,7 +140,7 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Escape: close split → browse to overview → overview to start screen
+      // Escape: close split → browse to overview → overview is a no-op (use tab close)
       if (event.key === "Escape") {
         if (secondaryFile !== null) {
           event.preventDefault();
@@ -133,11 +152,7 @@ export function useKeyboardNavigation({
           navigateToOverview();
           return;
         }
-        if (topLevelView === "overview") {
-          event.preventDefault();
-          onBack();
-          return;
-        }
+        // On overview: do nothing (no "back" destination with tabs)
       }
 
       // Cmd/Ctrl+Shift+\ to toggle split orientation
@@ -223,23 +238,9 @@ export function useKeyboardNavigation({
         case "z":
           undo();
           break;
-        case "ArrowDown":
-          if (event.metaKey || event.ctrlKey) {
-            nextFile();
-            event.preventDefault();
-          }
-          break;
-        case "ArrowUp":
-          if (event.metaKey || event.ctrlKey) {
-            prevFile();
-            event.preventDefault();
-          }
-          break;
       }
     },
     [
-      nextFile,
-      prevFile,
       nextHunk,
       prevHunk,
       hunks,
@@ -248,7 +249,6 @@ export function useKeyboardNavigation({
       rejectHunk,
       setPendingCommentHunkId,
       nextHunkInFile,
-      onBack,
       codeFontSize,
       setCodeFontSize,
       secondaryFile,
@@ -264,6 +264,8 @@ export function useKeyboardNavigation({
       navigateToBrowse,
       navigateToOverview,
       undo,
+      setComparisonPickerOpen,
+      setComparisonPickerRepoPath,
     ],
   );
 

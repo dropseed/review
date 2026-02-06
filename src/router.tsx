@@ -6,20 +6,15 @@ import {
   Navigate,
   Outlet,
   useOutletContext,
-  useParams,
-  useNavigate,
 } from "react-router-dom";
-import type { Comparison } from "./types";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { TabRail } from "./components/TabRail";
 import { getPlatformServices } from "./platform";
-import { getApiClient } from "./api";
 import { ReviewView } from "./components/ReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores";
 import {
   useRepositoryInit,
-  useGlobalShortcut,
   useComparisonLoader,
   useWindowTitle,
   useFileRouteSync,
@@ -59,17 +54,12 @@ function AppShell() {
     checkClaudeAvailable();
   }, [loadPreferences, loadOpenReviews, checkClaudeAvailable]);
 
-  // Global shortcuts
-  useGlobalShortcut();
-
   const {
     repoStatus,
     repoError,
     comparisonReady,
     initialLoading,
     setInitialLoading,
-    handleSelectReview,
-    handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
     handleCloseRepo,
@@ -146,7 +136,7 @@ function AppShell() {
     <TooltipProvider delayDuration={300}>
       <UpdateBanner />
       <div className="flex h-screen bg-stone-950">
-        <TabRail onOpenRepo={handleOpenRepo} onSelectRepo={handleSelectRepo} />
+        <TabRail onOpenRepo={handleOpenRepo} />
         <div className="flex flex-1 flex-col overflow-hidden">
           <Outlet
             context={{
@@ -157,8 +147,6 @@ function AppShell() {
               initialLoading,
               setInitialLoading,
               loadingProgress,
-              handleSelectReview,
-              handleBackToStart,
               handleOpenRepo,
               handleNewWindow,
               handleCloseRepo,
@@ -179,8 +167,6 @@ interface AppContext {
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
   loadingProgress: { phase: string; current: number; total: number } | null;
-  handleSelectReview: (comparison: Comparison) => void;
-  handleBackToStart: () => void;
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
@@ -246,56 +232,6 @@ function EmptyTabState() {
   );
 }
 
-/**
- * Start screen route — redirects to working tree review.
- * This maintains backwards compatibility with old URLs that land on /:owner/:repo
- */
-function StartRoute() {
-  const { repoPath } = useAppContext();
-  const { owner, repo } = useParams<{ owner: string; repo: string }>();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!repoPath) return;
-
-    const redirectToWorkingTree = async () => {
-      const apiClient = getApiClient();
-      try {
-        const [defaultBranch, currentBranch] = await Promise.all([
-          apiClient.getDefaultBranch(repoPath).catch(() => "main"),
-          apiClient.getCurrentBranch(repoPath).catch(() => "HEAD"),
-        ]);
-        const workingTreeKey = `${defaultBranch}..${currentBranch}+working-tree`;
-        navigate(`/${owner}/${repo}/review/${workingTreeKey}`, {
-          replace: true,
-        });
-      } catch {
-        // Fallback: use main..HEAD+working-tree
-        navigate(`/${owner}/${repo}/review/main..HEAD+working-tree`, {
-          replace: true,
-        });
-      }
-    };
-
-    redirectToWorkingTree();
-  }, [repoPath, owner, repo, navigate]);
-
-  // If no repo path resolved yet, redirect to welcome
-  if (!repoPath) {
-    return <Navigate to="/" replace />;
-  }
-
-  // Show loading state while redirecting
-  return (
-    <div className="flex h-full items-center justify-center bg-stone-950">
-      <div className="flex flex-col items-center gap-4 animate-fade-in">
-        <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-        <p className="text-stone-400">Loading repository...</p>
-      </div>
-    </div>
-  );
-}
-
 /** Review UI — shown at /:owner/:repo/review/:comparisonKey */
 function ReviewRoute() {
   const {
@@ -303,7 +239,6 @@ function ReviewRoute() {
     comparisonReady,
     initialLoading,
     loadingProgress,
-    handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
   } = useAppContext();
@@ -344,7 +279,6 @@ function ReviewRoute() {
 
   return (
     <ReviewView
-      onBack={handleBackToStart}
       onOpenRepo={handleOpenRepo}
       onNewWindow={handleNewWindow}
       comparisonReady={comparisonReady}
@@ -359,7 +293,6 @@ export function AppRouter() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<EmptyTabState />} />
-          <Route path="/:owner/:repo" element={<StartRoute />} />
           <Route
             path="/:owner/:repo/review/:comparisonKey/*"
             element={<ReviewRoute />}

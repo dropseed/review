@@ -17,7 +17,6 @@ export interface TabRailSlice {
   addOpenReview: (review: OpenReview) => void;
   removeOpenReview: (index: number) => void;
   setActiveTab: (index: number) => void;
-  updateTabComparison: (index: number, comparison: Comparison) => void;
 }
 
 const STORAGE_KEY = "openReviews";
@@ -45,20 +44,6 @@ export const createTabRailSlice: SliceCreatorWithStorage<TabRailSlice> =
       if (existingIndex >= 0) {
         // Tab already exists — just activate it
         set({ activeTabIndex: existingIndex });
-        return;
-      }
-
-      // Check if this repo already has a tab (same repo, different comparison)
-      const sameRepoIndex = openReviews.findIndex(
-        (r) => r.repoPath === review.repoPath,
-      );
-
-      if (sameRepoIndex >= 0) {
-        // Update existing tab's comparison instead of adding a new one
-        const updated = [...openReviews];
-        updated[sameRepoIndex] = { ...updated[sameRepoIndex], ...review };
-        set({ openReviews: updated, activeTabIndex: sameRepoIndex });
-        storage.set(STORAGE_KEY, updated);
         return;
       }
 
@@ -96,16 +81,5 @@ export const createTabRailSlice: SliceCreatorWithStorage<TabRailSlice> =
       if (index >= 0 && index < openReviews.length) {
         set({ activeTabIndex: index });
       }
-    },
-
-    updateTabComparison: (index, comparison) => {
-      const { openReviews } = get();
-      if (index < 0 || index >= openReviews.length) return;
-
-      const updated = [...openReviews];
-      updated[index] = { ...updated[index], comparison };
-
-      set({ openReviews: updated });
-      storage.set(STORAGE_KEY, updated);
     },
   });

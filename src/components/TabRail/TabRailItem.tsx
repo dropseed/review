@@ -21,7 +21,7 @@ interface TabRailItemProps {
   isActive: boolean;
   onActivate: () => void;
   onClose: () => void;
-  onSwitchComparison: () => void;
+  onNewReviewInRepo: () => void;
 }
 
 export const TabRailItem = memo(function TabRailItem({
@@ -29,7 +29,7 @@ export const TabRailItem = memo(function TabRailItem({
   isActive,
   onActivate,
   onClose,
-  onSwitchComparison,
+  onNewReviewInRepo,
 }: TabRailItemProps) {
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
@@ -139,11 +139,11 @@ export const TabRailItem = memo(function TabRailItem({
           <button
             onClick={() => {
               setShowContextMenu(false);
-              onSwitchComparison();
+              onNewReviewInRepo();
             }}
             className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-stone-700 transition-colors"
           >
-            Switch Comparison...
+            New Review in This Repo...
           </button>
           <button
             onClick={() => {

@@ -1,16 +1,15 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { TabRailItem } from "./TabRailItem";
-import { AddReviewPopover } from "./AddReviewPopover";
+import { ComparisonPickerModal } from "../ComparisonPickerModal";
 
 interface TabRailProps {
   onOpenRepo: () => Promise<void>;
-  onSelectRepo: (path: string) => void;
 }
 
-export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
+export function TabRail({ onOpenRepo }: TabRailProps) {
   const navigate = useNavigate();
   const openReviews = useReviewStore((s) => s.openReviews);
   const activeTabIndex = useReviewStore((s) => s.activeTabIndex);
@@ -19,14 +18,23 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
 
+  const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
+  const setComparisonPickerOpen = useReviewStore(
+    (s) => s.setComparisonPickerOpen,
+  );
+  const comparisonPickerRepoPath = useReviewStore(
+    (s) => s.comparisonPickerRepoPath,
+  );
+  const setComparisonPickerRepoPath = useReviewStore(
+    (s) => s.setComparisonPickerRepoPath,
+  );
+
   const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
     sidebarPosition: "left",
-    initialWidth: 14, // ~210px
-    minWidth: 10, // ~150px
-    maxWidth: 24, // ~360px
+    initialWidth: 14,
+    minWidth: 10,
+    maxWidth: 24,
   });
-
-  const [addPopoverOpen, setAddPopoverOpen] = useState(false);
 
   const handleActivateTab = useCallback(
     (index: number) => {
@@ -34,11 +42,8 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
       if (!review) return;
 
       setActiveTab(index);
-
-      // Navigate to the review's URL
       navigate(`/${review.routePrefix}/review/${review.comparison.key}`);
 
-      // If repo changed, update the repo path
       const currentRepoPath = useReviewStore.getState().repoPath;
       if (review.repoPath !== currentRepoPath) {
         setRepoPath(review.repoPath);
@@ -53,11 +58,8 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
       removeOpenReview(index);
 
       if (isLast) {
-        // No more tabs — go to welcome
         navigate("/");
       } else {
-        // The removeOpenReview already adjusts activeTabIndex,
-        // but we need to navigate to the new active tab
         const state = useReviewStore.getState();
         const newIndex = state.activeTabIndex;
         if (newIndex !== null && state.openReviews[newIndex]) {
@@ -72,10 +74,25 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
     [openReviews.length, removeOpenReview, navigate, setRepoPath],
   );
 
-  // Placeholder for comparison switching (right-click context menu)
-  const handleSwitchComparison = useCallback((_index: number) => {
-    // TODO: open a comparison picker popover for this tab
-  }, []);
+  // Context menu: "New Review in This Repo..." — pre-fill with that tab's repo
+  const handleNewReviewInRepo = useCallback(
+    (repoPath: string) => {
+      setComparisonPickerRepoPath(repoPath);
+      setComparisonPickerOpen(true);
+    },
+    [setComparisonPickerRepoPath, setComparisonPickerOpen],
+  );
+
+  // "+" button: open modal with no pre-filled repo (step 1)
+  const handleAddReview = useCallback(() => {
+    setComparisonPickerRepoPath(null);
+    setComparisonPickerOpen(true);
+  }, [setComparisonPickerRepoPath, setComparisonPickerOpen]);
+
+  const handleCloseModal = useCallback(() => {
+    setComparisonPickerOpen(false);
+    setComparisonPickerRepoPath(null);
+  }, [setComparisonPickerOpen, setComparisonPickerRepoPath]);
 
   return (
     <div className="relative flex shrink-0" data-tauri-drag-region>
@@ -110,7 +127,7 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
                 isActive={index === activeTabIndex}
                 onActivate={() => handleActivateTab(index)}
                 onClose={() => handleCloseTab(index)}
-                onSwitchComparison={() => handleSwitchComparison(index)}
+                onNewReviewInRepo={() => handleNewReviewInRepo(review.repoPath)}
               />
             ))}
 
@@ -123,12 +140,28 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
 
           {/* Add button */}
           <div className="shrink-0 px-1.5 pb-1.5">
-            <AddReviewPopover
-              isOpen={addPopoverOpen}
-              onOpenChange={setAddPopoverOpen}
-              onOpenRepo={onOpenRepo}
-              onSelectRepo={onSelectRepo}
-            />
+            <button
+              type="button"
+              onClick={handleAddReview}
+              className="flex items-center justify-center w-full py-2 rounded-lg
+                         text-stone-500 hover:text-stone-300 hover:bg-stone-800/50
+                         transition-colors duration-100"
+              aria-label="Add review"
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -141,6 +174,14 @@ export function TabRail({ onOpenRepo, onSelectRepo }: TabRailProps) {
           />
         )}
       </nav>
+
+      {/* Comparison Picker Modal */}
+      <ComparisonPickerModal
+        isOpen={comparisonPickerOpen}
+        onClose={handleCloseModal}
+        prefilledRepoPath={comparisonPickerRepoPath}
+        onOpenRepo={onOpenRepo}
+      />
     </div>
   );
 }

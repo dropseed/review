@@ -76,6 +76,12 @@ export interface NavigationSlice {
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
+
+  // Comparison picker modal
+  comparisonPickerOpen: boolean;
+  setComparisonPickerOpen: (open: boolean) => void;
+  comparisonPickerRepoPath: string | null;
+  setComparisonPickerRepoPath: (path: string | null) => void;
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -329,6 +335,13 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   classificationsModalOpen: false,
   setClassificationsModalOpen: (open) =>
     set({ classificationsModalOpen: open }),
+
+  // Comparison picker modal
+  comparisonPickerOpen: false,
+  setComparisonPickerOpen: (open) => set({ comparisonPickerOpen: open }),
+  comparisonPickerRepoPath: null,
+  setComparisonPickerRepoPath: (path) =>
+    set({ comparisonPickerRepoPath: path }),
 
   swapPanes: () => {
     const { selectedFile, secondaryFile } = get();

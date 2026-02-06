@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { makeComparison, type Comparison } from "../types";
 import { setLoggerRepoPath, clearLog } from "../utils/logger";
+import { resolveRepoIdentity } from "../utils/repo-identity";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
@@ -44,26 +45,6 @@ function parseComparisonKey(key: string): Comparison | null {
   if (!oldRef || !newRef) return null;
 
   return makeComparison(oldRef, newRef, workingTree);
-}
-
-/**
- * Resolve the route prefix and display name for a repo in a single API call.
- * Uses the git remote to get "owner/repo", falls back to "local/dirname".
- */
-async function resolveRepoIdentity(
-  repoPath: string,
-): Promise<{ routePrefix: string; repoName: string }> {
-  try {
-    const apiClient = getApiClient();
-    const info = await apiClient.getRemoteInfo(repoPath);
-    if (info?.name) {
-      return { routePrefix: info.name, repoName: info.name };
-    }
-  } catch {
-    // Fall through to local fallback
-  }
-  const dirname = repoPath.replace(/\/+$/, "").split("/").pop() || "repo";
-  return { routePrefix: `local/${dirname}`, repoName: dirname };
 }
 
 /**
@@ -117,8 +98,6 @@ interface UseRepositoryInitReturn {
   setComparisonReady: (ready: boolean) => void;
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
-  handleSelectReview: (comparison: Comparison) => void;
-  handleBackToStart: () => void;
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
@@ -140,7 +119,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const loadCurrentComparison = useReviewStore((s) => s.loadCurrentComparison);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
   const addOpenReview = useReviewStore((s) => s.addOpenReview);
-  const updateTabComparison = useReviewStore((s) => s.updateTabComparison);
 
   // Repository status tracking
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
@@ -294,44 +272,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     }
   }, [repoPath, setComparison, loadCurrentComparison]);
 
-  // Handle selecting a review from the start screen or reviews list
-  const handleSelectReview = useCallback(
-    async (selectedComparison: Comparison) => {
-      const currentKey = useReviewStore.getState().comparison.key;
-
-      // Only reset state when switching to a different comparison.
-      // setComparison already persists via saveCurrentComparison internally.
-      if (selectedComparison.key !== currentKey) {
-        setComparison(selectedComparison);
-        setComparisonReady(true);
-        setInitialLoading(true);
-      }
-
-      // Navigate to the review route and update tab
-      if (repoPath) {
-        const { routePrefix } = await resolveRepoIdentity(repoPath);
-        navigateRef.current(`/${routePrefix}/review/${selectedComparison.key}`);
-
-        // Update the active tab's comparison
-        const { activeTabIndex } = useReviewStore.getState();
-        if (activeTabIndex !== null) {
-          updateTabComparison(activeTabIndex, selectedComparison);
-        }
-      }
-    },
-    [setComparison, repoPath, updateTabComparison],
-  );
-
-  // Navigate back to start screen
-  const handleBackToStart = useCallback(async () => {
-    if (repoPath) {
-      const { routePrefix } = await resolveRepoIdentity(repoPath);
-      navigateRef.current(`/${routePrefix}`);
-    } else {
-      navigateRef.current("/");
-    }
-  }, [repoPath]);
-
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
     setRepoPath(null);
@@ -406,8 +346,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     setComparisonReady,
     initialLoading,
     setInitialLoading,
-    handleSelectReview,
-    handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
     handleCloseRepo,

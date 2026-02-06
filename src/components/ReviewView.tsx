@@ -24,14 +24,12 @@ import {
 } from "../hooks";
 
 interface ReviewViewProps {
-  onBack: () => void;
   onOpenRepo: () => Promise<void>;
   onNewWindow: () => Promise<void>;
   comparisonReady: boolean;
 }
 
 export function ReviewView({
-  onBack,
   onOpenRepo,
   onNewWindow,
   comparisonReady,
@@ -47,7 +45,6 @@ export function ReviewView({
   const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const refresh = useReviewStore((s) => s.refresh);
-  const selectedFile = useReviewStore((s) => s.selectedFile);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const closeSplit = useReviewStore((s) => s.closeSplit);
   const showClassificationsModal = useReviewStore(
@@ -135,7 +132,6 @@ export function ReviewView({
   });
 
   useKeyboardNavigation({
-    onBack,
     setShowDebugModal,
     setShowSettingsModal,
     setShowFileFinder,
@@ -168,7 +164,6 @@ export function ReviewView({
   // Celebration on 100% reviewed
   useCelebration();
 
-  // Derive repo display name
   const repoName =
     remoteInfo?.name ||
     repoPath?.replace(/\/+$/, "").split("/").pop() ||
@@ -178,22 +173,28 @@ export function ReviewView({
     <div className="flex h-full flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
-        {/* Left: breadcrumb navigation */}
+        {/* Left: sidebar toggle + overview link */}
         <ReviewBreadcrumb
           repoName={repoName}
           comparison={comparison}
           topLevelView={topLevelView}
-          selectedFile={selectedFile}
           onNavigateToOverview={navigateToOverview}
         />
 
-        {/* Right: review controls */}
+        {/* Right: review progress */}
         <div className="flex items-center gap-3">
           {totalHunks > 0 ? (
-            <button
-              onClick={navigateToOverview}
-              className="group relative flex cursor-pointer items-center gap-2 rounded px-2 py-1 -mx-2 -my-1 hover:bg-stone-800 transition-colors"
-            >
+            <div className="group relative flex items-center gap-2.5">
+              {state === "approved" && (
+                <span className="text-xs font-medium text-emerald-400">
+                  Approved
+                </span>
+              )}
+              {state === "changes_requested" && (
+                <span className="text-xs font-medium text-rose-400">
+                  Changes Requested
+                </span>
+              )}
               <span className="text-xs text-stone-500">Hunks reviewed</span>
               <span className="font-mono text-xs tabular-nums text-stone-400">
                 {reviewedHunks}/{totalHunks}
@@ -220,21 +221,11 @@ export function ReviewView({
                   }}
                 />
               </div>
-              {state === "approved" && (
-                <span className="text-xxs font-medium text-emerald-400">
-                  Approved
-                </span>
-              )}
-              {state === "changes_requested" && (
-                <span className="text-xxs font-medium text-rose-400">
-                  Changes Requested
-                </span>
-              )}
               {/* Hover tooltip */}
               <div
                 className="absolute top-full right-0 mt-1 hidden group-hover:block
-                                bg-stone-900 border border-stone-700 rounded px-2 py-1.5
-                                text-xs whitespace-nowrap z-50 shadow-lg"
+                            bg-stone-900 border border-stone-700 rounded px-2 py-1.5
+                            text-xs whitespace-nowrap z-50 shadow-lg"
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="w-2 h-2 rounded-full bg-cyan-500" />
@@ -249,7 +240,7 @@ export function ReviewView({
                   </span>
                 </div>
                 {rejectedHunks > 0 && (
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-rose-500" />
                     <span className="text-stone-300">
                       Rejected: {rejectedHunks}
@@ -257,7 +248,7 @@ export function ReviewView({
                   </div>
                 )}
               </div>
-            </button>
+            </div>
           ) : (
             <span className="text-xs text-stone-500">No changes to review</span>
           )}

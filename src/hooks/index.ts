@@ -1,4 +1,3 @@
-export { useGlobalShortcut } from "./useGlobalShortcut";
 export { useWindowTitle } from "./useWindowTitle";
 export { useSidebarResize } from "./useSidebarResize";
 export { useMenuEvents } from "./useMenuEvents";
