@@ -707,20 +707,20 @@ export function FileViewer({ filePath }: FileViewerProps) {
 
       {/* Content area */}
       <div className="relative flex flex-1 overflow-hidden">
+        {/* In-file search bar */}
+        {inFileSearchOpen && fileContent && (
+          <div className="absolute top-0 right-0 z-20 p-2">
+            <InFileSearchBar
+              content={fileContent.content}
+              onHighlightLine={handleSearchHighlightLine}
+              onClose={handleCloseSearch}
+            />
+          </div>
+        )}
         <div
           ref={setScrollNode}
           className={`min-w-0 flex-1 h-full overflow-auto bg-stone-950 ${hasChanges && !showImageViewer ? "scrollbar-none" : "scrollbar-thin"}`}
         >
-          {/* In-file search bar */}
-          {inFileSearchOpen && fileContent && (
-            <div className="sticky top-0 z-10 flex justify-end p-2">
-              <InFileSearchBar
-                content={fileContent.content}
-                onHighlightLine={handleSearchHighlightLine}
-                onClose={handleCloseSearch}
-              />
-            </div>
-          )}
           <FileContentRenderer
             filePath={filePath}
             fileContent={fileContent}
