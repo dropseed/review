@@ -2,6 +2,7 @@
 name = "review-desktop"
 version = "0.0.10"
 description = "A diff review desktop app"
+license = "FSL-1.1-MIT"
 edition = "2021"
 default-run = "review-desktop"
 
