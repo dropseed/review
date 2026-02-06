@@ -46,10 +46,15 @@ function shouldSkipFile(path: string): boolean {
   return SKIP_PATTERNS.some((pattern) => pattern.test(path));
 }
 
+/**
+ * Tracks file/hunk loading progress. `null` means no load is in progress
+ * (either before any repo is opened, or after loading completes).
+ * The "pending" phase signals that a new load is about to begin.
+ */
 export interface LoadingProgress {
   current: number;
   total: number;
-  phase: "files" | "hunks" | "moves";
+  phase: "pending" | "files" | "hunks" | "moves";
 }
 
 export interface FilesSlice {
@@ -116,7 +121,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         hunks: [],
         movePairs: [],
         flatFileList: [],
-        loadingProgress: null,
+        loadingProgress: { phase: "pending", current: 0, total: 0 },
         loadedGitIgnoredDirs: new Set<string>(),
         refreshGeneration: 0,
         // Navigation
@@ -154,8 +159,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     setComparison: (comparison) => {
-      // Clear stale data immediately so the UI doesn't show files from
-      // the previous comparison while the new one loads.
+      // Clear stale data and signal that new data is loading.
       set({
         comparison,
         files: [],
@@ -163,7 +167,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         hunks: [],
         movePairs: [],
         allFiles: [],
-        loadingProgress: null,
+        loadingProgress: { phase: "pending", current: 0, total: 0 },
         reviewState: null,
         undoStack: [],
       });

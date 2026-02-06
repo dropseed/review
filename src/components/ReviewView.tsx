@@ -53,6 +53,7 @@ export function ReviewView({
   const setShowClassificationsModal = useReviewStore(
     (s) => s.setClassificationsModalOpen,
   );
+  const loadingProgress = useReviewStore((s) => s.loadingProgress);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -254,6 +255,22 @@ export function ReviewView({
           )}
         </div>
       </header>
+
+      {/* Loading progress bar */}
+      {loadingProgress && (
+        <div className="h-0.5 w-full overflow-hidden shrink-0">
+          {loadingProgress.phase === "hunks" && loadingProgress.total > 0 ? (
+            <div
+              className="h-full bg-amber-500/60 transition-[width] duration-300 ease-out"
+              style={{
+                width: `${Math.round((loadingProgress.current / loadingProgress.total) * 100)}%`,
+              }}
+            />
+          ) : (
+            <div className="h-full w-1/4 bg-amber-500/40 animate-[shimmer_1.5s_ease-in-out_infinite]" />
+          )}
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex flex-1 flex-row overflow-hidden">

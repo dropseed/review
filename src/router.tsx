@@ -21,23 +21,6 @@ import {
   type RepoStatus,
 } from "./hooks";
 
-/** Returns the appropriate loading progress message based on current phase */
-function getLoadingProgressText(
-  loadingProgress: { phase: string; current: number; total: number } | null,
-): string {
-  if (!loadingProgress) {
-    return "Loading review...";
-  }
-  switch (loadingProgress.phase) {
-    case "files":
-      return "Finding changed files...";
-    case "hunks":
-      return `Loading file ${loadingProgress.current} of ${loadingProgress.total}...`;
-    default:
-      return "Detecting moved code...";
-  }
-}
-
 /**
  * AppShell — layout wrapper that provides global effects and the ?repo= bootstrap.
  * Renders <Outlet /> for child routes.
@@ -58,7 +41,6 @@ function AppShell() {
     repoStatus,
     repoError,
     comparisonReady,
-    initialLoading,
     setInitialLoading,
     handleOpenRepo,
     handleNewWindow,
@@ -111,26 +93,9 @@ function AppShell() {
 
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
-  const loadingProgress = useReviewStore((s) => s.loadingProgress);
 
   // Update window title on every route (welcome, start, review)
   useWindowTitle(repoPath, comparison, comparisonReady);
-
-  // Show loading state while determining repo status
-  if (repoStatus === "loading") {
-    return (
-      <div className="flex h-screen bg-stone-950">
-        {/* Tab rail placeholder during loading */}
-        <div className="w-[14rem] shrink-0 border-r border-stone-800/60 bg-stone-900/70" />
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-4 animate-fade-in">
-            <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-            <p className="text-stone-400">Loading repository...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -144,9 +109,6 @@ function AppShell() {
               repoError,
               repoPath,
               comparisonReady,
-              initialLoading,
-              setInitialLoading,
-              loadingProgress,
               handleOpenRepo,
               handleNewWindow,
               handleCloseRepo,
@@ -164,9 +126,6 @@ interface AppContext {
   repoError: string | null;
   repoPath: string | null;
   comparisonReady: boolean;
-  initialLoading: boolean;
-  setInitialLoading: (loading: boolean) => void;
-  loadingProgress: { phase: string; current: number; total: number } | null;
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
@@ -234,14 +193,8 @@ function EmptyTabState() {
 
 /** Review UI — shown at /:owner/:repo/review/:comparisonKey */
 function ReviewRoute() {
-  const {
-    repoPath,
-    comparisonReady,
-    initialLoading,
-    loadingProgress,
-    handleOpenRepo,
-    handleNewWindow,
-  } = useAppContext();
+  const { repoPath, comparisonReady, handleOpenRepo, handleNewWindow } =
+    useAppContext();
 
   // Bidirectional sync between URL file path and store
   useFileRouteSync();
@@ -249,32 +202,6 @@ function ReviewRoute() {
   // If no repo path, redirect to welcome
   if (!repoPath) {
     return <Navigate to="/" replace />;
-  }
-
-  // Show loading indicator during initial load
-  if (initialLoading) {
-    const progressText = getLoadingProgressText(loadingProgress);
-
-    return (
-      <div className="flex h-full items-center justify-center bg-stone-950">
-        <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <p className="text-stone-400">{progressText}</p>
-          {loadingProgress?.phase === "hunks" && loadingProgress.total > 0 && (
-            <div className="w-48">
-              <div className="h-1.5 w-full rounded-full bg-stone-800">
-                <div
-                  className="h-1.5 rounded-full bg-amber-500"
-                  style={{
-                    width: `${Math.round((loadingProgress.current / loadingProgress.total) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
   }
 
   return (

@@ -82,6 +82,7 @@ const markdownComponents = {
 export function OverviewView() {
   const progress = useReviewProgress();
   const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
+  const loadingProgress = useReviewStore((s) => s.loadingProgress);
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col">
@@ -116,7 +117,10 @@ export function OverviewView() {
         )}
       </div>
 
-      {progress.totalHunks === 0 ? (
+      {progress.totalHunks === 0 && loadingProgress ? (
+        /* Spacer while files are still loading */
+        <div className="flex-1" />
+      ) : progress.totalHunks === 0 ? (
         <NoChangesPrompt />
       ) : (
         <div className="max-w-5xl w-full mx-auto">
