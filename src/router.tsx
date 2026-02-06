@@ -10,8 +10,8 @@ import {
   useNavigate,
 } from "react-router-dom";
 import type { Comparison } from "./types";
-import { WelcomePage } from "./components/WelcomePage";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { TabRail } from "./components/TabRail";
 import { getPlatformServices } from "./platform";
 import { getApiClient } from "./api";
 import { ReviewView } from "./components/ReviewView";
@@ -49,13 +49,15 @@ function getLoadingProgressText(
  */
 function AppShell() {
   const loadPreferences = useReviewStore((s) => s.loadPreferences);
+  const loadOpenReviews = useReviewStore((s) => s.loadOpenReviews);
   const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
 
-  // Load preferences on mount
+  // Load preferences and tab state on mount
   useEffect(() => {
     loadPreferences();
+    loadOpenReviews();
     checkClaudeAvailable();
-  }, [loadPreferences, checkClaudeAvailable]);
+  }, [loadPreferences, loadOpenReviews, checkClaudeAvailable]);
 
   // Global shortcuts
   useGlobalShortcut();
@@ -74,20 +76,32 @@ function AppShell() {
     handleSelectRepo,
   } = useRepositoryInit();
 
-  // Global Cmd+O and menu:open-repo listener so it works on every route
+  // Global Cmd+O / Cmd+B and menu:open-repo listener so it works on every route
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
-        (e.metaKey || e.ctrlKey) &&
-        e.key === "o" &&
-        !(e.target instanceof HTMLInputElement) &&
-        !(e.target instanceof HTMLTextAreaElement)
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
       ) {
+        return;
+      }
+
+      // Cmd/Ctrl+O to open repo
+      if ((e.metaKey || e.ctrlKey) && e.key === "o") {
         e.preventDefault();
         handleOpenRepoRef.current();
+        return;
+      }
+
+      // Cmd/Ctrl+B to toggle tab rail
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "b") {
+        e.preventDefault();
+        toggleTabRail();
+        return;
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -115,10 +129,14 @@ function AppShell() {
   // Show loading state while determining repo status
   if (repoStatus === "loading") {
     return (
-      <div className="flex h-screen items-center justify-center bg-stone-950">
-        <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <p className="text-stone-400">Loading repository...</p>
+      <div className="flex h-screen bg-stone-950">
+        {/* Tab rail placeholder during loading */}
+        <div className="w-[14rem] shrink-0 border-r border-stone-800/60 bg-stone-900/70" />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="flex flex-col items-center gap-4 animate-fade-in">
+            <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+            <p className="text-stone-400">Loading repository...</p>
+          </div>
         </div>
       </div>
     );
@@ -127,23 +145,28 @@ function AppShell() {
   return (
     <TooltipProvider delayDuration={300}>
       <UpdateBanner />
-      <Outlet
-        context={{
-          repoStatus,
-          repoError,
-          repoPath,
-          comparisonReady,
-          initialLoading,
-          setInitialLoading,
-          loadingProgress,
-          handleSelectReview,
-          handleBackToStart,
-          handleOpenRepo,
-          handleNewWindow,
-          handleCloseRepo,
-          handleSelectRepo,
-        }}
-      />
+      <div className="flex h-screen bg-stone-950">
+        <TabRail onOpenRepo={handleOpenRepo} onSelectRepo={handleSelectRepo} />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Outlet
+            context={{
+              repoStatus,
+              repoError,
+              repoPath,
+              comparisonReady,
+              initialLoading,
+              setInitialLoading,
+              loadingProgress,
+              handleSelectReview,
+              handleBackToStart,
+              handleOpenRepo,
+              handleNewWindow,
+              handleCloseRepo,
+              handleSelectRepo,
+            }}
+          />
+        </div>
+      </div>
     </TooltipProvider>
   );
 }
@@ -168,17 +191,13 @@ function useAppContext() {
   return useOutletContext<AppContext>();
 }
 
-/** Welcome page — shown at "/" when no repo is loaded */
-function WelcomeRoute() {
-  const { repoStatus, repoError, handleOpenRepo, handleSelectRepo } =
-    useAppContext();
-
-  // If repo is loaded but we're on "/", that's fine — the init hook
-  // will navigate us away once it resolves the route prefix.
+/** Empty state — shown at "/" when no tab is active */
+function EmptyTabState() {
+  const { repoStatus, repoError, handleOpenRepo } = useAppContext();
 
   if (repoStatus === "error") {
     return (
-      <div className="flex h-screen items-center justify-center bg-stone-950">
+      <div className="flex h-full items-center justify-center bg-stone-950">
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
           <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
             <svg
@@ -211,7 +230,19 @@ function WelcomeRoute() {
   }
 
   return (
-    <WelcomePage onOpenRepo={handleOpenRepo} onSelectRepo={handleSelectRepo} />
+    <div className="flex h-full items-center justify-center bg-stone-950">
+      <div className="flex flex-col items-center gap-3 text-center px-6">
+        <p className="text-sm text-stone-500">
+          Open a repository to start reviewing
+        </p>
+        <p className="text-2xs text-stone-600">
+          <kbd className="rounded bg-stone-800 px-1.5 py-0.5 text-xxs text-stone-500 font-mono">
+            {"\u2318"}O
+          </kbd>
+          <span className="ml-1.5">to open a folder</span>
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -256,7 +287,7 @@ function StartRoute() {
 
   // Show loading state while redirecting
   return (
-    <div className="flex h-screen items-center justify-center bg-stone-950">
+    <div className="flex h-full items-center justify-center bg-stone-950">
       <div className="flex flex-col items-center gap-4 animate-fade-in">
         <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
         <p className="text-stone-400">Loading repository...</p>
@@ -272,7 +303,6 @@ function ReviewRoute() {
     comparisonReady,
     initialLoading,
     loadingProgress,
-    handleSelectReview,
     handleBackToStart,
     handleOpenRepo,
     handleNewWindow,
@@ -291,7 +321,7 @@ function ReviewRoute() {
     const progressText = getLoadingProgressText(loadingProgress);
 
     return (
-      <div className="flex h-screen items-center justify-center bg-stone-950">
+      <div className="flex h-full items-center justify-center bg-stone-950">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
           <p className="text-stone-400">{progressText}</p>
@@ -317,7 +347,6 @@ function ReviewRoute() {
       onBack={handleBackToStart}
       onOpenRepo={handleOpenRepo}
       onNewWindow={handleNewWindow}
-      onSelectReview={handleSelectReview}
       comparisonReady={comparisonReady}
     />
   );
@@ -329,7 +358,7 @@ export function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<WelcomeRoute />} />
+          <Route path="/" element={<EmptyTabState />} />
           <Route path="/:owner/:repo" element={<StartRoute />} />
           <Route
             path="/:owner/:repo/review/:comparisonKey/*"

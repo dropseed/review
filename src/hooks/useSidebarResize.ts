@@ -9,6 +9,7 @@ interface UseSidebarResizeOptions {
 
 interface UseSidebarResizeReturn {
   sidebarWidth: number;
+  isResizing: boolean;
   handleResizeStart: (e: React.MouseEvent) => void;
 }
 
@@ -22,18 +23,20 @@ export function useSidebarResize({
   maxWidth = 40, // 600px in rem
 }: UseSidebarResizeOptions): UseSidebarResizeReturn {
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
-  const isResizing = useRef(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const isResizingRef = useRef(false);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    isResizing.current = true;
+    isResizingRef.current = true;
+    setIsResizing(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current) return;
+      if (!isResizingRef.current) return;
       // Calculate width based on sidebar position
       // Get the root font size to convert pixels to rem
       const rootFontSize = parseFloat(
@@ -50,8 +53,9 @@ export function useSidebarResize({
     };
 
     const handleMouseUp = () => {
-      if (isResizing.current) {
-        isResizing.current = false;
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        setIsResizing(false);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
       }
@@ -65,5 +69,5 @@ export function useSidebarResize({
     };
   }, [sidebarPosition, minWidth, maxWidth]);
 
-  return { sidebarWidth, handleResizeStart };
+  return { sidebarWidth, isResizing, handleResizeStart };
 }

@@ -1,5 +1,4 @@
 import { useEffect, useCallback, useState, useRef } from "react";
-import type { Comparison } from "../types";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { DebugModal } from "./DebugModal";
@@ -12,7 +11,6 @@ import { ClassificationsModal } from "./ClassificationsModal";
 import { FeedbackPanel } from "./FeedbackPanel";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
-import { ReviewsSidebar, ReviewsSidebarToggle } from "./ReviewsSidebar";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -29,7 +27,6 @@ interface ReviewViewProps {
   onBack: () => void;
   onOpenRepo: () => Promise<void>;
   onNewWindow: () => Promise<void>;
-  onSelectReview: (comparison: Comparison) => void;
   comparisonReady: boolean;
 }
 
@@ -37,7 +34,6 @@ export function ReviewView({
   onBack,
   onOpenRepo,
   onNewWindow,
-  onSelectReview,
   comparisonReady,
 }: ReviewViewProps) {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -61,10 +57,6 @@ export function ReviewView({
     (s) => s.setClassificationsModalOpen,
   );
 
-  // Reviews sidebar state from store (allows OverviewView to control it too)
-  const showReviewsSidebar = useReviewStore((s) => s.reviewsSidebarOpen);
-  const setShowReviewsSidebar = useReviewStore((s) => s.setReviewsSidebarOpen);
-
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -74,11 +66,6 @@ export function ReviewView({
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
-
-  // Toggle reviews sidebar with keyboard shortcut (Cmd+E)
-  const toggleReviewsSidebar = useCallback(() => {
-    setShowReviewsSidebar(!showReviewsSidebar);
-  }, [showReviewsSidebar, setShowReviewsSidebar]);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -144,18 +131,16 @@ export function ReviewView({
   }, [classifying, classificationError]);
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({
-    sidebarPosition: "left",
+    sidebarPosition: "right",
   });
 
   useKeyboardNavigation({
-    handleOpenRepo: onOpenRepo,
     onBack,
     setShowDebugModal,
     setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
     setShowSymbolSearch,
-    toggleReviewsSidebar,
   });
 
   useMenuEvents({
@@ -190,7 +175,7 @@ export function ReviewView({
     "repo";
 
   return (
-    <div className="flex h-screen flex-col bg-stone-950">
+    <div className="flex h-full flex-col bg-stone-950">
       {/* Header */}
       <header className="flex h-12 items-center justify-between border-b border-stone-800 bg-stone-900 px-4">
         {/* Left: breadcrumb navigation */}
@@ -199,11 +184,10 @@ export function ReviewView({
           comparison={comparison}
           topLevelView={topLevelView}
           selectedFile={selectedFile}
-          onNavigateToStart={onBack}
           onNavigateToOverview={navigateToOverview}
         />
 
-        {/* Right: review controls and sidebar toggle */}
+        {/* Right: review controls */}
         <div className="flex items-center gap-3">
           {totalHunks > 0 ? (
             <button
@@ -277,20 +261,20 @@ export function ReviewView({
           ) : (
             <span className="text-xs text-stone-500">No changes to review</span>
           )}
-
-          {/* Reviews sidebar toggle */}
-          <ReviewsSidebarToggle
-            isOpen={showReviewsSidebar}
-            onClick={toggleReviewsSidebar}
-          />
         </div>
       </header>
 
       {/* Main content */}
       <div className="flex flex-1 flex-row overflow-hidden">
-        {/* Sidebar (always on left) */}
+        {/* Code viewer */}
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
+          <ContentArea />
+          <FeedbackPanel />
+        </main>
+
+        {/* FilesPanel (right side) */}
         <aside
-          className="relative flex flex-shrink-0 flex-col border-r border-stone-800 bg-stone-900"
+          className="relative flex flex-shrink-0 flex-col border-l border-stone-800 bg-stone-900"
           style={{ width: `${sidebarWidth}rem` }}
         >
           {/* Sidebar content */}
@@ -300,18 +284,12 @@ export function ReviewView({
             />
           </div>
 
-          {/* Resize handle */}
+          {/* Resize handle (on left edge of right sidebar) */}
           <div
             onMouseDown={handleResizeStart}
-            className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
+            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
           />
         </aside>
-
-        {/* Code viewer */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
-          <ContentArea />
-          <FeedbackPanel />
-        </main>
       </div>
 
       {/* Status Bar */}
@@ -448,16 +426,6 @@ export function ReviewView({
         onClose={() => setShowClassificationsModal(false)}
         onSelectHunk={handleClassificationSelectHunk}
       />
-
-      {/* Reviews Sidebar */}
-      {repoPath && (
-        <ReviewsSidebar
-          isOpen={showReviewsSidebar}
-          onClose={() => setShowReviewsSidebar(false)}
-          onSelectReview={onSelectReview}
-          repoPath={repoPath}
-        />
-      )}
     </div>
   );
 }

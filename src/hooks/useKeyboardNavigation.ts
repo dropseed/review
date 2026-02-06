@@ -8,14 +8,12 @@ import {
 } from "../utils/preferences";
 
 interface UseKeyboardNavigationOptions {
-  handleOpenRepo: () => void;
   onBack: () => void;
   setShowDebugModal: (show: boolean) => void;
   setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
   setShowSymbolSearch: (show: boolean) => void;
-  toggleReviewsSidebar?: () => void;
 }
 
 /**
@@ -23,14 +21,12 @@ interface UseKeyboardNavigationOptions {
  * j/k for hunk navigation, a/r for approve/reject, modal toggles, font size, split view.
  */
 export function useKeyboardNavigation({
-  handleOpenRepo,
   onBack,
   setShowDebugModal,
   setShowSettingsModal,
   setShowFileFinder,
   setShowContentSearch,
   setShowSymbolSearch,
-  toggleReviewsSidebar,
 }: UseKeyboardNavigationOptions) {
   const hunks = useReviewStore((s) => s.hunks);
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
@@ -65,12 +61,7 @@ export function useKeyboardNavigation({
         return;
       }
 
-      // Cmd/Ctrl+O to open repository
-      if ((event.metaKey || event.ctrlKey) && event.key === "o") {
-        event.preventDefault();
-        handleOpenRepo();
-        return;
-      }
+      // Cmd/Ctrl+O is handled globally by AppShell
 
       // Cmd/Ctrl+Shift+D to open debug modal
       if (
@@ -87,13 +78,6 @@ export function useKeyboardNavigation({
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault();
         setShowSettingsModal(true);
-        return;
-      }
-
-      // Cmd/Ctrl+E to toggle reviews sidebar
-      if ((event.metaKey || event.ctrlKey) && event.key === "e") {
-        event.preventDefault();
-        toggleReviewsSidebar?.();
         return;
       }
 
@@ -264,7 +248,6 @@ export function useKeyboardNavigation({
       rejectHunk,
       setPendingCommentHunkId,
       nextHunkInFile,
-      handleOpenRepo,
       onBack,
       codeFontSize,
       setCodeFontSize,
@@ -277,7 +260,6 @@ export function useKeyboardNavigation({
       setShowFileFinder,
       setShowContentSearch,
       setShowSymbolSearch,
-      toggleReviewsSidebar,
       topLevelView,
       navigateToBrowse,
       navigateToOverview,

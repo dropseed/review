@@ -26,7 +26,6 @@ export type DiffViewMode = "unified" | "split" | "old" | "new";
 
 // Preference defaults
 const defaults = {
-  sidebarPosition: "left" as const,
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeTheme: "github-dark",
   autoClassifyEnabled: true,
@@ -41,11 +40,11 @@ const defaults = {
   diffViewMode: "split" as DiffViewMode,
   sentryEnabled: false,
   soundEffectsEnabled: true,
+  tabRailCollapsed: false,
 };
 
 export interface PreferencesSlice {
   // UI settings
-  sidebarPosition: "left" | "right";
   codeFontSize: number;
   codeTheme: string;
   fileToReveal: string | null;
@@ -77,8 +76,10 @@ export interface PreferencesSlice {
   // Sound effects
   soundEffectsEnabled: boolean;
 
+  // Tab rail
+  tabRailCollapsed: boolean;
+
   // Actions
-  setSidebarPosition: (position: "left" | "right") => void;
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
@@ -107,13 +108,16 @@ export interface PreferencesSlice {
 
   // Sound effects actions
   setSoundEffectsEnabled: (enabled: boolean) => void;
+
+  // Tab rail actions
+  setTabRailCollapsed: (collapsed: boolean) => void;
+  toggleTabRail: () => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
   PreferencesSlice
 > = (storage: StorageService) => (set, get) => ({
   // Initial state
-  sidebarPosition: defaults.sidebarPosition,
   codeFontSize: defaults.codeFontSize,
   codeTheme: defaults.codeTheme,
   fileToReveal: null,
@@ -130,11 +134,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   recentRepositories: defaults.recentRepositories,
   sentryEnabled: defaults.sentryEnabled,
   soundEffectsEnabled: defaults.soundEffectsEnabled,
-
-  setSidebarPosition: (position) => {
-    set({ sidebarPosition: position });
-    storage.set("sidebarPosition", position);
-  },
+  tabRailCollapsed: defaults.tabRailCollapsed,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
@@ -178,9 +178,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   loadPreferences: async () => {
-    const position =
-      (await storage.get<"left" | "right">("sidebarPosition")) ??
-      defaults.sidebarPosition;
     const fontSize =
       (await storage.get<number>("codeFontSize")) ?? defaults.codeFontSize;
     const theme =
@@ -205,6 +202,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const soundEffectsEnabled =
       (await storage.get<boolean>("soundEffectsEnabled")) ??
       defaults.soundEffectsEnabled;
+    const tabRailCollapsed =
+      (await storage.get<boolean>("tabRailCollapsed")) ??
+      defaults.tabRailCollapsed;
     const diffLineDiffType =
       (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
       defaults.diffLineDiffType;
@@ -227,7 +227,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     if ((diffViewMode as string) === "file") diffViewMode = "new";
 
     set({
-      sidebarPosition: position,
       codeFontSize: fontSize,
       codeTheme: theme,
       diffLineDiffType,
@@ -242,6 +241,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       recentRepositories: recentRepos,
       sentryEnabled,
       soundEffectsEnabled,
+      tabRailCollapsed,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
@@ -339,5 +339,16 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     set({ soundEffectsEnabled: enabled });
     storage.set("soundEffectsEnabled", enabled);
     setSoundEnabled(enabled);
+  },
+
+  setTabRailCollapsed: (collapsed) => {
+    set({ tabRailCollapsed: collapsed });
+    storage.set("tabRailCollapsed", collapsed);
+  },
+
+  toggleTabRail: () => {
+    const collapsed = !get().tabRailCollapsed;
+    set({ tabRailCollapsed: collapsed });
+    storage.set("tabRailCollapsed", collapsed);
   },
 });

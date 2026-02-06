@@ -76,10 +76,6 @@ export interface NavigationSlice {
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
-
-  // Reviews sidebar (right sidebar for switching comparisons)
-  reviewsSidebarOpen: boolean;
-  setReviewsSidebarOpen: (open: boolean) => void;
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -333,10 +329,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   classificationsModalOpen: false,
   setClassificationsModalOpen: (open) =>
     set({ classificationsModalOpen: open }),
-
-  // Reviews sidebar
-  reviewsSidebarOpen: false,
-  setReviewsSidebarOpen: (open) => set({ reviewsSidebarOpen: open }),
 
   swapPanes: () => {
     const { selectedFile, secondaryFile } = get();

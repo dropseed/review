@@ -47,36 +47,40 @@ function parseComparisonKey(key: string): Comparison | null {
 }
 
 /**
- * Resolve the route prefix (owner/repo) from a repo path.
+ * Resolve the route prefix and display name for a repo in a single API call.
  * Uses the git remote to get "owner/repo", falls back to "local/dirname".
  */
-async function resolveRoutePrefix(repoPath: string): Promise<string> {
+async function resolveRepoIdentity(
+  repoPath: string,
+): Promise<{ routePrefix: string; repoName: string }> {
   try {
     const apiClient = getApiClient();
     const info = await apiClient.getRemoteInfo(repoPath);
     if (info?.name) {
-      return info.name; // e.g. "dropseed/plain"
+      return { routePrefix: info.name, repoName: info.name };
     }
   } catch {
     // Fall through to local fallback
   }
-  // No remote — use directory name
-  const parts = repoPath.replace(/\/+$/, "").split("/");
-  const dirname = parts[parts.length - 1] || "repo";
-  return `local/${dirname}`;
+  const dirname = repoPath.replace(/\/+$/, "").split("/").pop() || "repo";
+  return { routePrefix: `local/${dirname}`, repoName: dirname };
 }
 
 /**
- * Get the working tree comparison key for a repo.
- * Returns `defaultBranch..currentBranch+working-tree`
+ * Get the working tree comparison for a repo.
+ * Returns both the key and the Comparison object.
  */
-async function getWorkingTreeComparisonKey(repoPath: string): Promise<string> {
+async function getWorkingTreeComparison(
+  repoPath: string,
+): Promise<{ key: string; comparison: Comparison }> {
   const apiClient = getApiClient();
   const [defaultBranch, currentBranch] = await Promise.all([
     apiClient.getDefaultBranch(repoPath).catch(() => "main"),
     apiClient.getCurrentBranch(repoPath).catch(() => "HEAD"),
   ]);
-  return `${defaultBranch}..${currentBranch}+working-tree`;
+  const key = `${defaultBranch}..${currentBranch}+working-tree`;
+  const comparison = makeComparison(defaultBranch, currentBranch, true);
+  return { key, comparison };
 }
 
 /**
@@ -135,6 +139,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const setComparison = useReviewStore((s) => s.setComparison);
   const loadCurrentComparison = useReviewStore((s) => s.loadCurrentComparison);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
+  const addOpenReview = useReviewStore((s) => s.addOpenReview);
+  const updateTabComparison = useReviewStore((s) => s.updateTabComparison);
 
   // Repository status tracking
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
@@ -170,14 +176,31 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         storeRepoPath(urlRepoPath);
 
         // Resolve owner/repo and navigate to review route
-        const prefix = await resolveRoutePrefix(urlRepoPath);
+        const { routePrefix, repoName } =
+          await resolveRepoIdentity(urlRepoPath);
         const urlComparisonKey = getComparisonKeyFromUrl();
         if (urlComparisonKey) {
-          nav(`/${prefix}/review/${urlComparisonKey}`, { replace: true });
+          const comparison = parseComparisonKey(urlComparisonKey);
+          if (comparison) {
+            addOpenReview({
+              repoPath: urlRepoPath,
+              repoName,
+              comparison,
+              routePrefix,
+            });
+          }
+          nav(`/${routePrefix}/review/${urlComparisonKey}`, { replace: true });
         } else {
           // Default to working tree comparison
-          const workingTreeKey = await getWorkingTreeComparisonKey(urlRepoPath);
-          nav(`/${prefix}/review/${workingTreeKey}`, { replace: true });
+          const { key, comparison } =
+            await getWorkingTreeComparison(urlRepoPath);
+          addOpenReview({
+            repoPath: urlRepoPath,
+            repoName,
+            comparison,
+            routePrefix,
+          });
+          nav(`/${routePrefix}/review/${key}`, { replace: true });
         }
         return;
       }
@@ -212,9 +235,15 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         storeRepoPath(path);
 
         // Resolve and navigate to review route (working tree by default)
-        const prefix = await resolveRoutePrefix(path);
-        const workingTreeKey = await getWorkingTreeComparisonKey(path);
-        nav(`/${prefix}/review/${workingTreeKey}`, { replace: true });
+        const { routePrefix, repoName } = await resolveRepoIdentity(path);
+        const { key, comparison } = await getWorkingTreeComparison(path);
+        addOpenReview({
+          repoPath: path,
+          repoName,
+          comparison,
+          routePrefix,
+        });
+        nav(`/${routePrefix}/review/${key}`, { replace: true });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (
@@ -232,7 +261,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     };
 
     init();
-  }, [setRepoPath, addRecentRepository]);
+  }, [setRepoPath, addRecentRepository, addOpenReview]);
 
   // When repo path changes, always load a comparison
   useEffect(() => {
@@ -278,20 +307,26 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         setInitialLoading(true);
       }
 
-      // Navigate to the review route
+      // Navigate to the review route and update tab
       if (repoPath) {
-        const prefix = await resolveRoutePrefix(repoPath);
-        navigateRef.current(`/${prefix}/review/${selectedComparison.key}`);
+        const { routePrefix } = await resolveRepoIdentity(repoPath);
+        navigateRef.current(`/${routePrefix}/review/${selectedComparison.key}`);
+
+        // Update the active tab's comparison
+        const { activeTabIndex } = useReviewStore.getState();
+        if (activeTabIndex !== null) {
+          updateTabComparison(activeTabIndex, selectedComparison);
+        }
       }
     },
-    [setComparison, repoPath],
+    [setComparison, repoPath, updateTabComparison],
   );
 
   // Navigate back to start screen
   const handleBackToStart = useCallback(async () => {
     if (repoPath) {
-      const prefix = await resolveRoutePrefix(repoPath);
-      navigateRef.current(`/${prefix}`);
+      const { routePrefix } = await resolveRepoIdentity(repoPath);
+      navigateRef.current(`/${routePrefix}`);
     } else {
       navigateRef.current("/");
     }
@@ -307,8 +342,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     navigateRef.current("/");
   }, [setRepoPath]);
 
-  // Handle selecting a repo (from welcome page recent list)
-  const handleSelectRepo = useCallback(
+  // Shared logic: validate, activate, and navigate to a repo's working tree
+  const activateRepo = useCallback(
     async (path: string) => {
       if (!(await validateGitRepo(path))) return;
 
@@ -320,12 +355,23 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       addRecentRepository(path);
       storeRepoPath(path);
 
-      // Resolve and navigate directly to review (working tree by default)
-      const prefix = await resolveRoutePrefix(path);
-      const workingTreeKey = await getWorkingTreeComparisonKey(path);
-      navigateRef.current(`/${prefix}/review/${workingTreeKey}`);
+      const { routePrefix, repoName } = await resolveRepoIdentity(path);
+      const { key, comparison } = await getWorkingTreeComparison(path);
+      addOpenReview({
+        repoPath: path,
+        repoName,
+        comparison,
+        routePrefix,
+      });
+      navigateRef.current(`/${routePrefix}/review/${key}`);
     },
-    [setRepoPath, addRecentRepository],
+    [setRepoPath, addRecentRepository, addOpenReview],
+  );
+
+  // Handle selecting a repo (from welcome page recent list or tab rail)
+  const handleSelectRepo = useCallback(
+    (path: string) => activateRepo(path),
+    [activateRepo],
   );
 
   // Open a repository in the current window (standard Cmd+O behavior)
@@ -335,27 +381,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const selected = await platform.dialogs.openDirectory({
         title: "Open Repository",
       });
-
       if (selected) {
-        if (!(await validateGitRepo(selected))) return;
-
-        setRepoPath(selected);
-        setLoggerRepoPath(selected);
-        clearLog();
-        setRepoStatus("found");
-        setRepoError(null);
-        addRecentRepository(selected);
-        storeRepoPath(selected);
-
-        // Resolve and navigate directly to review (working tree by default)
-        const prefix = await resolveRoutePrefix(selected);
-        const workingTreeKey = await getWorkingTreeComparisonKey(selected);
-        navigateRef.current(`/${prefix}/review/${workingTreeKey}`);
+        await activateRepo(selected);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
     }
-  }, [setRepoPath, addRecentRepository]);
+  }, [activateRepo]);
 
   // Open a new window (Cmd+N behavior)
   const handleNewWindow = useCallback(async () => {

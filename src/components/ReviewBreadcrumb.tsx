@@ -1,4 +1,5 @@
 import type { Comparison } from "../types";
+import { useReviewStore } from "../stores";
 import { SimpleTooltip } from "./ui/tooltip";
 
 interface ReviewBreadcrumbProps {
@@ -6,30 +7,38 @@ interface ReviewBreadcrumbProps {
   comparison: Comparison;
   topLevelView: "overview" | "browse";
   selectedFile: string | null;
-  onNavigateToStart: () => void;
   onNavigateToOverview: () => void;
 }
 
-function LogoButton({ onClick }: { onClick: () => void }) {
+function SidebarToggle() {
+  const collapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
+
   return (
-    <SimpleTooltip content="Back to start">
+    <SimpleTooltip
+      content={collapsed ? "Show sidebar (⌘B)" : "Hide sidebar (⌘B)"}
+    >
       <button
-        onClick={onClick}
+        onClick={toggleTabRail}
         className="flex items-center justify-center w-7 h-7 rounded-md
                    hover:bg-stone-800/60 transition-colors duration-100
-                   focus:outline-hidden focus:ring-2 focus:ring-stone-500/50"
-        aria-label="Back to start screen"
+                   focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
+                   text-stone-500 hover:text-stone-300"
+        aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
       >
-        <svg className="w-4 h-4" viewBox="0 0 512 512" fill="none">
-          <rect x="32" y="16" width="210" height="480" rx="90" fill="#C45850" />
-          <rect
-            x="270"
-            y="16"
-            width="210"
-            height="480"
-            rx="90"
-            fill="#4D7C6B"
-          />
+        <svg
+          className="w-4 h-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          {/* Sidebar layout icon */}
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <line x1="9" y1="3" x2="9" y2="21" />
         </svg>
       </button>
     </SimpleTooltip>
@@ -47,7 +56,6 @@ export function ReviewBreadcrumb({
   comparison,
   topLevelView,
   selectedFile,
-  onNavigateToStart,
   onNavigateToOverview,
 }: ReviewBreadcrumbProps) {
   const isPr = !!comparison.githubPr;
@@ -57,12 +65,12 @@ export function ReviewBreadcrumb({
 
   return (
     <div className="flex items-center gap-2">
-      {/* Logo as home button */}
-      <LogoButton onClick={onNavigateToStart} />
+      {/* Sidebar toggle */}
+      <SidebarToggle />
 
       {/* Repo name */}
       <button
-        onClick={onNavigateToStart}
+        onClick={onNavigateToOverview}
         className="cursor-pointer text-xs text-stone-500 hover:text-stone-300 transition-colors duration-100"
       >
         {repoName}

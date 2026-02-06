@@ -22,11 +22,9 @@ function DiffLinePlaceholder({ lineNumber }: { lineNumber: number }) {
 
 /**
  * Empty state shown when there are no changes in the current comparison.
- * Prompts the user to switch to a different comparison via the reviews sidebar.
+ * Prompts the user to switch comparison via the tab rail.
  */
 function NoChangesPrompt() {
-  const setReviewsSidebarOpen = useReviewStore((s) => s.setReviewsSidebarOpen);
-
   return (
     <div className="flex-1 flex items-center justify-center pb-16">
       <div className="flex flex-col items-center max-w-sm">
@@ -43,66 +41,9 @@ function NoChangesPrompt() {
         <p className="text-xs text-stone-500 text-center mb-5">
           The base and compare refs are identical, or no diff hunks were found.
         </p>
-
-        {/* Prompt card to switch comparison */}
-        <button
-          onClick={() => setReviewsSidebarOpen(true)}
-          className="group flex items-center gap-3 rounded-lg border border-stone-800/80
-                     bg-gradient-to-br from-stone-900/60 to-stone-900/40
-                     px-5 py-3.5 text-left
-                     transition-all duration-200
-                     hover:border-amber-500/30 hover:from-stone-900 hover:to-stone-900/60
-                     hover:shadow-lg hover:shadow-amber-900/10 hover:-translate-y-0.5
-                     focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
-        >
-          {/* Icon */}
-          <div className="shrink-0 w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
-            <svg
-              className="w-4.5 h-4.5 text-amber-400"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="3" y1="9" x2="21" y2="9" />
-              <line x1="9" y1="21" x2="9" y2="9" />
-            </svg>
-          </div>
-
-          {/* Text */}
-          <div className="flex-1 min-w-0">
-            <span className="block text-sm font-medium text-stone-200">
-              Switch comparison
-            </span>
-            <span className="block text-xs text-stone-500 mt-0.5">
-              Review a different branch or pull request
-            </span>
-          </div>
-
-          {/* Arrow */}
-          <svg
-            className="w-4 h-4 text-stone-600 group-hover:text-stone-400 transition-colors"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
-
-        {/* Keyboard hint */}
-        <p className="mt-4 text-xxs text-stone-600 flex items-center gap-1.5">
-          <kbd className="inline-flex items-center gap-0.5 rounded border border-stone-800/80 bg-stone-800 px-1 py-0.5 font-mono text-xxs text-stone-500">
-            <span>{"\u2318"}</span>
-            <span>E</span>
-          </kbd>
-          <span>to open comparison selector</span>
+        <p className="text-xs text-stone-600 text-center">
+          Right-click a tab in the sidebar to switch comparison, or open a
+          different repository.
         </p>
       </div>
     </div>

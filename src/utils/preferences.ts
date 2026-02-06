@@ -22,7 +22,6 @@ export interface RecentRepo {
 }
 
 export interface Preferences {
-  sidebarPosition: "left" | "right";
   sidebarWidth: number;
   editorCommand: string | null;
   codeFontSize: number; // pixels
@@ -35,7 +34,6 @@ export interface Preferences {
 }
 
 const defaults: Preferences = {
-  sidebarPosition: "left",
   sidebarWidth: 288,
   editorCommand: null,
   codeFontSize: 12, // matches CODE_FONT_SIZE_DEFAULT
@@ -86,9 +84,6 @@ export async function getAllPreferences(): Promise<Preferences> {
   const storage = getPlatformServices().storage;
   try {
     return {
-      sidebarPosition:
-        (await storage.get<"left" | "right">("sidebarPosition")) ??
-        defaults.sidebarPosition,
       sidebarWidth:
         (await storage.get<number>("sidebarWidth")) ?? defaults.sidebarWidth,
       editorCommand:
