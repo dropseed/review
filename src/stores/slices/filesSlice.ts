@@ -127,9 +127,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
-        topLevelView: "overview" as const,
+        topLevelView: "overview",
         secondaryFile: null,
-        focusedPane: "primary" as const,
+        focusedPane: "primary",
+        narrativeSidebarOpen: false,
         // Search
         searchQuery: "",
         searchResults: [],
@@ -168,6 +169,14 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         movePairs: [],
         allFiles: [],
         loadingProgress: { phase: "pending", current: 0, total: 0 },
+        // Navigation — reset to overview on comparison switch
+        selectedFile: null,
+        focusedHunkIndex: 0,
+        topLevelView: "overview",
+        secondaryFile: null,
+        focusedPane: "primary",
+        narrativeSidebarOpen: false,
+        // Review
         reviewState: null,
         undoStack: [],
       });

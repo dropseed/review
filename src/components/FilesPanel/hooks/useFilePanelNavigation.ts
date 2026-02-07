@@ -45,6 +45,26 @@ export function useFilePanelNavigation({
   const [viewMode, setViewMode] = useState<ViewMode>(
     hunks.length === 0 ? "all" : "changes",
   );
+  const userHasChosenViewMode = useRef(false);
+
+  const handleSetViewMode = useCallback((mode: ViewMode) => {
+    userHasChosenViewMode.current = true;
+    setViewMode(mode);
+  }, []);
+
+  // When hunks are cleared (e.g. new comparison), allow auto-switching again.
+  // When hunks arrive and user hasn't explicitly chosen a tab, switch to "changes".
+  useEffect(() => {
+    if (hunks.length === 0) {
+      userHasChosenViewMode.current = false;
+      return;
+    }
+
+    if (viewMode === "all" && !userHasChosenViewMode.current) {
+      setViewMode("changes");
+    }
+  }, [hunks.length, viewMode]);
+
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const fileRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -153,7 +173,7 @@ export function useFilePanelNavigation({
   return {
     selectedFile,
     viewMode,
-    setViewMode,
+    setViewMode: handleSetViewMode,
     expandedPaths,
     togglePath,
     handleSelectFile,
