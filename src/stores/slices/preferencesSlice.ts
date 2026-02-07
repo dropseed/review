@@ -41,6 +41,7 @@ const defaults = {
   sentryEnabled: false,
   soundEffectsEnabled: true,
   tabRailCollapsed: false,
+  pinnedReviewKeys: [] as string[],
 };
 
 export interface PreferencesSlice {
@@ -79,6 +80,9 @@ export interface PreferencesSlice {
   // Tab rail
   tabRailCollapsed: boolean;
 
+  // Pinned reviews (ordered array of "repoPath:comparisonKey" strings)
+  pinnedReviewKeys: string[];
+
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
@@ -112,6 +116,11 @@ export interface PreferencesSlice {
   // Tab rail actions
   setTabRailCollapsed: (collapsed: boolean) => void;
   toggleTabRail: () => void;
+
+  // Pinned reviews actions
+  pinReview: (key: string) => void;
+  unpinReview: (key: string) => void;
+  reorderPinnedReviews: (keys: string[]) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -135,6 +144,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   sentryEnabled: defaults.sentryEnabled,
   soundEffectsEnabled: defaults.soundEffectsEnabled,
   tabRailCollapsed: defaults.tabRailCollapsed,
+  pinnedReviewKeys: defaults.pinnedReviewKeys,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
@@ -205,6 +215,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const tabRailCollapsed =
       (await storage.get<boolean>("tabRailCollapsed")) ??
       defaults.tabRailCollapsed;
+    const pinnedReviewKeys =
+      (await storage.get<string[]>("pinnedReviewKeys")) ??
+      defaults.pinnedReviewKeys;
     const diffLineDiffType =
       (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
       defaults.diffLineDiffType;
@@ -242,6 +255,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       sentryEnabled,
       soundEffectsEnabled,
       tabRailCollapsed,
+      pinnedReviewKeys,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
@@ -350,5 +364,25 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const collapsed = !get().tabRailCollapsed;
     set({ tabRailCollapsed: collapsed });
     storage.set("tabRailCollapsed", collapsed);
+  },
+
+  pinReview: (key) => {
+    const current = get().pinnedReviewKeys;
+    if (current.includes(key)) return;
+    const updated = [...current, key];
+    set({ pinnedReviewKeys: updated });
+    storage.set("pinnedReviewKeys", updated);
+  },
+
+  unpinReview: (key) => {
+    const current = get().pinnedReviewKeys;
+    const updated = current.filter((k) => k !== key);
+    set({ pinnedReviewKeys: updated });
+    storage.set("pinnedReviewKeys", updated);
+  },
+
+  reorderPinnedReviews: (keys) => {
+    set({ pinnedReviewKeys: keys });
+    storage.set("pinnedReviewKeys", keys);
   },
 });

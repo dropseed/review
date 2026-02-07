@@ -1,10 +1,29 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { TabRailItem } from "./TabRailItem";
+import { SortableTabRailItem } from "./SortableTabRailItem";
 import { ComparisonPickerModal } from "../ComparisonPickerModal";
 import type { GlobalReviewSummary } from "../../types";
+
+/** Derive the unique key used for pinning, stats lookup, etc. */
+function reviewKey(review: GlobalReviewSummary): string {
+  return `${review.repoPath}:${review.comparison.key}`;
+}
 
 interface TabRailProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -19,6 +38,10 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const pinnedReviewKeys = useReviewStore((s) => s.pinnedReviewKeys);
+  const pinReview = useReviewStore((s) => s.pinReview);
+  const unpinReview = useReviewStore((s) => s.unpinReview);
+  const reorderPinnedReviews = useReviewStore((s) => s.reorderPinnedReviews);
 
   const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
   const setComparisonPickerOpen = useReviewStore(
@@ -38,8 +61,55 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     maxWidth: 24,
   });
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  // Split reviews into pinned (ordered by pinnedReviewKeys) and unpinned
+  const pinnedKeySet = useMemo(
+    () => new Set(pinnedReviewKeys),
+    [pinnedReviewKeys],
+  );
+
+  const reviewsByKey = useMemo(() => {
+    const map = new Map<string, GlobalReviewSummary>();
+    for (const review of globalReviews) {
+      map.set(reviewKey(review), review);
+    }
+    return map;
+  }, [globalReviews]);
+
+  const pinnedReviews = useMemo(
+    () =>
+      pinnedReviewKeys
+        .map((key) => ({ key, review: reviewsByKey.get(key) }))
+        .filter(
+          (item): item is { key: string; review: GlobalReviewSummary } =>
+            item.review !== undefined,
+        ),
+    [pinnedReviewKeys, reviewsByKey],
+  );
+
+  const unpinnedReviews = useMemo(
+    () => globalReviews.filter((r) => !pinnedKeySet.has(reviewKey(r))),
+    [globalReviews, pinnedKeySet],
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+        const oldIndex = pinnedReviewKeys.indexOf(active.id as string);
+        const newIndex = pinnedReviewKeys.indexOf(over.id as string);
+        reorderPinnedReviews(arrayMove(pinnedReviewKeys, oldIndex, newIndex));
+      }
+    },
+    [pinnedReviewKeys, reorderPinnedReviews],
+  );
+
   const handleDeleteReview = useCallback(
     (review: GlobalReviewSummary) => {
+      unpinReview(reviewKey(review));
       deleteGlobalReview(review.repoPath, review.comparison);
       if (
         activeReviewKey?.repoPath === review.repoPath &&
@@ -48,7 +118,19 @@ export function TabRail({ onActivateReview }: TabRailProps) {
         navigate("/");
       }
     },
-    [deleteGlobalReview, activeReviewKey, navigate],
+    [deleteGlobalReview, unpinReview, activeReviewKey, navigate],
+  );
+
+  const handleTogglePin = useCallback(
+    (review: GlobalReviewSummary) => {
+      const key = reviewKey(review);
+      if (pinnedKeySet.has(key)) {
+        unpinReview(key);
+      } else {
+        pinReview(key);
+      }
+    },
+    [pinnedKeySet, pinReview, unpinReview],
   );
 
   const handleAddReview = useCallback(() => {
@@ -60,6 +142,29 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     setComparisonPickerOpen(false);
     setComparisonPickerRepoPath(null);
   }, [setComparisonPickerOpen, setComparisonPickerRepoPath]);
+
+  /** Build the common TabRailItem props for a review. */
+  function itemPropsFor(
+    review: GlobalReviewSummary,
+    key: string,
+    isPinned: boolean,
+  ) {
+    const meta = repoMetadata[review.repoPath];
+    return {
+      review,
+      repoName: meta?.routePrefix ?? review.repoName,
+      defaultBranch: meta?.defaultBranch,
+      isActive:
+        activeReviewKey?.repoPath === review.repoPath &&
+        activeReviewKey?.comparisonKey === review.comparison.key,
+      isPinned,
+      diffStats: reviewDiffStats[key],
+      avatarUrl: meta?.avatarUrl,
+      onActivate: () => onActivateReview(review),
+      onDelete: () => handleDeleteReview(review),
+      onTogglePin: () => handleTogglePin(review),
+    };
+  }
 
   return (
     <div className="relative flex shrink-0" data-tauri-drag-region>
@@ -147,25 +252,41 @@ export function TabRail({ onActivateReview }: TabRailProps) {
               </div>
             )}
 
-            {globalReviews.map((review) => {
-              const meta = repoMetadata[review.repoPath];
-              const displayName = meta?.routePrefix ?? review.repoName;
-              const isActive =
-                activeReviewKey?.repoPath === review.repoPath &&
-                activeReviewKey?.comparisonKey === review.comparison.key;
-              const statsKey = `${review.repoPath}:${review.comparison.key}`;
+            {/* Pinned section */}
+            {pinnedReviews.length > 0 && (
+              <>
+                <div className="px-2 pt-1 pb-0.5">
+                  <span className="text-[9px] uppercase tracking-wider text-stone-600">
+                    Pinned
+                  </span>
+                </div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={pinnedReviews.map((p) => p.key)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {pinnedReviews.map(({ key, review }) => (
+                      <SortableTabRailItem
+                        key={key}
+                        id={key}
+                        {...itemPropsFor(review, key, true)}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+                <div className="mx-1.5 my-1 h-px bg-white/[0.06]" />
+              </>
+            )}
+
+            {/* Unpinned section */}
+            {unpinnedReviews.map((review) => {
+              const key = reviewKey(review);
               return (
-                <TabRailItem
-                  key={statsKey}
-                  review={review}
-                  repoName={displayName}
-                  defaultBranch={meta?.defaultBranch}
-                  isActive={isActive}
-                  diffStats={reviewDiffStats[statsKey]}
-                  avatarUrl={meta?.avatarUrl}
-                  onActivate={() => onActivateReview(review)}
-                  onDelete={() => handleDeleteReview(review)}
-                />
+                <TabRailItem key={key} {...itemPropsFor(review, key, false)} />
               );
             })}
           </div>

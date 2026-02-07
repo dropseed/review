@@ -1,7 +1,10 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
-import type { Comparison, DiffShortStat } from "../../types";
-import type { GlobalReviewSummary } from "../../types";
+import type {
+  Comparison,
+  DiffShortStat,
+  GlobalReviewSummary,
+} from "../../types";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -115,10 +118,12 @@ interface TabRailItemProps {
   repoName: string;
   defaultBranch?: string;
   isActive: boolean;
+  isPinned?: boolean;
   diffStats?: DiffShortStat;
   avatarUrl?: string | null;
   onActivate: () => void;
   onDelete: () => void;
+  onTogglePin?: () => void;
 }
 
 export const TabRailItem = memo(function TabRailItem({
@@ -126,10 +131,12 @@ export const TabRailItem = memo(function TabRailItem({
   repoName,
   defaultBranch,
   isActive,
+  isPinned,
   diffStats,
   avatarUrl,
   onActivate,
   onDelete,
+  onTogglePin,
 }: TabRailItemProps) {
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
@@ -304,6 +311,20 @@ export const TabRailItem = memo(function TabRailItem({
             className="fixed z-50 min-w-[160px] rounded-lg border border-white/[0.08] bg-stone-800/90 backdrop-blur-xl py-1 shadow-xl"
             style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
+            {onTogglePin && (
+              <>
+                <button
+                  onClick={() => {
+                    setShowContextMenu(false);
+                    onTogglePin();
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-white/[0.08] transition-colors"
+                >
+                  {isPinned ? "Unpin Review" : "Pin Review"}
+                </button>
+                <div className="my-1 h-px bg-white/[0.06]" />
+              </>
+            )}
             <button
               onClick={() => {
                 setShowContextMenu(false);
