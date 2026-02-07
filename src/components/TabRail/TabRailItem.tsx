@@ -1,10 +1,6 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
-import type {
-  Comparison,
-  DiffShortStat,
-  GlobalReviewSummary,
-} from "../../types";
+import type { Comparison, GlobalReviewSummary } from "../../types";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -18,13 +14,6 @@ function formatBranchComparison(
     return comparison.new;
   }
   return `${comparison.old}..${comparison.new}`;
-}
-
-/** Abbreviate large numbers: 1234 → "1.2k", 56789 → "57k" */
-function abbreviateCount(n: number): string {
-  if (n < 1000) return String(n);
-  const k = n / 1000;
-  return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
 }
 
 /** Format a date as relative age: "2m", "3h", "5d", "2w", "3mo" */
@@ -119,7 +108,6 @@ interface TabRailItemProps {
   defaultBranch?: string;
   isActive: boolean;
   isPinned?: boolean;
-  diffStats?: DiffShortStat;
   avatarUrl?: string | null;
   onActivate: () => void;
   onDelete: () => void;
@@ -132,7 +120,6 @@ export const TabRailItem = memo(function TabRailItem({
   defaultBranch,
   isActive,
   isPinned,
-  diffStats,
   avatarUrl,
   onActivate,
   onDelete,
@@ -173,13 +160,11 @@ export const TabRailItem = memo(function TabRailItem({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showContextMenu]);
 
-  // Compute progress from the GlobalReviewSummary fields
-  const totalHunks = review.totalHunks;
   const reviewedPercent =
-    totalHunks > 0
+    review.totalHunks > 0
       ? Math.round(
           ((review.trustedHunks + review.approvedHunks + review.rejectedHunks) /
-            totalHunks) *
+            review.totalHunks) *
             100,
         )
       : 0;
@@ -216,90 +201,69 @@ export const TabRailItem = memo(function TabRailItem({
       >
         {/* Active indicator bar */}
         {isActive && (
-          <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-amber-500/80" />
+          <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-amber-500/80" />
         )}
 
-        <div className="min-w-0">
-          {/* Line 1: primary label + age + progress circle / overflow on hover */}
-          <div className="flex items-center gap-1.5 min-w-0">
-            {isPr && (
-              <PullRequestIcon className="h-3 w-3 shrink-0 text-[#3fb950]" />
-            )}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {avatarUrl && (
+            <img
+              src={avatarUrl}
+              alt=""
+              className="h-3 w-3 shrink-0 rounded-sm"
+            />
+          )}
+          <span className="text-xs text-stone-500 shrink-0">
+            {review.repoName}
+          </span>
+          <span className="text-xs text-stone-600 shrink-0 -mx-0.5">/</span>
+          {isPr && (
+            <PullRequestIcon className="h-3 w-3 shrink-0 text-[#3fb950]" />
+          )}
+          <span
+            className={`text-xs truncate flex-1 min-w-0 ${
+              isActive
+                ? "text-stone-100 font-medium"
+                : "text-stone-300 group-hover:text-stone-200"
+            }`}
+          >
+            {primaryLabel}
+            {isPr && ` #${pr.number}`}
+          </span>
+          {/* Right side: age + circle / overflow — stacked grid for no layout shift */}
+          <span className="relative grid shrink-0 justify-items-end items-center">
             <span
-              className={`text-xs truncate flex-1 min-w-0 ${
-                isActive
-                  ? "text-stone-100 font-medium"
-                  : "text-stone-300 group-hover:text-stone-200"
-              }`}
+              className="col-start-1 row-start-1 flex items-center gap-1.5
+                             transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
             >
-              {primaryLabel}
-            </span>
-            {/* Right side: age + circle / overflow — stacked grid for no layout shift */}
-            <span className="relative grid shrink-0 justify-items-end items-center">
-              <span
-                className="col-start-1 row-start-1 flex items-center gap-1.5
-                               transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
-              >
-                <span className="text-2xs tabular-nums text-stone-600">
-                  {age}
-                </span>
-                {reviewedPercent > 0 && (
-                  <CircleProgress percent={reviewedPercent} />
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={handleOverflowClick}
-                className="col-start-1 row-start-1 flex items-center justify-center
-                           h-5 w-5 rounded text-stone-500 hover:text-stone-300
-                           hover:bg-white/[0.08] opacity-0 pointer-events-none
-                           group-hover:opacity-100 group-hover:pointer-events-auto
-                           transition-opacity duration-100"
-                aria-label="Review options"
-              >
-                <svg
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="5" r="2" />
-                  <circle cx="12" cy="12" r="2" />
-                  <circle cx="12" cy="19" r="2" />
-                </svg>
-              </button>
-            </span>
-          </div>
-          {/* Line 2: repo name + PR number or diff stats */}
-          <div className="flex items-center gap-1 mt-0.5 min-w-0">
-            {avatarUrl && (
-              <img
-                src={avatarUrl}
-                alt=""
-                className="h-3 w-3 shrink-0 rounded-sm"
-              />
-            )}
-            <span className="text-2xs text-stone-500 truncate min-w-0">
-              {review.repoName}
-              {isPr && ` · #${pr.number}`}
-            </span>
-            <span className="flex-1" />
-            {diffStats &&
-              (diffStats.additions > 0 || diffStats.deletions > 0) && (
-                <span className="flex items-center gap-1.5 text-2xs tabular-nums leading-none shrink-0">
-                  {diffStats.additions > 0 && (
-                    <span className="text-sage-400">
-                      +{abbreviateCount(diffStats.additions)}
-                    </span>
-                  )}
-                  {diffStats.deletions > 0 && (
-                    <span className="text-terracotta-400">
-                      -{abbreviateCount(diffStats.deletions)}
-                    </span>
-                  )}
-                </span>
+              {reviewedPercent > 0 && (
+                <CircleProgress percent={reviewedPercent} />
               )}
-          </div>
+              <span className="text-2xs tabular-nums text-stone-600">
+                {age}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={handleOverflowClick}
+              className="col-start-1 row-start-1 flex items-center justify-center
+                         h-5 w-5 rounded text-stone-500 hover:text-stone-300
+                         hover:bg-white/[0.08] opacity-0 pointer-events-none
+                         group-hover:opacity-100 group-hover:pointer-events-auto
+                         transition-opacity duration-100"
+              aria-label="Review options"
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </span>
         </div>
       </div>
 

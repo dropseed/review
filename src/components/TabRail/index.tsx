@@ -35,7 +35,6 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
-  const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const pinnedReviewKeys = useReviewStore((s) => s.pinnedReviewKeys);
@@ -144,11 +143,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   }, [setComparisonPickerOpen, setComparisonPickerRepoPath]);
 
   /** Build the common TabRailItem props for a review. */
-  function itemPropsFor(
-    review: GlobalReviewSummary,
-    key: string,
-    isPinned: boolean,
-  ) {
+  function itemPropsFor(review: GlobalReviewSummary, isPinned: boolean) {
     const meta = repoMetadata[review.repoPath];
     return {
       review,
@@ -158,7 +153,6 @@ export function TabRail({ onActivateReview }: TabRailProps) {
         activeReviewKey?.repoPath === review.repoPath &&
         activeReviewKey?.comparisonKey === review.comparison.key,
       isPinned,
-      diffStats: reviewDiffStats[key],
       avatarUrl: meta?.avatarUrl,
       onActivate: () => onActivateReview(review),
       onDelete: () => handleDeleteReview(review),
@@ -273,7 +267,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
                       <SortableTabRailItem
                         key={key}
                         id={key}
-                        {...itemPropsFor(review, key, true)}
+                        {...itemPropsFor(review, true)}
                       />
                     ))}
                   </SortableContext>
@@ -285,9 +279,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
             {/* Unpinned section */}
             {unpinnedReviews.map((review) => {
               const key = reviewKey(review);
-              return (
-                <TabRailItem key={key} {...itemPropsFor(review, key, false)} />
-              );
+              return <TabRailItem key={key} {...itemPropsFor(review, false)} />;
             })}
           </div>
         </div>

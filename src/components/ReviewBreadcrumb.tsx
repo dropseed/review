@@ -5,8 +5,6 @@ import { SimpleTooltip } from "./ui/tooltip";
 interface ReviewBreadcrumbProps {
   repoName: string;
   comparison: Comparison;
-  topLevelView: "overview" | "browse";
-  onNavigateToOverview: () => void;
 }
 
 function SidebarToggle() {
@@ -51,10 +49,7 @@ function getOverviewLabel(comparison: Comparison): string {
 export function ReviewBreadcrumb({
   repoName,
   comparison,
-  topLevelView,
-  onNavigateToOverview,
 }: ReviewBreadcrumbProps) {
-  const isBrowsing = topLevelView === "browse";
   const isPr = !!comparison.githubPr;
 
   return (
@@ -65,35 +60,9 @@ export function ReviewBreadcrumb({
 
       <span className="text-stone-600 text-xs">/</span>
 
-      {isBrowsing ? (
-        <button
-          onClick={onNavigateToOverview}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5
-                     text-xs text-stone-400 hover:text-stone-200
-                     hover:bg-stone-800/60 transition-colors duration-100
-                     cursor-pointer"
-        >
-          <svg
-            className="w-3 h-3 text-stone-500"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          <span className={isPr ? "" : "font-mono"}>
-            {getOverviewLabel(comparison)}
-          </span>
-        </button>
-      ) : (
-        <span className={`text-xs text-stone-500 ${isPr ? "" : "font-mono"}`}>
-          {getOverviewLabel(comparison)}
-        </span>
-      )}
+      <span className={`text-xs text-stone-500 ${isPr ? "" : "font-mono"}`}>
+        {getOverviewLabel(comparison)}
+      </span>
     </div>
   );
 }

@@ -29,6 +29,56 @@ interface ReviewViewProps {
   comparisonReady: boolean;
 }
 
+/** Circular progress indicator for the header. */
+function HeaderCircleProgress({ percent }: { percent: number }) {
+  const size = 20;
+  const strokeWidth = 2.5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percent / 100) * circumference;
+  const center = size / 2;
+  const isComplete = percent >= 100;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      className="shrink-0 cursor-default"
+      role="progressbar"
+      aria-valuenow={percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`${percent}% reviewed`}
+    >
+      <circle
+        cx={center}
+        cy={center}
+        r={radius}
+        fill="none"
+        stroke="rgba(255,255,255,0.08)"
+        strokeWidth={strokeWidth}
+      />
+      {percent > 0 && (
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke={
+            isComplete ? "var(--color-amber-500)" : "var(--color-sage-400)"
+          }
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${center} ${center})`}
+          className="transition-all duration-300"
+        />
+      )}
+    </svg>
+  );
+}
+
 export function ReviewView({
   onOpenRepo,
   onNewWindow,
@@ -174,12 +224,7 @@ export function ReviewView({
         <header className="flex h-12 items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] px-4">
           {/* Left: breadcrumb + status indicators */}
           <div className="flex items-center gap-3 min-w-0">
-            <ReviewBreadcrumb
-              repoName={repoName}
-              comparison={comparison}
-              topLevelView={topLevelView}
-              onNavigateToOverview={navigateToOverview}
-            />
+            <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
             {classifyingHunkIds.size > 0 && (
               <div className="flex items-center gap-1.5 text-violet-400 text-2xs shrink-0">
                 <svg
@@ -212,7 +257,12 @@ export function ReviewView({
           {/* Right: review progress */}
           <div className="flex items-center gap-3">
             {totalHunks > 0 ? (
-              <div className="group relative flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={navigateToOverview}
+                className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
+                           hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
+              >
                 {state === "approved" && (
                   <span className="text-xs font-medium text-emerald-400">
                     Approved
@@ -223,7 +273,6 @@ export function ReviewView({
                     Changes Requested
                   </span>
                 )}
-                <span className="text-xs text-stone-500">Hunks reviewed</span>
                 <span className="font-mono text-xs tabular-nums text-stone-400">
                   {reviewedHunks}/{totalHunks}
                 </span>
@@ -247,38 +296,11 @@ export function ReviewView({
                     </div>
                   }
                 >
-                  <div
-                    className="progress-bar w-24"
-                    tabIndex={0}
-                    role="progressbar"
-                    aria-valuenow={reviewedHunks}
-                    aria-valuemin={0}
-                    aria-valuemax={totalHunks}
-                    aria-label={`${reviewedHunks} of ${totalHunks} hunks reviewed`}
-                  >
-                    <div
-                      className="progress-bar-trusted"
-                      style={{
-                        width: `${(trustedHunks / totalHunks) * 100}%`,
-                      }}
-                    />
-                    <div
-                      className="progress-bar-approved"
-                      style={{
-                        width: `${(approvedHunks / totalHunks) * 100}%`,
-                        left: `${(trustedHunks / totalHunks) * 100}%`,
-                      }}
-                    />
-                    <div
-                      className="progress-bar-rejected"
-                      style={{
-                        width: `${(rejectedHunks / totalHunks) * 100}%`,
-                        left: `${((trustedHunks + approvedHunks) / totalHunks) * 100}%`,
-                      }}
-                    />
-                  </div>
+                  <HeaderCircleProgress
+                    percent={Math.round((reviewedHunks / totalHunks) * 100)}
+                  />
                 </SimpleTooltip>
-              </div>
+              </button>
             ) : (
               <span className="text-xs text-stone-500">
                 No changes to review
