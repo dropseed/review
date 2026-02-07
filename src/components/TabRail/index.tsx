@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   DndContext,
@@ -15,10 +15,14 @@ import {
 } from "@dnd-kit/sortable";
 import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
+import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
 import { SortableTabRailItem } from "./SortableTabRailItem";
 import { ComparisonPickerModal } from "../ComparisonPickerModal";
+import { SettingsModal } from "../SettingsModal";
 import type { GlobalReviewSummary } from "../../types";
+
+const GITHUB_REPO_URL = "https://github.com/dropseed/review";
 
 /** Derive the unique key used for pinning, stats lookup, etc. */
 function reviewKey(review: GlobalReviewSummary): string {
@@ -42,6 +46,9 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   const unpinReview = useReviewStore((s) => s.unpinReview);
   const reorderPinnedReviews = useReviewStore((s) => s.reorderPinnedReviews);
 
+  const [showSettings, setShowSettings] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
   const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
   const setComparisonPickerOpen = useReviewStore(
     (s) => s.setComparisonPickerOpen,
@@ -59,6 +66,13 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     minWidth: 10,
     maxWidth: 24,
   });
+
+  useEffect(() => {
+    getPlatformServices()
+      .window.getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -158,6 +172,16 @@ export function TabRail({ onActivateReview }: TabRailProps) {
       onDelete: () => handleDeleteReview(review),
       onTogglePin: () => handleTogglePin(review),
     };
+  }
+
+  function handleOpenFeedback(): void {
+    getPlatformServices().opener.openUrl(`${GITHUB_REPO_URL}/issues`);
+  }
+
+  function handleOpenRelease(): void {
+    getPlatformServices().opener.openUrl(
+      `${GITHUB_REPO_URL}/releases/tag/v${appVersion}`,
+    );
   }
 
   return (
@@ -282,6 +306,64 @@ export function TabRail({ onActivateReview }: TabRailProps) {
               return <TabRailItem key={key} {...itemPropsFor(review, false)} />;
             })}
           </div>
+
+          {/* Footer */}
+          <div className="shrink-0 border-t border-white/[0.06] px-3 py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(true)}
+                  className="p-1.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.06]
+                             transition-colors duration-100"
+                  aria-label="Settings"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenFeedback}
+                  className="p-1.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.06]
+                             transition-colors duration-100"
+                  aria-label="Send feedback"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                </button>
+              </div>
+              {appVersion && (
+                <button
+                  type="button"
+                  onClick={handleOpenRelease}
+                  className="text-[10px] tabular-nums text-stone-600 hover:text-stone-400 transition-colors duration-100"
+                >
+                  v{appVersion}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {!collapsed && (
@@ -300,6 +382,11 @@ export function TabRail({ onActivateReview }: TabRailProps) {
         isOpen={comparisonPickerOpen}
         onClose={handleCloseModal}
         prefilledRepoPath={comparisonPickerRepoPath}
+      />
+
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
       />
     </div>
   );
