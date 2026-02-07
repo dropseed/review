@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from "react";
+import { toast } from "sonner";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { DebugModal } from "./DebugModal";
@@ -22,61 +23,12 @@ import {
   useReviewProgress,
   useCelebration,
 } from "../hooks";
+import { CircleProgress } from "./ui/circle-progress";
 
 interface ReviewViewProps {
   onOpenRepo: () => Promise<void>;
   onNewWindow: () => Promise<void>;
   comparisonReady: boolean;
-}
-
-/** Circular progress indicator for the header. */
-function HeaderCircleProgress({ percent }: { percent: number }) {
-  const size = 20;
-  const strokeWidth = 2.5;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percent / 100) * circumference;
-  const center = size / 2;
-  const isComplete = percent >= 100;
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      className="shrink-0 cursor-default"
-      role="progressbar"
-      aria-valuenow={percent}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={`${percent}% reviewed`}
-    >
-      <circle
-        cx={center}
-        cy={center}
-        r={radius}
-        fill="none"
-        stroke="rgba(255,255,255,0.08)"
-        strokeWidth={strokeWidth}
-      />
-      {percent > 0 && (
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          stroke={
-            isComplete ? "var(--color-amber-500)" : "var(--color-sage-400)"
-          }
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          transform={`rotate(-90 ${center} ${center})`}
-          className="transition-all duration-300"
-        />
-      )}
-    </svg>
-  );
 }
 
 export function ReviewView({
@@ -88,7 +40,6 @@ export function ReviewView({
   const comparison = useReviewStore((s) => s.comparison);
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
-  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
   const hunks = useReviewStore((s) => s.hunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const topLevelView = useReviewStore((s) => s.topLevelView);
@@ -159,23 +110,47 @@ export function ReviewView({
     [hunks, navigateToBrowse],
   );
 
-  // Send desktop notification when classification completes
+  // Toast notifications for classification progress
+  const classificationToastId = useRef<string | number | undefined>();
   const wasClassifying = useRef(false);
   useEffect(() => {
-    const notifyCompletion = async () => {
-      if (wasClassifying.current && !classifying && !classificationError) {
-        const platform = getPlatformServices();
-        const hasPermission = await platform.notifications.requestPermission();
-        if (hasPermission) {
-          await platform.notifications.show(
-            "Classification Complete",
-            "All hunks have been classified by Claude.",
-          );
-        }
+    if (classifying && !wasClassifying.current) {
+      // Classification started
+      classificationToastId.current = toast("Classifying hunks…", {
+        duration: Infinity,
+        icon: (
+          <svg
+            className="h-4 w-4 animate-spin text-violet-400"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="3"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
+          </svg>
+        ),
+      });
+    } else if (wasClassifying.current && !classifying) {
+      // Classification finished — dismiss the progress toast
+      if (classificationToastId.current !== undefined) {
+        toast.dismiss(classificationToastId.current);
+        classificationToastId.current = undefined;
       }
-      wasClassifying.current = classifying;
-    };
-    notifyCompletion();
+      if (!classificationError) {
+        toast("Classification complete", { duration: 2000 });
+      }
+    }
+    wasClassifying.current = classifying;
   }, [classifying, classificationError]);
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({
@@ -212,46 +187,28 @@ export function ReviewView({
   // Celebration on 100% reviewed
   useCelebration();
 
+  const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
+
   const repoName =
     remoteInfo?.name ||
     repoPath?.replace(/\/+$/, "").split("/").pop() ||
     "repo";
 
+  // When the sidebar is collapsed, shrink the header and add left padding
+  // to clear the macOS traffic lights
+  const headerLayout = tabRailCollapsed ? "h-[34px] pl-[76px]" : "h-12 pl-4";
+
   return (
     <div className="flex h-full flex-row bg-stone-900">
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="flex h-12 items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] px-4">
-          {/* Left: breadcrumb + status indicators */}
+        <header
+          className={`flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 ${headerLayout}`}
+          data-tauri-drag-region
+        >
+          {/* Left: breadcrumb */}
           <div className="flex items-center gap-3 min-w-0">
             <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
-            {classifyingHunkIds.size > 0 && (
-              <div className="flex items-center gap-1.5 text-violet-400 text-2xs shrink-0">
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                <span className="tabular-nums" aria-live="polite">
-                  Classifying {classifyingHunkIds.size} hunk
-                  {classifyingHunkIds.size !== 1 ? "s" : ""}
-                </span>
-              </div>
-            )}
           </div>
 
           {/* Right: review progress */}
@@ -296,16 +253,15 @@ export function ReviewView({
                     </div>
                   }
                 >
-                  <HeaderCircleProgress
+                  <CircleProgress
                     percent={Math.round((reviewedHunks / totalHunks) * 100)}
+                    size={20}
+                    strokeWidth={2.5}
+                    className="shrink-0 cursor-default"
                   />
                 </SimpleTooltip>
               </button>
-            ) : (
-              <span className="text-xs text-stone-500">
-                No changes to review
-              </span>
-            )}
+            ) : null}
           </div>
         </header>
 

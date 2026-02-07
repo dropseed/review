@@ -91,7 +91,17 @@ resolveLanguages([...commonLanguages])
           >
             <WorkerPoolThemeSync />
             <AppRouter />
-            <Toaster theme="dark" position="top-right" />
+            <Toaster
+              theme="dark"
+              position="bottom-right"
+              toastOptions={{
+                style: {
+                  background: "#292524",
+                  color: "#e7e5e4",
+                  border: "1px solid rgba(168, 162, 158, 0.15)",
+                },
+              }}
+            />
           </WorkerPoolContextProvider>
         </ErrorBoundary>
       </React.StrictMode>,

@@ -23,7 +23,9 @@
         "minWidth": 800,
         "minHeight": 600,
         "tabbingIdentifier": "review-main",
-        "transparent": true
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

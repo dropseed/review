@@ -15,18 +15,80 @@ import {
 } from "@dnd-kit/sortable";
 import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
+import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
 import { SortableTabRailItem } from "./SortableTabRailItem";
 import { ComparisonPickerModal } from "../ComparisonPickerModal";
 import { SettingsModal } from "../SettingsModal";
 import type { GlobalReviewSummary } from "../../types";
+import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
+
+const SORT_OPTIONS: [ReviewSortOrder, string][] = [
+  ["updated", "Last updated"],
+  ["repo", "Repository"],
+  ["size", "Size"],
+];
 
 /** Derive the unique key used for pinning, stats lookup, etc. */
 function reviewKey(review: GlobalReviewSummary): string {
   return `${review.repoPath}:${review.comparison.key}`;
+}
+
+interface FooterVersionInfoProps {
+  updateAvailable: { version: string } | null;
+  installing: boolean;
+  installUpdate: () => void;
+  appVersion: string | null;
+  onOpenRelease: () => void;
+}
+
+/** Displays either an update button or the current version in the footer. */
+function FooterVersionInfo({
+  updateAvailable,
+  installing,
+  installUpdate,
+  appVersion,
+  onOpenRelease,
+}: FooterVersionInfoProps) {
+  if (updateAvailable) {
+    return (
+      <button
+        type="button"
+        onClick={installUpdate}
+        disabled={installing}
+        className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-400 hover:text-emerald-300 transition-colors duration-100 disabled:opacity-50"
+      >
+        {installing ? (
+          <>
+            <span className="inline-block h-2.5 w-2.5 rounded-full border-[1.5px] border-stone-600 border-t-emerald-400 animate-spin" />
+            Installing…
+          </>
+        ) : (
+          <>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Update to v{updateAvailable.version}
+          </>
+        )}
+      </button>
+    );
+  }
+
+  if (appVersion) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenRelease}
+        className="text-[10px] tabular-nums text-stone-600 hover:text-stone-400 transition-colors duration-100"
+      >
+        v{appVersion}
+      </button>
+    );
+  }
+
+  return null;
 }
 
 interface TabRailProps {
@@ -41,13 +103,19 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
   const pinnedReviewKeys = useReviewStore((s) => s.pinnedReviewKeys);
   const pinReview = useReviewStore((s) => s.pinReview);
   const unpinReview = useReviewStore((s) => s.unpinReview);
   const reorderPinnedReviews = useReviewStore((s) => s.reorderPinnedReviews);
+  const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
+  const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
+  const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const { updateAvailable, installing, installUpdate } = useAutoUpdater();
 
   const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
   const setComparisonPickerOpen = useReviewStore(
@@ -103,10 +171,36 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     [pinnedReviewKeys, reviewsByKey],
   );
 
-  const unpinnedReviews = useMemo(
-    () => globalReviews.filter((r) => !pinnedKeySet.has(reviewKey(r))),
-    [globalReviews, pinnedKeySet],
-  );
+  const unpinnedReviews = useMemo(() => {
+    const filtered = globalReviews.filter(
+      (r) => !pinnedKeySet.has(reviewKey(r)),
+    );
+    switch (reviewSortOrder) {
+      case "repo":
+        return [...filtered].sort((a, b) => {
+          const nameCmp = a.repoName.localeCompare(b.repoName);
+          if (nameCmp !== 0) return nameCmp;
+          return (
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          );
+        });
+      case "size":
+        return [...filtered].sort((a, b) => {
+          const statsA = reviewDiffStats[reviewKey(a)];
+          const statsB = reviewDiffStats[reviewKey(b)];
+          const sizeA = statsA
+            ? statsA.additions + statsA.deletions
+            : a.totalHunks;
+          const sizeB = statsB
+            ? statsB.additions + statsB.deletions
+            : b.totalHunks;
+          return sizeB - sizeA;
+        });
+      case "updated":
+      default:
+        return filtered;
+    }
+  }, [globalReviews, pinnedKeySet, reviewSortOrder, reviewDiffStats]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -159,6 +253,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   /** Build the common TabRailItem props for a review. */
   function itemPropsFor(review: GlobalReviewSummary, isPinned: boolean) {
     const meta = repoMetadata[review.repoPath];
+    const key = reviewKey(review);
     return {
       review,
       repoName: meta?.routePrefix ?? review.repoName,
@@ -168,6 +263,8 @@ export function TabRail({ onActivateReview }: TabRailProps) {
         activeReviewKey?.comparisonKey === review.comparison.key,
       isPinned,
       avatarUrl: meta?.avatarUrl,
+      sortOrder: isPinned ? undefined : reviewSortOrder,
+      diffStats: reviewDiffStats[key],
       onActivate: () => onActivateReview(review),
       onDelete: () => handleDeleteReview(review),
       onTogglePin: () => handleTogglePin(review),
@@ -201,24 +298,46 @@ export function TabRail({ onActivateReview }: TabRailProps) {
           className="flex flex-col h-full min-w-0"
           style={{ width: `${sidebarWidth}rem` }}
         >
-          {/* Header — matches h-12 main header */}
+          {/* Traffic lights row */}
           <div
-            className="shrink-0 flex items-center justify-between h-12 pl-3.5 pr-3"
+            className="shrink-0 h-[38px] flex items-center justify-end pr-3"
             data-tauri-drag-region
           >
-            <span className="text-[10px] font-medium uppercase tracking-widest text-stone-500">
-              Reviews
-            </span>
+            <button
+              type="button"
+              onClick={toggleTabRail}
+              className="flex items-center justify-center w-6 h-6 rounded-md
+                         hover:bg-white/[0.08] transition-colors duration-100
+                         text-stone-500 hover:text-stone-300"
+              aria-label="Hide sidebar"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+            </button>
+          </div>
+          {/* New review button */}
+          <div className="shrink-0 px-1.5 pt-1 pb-2">
             <button
               type="button"
               onClick={handleAddReview}
-              className="p-1 rounded text-stone-500 hover:text-stone-300 hover:bg-white/[0.08]
-                         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50
-                         transition-colors duration-100"
-              aria-label="New review"
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5
+                         text-[11px] font-medium text-stone-400 hover:text-stone-200
+                         hover:bg-white/[0.08] transition-colors duration-100
+                         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50"
             >
               <svg
-                className="h-3.5 w-3.5"
+                className="h-3 w-3"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -230,6 +349,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
+              New review
             </button>
           </div>
 
@@ -265,7 +385,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
                 </svg>
                 <p className="text-2xs text-stone-500">No reviews yet</p>
                 <p className="text-xxs text-stone-600 mt-1">
-                  Press &ldquo;+&rdquo; to start
+                  Click &ldquo;New review&rdquo; to start
                 </p>
               </div>
             )}
@@ -296,11 +416,70 @@ export function TabRail({ onActivateReview }: TabRailProps) {
                     ))}
                   </SortableContext>
                 </DndContext>
-                <div className="mx-1.5 my-1 h-px bg-white/[0.06]" />
+                <div className="h-2" />
               </>
             )}
 
-            {/* Unpinned section */}
+            {/* All Reviews section */}
+            {unpinnedReviews.length > 0 && (
+              <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
+                <span className="text-[9px] uppercase tracking-wider text-stone-600">
+                  All Reviews
+                </span>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowSortMenu((prev) => !prev)}
+                    className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
+                               transition-colors duration-100"
+                    aria-label="Sort reviews"
+                  >
+                    <svg
+                      className="h-3 w-3"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M7 12h10" />
+                      <path d="M10 18h4" />
+                    </svg>
+                  </button>
+                  {showSortMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowSortMenu(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl">
+                        {SORT_OPTIONS.map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setReviewSortOrder(value);
+                              setShowSortMenu(false);
+                            }}
+                            className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
+                              ${
+                                reviewSortOrder === value
+                                  ? "text-stone-200 bg-white/[0.06]"
+                                  : "text-stone-400 hover:text-stone-200 hover:bg-white/[0.04]"
+                              }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             {unpinnedReviews.map((review) => {
               const key = reviewKey(review);
               return <TabRailItem key={key} {...itemPropsFor(review, false)} />;
@@ -353,15 +532,13 @@ export function TabRail({ onActivateReview }: TabRailProps) {
                   </svg>
                 </button>
               </div>
-              {appVersion && (
-                <button
-                  type="button"
-                  onClick={handleOpenRelease}
-                  className="text-[10px] tabular-nums text-stone-600 hover:text-stone-400 transition-colors duration-100"
-                >
-                  v{appVersion}
-                </button>
-              )}
+              <FooterVersionInfo
+                updateAvailable={updateAvailable}
+                installing={installing}
+                installUpdate={installUpdate}
+                appVersion={appVersion}
+                onOpenRelease={handleOpenRelease}
+              />
             </div>
           </div>
         </div>

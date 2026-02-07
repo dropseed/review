@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useReviewStore } from "../../../stores";
-import type { ViewMode, ProcessedFileEntry } from "../types";
+import type { FilesPanelTab, ProcessedFileEntry } from "../types";
 
 interface UseFilePanelNavigationOptions {
   sectionedFiles: {
@@ -42,26 +42,28 @@ export function useFilePanelNavigation({
   } = useReviewStore();
 
   const hunks = useReviewStore((s) => s.hunks);
-  const [viewMode, setViewMode] = useState<ViewMode>(
-    hunks.length === 0 ? "all" : "changes",
+  const [viewMode, setFilesPanelTab] = useState<FilesPanelTab>(
+    hunks.length === 0 ? "browse" : "changes",
   );
-  const userHasChosenViewMode = useRef(false);
+  const userHasChosenFilesPanelTab = useRef(false);
 
-  const handleSetViewMode = useCallback((mode: ViewMode) => {
-    userHasChosenViewMode.current = true;
-    setViewMode(mode);
+  const handleSetFilesPanelTab = useCallback((mode: FilesPanelTab) => {
+    userHasChosenFilesPanelTab.current = true;
+    setFilesPanelTab(mode);
   }, []);
 
-  // When hunks are cleared (e.g. new comparison), allow auto-switching again.
-  // When hunks arrive and user hasn't explicitly chosen a tab, switch to "changes".
+  // When hunks are cleared (e.g. new comparison), allow auto-switching again
+  // and default to Browse. When hunks arrive and user hasn't explicitly chosen
+  // a tab, switch to "changes".
   useEffect(() => {
     if (hunks.length === 0) {
-      userHasChosenViewMode.current = false;
+      userHasChosenFilesPanelTab.current = false;
+      setFilesPanelTab("browse");
       return;
     }
 
-    if (viewMode === "all" && !userHasChosenViewMode.current) {
-      setViewMode("changes");
+    if (viewMode === "browse" && !userHasChosenFilesPanelTab.current) {
+      setFilesPanelTab("changes");
     }
   }, [hunks.length, viewMode]);
 
@@ -103,8 +105,8 @@ export function useFilePanelNavigation({
       directoryExistsInTree(directoryToReveal, sectionedFiles.needsReview) ||
       directoryExistsInTree(directoryToReveal, sectionedFiles.reviewed);
 
-    if (!existsInChanges && viewMode !== "all") {
-      setViewMode("all");
+    if (!existsInChanges && viewMode !== "browse") {
+      setFilesPanelTab("browse");
     }
 
     expandAndScrollTo(directoryToReveal, true);
@@ -173,7 +175,7 @@ export function useFilePanelNavigation({
   return {
     selectedFile,
     viewMode,
-    setViewMode: handleSetViewMode,
+    setFilesPanelTab: handleSetFilesPanelTab,
     expandedPaths,
     togglePath,
     handleSelectFile,

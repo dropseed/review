@@ -1,6 +1,10 @@
 import type { FileEntry, ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
-import type { FileHunkStatus, ProcessedFileEntry, ViewMode } from "./types";
+import type {
+  FileHunkStatus,
+  ProcessedFileEntry,
+  FilesPanelTab,
+} from "./types";
 
 export const EMPTY_HUNK_STATUS: FileHunkStatus = {
   pending: 0,
@@ -65,7 +69,7 @@ export function calculateFileHunkStatus(
 export function processTree(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
-  viewMode: ViewMode,
+  viewMode: FilesPanelTab,
 ): ProcessedFileEntry[] {
   function process(entry: FileEntry): ProcessedFileEntry {
     const fileStatus = hunkStatusMap.get(entry.path);
@@ -92,7 +96,7 @@ export function processTree(
       // Directory matches filter if any child matches OR it has its own status change
       const anyChildMatches = processedChildren.some((c) => c.matchesFilter);
       const matchesFilter =
-        viewMode === "all" ||
+        viewMode === "browse" ||
         (viewMode === "changes" && (anyChildMatches || ownStatusChanged));
 
       const fileCount = processedChildren.reduce(
@@ -118,9 +122,9 @@ export function processTree(
     const hasChanges = hunkStatus.total > 0 || hasChangeStatus(entry.status);
 
     // Filter based on view mode
-    // In "all" mode, exclude deleted files since they don't exist in the current state
+    // In browse mode, exclude deleted files since they don't exist in the current state
     const matchesFilter =
-      (viewMode === "all" && entry.status !== "deleted") ||
+      (viewMode === "browse" && entry.status !== "deleted") ||
       (viewMode === "changes" && hasChanges);
 
     return {

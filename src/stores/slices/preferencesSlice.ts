@@ -24,6 +24,9 @@ export type ChangesDisplayMode = "tree" | "flat";
 // Diff view mode type
 export type DiffViewMode = "unified" | "split" | "old" | "new";
 
+// Review sort order type
+export type ReviewSortOrder = "updated" | "repo" | "size";
+
 // Preference defaults
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
@@ -42,6 +45,7 @@ const defaults = {
   soundEffectsEnabled: true,
   tabRailCollapsed: false,
   pinnedReviewKeys: [] as string[],
+  reviewSortOrder: "updated" as ReviewSortOrder,
 };
 
 export interface PreferencesSlice {
@@ -83,6 +87,9 @@ export interface PreferencesSlice {
   // Pinned reviews (ordered array of "repoPath:comparisonKey" strings)
   pinnedReviewKeys: string[];
 
+  // Review sort order
+  reviewSortOrder: ReviewSortOrder;
+
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
@@ -121,6 +128,9 @@ export interface PreferencesSlice {
   pinReview: (key: string) => void;
   unpinReview: (key: string) => void;
   reorderPinnedReviews: (keys: string[]) => void;
+
+  // Review sort order actions
+  setReviewSortOrder: (order: ReviewSortOrder) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -145,6 +155,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   soundEffectsEnabled: defaults.soundEffectsEnabled,
   tabRailCollapsed: defaults.tabRailCollapsed,
   pinnedReviewKeys: defaults.pinnedReviewKeys,
+  reviewSortOrder: defaults.reviewSortOrder,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
@@ -218,6 +229,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const pinnedReviewKeys =
       (await storage.get<string[]>("pinnedReviewKeys")) ??
       defaults.pinnedReviewKeys;
+    const reviewSortOrder =
+      (await storage.get<ReviewSortOrder>("reviewSortOrder")) ??
+      defaults.reviewSortOrder;
     const diffLineDiffType =
       (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
       defaults.diffLineDiffType;
@@ -256,6 +270,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       soundEffectsEnabled,
       tabRailCollapsed,
       pinnedReviewKeys,
+      reviewSortOrder,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
@@ -384,5 +399,10 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   reorderPinnedReviews: (keys) => {
     set({ pinnedReviewKeys: keys });
     storage.set("pinnedReviewKeys", keys);
+  },
+
+  setReviewSortOrder: (order) => {
+    set({ reviewSortOrder: order });
+    storage.set("reviewSortOrder", order);
   },
 });

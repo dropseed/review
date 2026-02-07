@@ -11,17 +11,18 @@ function SidebarToggle() {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
+  if (!collapsed) return null;
+
   return (
-    <SimpleTooltip
-      content={collapsed ? "Show sidebar (\u2318B)" : "Hide sidebar (\u2318B)"}
-    >
+    <SimpleTooltip content="Show sidebar (\u2318B)">
       <button
+        type="button"
         onClick={toggleTabRail}
         className="flex items-center justify-center w-7 h-7 rounded-md
                    hover:bg-stone-800/60 transition-colors duration-100
                    focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
                    text-stone-500 hover:text-stone-300"
-        aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
+        aria-label="Show sidebar"
       >
         <svg
           className="w-4 h-4"

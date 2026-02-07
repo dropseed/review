@@ -1,6 +1,12 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
-import type { Comparison, GlobalReviewSummary } from "../../types";
+import type {
+  Comparison,
+  DiffShortStat,
+  GlobalReviewSummary,
+} from "../../types";
+import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
+import { CircleProgress } from "../ui/circle-progress";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -35,6 +41,12 @@ function formatAge(dateStr: string): string {
   return `${months}mo`;
 }
 
+/** Format a number compactly: 1234 → "1.2k" */
+function compactNum(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 /** GitHub pull request icon (open state style). */
 function PullRequestIcon({ className }: { className?: string }) {
   return (
@@ -49,59 +61,6 @@ function PullRequestIcon({ className }: { className?: string }) {
   );
 }
 
-/** Small SVG circular progress indicator using brand colors. */
-function CircleProgress({
-  percent,
-  size = 14,
-}: {
-  percent: number;
-  size?: number;
-}) {
-  const strokeWidth = 2;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percent / 100) * circumference;
-  const center = size / 2;
-  const isComplete = percent >= 100;
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      className="shrink-0"
-      aria-label={`${percent}% reviewed`}
-    >
-      {/* Track ring */}
-      <circle
-        cx={center}
-        cy={center}
-        r={radius}
-        fill="none"
-        stroke="rgba(255,255,255,0.08)"
-        strokeWidth={strokeWidth}
-      />
-      {/* Filled arc — sage green in progress, amber when complete */}
-      {percent > 0 && (
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          stroke={
-            isComplete ? "var(--color-amber-500)" : "var(--color-sage-400)"
-          }
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          transform={`rotate(-90 ${center} ${center})`}
-          className="transition-all duration-300"
-        />
-      )}
-    </svg>
-  );
-}
-
 interface TabRailItemProps {
   review: GlobalReviewSummary;
   repoName: string;
@@ -109,6 +68,8 @@ interface TabRailItemProps {
   isActive: boolean;
   isPinned?: boolean;
   avatarUrl?: string | null;
+  sortOrder?: ReviewSortOrder;
+  diffStats?: DiffShortStat;
   onActivate: () => void;
   onDelete: () => void;
   onTogglePin?: () => void;
@@ -121,6 +82,8 @@ export const TabRailItem = memo(function TabRailItem({
   isActive,
   isPinned,
   avatarUrl,
+  sortOrder,
+  diffStats,
   onActivate,
   onDelete,
   onTogglePin,
@@ -130,7 +93,7 @@ export const TabRailItem = memo(function TabRailItem({
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const pr = review.comparison.githubPr;
-  const isPr = !!pr;
+  const isPr = pr != null;
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -212,7 +175,7 @@ export const TabRailItem = memo(function TabRailItem({
               className="h-3 w-3 shrink-0 rounded-sm"
             />
           )}
-          <span className="text-xs text-stone-500 shrink-0">
+          <span className="text-xs text-stone-500 truncate min-w-0">
             {review.repoName}
           </span>
           <span className="text-xs text-stone-600 shrink-0 -mx-0.5">/</span>
@@ -229,18 +192,29 @@ export const TabRailItem = memo(function TabRailItem({
             {primaryLabel}
             {isPr && ` #${pr.number}`}
           </span>
-          {/* Right side: age + circle / overflow — stacked grid for no layout shift */}
+          {/* Right side: contextual metadata / overflow — stacked grid for no layout shift */}
           <span className="relative grid shrink-0 justify-items-end items-center">
             <span
               className="col-start-1 row-start-1 flex items-center gap-1.5
                              transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
             >
-              {reviewedPercent > 0 && (
+              {review.totalHunks > 0 && (
                 <CircleProgress percent={reviewedPercent} />
               )}
-              <span className="text-2xs tabular-nums text-stone-600">
-                {age}
-              </span>
+              {sortOrder === "size" && diffStats ? (
+                <span className="text-2xs tabular-nums">
+                  <span className="text-[var(--color-diff-added)]">
+                    +{compactNum(diffStats.additions)}
+                  </span>{" "}
+                  <span className="text-[var(--color-diff-removed)]">
+                    -{compactNum(diffStats.deletions)}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-2xs tabular-nums text-stone-600">
+                  {age}
+                </span>
+              )}
             </span>
             <button
               type="button"
@@ -278,6 +252,7 @@ export const TabRailItem = memo(function TabRailItem({
             {onTogglePin && (
               <>
                 <button
+                  type="button"
                   onClick={() => {
                     setShowContextMenu(false);
                     onTogglePin();
@@ -290,6 +265,7 @@ export const TabRailItem = memo(function TabRailItem({
               </>
             )}
             <button
+              type="button"
               onClick={() => {
                 setShowContextMenu(false);
                 onDelete();

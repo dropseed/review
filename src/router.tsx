@@ -7,7 +7,6 @@ import {
   Outlet,
   useOutletContext,
 } from "react-router-dom";
-import { UpdateBanner } from "./components/UpdateBanner";
 import { TabRail } from "./components/TabRail";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
@@ -91,7 +90,6 @@ function AppShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <UpdateBanner />
       <div className="flex h-screen">
         <TabRail onActivateReview={handleActivateReview} />
         <div className="flex flex-1 flex-col overflow-hidden bg-stone-900">
@@ -134,7 +132,10 @@ function EmptyTabState() {
 
   if (repoStatus === "error") {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div
+        className="flex h-full items-center justify-center"
+        data-tauri-drag-region
+      >
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
           <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
             <svg
@@ -167,7 +168,10 @@ function EmptyTabState() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center">
+    <div
+      className="flex h-full items-center justify-center"
+      data-tauri-drag-region
+    >
       <div className="flex flex-col items-center gap-3 text-center px-6">
         <p className="text-sm text-stone-500">
           Open a repository to start reviewing

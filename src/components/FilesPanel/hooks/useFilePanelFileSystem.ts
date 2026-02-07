@@ -53,7 +53,7 @@ export function useFilePanelFileSystem() {
 
   // Process tree for All Files section
   const allFilesTree = useMemo(
-    () => processTree(allFiles, hunkStatusMap, "all"),
+    () => processTree(allFiles, hunkStatusMap, "browse"),
     [allFiles, hunkStatusMap],
   );
 

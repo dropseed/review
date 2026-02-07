@@ -296,7 +296,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const {
     selectedFile,
     viewMode,
-    setViewMode,
+    setFilesPanelTab,
     expandedPaths,
     togglePath,
     handleSelectFile,
@@ -503,13 +503,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     flatSectionedFiles.reviewed.length > 0;
 
   // Handle commit selection
-  const handleCommitSelect = (hash: string) => {
-    setSelectedCommitHash(hash);
-    const commit = commits.find((c) => c.hash === hash);
-    if (commit && onSelectCommit) {
-      onSelectCommit(commit);
-    }
-  };
+  const handleCommitSelect = useCallback(
+    (hash: string) => {
+      setSelectedCommitHash(hash);
+      const commit = commits.find((c) => c.hash === hash);
+      if (commit && onSelectCommit) {
+        onSelectCommit(commit);
+      }
+    },
+    [commits, onSelectCommit],
+  );
 
   if (allFilesLoading) {
     return (
@@ -529,11 +532,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         <div className="border-b border-stone-800/50 px-3 py-2">
           <Tabs
             value={viewMode}
-            onValueChange={(v) => setViewMode(v as typeof viewMode)}
+            onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
           >
             <TabsList aria-label="File view mode">
               <TabsTrigger value="changes">Changes</TabsTrigger>
-              <TabsTrigger value="all">Browse</TabsTrigger>
+              <TabsTrigger value="browse">Browse</TabsTrigger>
               <TabsTrigger value="commits">Commits</TabsTrigger>
             </TabsList>
           </Tabs>

@@ -115,8 +115,8 @@
   --color-status-info: oklch(0.685 0.169 237.323);     /* sky-500 - informational */
 
   /* Diff highlighting */
-  --color-diff-added: oklch(0.765 0.177 162.73);       /* emerald-500 */
-  --color-diff-removed: oklch(0.712 0.194 13.428);     /* rose-500 */
+  --color-diff-added: var(--color-sage-400);
+  --color-diff-removed: var(--color-terracotta-400);
 
   /* Extended backgrounds */
   --color-bg-primary: #0c0a09;
