@@ -28,7 +28,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { platform } from "@tauri-apps/plugin-os";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 
 import type {
   ClipboardService,
@@ -259,38 +259,44 @@ class TauriWindowService implements WindowService {
 // ----- Menu Events -----
 
 class TauriMenuEventService implements MenuEventService {
-  on(event: string, callback: (payload?: unknown) => void): () => void {
-    let unlisten: UnlistenFn | null = null;
-    let cancelled = false;
+  // Single Tauri listener per event with synchronous callback management.
+  // Prevents listener accumulation during HMR.
+  private subscriptions = new Map<string, Set<(payload?: unknown) => void>>();
 
-    listen(event, (e) => {
-      if (!cancelled) {
-        callback(e.payload);
-      }
-    })
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-        } else {
-          unlisten = fn;
+  // Arrow function to preserve `this` when destructured.
+  on = (event: string, callback: (payload?: unknown) => void): (() => void) => {
+    let subscribers = this.subscriptions.get(event);
+
+    if (!subscribers) {
+      subscribers = new Set();
+      this.subscriptions.set(event, subscribers);
+
+      // Capture the Set in a const so the listen callback can reference it
+      // directly rather than re-looking up the map each time.
+      const callbacks = subscribers;
+      listen(event, (e) => {
+        for (const cb of callbacks) {
+          cb(e.payload);
         }
-      })
-      .catch((err) => {
+      }).catch((err) => {
         console.error(`Failed to listen for ${event}:`, err);
       });
+    }
+
+    subscribers.add(callback);
 
     return () => {
-      cancelled = true;
-      if (unlisten) {
-        unlisten();
-      }
+      subscribers.delete(callback);
     };
-  }
+  };
 }
 
 // ----- Combined Services -----
 
-let services: PlatformServices | null = null;
+// Preserve the singleton across HMR so Tauri listeners are not orphaned.
+let services: PlatformServices | null =
+  (import.meta.hot?.data as { services?: PlatformServices } | undefined)
+    ?.services ?? null;
 
 /**
  * Get the Tauri platform services (singleton)
@@ -307,6 +313,9 @@ export function getTauriServices(): PlatformServices {
       window: new TauriWindowService(),
       menuEvents: new TauriMenuEventService(),
     };
+  }
+  if (import.meta.hot) {
+    import.meta.hot.data.services = services;
   }
   return services;
 }
