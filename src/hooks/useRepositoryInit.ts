@@ -35,7 +35,7 @@ function getUrlParams(): {
 
 // Parse comparison key back into a Comparison object
 // Key format: "old..new"
-function parseComparisonKey(key: string): Comparison | null {
+export function parseComparisonKey(key: string): Comparison | null {
   const parts = key.split("..");
   if (parts.length !== 2) return null;
 
@@ -216,9 +216,15 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         addRecentRepository(path);
         storeRepoPath(path);
 
-        // Resolve and navigate to review route (working tree by default)
+        // Resolve and navigate to review route.
+        // Check if the CLI set a current comparison (via `review open`).
         const { routePrefix } = await resolveRepoIdentity(path);
-        const { key, comparison } = await getDefaultComparison(path);
+        const saved = await apiClient
+          .getCurrentComparison(path)
+          .catch(() => null);
+        const { key, comparison } = saved
+          ? { key: saved.key, comparison: saved }
+          : await getDefaultComparison(path);
         setActiveReviewKey({
           repoPath: path,
           comparisonKey: key,
@@ -306,6 +312,37 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         setInitialLoading(true);
       });
   }, [repoPath, setComparison]);
+
+  // Listen for cli:switch-comparison events from Rust (when CLI reuses an existing window)
+  useEffect(() => {
+    const platform = getPlatformServices();
+    const unlisten = platform.menuEvents.on(
+      "cli:switch-comparison",
+      (payload) => {
+        const key = typeof payload === "string" ? payload : null;
+        if (!key) return;
+
+        const comparison = parseComparisonKey(key);
+        if (!comparison) return;
+
+        const currentRepoPath = useReviewStore.getState().repoPath;
+        if (!currentRepoPath) return;
+
+        skipNextAutoDetectRef.current = true;
+        setActiveReviewKey({ repoPath: currentRepoPath, comparisonKey: key });
+        setComparison(comparison);
+        setComparisonReady(true);
+        setInitialLoading(true);
+
+        // Navigate to the comparison route
+        resolveRepoIdentity(currentRepoPath).then(({ routePrefix }) => {
+          navigateRef.current(`/${routePrefix}/review/${key}`);
+        });
+      },
+    );
+
+    return unlisten;
+  }, [setActiveReviewKey, setComparison]);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {

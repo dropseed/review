@@ -1203,9 +1203,9 @@ pub fn stop_file_watcher(repo_path: String) {
 pub async fn open_repo_window(
     app: tauri::AppHandle,
     repo_path: String,
-    comparison: Option<ComparisonParam>,
+    comparison_key: Option<String>,
 ) -> Result<(), String> {
-    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
     use tauri_plugin_liquid_glass::{GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt};
 
     // Handle empty repo_path for creating a new blank window (welcome page)
@@ -1258,15 +1258,17 @@ pub async fn open_repo_window(
         return Ok(());
     }
 
-    let comparison_key = comparison
-        .as_ref()
-        .map_or_else(|| "default".to_owned(), |c| c.key.clone());
-
+    // Hash window label on repo_path only — one window per repo
     let mut hasher = DefaultHasher::new();
-    format!("{repo_path}:{comparison_key}").hash(&mut hasher);
+    repo_path.hash(&mut hasher);
     let label = format!("repo-{:x}", hasher.finish());
 
+    // If a window already exists for this repo, reuse it
     if let Some(existing) = app.get_webview_window(&label) {
+        // If a comparison key was provided, tell the frontend to switch
+        if let Some(ref key) = comparison_key {
+            let _ = existing.emit("cli:switch-comparison", key.clone());
+        }
         existing
             .set_focus()
             .map_err(|e: tauri::Error| e.to_string())?;
@@ -1278,23 +1280,12 @@ pub async fn open_repo_window(
         |s| s.to_string_lossy().to_string(),
     );
 
-    let window_title = if let Some(ref c) = comparison {
-        let compare_display = if c.working_tree && c.new == "HEAD" {
-            "Working Tree".to_owned()
-        } else {
-            c.new.clone()
-        };
-        format!("{} — {}..{}", repo_name, c.old, compare_display)
-    } else {
-        repo_name
-    };
-
-    let url = if let Some(ref c) = comparison {
+    let url = if let Some(ref key) = comparison_key {
         WebviewUrl::App(
             format!(
                 "index.html?repo={}&comparison={}",
                 urlencoding::encode(&repo_path),
-                urlencoding::encode(&c.key)
+                urlencoding::encode(key)
             )
             .into(),
         )
@@ -1316,7 +1307,7 @@ pub async fn open_repo_window(
         .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
 
     let window = WebviewWindowBuilder::new(&app, label, url)
-        .title(window_title)
+        .title(repo_name)
         .inner_size(width, height)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         .tabbing_identifier("review-main")

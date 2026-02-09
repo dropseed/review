@@ -228,6 +228,11 @@ export interface ApiClient {
   /** Subscribe to git change events */
   onGitChanged(callback: (repoPath: string) => void): () => void;
 
+  // ----- Comparison -----
+
+  /** Get the current comparison saved for a repo (if any) */
+  getCurrentComparison(repoPath: string): Promise<Comparison | null>;
+
   // ----- Window/App -----
 
   /** Open a new window for a repository */

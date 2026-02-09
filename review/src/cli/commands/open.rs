@@ -1,3 +1,4 @@
+use crate::review::storage;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -9,77 +10,87 @@ fn open_request_path() -> PathBuf {
     PathBuf::from(tmp).join("review-open-request")
 }
 
-pub fn run(repo_path: &str, _spec: Option<String>) -> Result<(), String> {
-    // Write a signal file with a timestamp and the requested repo path.
+pub fn run(repo_path: &str, spec: Option<String>) -> Result<(), String> {
+    let path = PathBuf::from(repo_path);
+
+    // Resolve comparison: from spec or auto-detect
+    let comparison = match spec {
+        Some(spec) => crate::cli::parse_comparison_spec(&path, &spec, false)?,
+        None => crate::cli::get_or_detect_comparison(&path)?,
+    };
+
+    // Persist review state so the GUI finds it on launch
+    storage::set_current_comparison(&path, &comparison).map_err(|e| e.to_string())?;
+    storage::ensure_review_exists(&path, &comparison).map_err(|e| e.to_string())?;
+
+    let comparison_key = &comparison.key;
+
+    // Write a signal file with a timestamp, repo path, and comparison key.
     // This is the reliable channel for the already-running case where
     // `open -a` activates the app but drops `--args`.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let _ = std::fs::write(open_request_path(), format!("{now}\n{repo_path}"));
+    let _ = std::fs::write(
+        open_request_path(),
+        format!("{now}\n{repo_path}\n{comparison_key}"),
+    );
 
     #[cfg(target_os = "macos")]
     {
+        // Try to launch the app at the given path via `open -a`.
+        // --args works for fresh launches; the signal file handles the rest.
+        let try_open = |app_path: &std::path::Path| -> Option<()> {
+            if !app_path.exists() {
+                return None;
+            }
+            let result = Command::new("open")
+                .arg("-a")
+                .arg(app_path)
+                .arg("--args")
+                .arg(repo_path)
+                .arg(comparison_key)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            match result {
+                Ok(status) if status.success() => Some(()),
+                Ok(_) => {
+                    eprintln!("open -a failed for {}", app_path.display());
+                    None
+                }
+                Err(e) => {
+                    eprintln!("Failed to run open -a {}: {}", app_path.display(), e);
+                    None
+                }
+            }
+        };
+
         // Common locations for the app bundle
         let home_apps = std::env::var("HOME")
             .map(|h| PathBuf::from(h).join("Applications/Review.app"))
             .unwrap_or_default();
         let app_locations = [PathBuf::from("/Applications/Review.app"), home_apps];
 
-        // Use `open -a` to launch or activate the app.
-        // --args works for fresh launches; the signal file handles the rest.
         for app_path in &app_locations {
-            if app_path.exists() {
-                let result = Command::new("open")
-                    .arg("-a")
-                    .arg(app_path)
-                    .arg("--args")
-                    .arg(repo_path)
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-
-                match result {
-                    Ok(status) if status.success() => {
-                        println!("Opened Review app for {repo_path}");
-                        return Ok(());
-                    }
-                    Ok(_) => {
-                        eprintln!("open -a failed for {}", app_path.display());
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to run open -a {}: {}", app_path.display(), e);
-                    }
-                }
+            if try_open(app_path).is_some() {
+                println!("Opened Review app for {repo_path}");
+                return Ok(());
             }
         }
 
         // Fallback: Try the development binary location
-        if let Ok(exe_path) = std::env::current_exe() {
-            let dev_app = exe_path
+        let dev_app = std::env::current_exe().ok().and_then(|p| {
+            p.parent()?
                 .parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.join("bundle/macos/Review.app"));
-
-            if let Some(app_path) = dev_app {
-                if app_path.exists() {
-                    let result = Command::new("open")
-                        .arg("-a")
-                        .arg(&app_path)
-                        .arg("--args")
-                        .arg(repo_path)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status();
-
-                    if let Ok(status) = result {
-                        if status.success() {
-                            println!("Opened Review app for {repo_path}");
-                            return Ok(());
-                        }
-                    }
-                }
+                .map(|p| p.join("bundle/macos/Review.app"))
+        });
+        if let Some(ref app_path) = dev_app {
+            if try_open(app_path).is_some() {
+                println!("Opened Review app for {repo_path}");
+                return Ok(());
             }
         }
     }

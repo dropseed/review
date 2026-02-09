@@ -46,10 +46,10 @@ fn open_request_path() -> std::path::PathBuf {
     std::path::PathBuf::from(tmp).join("review-open-request")
 }
 
-/// Read and delete the signal file. Returns the repo path if the file
-/// exists and was written recently (within 30 seconds).
+/// Read and delete the signal file. Returns `(repo_path, optional_comparison_key)`
+/// if the file exists and was written recently (within 30 seconds).
 #[cfg(desktop)]
-fn read_open_request() -> Option<String> {
+fn read_open_request() -> Option<(String, Option<String>)> {
     let path = open_request_path();
     let content = std::fs::read_to_string(&path).ok()?;
     let _ = std::fs::remove_file(&path);
@@ -57,6 +57,10 @@ fn read_open_request() -> Option<String> {
     let mut lines = content.lines();
     let timestamp: u64 = lines.next()?.parse().ok()?;
     let repo_path = lines.next()?.trim().to_owned();
+    let comparison_key = lines
+        .next()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
 
     // Ignore stale requests (e.g. from a crashed CLI run)
     let now = std::time::SystemTime::now()
@@ -70,7 +74,7 @@ fn read_open_request() -> Option<String> {
     if repo_path.is_empty() {
         None
     } else {
-        Some(repo_path)
+        Some((repo_path, comparison_key))
     }
 }
 
@@ -117,13 +121,21 @@ pub fn run() {
                 let _ = std::fs::remove_file(open_request_path());
 
                 // When a second instance is launched, its CLI args are forwarded here.
-                // Find a repo path argument (first non-flag arg after the binary name)
-                // and open it in a new window directly (handles dedup of existing windows).
-                if let Some(repo_path) = argv.iter().skip(1).find(|a| !a.starts_with('-')) {
+                // Find non-flag args after the binary name: first is repo path,
+                // optional second is comparison key.
+                let non_flag_args: Vec<String> = argv
+                    .iter()
+                    .skip(1)
+                    .filter(|a| !a.starts_with('-'))
+                    .cloned()
+                    .collect();
+                if let Some(repo) = non_flag_args.first().cloned() {
                     let app_clone = app.clone();
-                    let repo = repo_path.clone();
+                    let comparison_key = non_flag_args.get(1).cloned();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = commands::open_repo_window(app_clone, repo, None).await {
+                        if let Err(e) =
+                            commands::open_repo_window(app_clone, repo, comparison_key).await
+                        {
                             log::error!("Failed to open repo window from CLI: {e}");
                         }
                     });
@@ -652,10 +664,12 @@ pub fn run() {
         // the app was already running and `open -a` dropped --args.
         #[cfg(desktop)]
         if let tauri::RunEvent::Reopen { .. } = event {
-            if let Some(repo_path) = read_open_request() {
+            if let Some((repo_path, comparison_key)) = read_open_request() {
                 let handle = app_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = commands::open_repo_window(handle, repo_path, None).await {
+                    if let Err(e) =
+                        commands::open_repo_window(handle, repo_path, comparison_key).await
+                    {
                         log::error!("Failed to open repo from CLI signal: {e}");
                     }
                 });

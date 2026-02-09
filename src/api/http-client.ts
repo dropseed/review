@@ -531,6 +531,13 @@ export class HttpClient implements ApiClient {
     return () => {};
   }
 
+  // ----- Comparison -----
+
+  async getCurrentComparison(_repoPath: string): Promise<Comparison | null> {
+    // Not available in browser mode
+    return null;
+  }
+
   // ----- Window/App -----
 
   async openRepoWindow(_repoPath: string): Promise<void> {
