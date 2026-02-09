@@ -3,6 +3,9 @@
 import { installMockTauri } from "./utils/tauriMock";
 installMockTauri();
 
+import { scan } from "react-scan";
+scan({ enabled: import.meta.env.DEV });
+
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { AppRouter } from "./router";
