@@ -152,12 +152,6 @@ export interface ApiClient {
   /** Get the central storage path for a repo */
   getReviewStoragePath(repoPath: string): Promise<string>;
 
-  /** Get the current (last active) comparison for a repo */
-  getCurrentComparison(repoPath: string): Promise<Comparison | null>;
-
-  /** Set the current comparison */
-  setCurrentComparison(repoPath: string, comparison: Comparison): Promise<void>;
-
   // ----- Classification -----
 
   /** Check if Claude CLI is available */

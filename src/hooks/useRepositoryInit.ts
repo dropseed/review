@@ -21,16 +21,16 @@ export function getStoredRepoPath(): string | null {
   return sessionStorage.getItem(REPO_PATH_KEY);
 }
 
-// Get repo path from URL query parameter (for multi-window bootstrap)
-function getRepoPathFromUrl(): string | null {
+/** Extract bootstrap parameters from URL query string (set by Tauri on window creation). */
+function getUrlParams(): {
+  repoPath: string | null;
+  comparisonKey: string | null;
+} {
   const params = new URLSearchParams(window.location.search);
-  return params.get("repo");
-}
-
-// Get comparison key from URL query parameter (for multi-window bootstrap)
-function getComparisonKeyFromUrl(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("comparison");
+  return {
+    repoPath: params.get("repo"),
+    comparisonKey: params.get("comparison"),
+  };
 }
 
 // Parse comparison key back into a Comparison object
@@ -52,7 +52,7 @@ function parseComparisonKey(key: string): Comparison | null {
  */
 async function getDefaultComparison(
   repoPath: string,
-): Promise<{ key: string; comparison: Comparison; defaultBranch: string }> {
+): Promise<{ key: string; comparison: Comparison }> {
   const apiClient = getApiClient();
   const [defaultBranch, currentBranch] = await Promise.all([
     apiClient.getDefaultBranch(repoPath).catch(() => "main"),
@@ -60,7 +60,7 @@ async function getDefaultComparison(
   ]);
   const key = `${defaultBranch}..${currentBranch}`;
   const comparison = makeComparison(defaultBranch, currentBranch, true);
-  return { key, comparison, defaultBranch };
+  return { key, comparison };
 }
 
 /**
@@ -116,7 +116,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const repoPath = useReviewStore((s) => s.repoPath);
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const setComparison = useReviewStore((s) => s.setComparison);
-  const loadCurrentComparison = useReviewStore((s) => s.loadCurrentComparison);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
@@ -138,8 +137,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const hasInitializedRef = useRef(false);
 
   // When a review is activated explicitly (sidebar click), skip the automatic
-  // loadCurrentComparison that fires on repoPath changes.
-  const skipNextComparisonLoadRef = useRef(false);
+  // comparison auto-detection that fires on repoPath changes.
+  const skipNextAutoDetectRef = useRef(false);
 
   // Initialize repo path from URL or API, then navigate to clean route
   useEffect(() => {
@@ -150,7 +149,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const nav = navigateRef.current;
 
       // Check URL for repo path first (Tauri bootstrap)
-      const urlRepoPath = getRepoPathFromUrl();
+      const { repoPath: urlRepoPath, comparisonKey: urlComparisonKey } =
+        getUrlParams();
       if (urlRepoPath) {
         setRepoPath(urlRepoPath);
         initLogPath(urlRepoPath);
@@ -161,7 +161,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
         // Resolve owner/repo and navigate to review route
         const { routePrefix } = await resolveRepoIdentity(urlRepoPath);
-        const urlComparisonKey = getComparisonKeyFromUrl();
         if (urlComparisonKey) {
           const comparison = parseComparisonKey(urlComparisonKey);
           if (comparison) {
@@ -250,42 +249,61 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     loadGlobalReviews,
   ]);
 
-  // When repo path changes, always load a comparison
+  // When repo path changes, derive the comparison from the URL or auto-detect
   useEffect(() => {
-    if (repoPath) {
-      // If comparison was explicitly set (e.g. sidebar click), skip auto-detection
-      if (skipNextComparisonLoadRef.current) {
-        skipNextComparisonLoadRef.current = false;
+    if (!repoPath) return;
+
+    // If comparison was explicitly set (e.g. sidebar click), skip auto-detection
+    if (skipNextAutoDetectRef.current) {
+      skipNextAutoDetectRef.current = false;
+      return;
+    }
+
+    setComparisonReady(false);
+
+    // Helper: apply the resolved comparison and mark loading ready
+    const applyComparison = (comparison: Comparison) => {
+      setComparison(comparison);
+      setComparisonReady(true);
+      setInitialLoading(true);
+    };
+
+    // Check URL query param for comparison (multi-window bootstrap)
+    const { comparisonKey: urlComparisonKey } = getUrlParams();
+    if (urlComparisonKey) {
+      const parsed = parseComparisonKey(urlComparisonKey);
+      if (parsed) {
+        applyComparison(parsed);
         return;
       }
-
-      setComparisonReady(false);
-
-      // Check URL for comparison (multi-window support with specific comparison)
-      const urlComparisonKey = getComparisonKeyFromUrl();
-      if (urlComparisonKey) {
-        const parsedComparison = parseComparisonKey(urlComparisonKey);
-        if (parsedComparison) {
-          setComparison(parsedComparison);
-          setComparisonReady(true);
-          setInitialLoading(true);
-          return;
-        }
-      }
-
-      // No URL comparison — load last active (falls back to default_branch..working_tree)
-      loadCurrentComparison()
-        .then(() => {
-          setComparisonReady(true);
-          setInitialLoading(true);
-        })
-        .catch((err) => {
-          console.error("Failed to load current comparison:", err);
-          setComparisonReady(true);
-          setInitialLoading(true);
-        });
     }
-  }, [repoPath, setComparison, loadCurrentComparison]);
+
+    // Try to extract comparison from the current route path
+    // e.g. /owner/repo/review/main..feature -> "main..feature"
+    const pathMatch = window.location.pathname.match(/\/review\/([^/]+)$/);
+    if (pathMatch) {
+      const parsed = parseComparisonKey(pathMatch[1]);
+      if (parsed) {
+        applyComparison(parsed);
+        return;
+      }
+    }
+
+    // No comparison in URL -- auto-detect default_branch..current_branch
+    getDefaultComparison(repoPath)
+      .then(async ({ key, comparison }) => {
+        applyComparison(comparison);
+
+        // Navigate to the review route so the URL reflects the comparison
+        const { routePrefix } = await resolveRepoIdentity(repoPath);
+        navigateRef.current(`/${routePrefix}/review/${key}`, { replace: true });
+      })
+      .catch((err) => {
+        console.error("Failed to auto-detect comparison:", err);
+        setComparisonReady(true);
+        setInitialLoading(true);
+      });
+  }, [repoPath, setComparison]);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {
@@ -360,8 +378,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     }
   }, []);
 
-  // Activate a specific review from the sidebar — sets repo + comparison
-  // atomically, bypassing the automatic loadCurrentComparison flow.
+  // Activate a specific review from the sidebar — sets repo + comparison directly.
   const handleActivateReview = useCallback(
     (review: GlobalReviewSummary) => {
       const nav = navigateRef.current;
@@ -374,13 +391,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         comparisonKey: review.comparison.key,
       });
 
-      // If repo is changing, skip the automatic loadCurrentComparison
+      // If repo is changing, skip the automatic comparison auto-detection
       if (review.repoPath !== state.repoPath) {
-        skipNextComparisonLoadRef.current = true;
+        skipNextAutoDetectRef.current = true;
         setRepoPath(review.repoPath);
       }
 
-      // Always set comparison (clears stale data, saves, loads review state)
+      // Always set comparison (clears stale data, loads review state)
       setComparison(review.comparison);
 
       // Mark ready so useComparisonLoader fires

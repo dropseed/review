@@ -39,7 +39,6 @@ export class HttpClient implements ApiClient {
   private baseUrl: string;
   private token: string | null;
   private reviewStates = new Map<string, ReviewState>();
-  private currentComparison: Comparison | null = null;
 
   constructor(baseUrl: string = DEFAULT_BASE_URL, token?: string | null) {
     this.baseUrl = baseUrl;
@@ -385,36 +384,6 @@ export class HttpClient implements ApiClient {
   async getReviewStoragePath(_repoPath: string): Promise<string> {
     console.warn("[HttpClient] getReviewStoragePath not implemented");
     return "";
-  }
-
-  async getCurrentComparison(repoPath: string): Promise<Comparison | null> {
-    // Try to get from server first
-    try {
-      const result = await this.fetchJson<{ comparison: Comparison | null }>(
-        `/comparison?${this.buildRepoQuery(repoPath)}`,
-      );
-      this.currentComparison = result.comparison;
-      return result.comparison;
-    } catch {
-      // Fallback to local cache
-      return this.currentComparison;
-    }
-  }
-
-  async setCurrentComparison(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<void> {
-    this.currentComparison = comparison;
-
-    // Try to save to server
-    try {
-      await this.postJson(`/comparison?${this.buildRepoQuery(repoPath)}`, {
-        comparison,
-      });
-    } catch (err) {
-      console.warn("[HttpClient] Failed to save comparison to server:", err);
-    }
   }
 
   // ----- Classification -----

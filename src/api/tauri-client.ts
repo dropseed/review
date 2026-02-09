@@ -222,17 +222,6 @@ export class TauriClient implements ApiClient {
     return invoke<string>("get_review_storage_path", { repoPath });
   }
 
-  async getCurrentComparison(repoPath: string): Promise<Comparison | null> {
-    return invoke<Comparison | null>("get_current_comparison", { repoPath });
-  }
-
-  async setCurrentComparison(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<void> {
-    await invoke("set_current_comparison", { repoPath, comparison });
-  }
-
   // ----- Classification -----
 
   async checkClaudeAvailable(): Promise<boolean> {

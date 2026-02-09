@@ -15,7 +15,6 @@ export const isTauri = () => {
 // In-memory state for things that would normally persist via Tauri
 const mockState = {
   reviewStates: new Map<string, unknown>(),
-  currentComparison: null as unknown,
 };
 
 /**
@@ -91,13 +90,6 @@ export async function mockInvoke<T>(cmd: string, args?: unknown): Promise<T> {
       console.log(`[tauriMock] Saved review state for ${key}`);
       return undefined as T;
     }
-
-    case "get_current_comparison":
-      return mockState.currentComparison as T;
-
-    case "set_current_comparison":
-      mockState.currentComparison = params.comparison;
-      return undefined as T;
 
     case "check_claude_available":
       return false as T; // Claude CLI not available in browser mock

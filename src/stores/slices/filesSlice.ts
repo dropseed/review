@@ -86,8 +86,6 @@ export interface FilesSlice {
     isRefreshing?: boolean,
   ) => Promise<void>;
   loadAllFiles: () => Promise<void>;
-  loadCurrentComparison: () => Promise<void>;
-  saveCurrentComparison: () => Promise<void>;
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
 }
@@ -180,7 +178,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         reviewState: null,
         undoStack: [],
       });
-      get().saveCurrentComparison();
       get().loadReviewState();
     },
 
@@ -426,48 +423,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       } catch (err) {
         console.error("Failed to load all files:", err);
         set({ allFilesLoading: false });
-      }
-    },
-
-    loadCurrentComparison: async () => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-
-      try {
-        const savedComparison = await client.getCurrentComparison(repoPath);
-        if (savedComparison) {
-          set({ comparison: savedComparison });
-        } else {
-          try {
-            const [defaultBranch, currentBranch] = await Promise.all([
-              client.getDefaultBranch(repoPath),
-              client.getCurrentBranch(repoPath),
-            ]);
-            // Use resolved branch name instead of "HEAD" so each branch gets its own review state
-            const newComparison = makeComparison(
-              defaultBranch,
-              currentBranch,
-              true,
-            );
-            set({ comparison: newComparison });
-            get().saveCurrentComparison();
-          } catch {
-            set({ comparison: defaultComparison });
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load current comparison:", err);
-      }
-    },
-
-    saveCurrentComparison: async () => {
-      const { repoPath, comparison } = get();
-      if (!repoPath) return;
-
-      try {
-        await client.setCurrentComparison(repoPath, comparison);
-      } catch (err) {
-        console.error("Failed to save current comparison:", err);
       }
     },
 
