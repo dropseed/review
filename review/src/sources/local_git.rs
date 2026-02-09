@@ -66,7 +66,11 @@ impl LocalGitSource {
 
     /// Get the current branch name
     pub fn get_current_branch(&self) -> Result<String, LocalGitError> {
-        let output = self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if let Ok(output) = self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"]) {
+            return Ok(output.trim().to_owned());
+        }
+        // Unborn branch: HEAD is symbolic ref but target has no commits
+        let output = self.run_git(&["symbolic-ref", "--short", "HEAD"])?;
         Ok(output.trim().to_owned())
     }
 
@@ -79,7 +83,7 @@ impl LocalGitSource {
 
     /// The well-known SHA for git's empty tree object.
     /// This exists in every git repo and represents a tree with no files.
-    const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf899d15363d7aa16";
+    const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
     /// Resolve a ref to a commit SHA hash, falling back to the empty tree
     /// if the ref doesn't exist (e.g., HEAD in an empty repo with no commits).
@@ -105,6 +109,14 @@ impl LocalGitSource {
         }
         if self.run_git(&["rev-parse", "--verify", "master"]).is_ok() {
             return Ok("master".to_owned());
+        }
+        // Empty repo: no refs exist yet, check what HEAD points to
+        if let Ok(output) = self.run_git(&["symbolic-ref", "HEAD"]) {
+            if let Some(branch) = output.trim().strip_prefix("refs/heads/") {
+                if branch == "main" || branch == "master" {
+                    return Ok(branch.to_owned());
+                }
+            }
         }
         // Last resort: use HEAD
         Ok("HEAD".to_owned())
