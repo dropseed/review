@@ -1,3 +1,4 @@
+use super::{print_json, require_comparison};
 use crate::cli::OutputFormat;
 use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
@@ -8,18 +9,10 @@ use std::path::PathBuf;
 
 pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
     let path = PathBuf::from(repo_path);
+    let comparison = require_comparison(&path)?;
 
-    // Get current comparison
-    let comparison = storage::get_current_comparison(&path)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            "No active comparison. Use 'review compare <base>..<head>' to set one.".to_owned()
-        })?;
-
-    // Load review state
     let state = storage::load_review_state(&path, &comparison).map_err(|e| e.to_string())?;
 
-    // Get file count
     let source = LocalGitSource::new(path.clone()).map_err(|e| e.to_string())?;
     let files = source.list_files(&comparison).map_err(|e| e.to_string())?;
     let changed_files = files
@@ -27,7 +20,6 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
         .filter(|f| !f.is_directory && f.status.is_some())
         .count();
 
-    // Count hunk statistics
     let total_hunks = state.hunks.len();
     let approved = state
         .hunks
@@ -65,7 +57,7 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
     };
 
     if format == OutputFormat::Json {
-        let output = serde_json::json!({
+        print_json(&serde_json::json!({
             "comparison": {
                 "old": comparison.old,
                 "new": comparison.new,
@@ -85,11 +77,7 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
             "trust_list": state.trust_list,
             "notes": state.notes,
             "updated_at": state.updated_at,
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
-        );
+        }));
         return Ok(());
     }
 
@@ -97,13 +85,11 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
     println!("{}", "Review Status".bold());
     println!();
 
-    // Comparison info
     let compare_display = format!("{}..{}", comparison.old, comparison.new);
     println!("  {} {}", "Comparison:".dimmed(), compare_display);
     println!("  {} {}", "Files:".dimmed(), changed_files);
     println!();
 
-    // Hunk summary
     println!("{}", "Hunks".bold());
     let progress = if total_hunks > 0 {
         ((approved + rejected + trusted) as f64 / total_hunks as f64 * 100.0) as u32
@@ -153,7 +139,6 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
         );
     }
 
-    // Trust list
     if !state.trust_list.is_empty() {
         println!();
         println!("{}", "Trust List".bold());
@@ -162,7 +147,6 @@ pub fn run(repo_path: &str, format: OutputFormat) -> Result<(), String> {
         }
     }
 
-    // Notes
     if !state.notes.is_empty() {
         println!();
         println!("{}", "Notes".bold());

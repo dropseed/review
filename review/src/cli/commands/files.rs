@@ -1,5 +1,5 @@
+use super::{print_json, require_comparison};
 use crate::cli::OutputFormat;
-use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::{DiffSource, FileStatus};
 use colored::Colorize;
@@ -7,15 +7,8 @@ use std::path::PathBuf;
 
 pub fn run(repo_path: &str, show_all: bool, format: OutputFormat) -> Result<(), String> {
     let path = PathBuf::from(repo_path);
+    let comparison = require_comparison(&path)?;
 
-    // Get current comparison
-    let comparison = storage::get_current_comparison(&path)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
-        })?;
-
-    // Get files
     let source = LocalGitSource::new(path.clone()).map_err(|e| e.to_string())?;
     let files = if show_all {
         source
@@ -46,10 +39,7 @@ pub fn run(repo_path: &str, show_all: bool, format: OutputFormat) -> Result<(), 
                 })
             })
             .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
-        );
+        print_json(&output);
         return Ok(());
     }
 

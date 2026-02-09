@@ -1,3 +1,4 @@
+use super::{extract_file_path, print_json, require_comparison, split_diff_by_file};
 use crate::classify::{check_claude_available, classify_hunks_batched, should_skip_ai, HunkInput};
 use crate::cli::OutputFormat;
 use crate::diff::parser::parse_diff;
@@ -17,7 +18,6 @@ pub fn run(
 ) -> Result<(), String> {
     let path = PathBuf::from(repo_path);
 
-    // Check if Claude is available
     if !check_claude_available() {
         return Err(
             "Claude CLI not found. Please install: npm install -g @anthropic-ai/claude-code"
@@ -25,17 +25,9 @@ pub fn run(
         );
     }
 
-    // Get current comparison
-    let comparison = storage::get_current_comparison(&path)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            "No active comparison. Use 'compare <base>..<head>' to set one.".to_owned()
-        })?;
-
-    // Load review state
+    let comparison = require_comparison(&path)?;
     let mut state = storage::load_review_state(&path, &comparison).map_err(|e| e.to_string())?;
 
-    // Get the full diff
     let source = LocalGitSource::new(path.clone()).map_err(|e| e.to_string())?;
     let diff_output = source
         .get_diff(&comparison, None)
@@ -59,19 +51,16 @@ pub fn run(
         let hunks = parse_diff(&file_diff, &file_path);
 
         for hunk in hunks {
-            // Check if already classified
             let existing = state.hunks.get(&hunk.id);
             if existing.is_some_and(|h| !h.label.is_empty()) {
                 continue;
             }
 
-            // Skip hunks that heuristics say won't match any AI label
             if should_skip_ai(&hunk).is_some() {
                 skipped_count += 1;
                 continue;
             }
 
-            // Build hunk input for classification - use the content field
             hunks_to_classify.push(HunkInput {
                 id: hunk.id.clone(),
                 file_path: hunk.file_path.clone(),
@@ -106,7 +95,6 @@ pub fn run(
         );
     }
 
-    // Run classification (blocking)
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     let result = rt
         .block_on(async {
@@ -142,11 +130,10 @@ pub fn run(
         classified_count += 1;
     }
 
-    // Save updated state
     storage::save_review_state(&path, &state).map_err(|e| e.to_string())?;
 
     if format == OutputFormat::Json {
-        let output = serde_json::json!({
+        print_json(&serde_json::json!({
             "message": "Classification complete",
             "classified": classified_count,
             "total": total,
@@ -157,11 +144,7 @@ pub fn run(
                     "reasoning": c.reasoning,
                 })
             }).collect::<Vec<_>>(),
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).expect("failed to serialize JSON output")
-        );
+        }));
     } else {
         println!();
         println!(
@@ -198,38 +181,4 @@ pub fn run(
     }
 
     Ok(())
-}
-
-fn split_diff_by_file(diff: &str) -> Vec<String> {
-    let mut files = Vec::new();
-    let mut current = String::new();
-
-    for line in diff.lines() {
-        if line.starts_with("diff --git ") {
-            if !current.is_empty() {
-                files.push(current);
-            }
-            current = String::new();
-        }
-        current.push_str(line);
-        current.push('\n');
-    }
-
-    if !current.is_empty() {
-        files.push(current);
-    }
-
-    files
-}
-
-fn extract_file_path(file_diff: &str) -> Option<String> {
-    for line in file_diff.lines() {
-        if let Some(path) = line.strip_prefix("+++ b/") {
-            return Some(path.to_owned());
-        }
-        if let Some(path) = line.strip_prefix("+++ a/") {
-            return Some(path.to_owned());
-        }
-    }
-    None
 }

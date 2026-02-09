@@ -31,8 +31,31 @@ pub enum OutputFormat {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Start a review (set or auto-detect comparison)
+    Start {
+        /// Comparison spec (e.g., main..HEAD, main..feature-branch)
+        spec: Option<String>,
+
+        /// Include working tree changes
+        #[arg(short, long)]
+        working_tree: bool,
+    },
+
     /// Show current comparison and review progress
     Status,
+
+    /// List saved reviews
+    List {
+        /// Show reviews from all repositories
+        #[arg(short, long)]
+        all: bool,
+    },
+
+    /// Delete a saved review
+    Delete {
+        /// Comparison key to delete (e.g., main..HEAD)
+        key: String,
+    },
 
     /// Show diff with trust labels
     Diff {
@@ -66,30 +89,6 @@ pub enum Commands {
         batch_size: usize,
     },
 
-    /// Add a pattern to the trust list
-    Trust {
-        /// Pattern to trust (e.g., imports:added, formatting:*)
-        pattern: String,
-    },
-
-    /// Remove a pattern from the trust list
-    Untrust {
-        /// Pattern to remove from trust list
-        pattern: String,
-    },
-
-    /// Manually approve a specific hunk
-    Approve {
-        /// Hunk ID (filepath:hash format)
-        hunk_id: String,
-    },
-
-    /// Manually reject a specific hunk
-    Reject {
-        /// Hunk ID (filepath:hash format)
-        hunk_id: String,
-    },
-
     /// Clear review state
     Reset {
         /// Also clear trust list
@@ -97,68 +96,26 @@ pub enum Commands {
         hard: bool,
     },
 
-    /// Set or show the current comparison
-    Compare {
-        /// Comparison spec (e.g., main..HEAD, main..feature-branch)
-        spec: Option<String>,
+    /// View or set review notes
+    Notes {
+        /// Note text to set (omit to view current notes)
+        text: Option<String>,
 
-        /// Include working tree changes
+        /// Append to existing notes instead of replacing
         #[arg(short, long)]
-        working_tree: bool,
+        append: bool,
+    },
+
+    /// Review a GitHub pull request
+    Pr {
+        /// PR number (omit to list open PRs)
+        number: Option<u32>,
     },
 
     /// Open the GUI for the current comparison
     Open {
         /// Comparison spec (optional, uses current if not specified)
         spec: Option<String>,
-    },
-
-    /// Show the trust pattern taxonomy
-    Taxonomy {
-        /// Show only a specific category
-        #[arg(short, long)]
-        category: Option<String>,
-    },
-
-    /// Show symbol-level changes (functions, classes, etc.)
-    Symbols {
-        /// Specific file to show symbols for
-        file: Option<String>,
-
-        /// Show old/new side-by-side split view
-        #[arg(long)]
-        split: bool,
-    },
-
-    /// Run classification eval to measure accuracy
-    Eval {
-        /// Model to use (e.g., sonnet, haiku, opus)
-        #[arg(short, long, default_value = "sonnet")]
-        model: String,
-
-        /// Number of runs per case (for consistency checks)
-        #[arg(short = 'n', long, default_value = "1")]
-        runs: usize,
-
-        /// Filter by tag
-        #[arg(long)]
-        tag: Option<String>,
-
-        /// Filter by case ID
-        #[arg(long)]
-        case: Option<String>,
-
-        /// Path to custom fixtures file
-        #[arg(long)]
-        fixtures: Option<String>,
-
-        /// Maximum concurrent classifications
-        #[arg(long, default_value = "2")]
-        concurrency: usize,
-
-        /// Show every case result
-        #[arg(short, long)]
-        verbose: bool,
     },
 }
 
@@ -217,34 +174,21 @@ pub fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> 
 
 /// Run the CLI with parsed arguments
 pub fn run(cli: Cli) -> Result<(), String> {
-    // Eval doesn't require a git repo — handle it before resolving repo_path
-    if let Some(Commands::Eval {
-        model,
-        runs,
-        tag,
-        case,
-        fixtures,
-        concurrency,
-        verbose,
-    }) = cli.command
-    {
-        return commands::eval::run(
-            &model,
-            runs,
-            tag.as_deref(),
-            case.as_deref(),
-            fixtures.as_deref(),
-            concurrency,
-            verbose,
-            cli.format,
-        );
+    // List doesn't always require a git repo
+    if let Some(Commands::List { all }) = cli.command {
+        let repo_path = cli.get_repo_path().ok();
+        return commands::list::run(repo_path.as_deref(), all, cli.format);
     }
 
     let repo_path = cli.get_repo_path()?;
 
     match cli.command {
         None => commands::open::run(&repo_path, None),
+        Some(Commands::Start { spec, working_tree }) => {
+            commands::start::run(&repo_path, spec, working_tree, cli.format)
+        }
         Some(Commands::Status) => commands::status::run(&repo_path, cli.format),
+        Some(Commands::Delete { key }) => commands::delete::run(&repo_path, &key, cli.format),
         Some(Commands::Diff { labeled, file }) => {
             commands::diff::run(&repo_path, labeled, file, cli.format)
         }
@@ -254,27 +198,12 @@ pub fn run(cli: Cli) -> Result<(), String> {
             concurrency,
             batch_size,
         }) => commands::classify::run(&repo_path, &model, concurrency, batch_size, cli.format),
-        Some(Commands::Trust { pattern }) => commands::trust::run(&repo_path, &pattern, cli.format),
-        Some(Commands::Untrust { pattern }) => {
-            commands::untrust::run(&repo_path, &pattern, cli.format)
-        }
-        Some(Commands::Approve { hunk_id }) => {
-            commands::approve::run(&repo_path, &hunk_id, true, cli.format)
-        }
-        Some(Commands::Reject { hunk_id }) => {
-            commands::approve::run(&repo_path, &hunk_id, false, cli.format)
-        }
         Some(Commands::Reset { hard }) => commands::reset::run(&repo_path, hard, cli.format),
-        Some(Commands::Compare { spec, working_tree }) => {
-            commands::compare::run(&repo_path, spec, working_tree, cli.format)
+        Some(Commands::Notes { text, append }) => {
+            commands::notes::run(&repo_path, text, append, cli.format)
         }
+        Some(Commands::Pr { number }) => commands::pr::run(&repo_path, number, cli.format),
         Some(Commands::Open { spec }) => commands::open::run(&repo_path, spec),
-        Some(Commands::Taxonomy { category }) => {
-            commands::taxonomy::run(&repo_path, category, cli.format)
-        }
-        Some(Commands::Symbols { file, split }) => {
-            commands::symbols::run(&repo_path, file, split, cli.format)
-        }
-        Some(Commands::Eval { .. }) => unreachable!("handled above"),
+        Some(Commands::List { .. }) => unreachable!("handled above"),
     }
 }
