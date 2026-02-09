@@ -1223,9 +1223,23 @@ pub async fn open_repo_window(
         .hash(&mut hasher);
         let label = format!("repo-{:x}", hasher.finish());
 
+        // Inherit size from an existing window so new windows match the
+        // user's current preferred size (the window-state plugin can't
+        // restore these since each blank window gets a unique label).
+        let (width, height) = app
+            .webview_windows()
+            .values()
+            .next()
+            .and_then(|w| {
+                let size = w.inner_size().ok()?;
+                let scale = w.scale_factor().ok()?;
+                Some((size.width as f64 / scale, size.height as f64 / scale))
+            })
+            .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
+
         let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
             .title("Review")
-            .inner_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+            .inner_size(width, height)
             .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
             .tabbing_identifier("review-main")
             .transparent(true)
@@ -1288,10 +1302,23 @@ pub async fn open_repo_window(
         WebviewUrl::App(format!("index.html?repo={}", urlencoding::encode(&repo_path)).into())
     };
 
+    // Inherit size from an existing window for first-time repos (the
+    // window-state plugin will override this for previously-opened repos).
+    let (width, height) = app
+        .webview_windows()
+        .values()
+        .next()
+        .and_then(|w| {
+            let size = w.inner_size().ok()?;
+            let scale = w.scale_factor().ok()?;
+            Some((size.width as f64 / scale, size.height as f64 / scale))
+        })
+        .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
+
     let window = WebviewWindowBuilder::new(&app, label, url)
         .title(window_title)
-        .inner_size(1100.0, 750.0)
-        .min_inner_size(800.0, 600.0)
+        .inner_size(width, height)
+        .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         .tabbing_identifier("review-main")
         .transparent(true)
         .build()
