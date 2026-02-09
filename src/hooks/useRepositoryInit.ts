@@ -42,8 +42,10 @@ function parseComparisonKey(key: string): Comparison | null {
   const [oldRef, newRef] = parts;
   if (!oldRef || !newRef) return null;
 
-  // workingTree will be auto-determined at diff time based on current branch
-  return makeComparison(oldRef, newRef, false);
+  // Default to including working tree changes (matches getDefaultComparison behavior).
+  // The key format doesn't encode workingTree, so we assume true — the Rust diff
+  // layer uses this flag to decide whether to include uncommitted changes.
+  return makeComparison(oldRef, newRef, true);
 }
 
 /**
