@@ -168,7 +168,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     setReviewState: (state) => set({ reviewState: state }),
 
     loadReviewState: async () => {
-      const { repoPath, comparison, reviewState: currentState } = get();
+      const { repoPath, comparison } = get();
       if (!repoPath) return;
 
       const comparisonKey = comparison.key;
@@ -176,8 +176,15 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         const state = await client.loadReviewState(repoPath, comparison);
         // Discard result if comparison changed while loading
         if (get().comparison.key !== comparisonKey) return;
-        // Skip update if the state hasn't changed (avoids unnecessary re-renders)
-        if (currentState && state.updatedAt === currentState.updatedAt) return;
+        // Re-read current state after await — it may have been updated
+        // by user actions (e.g. setTrustList) while the load was in flight
+        const latestState = get().reviewState;
+        if (latestState) {
+          // Skip if nothing changed
+          if (state.updatedAt === latestState.updatedAt) return;
+          // Skip if in-memory state is newer (unsaved changes pending)
+          if (latestState.updatedAt > state.updatedAt) return;
+        }
         set({ reviewState: state });
       } catch (err) {
         if (get().comparison.key !== comparisonKey) return;
