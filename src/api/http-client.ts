@@ -1,7 +1,7 @@
 /**
  * HTTP Client Implementation
  *
- * Implements ApiClient using HTTP requests to the debug server.
+ * Implements ApiClient using HTTP requests to the companion server.
  * Used in browser testing and future web version.
  */
 
@@ -37,11 +37,20 @@ const DEFAULT_BASE_URL = "http://localhost:3333";
 
 export class HttpClient implements ApiClient {
   private baseUrl: string;
+  private token: string | null;
   private reviewStates = new Map<string, ReviewState>();
   private currentComparison: Comparison | null = null;
 
-  constructor(baseUrl: string = DEFAULT_BASE_URL) {
+  constructor(baseUrl: string = DEFAULT_BASE_URL, token?: string | null) {
     this.baseUrl = baseUrl;
+    this.token = token ?? null;
+  }
+
+  private authHeaders(): Record<string, string> {
+    if (this.token) {
+      return { Authorization: `Bearer ${this.token}` };
+    }
+    return {};
   }
 
   // ----- Helper methods -----
@@ -50,7 +59,7 @@ export class HttpClient implements ApiClient {
     const url = `${this.baseUrl}${path}`;
     console.log(`[HttpClient] GET ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetch(url, { headers: this.authHeaders() });
     if (!response.ok) {
       const error = await response.text();
       throw new Error(`HTTP ${response.status}: ${error}`);
@@ -64,7 +73,7 @@ export class HttpClient implements ApiClient {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...this.authHeaders() },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
@@ -80,6 +89,7 @@ export class HttpClient implements ApiClient {
 
     const response = await fetch(url, {
       method: "DELETE",
+      headers: this.authHeaders(),
     });
     if (!response.ok) {
       const error = await response.text();
@@ -369,8 +379,7 @@ export class HttpClient implements ApiClient {
   }
 
   async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {
-    console.warn("[HttpClient] listAllReviewsGlobal not implemented");
-    return [];
+    return this.fetchJson<GlobalReviewSummary[]>("/reviews/global");
   }
 
   async getReviewStoragePath(_repoPath: string): Promise<string> {

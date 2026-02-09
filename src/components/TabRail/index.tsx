@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   DndContext,
@@ -91,19 +91,21 @@ function FooterVersionInfo({
   return null;
 }
 
-interface TabRailProps {
+// --- Review list (owns the data-heavy store subscriptions) ---
+
+interface TabRailListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
 }
 
-export function TabRail({ onActivateReview }: TabRailProps) {
+function TabRailList({ onActivateReview }: TabRailListProps) {
   const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
   const globalReviews = useReviewStore((s) => s.globalReviews);
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
-  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
-  const collapsed = useReviewStore((s) => s.tabRailCollapsed);
-  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
   const pinnedReviewKeys = useReviewStore((s) => s.pinnedReviewKeys);
   const pinReview = useReviewStore((s) => s.pinReview);
   const unpinReview = useReviewStore((s) => s.unpinReview);
@@ -112,41 +114,12 @@ export function TabRail({ onActivateReview }: TabRailProps) {
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
 
-  const [showSettings, setShowSettings] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const [appVersion, setAppVersion] = useState<string | null>(null);
-  const { updateAvailable, installing, installUpdate } = useAutoUpdater();
-
-  const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
-  const setComparisonPickerOpen = useReviewStore(
-    (s) => s.setComparisonPickerOpen,
-  );
-  const comparisonPickerRepoPath = useReviewStore(
-    (s) => s.comparisonPickerRepoPath,
-  );
-  const setComparisonPickerRepoPath = useReviewStore(
-    (s) => s.setComparisonPickerRepoPath,
-  );
-
-  const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
-    sidebarPosition: "left",
-    initialWidth: 14,
-    minWidth: 10,
-    maxWidth: 24,
-  });
-
-  useEffect(() => {
-    getPlatformServices()
-      .window.getVersion()
-      .then(setAppVersion)
-      .catch(() => {});
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  // Split reviews into pinned (ordered by pinnedReviewKeys) and unpinned
   const pinnedKeySet = useMemo(
     () => new Set(pinnedReviewKeys),
     [pinnedReviewKeys],
@@ -218,14 +191,15 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     (review: GlobalReviewSummary) => {
       unpinReview(reviewKey(review));
       deleteGlobalReview(review.repoPath, review.comparison);
+      const active = useReviewStore.getState().activeReviewKey;
       if (
-        activeReviewKey?.repoPath === review.repoPath &&
-        activeReviewKey?.comparisonKey === review.comparison.key
+        active?.repoPath === review.repoPath &&
+        active?.comparisonKey === review.comparison.key
       ) {
-        navigate("/");
+        navigateRef.current("/");
       }
     },
-    [deleteGlobalReview, unpinReview, activeReviewKey, navigate],
+    [deleteGlobalReview, unpinReview],
   );
 
   const handleTogglePin = useCallback(
@@ -240,6 +214,200 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     [pinnedKeySet, pinReview, unpinReview],
   );
 
+  function itemPropsFor(review: GlobalReviewSummary, isPinned: boolean) {
+    const meta = repoMetadata[review.repoPath];
+    const key = reviewKey(review);
+    return {
+      review,
+      repoName: meta?.routePrefix ?? review.repoName,
+      defaultBranch: meta?.defaultBranch,
+      isPinned,
+      avatarUrl: meta?.avatarUrl,
+      sortOrder: isPinned ? undefined : reviewSortOrder,
+      diffStats: reviewDiffStats[key],
+      onActivate: onActivateReview,
+      onDelete: handleDeleteReview,
+      onTogglePin: handleTogglePin,
+    };
+  }
+
+  return (
+    <div
+      className="flex-1 overflow-y-auto scrollbar-thin px-1.5 py-1"
+      role="tablist"
+    >
+      {globalReviewsLoading && globalReviews.length === 0 && (
+        <div className="space-y-2 px-2 py-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="animate-pulse space-y-1">
+              <div className="h-2.5 w-16 rounded bg-white/[0.06]" />
+              <div className="h-8 rounded bg-white/[0.04]" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!globalReviewsLoading && globalReviews.length === 0 && (
+        <div className="px-2 py-8 text-center">
+          <svg
+            className="h-6 w-6 mx-auto mb-2 text-stone-600"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <p className="text-2xs text-stone-500">No reviews yet</p>
+          <p className="text-xxs text-stone-600 mt-1">
+            Click &ldquo;New review&rdquo; to start
+          </p>
+        </div>
+      )}
+
+      {/* Pinned section */}
+      {pinnedReviews.length > 0 && (
+        <>
+          <div className="px-2 pt-1 pb-0.5">
+            <span className="text-[9px] uppercase tracking-wider text-stone-600">
+              Pinned
+            </span>
+          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={pinnedReviews.map((p) => p.key)}
+              strategy={verticalListSortingStrategy}
+            >
+              {pinnedReviews.map(({ key, review }) => (
+                <SortableTabRailItem
+                  key={key}
+                  id={key}
+                  {...itemPropsFor(review, true)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+          <div className="h-2" />
+        </>
+      )}
+
+      {/* All Reviews section */}
+      {unpinnedReviews.length > 0 && (
+        <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
+          <span className="text-[9px] uppercase tracking-wider text-stone-600">
+            All Reviews
+          </span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowSortMenu((prev) => !prev)}
+              className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
+                         transition-colors duration-100"
+              aria-label="Sort reviews"
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 6h18" />
+                <path d="M7 12h10" />
+                <path d="M10 18h4" />
+              </svg>
+            </button>
+            {showSortMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowSortMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl">
+                  {SORT_OPTIONS.map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setReviewSortOrder(value);
+                        setShowSortMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
+                        ${
+                          reviewSortOrder === value
+                            ? "text-stone-200 bg-white/[0.06]"
+                            : "text-stone-400 hover:text-stone-200 hover:bg-white/[0.04]"
+                        }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {unpinnedReviews.map((review) => {
+        const key = reviewKey(review);
+        return <TabRailItem key={key} {...itemPropsFor(review, false)} />;
+      })}
+    </div>
+  );
+}
+
+// --- Shell (header, footer, resize — no data subscriptions) ---
+
+interface TabRailProps {
+  onActivateReview: (review: GlobalReviewSummary) => void;
+}
+
+export const TabRail = memo(function TabRail({
+  onActivateReview,
+}: TabRailProps) {
+  const collapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const { updateAvailable, installing, installUpdate } = useAutoUpdater();
+
+  const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
+  const setComparisonPickerOpen = useReviewStore(
+    (s) => s.setComparisonPickerOpen,
+  );
+  const comparisonPickerRepoPath = useReviewStore(
+    (s) => s.comparisonPickerRepoPath,
+  );
+  const setComparisonPickerRepoPath = useReviewStore(
+    (s) => s.setComparisonPickerRepoPath,
+  );
+
+  const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
+    sidebarPosition: "left",
+    initialWidth: 14,
+    minWidth: 10,
+    maxWidth: 24,
+  });
+
+  useEffect(() => {
+    getPlatformServices()
+      .window.getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
+
   const handleAddReview = useCallback(() => {
     setComparisonPickerRepoPath(null);
     setComparisonPickerOpen(true);
@@ -249,27 +417,6 @@ export function TabRail({ onActivateReview }: TabRailProps) {
     setComparisonPickerOpen(false);
     setComparisonPickerRepoPath(null);
   }, [setComparisonPickerOpen, setComparisonPickerRepoPath]);
-
-  /** Build the common TabRailItem props for a review. */
-  function itemPropsFor(review: GlobalReviewSummary, isPinned: boolean) {
-    const meta = repoMetadata[review.repoPath];
-    const key = reviewKey(review);
-    return {
-      review,
-      repoName: meta?.routePrefix ?? review.repoName,
-      defaultBranch: meta?.defaultBranch,
-      isActive:
-        activeReviewKey?.repoPath === review.repoPath &&
-        activeReviewKey?.comparisonKey === review.comparison.key,
-      isPinned,
-      avatarUrl: meta?.avatarUrl,
-      sortOrder: isPinned ? undefined : reviewSortOrder,
-      diffStats: reviewDiffStats[key],
-      onActivate: () => onActivateReview(review),
-      onDelete: () => handleDeleteReview(review),
-      onTogglePin: () => handleTogglePin(review),
-    };
-  }
 
   function handleOpenFeedback(): void {
     getPlatformServices().opener.openUrl(`${GITHUB_REPO_URL}/issues`);
@@ -353,138 +500,7 @@ export function TabRail({ onActivateReview }: TabRailProps) {
             </button>
           </div>
 
-          <div
-            className="flex-1 overflow-y-auto scrollbar-thin px-1.5 py-1"
-            role="tablist"
-          >
-            {globalReviewsLoading && globalReviews.length === 0 && (
-              <div className="space-y-2 px-2 py-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="animate-pulse space-y-1">
-                    <div className="h-2.5 w-16 rounded bg-white/[0.06]" />
-                    <div className="h-8 rounded bg-white/[0.04]" />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!globalReviewsLoading && globalReviews.length === 0 && (
-              <div className="px-2 py-8 text-center">
-                <svg
-                  className="h-6 w-6 mx-auto mb-2 text-stone-600"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                <p className="text-2xs text-stone-500">No reviews yet</p>
-                <p className="text-xxs text-stone-600 mt-1">
-                  Click &ldquo;New review&rdquo; to start
-                </p>
-              </div>
-            )}
-
-            {/* Pinned section */}
-            {pinnedReviews.length > 0 && (
-              <>
-                <div className="px-2 pt-1 pb-0.5">
-                  <span className="text-[9px] uppercase tracking-wider text-stone-600">
-                    Pinned
-                  </span>
-                </div>
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={pinnedReviews.map((p) => p.key)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {pinnedReviews.map(({ key, review }) => (
-                      <SortableTabRailItem
-                        key={key}
-                        id={key}
-                        {...itemPropsFor(review, true)}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-                <div className="h-2" />
-              </>
-            )}
-
-            {/* All Reviews section */}
-            {unpinnedReviews.length > 0 && (
-              <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
-                <span className="text-[9px] uppercase tracking-wider text-stone-600">
-                  All Reviews
-                </span>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowSortMenu((prev) => !prev)}
-                    className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
-                               transition-colors duration-100"
-                    aria-label="Sort reviews"
-                  >
-                    <svg
-                      className="h-3 w-3"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M7 12h10" />
-                      <path d="M10 18h4" />
-                    </svg>
-                  </button>
-                  {showSortMenu && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setShowSortMenu(false)}
-                      />
-                      <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl">
-                        {SORT_OPTIONS.map(([value, label]) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => {
-                              setReviewSortOrder(value);
-                              setShowSortMenu(false);
-                            }}
-                            className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
-                              ${
-                                reviewSortOrder === value
-                                  ? "text-stone-200 bg-white/[0.06]"
-                                  : "text-stone-400 hover:text-stone-200 hover:bg-white/[0.04]"
-                              }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            {unpinnedReviews.map((review) => {
-              const key = reviewKey(review);
-              return <TabRailItem key={key} {...itemPropsFor(review, false)} />;
-            })}
-          </div>
+          <TabRailList onActivateReview={onActivateReview} />
 
           {/* Footer */}
           <div className="shrink-0 border-t border-white/[0.06] px-3 py-2">
@@ -555,16 +571,20 @@ export function TabRail({ onActivateReview }: TabRailProps) {
         )}
       </nav>
 
-      <ComparisonPickerModal
-        isOpen={comparisonPickerOpen}
-        onClose={handleCloseModal}
-        prefilledRepoPath={comparisonPickerRepoPath}
-      />
+      {comparisonPickerOpen && (
+        <ComparisonPickerModal
+          isOpen={comparisonPickerOpen}
+          onClose={handleCloseModal}
+          prefilledRepoPath={comparisonPickerRepoPath}
+        />
+      )}
 
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
+      {showSettings && (
+        <SettingsModal
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
-}
+});

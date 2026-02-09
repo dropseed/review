@@ -13,6 +13,7 @@ import {
   playRejectSound,
   playBulkSound,
 } from "../../utils/sounds";
+import { computeReviewProgress } from "../../hooks/useReviewProgress";
 
 // ========================================================================
 // Review Slice
@@ -130,13 +131,11 @@ function updateHunkStatuses(
         label: newHunks[id]?.label ?? [],
         status,
       };
-    } else {
-      if (newHunks[id]) {
-        newHunks[id] = {
-          ...newHunks[id],
-          status: undefined,
-        };
-      }
+    } else if (newHunks[id]) {
+      newHunks[id] = {
+        ...newHunks[id],
+        status: undefined,
+      };
     }
   }
 
@@ -205,7 +204,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      const { repoPath, reviewState } = get();
+      const { repoPath, reviewState, hunks, comparison, globalReviews } = get();
       if (!repoPath || !reviewState) return;
 
       try {
@@ -213,8 +212,25 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         // Record save time so file watcher can ignore our own writes
         lastSaveTimestamp = Date.now();
 
-        // Refresh sidebar so it reflects updated progress
-        get().loadGlobalReviews();
+        // Patch the specific review entry in globalReviews instead of
+        // doing a full loadGlobalReviews() IPC round-trip.
+        const progress = computeReviewProgress(hunks, reviewState);
+        const updatedReviews = globalReviews.map((r) => {
+          if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
+            return {
+              ...r,
+              totalHunks: progress.totalHunks,
+              trustedHunks: progress.trustedHunks,
+              approvedHunks: progress.approvedHunks,
+              rejectedHunks: progress.rejectedHunks,
+              reviewedHunks: progress.reviewedHunks,
+              state: progress.state,
+              updatedAt: reviewState.updatedAt,
+            };
+          }
+          return r;
+        });
+        set({ globalReviews: updatedReviews });
       } catch (err) {
         console.error("Failed to save review state:", err);
       }

@@ -37,8 +37,13 @@ export function createApiClient(): ApiClient {
     console.log("[api] Using TauriClient");
     return new TauriClient();
   } else {
-    console.log("[api] Using HttpClient (debug server)");
-    return new HttpClient();
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token") ?? localStorage.getItem("reviewToken");
+    if (token) {
+      localStorage.setItem("reviewToken", token);
+    }
+    console.log("[api] Using HttpClient (companion server)");
+    return new HttpClient(undefined, token);
   }
 }
 

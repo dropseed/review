@@ -6,6 +6,7 @@ import type {
   GlobalReviewSummary,
 } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
+import { useReviewStore } from "../../stores";
 import { CircleProgress } from "../ui/circle-progress";
 
 /** Format a branch comparison for display. */
@@ -65,21 +66,59 @@ interface TabRailItemProps {
   review: GlobalReviewSummary;
   repoName: string;
   defaultBranch?: string;
-  isActive: boolean;
   isPinned?: boolean;
   avatarUrl?: string | null;
   sortOrder?: ReviewSortOrder;
   diffStats?: DiffShortStat;
-  onActivate: () => void;
-  onDelete: () => void;
-  onTogglePin?: () => void;
+  onActivate: (review: GlobalReviewSummary) => void;
+  onDelete: (review: GlobalReviewSummary) => void;
+  onTogglePin?: (review: GlobalReviewSummary) => void;
+}
+
+/** Value-based comparison so items skip re-render when globalReviews is reconstructed. */
+function arePropsEqual(
+  prev: TabRailItemProps,
+  next: TabRailItemProps,
+): boolean {
+  // Review identity + rendered data (objects are new refs on each loadGlobalReviews)
+  if (prev.review.repoPath !== next.review.repoPath) return false;
+  if (prev.review.comparison.key !== next.review.comparison.key) return false;
+  if (prev.review.updatedAt !== next.review.updatedAt) return false;
+  if (prev.review.totalHunks !== next.review.totalHunks) return false;
+  if (prev.review.trustedHunks !== next.review.trustedHunks) return false;
+  if (prev.review.approvedHunks !== next.review.approvedHunks) return false;
+  if (prev.review.rejectedHunks !== next.review.rejectedHunks) return false;
+  if (prev.review.repoName !== next.review.repoName) return false;
+  if (
+    prev.review.comparison.githubPr?.number !==
+    next.review.comparison.githubPr?.number
+  )
+    return false;
+  if (
+    prev.review.comparison.githubPr?.title !==
+    next.review.comparison.githubPr?.title
+  )
+    return false;
+  // Scalar props
+  if (prev.repoName !== next.repoName) return false;
+  if (prev.defaultBranch !== next.defaultBranch) return false;
+  if (prev.isPinned !== next.isPinned) return false;
+  if (prev.avatarUrl !== next.avatarUrl) return false;
+  if (prev.sortOrder !== next.sortOrder) return false;
+  // DiffStats (object ref may change)
+  if (prev.diffStats?.additions !== next.diffStats?.additions) return false;
+  if (prev.diffStats?.deletions !== next.diffStats?.deletions) return false;
+  // Callbacks
+  if (prev.onActivate !== next.onActivate) return false;
+  if (prev.onDelete !== next.onDelete) return false;
+  if (prev.onTogglePin !== next.onTogglePin) return false;
+  return true;
 }
 
 export const TabRailItem = memo(function TabRailItem({
   review,
   repoName,
   defaultBranch,
-  isActive,
   isPinned,
   avatarUrl,
   sortOrder,
@@ -88,6 +127,11 @@ export const TabRailItem = memo(function TabRailItem({
   onDelete,
   onTogglePin,
 }: TabRailItemProps) {
+  const isActive = useReviewStore(
+    (s) =>
+      s.activeReviewKey?.repoPath === review.repoPath &&
+      s.activeReviewKey?.comparisonKey === review.comparison.key,
+  );
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -148,11 +192,11 @@ export const TabRailItem = memo(function TabRailItem({
       <div
         role="button"
         tabIndex={0}
-        onClick={onActivate}
+        onClick={() => onActivate(review)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onActivate();
+            onActivate(review);
           }
         }}
         onContextMenu={handleContextMenu}
@@ -255,7 +299,7 @@ export const TabRailItem = memo(function TabRailItem({
                   type="button"
                   onClick={() => {
                     setShowContextMenu(false);
-                    onTogglePin();
+                    onTogglePin(review);
                   }}
                   className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-white/[0.08] transition-colors"
                 >
@@ -268,7 +312,7 @@ export const TabRailItem = memo(function TabRailItem({
               type="button"
               onClick={() => {
                 setShowContextMenu(false);
-                onDelete();
+                onDelete(review);
               }}
               className="w-full px-3 py-1.5 text-left text-xs text-rose-400 hover:bg-white/[0.08] transition-colors"
             >
@@ -279,4 +323,4 @@ export const TabRailItem = memo(function TabRailItem({
         )}
     </>
   );
-});
+}, arePropsEqual);

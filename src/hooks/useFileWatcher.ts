@@ -61,18 +61,22 @@ export function useFileWatcher(comparisonReady: boolean) {
           "[watcher] Received review-state-changed event:",
           eventRepoPath,
         );
+        // Skip events triggered by our own saves — saveReviewState already
+        // patches the sidebar entry, so a full loadGlobalReviews is unnecessary.
+        if (
+          eventRepoPath === repoPathRef.current &&
+          shouldIgnoreReviewStateReload()
+        ) {
+          console.log(
+            "[watcher] Ignoring review-state-changed - triggered by our own save",
+          );
+          return;
+        }
         if (eventRepoPath === repoPathRef.current) {
-          // Ignore events triggered by our own saves to prevent overwriting user input
-          if (shouldIgnoreReviewStateReload()) {
-            console.log(
-              "[watcher] Ignoring review-state-changed - triggered by our own save",
-            );
-            return;
-          }
           console.log("[watcher] Reloading review state...");
           loadReviewStateRef.current();
         }
-        // Refresh sidebar for any review state change
+        // Refresh sidebar for external review state changes
         loadGlobalReviewsRef.current();
       }),
     );
