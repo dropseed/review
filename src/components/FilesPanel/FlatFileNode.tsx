@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, memo } from "react";
 import { StatusLetter, HunkCount } from "./StatusIndicators";
 import type { FileHunkStatus } from "./types";
 import { ApprovalButtons, type HunkContext } from "./FileNode";
+import { NodeOverflowMenu } from "./NodeOverflowMenu";
 import type { FileSymbolDiff } from "../../types";
 import {
   ChangeIndicator,
@@ -36,6 +37,7 @@ interface FlatFileNodeProps {
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
+  onRejectAll?: (path: string, isDir: boolean) => void;
   movedFilePaths?: Set<string>;
 }
 
@@ -51,6 +53,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   hunkContext,
   onApproveAll,
   onUnapproveAll,
+  onRejectAll,
   movedFilePaths,
 }: FlatFileNodeProps) {
   const {
@@ -65,6 +68,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   const hasPending = hunkStatus.pending > 0;
   const hasApproved = hunkStatus.approved > 0;
   const isComplete = hasReviewableContent && hunkStatus.pending === 0;
+  const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
 
   // Split path into dir + filename
   const lastSlash = filePath.lastIndexOf("/");
@@ -145,12 +149,26 @@ export const FlatFileNode = memo(function FlatFileNode({
         </button>
 
         {/* Approval buttons on hover */}
-        {onApproveAll && onUnapproveAll && hasReviewableContent && (
+        {hasReviewActions && hasReviewableContent && (
           <ApprovalButtons
             hasPending={hasPending}
             hasApproved={hasApproved}
-            onApprove={() => onApproveAll(filePath, false)}
-            onUnapprove={() => onUnapproveAll(filePath, false)}
+            onApprove={() => onApproveAll!(filePath, false)}
+            onUnapprove={() => onUnapproveAll!(filePath, false)}
+          />
+        )}
+
+        {/* Overflow menu */}
+        {hasReviewActions && (
+          <NodeOverflowMenu
+            path={filePath}
+            isDirectory={false}
+            hasPending={hasPending}
+            hasApproved={hasApproved}
+            hasRejected={hunkStatus.rejected > 0}
+            onApproveAll={() => onApproveAll!(filePath, false)}
+            onRejectAll={() => onRejectAll!(filePath, false)}
+            onUnapproveAll={() => onUnapproveAll!(filePath, false)}
           />
         )}
 

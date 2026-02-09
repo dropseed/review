@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { useReviewStore } from "../../stores";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { Breadcrumbs } from "../Breadcrumbs";
@@ -14,6 +14,7 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { isMarkdownFile, type SupportedLanguages } from "./languageMap";
 import { LanguageSelector } from "./LanguageSelector";
 import { DiffOptionsPopover } from "./DiffOptionsPopover";
+import { SimilarFilesModal } from "./annotations/SimilarFilesModal";
 
 interface ToggleButtonGroupProps<T extends string> {
   options: [T, string][];
@@ -109,6 +110,24 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
   const viewMode = useReviewStore((s) => s.diffViewMode);
   const setViewMode = useReviewStore((s) => s.setDiffViewMode);
+  const hunks = useReviewStore((s) => s.hunks);
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
+  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+
+  // Count other files sharing this basename for the SimilarFilesModal trigger
+  const basename = filePath.split("/").pop() ?? "";
+  const matchingFileCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const h of hunks) {
+      const name = h.filePath.split("/").pop();
+      if (name === basename && h.filePath !== filePath) {
+        seen.add(h.filePath);
+      }
+    }
+    return seen.size;
+  }, [hunks, basename, filePath]);
 
   const fullPath = `${repoPath}/${filePath}`;
 
@@ -139,9 +158,22 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   function renderFileStatusBadge(): JSX.Element | null {
     if (isUntracked) {
       return (
-        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
-          New
-        </span>
+        <>
+          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
+            New
+          </span>
+          {matchingFileCount > 0 && (
+            <SimilarFilesModal
+              currentFilePath={filePath}
+              hunks={hunks}
+              hunkStates={reviewState?.hunks ?? {}}
+              trustList={reviewState?.trustList ?? []}
+              onApproveAll={approveHunkIds}
+              onRejectAll={rejectHunkIds}
+              onNavigateToFile={navigateToBrowse}
+            />
+          )}
+        </>
       );
     }
 
@@ -170,6 +202,17 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
               Approve
             </button>
           </SimpleTooltip>
+        )}
+        {matchingFileCount > 0 && (
+          <SimilarFilesModal
+            currentFilePath={filePath}
+            hunks={hunks}
+            hunkStates={reviewState?.hunks ?? {}}
+            trustList={reviewState?.trustList ?? []}
+            onApproveAll={approveHunkIds}
+            onRejectAll={rejectHunkIds}
+            onNavigateToFile={navigateToBrowse}
+          />
         )}
       </>
     );

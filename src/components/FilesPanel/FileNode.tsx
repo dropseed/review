@@ -10,6 +10,7 @@ import {
 import { SimpleTooltip } from "../ui/tooltip";
 import type { ProcessedFileEntry } from "./types";
 import { HunkCount, StatusLetter, SymlinkIndicator } from "./StatusIndicators";
+import { NodeOverflowMenu } from "./NodeOverflowMenu";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
@@ -59,6 +60,7 @@ interface FileNodeProps {
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
+  onRejectAll?: (path: string, isDir: boolean) => void;
   movedFilePaths?: Set<string>;
 }
 
@@ -155,6 +157,7 @@ export const FileNode = memo(
     hunkContext,
     onApproveAll,
     onUnapproveAll,
+    onRejectAll,
     movedFilePaths,
   }: FileNodeProps) {
     if (!entry.matchesFilter) {
@@ -175,6 +178,11 @@ export const FileNode = memo(
       const dirHasRejections = entry.hunkStatus.rejected > 0;
       // Symlink directories pointing outside repo need lazy loading like gitignored dirs
       const needsLazyLoad = isGitignored || entry.isSymlink;
+      const hasReviewActions = !!(
+        onApproveAll &&
+        onUnapproveAll &&
+        onRejectAll
+      );
 
       const barPct =
         hunkContext === "all" && entry.siblingMaxFileCount > 0
@@ -239,12 +247,26 @@ export const FileNode = memo(
             )}
 
             {/* Approval button */}
-            {onApproveAll && onUnapproveAll && hasReviewableContent && (
+            {hasReviewActions && hasReviewableContent && (
               <ApprovalButtons
                 hasPending={hasPending}
                 hasApproved={hasApproved}
-                onApprove={() => onApproveAll(entry.path, true)}
-                onUnapprove={() => onUnapproveAll(entry.path, true)}
+                onApprove={() => onApproveAll!(entry.path, true)}
+                onUnapprove={() => onUnapproveAll!(entry.path, true)}
+              />
+            )}
+
+            {/* Overflow menu */}
+            {hasReviewActions && hasReviewableContent && (
+              <NodeOverflowMenu
+                path={entry.path}
+                isDirectory
+                hasPending={hasPending}
+                hasApproved={hasApproved}
+                hasRejected={dirHasRejections}
+                onApproveAll={() => onApproveAll!(entry.path, true)}
+                onRejectAll={() => onRejectAll!(entry.path, true)}
+                onUnapproveAll={() => onUnapproveAll!(entry.path, true)}
               />
             )}
 
@@ -272,6 +294,7 @@ export const FileNode = memo(
                   hunkContext={hunkContext}
                   onApproveAll={onApproveAll}
                   onUnapproveAll={onUnapproveAll}
+                  onRejectAll={onRejectAll}
                   movedFilePaths={movedFilePaths}
                 />
               ))}
@@ -288,6 +311,7 @@ export const FileNode = memo(
     const hasApproved = entry.hunkStatus.approved > 0;
     const hasRejections = entry.hunkStatus.rejected > 0;
     const isComplete = hasReviewableContent && entry.hunkStatus.pending === 0;
+    const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
     const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
 
     return (
@@ -335,12 +359,28 @@ export const FileNode = memo(
             </button>
 
             {/* Approval button */}
-            {onApproveAll && onUnapproveAll && hasReviewableContent && (
+            {hasReviewActions && hasReviewableContent && (
               <ApprovalButtons
                 hasPending={hasPending}
                 hasApproved={hasApproved}
-                onApprove={() => onApproveAll(entry.path, false)}
-                onUnapprove={() => onUnapproveAll(entry.path, false)}
+                onApprove={() => onApproveAll!(entry.path, false)}
+                onUnapprove={() => onUnapproveAll!(entry.path, false)}
+              />
+            )}
+
+            {/* Overflow menu */}
+            {hasReviewActions && (
+              <NodeOverflowMenu
+                path={entry.path}
+                isDirectory={false}
+                hasPending={hasPending}
+                hasApproved={hasApproved}
+                hasRejected={hasRejections}
+                onApproveAll={() => onApproveAll!(entry.path, false)}
+                onRejectAll={() => onRejectAll!(entry.path, false)}
+                onUnapproveAll={() => onUnapproveAll!(entry.path, false)}
+                onOpenInSplit={onOpenInSplit}
+                revealLabel={revealLabel}
               />
             )}
 
@@ -445,6 +485,7 @@ export const FileNode = memo(
       prev.hunkContext === next.hunkContext &&
       prev.onApproveAll === next.onApproveAll &&
       prev.onUnapproveAll === next.onUnapproveAll &&
+      prev.onRejectAll === next.onRejectAll &&
       prev.movedFilePaths === next.movedFilePaths &&
       prev.repoPath === next.repoPath &&
       prev.revealLabel === next.revealLabel &&

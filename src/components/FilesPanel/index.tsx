@@ -33,6 +33,7 @@ import {
 import { flattenFilesWithStatus } from "../../stores/types";
 import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import { ReviewDataProvider } from "../ReviewDataContext";
+import { FilenameModal } from "./FilenameModal";
 
 interface QuickActionItem {
   label: string;
@@ -276,6 +277,12 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
   const [reviewedOpen, setReviewedOpen] = useState(true);
 
+  // Filename modal state
+  const [filenameModalOpen, setFilenameModalOpen] = useState(false);
+  const [filenameModalMode, setFilenameModalMode] = useState<
+    "approve" | "unapprove"
+  >("approve");
+
   // File system data
   const {
     repoPath,
@@ -306,7 +313,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   } = useFilePanelNavigation({ sectionedFiles });
 
   // Approval actions
-  const { handleApproveAll, handleUnapproveAll } = useFilePanelApproval();
+  const { handleApproveAll, handleUnapproveAll, handleRejectAll } =
+    useFilePanelApproval();
 
   // Changes display mode (tree vs flat) — persisted per section
   const needsReviewDisplayMode = useReviewStore(
@@ -363,9 +371,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     [navigateToBrowse, hunkIndexMap],
   );
 
-  // Section-level bulk approve/unapprove
+  // Section-level bulk approve/unapprove/reject
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
+  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
 
   const pendingHunkIds = useMemo(() => {
     return hunks
@@ -438,6 +447,22 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return result;
   }, [files, hunks, reviewState]);
 
+  // Count unique basenames that appear in 2+ files (for "by filename" quick actions)
+  const basenameCount = useMemo(() => {
+    const nameToFiles = new Map<string, Set<string>>();
+    for (const hunk of hunks) {
+      const name = hunk.filePath.split("/").pop() ?? "";
+      const set = nameToFiles.get(name) ?? new Set();
+      set.add(hunk.filePath);
+      nameToFiles.set(name, set);
+    }
+    let count = 0;
+    for (const files of nameToFiles.values()) {
+      if (files.size >= 2) count++;
+    }
+    return count;
+  }, [hunks]);
+
   const needsReviewQuickActions = useMemo(() => {
     const actions: QuickActionItem[] = [];
     const labels: Record<string, string> = {
@@ -455,8 +480,18 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         });
       }
     }
+    if (basenameCount > 0) {
+      actions.push({
+        label: "Approve by filename\u2026",
+        count: basenameCount,
+        onAction: () => {
+          setFilenameModalMode("approve");
+          setFilenameModalOpen(true);
+        },
+      });
+    }
     return actions;
-  }, [quickActionData, approveHunkIds]);
+  }, [quickActionData, approveHunkIds, basenameCount]);
 
   const reviewedQuickActions = useMemo(() => {
     const actions: QuickActionItem[] = [];
@@ -475,8 +510,18 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         });
       }
     }
+    if (basenameCount > 0) {
+      actions.push({
+        label: "Unapprove by filename\u2026",
+        count: basenameCount,
+        onAction: () => {
+          setFilenameModalMode("unapprove");
+          setFilenameModalOpen(true);
+        },
+      });
+    }
     return actions;
-  }, [quickActionData, unapproveHunkIds]);
+  }, [quickActionData, unapproveHunkIds, basenameCount]);
 
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
@@ -637,6 +682,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                 hunkContext="needs-review"
                                 onApproveAll={handleApproveAll}
                                 onUnapproveAll={handleUnapproveAll}
+                                onRejectAll={handleRejectAll}
                                 movedFilePaths={movedFilePaths}
                               />
                             ))
@@ -675,6 +721,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               hunkContext="needs-review"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
+                              onRejectAll={handleRejectAll}
                               movedFilePaths={movedFilePaths}
                             />
                           ))
@@ -752,6 +799,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                 hunkContext="reviewed"
                                 onApproveAll={handleApproveAll}
                                 onUnapproveAll={handleUnapproveAll}
+                                onRejectAll={handleRejectAll}
                                 movedFilePaths={movedFilePaths}
                               />
                             ))
@@ -777,6 +825,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               hunkContext="reviewed"
                               onApproveAll={handleApproveAll}
                               onUnapproveAll={handleUnapproveAll}
+                              onRejectAll={handleRejectAll}
                               movedFilePaths={movedFilePaths}
                             />
                           ))
@@ -870,6 +919,19 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           </>
         )}
       </div>
+
+      <FilenameModal
+        open={filenameModalOpen}
+        onOpenChange={setFilenameModalOpen}
+        mode={filenameModalMode}
+        hunks={hunks}
+        hunkStates={reviewState?.hunks ?? {}}
+        trustList={reviewState?.trustList ?? []}
+        onApproveAll={approveHunkIds}
+        onRejectAll={rejectHunkIds}
+        onUnapproveAll={unapproveHunkIds}
+        onNavigateToFile={navigateToBrowse}
+      />
     </ReviewDataProvider>
   );
 }

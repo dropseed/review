@@ -64,6 +64,7 @@ export interface ReviewSlice {
   rejectHunkIds: (hunkIds: string[]) => void;
   approveAllDirHunks: (dirPath: string) => void;
   unapproveAllDirHunks: (dirPath: string) => void;
+  rejectAllDirHunks: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
 
   // Feedback export
@@ -156,6 +157,17 @@ function updateHunkStatuses(
   } else if (status === "rejected") {
     playRejectSound();
   }
+}
+
+/** Collect hunk IDs for all files under the given directory path. */
+function getDirHunkIds(
+  get: () => HunkStatusGetter & { hunks: { id: string; filePath: string }[] },
+  dirPath: string,
+): string[] {
+  const prefix = dirPath + "/";
+  return get()
+    .hunks.filter((h) => h.filePath.startsWith(prefix))
+    .map((h) => h.id);
 }
 
 export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
@@ -347,21 +359,18 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveAllDirHunks: (dirPath) => {
-      const { hunks } = get();
-      const prefix = dirPath + "/";
-      const ids = hunks
-        .filter((h) => h.filePath.startsWith(prefix))
-        .map((h) => h.id);
+      const ids = getDirHunkIds(get, dirPath);
       updateHunkStatuses(get, set, ids, "approved");
     },
 
     unapproveAllDirHunks: (dirPath) => {
-      const { hunks } = get();
-      const prefix = dirPath + "/";
-      const ids = hunks
-        .filter((h) => h.filePath.startsWith(prefix))
-        .map((h) => h.id);
+      const ids = getDirHunkIds(get, dirPath);
       updateHunkStatuses(get, set, ids, undefined, { skipMissing: true });
+    },
+
+    rejectAllDirHunks: (dirPath) => {
+      const ids = getDirHunkIds(get, dirPath);
+      updateHunkStatuses(get, set, ids, "rejected");
     },
 
     setHunkLabel: (hunkId, label) => {
