@@ -9,6 +9,10 @@ import { useScrollHunkTracking } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
 import { detectLanguage, type SupportedLanguages } from "./languageMap";
 import { FileViewerToolbar } from "./FileViewerToolbar";
+import {
+  AnnotationEditor,
+  AnnotationDisplay,
+} from "./annotations/AnnotationEditor";
 
 interface FileViewerProps {
   filePath: string;
@@ -65,6 +69,12 @@ export function FileViewer({ filePath }: FileViewerProps) {
   // In-file search state
   const [inFileSearchOpen, setInFileSearchOpen] = useState(false);
 
+  // File-level comment editor state
+  const [fileCommentEditorOpen, setFileCommentEditorOpen] = useState(false);
+  const [editingFileCommentId, setEditingFileCommentId] = useState<
+    string | null
+  >(null);
+
   // Handle search highlight — stable callback for InFileSearchBar
   const handleSearchHighlightLine = useCallback((line: number | null) => {
     setHighlightLine(line);
@@ -81,8 +91,32 @@ export function FileViewer({ filePath }: FileViewerProps) {
     setHighlightLine(null);
   }, []);
 
-  // Reset search when file changes
+  // File-level annotations (lineNumber === 0, side === "file")
+  const fileAnnotations = useMemo(() => {
+    return (
+      reviewState?.annotations?.filter(
+        (a) =>
+          a.filePath === filePath && a.lineNumber === 0 && a.side === "file",
+      ) ?? []
+    );
+  }, [reviewState?.annotations, filePath]);
+
+  const handleAddFileComment = useCallback(() => {
+    setFileCommentEditorOpen(true);
+  }, []);
+
+  const handleSaveFileComment = useCallback(
+    (content: string) => {
+      addAnnotation(filePath, 0, "file", content);
+      setFileCommentEditorOpen(false);
+    },
+    [addAnnotation, filePath],
+  );
+
+  // Reset transient UI state when file changes
   useEffect(() => {
+    setFileCommentEditorOpen(false);
+    setEditingFileCommentId(null);
     setInFileSearchOpen(false);
   }, [filePath]);
 
@@ -324,7 +358,50 @@ export function FileViewer({ filePath }: FileViewerProps) {
         onMarkdownViewModeChange={setMarkdownViewMode}
         onSvgViewModeChange={setSvgViewMode}
         onClearHighlight={handleClearHighlight}
+        onAddFileComment={handleAddFileComment}
       />
+
+      {/* File-level annotations */}
+      {(fileAnnotations.length > 0 || fileCommentEditorOpen) && (
+        <div className="border-b border-stone-800/50">
+          {fileAnnotations.map((annotation) => {
+            const isEditing = editingFileCommentId === annotation.id;
+            if (isEditing) {
+              return (
+                <AnnotationEditor
+                  key={annotation.id}
+                  initialContent={annotation.content}
+                  onSave={(content) => {
+                    updateAnnotation(annotation.id, content);
+                    setEditingFileCommentId(null);
+                  }}
+                  onCancel={() => setEditingFileCommentId(null)}
+                  onDelete={() => {
+                    deleteAnnotation(annotation.id);
+                    setEditingFileCommentId(null);
+                  }}
+                  autoFocus
+                />
+              );
+            }
+            return (
+              <AnnotationDisplay
+                key={annotation.id}
+                annotation={annotation}
+                onEdit={() => setEditingFileCommentId(annotation.id)}
+                onDelete={() => deleteAnnotation(annotation.id)}
+              />
+            );
+          })}
+          {fileCommentEditorOpen && (
+            <AnnotationEditor
+              onSave={handleSaveFileComment}
+              onCancel={() => setFileCommentEditorOpen(false)}
+              autoFocus
+            />
+          )}
+        </div>
+      )}
 
       <div className="relative flex flex-1 overflow-hidden">
         {inFileSearchOpen && fileContent && (
@@ -349,7 +426,6 @@ export function FileViewer({ filePath }: FileViewerProps) {
             focusedHunkId={focusedHunkId}
             effectiveLanguage={effectiveLanguage}
             markdownViewMode={markdownViewMode}
-            svgViewMode={svgViewMode}
             showImageViewer={!!showImageViewer}
             isUntracked={isUntracked}
             hasChanges={hasChanges}

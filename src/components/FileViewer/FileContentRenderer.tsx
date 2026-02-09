@@ -16,7 +16,6 @@ interface FileContentRendererProps {
   focusedHunkId: string | null;
   effectiveLanguage: SupportedLanguages | undefined;
   markdownViewMode: "preview" | "code";
-  svgViewMode: "rendered" | "code";
   showImageViewer: boolean;
   isUntracked: boolean;
   hasChanges: boolean;
@@ -54,6 +53,10 @@ export function FileContentRenderer({
   updateAnnotation,
   deleteAnnotation,
 }: FileContentRendererProps) {
+  const fileAnnotations = reviewState?.annotations?.filter(
+    (a) => a.filePath === filePath,
+  );
+
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
     return <MarkdownViewer content={fileContent.content} />;
@@ -85,6 +88,12 @@ export function FileContentRenderer({
           theme={codeTheme}
           fontSizeCSS={fontSizeCSS}
           language={effectiveLanguage}
+          annotations={fileAnnotations}
+          onAddAnnotation={(lineNumber, content) =>
+            addAnnotation(filePath, lineNumber, "file", content)
+          }
+          onUpdateAnnotation={updateAnnotation}
+          onDeleteAnnotation={deleteAnnotation}
         />
       </DiffErrorBoundary>
     );
@@ -130,9 +139,7 @@ export function FileContentRenderer({
           fontSizeCSS={fontSizeCSS}
           language={effectiveLanguage}
           lineHeight={lineHeight}
-          annotations={reviewState?.annotations?.filter(
-            (a) => a.filePath === filePath,
-          )}
+          annotations={fileAnnotations}
           onAddAnnotation={(lineNumber, content) =>
             addAnnotation(filePath, lineNumber, "file", content)
           }
@@ -176,9 +183,7 @@ export function FileContentRenderer({
         fontSizeCSS={fontSizeCSS}
         language={effectiveLanguage}
         lineHeight={lineHeight}
-        annotations={reviewState?.annotations?.filter(
-          (a) => a.filePath === filePath,
-        )}
+        annotations={fileAnnotations}
         onAddAnnotation={(lineNumber, content) =>
           addAnnotation(filePath, lineNumber, "file", content)
         }

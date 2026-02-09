@@ -58,9 +58,12 @@ export function HunkCount({
   }
 
   if (context === "reviewed") {
-    // Show reviewed count
+    // Show reviewed count — rose when file has rejections
+    const hasRejections = status.rejected > 0;
     return (
-      <span className="font-mono text-xxs tabular-nums text-emerald-500">
+      <span
+        className={`font-mono text-xxs tabular-nums ${hasRejections ? "text-rose-400" : "text-emerald-500"}`}
+      >
         {reviewed}
       </span>
     );

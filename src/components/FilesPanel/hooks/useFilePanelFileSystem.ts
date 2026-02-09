@@ -12,14 +12,12 @@ import {
  * Groups: repoPath, allFiles, allFilesLoading, hunks, reviewState (for hunk status)
  */
 export function useFilePanelFileSystem() {
-  const {
-    repoPath,
-    allFiles,
-    allFilesLoading,
-    hunks,
-    reviewState,
-    stagedFilePaths,
-  } = useReviewStore();
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const allFiles = useReviewStore((s) => s.allFiles);
+  const allFilesLoading = useReviewStore((s) => s.allFilesLoading);
+  const hunks = useReviewStore((s) => s.hunks);
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
 
   // Calculate hunk status per file
   const hunkStatusMap = useMemo(

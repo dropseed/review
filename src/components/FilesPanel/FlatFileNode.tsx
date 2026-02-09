@@ -13,6 +13,17 @@ import {
 } from "../symbols";
 import { useReviewData } from "../ReviewDataContext";
 
+function flatFileNameColor(
+  isSelected: boolean,
+  isComplete: boolean,
+  hasRejections: boolean,
+): string {
+  if (isSelected) return "text-stone-100";
+  if (isComplete && hasRejections) return "text-rose-400";
+  if (isComplete) return "text-emerald-400";
+  return "text-stone-300";
+}
+
 // --- Props ---
 
 interface FlatFileNodeProps {
@@ -121,13 +132,7 @@ export const FlatFileNode = memo(function FlatFileNode({
           onClick={() => onSelectFile(filePath)}
         >
           <span
-            className={`min-w-0 truncate text-xs ${
-              isSelected
-                ? "text-stone-100"
-                : isComplete
-                  ? "text-emerald-400"
-                  : "text-stone-300"
-            }`}
+            className={`min-w-0 truncate text-xs ${flatFileNameColor(isSelected, isComplete, hunkStatus.rejected > 0)}`}
           >
             {dirPath && <span className="text-stone-500">{dirPath}</span>}
             {fileName}

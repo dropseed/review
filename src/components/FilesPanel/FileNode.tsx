@@ -18,9 +18,12 @@ function directoryNameColor(
   hunkContext: HunkContext,
   hasReviewableContent: boolean,
   hasPending: boolean,
+  hasRejections?: boolean,
 ): string {
   if (isGitignored) return "text-stone-500";
   if (hunkContext !== "all") return "text-stone-200";
+  if (hasReviewableContent && !hasPending && hasRejections)
+    return "text-rose-400";
   if (hasReviewableContent && !hasPending) return "text-emerald-400";
   if (hasPending) return "text-amber-200";
   return "text-stone-300";
@@ -32,8 +35,10 @@ function fileNameColor(
   isGitignored: boolean,
   hunkContext: HunkContext,
   hasReviewableContent: boolean,
+  hasRejections: boolean,
 ): string {
   if (isSelected) return "text-stone-100";
+  if (isComplete && hasRejections) return "text-rose-400";
   if (isComplete) return "text-emerald-400";
   if (isGitignored) return "text-stone-500";
   if (hunkContext === "all" && hasReviewableContent) return "text-amber-400";
@@ -167,6 +172,7 @@ export const FileNode = memo(
       const hasReviewableContent = entry.hunkStatus.total > 0;
       const hasPending = entry.hunkStatus.pending > 0;
       const hasApproved = entry.hunkStatus.approved > 0;
+      const dirHasRejections = entry.hunkStatus.rejected > 0;
       // Symlink directories pointing outside repo need lazy loading like gitignored dirs
       const needsLazyLoad = isGitignored || entry.isSymlink;
 
@@ -206,7 +212,7 @@ export const FileNode = memo(
 
               {/* Directory name */}
               <span
-                className={`min-w-0 flex-1 truncate text-xs ${directoryNameColor(isGitignored, hunkContext, hasReviewableContent, hasPending)}`}
+                className={`min-w-0 flex-1 truncate text-xs ${directoryNameColor(isGitignored, hunkContext, hasReviewableContent, hasPending, dirHasRejections)}`}
               >
                 {entry.displayName}
               </span>
@@ -280,6 +286,7 @@ export const FileNode = memo(
     const hasReviewableContent = entry.hunkStatus.total > 0;
     const hasPending = entry.hunkStatus.pending > 0;
     const hasApproved = entry.hunkStatus.approved > 0;
+    const hasRejections = entry.hunkStatus.rejected > 0;
     const isComplete = hasReviewableContent && entry.hunkStatus.pending === 0;
     const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
 
@@ -309,7 +316,7 @@ export const FileNode = memo(
 
               {/* File name */}
               <span
-                className={`min-w-0 flex-1 truncate text-xs ${fileNameColor(isSelected, isComplete, isGitignored, hunkContext, hasReviewableContent)}`}
+                className={`min-w-0 flex-1 truncate text-xs ${fileNameColor(isSelected, isComplete, isGitignored, hunkContext, hasReviewableContent, hasRejections)}`}
               >
                 {entry.name}
               </span>
