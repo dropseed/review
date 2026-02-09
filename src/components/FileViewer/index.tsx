@@ -736,9 +736,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
             hasChanges={hasChanges}
             highlightLine={highlightLine}
             lineHeight={lineHeight}
-            onViewInFile={(line) => {
-              setHighlightLine(line);
-            }}
+            onViewInFile={setHighlightLine}
             reviewState={reviewState}
             addAnnotation={addAnnotation}
             updateAnnotation={updateAnnotation}

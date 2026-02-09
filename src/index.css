@@ -509,6 +509,12 @@ kbd {
   color: #c4b5fd;
 }
 
+/* File tree item optimization — skip layout/paint for off-screen nodes */
+.file-node-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 28px;
+}
+
 /* Image viewer styles */
 .image-viewer-checkerboard {
   background-color: #1c1917;

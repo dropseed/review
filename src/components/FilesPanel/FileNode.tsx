@@ -176,7 +176,7 @@ export const FileNode = memo(
           : 0;
 
       return (
-        <div className="select-none">
+        <div className="file-node-item select-none">
           <div
             className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
               isGitignored

@@ -1,15 +1,40 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useCallback,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import { toast } from "sonner";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
-import { DebugModal } from "./DebugModal";
-import { SettingsModal } from "./SettingsModal";
-import { CommitDetailModal } from "./CommitDetailModal";
-import { FileFinder } from "./FileFinder";
-import { ContentSearch } from "./ContentSearch";
-import { SymbolSearch } from "./SymbolSearch";
-import { ClassificationsModal } from "./ClassificationsModal";
 import { FeedbackPanel } from "./FeedbackPanel";
+
+const DebugModal = lazy(() =>
+  import("./DebugModal").then((m) => ({ default: m.DebugModal })),
+);
+const SettingsModal = lazy(() =>
+  import("./SettingsModal").then((m) => ({ default: m.SettingsModal })),
+);
+const CommitDetailModal = lazy(() =>
+  import("./CommitDetailModal").then((m) => ({ default: m.CommitDetailModal })),
+);
+const FileFinder = lazy(() =>
+  import("./FileFinder").then((m) => ({ default: m.FileFinder })),
+);
+const ContentSearch = lazy(() =>
+  import("./ContentSearch").then((m) => ({ default: m.ContentSearch })),
+);
+const SymbolSearch = lazy(() =>
+  import("./SymbolSearch").then((m) => ({ default: m.SymbolSearch })),
+);
+const ClassificationsModal = lazy(() =>
+  import("./ClassificationsModal").then((m) => ({
+    default: m.ClassificationsModal,
+  })),
+);
 import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { useReviewStore } from "../stores";
@@ -99,15 +124,22 @@ export function ReviewView({
     }
   }, [repoPath]);
 
+  // Index map for O(1) hunk ID → index lookups
+  const hunkIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < hunks.length; i++) map.set(hunks[i].id, i);
+    return map;
+  }, [hunks]);
+
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
       setShowClassificationsModal(false);
       navigateToBrowse(filePath);
-      const idx = hunks.findIndex((h) => h.id === hunkId);
-      if (idx >= 0) useReviewStore.setState({ focusedHunkIndex: idx });
+      const idx = hunkIndexMap.get(hunkId);
+      if (idx !== undefined) useReviewStore.setState({ focusedHunkIndex: idx });
     },
-    [hunks, navigateToBrowse],
+    [hunkIndexMap, navigateToBrowse],
   );
 
   // Toast notifications for classification progress
@@ -119,25 +151,27 @@ export function ReviewView({
       classificationToastId.current = toast("Classifying hunks…", {
         duration: Infinity,
         icon: (
-          <svg
-            className="h-4 w-4 animate-spin text-violet-400"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="3"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
+          <div className="h-4 w-4 animate-spin">
+            <svg
+              className="h-4 w-4 text-violet-400"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="3"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+          </div>
         ),
       });
     } else if (wasClassifying.current && !classifying) {
@@ -312,60 +346,74 @@ export function ReviewView({
 
       {/* Debug Modal */}
       {showDebugModal && (
-        <DebugModal
-          isOpen={showDebugModal}
-          onClose={() => setShowDebugModal(false)}
-        />
+        <Suspense fallback={null}>
+          <DebugModal
+            isOpen={showDebugModal}
+            onClose={() => setShowDebugModal(false)}
+          />
+        </Suspense>
       )}
 
       {/* Settings Modal */}
       {showSettingsModal && (
-        <SettingsModal
-          isOpen={showSettingsModal}
-          onClose={() => setShowSettingsModal(false)}
-        />
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={showSettingsModal}
+            onClose={() => setShowSettingsModal(false)}
+          />
+        </Suspense>
       )}
 
       {/* Commit Detail Modal */}
       {selectedCommitHash && (
-        <CommitDetailModal
-          isOpen={!!selectedCommitHash}
-          onClose={() => setSelectedCommitHash(null)}
-          commitHash={selectedCommitHash}
-        />
+        <Suspense fallback={null}>
+          <CommitDetailModal
+            isOpen={!!selectedCommitHash}
+            onClose={() => setSelectedCommitHash(null)}
+            commitHash={selectedCommitHash}
+          />
+        </Suspense>
       )}
 
       {/* File Finder */}
       {showFileFinder && (
-        <FileFinder
-          isOpen={showFileFinder}
-          onClose={() => setShowFileFinder(false)}
-        />
+        <Suspense fallback={null}>
+          <FileFinder
+            isOpen={showFileFinder}
+            onClose={() => setShowFileFinder(false)}
+          />
+        </Suspense>
       )}
 
       {/* Content Search */}
       {showContentSearch && (
-        <ContentSearch
-          isOpen={showContentSearch}
-          onClose={() => setShowContentSearch(false)}
-        />
+        <Suspense fallback={null}>
+          <ContentSearch
+            isOpen={showContentSearch}
+            onClose={() => setShowContentSearch(false)}
+          />
+        </Suspense>
       )}
 
       {/* Symbol Search */}
       {showSymbolSearch && (
-        <SymbolSearch
-          isOpen={showSymbolSearch}
-          onClose={() => setShowSymbolSearch(false)}
-        />
+        <Suspense fallback={null}>
+          <SymbolSearch
+            isOpen={showSymbolSearch}
+            onClose={() => setShowSymbolSearch(false)}
+          />
+        </Suspense>
       )}
 
       {/* Classifications Modal */}
       {showClassificationsModal && (
-        <ClassificationsModal
-          isOpen={showClassificationsModal}
-          onClose={() => setShowClassificationsModal(false)}
-          onSelectHunk={handleClassificationSelectHunk}
-        />
+        <Suspense fallback={null}>
+          <ClassificationsModal
+            isOpen={showClassificationsModal}
+            onClose={() => setShowClassificationsModal(false)}
+            onSelectHunk={handleClassificationSelectHunk}
+          />
+        </Suspense>
       )}
     </div>
   );

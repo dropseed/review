@@ -344,16 +344,23 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return map;
   }, [symbolDiffs]);
 
+  // Index map for O(1) hunk ID → index lookups
+  const hunkIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < hunks.length; i++) map.set(hunks[i].id, i);
+    return map;
+  }, [hunks]);
+
   // Navigate to a specific hunk (used by flat mode symbol rows)
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
       navigateToBrowse(filePath);
-      const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
-      if (hunkIndex >= 0) {
+      const hunkIndex = hunkIndexMap.get(hunkId);
+      if (hunkIndex !== undefined) {
         useReviewStore.setState({ focusedHunkIndex: hunkIndex });
       }
     },
-    [navigateToBrowse, hunks],
+    [navigateToBrowse, hunkIndexMap],
   );
 
   // Section-level bulk approve/unapprove
@@ -472,7 +479,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   }, [quickActionData, unapproveHunkIds]);
 
   // Context menu support
-  const { openInSplit } = useReviewStore();
+  const openInSplit = useReviewStore((s) => s.openInSplit);
   const [revealLabel, setRevealLabel] = useState("Reveal in Finder");
   useEffect(() => {
     const platformName = getPlatformServices().window.getPlatformName();

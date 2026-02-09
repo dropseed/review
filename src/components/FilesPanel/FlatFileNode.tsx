@@ -92,7 +92,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   }, []);
 
   return (
-    <div className="select-none">
+    <div className="file-node-item select-none">
       {/* File row */}
       <div
         className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 pl-2 transition-colors ${

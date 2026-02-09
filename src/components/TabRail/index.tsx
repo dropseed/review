@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   DndContext,
@@ -19,10 +28,17 @@ import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
 import { SortableTabRailItem } from "./SortableTabRailItem";
-import { ComparisonPickerModal } from "../ComparisonPickerModal";
-import { SettingsModal } from "../SettingsModal";
 import type { GlobalReviewSummary } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
+
+const ComparisonPickerModal = lazy(() =>
+  import("../ComparisonPickerModal").then((m) => ({
+    default: m.ComparisonPickerModal,
+  })),
+);
+const SettingsModal = lazy(() =>
+  import("../SettingsModal").then((m) => ({ default: m.SettingsModal })),
+);
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
 
@@ -572,18 +588,22 @@ export const TabRail = memo(function TabRail({
       </nav>
 
       {comparisonPickerOpen && (
-        <ComparisonPickerModal
-          isOpen={comparisonPickerOpen}
-          onClose={handleCloseModal}
-          prefilledRepoPath={comparisonPickerRepoPath}
-        />
+        <Suspense fallback={null}>
+          <ComparisonPickerModal
+            isOpen={comparisonPickerOpen}
+            onClose={handleCloseModal}
+            prefilledRepoPath={comparisonPickerRepoPath}
+          />
+        </Suspense>
       )}
 
       {showSettings && (
-        <SettingsModal
-          isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-        />
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+          />
+        </Suspense>
       )}
     </div>
   );
