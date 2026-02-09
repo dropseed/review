@@ -311,48 +311,62 @@ export function ReviewView({
       </aside>
 
       {/* Debug Modal */}
-      <DebugModal
-        isOpen={showDebugModal}
-        onClose={() => setShowDebugModal(false)}
-      />
+      {showDebugModal && (
+        <DebugModal
+          isOpen={showDebugModal}
+          onClose={() => setShowDebugModal(false)}
+        />
+      )}
 
       {/* Settings Modal */}
-      <SettingsModal
-        isOpen={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
-      />
+      {showSettingsModal && (
+        <SettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+        />
+      )}
 
       {/* Commit Detail Modal */}
-      <CommitDetailModal
-        isOpen={!!selectedCommitHash}
-        onClose={() => setSelectedCommitHash(null)}
-        commitHash={selectedCommitHash}
-      />
+      {selectedCommitHash && (
+        <CommitDetailModal
+          isOpen={!!selectedCommitHash}
+          onClose={() => setSelectedCommitHash(null)}
+          commitHash={selectedCommitHash}
+        />
+      )}
 
       {/* File Finder */}
-      <FileFinder
-        isOpen={showFileFinder}
-        onClose={() => setShowFileFinder(false)}
-      />
+      {showFileFinder && (
+        <FileFinder
+          isOpen={showFileFinder}
+          onClose={() => setShowFileFinder(false)}
+        />
+      )}
 
       {/* Content Search */}
-      <ContentSearch
-        isOpen={showContentSearch}
-        onClose={() => setShowContentSearch(false)}
-      />
+      {showContentSearch && (
+        <ContentSearch
+          isOpen={showContentSearch}
+          onClose={() => setShowContentSearch(false)}
+        />
+      )}
 
       {/* Symbol Search */}
-      <SymbolSearch
-        isOpen={showSymbolSearch}
-        onClose={() => setShowSymbolSearch(false)}
-      />
+      {showSymbolSearch && (
+        <SymbolSearch
+          isOpen={showSymbolSearch}
+          onClose={() => setShowSymbolSearch(false)}
+        />
+      )}
 
       {/* Classifications Modal */}
-      <ClassificationsModal
-        isOpen={showClassificationsModal}
-        onClose={() => setShowClassificationsModal(false)}
-        onSelectHunk={handleClassificationSelectHunk}
-      />
+      {showClassificationsModal && (
+        <ClassificationsModal
+          isOpen={showClassificationsModal}
+          onClose={() => setShowClassificationsModal(false)}
+          onSelectHunk={handleClassificationSelectHunk}
+        />
+      )}
     </div>
   );
 }
