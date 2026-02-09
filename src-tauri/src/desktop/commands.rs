@@ -752,82 +752,89 @@ pub async fn get_all_hunks(
     comparison: Comparison,
     file_paths: Vec<String>,
 ) -> Result<Vec<DiffHunk>, String> {
+    tokio::task::spawn_blocking(move || get_all_hunks_sync(repo_path, comparison, file_paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Synchronous implementation of `get_all_hunks`, callable from blocking contexts.
+pub fn get_all_hunks_sync(
+    repo_path: String,
+    comparison: Comparison,
+    file_paths: Vec<String>,
+) -> Result<Vec<DiffHunk>, String> {
     let t0 = Instant::now();
     debug!(
         "[get_all_hunks] repo_path={repo_path}, {} files",
         file_paths.len()
     );
 
-    tokio::task::spawn_blocking(move || {
-        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-            error!("[get_all_hunks] ERROR creating source: {e}");
-            e.to_string()
-        })?;
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+        error!("[get_all_hunks] ERROR creating source: {e}");
+        e.to_string()
+    })?;
 
-        // Single git diff call for all files at once
-        let diff_start = Instant::now();
-        let full_diff = source.get_diff(&comparison, None).map_err(|e| {
-            error!("[get_all_hunks] ERROR getting diff: {e}");
-            e.to_string()
-        })?;
-        debug!(
-            "[get_all_hunks] git diff: {}KB in {:?}",
-            full_diff.len() / 1024,
-            diff_start.elapsed()
-        );
+    // Single git diff call for all files at once
+    let diff_start = Instant::now();
+    let full_diff = source.get_diff(&comparison, None).map_err(|e| {
+        error!("[get_all_hunks] ERROR getting diff: {e}");
+        e.to_string()
+    })?;
+    debug!(
+        "[get_all_hunks] git diff: {}KB in {:?}",
+        full_diff.len() / 1024,
+        diff_start.elapsed()
+    );
 
-        // Parse all hunks from the combined diff
-        let parse_start = Instant::now();
-        let mut all_hunks = parse_multi_file_diff(&full_diff);
-        debug!(
-            "[get_all_hunks] parsed {} hunks in {:?}",
-            all_hunks.len(),
-            parse_start.elapsed()
-        );
+    // Parse all hunks from the combined diff
+    let parse_start = Instant::now();
+    let mut all_hunks = parse_multi_file_diff(&full_diff);
+    debug!(
+        "[get_all_hunks] parsed {} hunks in {:?}",
+        all_hunks.len(),
+        parse_start.elapsed()
+    );
 
-        // Build a set of file paths that got hunks from the diff
-        let files_with_hunks: std::collections::HashSet<String> =
-            all_hunks.iter().map(|h| h.file_path.clone()).collect();
+    // Build a set of file paths that got hunks from the diff
+    let files_with_hunks: std::collections::HashSet<String> =
+        all_hunks.iter().map(|h| h.file_path.clone()).collect();
 
-        // For requested files that have no diff hunks, check if they're
-        // untracked (new) and create untracked hunks for them
-        let repo_path_buf = PathBuf::from(&repo_path);
-        for file_path in &file_paths {
-            if !files_with_hunks.contains(file_path.as_str()) {
-                let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
-                if !is_tracked {
-                    let full_path = repo_path_buf.join(file_path);
-                    let (content_hash, text_content) = std::fs::read(&full_path)
-                        .map(|bytes| {
-                            let hash = compute_content_hash(&bytes);
-                            let text = String::from_utf8(bytes).ok();
-                            (hash, text)
-                        })
-                        .unwrap_or_else(|_| ("00000000".to_owned(), None));
-                    all_hunks.push(create_untracked_hunk(
-                        file_path,
-                        &content_hash,
-                        text_content.as_deref(),
-                    ));
-                }
+    // For requested files that have no diff hunks, check if they're
+    // untracked (new) and create untracked hunks for them
+    let repo_path_buf = PathBuf::from(&repo_path);
+    for file_path in &file_paths {
+        if !files_with_hunks.contains(file_path.as_str()) {
+            let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
+            if !is_tracked {
+                let full_path = repo_path_buf.join(file_path);
+                let (content_hash, text_content) = std::fs::read(&full_path)
+                    .map(|bytes| {
+                        let hash = compute_content_hash(&bytes);
+                        let text = String::from_utf8(bytes).ok();
+                        (hash, text)
+                    })
+                    .unwrap_or_else(|_| ("00000000".to_owned(), None));
+                all_hunks.push(create_untracked_hunk(
+                    file_path,
+                    &content_hash,
+                    text_content.as_deref(),
+                ));
             }
         }
+    }
 
-        // Filter to only include hunks for the requested files
-        let requested: std::collections::HashSet<&str> =
-            file_paths.iter().map(|s| s.as_str()).collect();
-        all_hunks.retain(|h| requested.contains(h.file_path.as_str()));
+    // Filter to only include hunks for the requested files
+    let requested: std::collections::HashSet<&str> =
+        file_paths.iter().map(|s| s.as_str()).collect();
+    all_hunks.retain(|h| requested.contains(h.file_path.as_str()));
 
-        info!(
-            "[get_all_hunks] SUCCESS: {} hunks from {} files in {:?}",
-            all_hunks.len(),
-            file_paths.len(),
-            t0.elapsed()
-        );
-        Ok(all_hunks)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    info!(
+        "[get_all_hunks] SUCCESS: {} hunks from {} files in {:?}",
+        all_hunks.len(),
+        file_paths.len(),
+        t0.elapsed()
+    );
+    Ok(all_hunks)
 }
 
 #[tauri::command]
@@ -1659,4 +1666,45 @@ pub async fn generate_narrative(
 
     info!("[generate_narrative] SUCCESS: {} chars", result.len());
     Ok(result)
+}
+
+// --- Companion server commands ---
+
+#[tauri::command]
+pub fn generate_companion_token() -> String {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).expect("Failed to generate random bytes");
+    BASE64.encode(bytes)
+}
+
+#[tauri::command]
+pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use super::debug_server;
+    use tauri_plugin_store::StoreExt;
+
+    let store = app_handle
+        .store("preferences.json")
+        .map_err(|e| e.to_string())?;
+    let token = store
+        .get("companionServerToken")
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+    if let Some(ref t) = token {
+        debug_server::set_auth_token(Some(t.clone()));
+    }
+    debug_server::start();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_companion_server() {
+    use super::debug_server;
+    debug_server::stop();
+    debug_server::set_auth_token(None);
+}
+
+#[tauri::command]
+pub fn get_companion_server_status() -> bool {
+    use super::debug_server;
+    debug_server::is_running()
 }

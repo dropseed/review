@@ -1,0 +1,6 @@
+#!/bin/bash
+# Run the mobile companion app in development mode
+set -e
+cd "$(dirname "$0")/../mobile"
+
+npx expo start --ios

@@ -3,13 +3,11 @@
 //! This module contains all Tauri-specific code including:
 //! - Command handlers (commands.rs)
 //! - File system watchers (watchers.rs)
-//! - Debug HTTP server (debug_server.rs, debug builds only)
+//! - Companion HTTP server (debug_server.rs)
 
 pub mod commands;
-pub mod watchers;
-
-#[cfg(debug_assertions)]
 pub mod debug_server;
+pub mod watchers;
 
 // Re-export commands for convenient access
 pub use commands::*;
@@ -155,8 +153,32 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
-            #[cfg(debug_assertions)]
-            debug_server::start();
+            // Start companion server if enabled in preferences
+            // (always start in debug builds for development convenience)
+            {
+                use tauri_plugin_store::StoreExt;
+                let should_start = if cfg!(debug_assertions) {
+                    true
+                } else if let Ok(store) = app.handle().store("preferences.json") {
+                    matches!(
+                        store.get("companionServerEnabled"),
+                        Some(serde_json::Value::Bool(true))
+                    )
+                } else {
+                    false
+                };
+                if should_start {
+                    if let Ok(store) = app.handle().store("preferences.json") {
+                        let token = store
+                            .get("companionServerToken")
+                            .and_then(|v| v.as_str().map(|s| s.to_string()));
+                        if let Some(ref t) = token {
+                            debug_server::set_auth_token(Some(t.clone()));
+                        }
+                    }
+                    debug_server::start();
+                }
+            }
 
             // Restore Sentry consent from persisted preferences
             {
@@ -372,6 +394,123 @@ pub fn run() {
                 toggle_sidebar,
             });
 
+            // Set up system tray icon for companion server
+            {
+                use tauri::menu::{
+                    MenuBuilder as TrayMenuBuilder, MenuItemBuilder as TrayMenuItemBuilder,
+                };
+                use tauri::tray::TrayIconBuilder;
+
+                let server_running = debug_server::is_running();
+                let toggle_label = if server_running {
+                    "Stop Server"
+                } else {
+                    "Start Server"
+                };
+                let tooltip = if server_running {
+                    "Review - Companion Server: Running"
+                } else {
+                    "Review - Companion Server: Stopped"
+                };
+
+                let tray_toggle = TrayMenuItemBuilder::new(toggle_label)
+                    .id("tray_toggle")
+                    .build(app)?;
+                let tray_copy_url = TrayMenuItemBuilder::new("Copy Server URL")
+                    .id("tray_copy_url")
+                    .enabled(server_running)
+                    .build(app)?;
+                let tray_copy_token = TrayMenuItemBuilder::new("Copy Auth Token")
+                    .id("tray_copy_token")
+                    .enabled(server_running)
+                    .build(app)?;
+                let tray_open = TrayMenuItemBuilder::new("Open Review")
+                    .id("tray_open")
+                    .build(app)?;
+                let tray_quit = TrayMenuItemBuilder::new("Quit")
+                    .id("tray_quit")
+                    .build(app)?;
+
+                let tray_menu = TrayMenuBuilder::new(app)
+                    .item(&tray_toggle)
+                    .separator()
+                    .item(&tray_copy_url)
+                    .item(&tray_copy_token)
+                    .separator()
+                    .item(&tray_open)
+                    .item(&tray_quit)
+                    .build()?;
+
+                let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .menu(&tray_menu)
+                    .tooltip(tooltip)
+                    .on_menu_event(move |app, event| {
+                        let id = event.id().as_ref();
+                        match id {
+                            "tray_toggle" => {
+                                if debug_server::is_running() {
+                                    debug_server::stop();
+                                    debug_server::set_auth_token(None);
+                                } else {
+                                    // Read token from store and start
+                                    use tauri_plugin_store::StoreExt;
+                                    if let Ok(store) = app.store("preferences.json") {
+                                        let token = store
+                                            .get("companionServerToken")
+                                            .and_then(|v| v.as_str().map(|s| s.to_string()));
+                                        if let Some(ref t) = token {
+                                            debug_server::set_auth_token(Some(t.clone()));
+                                        }
+                                    }
+                                    debug_server::start();
+                                }
+                                // Update tray menu items
+                                let running = debug_server::is_running();
+                                let _ = tray_toggle.set_text(if running {
+                                    "Stop Server"
+                                } else {
+                                    "Start Server"
+                                });
+                                let _ = tray_copy_url.set_enabled(running);
+                                let _ = tray_copy_token.set_enabled(running);
+                            }
+                            "tray_copy_url" => {
+                                let hostname = std::process::Command::new("hostname")
+                                    .output()
+                                    .map(|o| {
+                                        String::from_utf8_lossy(&o.stdout).trim().to_string()
+                                    })
+                                    .unwrap_or_else(|_| "localhost".to_string());
+                                let url = format!("http://{}:3333", hostname);
+                                let _ = app.emit("tray:copy-text", url);
+                            }
+                            "tray_copy_token" => {
+                                use tauri_plugin_store::StoreExt;
+                                if let Ok(store) = app.store("preferences.json") {
+                                    if let Some(token) = store
+                                        .get("companionServerToken")
+                                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                                    {
+                                        let _ = app.emit("tray:copy-text", token);
+                                    }
+                                }
+                            }
+                            "tray_open" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                            "tray_quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .build(app)?;
+            }
+
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -501,6 +640,10 @@ pub fn run() {
             commands::uninstall_cli,
             commands::set_sentry_consent,
             commands::update_menu_state,
+            commands::generate_companion_token,
+            commands::start_companion_server,
+            commands::stop_companion_server,
+            commands::get_companion_server_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

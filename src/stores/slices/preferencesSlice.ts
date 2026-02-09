@@ -46,6 +46,8 @@ const defaults = {
   tabRailCollapsed: false,
   pinnedReviewKeys: [] as string[],
   reviewSortOrder: "updated" as ReviewSortOrder,
+  companionServerEnabled: false,
+  companionServerToken: null as string | null,
 };
 
 export interface PreferencesSlice {
@@ -90,6 +92,10 @@ export interface PreferencesSlice {
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
 
+  // Companion server
+  companionServerEnabled: boolean;
+  companionServerToken: string | null;
+
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
@@ -131,6 +137,11 @@ export interface PreferencesSlice {
 
   // Review sort order actions
   setReviewSortOrder: (order: ReviewSortOrder) => void;
+
+  // Companion server actions
+  setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
+  setCompanionServerToken: (token: string | null) => void;
+  generateCompanionServerToken: () => Promise<string>;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -156,6 +167,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   tabRailCollapsed: defaults.tabRailCollapsed,
   pinnedReviewKeys: defaults.pinnedReviewKeys,
   reviewSortOrder: defaults.reviewSortOrder,
+  companionServerEnabled: defaults.companionServerEnabled,
+  companionServerToken: defaults.companionServerToken,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
@@ -232,6 +245,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const reviewSortOrder =
       (await storage.get<ReviewSortOrder>("reviewSortOrder")) ??
       defaults.reviewSortOrder;
+    const companionServerEnabled =
+      (await storage.get<boolean>("companionServerEnabled")) ??
+      defaults.companionServerEnabled;
+    const companionServerToken =
+      (await storage.get<string | null>("companionServerToken")) ??
+      defaults.companionServerToken;
     const diffLineDiffType =
       (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
       defaults.diffLineDiffType;
@@ -271,6 +290,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       tabRailCollapsed,
       pinnedReviewKeys,
       reviewSortOrder,
+      companionServerEnabled,
+      companionServerToken,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
@@ -404,5 +425,31 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   setReviewSortOrder: (order) => {
     set({ reviewSortOrder: order });
     storage.set("reviewSortOrder", order);
+  },
+
+  setCompanionServerEnabled: async (enabled) => {
+    set({ companionServerEnabled: enabled });
+    storage.set("companionServerEnabled", enabled);
+    try {
+      if (enabled) {
+        await invoke("start_companion_server");
+      } else {
+        await invoke("stop_companion_server");
+      }
+    } catch (e) {
+      console.error("Failed to toggle companion server:", e);
+    }
+  },
+
+  setCompanionServerToken: (token) => {
+    set({ companionServerToken: token });
+    storage.set("companionServerToken", token);
+  },
+
+  generateCompanionServerToken: async () => {
+    const token = await invoke<string>("generate_companion_token");
+    set({ companionServerToken: token });
+    storage.set("companionServerToken", token);
+    return token;
   },
 });

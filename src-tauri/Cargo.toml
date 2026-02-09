@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 review = { path = "../review", features = ["symbols-dev"] }
 
 # Tauri and plugins
-tauri = { version = "2", features = ["macos-private-api", "devtools"] }
+tauri = { version = "2", features = ["macos-private-api", "devtools", "tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
@@ -46,6 +46,7 @@ notify-debouncer-mini = "0.4"
 ignore = "0.4"
 chrono = "0.4"
 tiny_http = "0.12"
+getrandom = "0.2"
 sentry = "0.35"
 
 [features]

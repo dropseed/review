@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { hostname as getHostname } from "@tauri-apps/plugin-os";
 import { useReviewStore } from "../stores";
 import {
   CODE_FONT_SIZE_DEFAULT,
@@ -81,6 +83,49 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const setSoundEffectsEnabled = useReviewStore(
     (s) => s.setSoundEffectsEnabled,
   );
+  const companionServerEnabled = useReviewStore(
+    (s) => s.companionServerEnabled,
+  );
+  const setCompanionServerEnabled = useReviewStore(
+    (s) => s.setCompanionServerEnabled,
+  );
+  const companionServerToken = useReviewStore((s) => s.companionServerToken);
+  const generateCompanionServerToken = useReviewStore(
+    (s) => s.generateCompanionServerToken,
+  );
+
+  const [machineHostname, setMachineHostname] = useState<string>("");
+  const [companionCopied, setCompanionCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      getHostname()
+        .then((h) => setMachineHostname(h ?? "localhost"))
+        .catch(() => setMachineHostname("localhost"));
+    }
+  }, [isOpen]);
+
+  // Auto-generate token if enabled but no token exists
+  useEffect(() => {
+    if (isOpen && companionServerEnabled && !companionServerToken) {
+      generateCompanionServerToken();
+    }
+  }, [
+    isOpen,
+    companionServerEnabled,
+    companionServerToken,
+    generateCompanionServerToken,
+  ]);
+
+  const copyToClipboard = useCallback(async (text: string, label: string) => {
+    try {
+      await writeText(text);
+      setCompanionCopied(label);
+      setTimeout(() => setCompanionCopied(null), 2000);
+    } catch {
+      // Ignore clipboard errors
+    }
+  }, []);
 
   // CLI install status (hidden in dev mode)
   const [devMode, setDevMode] = useState(false);
@@ -579,6 +624,92 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </label>
             <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
               Play sounds when approving, rejecting, and completing reviews.
+            </p>
+          </div>
+
+          {/* Companion Server */}
+          <div className="px-5 py-4">
+            <div className="mb-3 flex items-center gap-2">
+              <svg
+                className="h-4 w-4 text-stone-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                <line x1="12" y1="20" x2="12.01" y2="20" />
+              </svg>
+              <span className="text-xs font-medium text-stone-300">
+                Companion Server
+              </span>
+            </div>
+
+            <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
+              <span className="text-xs text-stone-300">
+                Enable companion server
+              </span>
+              <Switch
+                checked={companionServerEnabled}
+                onCheckedChange={setCompanionServerEnabled}
+              />
+            </label>
+
+            {companionServerEnabled && (
+              <div className="mt-3 space-y-2">
+                {/* Server URL */}
+                <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xxs text-stone-500 mb-0.5">
+                      Server URL
+                    </div>
+                    <code className="text-xs text-stone-400">
+                      http://{machineHostname || "localhost"}:3333
+                    </code>
+                  </div>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(
+                        `http://${machineHostname || "localhost"}:3333`,
+                        "url",
+                      )
+                    }
+                    className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-stone-500 transition-colors hover:bg-stone-700 hover:text-stone-300"
+                  >
+                    {companionCopied === "url" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+
+                {/* Auth Token */}
+                {companionServerToken && (
+                  <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xxs text-stone-500 mb-0.5">
+                        Auth Token
+                      </div>
+                      <code className="text-xs text-stone-400 block truncate">
+                        {companionServerToken}
+                      </code>
+                    </div>
+                    <button
+                      onClick={() =>
+                        copyToClipboard(companionServerToken, "token")
+                      }
+                      className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-stone-500 transition-colors hover:bg-stone-700 hover:text-stone-300"
+                    >
+                      {companionCopied === "token" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+              Allows the Review mobile app to connect over your local network.
             </p>
           </div>
 

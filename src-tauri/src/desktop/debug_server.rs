@@ -1,46 +1,100 @@
-//! Debug HTTP server for external automation/testing.
-//! Only active in debug builds. Listens on localhost:3333.
+//! Companion HTTP server for mobile app connectivity.
+//! Listens on 0.0.0.0:3333 so mobile devices on the same network can connect.
 
 use super::commands;
 use review::diff::parser::DiffHunk;
 use review::review::state::ReviewState;
+use review::review::storage::GlobalReviewSummary;
 use review::sources::traits::Comparison;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::thread;
 use tiny_http::{Header, Request, Response, Server};
 
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
+static SERVER_INSTANCE: Mutex<Option<Server>> = Mutex::new(None);
+static AUTH_TOKEN: Mutex<Option<String>> = Mutex::new(None);
 
 const PORT: u16 = 3333;
 
-/// Start the debug server in a background thread.
+/// Set the bearer token required for authentication.
+/// Pass `None` to disable authentication.
+pub fn set_auth_token(token: Option<String>) {
+    if let Ok(mut guard) = AUTH_TOKEN.lock() {
+        *guard = token;
+    }
+}
+
+/// Start the companion server in a background thread.
 /// Only starts if not already running.
 pub fn start() {
     if SERVER_RUNNING.swap(true, Ordering::SeqCst) {
-        eprintln!("[debug_server] Already running");
+        eprintln!("[companion_server] Already running");
         return;
     }
 
     thread::spawn(|| {
         if let Err(e) = run_server() {
-            eprintln!("[debug_server] Server error: {e}");
+            eprintln!("[companion_server] Server error: {e}");
         }
         SERVER_RUNNING.store(false, Ordering::SeqCst);
     });
 }
 
+/// Stop the companion server if it is running.
+pub fn stop() {
+    if let Ok(mut guard) = SERVER_INSTANCE.lock() {
+        if let Some(server) = guard.take() {
+            server.unblock();
+        }
+    }
+}
+
+/// Check if the companion server is currently running.
+pub fn is_running() -> bool {
+    SERVER_RUNNING.load(Ordering::SeqCst)
+}
+
 fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = format!("127.0.0.1:{PORT}");
+    let addr = format!("0.0.0.0:{PORT}");
     let server = Server::http(&addr).map_err(|e| format!("Failed to bind: {e}"))?;
 
-    eprintln!("[debug_server] Listening on http://{addr}");
+    eprintln!("[companion_server] Listening on http://{addr}");
 
-    for request in server.incoming_requests() {
-        if let Err(e) = handle_request(request) {
-            eprintln!("[debug_server] Request error: {e}");
+    // Store the server so we can call unblock() from stop()
+    if let Ok(mut guard) = SERVER_INSTANCE.lock() {
+        *guard = Some(server);
+    }
+
+    // Re-acquire the server reference for the request loop
+    loop {
+        let request = {
+            let guard = SERVER_INSTANCE.lock().ok();
+            let guard = guard.as_ref().and_then(|g| g.as_ref());
+            match guard {
+                Some(server) => server.recv(),
+                None => break, // Server was taken by stop()
+            }
+        };
+
+        match request {
+            Ok(request) => {
+                if let Err(e) = handle_request(request) {
+                    eprintln!("[companion_server] Request error: {e}");
+                }
+            }
+            Err(_) => {
+                // recv() returns Err when the server is unblocked / shut down
+                break;
+            }
         }
+    }
+
+    // Clean up
+    if let Ok(mut guard) = SERVER_INSTANCE.lock() {
+        *guard = None;
     }
 
     Ok(())
@@ -53,7 +107,7 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
     let query = url.split('?').nth(1).unwrap_or("").to_owned();
     let method = request.method().as_str().to_owned();
 
-    eprintln!("[debug_server] {method} {path} (query: {query})");
+    eprintln!("[companion_server] {method} {path} (query: {query})");
 
     // Handle CORS preflight
     if method == "OPTIONS" {
@@ -67,11 +121,38 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
                 .unwrap(),
             )
             .with_header(
-                Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..])
-                    .unwrap(),
+                Header::from_bytes(
+                    &b"Access-Control-Allow-Headers"[..],
+                    &b"Content-Type, Authorization"[..],
+                )
+                .unwrap(),
             );
         request.respond(response)?;
         return Ok(());
+    }
+
+    // Check bearer token authentication (skip for health check)
+    if path != "/health" {
+        if let Ok(guard) = AUTH_TOKEN.lock() {
+            if let Some(ref token) = *guard {
+                let auth_header = request
+                    .headers()
+                    .iter()
+                    .find(|h| {
+                        h.field
+                            .as_str()
+                            .as_str()
+                            .eq_ignore_ascii_case("authorization")
+                    })
+                    .map(|h| h.value.as_str().to_string());
+
+                let expected = format!("Bearer {}", token);
+                if auth_header.as_deref() != Some(expected.as_str()) {
+                    request.respond(error_response(401, "Unauthorized"))?;
+                    return Ok(());
+                }
+            }
+        }
     }
 
     // Read body for POST/DELETE requests
@@ -116,6 +197,10 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
 
         // Saved reviews list
         ("GET", "/reviews") => handle_list_reviews(&query),
+        ("GET", "/reviews/global") => handle_list_reviews_global(),
+
+        // Server info
+        ("GET", "/info") => handle_get_info(),
 
         // Current comparison
         ("GET", "/comparison") => handle_get_comparison(&query),
@@ -123,6 +208,9 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
 
         // Trust taxonomy
         ("GET", "/taxonomy") => handle_get_taxonomy(&query),
+
+        // Hunks (batch)
+        ("POST", "/hunks") => handle_get_all_hunks(body.as_deref()),
 
         // Move detection
         ("POST", "/detect-moves") => handle_detect_moves(body.as_deref()),
@@ -528,6 +616,27 @@ fn handle_list_reviews(query: &str) -> Response<Cursor<Vec<u8>>> {
     }
 }
 
+fn handle_list_reviews_global() -> Response<Cursor<Vec<u8>>> {
+    match commands::list_all_reviews_global() {
+        Ok(reviews) => json_response(&reviews),
+        Err(e) => error_response(500, &e),
+    }
+}
+
+fn handle_get_info() -> Response<Cursor<Vec<u8>>> {
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    let hostname = std::process::Command::new("hostname")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    let repos = commands::list_all_reviews_global().unwrap_or_default();
+    json_response(&InfoResponse {
+        version,
+        hostname,
+        repos,
+    })
+}
+
 fn handle_get_comparison(query: &str) -> Response<Cursor<Vec<u8>>> {
     let params = parse_query(query);
     let repo_path = match get_repo_path(&params) {
@@ -571,6 +680,30 @@ struct DetectMovesRequest {
 #[derive(Deserialize)]
 struct SetComparisonRequest {
     comparison: Comparison,
+}
+
+fn handle_get_all_hunks(body: Option<&str>) -> Response<Cursor<Vec<u8>>> {
+    let Some(body) = body else {
+        return error_response(400, "Missing request body");
+    };
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct HunksRequest {
+        repo: String,
+        comparison: Comparison,
+        file_paths: Vec<String>,
+    }
+
+    let request: HunksRequest = match serde_json::from_str(body) {
+        Ok(r) => r,
+        Err(e) => return error_response(400, &format!("Invalid JSON: {e}")),
+    };
+
+    match commands::get_all_hunks_sync(request.repo, request.comparison, request.file_paths) {
+        Ok(hunks) => json_response(&hunks),
+        Err(e) => error_response(500, &e),
+    }
 }
 
 fn handle_detect_moves(body: Option<&str>) -> Response<Cursor<Vec<u8>>> {
@@ -651,4 +784,11 @@ struct SuccessResponse {
 #[derive(Serialize)]
 struct ComparisonResponse {
     comparison: Option<Comparison>,
+}
+
+#[derive(Serialize)]
+struct InfoResponse {
+    version: String,
+    hostname: String,
+    repos: Vec<GlobalReviewSummary>,
 }

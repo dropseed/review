@@ -1,0 +1,7 @@
+#!/bin/bash
+# Install dependencies for the mobile companion app
+set -e
+cd "$(dirname "$0")/../mobile"
+
+echo "Installing mobile app dependencies..."
+npm install

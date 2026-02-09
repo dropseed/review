@@ -4154,6 +4154,7 @@ version = "0.0.14"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "getrandom 0.2.17",
  "ignore",
  "log",
  "notify",
