@@ -1,6 +1,6 @@
 [package]
 name = "review"
-version = "0.0.15"
+version = "0.0.16"
 description = "A diff review library and CLI"
 license = "FSL-1.1-MIT"
 edition = "2021"
