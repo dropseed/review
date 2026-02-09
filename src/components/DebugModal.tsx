@@ -2,11 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import { useReviewStore } from "../stores";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
-// Simple JSON syntax highlighting
 function highlightJson(json: string): React.ReactNode[] {
   const lines = json.split("\n");
   return lines.map((line, i) => {
-    // Highlight different parts of JSON
     const highlighted = line
       // Keys (before colon)
       .replace(/"([^"]+)":/g, '<span class="text-sky-400">"$1"</span>:')
@@ -33,41 +31,52 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
     "persisted",
   );
 
-  const {
-    repoPath,
-    comparison,
-    selectedFile,
-    files,
-    hunks,
-    reviewState,
-    focusedHunkIndex,
-  } = useReviewStore();
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const comparison = useReviewStore((s) => s.comparison);
+  const selectedFile = useReviewStore((s) => s.selectedFile);
+  const files = useReviewStore((s) => s.files);
+  const hunks = useReviewStore((s) => s.hunks);
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
 
-  const persistedData = { reviewState };
-  const inMemoryData = {
-    repoPath,
-    comparison,
-    selectedFile,
-    focusedHunkIndex,
-    files,
-    hunks,
-  };
-
-  const persistedJsonString = JSON.stringify(persistedData, null, 2);
-  const inMemoryJsonString = JSON.stringify(inMemoryData, null, 2);
-  const fullJsonString = JSON.stringify(
-    { ...persistedData, ...inMemoryData },
-    null,
-    2,
+  const persistedJsonString = useMemo(
+    () => (isOpen ? JSON.stringify({ reviewState }, null, 2) : ""),
+    [isOpen, reviewState],
+  );
+  const inMemoryJsonString = useMemo(
+    () =>
+      isOpen
+        ? JSON.stringify(
+            {
+              repoPath,
+              comparison,
+              selectedFile,
+              focusedHunkIndex,
+              files,
+              hunks,
+            },
+            null,
+            2,
+          )
+        : "",
+    [
+      isOpen,
+      repoPath,
+      comparison,
+      selectedFile,
+      focusedHunkIndex,
+      files,
+      hunks,
+    ],
   );
 
   const highlightedPersistedJson = useMemo(
-    () => highlightJson(persistedJsonString),
-    [persistedJsonString],
+    () => (isOpen ? highlightJson(persistedJsonString) : []),
+    [isOpen, persistedJsonString],
   );
   const highlightedInMemoryJson = useMemo(
-    () => highlightJson(inMemoryJsonString),
-    [inMemoryJsonString],
+    () => (isOpen ? highlightJson(inMemoryJsonString) : []),
+    [isOpen, inMemoryJsonString],
   );
 
   // Construct the review state file path (centralized in ~/.review/)
@@ -78,10 +87,16 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
   }, [repoPath, comparison]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(fullJsonString).catch((err) => {
-      console.error("Failed to copy:", err);
-    });
-  }, [fullJsonString]);
+    const combined = {
+      ...JSON.parse(persistedJsonString || "{}"),
+      ...JSON.parse(inMemoryJsonString || "{}"),
+    };
+    navigator.clipboard
+      .writeText(JSON.stringify(combined, null, 2))
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
+  }, [persistedJsonString, inMemoryJsonString]);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>

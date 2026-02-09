@@ -37,25 +37,20 @@ export function useScrollHunkTracking(
     }
 
     function findClosestHunkElement(): HTMLElement | null {
-      const elements =
-        scrollContainer!.querySelectorAll<HTMLElement>("[data-hunk-id]");
-      if (elements.length === 0) return null;
-
       const containerRect = scrollContainer!.getBoundingClientRect();
       const targetY = containerRect.top + containerRect.height / 3;
+      const targetX = containerRect.left + containerRect.width / 2;
 
-      let closest: HTMLElement | null = null;
-      let closestDist = Infinity;
-
-      for (const el of elements) {
-        const dist = Math.abs(el.getBoundingClientRect().top - targetY);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closest = el;
-        }
+      let el = document.elementFromPoint(
+        targetX,
+        targetY,
+      ) as HTMLElement | null;
+      while (el && el !== scrollContainer) {
+        if (el.hasAttribute("data-hunk-id")) return el;
+        el = el.parentElement;
       }
 
-      return closest;
+      return null;
     }
 
     function handleScroll(): void {

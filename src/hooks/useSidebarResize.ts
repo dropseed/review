@@ -25,10 +25,14 @@ export function useSidebarResize({
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const isResizingRef = useRef(false);
+  const rootFontSizeRef = useRef(16);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isResizingRef.current = true;
+    rootFontSizeRef.current = parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
     setIsResizing(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
@@ -37,17 +41,11 @@ export function useSidebarResize({
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingRef.current) return;
-      // Calculate width based on sidebar position
-      // Get the root font size to convert pixels to rem
-      const rootFontSize = parseFloat(
-        getComputedStyle(document.documentElement).fontSize,
-      );
       const pixelWidth =
         sidebarPosition === "left" ? e.clientX : window.innerWidth - e.clientX;
-      // Convert to rem and clamp
       const newWidth = Math.max(
         minWidth,
-        Math.min(maxWidth, pixelWidth / rootFontSize),
+        Math.min(maxWidth, pixelWidth / rootFontSizeRef.current),
       );
       setSidebarWidth(newWidth);
     };
