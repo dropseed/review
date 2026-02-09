@@ -478,9 +478,7 @@ pub fn run() {
                             "tray_copy_url" => {
                                 let hostname = std::process::Command::new("hostname")
                                     .output()
-                                    .map(|o| {
-                                        String::from_utf8_lossy(&o.stdout).trim().to_string()
-                                    })
+                                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                                     .unwrap_or_else(|_| "localhost".to_string());
                                 let url = format!("http://{}:3333", hostname);
                                 let _ = app.emit("tray:copy-text", url);
