@@ -67,7 +67,7 @@ graph TB
     subgraph Desktop["Desktop (src-tauri/)"]
         commands["commands.rs"]
         watchers["watchers.rs"]
-        debug_server["debug_server.rs"]
+        companion_server["companion_server.rs"]
     end
 
     subgraph Core["Core Library (review/)"]

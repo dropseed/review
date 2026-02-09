@@ -3,10 +3,10 @@
 //! This module contains all Tauri-specific code including:
 //! - Command handlers (commands.rs)
 //! - File system watchers (watchers.rs)
-//! - Companion HTTP server (debug_server.rs)
+//! - Companion HTTP server (companion_server.rs)
 
 pub mod commands;
-pub mod debug_server;
+pub mod companion_server;
 pub mod watchers;
 
 // Re-export commands for convenient access
@@ -173,10 +173,10 @@ pub fn run() {
                             .get("companionServerToken")
                             .and_then(|v| v.as_str().map(|s| s.to_string()));
                         if let Some(ref t) = token {
-                            debug_server::set_auth_token(Some(t.clone()));
+                            companion_server::set_auth_token(Some(t.clone()));
                         }
                     }
-                    debug_server::start();
+                    companion_server::start();
                 }
             }
 
@@ -401,7 +401,7 @@ pub fn run() {
                 };
                 use tauri::tray::TrayIconBuilder;
 
-                let server_running = debug_server::is_running();
+                let server_running = companion_server::is_running();
                 let toggle_label = if server_running {
                     "Stop Server"
                 } else {
@@ -449,9 +449,9 @@ pub fn run() {
                         let id = event.id().as_ref();
                         match id {
                             "tray_toggle" => {
-                                if debug_server::is_running() {
-                                    debug_server::stop();
-                                    debug_server::set_auth_token(None);
+                                if companion_server::is_running() {
+                                    companion_server::stop();
+                                    companion_server::set_auth_token(None);
                                 } else {
                                     // Read token from store and start
                                     use tauri_plugin_store::StoreExt;
@@ -460,13 +460,13 @@ pub fn run() {
                                             .get("companionServerToken")
                                             .and_then(|v| v.as_str().map(|s| s.to_string()));
                                         if let Some(ref t) = token {
-                                            debug_server::set_auth_token(Some(t.clone()));
+                                            companion_server::set_auth_token(Some(t.clone()));
                                         }
                                     }
-                                    debug_server::start();
+                                    companion_server::start();
                                 }
                                 // Update tray menu items
-                                let running = debug_server::is_running();
+                                let running = companion_server::is_running();
                                 let _ = tray_toggle.set_text(if running {
                                     "Stop Server"
                                 } else {

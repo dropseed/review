@@ -1,11 +1,11 @@
 /**
- * Mock Tauri API that proxies to the debug HTTP server.
+ * Mock Tauri API that proxies to the companion HTTP server.
  * This allows the app to run in a regular browser for testing.
  *
  * Only active when window.__TAURI_INTERNALS__ is not defined.
  */
 
-const DEBUG_SERVER = "http://localhost:3333";
+const COMPANION_SERVER = "http://localhost:3333";
 
 // Check if we're in a real Tauri environment
 export const isTauri = () => {
@@ -19,7 +19,7 @@ const mockState = {
 };
 
 /**
- * Mock invoke function that proxies commands to the HTTP debug server
+ * Mock invoke function that proxies commands to the HTTP companion server
  */
 export async function mockInvoke<T>(cmd: string, args?: unknown): Promise<T> {
   console.log(`[tauriMock] invoke: ${cmd}`, args);
@@ -168,9 +168,9 @@ function buildComparisonKey(comparison: unknown): string {
   return c.key || `${c.old}..${c.new}`;
 }
 
-// Fetch JSON from debug server
+// Fetch JSON from companion server
 async function fetchJson(path: string): Promise<any> {
-  const url = `${DEBUG_SERVER}${path}`;
+  const url = `${COMPANION_SERVER}${path}`;
   console.log(`[tauriMock] fetch: ${url}`);
 
   const response = await fetch(url);

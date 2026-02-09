@@ -1679,7 +1679,7 @@ pub fn generate_companion_token() -> String {
 
 #[tauri::command]
 pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String> {
-    use super::debug_server;
+    use super::companion_server;
     use tauri_plugin_store::StoreExt;
 
     let store = app_handle
@@ -1690,21 +1690,21 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
         .and_then(|v| v.as_str().map(|s| s.to_string()));
 
     if let Some(ref t) = token {
-        debug_server::set_auth_token(Some(t.clone()));
+        companion_server::set_auth_token(Some(t.clone()));
     }
-    debug_server::start();
+    companion_server::start();
     Ok(())
 }
 
 #[tauri::command]
 pub fn stop_companion_server() {
-    use super::debug_server;
-    debug_server::stop();
-    debug_server::set_auth_token(None);
+    use super::companion_server;
+    companion_server::stop();
+    companion_server::set_auth_token(None);
 }
 
 #[tauri::command]
 pub fn get_companion_server_status() -> bool {
-    use super::debug_server;
-    debug_server::is_running()
+    use super::companion_server;
+    companion_server::is_running()
 }

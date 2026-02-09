@@ -131,8 +131,8 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
         return Ok(());
     }
 
-    // Check bearer token authentication (skip for health check)
-    if path != "/health" {
+    // Check bearer token authentication (skip for health check and debug builds)
+    if path != "/health" && !cfg!(debug_assertions) {
         if let Ok(guard) = AUTH_TOKEN.lock() {
             if let Some(ref token) = *guard {
                 let auth_header = request
@@ -338,14 +338,9 @@ fn handle_get_repo() -> Response<Cursor<Vec<u8>>> {
 
 fn handle_get_branches(query: &str) -> Response<Cursor<Vec<u8>>> {
     let params = parse_query(query);
-    let repo_path = match params.get("repo") {
-        Some(p) => p.clone(),
-        None => match commands::get_current_repo() {
-            Ok(p) => p,
-            Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {e}"))
-            }
-        },
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     match commands::list_branches(repo_path) {
@@ -356,15 +351,9 @@ fn handle_get_branches(query: &str) -> Response<Cursor<Vec<u8>>> {
 
 fn handle_list_files(query: &str) -> Response<Cursor<Vec<u8>>> {
     let params = parse_query(query);
-
-    let repo_path = match params.get("repo") {
-        Some(p) => p.clone(),
-        None => match commands::get_current_repo() {
-            Ok(p) => p,
-            Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {e}"))
-            }
-        },
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let Some(comparison) = get_comparison_from_query(&params) else {
@@ -379,15 +368,9 @@ fn handle_list_files(query: &str) -> Response<Cursor<Vec<u8>>> {
 
 fn handle_get_state(query: &str) -> Response<Cursor<Vec<u8>>> {
     let params = parse_query(query);
-
-    let repo_path = match params.get("repo") {
-        Some(p) => p.clone(),
-        None => match commands::get_current_repo() {
-            Ok(p) => p,
-            Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {e}"))
-            }
-        },
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let Some(comparison) = get_comparison_from_query(&params) else {
@@ -402,15 +385,9 @@ fn handle_get_state(query: &str) -> Response<Cursor<Vec<u8>>> {
 
 fn handle_get_status(query: &str) -> Response<Cursor<Vec<u8>>> {
     let params = parse_query(query);
-
-    let repo_path = match params.get("repo") {
-        Some(p) => p.clone(),
-        None => match commands::get_current_repo() {
-            Ok(p) => p,
-            Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {e}"))
-            }
-        },
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     match commands::get_git_status(repo_path) {
@@ -421,15 +398,9 @@ fn handle_get_status(query: &str) -> Response<Cursor<Vec<u8>>> {
 
 fn handle_get_file(query: &str) -> Response<Cursor<Vec<u8>>> {
     let params = parse_query(query);
-
-    let repo_path = match params.get("repo") {
-        Some(p) => p.clone(),
-        None => match commands::get_current_repo() {
-            Ok(p) => p,
-            Err(e) => {
-                return error_response(400, &format!("No repo specified and none found: {e}"))
-            }
-        },
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let file_path = match params.get("path") {

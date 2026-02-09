@@ -40,7 +40,7 @@ The project is organized as a Cargo workspace with two crates:
   - `src/bin/` - CLI binary (`review`)
 
 - **`src-tauri/`** - Desktop app (depends on `review`)
-  - `src/desktop/` - Tauri-specific code (commands, watchers, debug server)
+  - `src/desktop/` - Tauri-specific code (commands, watchers, companion server)
 
 - **Desktop Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
 - **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/commands.rs`

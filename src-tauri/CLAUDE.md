@@ -7,7 +7,7 @@ This crate wraps the `review` core library into a Tauri desktop application.
 - `src/desktop/commands.rs` — All `#[tauri::command]` handlers. Thin wrappers that delegate to `review` crate.
 - `src/desktop/mod.rs` — App setup: plugins, menus, window management, Sentry init, single-instance handling.
 - `src/desktop/watchers.rs` — File system watcher using `notify`. Emits events to frontend on repo/review state changes.
-- `src/desktop/debug_server.rs` — HTTP debug server (debug builds only). Serves same API as Tauri commands for browser testing.
+- `src/desktop/companion_server.rs` — Companion HTTP server for mobile app and browser testing. Serves same API as Tauri commands over HTTP.
 - `src/lib.rs` — Crate root, delegates to `desktop::run()`.
 - `src/main.rs` — Binary entry point.
 
