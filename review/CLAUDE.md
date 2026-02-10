@@ -26,8 +26,8 @@ src/
 │   └── extractor.rs    Extract/diff symbols across old/new versions
 ├── filters.rs      File skip rules (generated files, binaries)
 ├── error.rs        Error types
-├── cli/            CLI commands (behind `cli` feature flag)
-│   └── commands/       Subcommands: classify, open, review
+├── cli/            CLI module (behind `cli` feature flag)
+│   └── mod.rs          Parses args, resolves comparison, opens desktop app
 └── bin/            CLI binary entry point
 ```
 

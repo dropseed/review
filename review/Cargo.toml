@@ -47,7 +47,6 @@ tree-sitter-md = { version = "0.3", optional = true }
 
 # CLI dependencies (feature-gated)
 clap = { version = "4", features = ["derive"], optional = true }
-colored = { version = "2", optional = true }
 
 [features]
 default = []
@@ -80,7 +79,7 @@ symbols-all = [
     "symbols-html",
     "symbols-markdown",
 ]
-cli = ["clap", "colored"]
+cli = ["clap"]
 
 [[bin]]
 name = "review"
