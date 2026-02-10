@@ -16,33 +16,40 @@ export function useComparisonLoader(
   const loadGitStatus = useReviewStore((s) => s.loadGitStatus);
   const loadRemoteInfo = useReviewStore((s) => s.loadRemoteInfo);
   const loadCommits = useReviewStore((s) => s.loadCommits);
-  const triggerAutoClassification = useReviewStore(
-    (s) => s.triggerAutoClassification,
-  );
+  const classifyStaticHunks = useReviewStore((s) => s.classifyStaticHunks);
+  const loadSymbols = useReviewStore((s) => s.loadSymbols);
 
   useEffect(() => {
     if (repoPath && comparisonReady) {
+      let cancelled = false;
       const loadData = async () => {
         try {
           // Load review state FIRST to ensure labels are available before auto-classification
           await loadReviewState();
-          // Then load files (skip auto-classify) and other data in parallel
+          if (cancelled) return;
+          // Then load files and other data in parallel
           await Promise.all([
-            loadFiles(true),
+            loadFiles(),
             loadAllFiles(),
             loadGitStatus(),
             loadRemoteInfo(),
             loadCommits(repoPath),
           ]);
-          // Now trigger auto-classification with the loaded review state
-          triggerAutoClassification();
+          if (cancelled) return;
+          // Run static (rule-based) classification only — no AI on load
+          classifyStaticHunks();
+          // Load symbols eagerly (also computes symbol-linked hunks)
+          await loadSymbols();
         } catch (err) {
-          console.error("Failed to load data:", err);
+          if (!cancelled) console.error("Failed to load data:", err);
         } finally {
-          setInitialLoading(false);
+          if (!cancelled) setInitialLoading(false);
         }
       };
       loadData();
+      return () => {
+        cancelled = true;
+      };
     }
   }, [
     repoPath,
@@ -54,7 +61,8 @@ export function useComparisonLoader(
     loadGitStatus,
     loadRemoteInfo,
     loadCommits,
-    triggerAutoClassification,
+    classifyStaticHunks,
+    loadSymbols,
     setInitialLoading,
   ]);
 }

@@ -81,10 +81,7 @@ export interface FilesSlice {
   setHunks: (hunks: DiffHunk[]) => void;
 
   // Loading
-  loadFiles: (
-    skipAutoClassify?: boolean,
-    isRefreshing?: boolean,
-  ) => Promise<void>;
+  loadFiles: (isRefreshing?: boolean) => Promise<void>;
   loadAllFiles: () => Promise<void>;
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
@@ -125,10 +122,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
-        topLevelView: "overview",
+        topLevelView: "browse",
         secondaryFile: null,
         focusedPane: "primary",
-        narrativeSidebarOpen: false,
+        groupingSidebarOpen: false,
         // Search
         searchQuery: "",
         searchResults: [],
@@ -167,26 +164,43 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         movePairs: [],
         allFiles: [],
         loadingProgress: { phase: "pending", current: 0, total: 0 },
-        // Navigation — reset to overview on comparison switch
+        // Navigation — reset to browse on comparison switch
         selectedFile: null,
         focusedHunkIndex: 0,
-        topLevelView: "overview",
+        topLevelView: "browse",
         secondaryFile: null,
         focusedPane: "primary",
-        narrativeSidebarOpen: false,
+        groupingSidebarOpen: false,
         // Review
         reviewState: null,
         undoStack: [],
+        // Symbols — reset loading guards so new load isn't blocked
+        symbolsLoading: false,
+        symbolsLoaded: false,
+        symbolDiffs: [],
+        symbolLinkedHunks: new Map(),
+        // All files — reset loading guard
+        allFilesLoading: false,
+        // Grouping — reset loading guard and stale data
+        groupingLoading: false,
+        reviewGroups: [],
+        identicalHunkIds: new Map(),
+        // AI state — clear cached results and progress indicators
+        guideSummary: null,
+        guideSummaryError: null,
+        summaryHunkIds: null,
+        classifiedHunkIds: null,
+        classificationStatus: "idle" as const,
+        groupingStatus: "idle" as const,
+        summaryStatus: "idle" as const,
       });
-      get().loadReviewState();
     },
 
     setFiles: (files) => set({ files, flatFileList: flattenFiles(files) }),
     setHunks: (hunks) => set({ hunks }),
 
-    loadFiles: async (skipAutoClassify = false, isRefreshing = false) => {
-      const { repoPath, comparison, triggerAutoClassification, clearSymbols } =
-        get();
+    loadFiles: async (isRefreshing = false) => {
+      const { repoPath, comparison, clearSymbols } = get();
       if (!repoPath) return;
 
       // Capture comparison key so we can detect if the user switched
@@ -394,11 +408,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         console.log(
           `[perf] Total loadFiles: ${(performance.now() - loadStart).toFixed(0)}ms`,
         );
-
-        // Trigger auto-classification after files are loaded
-        if (!skipAutoClassify) {
-          triggerAutoClassification();
-        }
       } catch (err) {
         console.error("Failed to load files:", err);
         if (!isRefreshing) {

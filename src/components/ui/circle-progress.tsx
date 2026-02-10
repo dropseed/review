@@ -1,15 +1,20 @@
-/** SVG circular progress indicator using brand colors. */
-export function CircleProgress({
-  percent,
-  size = 14,
-  strokeWidth = 2,
-  className,
-}: {
+import React from "react";
+
+interface CircleProgressProps {
   percent: number;
   size?: number;
   strokeWidth?: number;
   className?: string;
-}) {
+}
+
+/** SVG circular progress indicator using brand colors. */
+export const CircleProgress = React.forwardRef<
+  SVGSVGElement,
+  CircleProgressProps
+>(function CircleProgress(
+  { percent, size = 14, strokeWidth = 2, className },
+  ref,
+) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percent / 100) * circumference;
@@ -18,6 +23,7 @@ export function CircleProgress({
 
   return (
     <svg
+      ref={ref}
       width={size}
       height={size}
       className={className ?? "shrink-0"}
@@ -56,4 +62,4 @@ export function CircleProgress({
       )}
     </svg>
   );
-}
+});

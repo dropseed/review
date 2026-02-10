@@ -30,7 +30,10 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
-  NarrativeInput,
+  GroupingInput,
+  HunkGroup,
+  ModifiedSymbolEntry,
+  SummaryInput,
 } from "../types";
 
 export interface ApiClient {
@@ -134,8 +137,8 @@ export interface ApiClient {
     comparison: Comparison,
   ): Promise<ReviewState>;
 
-  /** Save review state */
-  saveReviewState(repoPath: string, state: ReviewState): Promise<void>;
+  /** Save review state (returns the new version number) */
+  saveReviewState(repoPath: string, state: ReviewState): Promise<number>;
 
   /** List all saved reviews for a repository */
   listSavedReviews(repoPath: string): Promise<ReviewSummary[]>;
@@ -170,12 +173,21 @@ export interface ApiClient {
   /** Detect move pairs in hunks */
   detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse>;
 
-  // ----- Narrative -----
+  // ----- Grouping -----
 
-  /** Generate a narrative walkthrough of changes using Claude */
-  generateNarrative(
+  /** Generate logical grouping of hunks using Claude */
+  generateGrouping(
     repoPath: string,
-    hunks: NarrativeInput[],
+    hunks: GroupingInput[],
+    options?: { command?: string; modifiedSymbols?: ModifiedSymbolEntry[] },
+  ): Promise<HunkGroup[]>;
+
+  // ----- Summary -----
+
+  /** Generate a concise summary of the diff using Claude */
+  generateSummary(
+    repoPath: string,
+    hunks: SummaryInput[],
     options?: { command?: string },
   ): Promise<string>;
 

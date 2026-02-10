@@ -16,9 +16,10 @@ pub mod classify;
 pub mod diff;
 pub mod error;
 pub mod filters;
-pub mod narrative;
+pub mod grouping;
 pub mod review;
 pub mod sources;
+pub mod summary;
 pub mod symbols;
 pub mod trust;
 

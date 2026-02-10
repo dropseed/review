@@ -1,8 +1,10 @@
 //! Tree-sitter based symbol extraction and hunk mapping.
 
-use super::{FileSymbolDiff, LineRange, Symbol, SymbolChangeType, SymbolDiff, SymbolKind};
+use super::{
+    FileSymbolDiff, LineRange, Symbol, SymbolChangeType, SymbolDiff, SymbolKind, SymbolReference,
+};
 use crate::diff::parser::DiffHunk;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Language, Node, Parser};
 
 /// Get the tree-sitter language for a file based on its extension.
@@ -1438,6 +1440,7 @@ pub fn compute_file_symbol_diff(
             symbols: vec![],
             top_level_hunk_ids: file_hunks.iter().map(|h| h.id.clone()).collect(),
             has_grammar: false,
+            symbol_references: vec![],
         };
     }
 
@@ -1469,6 +1472,7 @@ pub fn compute_file_symbol_diff(
         symbols,
         top_level_hunk_ids,
         has_grammar: true,
+        symbol_references: vec![],
     }
 }
 
@@ -1672,6 +1676,386 @@ fn hunk_overlaps_new_range(hunk: &DiffHunk, sym_start: u32, sym_end: u32) -> boo
     }
     let hunk_end = hunk.new_start + hunk.new_count - 1;
     ranges_overlap(hunk.new_start, hunk_end, sym_start, sym_end)
+}
+
+/// Find references to modified symbols within hunks of a file.
+///
+/// Parses the file content with tree-sitter and walks the AST to find
+/// identifier nodes matching any of the target symbol names. For each match,
+/// checks if the identifier falls within a hunk's line range.
+///
+/// `definition_ranges` maps symbol names to their definition line ranges in this
+/// file, so we can skip self-references within a symbol's own definition.
+pub fn find_symbol_references(
+    content: &str,
+    file_path: &str,
+    hunks: &[DiffHunk],
+    target_symbols: &HashSet<String>,
+    definition_ranges: &HashMap<String, (u32, u32)>,
+    use_new_side: bool,
+) -> Vec<SymbolReference> {
+    if target_symbols.is_empty() || hunks.is_empty() {
+        return vec![];
+    }
+
+    let Some(language) = get_language_for_file(file_path) else {
+        return vec![];
+    };
+
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return vec![];
+    }
+
+    let Some(tree) = parser.parse(content, None) else {
+        return vec![];
+    };
+
+    // Collect all identifier nodes and their line numbers
+    let mut identifiers: Vec<(String, u32)> = Vec::new();
+    collect_identifiers(tree.root_node(), content, &mut identifiers);
+
+    // Build hunk line ranges for quick lookup
+    let hunk_ranges: Vec<(&DiffHunk, u32, u32)> = hunks
+        .iter()
+        .filter(|h| h.file_path == file_path)
+        .filter_map(|h| {
+            let (start, count) = if use_new_side {
+                (h.new_start, h.new_count)
+            } else {
+                (h.old_start, h.old_count)
+            };
+            if count == 0 {
+                return None;
+            }
+            Some((h, start, start + count - 1))
+        })
+        .collect();
+
+    // Collect line numbers per (symbol_name, hunk_id)
+    let mut ref_lines: HashMap<(String, String), Vec<u32>> = HashMap::new();
+
+    for (name, line) in &identifiers {
+        // Skip short names (too common, high false-positive rate)
+        if name.len() < 3 {
+            continue;
+        }
+
+        // Must be a target symbol
+        if !target_symbols.contains(name.as_str()) {
+            continue;
+        }
+
+        // Skip if this line falls inside the symbol's own definition range
+        if let Some(&(def_start, def_end)) = definition_ranges.get(name.as_str()) {
+            if *line >= def_start && *line <= def_end {
+                continue;
+            }
+        }
+
+        // Check if this line falls within any hunk
+        for &(hunk, hunk_start, hunk_end) in &hunk_ranges {
+            if *line >= hunk_start && *line <= hunk_end {
+                let key = (name.clone(), hunk.id.clone());
+                let lines = ref_lines.entry(key).or_default();
+                if !lines.contains(line) {
+                    lines.push(*line);
+                }
+            }
+        }
+    }
+
+    ref_lines
+        .into_iter()
+        .map(|((symbol_name, hunk_id), line_numbers)| SymbolReference {
+            symbol_name,
+            hunk_id,
+            line_numbers,
+        })
+        .collect()
+}
+
+/// Recursively collect identifier-like leaf nodes from the AST.
+///
+/// Matches any named leaf node whose kind contains "identifier" or equals "name".
+/// This is language-agnostic and automatically excludes comments, strings, and keywords.
+fn collect_identifiers(node: Node, source: &str, out: &mut Vec<(String, u32)>) {
+    if node.child_count() == 0 && node.is_named() {
+        let kind = node.kind();
+        if kind.contains("identifier") || kind == "name" {
+            let text = &source[node.byte_range()];
+            // 1-based line number
+            let line = node.start_position().row as u32 + 1;
+            out.push((text.to_owned(), line));
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_identifiers(child, source, out);
+    }
+}
+
+/// Extract imported symbol names from a source file using tree-sitter.
+///
+/// Returns `Some(set)` with imported names for supported languages (JS/TS, Python, Rust).
+/// Returns `None` if the language doesn't support import extraction (Go, Ruby, Java, C, etc.),
+/// signaling the caller should fall back to using all modified symbols.
+/// Returns `Some(empty set)` if the file has no imports.
+pub fn extract_imported_names(content: &str, file_path: &str) -> Option<HashSet<String>> {
+    let ext = file_path.rsplit('.').next()?.to_lowercase();
+
+    // Only support languages where imports map to specific symbol names
+    match ext.as_str() {
+        "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "py" | "pyi" | "rs" => {}
+        // Go imports are package-level, not symbol-level — can't scope
+        // Other languages: fall back to unscoped behavior
+        _ => return None,
+    }
+
+    let language = get_language_for_file(file_path)?;
+    let mut parser = Parser::new();
+    parser.set_language(&language).ok()?;
+    let tree = parser.parse(content, None)?;
+    let root = tree.root_node();
+
+    let mut names = HashSet::new();
+    let mut cursor = root.walk();
+
+    for child in root.children(&mut cursor) {
+        match ext.as_str() {
+            "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" => {
+                collect_js_ts_imports(child, content, &mut names);
+            }
+            "py" | "pyi" => {
+                collect_python_imports(child, content, &mut names);
+            }
+            "rs" => {
+                collect_rust_imports(child, content, &mut names);
+            }
+            _ => {}
+        }
+    }
+
+    Some(names)
+}
+
+/// Collect imported names from JS/TS import statements.
+fn collect_js_ts_imports(node: Node, source: &str, names: &mut HashSet<String>) {
+    // Handle both `import_statement` and `export_statement` that re-export
+    let kind = node.kind();
+    if kind != "import_statement" {
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // `import Foo from "..."`  — default import
+            "identifier" => {
+                let text = &source[child.byte_range()];
+                names.insert(text.to_owned());
+            }
+            // `import { Foo, Bar as Baz } from "..."`
+            "import_clause" => {
+                collect_js_ts_import_clause(child, source, names);
+            }
+            // `import * as Foo from "..."`
+            "namespace_import" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let text = &source[name_node.byte_range()];
+                    names.insert(text.to_owned());
+                } else {
+                    // Fallback: look for identifier child
+                    let mut ns_cursor = child.walk();
+                    for ns_child in child.children(&mut ns_cursor) {
+                        if ns_child.kind() == "identifier" {
+                            let text = &source[ns_child.byte_range()];
+                            names.insert(text.to_owned());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collect names from an import clause (handles named_imports, default, namespace).
+fn collect_js_ts_import_clause(node: Node, source: &str, names: &mut HashSet<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "identifier" => {
+                // Default import within import clause
+                let text = &source[child.byte_range()];
+                names.insert(text.to_owned());
+            }
+            "named_imports" => {
+                let mut inner_cursor = child.walk();
+                for specifier in child.children(&mut inner_cursor) {
+                    if specifier.kind() == "import_specifier" {
+                        // Use alias if present, otherwise use name
+                        if let Some(alias) = specifier.child_by_field_name("alias") {
+                            let text = &source[alias.byte_range()];
+                            names.insert(text.to_owned());
+                        } else if let Some(name_node) = specifier.child_by_field_name("name") {
+                            let text = &source[name_node.byte_range()];
+                            names.insert(text.to_owned());
+                        }
+                    }
+                }
+            }
+            "namespace_import" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let text = &source[name_node.byte_range()];
+                    names.insert(text.to_owned());
+                } else {
+                    let mut ns_cursor = child.walk();
+                    for ns_child in child.children(&mut ns_cursor) {
+                        if ns_child.kind() == "identifier" {
+                            let text = &source[ns_child.byte_range()];
+                            names.insert(text.to_owned());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collect imported names from Python import statements.
+fn collect_python_imports(node: Node, source: &str, names: &mut HashSet<String>) {
+    match node.kind() {
+        "import_from_statement" => {
+            // `from module import Foo, Bar`
+            // Children after the `import` keyword are the imported names
+            let mut found_import_keyword = false;
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "import" {
+                    found_import_keyword = true;
+                    continue;
+                }
+                if found_import_keyword {
+                    match child.kind() {
+                        "dotted_name" => {
+                            // Simple name: `Foo`
+                            let text = &source[child.byte_range()];
+                            // For `module.submodule`, take the last segment
+                            if let Some(last) = text.rsplit('.').next() {
+                                names.insert(last.to_owned());
+                            }
+                        }
+                        "aliased_import" => {
+                            // `Foo as Bar` — use the alias
+                            if let Some(alias) = child.child_by_field_name("alias") {
+                                let text = &source[alias.byte_range()];
+                                names.insert(text.to_owned());
+                            } else if let Some(name_node) = child.child_by_field_name("name") {
+                                let text = &source[name_node.byte_range()];
+                                if let Some(last) = text.rsplit('.').next() {
+                                    names.insert(last.to_owned());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        "import_statement" => {
+            // `import module` or `import module as alias`
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "dotted_name" => {
+                        let text = &source[child.byte_range()];
+                        if let Some(last) = text.rsplit('.').next() {
+                            names.insert(last.to_owned());
+                        }
+                    }
+                    "aliased_import" => {
+                        if let Some(alias) = child.child_by_field_name("alias") {
+                            let text = &source[alias.byte_range()];
+                            names.insert(text.to_owned());
+                        } else if let Some(name_node) = child.child_by_field_name("name") {
+                            let text = &source[name_node.byte_range()];
+                            if let Some(last) = text.rsplit('.').next() {
+                                names.insert(last.to_owned());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collect imported names from Rust use declarations.
+fn collect_rust_imports(node: Node, source: &str, names: &mut HashSet<String>) {
+    if node.kind() != "use_declaration" {
+        return;
+    }
+
+    // Walk all descendants to find the actual imported identifiers
+    collect_rust_use_names(node, source, names);
+}
+
+/// Recursively collect identifier names from a Rust use tree.
+fn collect_rust_use_names(node: Node, source: &str, names: &mut HashSet<String>) {
+    match node.kind() {
+        "use_as_clause" => {
+            // `Foo as Bar` — use the alias
+            if let Some(alias) = node.child_by_field_name("alias") {
+                let text = &source[alias.byte_range()];
+                names.insert(text.to_owned());
+            }
+        }
+        "use_list" => {
+            // `{Foo, Bar, Baz}` — collect each child
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_rust_use_names(child, source, names);
+            }
+        }
+        "scoped_use_list" => {
+            // `path::{Foo, Bar}` — recurse into the list part
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "use_list" {
+                    collect_rust_use_names(child, source, names);
+                }
+            }
+        }
+        "scoped_identifier" => {
+            // `path::Foo` — take the last segment (the `name` field)
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let text = &source[name_node.byte_range()];
+                names.insert(text.to_owned());
+            }
+        }
+        "identifier" => {
+            // Standalone identifier in a use list
+            let text = &source[node.byte_range()];
+            names.insert(text.to_owned());
+        }
+        "use_wildcard" => {
+            // `use foo::*` — can't determine specific names
+            // Don't add anything; caller will have an incomplete set
+            // but this is fine — we still narrow down vs. the full set
+        }
+        _ => {
+            // Recurse into children for other node types (e.g., use_declaration wrapper)
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_rust_use_names(child, source, names);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2454,5 +2838,227 @@ API docs.
 
         let api = symbols.iter().find(|s| s.name == "API Reference").unwrap();
         assert_eq!(api.kind, SymbolKind::Module);
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_find_symbol_references() {
+        // File that calls `calculateTotal` in a hunk but doesn't define it
+        let content = r#"import { calculateTotal } from './math';
+
+function render() {
+    const total = calculateTotal(items);
+    console.log(total);
+}
+"#;
+        let hunks = vec![DiffHunk {
+            id: "caller.ts:abc123".to_owned(),
+            file_path: "caller.ts".to_owned(),
+            old_start: 3,
+            old_count: 3,
+            new_start: 3,
+            new_count: 4,
+            content: String::new(),
+            lines: vec![],
+            content_hash: String::new(),
+            move_pair_id: None,
+        }];
+
+        let mut targets = HashSet::new();
+        targets.insert("calculateTotal".to_owned());
+
+        // No definition in this file, so no ranges to skip
+        let def_ranges = HashMap::new();
+
+        let refs =
+            find_symbol_references(content, "caller.ts", &hunks, &targets, &def_ranges, true);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].symbol_name, "calculateTotal");
+        assert_eq!(refs[0].hunk_id, "caller.ts:abc123");
+        assert_eq!(refs[0].line_numbers, vec![4]); // line 4: `const total = calculateTotal(items);`
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_find_symbol_references_skips_definition() {
+        // File where `calculateTotal` is both defined and called
+        let content = r#"function calculateTotal(items: number[]): number {
+    return items.reduce((a, b) => a + b, 0);
+}
+
+function render() {
+    const total = calculateTotal([1, 2, 3]);
+    console.log(total);
+}
+"#;
+        let hunks = vec![
+            DiffHunk {
+                id: "math.ts:def".to_owned(),
+                file_path: "math.ts".to_owned(),
+                old_start: 1,
+                old_count: 3,
+                new_start: 1,
+                new_count: 3,
+                content: String::new(),
+                lines: vec![],
+                content_hash: String::new(),
+                move_pair_id: None,
+            },
+            DiffHunk {
+                id: "math.ts:call".to_owned(),
+                file_path: "math.ts".to_owned(),
+                old_start: 5,
+                old_count: 3,
+                new_start: 5,
+                new_count: 4,
+                content: String::new(),
+                lines: vec![],
+                content_hash: String::new(),
+                move_pair_id: None,
+            },
+        ];
+
+        let mut targets = HashSet::new();
+        targets.insert("calculateTotal".to_owned());
+
+        // Definition is lines 1-3
+        let mut def_ranges = HashMap::new();
+        def_ranges.insert("calculateTotal".to_owned(), (1u32, 3u32));
+
+        let refs = find_symbol_references(content, "math.ts", &hunks, &targets, &def_ranges, true);
+        // Should find the call in the second hunk but not the definition in the first
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].hunk_id, "math.ts:call");
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_find_symbol_references_skips_short_names() {
+        let content = r#"function render() {
+    const x = fn(1);
+}
+"#;
+        let hunks = vec![DiffHunk {
+            id: "test.ts:abc".to_owned(),
+            file_path: "test.ts".to_owned(),
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 3,
+            content: String::new(),
+            lines: vec![],
+            content_hash: String::new(),
+            move_pair_id: None,
+        }];
+
+        let mut targets = HashSet::new();
+        targets.insert("x".to_owned());
+        targets.insert("fn".to_owned());
+
+        let refs =
+            find_symbol_references(content, "test.ts", &hunks, &targets, &HashMap::new(), true);
+        // Both "x" and "fn" are < 3 chars, should be skipped
+        assert_eq!(refs.len(), 0);
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_extract_imported_names_js() {
+        let source = r#"
+import { computeWaves } from "./computeWaves";
+import { WaveCard } from "./WaveCard";
+import type { DiffHunk } from "../../types";
+"#;
+        let names = extract_imported_names(source, "test.ts").unwrap();
+        assert!(names.contains("computeWaves"));
+        assert!(names.contains("WaveCard"));
+        assert!(names.contains("DiffHunk"));
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_extract_imported_names_js_default_and_namespace() {
+        let source = r#"
+import React from "react";
+import * as utils from "./utils";
+import { useState, useEffect } from "react";
+"#;
+        let names = extract_imported_names(source, "test.tsx").unwrap();
+        assert!(names.contains("React"));
+        assert!(names.contains("utils"));
+        assert!(names.contains("useState"));
+        assert!(names.contains("useEffect"));
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_extract_imported_names_js_alias() {
+        let source = r#"
+import { Foo as Bar } from "./foo";
+"#;
+        let names = extract_imported_names(source, "test.ts").unwrap();
+        // Should use the alias (Bar), which is the local name used in the file
+        assert!(names.contains("Bar"));
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_extract_imported_names_js_no_imports() {
+        let source = r#"
+const x = 42;
+function hello() { return x; }
+"#;
+        let names = extract_imported_names(source, "test.ts").unwrap();
+        assert!(names.is_empty());
+    }
+
+    #[cfg(feature = "symbols-python")]
+    #[test]
+    fn test_extract_imported_names_python() {
+        let source = "from module import Foo, Bar\n";
+        let names = extract_imported_names(source, "test.py").unwrap();
+        assert!(names.contains("Foo"));
+        assert!(names.contains("Bar"));
+    }
+
+    #[cfg(feature = "symbols-python")]
+    #[test]
+    fn test_extract_imported_names_python_import_module() {
+        let source = "import os\nimport json\n";
+        let names = extract_imported_names(source, "test.py").unwrap();
+        assert!(names.contains("os"));
+        assert!(names.contains("json"));
+    }
+
+    #[cfg(feature = "symbols-rust-lang")]
+    #[test]
+    fn test_extract_imported_names_rust() {
+        let source = r#"
+use std::collections::{HashMap, HashSet};
+use crate::symbols::extractor::extract_symbols;
+"#;
+        let names = extract_imported_names(source, "test.rs").unwrap();
+        assert!(names.contains("HashMap"));
+        assert!(names.contains("HashSet"));
+        assert!(names.contains("extract_symbols"));
+    }
+
+    #[cfg(feature = "symbols-go")]
+    #[test]
+    fn test_extract_imported_names_go_returns_none() {
+        let source = r#"
+package main
+
+import "fmt"
+"#;
+        // Go imports are package-level, so we return None (fall back to all symbols)
+        assert!(extract_imported_names(source, "test.go").is_none());
+    }
+
+    #[test]
+    fn test_extract_imported_names_unsupported_language() {
+        assert!(extract_imported_names("some content", "test.rb").is_none());
+        assert!(extract_imported_names("some content", "test.java").is_none());
+        assert!(extract_imported_names("some content", "test.c").is_none());
     }
 }

@@ -9,7 +9,9 @@ import {
 } from "../../ui/dropdown-menu";
 import { SimpleTooltip } from "../../ui/tooltip";
 import { getFirstChangedLine } from "../hunkUtils";
+import type { SymbolLinkedHunk } from "../../../utils/symbolLinkedHunks";
 import { MovePairModal } from "./MovePairModal";
+import { SymbolLinkedHunksModal } from "./SymbolLinkedHunksModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
 
 /** Returns the appropriate background class for a hunk based on its state */
@@ -38,6 +40,9 @@ interface HunkAnnotationPanelProps {
   totalHunksInFile?: number;
   // Similar hunks data for "N like this" modal
   similarHunks: DiffHunk[];
+  // Symbol-linked hunks data for "N related" modal
+  symbolLinks: SymbolLinkedHunk[];
+  hunkById: Map<string, DiffHunk>;
   allHunkStates: Record<string, HunkState | undefined>;
   onApprove: (hunkId: string) => void;
   onUnapprove: (hunkId: string) => void;
@@ -69,6 +74,8 @@ export function HunkAnnotationPanel({
   hunkPosition,
   totalHunksInFile,
   similarHunks,
+  symbolLinks,
+  hunkById,
   allHunkStates,
   onApprove,
   onUnapprove,
@@ -223,6 +230,16 @@ export function HunkAnnotationPanel({
           <SimilarHunksModal
             currentHunk={hunk}
             similarHunks={similarHunks}
+            hunkStates={allHunkStates}
+            onApproveAll={onApproveAllSimilar}
+            onRejectAll={onRejectAllSimilar}
+            onNavigateToHunk={onNavigateToHunk}
+          />
+          {/* Symbol-linked hunks modal trigger - "N related" */}
+          <SymbolLinkedHunksModal
+            currentHunk={hunk}
+            symbolLinks={symbolLinks}
+            hunkById={hunkById}
             hunkStates={allHunkStates}
             onApproveAll={onApproveAllSimilar}
             onRejectAll={onRejectAllSimilar}

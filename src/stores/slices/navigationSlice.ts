@@ -1,5 +1,5 @@
 import { isHunkReviewed } from "../../types";
-import type { SliceCreator } from "../types";
+import type { ReviewStore, SliceCreator } from "../types";
 
 // ========================================================================
 // Navigation Slice
@@ -19,7 +19,7 @@ import type { SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
-export type TopLevelView = "overview" | "browse";
+export type TopLevelView = "guide" | "browse";
 
 export interface NavigationSlice {
   // Navigation state
@@ -27,7 +27,7 @@ export interface NavigationSlice {
   focusedHunkIndex: number;
   scrollDrivenNavigation: boolean;
 
-  // View hierarchy: overview (home) vs browse
+  // View hierarchy: guide vs browse
   topLevelView: TopLevelView;
 
   // Split view state
@@ -45,7 +45,7 @@ export interface NavigationSlice {
   // View hierarchy actions
   setTopLevelView: (view: TopLevelView) => void;
   navigateToBrowse: (filePath?: string) => void;
-  navigateToOverview: () => void;
+  navigateToGuide: () => void;
 
   // Split view actions
   setSecondaryFile: (path: string | null) => void;
@@ -65,9 +65,9 @@ export interface NavigationSlice {
   // Advance to next file if current file is fully reviewed
   advanceToNextUnreviewedFile: () => void;
 
-  // Narrative sidebar
-  narrativeSidebarOpen: boolean;
-  setNarrativeSidebarOpen: (open: boolean) => void;
+  // Grouping sidebar
+  groupingSidebarOpen: boolean;
+  setGroupingSidebarOpen: (open: boolean) => void;
 
   // Track the exact narrative link that was last clicked (by source offset)
   lastClickedNarrativeLinkOffset: number | null;
@@ -82,6 +82,62 @@ export interface NavigationSlice {
   setComparisonPickerOpen: (open: boolean) => void;
   comparisonPickerRepoPath: string | null;
   setComparisonPickerRepoPath: (path: string | null) => void;
+
+  // Active group index in focused review section
+  activeGroupIndex: number;
+  setActiveGroupIndex: (index: number) => void;
+
+  // Guide tab persistence
+  guideActiveTab: string;
+  setGuideActiveTab: (tab: string) => void;
+}
+
+/**
+ * Find the index of the first unreviewed hunk for a file,
+ * falling back to the first hunk in the file if all are reviewed.
+ * Returns -1 if no hunks exist for the file.
+ */
+function findFirstUnreviewedHunkIndex(
+  filePath: string,
+  state: ReviewStore,
+): number {
+  const { hunks, reviewState, stagedFilePaths } = state;
+  const trustList = reviewState?.trustList ?? [];
+  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+
+  const unreviewedIndex = hunks.findIndex((h) => {
+    if (h.filePath !== filePath) return false;
+    const hunkState = reviewState?.hunks[h.id];
+    return !isHunkReviewed(hunkState, trustList, {
+      autoApproveStaged,
+      stagedFilePaths,
+      filePath: h.filePath,
+    });
+  });
+
+  if (unreviewedIndex >= 0) return unreviewedIndex;
+
+  // Fall back to first hunk in the file
+  return hunks.findIndex((h) => h.filePath === filePath);
+}
+
+/**
+ * Check whether a file has any unreviewed hunks.
+ */
+function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
+  const { hunks, reviewState, stagedFilePaths } = state;
+  const trustList = reviewState?.trustList ?? [];
+  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+
+  return hunks.some((h) => {
+    if (h.filePath !== filePath) return false;
+    const hunkState = reviewState?.hunks[h.id];
+    return !isHunkReviewed(hunkState, trustList, {
+      autoApproveStaged,
+      stagedFilePaths,
+      filePath: h.filePath,
+    });
+  });
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -93,39 +149,20 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   scrollDrivenNavigation: false,
 
   // View hierarchy
-  topLevelView: "overview" as TopLevelView,
+  topLevelView: "browse",
 
   // Split view state
   secondaryFile: null,
-  focusedPane: "primary" as FocusedPane,
-  splitOrientation: "horizontal" as SplitOrientation,
+  focusedPane: "primary",
+  splitOrientation: "horizontal",
 
   setSelectedFile: (path) => {
-    const { secondaryFile, focusedPane, hunks, reviewState, stagedFilePaths } =
-      get();
+    const state = get();
+    const { secondaryFile, focusedPane } = state;
 
-    // Find the index of the first unreviewed hunk in the selected file,
-    // falling back to the first hunk if all are reviewed
     let targetHunkIndex = -1;
     if (path) {
-      const trustList = reviewState?.trustList ?? [];
-      const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
-
-      // First, try to find an unreviewed hunk
-      targetHunkIndex = hunks.findIndex((h) => {
-        if (h.filePath !== path) return false;
-        const hunkState = reviewState?.hunks[h.id];
-        return !isHunkReviewed(hunkState, trustList, {
-          autoApproveStaged,
-          stagedFilePaths,
-          filePath: h.filePath,
-        });
-      });
-
-      // Fall back to the first hunk in the file if all are reviewed
-      if (targetHunkIndex < 0) {
-        targetHunkIndex = hunks.findIndex((h) => h.filePath === path);
-      }
+      targetHunkIndex = findFirstUnreviewedHunkIndex(path, state);
     }
     const newFocusedHunkIndex = targetHunkIndex >= 0 ? targetHunkIndex : 0;
 
@@ -197,37 +234,24 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // View hierarchy actions
   setTopLevelView: (view) => set({ topLevelView: view }),
+
   navigateToBrowse: (filePath?) => {
-    const updates: Partial<NavigationSlice> = { topLevelView: "browse" };
-    if (filePath !== undefined) {
-      updates.selectedFile = filePath;
-      const { hunks, reviewState, stagedFilePaths } = get();
-      const trustList = reviewState?.trustList ?? [];
-      const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
-
-      // Find the first unreviewed hunk in the file
-      let targetHunkIndex = hunks.findIndex((h) => {
-        if (h.filePath !== filePath) return false;
-        const hunkState = reviewState?.hunks[h.id];
-        return !isHunkReviewed(hunkState, trustList, {
-          autoApproveStaged,
-          stagedFilePaths,
-          filePath: h.filePath,
-        });
-      });
-
-      // Fall back to the first hunk if all are reviewed
-      if (targetHunkIndex < 0) {
-        targetHunkIndex = hunks.findIndex((h) => h.filePath === filePath);
-      }
-
-      if (targetHunkIndex >= 0) {
-        updates.focusedHunkIndex = targetHunkIndex;
-      }
+    if (filePath === undefined) {
+      set({ topLevelView: "browse" });
+      return;
     }
-    set(updates);
+
+    const state = get();
+    const targetHunkIndex = findFirstUnreviewedHunkIndex(filePath, state);
+
+    set({
+      topLevelView: "browse",
+      selectedFile: filePath,
+      ...(targetHunkIndex >= 0 && { focusedHunkIndex: targetHunkIndex }),
+    });
   },
-  navigateToOverview: () => set({ topLevelView: "overview" }),
+
+  navigateToGuide: () => set({ topLevelView: "guide" }),
 
   // Split view actions
   setSecondaryFile: (path) => set({ secondaryFile: path }),
@@ -272,32 +296,12 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Advance to next file if current file is fully reviewed
   advanceToNextUnreviewedFile: () => {
-    const {
-      selectedFile,
-      hunks,
-      flatFileList,
-      reviewState,
-      stagedFilePaths,
-      setSelectedFile,
-    } = get();
+    const state = get();
+    const { selectedFile, flatFileList, setSelectedFile } = state;
     if (!selectedFile || flatFileList.length === 0) return;
 
-    const trustList = reviewState?.trustList ?? [];
-    const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
-
-    // Check if current file has any unreviewed hunks
-    const currentFileHasUnreviewed = hunks.some((h) => {
-      if (h.filePath !== selectedFile) return false;
-      const hunkState = reviewState?.hunks[h.id];
-      return !isHunkReviewed(hunkState, trustList, {
-        autoApproveStaged,
-        stagedFilePaths,
-        filePath: h.filePath,
-      });
-    });
-
     // If current file still has unreviewed hunks, don't advance
-    if (currentFileHasUnreviewed) return;
+    if (fileHasUnreviewedHunks(selectedFile, state)) return;
 
     // Find the next file with unreviewed hunks
     const currentIndex = flatFileList.indexOf(selectedFile);
@@ -305,17 +309,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       const nextIndex = (currentIndex + i) % flatFileList.length;
       const nextFile = flatFileList[nextIndex];
 
-      const hasUnreviewed = hunks.some((h) => {
-        if (h.filePath !== nextFile) return false;
-        const hunkState = reviewState?.hunks[h.id];
-        return !isHunkReviewed(hunkState, trustList, {
-          autoApproveStaged,
-          stagedFilePaths,
-          filePath: h.filePath,
-        });
-      });
-
-      if (hasUnreviewed) {
+      if (fileHasUnreviewedHunks(nextFile, state)) {
         setSelectedFile(nextFile);
         return;
       }
@@ -323,9 +317,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     // All files are fully reviewed - stay on current file
   },
 
-  // Narrative sidebar
-  narrativeSidebarOpen: false,
-  setNarrativeSidebarOpen: (open) => set({ narrativeSidebarOpen: open }),
+  // Grouping sidebar
+  groupingSidebarOpen: false,
+  setGroupingSidebarOpen: (open) => set({ groupingSidebarOpen: open }),
 
   lastClickedNarrativeLinkOffset: null,
   setLastClickedNarrativeLinkOffset: (offset) =>
@@ -351,4 +345,12 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       focusedHunkIndex: 0,
     });
   },
+
+  // Active group index
+  activeGroupIndex: 0,
+  setActiveGroupIndex: (index) => set({ activeGroupIndex: index }),
+
+  // Guide tab persistence
+  guideActiveTab: "overview",
+  setGuideActiveTab: (tab) => set({ guideActiveTab: tab }),
 });

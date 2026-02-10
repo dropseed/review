@@ -1,25 +1,6 @@
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 
-// Debounced auto-classification with generation counter for cancellation
-const createDebouncedAutoClassify = () => {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  let generation = 0;
-
-  return (classifyFn: (gen: number) => Promise<void>) => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    generation++;
-    const currentGen = generation;
-    timeout = setTimeout(async () => {
-      await classifyFn(currentGen);
-    }, 3000);
-  };
-};
-
-const debouncedAutoClassify = createDebouncedAutoClassify();
-
 export interface ClassificationSlice {
   // Classification state
   claudeAvailable: boolean | null;
@@ -28,13 +9,15 @@ export interface ClassificationSlice {
   classifyingHunkIds: Set<string>;
   // Track current classification generation for cancellation (moved into slice to avoid race conditions)
   classifyGeneration: number;
+  // Track which hunk IDs were present when classification last ran
+  classifiedHunkIds: string[] | null;
 
   // Actions
   checkClaudeAvailable: () => Promise<void>;
   classifyStaticHunks: (hunkIds?: string[]) => Promise<void>;
   classifyUnlabeledHunks: (hunkIds?: string[]) => Promise<void>;
   reclassifyHunks: (hunkIds?: string[]) => Promise<void>;
-  triggerAutoClassification: () => void;
+  isClassificationStale: () => boolean;
 }
 
 export const createClassificationSlice: SliceCreatorWithClient<
@@ -45,6 +28,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
   classificationError: null,
   classifyingHunkIds: new Set<string>(),
   classifyGeneration: 0,
+  classifiedHunkIds: null,
 
   checkClaudeAvailable: async () => {
     try {
@@ -279,8 +263,6 @@ export const createClassificationSlice: SliceCreatorWithClient<
         maxConcurrent: classifyMaxConcurrent,
       });
 
-      unlisten();
-
       console.log(
         `[classifyUnlabeledHunks] Got ${Object.keys(response.classifications).length} classifications`,
       );
@@ -340,10 +322,13 @@ export const createClassificationSlice: SliceCreatorWithClient<
       });
 
       await saveReviewState();
+      set({
+        classifiedHunkIds: get()
+          .hunks.map((h) => h.id)
+          .sort(),
+      });
       console.log("[classifyUnlabeledHunks] Review state saved");
     } catch (err) {
-      unlisten();
-
       // Remove only our hunks from the tracking set
       set((state) => {
         const remaining = new Set(state.classifyingHunkIds);
@@ -365,6 +350,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
           classificationError: err instanceof Error ? err.message : String(err),
         };
       });
+    } finally {
+      unlisten();
     }
   },
 
@@ -410,60 +397,15 @@ export const createClassificationSlice: SliceCreatorWithClient<
     await classifyUnlabeledHunks(targetHunks.map((h) => h.id));
   },
 
-  triggerAutoClassification: () => {
-    const {
-      claudeAvailable,
-      autoClassifyEnabled,
-      hunks,
-      reviewState,
-      classifying,
-      classifyStaticHunks,
-      classifyUnlabeledHunks,
-    } = get();
+  isClassificationStale: () => {
+    const { classifiedHunkIds, hunks } = get();
+    if (!classifiedHunkIds) return false;
 
-    if (!reviewState) {
-      return;
+    const currentIds = hunks.map((h) => h.id).sort();
+    if (classifiedHunkIds.length !== currentIds.length) return true;
+    for (let i = 0; i < classifiedHunkIds.length; i++) {
+      if (classifiedHunkIds[i] !== currentIds[i]) return true;
     }
-
-    // Always run static classification (free, no API calls)
-    classifyStaticHunks();
-
-    if (classifying) {
-      console.log(
-        "[triggerAutoClassification] Already classifying, will reschedule after completion",
-      );
-      // Don't return - let the debounce handle rescheduling
-    }
-
-    if (!claudeAvailable || !autoClassifyEnabled) {
-      console.log(
-        `[triggerAutoClassification] AI skipped - claude: ${claudeAvailable}, autoClassify: ${autoClassifyEnabled}`,
-      );
-      return;
-    }
-
-    const unclassifiedHunks = hunks.filter((hunk) => {
-      const state = reviewState.hunks[hunk.id];
-      return !state?.label || state.label.length === 0;
-    });
-
-    if (unclassifiedHunks.length === 0) {
-      console.log(
-        "[triggerAutoClassification] No unclassified hunks, skipping AI",
-      );
-      return;
-    }
-
-    console.log(
-      `[triggerAutoClassification] Scheduling AI classification for ${unclassifiedHunks.length} hunks`,
-    );
-
-    debouncedAutoClassify(async () => {
-      await classifyUnlabeledHunks();
-      // Don't show "All hunks already classified" for auto-triggered runs
-      if (get().classificationError === "All hunks already classified") {
-        set({ classificationError: null });
-      }
-    });
+    return false;
   },
 });

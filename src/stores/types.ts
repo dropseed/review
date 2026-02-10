@@ -13,7 +13,7 @@ import type { ReviewSlice } from "./slices/reviewSlice";
 import type { SearchSlice } from "./slices/searchSlice";
 import type { HistorySlice } from "./slices/historySlice";
 import type { SymbolsSlice } from "./slices/symbolsSlice";
-import type { NarrativeSlice } from "./slices/narrativeSlice";
+import type { GroupingSlice } from "./slices/groupingSlice";
 import type { UndoSlice } from "./slices/undoSlice";
 import type { GlobalReviewsSlice } from "./slices/tabRailSlice";
 
@@ -27,7 +27,7 @@ export type ReviewStore = PreferencesSlice &
   SearchSlice &
   HistorySlice &
   SymbolsSlice &
-  NarrativeSlice &
+  GroupingSlice &
   UndoSlice &
   GlobalReviewsSlice;
 

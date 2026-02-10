@@ -78,7 +78,7 @@ Storing review state inside `.git/` means it's automatically ignored by git and 
 
 ## App Logs
 
-Frontend logs are written to `.git/review/app.log`. All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
+Frontend logs are written to the central review storage directory at `~/.review/repos/<repo-id>/app.log` (use the `getReviewStoragePath` API to find the exact path for a given repo). All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
 
 ```
 [2026-01-26T12:00:00.000Z] [LOG] Message here

@@ -315,8 +315,48 @@ export interface ClassifyResponse {
   skippedHunkIds?: string[];
 }
 
-export interface NarrativeState {
+export interface HunkSymbolDef {
+  name: string;
+  kind?: string;
+  changeType: string;
+}
+
+export interface HunkSymbolRef {
+  name: string;
+}
+
+export interface ModifiedSymbolEntry {
+  name: string;
+  kind?: string;
+  changeType: string;
+  filePath: string;
+}
+
+export interface GroupingInput {
+  id: string;
+  filePath: string;
   content: string;
+  label?: string[];
+  symbols?: HunkSymbolDef[];
+  references?: HunkSymbolRef[];
+  hasGrammar?: boolean;
+}
+
+export interface SummaryInput {
+  id: string;
+  filePath: string;
+  content: string;
+  label?: string[];
+}
+
+export interface HunkGroup {
+  title: string;
+  description: string;
+  hunkIds: string[];
+}
+
+export interface GroupingState {
+  groups: HunkGroup[];
   hunkIds: string[];
   generatedAt: string;
 }
@@ -331,7 +371,7 @@ export interface ReviewState {
   createdAt: string;
   updatedAt: string;
   version: number; // Version counter for optimistic concurrency control
-  narrative?: NarrativeState; // AI-generated narrative walkthrough
+  grouping?: GroupingState; // AI-generated hunk grouping
 }
 
 // Summary of a saved review tagged with repo info (for cross-repo listing)
@@ -404,22 +444,24 @@ export interface SymbolDiff {
   newRange?: LineRange;
 }
 
+export interface SymbolReference {
+  symbolName: string;
+  hunkId: string;
+  /** 1-based line numbers where the reference appears within the hunk. */
+  lineNumbers: number[];
+}
+
 export interface FileSymbolDiff {
   filePath: string;
   symbols: SymbolDiff[];
   topLevelHunkIds: string[];
   hasGrammar: boolean;
+  symbolReferences: SymbolReference[];
 }
 
 // API operation types
 
 export interface HunkInput {
-  id: string;
-  filePath: string;
-  content: string;
-}
-
-export interface NarrativeInput {
   id: string;
   filePath: string;
   content: string;

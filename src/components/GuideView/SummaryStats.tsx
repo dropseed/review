@@ -34,22 +34,31 @@ function ProgressSegment({ count, total, className }: ProgressSegmentProps) {
   );
 }
 
+const STATE_BADGE_CONFIG: Record<
+  string,
+  { label: string; colorClass: string }
+> = {
+  approved: {
+    label: "Approved",
+    colorClass: "text-emerald-300 bg-emerald-500/10",
+  },
+  changes_requested: {
+    label: "Changes Requested",
+    colorClass: "text-rose-300 bg-rose-500/10",
+  },
+};
+
 function StateBadge({ state }: { state: ReviewProgress["state"] }) {
-  if (state === "approved") {
-    return (
-      <span className="text-xxs font-medium text-emerald-300 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-        Approved
-      </span>
-    );
-  }
-  if (state === "changes_requested") {
-    return (
-      <span className="text-xxs font-medium text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded">
-        Changes Requested
-      </span>
-    );
-  }
-  return null;
+  if (!state) return null;
+  const config = STATE_BADGE_CONFIG[state];
+  if (!config) return null;
+  return (
+    <span
+      className={`text-xxs font-medium px-1.5 py-0.5 rounded ${config.colorClass}`}
+    >
+      {config.label}
+    </span>
+  );
 }
 
 export function SummaryStats({
@@ -57,14 +66,13 @@ export function SummaryStats({
   trustedHunks,
   approvedHunks,
   rejectedHunks,
+  reviewedHunks,
   pendingHunks,
   reviewedPercent,
   state,
 }: ReviewProgress) {
-  const reviewedCount = trustedHunks + approvedHunks + rejectedHunks;
-
   return (
-    <div className="px-4 mb-4">
+    <div className="px-4 py-3">
       <div className="flex items-center gap-3">
         <div className="h-1.5 flex-1 rounded-full bg-stone-800 overflow-hidden flex">
           <ProgressSegment
@@ -107,7 +115,7 @@ export function SummaryStats({
         )}
         <StatChip color="bg-amber-500" label="Pending" count={pendingHunks} />
         <span className="text-xxs text-stone-600 tabular-nums ml-auto">
-          {reviewedCount}/{totalHunks} hunks
+          {reviewedHunks}/{totalHunks} hunks
         </span>
       </div>
     </div>

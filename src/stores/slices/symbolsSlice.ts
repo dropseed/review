@@ -2,6 +2,10 @@ import type { ApiClient } from "../../api";
 import type { FileSymbolDiff } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFilesWithStatus } from "../types";
+import {
+  computeSymbolLinkedHunks,
+  type SymbolLinkedHunk,
+} from "../../utils/symbolLinkedHunks";
 
 export interface SymbolsSlice {
   symbolDiffs: FileSymbolDiff[];
@@ -9,6 +13,9 @@ export interface SymbolsSlice {
   symbolsLoaded: boolean;
   loadSymbols: () => Promise<void>;
   clearSymbols: () => void;
+
+  /** Map from hunk ID → symbol-linked hunks (definition ↔ reference connections) */
+  symbolLinkedHunks: Map<string, SymbolLinkedHunk[]>;
 }
 
 export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
@@ -16,11 +23,13 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
     symbolDiffs: [],
     symbolsLoading: false,
     symbolsLoaded: false,
+    symbolLinkedHunks: new Map(),
 
     loadSymbols: async () => {
       const { repoPath, comparison, files, symbolsLoading } = get();
       if (!repoPath || symbolsLoading) return;
 
+      const comparisonKey = comparison.key;
       set({ symbolsLoading: true });
 
       try {
@@ -29,7 +38,12 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
           .map((f) => f.path);
 
         if (changedPaths.length === 0) {
-          set({ symbolDiffs: [], symbolsLoading: false, symbolsLoaded: true });
+          set({
+            symbolDiffs: [],
+            symbolLinkedHunks: new Map(),
+            symbolsLoading: false,
+            symbolsLoaded: true,
+          });
           return;
         }
 
@@ -38,18 +52,35 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
           changedPaths,
           comparison,
         );
+
+        // Don't update state if comparison changed while awaiting
+        if (get().comparison.key !== comparisonKey) {
+          set({ symbolsLoading: false });
+          return;
+        }
+
         set({
           symbolDiffs: results,
+          symbolLinkedHunks: computeSymbolLinkedHunks(results),
           symbolsLoading: false,
           symbolsLoaded: true,
         });
       } catch (err) {
         console.error("Failed to load symbols:", err);
-        set({ symbolDiffs: [], symbolsLoading: false, symbolsLoaded: true });
+        set({
+          symbolDiffs: [],
+          symbolLinkedHunks: new Map(),
+          symbolsLoading: false,
+          symbolsLoaded: true,
+        });
       }
     },
 
     clearSymbols: () => {
-      set({ symbolDiffs: [], symbolsLoaded: false });
+      set({
+        symbolDiffs: [],
+        symbolLinkedHunks: new Map(),
+        symbolsLoaded: false,
+      });
     },
   });

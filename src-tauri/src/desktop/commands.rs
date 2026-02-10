@@ -16,8 +16,8 @@ use review::diff::parser::{
     compute_content_hash, create_binary_hunk, create_untracked_hunk, detect_move_pairs, parse_diff,
     parse_multi_file_diff, DiffHunk, MovePair,
 };
-use review::narrative::NarrativeInput;
-use review::review::state::{ReviewState, ReviewSummary};
+use review::grouping::{GroupingInput, ModifiedSymbolEntry};
+use review::review::state::{HunkGroup, ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
 use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
 use review::sources::local_git::{DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch};
@@ -28,6 +28,7 @@ use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
 
 // --- Window defaults ---
 
@@ -871,8 +872,10 @@ pub fn load_review_state(repo_path: String, comparison: Comparison) -> Result<Re
 }
 
 #[tauri::command]
-pub fn save_review_state(repo_path: String, state: ReviewState) -> Result<(), String> {
-    storage::save_review_state(&PathBuf::from(&repo_path), &state).map_err(|e| e.to_string())
+pub fn save_review_state(repo_path: String, mut state: ReviewState) -> Result<u64, String> {
+    state.prepare_for_save();
+    storage::save_review_state(&PathBuf::from(&repo_path), &state).map_err(|e| e.to_string())?;
+    Ok(state.version)
 }
 
 #[tauri::command]
@@ -1358,8 +1361,13 @@ pub async fn get_file_symbol_diffs(
         let full_diff = source.get_diff(&comparison, None).unwrap_or_default();
         let all_hunks = parse_multi_file_diff(&full_diff);
 
-        // Process files in parallel: each gets its own thread for git show + tree-sitter parsing
-        let results: Vec<FileSymbolDiff> = std::thread::scope(|s| {
+        // Pass 1: compute FileSymbolDiff per file (parallel), also return file contents for reuse
+        let pass1_results: Vec<(
+            FileSymbolDiff,
+            Option<String>,
+            Option<String>,
+            Vec<DiffHunk>,
+        )> = std::thread::scope(|s| {
             let handles: Vec<_> = file_paths
                 .iter()
                 .map(|file_path| {
@@ -1392,14 +1400,147 @@ pub async fn get_file_symbol_diffs(
                             .cloned()
                             .collect();
 
-                        symbols::extractor::compute_file_symbol_diff(
+                        let diff = symbols::extractor::compute_file_symbol_diff(
                             old_content.as_deref(),
                             new_content.as_deref(),
                             file_path,
                             &file_hunks,
-                        )
+                        );
+
+                        (diff, old_content, new_content, file_hunks)
                     })
                 })
+                .collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        });
+
+        // Collect modified symbol names across all files (from SymbolDiff trees)
+        let mut modified_symbols: HashSet<String> = HashSet::new();
+        // Track definition ranges per file: file_path -> (symbol_name -> (start, end))
+        let mut definition_ranges_by_file: HashMap<String, HashMap<String, (u32, u32)>> =
+            HashMap::new();
+
+        fn collect_modified_names(
+            symbols: &[review::symbols::SymbolDiff],
+            file_path: &str,
+            modified: &mut HashSet<String>,
+            def_ranges: &mut HashMap<String, HashMap<String, (u32, u32)>>,
+        ) {
+            for sym in symbols {
+                modified.insert(sym.name.clone());
+                // Track definition range for this symbol in this file
+                if let Some(ref range) = sym.new_range {
+                    def_ranges
+                        .entry(file_path.to_owned())
+                        .or_default()
+                        .insert(sym.name.clone(), (range.start_line, range.end_line));
+                } else if let Some(ref range) = sym.old_range {
+                    def_ranges
+                        .entry(file_path.to_owned())
+                        .or_default()
+                        .insert(sym.name.clone(), (range.start_line, range.end_line));
+                }
+                collect_modified_names(&sym.children, file_path, modified, def_ranges);
+            }
+        }
+
+        for (diff, _, _, _) in &pass1_results {
+            collect_modified_names(
+                &diff.symbols,
+                &diff.file_path,
+                &mut modified_symbols,
+                &mut definition_ranges_by_file,
+            );
+        }
+
+        // Extract per-file imported names for scoping symbol reference search
+        let import_maps: Vec<Option<HashSet<String>>> = pass1_results
+            .iter()
+            .map(|(diff, _, new_content, _)| {
+                new_content
+                    .as_deref()
+                    .and_then(|c| symbols::extractor::extract_imported_names(c, &diff.file_path))
+            })
+            .collect();
+
+        // Pass 2: find references to modified symbols in each file (parallel)
+        let results: Vec<FileSymbolDiff> = std::thread::scope(|s| {
+            let handles: Vec<_> = pass1_results
+                .into_iter()
+                .zip(import_maps)
+                .map(
+                    |((mut diff, old_content, new_content, file_hunks), file_imports)| {
+                        let modified_symbols = &modified_symbols;
+                        let definition_ranges_by_file = &definition_ranges_by_file;
+                        s.spawn(move || {
+                            if diff.has_grammar {
+                                let file_path = &diff.file_path;
+                                let def_ranges = definition_ranges_by_file
+                                    .get(file_path)
+                                    .cloned()
+                                    .unwrap_or_default();
+
+                                // Scope target symbols: intersect with file's imports
+                                // if import extraction succeeded. Symbols defined in this
+                                // file are always included (they don't need to be imported).
+                                let scoped_symbols: HashSet<String>;
+                                let target_symbols = match &file_imports {
+                                    Some(imports) => {
+                                        let defined_in_file: HashSet<&String> =
+                                            def_ranges.keys().collect();
+                                        scoped_symbols = modified_symbols
+                                            .iter()
+                                            .filter(|sym| {
+                                                imports.contains(sym.as_str())
+                                                    || defined_in_file.contains(sym)
+                                            })
+                                            .cloned()
+                                            .collect();
+                                        &scoped_symbols
+                                    }
+                                    None => modified_symbols,
+                                };
+
+                                // Find references in new content
+                                if let Some(ref content) = new_content {
+                                    let mut refs = symbols::extractor::find_symbol_references(
+                                        content,
+                                        file_path,
+                                        &file_hunks,
+                                        target_symbols,
+                                        &def_ranges,
+                                        true,
+                                    );
+                                    diff.symbol_references.append(&mut refs);
+                                }
+
+                                // Find references in old content (for deletion-only hunks)
+                                if let Some(ref content) = old_content {
+                                    let mut refs = symbols::extractor::find_symbol_references(
+                                        content,
+                                        file_path,
+                                        &file_hunks,
+                                        target_symbols,
+                                        &def_ranges,
+                                        false,
+                                    );
+                                    // Deduplicate: only add refs for hunk IDs not already present
+                                    let existing: HashSet<(&str, &str)> = diff
+                                        .symbol_references
+                                        .iter()
+                                        .map(|r| (r.symbol_name.as_str(), r.hunk_id.as_str()))
+                                        .collect();
+                                    refs.retain(|r| {
+                                        !existing
+                                            .contains(&(r.symbol_name.as_str(), r.hunk_id.as_str()))
+                                    });
+                                    diff.symbol_references.append(&mut refs);
+                                }
+                            }
+                            diff
+                        })
+                    },
+                )
                 .collect();
             handles.into_iter().filter_map(|h| h.join().ok()).collect()
         });
@@ -1641,13 +1782,64 @@ pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryCo
     state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Timeout for narrative generation (single Claude call for entire diff).
-const NARRATIVE_TIMEOUT_SECS: u64 = 120;
+/// Timeout for hunk grouping generation (single Claude call for entire diff).
+const GROUPING_TIMEOUT_SECS: u64 = 120;
 
 #[tauri::command]
-pub async fn generate_narrative(
+pub async fn generate_hunk_grouping(
     repo_path: String,
-    hunks: Vec<NarrativeInput>,
+    hunks: Vec<GroupingInput>,
+    model: Option<String>,
+    command: Option<String>,
+    modified_symbols: Option<Vec<ModifiedSymbolEntry>>,
+) -> Result<Vec<HunkGroup>, String> {
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    let model = model.unwrap_or_else(|| "sonnet".to_owned());
+    let symbols = modified_symbols.unwrap_or_default();
+
+    debug!(
+        "[generate_hunk_grouping] repo_path={}, hunks={}, model={}, command={:?}, symbols={}",
+        repo_path,
+        hunks.len(),
+        model,
+        command,
+        symbols.len()
+    );
+
+    let repo_path_buf = PathBuf::from(&repo_path);
+
+    let result = timeout(
+        Duration::from_secs(GROUPING_TIMEOUT_SECS),
+        tokio::task::spawn_blocking(move || {
+            review::grouping::generate_grouping(
+                &hunks,
+                &repo_path_buf,
+                &model,
+                command.as_deref(),
+                &symbols,
+            )
+        }),
+    )
+    .await
+    .map_err(|_| {
+        format!("Hunk grouping generation timed out after {GROUPING_TIMEOUT_SECS} seconds")
+    })?
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    info!("[generate_hunk_grouping] SUCCESS: {} groups", result.len());
+    Ok(result)
+}
+
+/// Timeout for summary generation (single Claude call).
+const SUMMARY_TIMEOUT_SECS: u64 = 120;
+
+#[tauri::command]
+pub async fn generate_review_summary(
+    repo_path: String,
+    hunks: Vec<review::summary::SummaryInput>,
     model: Option<String>,
     command: Option<String>,
 ) -> Result<String, String> {
@@ -1657,32 +1849,27 @@ pub async fn generate_narrative(
     let model = model.unwrap_or_else(|| "sonnet".to_owned());
 
     debug!(
-        "[generate_narrative] repo_path={}, hunks={}, model={}, command={:?}",
+        "[generate_review_summary] repo_path={}, hunks={}, model={}, command={:?}",
         repo_path,
         hunks.len(),
         model,
-        command
+        command,
     );
 
     let repo_path_buf = PathBuf::from(&repo_path);
 
     let result = timeout(
-        Duration::from_secs(NARRATIVE_TIMEOUT_SECS),
+        Duration::from_secs(SUMMARY_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
-            review::narrative::generate_narrative(
-                &hunks,
-                &repo_path_buf,
-                &model,
-                command.as_deref(),
-            )
+            review::summary::generate_summary(&hunks, &repo_path_buf, &model, command.as_deref())
         }),
     )
     .await
-    .map_err(|_| format!("Narrative generation timed out after {NARRATIVE_TIMEOUT_SECS} seconds"))?
+    .map_err(|_| format!("Summary generation timed out after {SUMMARY_TIMEOUT_SECS} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 
-    info!("[generate_narrative] SUCCESS: {} chars", result.len());
+    info!("[generate_review_summary] SUCCESS: {} chars", result.len());
     Ok(result)
 }
 

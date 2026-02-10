@@ -143,7 +143,7 @@ export function useFilePanelNavigation({
 
   const handleSelectFile = useCallback(
     (path: string) => {
-      if (topLevelView === "overview") {
+      if (topLevelView === "guide") {
         // Auto-switch from overview to browse when clicking a file in sidebar
         navigateToBrowse(path);
       } else {

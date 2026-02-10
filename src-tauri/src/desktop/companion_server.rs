@@ -552,7 +552,7 @@ fn handle_save_state(query: &str, body: Option<&str>) -> Response<Cursor<Vec<u8>
     };
 
     match commands::save_review_state(repo_path, state) {
-        Ok(()) => json_response(&SuccessResponse { success: true }),
+        Ok(_version) => json_response(&SuccessResponse { success: true }),
         Err(e) => error_response(500, &e),
     }
 }

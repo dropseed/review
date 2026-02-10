@@ -12,7 +12,7 @@ import { createReviewSlice } from "./slices/reviewSlice";
 import { createSearchSlice } from "./slices/searchSlice";
 import { createHistorySlice } from "./slices/historySlice";
 import { createSymbolsSlice } from "./slices/symbolsSlice";
-import { createNarrativeSlice } from "./slices/narrativeSlice";
+import { createGroupingSlice } from "./slices/groupingSlice";
 import { createUndoSlice } from "./slices/undoSlice";
 import { createGlobalReviewsSlice } from "./slices/tabRailSlice";
 
@@ -31,7 +31,7 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createSearchSlice(apiClient)(...args),
   ...createHistorySlice(apiClient)(...args),
   ...createSymbolsSlice(apiClient)(...args),
-  ...createNarrativeSlice(apiClient)(...args),
+  ...createGroupingSlice(apiClient)(...args),
   ...createUndoSlice(...args),
   ...createGlobalReviewsSlice(apiClient)(...args),
 }));

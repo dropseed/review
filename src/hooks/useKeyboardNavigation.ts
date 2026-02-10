@@ -27,7 +27,7 @@ export function useKeyboardNavigation() {
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
+  const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
   const undo = useReviewStore((s) => s.undo);
 
   const handleKeyDown = useCallback(
@@ -55,7 +55,7 @@ export function useKeyboardNavigation() {
         return;
       }
 
-      // Escape: close split → browse to overview → overview is a no-op (use tab close)
+      // Escape: close split → toggle between browse and guide
       if (event.key === "Escape") {
         if (secondaryFile !== null) {
           event.preventDefault();
@@ -64,10 +64,14 @@ export function useKeyboardNavigation() {
         }
         if (topLevelView === "browse") {
           event.preventDefault();
-          navigateToOverview();
+          navigateToGuide();
           return;
         }
-        // On overview: do nothing (no "back" destination with tabs)
+        if (topLevelView === "guide") {
+          event.preventDefault();
+          navigateToBrowse();
+          return;
+        }
       }
 
       // Cmd/Ctrl+Shift+\ to toggle split orientation
@@ -93,7 +97,7 @@ export function useKeyboardNavigation() {
       switch (event.key) {
         case "j":
           // In overview, switch to browse first
-          if (topLevelView === "overview") {
+          if (topLevelView === "guide") {
             navigateToBrowse();
           }
           // Navigate to next hunk (handles file switching automatically)
@@ -101,7 +105,7 @@ export function useKeyboardNavigation() {
           break;
         case "k":
           // In overview, switch to browse first
-          if (topLevelView === "overview") {
+          if (topLevelView === "guide") {
             navigateToBrowse();
           }
           // Navigate to previous hunk (handles file switching automatically)
@@ -140,7 +144,7 @@ export function useKeyboardNavigation() {
       splitOrientation,
       topLevelView,
       navigateToBrowse,
-      navigateToOverview,
+      navigateToGuide,
       undo,
     ],
   );

@@ -31,7 +31,6 @@ export type ReviewSortOrder = "updated" | "repo" | "size";
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeTheme: "github-dark",
-  autoClassifyEnabled: true,
   classifyCommand: null as string | null,
   classifyBatchSize: 5,
   classifyMaxConcurrent: 2,
@@ -69,7 +68,6 @@ export interface PreferencesSlice {
   diffViewMode: DiffViewMode;
 
   // Classification settings
-  autoClassifyEnabled: boolean;
   classifyCommand: string | null;
   classifyBatchSize: number;
   classifyMaxConcurrent: number;
@@ -111,7 +109,6 @@ export interface PreferencesSlice {
   clearDirectoryToReveal: () => void;
 
   // Classification settings actions
-  setAutoClassifyEnabled: (enabled: boolean) => void;
   setClassifyCommand: (command: string | null) => void;
   setClassifyBatchSize: (size: number) => void;
   setClassifyMaxConcurrent: (count: number) => void;
@@ -157,7 +154,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   needsReviewDisplayMode: defaults.needsReviewDisplayMode,
   reviewedDisplayMode: defaults.reviewedDisplayMode,
   diffViewMode: defaults.diffViewMode,
-  autoClassifyEnabled: defaults.autoClassifyEnabled,
   classifyCommand: defaults.classifyCommand,
   classifyBatchSize: defaults.classifyBatchSize,
   classifyMaxConcurrent: defaults.classifyMaxConcurrent,
@@ -216,9 +212,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       (await storage.get<number>("codeFontSize")) ?? defaults.codeFontSize;
     const theme =
       (await storage.get<string>("codeTheme")) ?? defaults.codeTheme;
-    const autoClassify =
-      (await storage.get<boolean>("autoClassifyEnabled")) ??
-      defaults.autoClassifyEnabled;
     const classifyCmd =
       (await storage.get<string | null>("classifyCommand")) ??
       defaults.classifyCommand;
@@ -280,7 +273,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       needsReviewDisplayMode,
       reviewedDisplayMode,
       diffViewMode,
-      autoClassifyEnabled: autoClassify,
       classifyCommand: classifyCmd,
       classifyBatchSize: batchSize,
       classifyMaxConcurrent: maxConcurrent,
@@ -329,14 +321,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
 
   clearDirectoryToReveal: () => {
     set({ directoryToReveal: null });
-  },
-
-  setAutoClassifyEnabled: (enabled) => {
-    set({ autoClassifyEnabled: enabled });
-    storage.set("autoClassifyEnabled", enabled);
-    if (enabled) {
-      get().triggerAutoClassification();
-    }
   },
 
   setClassifyCommand: (command) => {

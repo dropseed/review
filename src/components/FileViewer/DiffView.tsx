@@ -18,6 +18,7 @@ import {
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
+import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changedLinesKey";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import {
   NewAnnotationEditor,
@@ -188,6 +189,7 @@ export function DiffView({
     (s) => s.setPendingCommentHunkId,
   );
   const nextHunkInFile = useReviewStore((s) => s.nextHunkInFile);
+  const symbolLinkedHunks = useReviewStore((s) => s.symbolLinkedHunks);
 
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
@@ -304,13 +306,9 @@ export function DiffView({
     });
   }, [hunks, hunkStates, hunkById]);
 
-  // Compute a content key for a hunk based on its changed lines (ignoring context).
-  // Used to group identical changes across different files for batch operations.
+  // Content key for grouping identical changes across files for batch operations.
   const getChangedLinesKey = useCallback((hunk: DiffHunk): string => {
-    return hunk.lines
-      .filter((l) => l.type === "added" || l.type === "removed")
-      .map((l) => `${l.type}:${l.content}`)
-      .join("\n");
+    return getChangedLinesKeyUtil(hunk);
   }, []);
 
   // Build lookup from changed-lines key to hunk IDs for batch operations.
@@ -448,6 +446,7 @@ export function DiffView({
     hunkById: typeof hunkById;
     setSelectedFile: typeof setSelectedFile;
     newAnnotationLine: typeof newAnnotationLine;
+    symbolLinkedHunks: typeof symbolLinkedHunks;
   }>(null!);
   renderAnnotationDepsRef.current = {
     handleSaveNewAnnotation,
@@ -480,6 +479,7 @@ export function DiffView({
     hunkById,
     setSelectedFile,
     newAnnotationLine,
+    symbolLinkedHunks,
   };
 
   const renderAnnotation = useCallback(
@@ -520,6 +520,7 @@ export function DiffView({
           const { hunk, hunkState, pairedHunk, isSource } = meta.data;
           const hunkIndex = deps.hunks.findIndex((h) => h.id === hunk.id);
           const similarHunks = deps.getSimilarHunks(hunk);
+          const symbolLinks = deps.symbolLinkedHunks.get(hunk.id) ?? [];
           return (
             <HunkAnnotationPanel
               hunk={hunk}
@@ -534,6 +535,8 @@ export function DiffView({
               hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
               totalHunksInFile={deps.hunks.length}
               similarHunks={similarHunks}
+              symbolLinks={symbolLinks}
+              hunkById={deps.hunkById}
               allHunkStates={deps.hunkStates ?? {}}
               onApprove={(hunkId) => {
                 deps.approveHunk(hunkId);

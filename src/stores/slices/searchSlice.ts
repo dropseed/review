@@ -72,7 +72,7 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
       if (!result) return;
 
       // Auto-switch to browse if in overview
-      if (topLevelView === "overview") {
+      if (topLevelView === "guide") {
         navigateToBrowse(result.filePath);
       } else {
         // Select the file within browse

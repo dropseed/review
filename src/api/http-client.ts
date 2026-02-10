@@ -30,7 +30,10 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
-  NarrativeInput,
+  GroupingInput,
+  HunkGroup,
+  ModifiedSymbolEntry,
+  SummaryInput,
 } from "../types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -332,17 +335,20 @@ export class HttpClient implements ApiClient {
     }
   }
 
-  async saveReviewState(repoPath: string, state: ReviewState): Promise<void> {
+  async saveReviewState(repoPath: string, state: ReviewState): Promise<number> {
     const key = this.getComparisonKey(state.comparison);
-    this.reviewStates.set(key, state);
+    const newVersion = (state.version ?? 0) + 1;
+    const updated = { ...state, version: newVersion };
+    this.reviewStates.set(key, updated);
 
     // Try to save to server (may not be implemented yet)
     try {
-      await this.postJson(`/state?${this.buildRepoQuery(repoPath)}`, state);
+      await this.postJson(`/state?${this.buildRepoQuery(repoPath)}`, updated);
     } catch (err) {
       console.warn("[HttpClient] Failed to save state to server:", err);
       // State is still saved locally in memory
     }
+    return newVersion;
   }
 
   async listSavedReviews(repoPath: string): Promise<ReviewSummary[]> {
@@ -420,14 +426,25 @@ export class HttpClient implements ApiClient {
     }
   }
 
-  // ----- Narrative -----
+  // ----- Grouping -----
 
-  async generateNarrative(
+  async generateGrouping(
     _repoPath: string,
-    _hunks: NarrativeInput[],
+    _hunks: GroupingInput[],
+    _options?: { command?: string; modifiedSymbols?: ModifiedSymbolEntry[] },
+  ): Promise<HunkGroup[]> {
+    console.warn("[HttpClient] generateGrouping not implemented");
+    return [];
+  }
+
+  // ----- Summary -----
+
+  async generateSummary(
+    _repoPath: string,
+    _hunks: SummaryInput[],
     _options?: { command?: string },
   ): Promise<string> {
-    console.warn("[HttpClient] generateNarrative not implemented");
+    console.warn("[HttpClient] generateSummary not implemented");
     return "";
   }
 

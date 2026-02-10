@@ -68,7 +68,7 @@ export function ReviewView({
   const hunks = useReviewStore((s) => s.hunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const topLevelView = useReviewStore((s) => s.topLevelView);
-  const navigateToOverview = useReviewStore((s) => s.navigateToOverview);
+  const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const refresh = useReviewStore((s) => s.refresh);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
@@ -107,12 +107,12 @@ export function ReviewView({
     if (secondaryFile !== null) {
       closeSplit();
     } else if (topLevelView === "browse") {
-      navigateToOverview();
+      navigateToGuide();
     } else {
       const platform = getPlatformServices();
       await platform.window.close();
     }
-  }, [secondaryFile, topLevelView, closeSplit, navigateToOverview]);
+  }, [secondaryFile, topLevelView, closeSplit, navigateToGuide]);
 
   // New tab handler: open a new tab with the current repo
   const handleNewTab = useCallback(async () => {
@@ -250,7 +250,7 @@ export function ReviewView({
             {totalHunks > 0 ? (
               <button
                 type="button"
-                onClick={navigateToOverview}
+                onClick={navigateToGuide}
                 className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
                            hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
               >

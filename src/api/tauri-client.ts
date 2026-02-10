@@ -32,7 +32,10 @@ import type {
   FileSymbol,
   FileSymbolDiff,
   RemoteInfo,
-  NarrativeInput,
+  GroupingInput,
+  HunkGroup,
+  ModifiedSymbolEntry,
+  SummaryInput,
 } from "../types";
 
 export class TauriClient implements ApiClient {
@@ -195,8 +198,8 @@ export class TauriClient implements ApiClient {
     return invoke<ReviewState>("load_review_state", { repoPath, comparison });
   }
 
-  async saveReviewState(repoPath: string, state: ReviewState): Promise<void> {
-    await invoke("save_review_state", { repoPath, state });
+  async saveReviewState(repoPath: string, state: ReviewState): Promise<number> {
+    return invoke<number>("save_review_state", { repoPath, state });
   }
 
   async listSavedReviews(repoPath: string): Promise<ReviewSummary[]> {
@@ -252,14 +255,29 @@ export class TauriClient implements ApiClient {
     });
   }
 
-  // ----- Narrative -----
+  // ----- Grouping -----
 
-  async generateNarrative(
+  async generateGrouping(
     repoPath: string,
-    hunks: NarrativeInput[],
+    hunks: GroupingInput[],
+    options?: { command?: string; modifiedSymbols?: ModifiedSymbolEntry[] },
+  ): Promise<HunkGroup[]> {
+    return invoke<HunkGroup[]>("generate_hunk_grouping", {
+      repoPath,
+      hunks,
+      command: options?.command,
+      modifiedSymbols: options?.modifiedSymbols,
+    });
+  }
+
+  // ----- Summary -----
+
+  async generateSummary(
+    repoPath: string,
+    hunks: SummaryInput[],
     options?: { command?: string },
   ): Promise<string> {
-    return invoke<string>("generate_narrative", {
+    return invoke<string>("generate_review_summary", {
       repoPath,
       hunks,
       command: options?.command,
@@ -344,7 +362,10 @@ export class TauriClient implements ApiClient {
 
     return () => {
       cancelled = true;
-      if (unlisten) unlisten();
+      if (unlisten) {
+        unlisten();
+        unlisten = null;
+      }
     };
   }
 
@@ -368,7 +389,10 @@ export class TauriClient implements ApiClient {
 
     return () => {
       cancelled = true;
-      if (unlisten) unlisten();
+      if (unlisten) {
+        unlisten();
+        unlisten = null;
+      }
     };
   }
 
@@ -392,7 +416,10 @@ export class TauriClient implements ApiClient {
 
     return () => {
       cancelled = true;
-      if (unlisten) unlisten();
+      if (unlisten) {
+        unlisten();
+        unlisten = null;
+      }
     };
   }
 

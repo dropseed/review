@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { CommitsPanel } from "./CommitsPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
-import { GuideSection } from "./GuideSection";
 import { EMPTY_HUNK_STATUS } from "./FileTree.utils";
 import {
   useFilePanelFileSystem,
@@ -627,9 +626,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   </div>
                 ) : (
                   <>
-                    {/* Guide section - PR description and AI narrative */}
-                    <GuideSection />
-
                     {/* Needs Review section */}
                     <SectionHeader
                       title="Needs Review"

@@ -87,6 +87,19 @@ pub struct SymbolDiff {
     pub new_range: Option<LineRange>,
 }
 
+/// A reference to a modified symbol found within a hunk.
+#[derive(Debug, Clone, Serialize)]
+pub struct SymbolReference {
+    #[serde(rename = "symbolName")]
+    pub symbol_name: String,
+    /// The hunk containing the reference.
+    #[serde(rename = "hunkId")]
+    pub hunk_id: String,
+    /// 1-based line numbers where the reference appears within the hunk.
+    #[serde(rename = "lineNumbers")]
+    pub line_numbers: Vec<u32>,
+}
+
 /// Symbol-level diff for a single file.
 #[derive(Debug, Clone, Serialize)]
 pub struct FileSymbolDiff {
@@ -100,4 +113,7 @@ pub struct FileSymbolDiff {
     /// Whether a tree-sitter grammar was available for this file.
     #[serde(rename = "hasGrammar")]
     pub has_grammar: bool,
+    /// References to modified symbols found in hunks of this file.
+    #[serde(rename = "symbolReferences")]
+    pub symbol_references: Vec<SymbolReference>,
 }

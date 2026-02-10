@@ -220,9 +220,11 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       if (!repoPath || !reviewState) return;
 
       try {
-        await client.saveReviewState(repoPath, reviewState);
+        const newVersion = await client.saveReviewState(repoPath, reviewState);
         // Record save time so file watcher can ignore our own writes
         lastSaveTimestamp = Date.now();
+        // Keep in-memory version in sync so the next save doesn't conflict
+        set({ reviewState: { ...get().reviewState!, version: newVersion } });
 
         // Patch the specific review entry in globalReviews instead of
         // doing a full loadGlobalReviews() IPC round-trip.
@@ -598,23 +600,29 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         loadReviewState,
         loadGitStatus,
         refreshCommits,
-        triggerAutoClassification,
+        classifyStaticHunks,
       } = get();
 
       // Increment refresh generation to trigger re-fetches in components like FileViewer
       set({ refreshGeneration: get().refreshGeneration + 1 });
 
-      // Load review state FIRST to ensure labels are available before auto-classification
+      // Load review state FIRST to ensure labels are available before classification
       await loadReviewState();
-      // Then load files, git status, and commits (skip auto-classify since we'll trigger it manually after)
+      // Then load files, git status, and commits
       // Pass isRefreshing=true to suppress loading progress indicators and batch state updates
       await Promise.all([
-        loadFiles(true, true),
+        loadFiles(true),
         loadAllFiles(),
         loadGitStatus(),
         repoPath ? refreshCommits(repoPath) : Promise.resolve(),
       ]);
-      // Now trigger auto-classification with the fresh review state
-      triggerAutoClassification();
+      // Run static (rule-based) classification on refresh
+      classifyStaticHunks();
+      // Reset guide progress indicators so stale badges can take over
+      set({
+        classificationStatus: "idle" as const,
+        groupingStatus: "idle" as const,
+        summaryStatus: "idle" as const,
+      });
     },
   });

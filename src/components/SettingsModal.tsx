@@ -65,10 +65,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const setCodeTheme = useReviewStore((s) => s.setCodeTheme);
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
-  const autoClassifyEnabled = useReviewStore((s) => s.autoClassifyEnabled);
-  const setAutoClassifyEnabled = useReviewStore(
-    (s) => s.setAutoClassifyEnabled,
-  );
   const classifyCommand = useReviewStore((s) => s.classifyCommand);
   const setClassifyCommand = useReviewStore((s) => s.setClassifyCommand);
   const classifyBatchSize = useReviewStore((s) => s.classifyBatchSize);
@@ -430,15 +426,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   Classification
                 </span>
               </div>
-
-              {/* Auto-classify toggle */}
-              <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
-                <span className="text-xs text-stone-300">AI auto-classify</span>
-                <Switch
-                  checked={autoClassifyEnabled}
-                  onCheckedChange={setAutoClassifyEnabled}
-                />
-              </label>
 
               {/* Classify command */}
               <div className="mt-3 space-y-1.5">

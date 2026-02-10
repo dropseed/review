@@ -424,6 +424,7 @@ export function DrillDownSection() {
             .filter((h) => h.filePath === filePath)
             .map((h) => h.id),
           hasGrammar: false,
+          symbolReferences: [],
         });
       }
     }
