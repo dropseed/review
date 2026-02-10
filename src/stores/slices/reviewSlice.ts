@@ -219,35 +219,56 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const { repoPath, reviewState, hunks, comparison, globalReviews } = get();
       if (!repoPath || !reviewState) return;
 
-      try {
-        const newVersion = await client.saveReviewState(repoPath, reviewState);
-        // Record save time so file watcher can ignore our own writes
+      const saveAndUpdateVersion = async (
+        state: ReviewState,
+      ): Promise<void> => {
+        const newVersion = await client.saveReviewState(repoPath, state);
         lastSaveTimestamp = Date.now();
-        // Keep in-memory version in sync so the next save doesn't conflict
         set({ reviewState: { ...get().reviewState!, version: newVersion } });
+      };
 
-        // Patch the specific review entry in globalReviews instead of
-        // doing a full loadGlobalReviews() IPC round-trip.
-        const progress = computeReviewProgress(hunks, reviewState);
-        const updatedReviews = globalReviews.map((r) => {
-          if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
-            return {
-              ...r,
-              totalHunks: progress.totalHunks,
-              trustedHunks: progress.trustedHunks,
-              approvedHunks: progress.approvedHunks,
-              rejectedHunks: progress.rejectedHunks,
-              reviewedHunks: progress.reviewedHunks,
-              state: progress.state,
-              updatedAt: reviewState.updatedAt,
-            };
-          }
-          return r;
-        });
-        set({ globalReviews: updatedReviews });
+      try {
+        await saveAndUpdateVersion(reviewState);
       } catch (err) {
-        console.error("Failed to save review state:", err);
+        if (!String(err).includes("Version conflict")) {
+          console.error("Failed to save review state:", err);
+          return;
+        }
+
+        // Version conflict: reload disk state for its version and retry
+        try {
+          const diskState = await client.loadReviewState(repoPath, comparison);
+          const currentState = get().reviewState!;
+          await saveAndUpdateVersion({
+            ...currentState,
+            version: diskState.version,
+          });
+        } catch (retryErr) {
+          console.error("Failed to save after version conflict:", retryErr);
+          return;
+        }
       }
+
+      // Patch the specific review entry in globalReviews instead of
+      // doing a full loadGlobalReviews() IPC round-trip.
+      const latestReviewState = get().reviewState!;
+      const progress = computeReviewProgress(hunks, latestReviewState);
+      const updatedReviews = globalReviews.map((r) => {
+        if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
+          return {
+            ...r,
+            totalHunks: progress.totalHunks,
+            trustedHunks: progress.trustedHunks,
+            approvedHunks: progress.approvedHunks,
+            rejectedHunks: progress.rejectedHunks,
+            reviewedHunks: progress.reviewedHunks,
+            state: progress.state,
+            updatedAt: latestReviewState.updatedAt,
+          };
+        }
+        return r;
+      });
+      set({ globalReviews: updatedReviews });
     },
 
     loadSavedReviews: async () => {
