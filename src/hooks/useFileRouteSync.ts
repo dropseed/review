@@ -8,7 +8,7 @@ import { useReviewStore } from "../stores";
  * URL format: /:owner/:repo/review/:comparisonKey/file/path/to/File.tsx
  *
  * - URL → Store: On mount or browser back/forward, reads the file path from
- *   the URL splat and calls navigateToBrowse or navigateToGuide.
+ *   the URL splat and calls navigateToBrowse.
  * - Store → URL: On selectedFile/topLevelView change, updates the URL via
  *   navigate(path, { replace: true }) to keep history clean during j/k nav.
  *
@@ -23,7 +23,6 @@ export function useFileRouteSync() {
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const flatFileList = useReviewStore((s) => s.flatFileList);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
 
   const isSyncingRef = useRef(false);
 
@@ -61,10 +60,10 @@ export function useFileRouteSync() {
       }
       // If file not in list, ignore (don't crash, just stay on overview)
     } else {
-      // No file in URL — go to overview
-      runSync(() => navigateToGuide());
+      // No file in URL — go to browse (empty state with Start Guide option)
+      runSync(() => navigateToBrowse());
     }
-  }, [urlFilePath, flatFileList, navigateToBrowse, navigateToGuide]);
+  }, [urlFilePath, flatFileList, navigateToBrowse]);
 
   // --- Store → URL ---
   // When selectedFile or topLevelView changes, update the URL.
