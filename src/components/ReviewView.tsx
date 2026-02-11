@@ -73,10 +73,10 @@ export function ReviewView({
   const refresh = useReviewStore((s) => s.refresh);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const closeSplit = useReviewStore((s) => s.closeSplit);
-  const showClassificationsModal = useReviewStore(
+  const classificationsModalOpen = useReviewStore(
     (s) => s.classificationsModalOpen,
   );
-  const setShowClassificationsModal = useReviewStore(
+  const setClassificationsModalOpen = useReviewStore(
     (s) => s.setClassificationsModalOpen,
   );
   const loadingProgress = useReviewStore((s) => s.loadingProgress);
@@ -137,7 +137,7 @@ export function ReviewView({
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      setShowClassificationsModal(false);
+      setClassificationsModalOpen(false);
       navigateToBrowse(filePath);
       const idx = hunkIndexMap.get(hunkId);
       if (idx !== undefined) useReviewStore.setState({ focusedHunkIndex: idx });
@@ -225,6 +225,8 @@ export function ReviewView({
   useCelebration();
 
   const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const filesPanelCollapsed = useReviewStore((s) => s.filesPanelCollapsed);
+  const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
 
   const repoName =
     remoteInfo?.name ||
@@ -344,6 +346,37 @@ export function ReviewView({
                 </SimpleTooltip>
               </button>
             ) : null}
+            <SimpleTooltip
+              content={
+                filesPanelCollapsed ? "Show files panel" : "Hide files panel"
+              }
+            >
+              <button
+                type="button"
+                onClick={toggleFilesPanel}
+                className="flex items-center justify-center w-7 h-7 rounded-md
+                           hover:bg-stone-800/60 transition-colors duration-100
+                           focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
+                           text-stone-500 hover:text-stone-300"
+                aria-label={
+                  filesPanelCollapsed ? "Show files panel" : "Hide files panel"
+                }
+              >
+                <svg
+                  className="w-4 h-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <line x1="15" y1="3" x2="15" y2="21" />
+                </svg>
+              </button>
+            </SimpleTooltip>
           </div>
         </header>
 
@@ -372,24 +405,29 @@ export function ReviewView({
 
       {/* FilesPanel (right side) */}
       <aside
-        className="relative flex flex-shrink-0 flex-col bg-stone-900 shadow-[-1px_0_0_0_rgba(255,255,255,0.04)]"
-        style={{ width: `${sidebarWidth}rem` }}
+        className="relative flex flex-shrink-0 flex-col bg-stone-900 shadow-[-1px_0_0_0_rgba(255,255,255,0.04)] overflow-hidden transition-[width] duration-200"
+        style={{ width: filesPanelCollapsed ? 0 : `${sidebarWidth}rem` }}
       >
         {/* Sidebar content */}
-        <div className="flex-1 overflow-hidden">
+        <div
+          className="flex-1 overflow-hidden"
+          style={{ width: `${sidebarWidth}rem` }}
+        >
           <FilesPanel
             onSelectCommit={(commit) => setSelectedCommitHash(commit.hash)}
           />
         </div>
 
         {/* Resize handle (on left edge of right sidebar) */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          onMouseDown={handleResizeStart}
-          className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
-        />
+        {!filesPanelCollapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={handleResizeStart}
+            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
+          />
+        )}
       </aside>
 
       {/* Debug Modal */}
@@ -454,11 +492,11 @@ export function ReviewView({
       )}
 
       {/* Classifications Modal */}
-      {showClassificationsModal && (
+      {classificationsModalOpen && (
         <Suspense fallback={null}>
           <ClassificationsModal
-            isOpen={showClassificationsModal}
-            onClose={() => setShowClassificationsModal(false)}
+            isOpen={classificationsModalOpen}
+            onClose={() => setClassificationsModalOpen(false)}
             onSelectHunk={handleClassificationSelectHunk}
           />
         </Suspense>

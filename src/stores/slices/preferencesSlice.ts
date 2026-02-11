@@ -43,6 +43,7 @@ const defaults = {
   sentryEnabled: false,
   soundEffectsEnabled: true,
   tabRailCollapsed: false,
+  filesPanelCollapsed: false,
   pinnedReviewKeys: [] as string[],
   reviewSortOrder: "updated" as ReviewSortOrder,
   companionServerEnabled: false,
@@ -83,6 +84,9 @@ export interface PreferencesSlice {
 
   // Tab rail
   tabRailCollapsed: boolean;
+
+  // Files panel (right sidebar)
+  filesPanelCollapsed: boolean;
 
   // Pinned reviews (ordered array of "repoPath:comparisonKey" strings)
   pinnedReviewKeys: string[];
@@ -127,6 +131,10 @@ export interface PreferencesSlice {
   setTabRailCollapsed: (collapsed: boolean) => void;
   toggleTabRail: () => void;
 
+  // Files panel actions
+  setFilesPanelCollapsed: (collapsed: boolean) => void;
+  toggleFilesPanel: () => void;
+
   // Pinned reviews actions
   pinReview: (key: string) => void;
   unpinReview: (key: string) => void;
@@ -161,6 +169,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   sentryEnabled: defaults.sentryEnabled,
   soundEffectsEnabled: defaults.soundEffectsEnabled,
   tabRailCollapsed: defaults.tabRailCollapsed,
+  filesPanelCollapsed: defaults.filesPanelCollapsed,
   pinnedReviewKeys: defaults.pinnedReviewKeys,
   reviewSortOrder: defaults.reviewSortOrder,
   companionServerEnabled: defaults.companionServerEnabled,
@@ -232,6 +241,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const tabRailCollapsed =
       (await storage.get<boolean>("tabRailCollapsed")) ??
       defaults.tabRailCollapsed;
+    const filesPanelCollapsed =
+      (await storage.get<boolean>("filesPanelCollapsed")) ??
+      defaults.filesPanelCollapsed;
     const pinnedReviewKeys =
       (await storage.get<string[]>("pinnedReviewKeys")) ??
       defaults.pinnedReviewKeys;
@@ -280,6 +292,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       sentryEnabled,
       soundEffectsEnabled,
       tabRailCollapsed,
+      filesPanelCollapsed,
       pinnedReviewKeys,
       reviewSortOrder,
       companionServerEnabled,
@@ -384,6 +397,17 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const collapsed = !get().tabRailCollapsed;
     set({ tabRailCollapsed: collapsed });
     storage.set("tabRailCollapsed", collapsed);
+  },
+
+  setFilesPanelCollapsed: (collapsed) => {
+    set({ filesPanelCollapsed: collapsed });
+    storage.set("filesPanelCollapsed", collapsed);
+  },
+
+  toggleFilesPanel: () => {
+    const collapsed = !get().filesPanelCollapsed;
+    set({ filesPanelCollapsed: collapsed });
+    storage.set("filesPanelCollapsed", collapsed);
   },
 
   pinReview: (key) => {

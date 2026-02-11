@@ -172,8 +172,18 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     startGuide: async () => {
-      const { hunks, classifyUnlabeledHunks, generateGrouping } = get();
+      const {
+        hunks,
+        classifyUnlabeledHunks,
+        generateGrouping,
+        setTabRailCollapsed,
+        setFilesPanelCollapsed,
+      } = get();
       if (hunks.length === 0) return;
+
+      // Collapse both sidebars to focus on the guide
+      setTabRailCollapsed(true);
+      setFilesPanelCollapsed(true);
 
       set({
         guideLoading: true,
