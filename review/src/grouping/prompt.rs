@@ -1,5 +1,7 @@
-use serde::Deserialize;
+use std::collections::HashSet;
 use std::fmt::Write;
+
+use serde::Deserialize;
 
 /// Input for grouping generation — one per hunk.
 #[derive(Debug, Clone, Deserialize)]
@@ -69,6 +71,14 @@ pub fn build_grouping_prompt(
          ## Rules\n\n\
          - Group hunks by logical concern (not necessarily file order).\n\
          - Each group should be a reviewable unit.\n\
+         - Prefer groups of 2\u{2013}5 hunks. A single-hunk group is acceptable only when \
+           a change is truly independent and unrelated to all other hunks. \
+           If in doubt, merge small groups together.\n\
+         - Multiple hunks in the same file that contribute to the same feature or \
+           concern should typically be grouped together, not split across groups.\n\
+         - Even without symbol data, read the diff content to identify shared names, \
+           patterns, or types across hunks (e.g., a method defined in one hunk and \
+           called in another). Group definition + usage together.\n\
          - Include every hunk ID exactly once.\n\
          - Each group needs a short title and a one-sentence description.\n\
          - Use symbol information to group related changes across files \
@@ -82,6 +92,18 @@ pub fn build_grouping_prompt(
          - Order groups within each phase by dependency (if B uses something A introduces, A comes first).\n\
          - Output JSON only — an array of objects with keys: title, description, hunkIds, phase.\n\
          - Do NOT wrap the JSON in markdown code fences or any other text.\n\n"
+    );
+
+    let file_count = hunks
+        .iter()
+        .map(|h| h.file_path.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    let _ = writeln!(
+        prompt,
+        "## Summary\n\nThis diff contains {} hunks across {} files.\n",
+        hunks.len(),
+        file_count
     );
 
     if !modified_symbols.is_empty() {
@@ -129,7 +151,12 @@ pub fn build_grouping_prompt(
         }
 
         if hunk.has_grammar == Some(false) {
-            prompt.push_str("[No grammar \u{2014} check glossary for symbol references]\n");
+            let hint = if modified_symbols.is_empty() {
+                "[No grammar \u{2014} scan diff content for cross-hunk symbol relationships]\n"
+            } else {
+                "[No grammar \u{2014} check glossary for symbol references]\n"
+            };
+            prompt.push_str(hint);
         }
 
         let _ = writeln!(prompt, "\n```\n{}\n```\n", hunk.content);
