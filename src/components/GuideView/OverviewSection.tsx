@@ -1,7 +1,5 @@
 import { type ReactNode, useMemo } from "react";
 import { useReviewStore } from "../../stores";
-import { useReviewProgress } from "../../hooks/useReviewProgress";
-import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import type { DiffHunk, ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
 
@@ -102,22 +100,18 @@ function groupByDirectory(
   );
 }
 
-function ReviewSnapshotStat({
-  value,
-  label,
-  color,
+function CategoryPill({
+  category,
+  count,
 }: {
-  value: number;
-  label: string;
-  color: string;
+  category: string;
+  count: number;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className={`font-mono text-sm font-semibold tabular-nums ${color}`}>
-        {value}
-      </span>
-      <span className="text-xs text-stone-500">{label}</span>
-    </div>
+    <span className="inline-flex items-center gap-1 text-xxs text-stone-400 bg-stone-800 rounded px-1.5 py-0.5">
+      <span className="text-stone-300">{category}</span>
+      <span className="text-stone-500 tabular-nums">{count}</span>
+    </span>
   );
 }
 
@@ -190,21 +184,61 @@ export function OverviewSection(): ReactNode {
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
-  const progress = useReviewProgress();
-  const fileHunkStatusMap = useMemo(
-    () => calculateFileHunkStatus(hunks, reviewState),
-    [hunks, reviewState],
-  );
+  const trustList = reviewState?.trustList ?? [];
 
-  const filesNeedingReview = useMemo(() => {
-    let count = 0;
-    for (const status of fileHunkStatusMap.values()) {
-      if (status.pending > 0) count++;
+  // Compute auto-approved breakdown by category
+  const autoApprovedBreakdown = useMemo(() => {
+    const categoryMap = new Map<string, number>();
+    let total = 0;
+    for (const h of hunks) {
+      const hunkState = reviewState?.hunks[h.id];
+      if (!hunkState) continue;
+      if (!hunkState.status && isHunkTrusted(hunkState, trustList)) {
+        total++;
+        for (const label of hunkState.label) {
+          const category = label.split(":")[0] || label;
+          categoryMap.set(category, (categoryMap.get(category) ?? 0) + 1);
+        }
+      }
     }
-    return count;
-  }, [fileHunkStatusMap]);
+    const categories = Array.from(categoryMap.entries()).sort(
+      (a, b) => b[1] - a[1],
+    );
+    return { total, categories };
+  }, [hunks, reviewState?.hunks, trustList]);
 
-  const trustPatternsActive = reviewState?.trustList.length ?? 0;
+  // Compute pending hunks breakdown by category
+  const pendingBreakdown = useMemo(() => {
+    const categoryMap = new Map<string, number>();
+    let total = 0;
+    let labeled = 0;
+    for (const h of hunks) {
+      const hunkState = reviewState?.hunks[h.id];
+      const status = hunkState?.status;
+      if (
+        status === "approved" ||
+        status === "rejected" ||
+        status === "saved_for_later"
+      )
+        continue;
+      if (isHunkTrusted(hunkState, trustList)) continue;
+      total++;
+      const labels = hunkState?.label ?? [];
+      if (labels.length > 0) {
+        labeled++;
+        for (const label of labels) {
+          const category = label.split(":")[0] || label;
+          categoryMap.set(category, (categoryMap.get(category) ?? 0) + 1);
+        }
+      }
+    }
+    const categories = Array.from(categoryMap.entries()).sort(
+      (a, b) => b[1] - a[1],
+    );
+    // Only show breakdown if >50% of pending hunks have labels
+    const showBreakdown = total > 0 && labeled / total > 0.5;
+    return { total, categories, showBreakdown };
+  }, [hunks, reviewState?.hunks, trustList]);
 
   const dirGroups = useMemo(
     () => groupByDirectory(hunks, reviewState),
@@ -215,99 +249,64 @@ export function OverviewSection(): ReactNode {
     [dirGroups],
   );
 
-  const reviewedPercent =
-    progress.totalHunks > 0
-      ? Math.round((progress.reviewedHunks / progress.totalHunks) * 100)
-      : 0;
-
   return (
     <div className="space-y-4">
-      {/* Review Snapshot */}
+      {/* Change Composition */}
       <div className="rounded-lg border border-stone-800 p-4">
         <h3 className="text-xs font-medium text-stone-400 mb-3">
-          Review snapshot
+          Change composition
         </h3>
-        <div className="space-y-3">
-          {/* Hunks reviewed progress bar */}
+        <div className="space-y-2.5">
+          {/* Auto-approved line */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs text-stone-400">
-                <span className="font-mono font-semibold text-stone-200 tabular-nums">
-                  {progress.reviewedHunks}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-stone-300">
+                <span className="font-mono font-semibold text-cyan-400 tabular-nums">
+                  {autoApprovedBreakdown.total}
                 </span>{" "}
-                of{" "}
-                <span className="font-mono tabular-nums">
-                  {progress.totalHunks}
-                </span>{" "}
-                hunks reviewed
+                {autoApprovedBreakdown.total === 1 ? "hunk" : "hunks"}{" "}
+                auto-approved
               </span>
-              <span className="text-xxs text-stone-500 tabular-nums">
-                {reviewedPercent}%
-              </span>
-            </div>
-            <div className="h-1.5 bg-stone-800 rounded-full overflow-hidden flex">
-              {progress.trustedHunks > 0 && (
-                <div
-                  className="bg-cyan-500 transition-all duration-500"
-                  style={{
-                    width: `${(progress.trustedHunks / progress.totalHunks) * 100}%`,
-                  }}
-                />
+              {autoApprovedBreakdown.categories.length > 0 && (
+                <span className="text-xxs text-stone-600">&mdash;</span>
               )}
-              {progress.approvedHunks > 0 && (
-                <div
-                  className="bg-emerald-500 transition-all duration-500"
-                  style={{
-                    width: `${(progress.approvedHunks / progress.totalHunks) * 100}%`,
-                  }}
-                />
-              )}
-              {progress.rejectedHunks > 0 && (
-                <div
-                  className="bg-rose-500 transition-all duration-500"
-                  style={{
-                    width: `${(progress.rejectedHunks / progress.totalHunks) * 100}%`,
-                  }}
-                />
-              )}
+              <div className="flex items-center gap-1 flex-wrap">
+                {autoApprovedBreakdown.categories.map(([category, count]) => (
+                  <CategoryPill
+                    key={category}
+                    category={category}
+                    count={count}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Stat pills */}
-          <div className="flex items-center gap-6 flex-wrap">
-            <ReviewSnapshotStat
-              value={filesNeedingReview}
-              label={
-                filesNeedingReview === 1
-                  ? "file needs review"
-                  : "files need review"
-              }
-              color={
-                filesNeedingReview > 0 ? "text-amber-400" : "text-emerald-400"
-              }
-            />
-            {trustPatternsActive > 0 && (
-              <ReviewSnapshotStat
-                value={trustPatternsActive}
-                label={
-                  trustPatternsActive === 1
-                    ? "trust pattern active"
-                    : "trust patterns active"
-                }
-                color="text-cyan-400"
-              />
-            )}
-            {progress.rejectedHunks > 0 && (
-              <ReviewSnapshotStat
-                value={progress.rejectedHunks}
-                label={
-                  progress.rejectedHunks === 1
-                    ? "hunk rejected"
-                    : "hunks rejected"
-                }
-                color="text-rose-400"
-              />
-            )}
+          {/* Needs review line */}
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-stone-300">
+                <span className="font-mono font-semibold text-amber-400 tabular-nums">
+                  {pendingBreakdown.total}
+                </span>{" "}
+                {pendingBreakdown.total === 1 ? "hunk" : "hunks"} need review
+              </span>
+              {pendingBreakdown.showBreakdown &&
+                pendingBreakdown.categories.length > 0 && (
+                  <>
+                    <span className="text-xxs text-stone-600">&mdash;</span>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {pendingBreakdown.categories.map(([category, count]) => (
+                        <CategoryPill
+                          key={category}
+                          category={category}
+                          count={count}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+            </div>
           </div>
         </div>
       </div>

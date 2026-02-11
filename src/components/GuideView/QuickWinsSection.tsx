@@ -191,7 +191,6 @@ function PatternRow({
 }
 
 interface CategorySectionProps {
-  categoryId: string;
   categoryName: string;
   patterns: PatternInfo[];
   totalMatches: number;
@@ -220,7 +219,16 @@ function CategorySection({
   onSelectHunk,
   onShowAllModal,
 }: CategorySectionProps) {
-  const [isOpen, setIsOpen] = useState(totalMatches > 0);
+  const [isOpen, setIsOpen] = useState(() => totalMatches > 0);
+  const prevTotalMatches = useRef(totalMatches);
+  useEffect(() => {
+    const prev = prevTotalMatches.current;
+    prevTotalMatches.current = totalMatches;
+    // Auto-expand when matches appear (e.g., after classification runs)
+    if (prev === 0 && totalMatches > 0) {
+      setIsOpen(true);
+    }
+  }, [totalMatches]);
 
   return (
     <div>
@@ -551,7 +559,6 @@ export function QuickWinsSection(): ReactNode {
               return (
                 <CategorySection
                   key={category.id}
-                  categoryId={category.id}
                   categoryName={category.name}
                   patterns={catPatterns}
                   totalMatches={totalMatches}
@@ -580,6 +587,11 @@ export function QuickWinsSection(): ReactNode {
         </div>
       )}
 
+      {/* Next step CTA */}
+      {allClassified && !classifying && trustedHunkCount > 0 && (
+        <TrustNextStepCta count={trustedHunkCount} />
+      )}
+
       {/* Hunk preview modal */}
       {modalPatternId && modalPreviewHunks.length > 0 && (
         <HunkPreviewModal
@@ -590,5 +602,34 @@ export function QuickWinsSection(): ReactNode {
         />
       )}
     </div>
+  );
+}
+
+function TrustNextStepCta({ count }: { count: number }) {
+  const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
+  return (
+    <button
+      type="button"
+      onClick={() => setActiveTab("focused-review")}
+      className="group flex items-center gap-2 w-full rounded-lg border border-stone-700/50 px-4 py-3 text-left hover:border-stone-600 hover:bg-stone-800/30 transition-colors"
+    >
+      <span className="text-xs text-stone-400 group-hover:text-stone-300 transition-colors">
+        {count} {count === 1 ? "hunk" : "hunks"} auto-approved. Continue to
+        Guided Review
+      </span>
+      <svg
+        className="w-3.5 h-3.5 text-stone-600 group-hover:text-stone-400 transition-colors ml-auto shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M13 7l5 5m0 0l-5 5m5-5H6"
+        />
+      </svg>
+    </button>
   );
 }

@@ -164,10 +164,15 @@ function SectionHeader({
 }
 
 function fileNameColor(fileStatus?: string): string {
-  if (fileStatus === "deleted") return "text-rose-400/70";
-  if (fileStatus === "added" || fileStatus === "untracked")
-    return "text-emerald-300";
-  return "text-stone-200";
+  switch (fileStatus) {
+    case "deleted":
+      return "text-rose-400/70";
+    case "added":
+    case "untracked":
+      return "text-emerald-300";
+    default:
+      return "text-stone-200";
+  }
 }
 
 const DrillDownFileRow = memo(function DrillDownFileRow({
@@ -547,6 +552,15 @@ export function DrillDownSection(): ReactNode {
               variant="reviewed"
             />
             {reviewedOpen && renderFileList(reviewedFiles, true)}
+          </div>
+        )}
+
+        {/* Completion banner */}
+        {needsReviewFiles.length === 0 && reviewedFiles.length > 0 && (
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-center mt-2">
+            <h3 className="text-sm font-medium text-emerald-300">
+              Review complete!
+            </h3>
           </div>
         )}
       </div>

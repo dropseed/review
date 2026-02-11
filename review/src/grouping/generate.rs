@@ -57,12 +57,10 @@ pub fn generate_grouping(
     let all_ids: HashSet<String> = hunks.iter().map(|h| h.id.clone()).collect();
 
     // Collect all IDs that appeared in the response
-    let mut seen_ids: HashSet<String> = HashSet::new();
-    for group in &groups {
-        for id in &group.hunk_ids {
-            seen_ids.insert(id.clone());
-        }
-    }
+    let seen_ids: HashSet<String> = groups
+        .iter()
+        .flat_map(|g| g.hunk_ids.iter().cloned())
+        .collect();
 
     // Find missing IDs and add them to a fallback group
     let missing: Vec<String> = all_ids.difference(&seen_ids).cloned().collect();
@@ -71,6 +69,7 @@ pub fn generate_grouping(
             title: "Other changes".to_string(),
             description: "Changes not covered by the groups above.".to_string(),
             hunk_ids: missing,
+            phase: None,
         });
     }
 

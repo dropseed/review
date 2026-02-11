@@ -359,6 +359,7 @@ export interface HunkGroup {
   title: string;
   description: string;
   hunkIds: string[];
+  phase?: string;
 }
 
 export interface GuideState {
@@ -458,6 +459,14 @@ export interface SymbolReference {
   hunkId: string;
   /** 1-based line numbers where the reference appears within the hunk. */
   lineNumbers: number[];
+}
+
+export interface SymbolDefinition {
+  filePath: string;
+  name: string;
+  kind: SymbolKind;
+  startLine: number;
+  endLine: number;
 }
 
 export interface FileSymbolDiff {

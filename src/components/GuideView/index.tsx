@@ -71,6 +71,40 @@ const markdownComponents = {
   a: ExternalLink,
 };
 
+function NextStepCta({
+  message,
+  targetTab,
+}: {
+  message: string;
+  targetTab: string;
+}) {
+  const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
+  return (
+    <button
+      type="button"
+      onClick={() => setActiveTab(targetTab)}
+      className="group flex items-center gap-2 w-full rounded-lg border border-stone-700/50 px-4 py-3 mt-4 text-left hover:border-stone-600 hover:bg-stone-800/30 transition-colors"
+    >
+      <span className="text-xs text-stone-400 group-hover:text-stone-300 transition-colors">
+        {message}
+      </span>
+      <svg
+        className="w-3.5 h-3.5 text-stone-600 group-hover:text-stone-400 transition-colors ml-auto shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M13 7l5 5m0 0l-5 5m5-5H6"
+        />
+      </svg>
+    </button>
+  );
+}
+
 function SummarySection() {
   const guideSummary = useReviewStore((s) => s.guideSummary);
   const guideSummaryError = useReviewStore((s) => s.guideSummaryError);
@@ -154,6 +188,7 @@ function SummarySection() {
         </div>
       )}
       <OverviewSection />
+      <NextStepCta message="Start reviewing" targetTab="quick-wins" />
     </div>
   );
 }

@@ -68,7 +68,6 @@ pub fn build_grouping_prompt(
          group them by logical concern so a reviewer can understand the changes progressively.\n\n\
          ## Rules\n\n\
          - Group hunks by logical concern (not necessarily file order).\n\
-         - Order groups for progressive understanding.\n\
          - Each group should be a reviewable unit.\n\
          - Include every hunk ID exactly once.\n\
          - Each group needs a short title and a one-sentence description.\n\
@@ -76,7 +75,12 @@ pub fn build_grouping_prompt(
            (e.g., a function definition and its call sites).\n\
          - For hunks in files without grammar support, check the glossary \
            to identify potential symbol references in the diff content.\n\
-         - Output JSON only — an array of objects with keys: title, description, hunkIds.\n\
+         - Assign each group a phase name. Phases tell a narrative — the reviewer reads Phase 1 first, then Phase 2, etc. \
+           Common phase patterns: \"Setup\" (imports, dependencies, scaffolding), \"Core changes\" (main logic), \
+           \"Integration\" (wiring, call sites), \"Tests\" (test updates), \"Cleanup\" (formatting, docs). \
+           Use names that fit the actual changes — not every phase will apply.\n\
+         - Order groups within each phase by dependency (if B uses something A introduces, A comes first).\n\
+         - Output JSON only — an array of objects with keys: title, description, hunkIds, phase.\n\
          - Do NOT wrap the JSON in markdown code fences or any other text.\n\n"
     );
 

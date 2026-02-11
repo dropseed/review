@@ -12,6 +12,12 @@ import {
 } from "../ui/dropdown-menu";
 import { GroupCard } from "./GroupCard";
 
+function getPhaseColor(complete: boolean, firstIncomplete: boolean): string {
+  if (complete) return "text-emerald-500/70";
+  if (firstIncomplete) return "text-amber-400";
+  return "text-stone-500";
+}
+
 function buildHunkMap(hunks: DiffHunk[]): Map<string, DiffHunk> {
   const map = new Map<string, DiffHunk>();
   for (const h of hunks) map.set(h.id, h);
@@ -65,9 +71,14 @@ function ProgressStepper({
       {Array.from({ length: total }, (_, i) => {
         const isComplete = i < completed;
         const isActive = i === activeIndex;
-        let dotColor = "bg-stone-700";
-        if (isComplete) dotColor = "bg-emerald-500";
-        else if (isActive) dotColor = "bg-amber-400";
+        let dotColor: string;
+        if (isComplete) {
+          dotColor = "bg-emerald-500";
+        } else if (isActive) {
+          dotColor = "bg-amber-400";
+        } else {
+          dotColor = "bg-stone-700";
+        }
 
         return (
           <div key={i} className="flex items-center">
@@ -207,6 +218,41 @@ export function FocusedReviewSection(): ReactNode {
     return { pendingGroups: pending, completedGroups: completed };
   }, [reviewGroups, groupUnreviewedCounts]);
 
+  // Group by phase for narrative structure
+  const phases = useMemo(() => {
+    const hasPhases = reviewGroups.some((g) => g.phase);
+    if (!hasPhases) return null;
+
+    const phaseOrder: string[] = [];
+    const phaseGroups = new Map<
+      string,
+      { group: HunkGroup; originalIndex: number }[]
+    >();
+    for (let i = 0; i < reviewGroups.length; i++) {
+      const group = reviewGroups[i];
+      const phase = group.phase ?? "Other";
+      if (!phaseGroups.has(phase)) {
+        phaseOrder.push(phase);
+        phaseGroups.set(phase, []);
+      }
+      phaseGroups.get(phase)!.push({ group, originalIndex: i });
+    }
+    return phaseOrder.map((name) => ({
+      name,
+      groups: phaseGroups.get(name)!,
+    }));
+  }, [reviewGroups]);
+
+  const currentPhaseNumber = useMemo(() => {
+    if (!phases) return 0;
+    const firstIncomplete = phases.findIndex((p) =>
+      p.groups.some(
+        ({ group }) => (groupUnreviewedCounts.get(group.title) ?? 0) > 0,
+      ),
+    );
+    return firstIncomplete === -1 ? phases.length : firstIncomplete + 1;
+  }, [phases, groupUnreviewedCounts]);
+
   const displayCount = useAnimatedCount(totalUnreviewed);
 
   const totalInGroups = useMemo(
@@ -245,8 +291,8 @@ export function FocusedReviewSection(): ReactNode {
 
   // Staleness
   const guide = reviewState?.guide;
-  const hasGrouping = !!guide && guide.groups.length > 0;
-  const stale = hasGrouping ? isGroupingStale() : false;
+  const hasGrouping = guide != null && guide.groups.length > 0;
+  const stale = hasGrouping && isGroupingStale();
 
   const staleReason = useMemo(() => {
     if (!stale || !guide) return "";
@@ -456,11 +502,17 @@ export function FocusedReviewSection(): ReactNode {
             {reviewedInGroups} of {totalInGroups} reviewed
           </p>
         )}
-        <ProgressStepper
-          total={reviewGroups.length}
-          completed={completedGroups.length}
-          activeIndex={pendingGroups.length > 0 ? 0 : -1}
-        />
+        {phases ? (
+          <p className="mt-1.5 text-xxs text-stone-500 text-center">
+            Phase {currentPhaseNumber} of {phases.length}
+          </p>
+        ) : (
+          <ProgressStepper
+            total={reviewGroups.length}
+            completed={completedGroups.length}
+            activeIndex={pendingGroups.length > 0 ? 0 : -1}
+          />
+        )}
       </div>
 
       {/* Stale / regenerate */}
@@ -509,61 +561,190 @@ export function FocusedReviewSection(): ReactNode {
         </div>
       )}
 
-      {/* Pending groups */}
-      {pendingGroups.length > 0 && (
-        <div className="space-y-2">
-          {pendingGroups.map(({ group, originalIndex }) => (
-            <div
-              key={group.title}
-              ref={
-                originalIndex === activeGroupIndex ? activeGroupRef : undefined
-              }
-            >
-              {renderGroupCard(
-                group,
-                originalIndex,
-                originalIndex === activeGroupIndex,
-              )}
-            </div>
-          ))}
+      {/* Phase-based rendering (when groups have phases) */}
+      {phases && (
+        <div className="space-y-4">
+          {phases.map((phase, phaseIndex) => {
+            const phaseUnreviewed = phase.groups.reduce(
+              (sum, { group }) =>
+                sum + (groupUnreviewedCounts.get(group.title) ?? 0),
+              0,
+            );
+            const phaseComplete = phaseUnreviewed === 0;
+            const isFirstIncomplete =
+              !phaseComplete &&
+              phases
+                .slice(0, phaseIndex)
+                .every((p) =>
+                  p.groups.every(
+                    ({ group }) =>
+                      (groupUnreviewedCounts.get(group.title) ?? 0) === 0,
+                  ),
+                );
+
+            return (
+              <div key={phase.name}>
+                {/* Phase header */}
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <span
+                    className={`text-xs font-semibold uppercase tracking-wide ${getPhaseColor(phaseComplete, isFirstIncomplete)}`}
+                  >
+                    {phase.name}
+                  </span>
+                  <span className="text-xxs text-stone-600 tabular-nums">
+                    {phase.groups.length}{" "}
+                    {phase.groups.length === 1 ? "group" : "groups"}
+                  </span>
+                  {phaseComplete && (
+                    <svg
+                      className="w-3 h-3 text-emerald-500/70"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={3}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  )}
+                  {isFirstIncomplete && (
+                    <span className="text-xxs text-amber-400/70 italic">
+                      Start here
+                    </span>
+                  )}
+                  <div className="flex-1 h-px bg-stone-800" />
+                </div>
+
+                {/* Groups in this phase */}
+                <div className="space-y-2">
+                  {phase.groups.map(({ group, originalIndex }) => {
+                    const unreviewed =
+                      groupUnreviewedCounts.get(group.title) ?? 0;
+                    if (unreviewed === 0) {
+                      return renderGroupCard(group, originalIndex, false, true);
+                    }
+                    return (
+                      <div
+                        key={group.title}
+                        ref={
+                          originalIndex === activeGroupIndex
+                            ? activeGroupRef
+                            : undefined
+                        }
+                      >
+                        {renderGroupCard(
+                          group,
+                          originalIndex,
+                          originalIndex === activeGroupIndex,
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Completed groups */}
-      {completedGroups.length > 0 && (
-        <div className="rounded-lg border border-stone-800/50">
-          <button
-            type="button"
-            onClick={() => setCompletedOpen(!completedOpen)}
-            className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-stone-800/30 transition-colors"
-          >
-            <svg
-              className={`h-3 w-3 text-stone-600 transition-transform ${completedOpen ? "rotate-90" : ""}`}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-            <span className="text-xs text-stone-500">
-              {completedGroups.length} completed
-            </span>
-          </button>
-          {completedOpen && (
-            <div className="px-1 pb-1 space-y-0.5">
-              {completedGroups.map(({ group, originalIndex }) =>
-                renderGroupCard(group, originalIndex, false, true),
+      {/* Flat rendering (no phases — backwards compat) */}
+      {!phases && (
+        <>
+          {/* Pending groups */}
+          {pendingGroups.length > 0 && (
+            <div className="space-y-2">
+              {pendingGroups.map(({ group, originalIndex }) => (
+                <div
+                  key={group.title}
+                  ref={
+                    originalIndex === activeGroupIndex
+                      ? activeGroupRef
+                      : undefined
+                  }
+                >
+                  {renderGroupCard(
+                    group,
+                    originalIndex,
+                    originalIndex === activeGroupIndex,
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Completed groups */}
+          {completedGroups.length > 0 && (
+            <div className="rounded-lg border border-stone-800/50">
+              <button
+                type="button"
+                onClick={() => setCompletedOpen(!completedOpen)}
+                className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-stone-800/30 transition-colors"
+              >
+                <svg
+                  className={`h-3 w-3 text-stone-600 transition-transform ${completedOpen ? "rotate-90" : ""}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+                <span className="text-xs text-stone-500">
+                  {completedGroups.length} completed
+                </span>
+              </button>
+              {completedOpen && (
+                <div className="px-1 pb-1 space-y-0.5">
+                  {completedGroups.map(({ group, originalIndex }) =>
+                    renderGroupCard(group, originalIndex, false, true),
+                  )}
+                </div>
               )}
             </div>
           )}
-        </div>
+        </>
+      )}
+
+      {/* Next step CTA */}
+      {totalUnreviewed === 0 && reviewGroups.length > 0 && (
+        <FocusedReviewNextStepCta />
       )}
     </div>
+  );
+}
+
+function FocusedReviewNextStepCta() {
+  const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
+  return (
+    <button
+      type="button"
+      onClick={() => setActiveTab("changed-files")}
+      className="group flex items-center gap-2 w-full rounded-lg border border-stone-700/50 px-4 py-3 text-left hover:border-stone-600 hover:bg-stone-800/30 transition-colors"
+    >
+      <span className="text-xs text-stone-400 group-hover:text-stone-300 transition-colors">
+        All groups complete! Check Remaining Files
+      </span>
+      <svg
+        className="w-3.5 h-3.5 text-stone-600 group-hover:text-stone-400 transition-colors ml-auto shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M13 7l5 5m0 0l-5 5m5-5H6"
+        />
+      </svg>
+    </button>
   );
 }
 
