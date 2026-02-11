@@ -60,7 +60,7 @@ function StartGuideButton() {
         ) : (
           <SparklesIcon className="h-4 w-4" />
         )}
-        {guideLoading ? "Starting Guide…" : "Start Guide"}
+        {guideLoading ? "Starting…" : "Guided Review"}
       </button>
       <p className="text-xs text-stone-500">
         {hunks.length} hunks across {flatFileList.length} files

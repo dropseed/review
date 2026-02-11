@@ -252,7 +252,7 @@ export function ReviewView({
 
           {/* Right: review progress */}
           <div className="flex items-center gap-3">
-            {guideRecommended && (
+            {guideRecommended && topLevelView !== "guide" && (
               <button
                 type="button"
                 onClick={startGuide}
@@ -294,7 +294,7 @@ export function ReviewView({
                     />
                   </svg>
                 )}
-                {guideLoading ? "Starting…" : "Start Guide"}
+                {guideLoading ? "Starting…" : "Guided Review"}
               </button>
             )}
             {totalHunks > 0 ? (
