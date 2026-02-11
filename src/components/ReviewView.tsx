@@ -178,16 +178,12 @@ export function ReviewView({
     repoPath?.replace(/\/+$/, "").split("/").pop() ||
     "repo";
 
-  // When the sidebar is collapsed, shrink the header and add left padding
-  // to clear the macOS traffic lights
-  const headerLayout = tabRailCollapsed ? "h-[34px] pl-[76px]" : "h-12 pl-4";
-
   return (
     <div className="flex h-full flex-row bg-stone-900">
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
         <header
-          className={`flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 ${headerLayout}`}
+          className={`flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 h-12 ${tabRailCollapsed ? "pl-[84px]" : "pl-4"}`}
           data-tauri-drag-region
         >
           {/* Left: breadcrumb */}
