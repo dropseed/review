@@ -31,6 +31,7 @@ import type {
   SearchMatch,
   FileSymbol,
   FileSymbolDiff,
+  SymbolDefinition,
   RemoteInfo,
   GroupingInput,
   HunkGroup,
@@ -305,6 +306,16 @@ export class TauriClient implements ApiClient {
   }
 
   // ----- Symbols -----
+
+  async findSymbolDefinitions(
+    repoPath: string,
+    symbolName: string,
+  ): Promise<SymbolDefinition[]> {
+    return invoke<SymbolDefinition[]>("find_symbol_definitions", {
+      repoPath,
+      symbolName,
+    });
+  }
 
   async getFileSymbolDiffs(
     repoPath: string,

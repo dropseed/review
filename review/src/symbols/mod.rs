@@ -36,6 +36,19 @@ pub struct Symbol {
     pub children: Vec<Symbol>,
 }
 
+/// A symbol definition found via name lookup (includes file path).
+#[derive(Debug, Clone, Serialize)]
+pub struct SymbolDefinition {
+    #[serde(rename = "filePath")]
+    pub file_path: String,
+    pub name: String,
+    pub kind: SymbolKind,
+    #[serde(rename = "startLine")]
+    pub start_line: u32,
+    #[serde(rename = "endLine")]
+    pub end_line: u32,
+}
+
 /// Maps symbols to hunks for a single file.
 #[derive(Debug, Clone, Serialize)]
 pub struct FileSymbolMap {

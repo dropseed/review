@@ -1590,6 +1590,84 @@ pub async fn get_file_symbols(
 }
 
 #[tauri::command]
+pub async fn find_symbol_definitions(
+    repo_path: String,
+    symbol_name: String,
+) -> Result<Vec<symbols::SymbolDefinition>, String> {
+    debug!(
+        "[find_symbol_definitions] repo_path={}, symbol_name={}",
+        repo_path, symbol_name
+    );
+
+    tokio::task::spawn_blocking(move || {
+        // Use git grep to find candidate files containing the symbol name
+        let output = std::process::Command::new("git")
+            .args(["grep", "-l", "-F", "--", &symbol_name])
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| format!("Failed to run git grep: {e}"))?;
+
+        let candidate_files: Vec<String> = if output.status.success() {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(|l| l.to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Filter to files with tree-sitter grammar support, cap at 50
+        // to keep response times reasonable for common symbol names
+        let supported_files: Vec<&String> = candidate_files
+            .iter()
+            .filter(|f| symbols::extractor::get_language_for_file(f).is_some())
+            .take(50)
+            .collect();
+
+        info!(
+            "[find_symbol_definitions] {} candidates, {} with grammar support (capped at 50)",
+            candidate_files.len(),
+            supported_files.len()
+        );
+
+        // Process candidates in parallel using scoped threads
+        let mut all_defs = Vec::new();
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = supported_files
+                .iter()
+                .map(|file_path| {
+                    let repo = &repo_path;
+                    let name = &symbol_name;
+                    let fp = file_path.as_str();
+                    scope.spawn(move || {
+                        let full_path = std::path::PathBuf::from(repo).join(fp);
+                        let content = match std::fs::read_to_string(&full_path) {
+                            Ok(c) => c,
+                            Err(_) => return Vec::new(),
+                        };
+                        symbols::extractor::find_definitions(&content, fp, name)
+                    })
+                })
+                .collect();
+
+            for handle in handles {
+                if let Ok(defs) = handle.join() {
+                    all_defs.extend(defs);
+                }
+            }
+        });
+
+        info!(
+            "[find_symbol_definitions] SUCCESS: {} definitions found",
+            all_defs.len()
+        );
+        Ok(all_defs)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub fn search_file_contents(
     repo_path: String,
     query: String,

@@ -642,6 +642,7 @@ pub fn run() {
             commands::search_file_contents,
             commands::get_file_symbol_diffs,
             commands::get_file_symbols,
+            commands::find_symbol_definitions,
             commands::generate_hunk_grouping,
             commands::generate_review_summary,
             commands::is_dev_mode,

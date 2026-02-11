@@ -5,7 +5,7 @@ import type { FileContent } from "../../types";
 import { isHunkReviewed } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
 import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
-import { useScrollHunkTracking } from "../../hooks";
+import { useScrollHunkTracking, useSymbolNavigation } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
 import { detectLanguage, type SupportedLanguages } from "./languageMap";
 import { FileViewerToolbar } from "./FileViewerToolbar";
@@ -13,6 +13,10 @@ import {
   AnnotationEditor,
   AnnotationDisplay,
 } from "./annotations/AnnotationEditor";
+import { SymbolPopover } from "./SymbolPopover";
+
+const CMD_HOVER_STYLE_ID = "cmd-hover-style";
+const CMD_HOVER_CSS = `code span { cursor: pointer; } code span:hover { text-decoration: underline; }`;
 
 interface FileViewerProps {
   filePath: string;
@@ -36,6 +40,79 @@ export function FileViewer({ filePath }: FileViewerProps) {
   const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
 
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
+
+  // Symbol navigation (Cmd+Click)
+  const {
+    popoverOpen,
+    popoverPosition,
+    symbolName,
+    definitions,
+    references,
+    loading: symbolLoading,
+    handleSymbolClick,
+    closePopover,
+    navigateToDefinition,
+    navigateToReference,
+  } = useSymbolNavigation();
+
+  // Cmd+hover CSS injection and Cmd+Click handling — entirely imperative to
+  // avoid re-rendering FileViewer on every Cmd press/release (rerender-use-ref-transient-values).
+  const handleSymbolClickRef = useRef(handleSymbolClick);
+  handleSymbolClickRef.current = handleSymbolClick;
+  const closePopoverRef = useRef(closePopover);
+  closePopoverRef.current = closePopover;
+
+  useEffect(() => {
+    const node = scrollNode;
+    if (!node) return;
+
+    const getShadowRoot = () =>
+      node.querySelector("diffs-container")?.shadowRoot ?? null;
+
+    const injectStyle = () => {
+      const shadow = getShadowRoot();
+      if (!shadow || shadow.getElementById(CMD_HOVER_STYLE_ID)) return;
+      const style = document.createElement("style");
+      style.id = CMD_HOVER_STYLE_ID;
+      style.textContent = CMD_HOVER_CSS;
+      shadow.appendChild(style);
+    };
+
+    const removeStyle = () => {
+      getShadowRoot()?.getElementById(CMD_HOVER_STYLE_ID)?.remove();
+    };
+
+    // Toggle CSS directly from key events — no React state involved
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Meta") injectStyle();
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Meta") removeStyle();
+    };
+    const handleBlur = () => removeStyle();
+
+    const handleClick = (e: MouseEvent) => {
+      if (e.metaKey) handleSymbolClickRef.current(e);
+    };
+
+    // Dismiss popover when the diff scrolls — the symbol moves away from the anchor
+    const handleScroll = () => closePopoverRef.current();
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    node.addEventListener("click", handleClick);
+    node.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      removeStyle();
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+      node.removeEventListener("click", handleClick);
+      node.removeEventListener("scroll", handleScroll);
+    };
+  }, [scrollNode]);
 
   // Get the focused hunk ID if it's in this file
   const focusedHunk = allHunks[focusedHunkIndex];
@@ -446,6 +523,18 @@ export function FileViewer({ filePath }: FileViewerProps) {
           />
         )}
       </div>
+
+      <SymbolPopover
+        open={popoverOpen}
+        position={popoverPosition}
+        symbolName={symbolName}
+        definitions={definitions}
+        references={references}
+        loading={symbolLoading}
+        onClose={closePopover}
+        onNavigateToDefinition={navigateToDefinition}
+        onNavigateToReference={navigateToReference}
+      />
     </div>
   );
 }

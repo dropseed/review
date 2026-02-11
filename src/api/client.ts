@@ -29,6 +29,7 @@ import type {
   SearchMatch,
   FileSymbol,
   FileSymbolDiff,
+  SymbolDefinition,
   RemoteInfo,
   GroupingInput,
   HunkGroup,
@@ -213,6 +214,12 @@ export interface ApiClient {
     filePaths: string[],
     comparison: Comparison,
   ): Promise<FileSymbolDiff[]>;
+
+  /** Find symbol definitions by name across the repo */
+  findSymbolDefinitions(
+    repoPath: string,
+    symbolName: string,
+  ): Promise<SymbolDefinition[]>;
 
   /** Extract all symbols from a file using tree-sitter */
   getFileSymbols(

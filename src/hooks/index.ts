@@ -22,3 +22,5 @@ export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
 export { useFeedbackPanel } from "./useFeedbackPanel";
 export { useMenuState } from "./useMenuState";
+export { useCmdKeyHeld } from "./useCmdKeyHeld";
+export { useSymbolNavigation } from "./useSymbolNavigation";
