@@ -172,6 +172,8 @@ export function DiffView({
   const unapproveHunk = useReviewStore((s) => s.unapproveHunk);
   const rejectHunk = useReviewStore((s) => s.rejectHunk);
   const unrejectHunk = useReviewStore((s) => s.unrejectHunk);
+  const saveHunkForLater = useReviewStore((s) => s.saveHunkForLater);
+  const unsaveHunkForLater = useReviewStore((s) => s.unsaveHunkForLater);
   const allHunks = useReviewStore((s) => s.hunks);
   const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
   const addAnnotation = useReviewStore((s) => s.addAnnotation);
@@ -435,7 +437,8 @@ export function DiffView({
     unapproveHunk: typeof unapproveHunk;
     rejectHunk: typeof rejectHunk;
     unrejectHunk: typeof unrejectHunk;
-
+    saveHunkForLater: typeof saveHunkForLater;
+    unsaveHunkForLater: typeof unsaveHunkForLater;
     addTrustPattern: typeof addTrustPattern;
     removeTrustPattern: typeof removeTrustPattern;
     reclassifyHunks: typeof reclassifyHunks;
@@ -468,7 +471,8 @@ export function DiffView({
     unapproveHunk,
     rejectHunk,
     unrejectHunk,
-
+    saveHunkForLater,
+    unsaveHunkForLater,
     addTrustPattern,
     removeTrustPattern,
     reclassifyHunks,
@@ -552,6 +556,8 @@ export function DiffView({
                 }
               }}
               onUnreject={deps.unrejectHunk}
+              onSaveForLater={deps.saveHunkForLater}
+              onUnsaveForLater={deps.unsaveHunkForLater}
               onApprovePair={(hunkIds) => {
                 deps.approveHunkIds(hunkIds);
                 deps.nextHunkInFile();

@@ -17,7 +17,7 @@ import { DiffOptionsPopover } from "./DiffOptionsPopover";
 import { SimilarFilesModal } from "./annotations/SimilarFilesModal";
 
 interface ToggleButtonGroupProps<T extends string> {
-  options: [T, string][];
+  options: [T, string, string?][];
   value: T;
   onChange: (value: T) => void;
 }
@@ -29,7 +29,7 @@ function ToggleButtonGroup<T extends string>({
 }: ToggleButtonGroupProps<T>): JSX.Element {
   return (
     <div className="flex items-center rounded bg-stone-800/30 p-0.5">
-      {options.map(([optionValue, label]) => (
+      {options.map(([optionValue, label, shortLabel]) => (
         <button
           key={optionValue}
           onClick={() => onChange(optionValue)}
@@ -39,7 +39,14 @@ function ToggleButtonGroup<T extends string>({
               : "text-stone-500 hover:text-stone-300"
           }`}
         >
-          {label}
+          {shortLabel ? (
+            <>
+              <span className="@md:hidden">{shortLabel}</span>
+              <span className="hidden @md:inline">{label}</span>
+            </>
+          ) : (
+            label
+          )}
         </button>
       ))}
     </div>
@@ -105,6 +112,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   onAddFileComment,
 }: FileViewerToolbarProps) {
   const repoPath = useReviewStore((s) => s.repoPath);
+  const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
@@ -112,6 +120,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const setViewMode = useReviewStore((s) => s.setDiffViewMode);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
+  const hasGuide = !!reviewState?.guide;
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
@@ -191,15 +200,29 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
         <span
           className={`rounded px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeClass}`}
         >
-          {reviewProgress.reviewed}/{reviewProgress.total} reviewed
+          {reviewProgress.reviewed}/{reviewProgress.total}
+          <span className="hidden @md:inline"> reviewed</span>
         </span>
         {!isComplete && (
           <SimpleTooltip content="Approve all hunks in this file">
             <button
               onClick={() => approveAllFileHunks(filePath)}
-              className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-xxs font-medium text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+              className="flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xxs font-medium text-emerald-300 hover:bg-emerald-500/20 transition-colors"
             >
-              Approve
+              <svg
+                className="h-3 w-3 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              <span className="hidden @md:inline">Approve</span>
             </button>
           </SimpleTooltip>
         )}
@@ -222,8 +245,29 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
     !isImage && !showImageViewer && !isUntracked && hasChanges;
 
   return (
-    <div className="flex items-center justify-between border-b border-stone-800/50 bg-stone-900 px-3 py-1.5">
+    <div className="@container flex items-center justify-between border-b border-stone-800/50 bg-stone-900 px-3 py-1.5">
       <div className="flex min-w-0 items-center gap-2">
+        {hasGuide && (
+          <button
+            onClick={navigateToGuide}
+            className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-stone-500 hover:text-stone-300 hover:bg-stone-800/50 transition-colors"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+            <span className="hidden @md:inline">Guide</span>
+          </button>
+        )}
         <Breadcrumbs
           filePath={filePath}
           onNavigateToDirectory={revealDirectoryInTree}

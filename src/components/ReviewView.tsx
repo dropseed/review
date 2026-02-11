@@ -183,7 +183,7 @@ export function ReviewView({
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
         <header
-          className={`relative flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 h-12 ${tabRailCollapsed ? "pl-[84px]" : "pl-4"}`}
+          className={`@container relative flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 h-12 ${tabRailCollapsed ? "pl-[84px]" : "pl-4"}`}
           data-tauri-drag-region
         >
           {/* Left: breadcrumb */}
@@ -240,7 +240,9 @@ export function ReviewView({
                       />
                     </svg>
                   )}
-                  {guideLoading ? "Starting…" : "Guided Review"}
+                  <span className="hidden @md:inline">
+                    {guideLoading ? "Starting…" : "Guided Review"}
+                  </span>
                 </button>
               )}
             {totalHunks > 0 ? (
@@ -251,12 +253,12 @@ export function ReviewView({
                            hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
               >
                 {state === "approved" && (
-                  <span className="text-xs font-medium text-emerald-400">
+                  <span className="hidden @md:inline text-xs font-medium text-emerald-400">
                     Approved
                   </span>
                 )}
                 {state === "changes_requested" && (
-                  <span className="text-xs font-medium text-rose-400">
+                  <span className="hidden @md:inline text-xs font-medium text-rose-400">
                     Changes Requested
                   </span>
                 )}

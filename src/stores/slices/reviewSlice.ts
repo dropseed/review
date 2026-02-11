@@ -3,6 +3,7 @@ import type {
   Comparison,
   DiffHunk,
   GlobalReviewSummary,
+  HunkState,
   ReviewState,
   ReviewSummary,
   RejectionFeedback,
@@ -67,6 +68,11 @@ export interface ReviewSlice {
   approveAllDirHunks: (dirPath: string) => void;
   unapproveAllDirHunks: (dirPath: string) => void;
   rejectAllDirHunks: (dirPath: string) => void;
+  saveHunkForLater: (hunkId: string) => void;
+  unsaveHunkForLater: (hunkId: string) => void;
+  saveAllFileHunksForLater: (filePath: string) => void;
+  saveHunkIdsForLater: (hunkIds: string[]) => void;
+  saveAllDirHunksForLater: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
 
   // Feedback export
@@ -154,7 +160,7 @@ function updateHunkStatuses(
   get: () => HunkStatusGetter,
   set: (partial: { reviewState: ReviewState }) => void,
   hunkIds: string[],
-  status: "approved" | "rejected" | undefined,
+  status: "approved" | "rejected" | "saved_for_later" | undefined,
   options?: {
     /** Skip hunks that don't already exist in reviewState.hunks */
     skipMissing?: boolean;
@@ -198,6 +204,31 @@ function updateHunkStatuses(
   } else if (status === "rejected") {
     playRejectSound();
   }
+}
+
+/** Push an undo entry for a single hunk action. */
+function pushHunkUndo(
+  get: () => {
+    reviewState: ReviewState | null;
+    focusedHunkIndex: number;
+    selectedFile: string | null;
+    pushUndo: (entry: {
+      hunkIds: string[];
+      previousStatuses: Record<string, HunkState | undefined>;
+      focusedHunkIndex: number;
+      selectedFile: string | null;
+    }) => void;
+  },
+  hunkId: string,
+): void {
+  const { reviewState, focusedHunkIndex, selectedFile, pushUndo } = get();
+  if (!reviewState) return;
+  pushUndo({
+    hunkIds: [hunkId],
+    previousStatuses: { [hunkId]: reviewState.hunks[hunkId] },
+    focusedHunkIndex,
+    selectedFile,
+  });
 }
 
 /** Collect hunk IDs for all files under the given directory path. */
@@ -329,20 +360,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveHunk: (hunkId) => {
-      const { reviewState, focusedHunkIndex, selectedFile, pushUndo } = get();
-      if (reviewState) {
-        const previousStatuses: Record<
-          string,
-          (typeof reviewState.hunks)[string] | undefined
-        > = {};
-        previousStatuses[hunkId] = reviewState.hunks[hunkId];
-        pushUndo({
-          hunkIds: [hunkId],
-          previousStatuses,
-          focusedHunkIndex,
-          selectedFile,
-        });
-      }
+      pushHunkUndo(get, hunkId);
       updateHunkStatuses(get, set, [hunkId], "approved");
       get().advanceToNextUnreviewedFile();
     },
@@ -354,20 +372,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     rejectHunk: (hunkId) => {
-      const { reviewState, focusedHunkIndex, selectedFile, pushUndo } = get();
-      if (reviewState) {
-        const previousStatuses: Record<
-          string,
-          (typeof reviewState.hunks)[string] | undefined
-        > = {};
-        previousStatuses[hunkId] = reviewState.hunks[hunkId];
-        pushUndo({
-          hunkIds: [hunkId],
-          previousStatuses,
-          focusedHunkIndex,
-          selectedFile,
-        });
-      }
+      pushHunkUndo(get, hunkId);
       updateHunkStatuses(get, set, [hunkId], "rejected");
       get().advanceToNextUnreviewedFile();
     },
@@ -425,6 +430,32 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     rejectAllDirHunks: (dirPath) => {
       const ids = getDirHunkIds(get, dirPath);
       updateHunkStatuses(get, set, ids, "rejected");
+    },
+
+    saveHunkForLater: (hunkId) => {
+      pushHunkUndo(get, hunkId);
+      updateHunkStatuses(get, set, [hunkId], "saved_for_later");
+    },
+
+    unsaveHunkForLater: (hunkId) => {
+      updateHunkStatuses(get, set, [hunkId], undefined, {
+        skipMissing: true,
+      });
+    },
+
+    saveAllFileHunksForLater: (filePath) => {
+      const { hunks } = get();
+      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      updateHunkStatuses(get, set, ids, "saved_for_later");
+    },
+
+    saveHunkIdsForLater: (hunkIds) => {
+      updateHunkStatuses(get, set, hunkIds, "saved_for_later");
+    },
+
+    saveAllDirHunksForLater: (dirPath) => {
+      const ids = getDirHunkIds(get, dirPath);
+      updateHunkStatuses(get, set, ids, "saved_for_later");
     },
 
     setHunkLabel: (hunkId, label) => {

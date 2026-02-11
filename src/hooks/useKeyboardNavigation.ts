@@ -28,6 +28,7 @@ export function useKeyboardNavigation() {
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
+  const saveHunkForLater = useReviewStore((s) => s.saveHunkForLater);
   const undo = useReviewStore((s) => s.undo);
 
   const handleKeyDown = useCallback(
@@ -112,15 +113,18 @@ export function useKeyboardNavigation() {
           prevHunk();
           break;
         case "a":
-        case "r": {
+        case "r":
+        case "s": {
           const focusedHunk = hunks[focusedHunkIndex];
           if (!focusedHunk) break;
           if (event.key === "a") {
             approveHunk(focusedHunk.id);
             nextHunkInFile();
-          } else {
+          } else if (event.key === "r") {
             rejectHunk(focusedHunk.id);
             setPendingCommentHunkId(focusedHunk.id);
+          } else {
+            saveHunkForLater(focusedHunk.id);
           }
           break;
         }
@@ -136,6 +140,7 @@ export function useKeyboardNavigation() {
       focusedHunkIndex,
       approveHunk,
       rejectHunk,
+      saveHunkForLater,
       setPendingCommentHunkId,
       nextHunkInFile,
       secondaryFile,

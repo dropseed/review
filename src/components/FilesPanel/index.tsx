@@ -275,6 +275,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   // Section collapse state
   const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
+  const [savedForLaterOpen, setSavedForLaterOpen] = useState(true);
   const [reviewedOpen, setReviewedOpen] = useState(true);
 
   // Filename modal state
@@ -380,7 +381,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return hunks
       .filter((h) => {
         const state = reviewState?.hunks[h.id];
-        if (state?.status === "approved" || state?.status === "rejected")
+        if (
+          state?.status === "approved" ||
+          state?.status === "rejected" ||
+          state?.status === "saved_for_later"
+        )
           return false;
         if (reviewState && isHunkTrusted(state, reviewState.trustList))
           return false;
@@ -554,8 +559,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Check if there are changes in the comparison
   const hasChanges =
     sectionedFiles.needsReview.length > 0 ||
+    sectionedFiles.savedForLater.length > 0 ||
     sectionedFiles.reviewed.length > 0 ||
     flatSectionedFiles.needsReview.length > 0 ||
+    flatSectionedFiles.savedForLater.length > 0 ||
     flatSectionedFiles.reviewed.length > 0;
 
   // Handle commit selection
@@ -772,6 +779,84 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         )}
                       </div>
                     </SectionHeader>
+
+                    {/* Saved for Later section */}
+                    {(sectionedFiles.savedForLater.length > 0 ||
+                      flatSectionedFiles.savedForLater.length > 0) && (
+                      <SectionHeader
+                        title="Saved for Later"
+                        icon={
+                          <svg
+                            className="h-3.5 w-3.5 text-amber-400"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        }
+                        badge={stats.savedForLater}
+                        badgeColor="amber"
+                        isOpen={savedForLaterOpen}
+                        onToggle={() =>
+                          setSavedForLaterOpen(!savedForLaterOpen)
+                        }
+                        onExpandAll={() => expandAll(allDirPaths)}
+                        onCollapseAll={collapseAll}
+                        displayMode={needsReviewDisplayMode}
+                        onSetDisplayMode={setNeedsReviewDisplayMode}
+                      >
+                        <div className="py-1">
+                          {needsReviewDisplayMode === "tree"
+                            ? sectionedFiles.savedForLater.map((entry) => (
+                                <FileNode
+                                  key={entry.path}
+                                  entry={entry}
+                                  depth={0}
+                                  expandedPaths={expandedPaths}
+                                  onToggle={togglePath}
+                                  selectedFile={selectedFile}
+                                  onSelectFile={handleSelectFile}
+                                  repoPath={repoPath}
+                                  revealLabel={revealLabel}
+                                  onOpenInSplit={openInSplit}
+                                  registerRef={registerRef}
+                                  hunkContext="needs-review"
+                                  onApproveAll={handleApproveAll}
+                                  onUnapproveAll={handleUnapproveAll}
+                                  onRejectAll={handleRejectAll}
+                                  movedFilePaths={movedFilePaths}
+                                />
+                              ))
+                            : flatSectionedFiles.savedForLater.map(
+                                (filePath) => (
+                                  <FlatFileNode
+                                    key={filePath}
+                                    filePath={filePath}
+                                    fileStatus={fileStatusMap.get(filePath)}
+                                    hunkStatus={
+                                      hunkStatusMap.get(filePath) ??
+                                      EMPTY_HUNK_STATUS
+                                    }
+                                    symbolDiff={
+                                      symbolDiffMap.get(filePath) ?? null
+                                    }
+                                    selectedFile={selectedFile}
+                                    onSelectFile={handleSelectFile}
+                                    hunkContext="needs-review"
+                                    onApproveAll={handleApproveAll}
+                                    onUnapproveAll={handleUnapproveAll}
+                                    onRejectAll={handleRejectAll}
+                                    movedFilePaths={movedFilePaths}
+                                  />
+                                ),
+                              )}
+                        </div>
+                      </SectionHeader>
+                    )}
 
                     {/* Reviewed section */}
                     <SectionHeader

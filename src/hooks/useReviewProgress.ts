@@ -10,6 +10,7 @@ export interface ReviewProgress {
   trustedHunks: number;
   approvedHunks: number;
   rejectedHunks: number;
+  savedForLaterHunks: number;
   reviewedHunks: number;
   pendingHunks: number;
   reviewedPercent: number;
@@ -22,20 +23,30 @@ export function computeReviewProgress(
   reviewState: ReviewState | null,
 ): ReviewProgress {
   const totalHunks = hunks.length;
-  const trustedHunks = reviewState
-    ? hunks.filter((h) => {
-        const state = reviewState.hunks[h.id];
-        return !state?.status && isHunkTrusted(state, reviewState.trustList);
-      }).length
-    : 0;
-  const approvedHunks = reviewState
-    ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "approved").length
-    : 0;
-  const rejectedHunks = reviewState
-    ? hunks.filter((h) => reviewState.hunks[h.id]?.status === "rejected").length
-    : 0;
+
+  // Single pass over hunks to count all status categories
+  let trustedHunks = 0;
+  let approvedHunks = 0;
+  let rejectedHunks = 0;
+  let savedForLaterHunks = 0;
+
+  if (reviewState) {
+    for (const h of hunks) {
+      const state = reviewState.hunks[h.id];
+      if (state?.status === "approved") {
+        approvedHunks++;
+      } else if (state?.status === "rejected") {
+        rejectedHunks++;
+      } else if (state?.status === "saved_for_later") {
+        savedForLaterHunks++;
+      } else if (isHunkTrusted(state, reviewState.trustList)) {
+        trustedHunks++;
+      }
+    }
+  }
+
   const reviewedHunks = trustedHunks + approvedHunks + rejectedHunks;
-  const pendingHunks = totalHunks - reviewedHunks;
+  const pendingHunks = totalHunks - reviewedHunks - savedForLaterHunks;
   const reviewedPercent =
     totalHunks > 0 ? Math.round((reviewedHunks / totalHunks) * 100) : 0;
 
@@ -51,6 +62,7 @@ export function computeReviewProgress(
     trustedHunks,
     approvedHunks,
     rejectedHunks,
+    savedForLaterHunks,
     reviewedHunks,
     pendingHunks,
     reviewedPercent,

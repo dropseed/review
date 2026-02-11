@@ -63,15 +63,17 @@ export function useFilePanelFileSystem() {
     let pendingHunks = 0;
     let reviewedHunks = 0;
     let rejectedHunks = 0;
+    let savedForLaterHunks = 0;
 
     for (const status of hunkStatusMap.values()) {
       totalHunks += status.total;
       pendingHunks += status.pending;
       reviewedHunks += status.approved + status.trusted;
       rejectedHunks += status.rejected;
+      savedForLaterHunks += status.savedForLater;
 
       if (status.total > 0) {
-        if (status.pending > 0) {
+        if (status.pending > 0 || status.savedForLater > 0) {
           needsReviewFiles++;
         } else {
           reviewedFiles++;
@@ -84,6 +86,7 @@ export function useFilePanelFileSystem() {
       reviewed: reviewedHunks,
       total: totalHunks,
       rejected: rejectedHunks,
+      savedForLater: savedForLaterHunks,
       needsReviewFiles,
       reviewedFiles,
     };
@@ -93,6 +96,7 @@ export function useFilePanelFileSystem() {
   // Files can appear in both sections if they have mixed hunk states
   const flatSectionedFiles = useMemo(() => {
     const needsReview: string[] = [];
+    const savedForLater: string[] = [];
     const reviewed: string[] = [];
     const seenPaths = new Set<string>();
 
@@ -101,6 +105,7 @@ export function useFilePanelFileSystem() {
       if (status.total === 0) continue;
       seenPaths.add(filePath);
       if (status.pending > 0) needsReview.push(filePath);
+      if (status.savedForLater > 0) savedForLater.push(filePath);
       if (status.approved + status.trusted + status.rejected > 0)
         reviewed.push(filePath);
     }
@@ -122,8 +127,9 @@ export function useFilePanelFileSystem() {
     collectStatusChanges(allFiles);
 
     needsReview.sort((a, b) => a.localeCompare(b));
+    savedForLater.sort((a, b) => a.localeCompare(b));
     reviewed.sort((a, b) => a.localeCompare(b));
-    return { needsReview, reviewed };
+    return { needsReview, savedForLater, reviewed };
   }, [hunkStatusMap, allFiles]);
 
   // Git status letter per file path (derived from allFiles tree)
@@ -162,6 +168,7 @@ export function useFilePanelFileSystem() {
       }
     }
     collect(sectionedFiles.needsReview);
+    collect(sectionedFiles.savedForLater);
     collect(sectionedFiles.reviewed);
     collect(allFilesTree);
     return paths;

@@ -8,22 +8,27 @@ import {
   DropdownMenuItem,
 } from "../../ui/dropdown-menu";
 import { SimpleTooltip } from "../../ui/tooltip";
-import { getFirstChangedLine } from "../hunkUtils";
 import type { SymbolLinkedHunk } from "../../../utils/symbolLinkedHunks";
 import { MovePairModal } from "./MovePairModal";
 import { SymbolLinkedHunksModal } from "./SymbolLinkedHunksModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
 
-/** Returns the appropriate background class for a hunk based on its state */
+/** Returns the appropriate background class for a hunk based on its review status */
 function getHunkBackgroundClass(
-  isRejected: boolean,
-  isApproved: boolean,
-  isTrusted: boolean,
+  status: "approved" | "rejected" | "saved_for_later" | "trusted" | "pending",
 ): string {
-  if (isRejected) return "bg-rose-500/10";
-  if (isApproved) return "bg-emerald-500/5";
-  if (isTrusted) return "bg-sky-500/5";
-  return "bg-stone-800/80";
+  switch (status) {
+    case "rejected":
+      return "bg-rose-500/10";
+    case "approved":
+      return "bg-emerald-500/5";
+    case "saved_for_later":
+      return "bg-amber-500/10";
+    case "trusted":
+      return "bg-sky-500/5";
+    case "pending":
+      return "bg-stone-800/80";
+  }
 }
 
 interface HunkAnnotationPanelProps {
@@ -48,6 +53,8 @@ interface HunkAnnotationPanelProps {
   onUnapprove: (hunkId: string) => void;
   onReject: (hunkId: string) => void;
   onUnreject: (hunkId: string) => void;
+  onSaveForLater: (hunkId: string) => void;
+  onUnsaveForLater: (hunkId: string) => void;
   onApprovePair: (hunkIds: string[]) => void;
   onRejectPair: (hunkIds: string[]) => void;
   onComment: (lineNumber: number, side: "old" | "new", hunkId: string) => void;
@@ -81,9 +88,11 @@ export function HunkAnnotationPanel({
   onUnapprove,
   onReject,
   onUnreject,
+  onSaveForLater,
+  onUnsaveForLater,
   onApprovePair,
   onRejectPair,
-  onComment,
+  onComment: _onComment,
   onAddTrustPattern,
   onRemoveTrustPattern,
   onReclassifyHunks,
@@ -95,18 +104,29 @@ export function HunkAnnotationPanel({
 }: HunkAnnotationPanelProps) {
   const isApproved = hunkState?.status === "approved";
   const isRejected = hunkState?.status === "rejected";
+  const isSavedForLater = hunkState?.status === "saved_for_later";
   const isTrusted = !hunkState?.status && isHunkTrusted(hunkState, trustList);
   const isFocused = hunk.id === focusedHunkId;
+
+  const reviewStatus = isRejected
+    ? ("rejected" as const)
+    : isApproved
+      ? ("approved" as const)
+      : isSavedForLater
+        ? ("saved_for_later" as const)
+        : isTrusted
+          ? ("trusted" as const)
+          : ("pending" as const);
 
   return (
     <div
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
-      className={`flex items-center gap-2 overflow-x-auto px-3 py-1.5 border-t border-stone-700/50 ${
+      className={`@container flex items-center gap-2 overflow-x-auto px-3 py-1.5 border-t border-stone-700/50 ${
         isFocused
           ? "border-l-[2px] border-l-white/50 border-b-[1px] border-b-white/30"
           : ""
-      } ${getHunkBackgroundClass(isRejected, isApproved, isTrusted)}`}
+      } ${getHunkBackgroundClass(reviewStatus)}`}
     >
       {/* Move pair indicator */}
       {pairedHunk && (
@@ -141,7 +161,7 @@ export function HunkAnnotationPanel({
                 d="M5 13l4 4L19 7"
               />
             </svg>
-            <span>Approved</span>
+            <span className="hidden @md:inline">Approved</span>
           </button>
         </SimpleTooltip>
       ) : isRejected ? (
@@ -163,40 +183,33 @@ export function HunkAnnotationPanel({
                 d="M6 18L18 6M6 6l12 12"
               />
             </svg>
-            <span>Rejected</span>
+            <span className="hidden @md:inline">Rejected</span>
+          </button>
+        </SimpleTooltip>
+      ) : isSavedForLater ? (
+        <SimpleTooltip content="Click to clear saved for later">
+          <button
+            onClick={() => onUnsaveForLater(hunk.id)}
+            className="group flex items-center gap-1.5 rounded-md bg-amber-500/20 px-2.5 py-1 text-xs font-medium text-amber-300 transition-all hover:bg-amber-500/30 inset-ring-1 inset-ring-amber-500/30 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <span className="hidden @md:inline">Saved for Later</span>
           </button>
         </SimpleTooltip>
       ) : (
         <div className="flex shrink-0 items-center gap-1">
-          <SimpleTooltip
-            content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
-          >
-            <button
-              onClick={() => onReject(hunk.id)}
-              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all active:scale-95 ${
-                isTrusted
-                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
-                  : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
-              }`}
-              aria-label="Reject change"
-            >
-              <svg
-                className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              <span>Reject</span>
-              {isFocused && <kbd className="ml-0.5 text-xxs opacity-60">r</kbd>}
-            </button>
-          </SimpleTooltip>
           <SimpleTooltip
             content={`Approve this change (a)${isTrusted ? " (optional)" : ""}`}
           >
@@ -222,8 +235,76 @@ export function HunkAnnotationPanel({
                   d="M5 13l4 4L19 7"
                 />
               </svg>
-              <span>Approve</span>
-              {isFocused && <kbd className="ml-0.5 text-xxs opacity-60">a</kbd>}
+              <span className="hidden @md:inline">Approve</span>
+              {isFocused && (
+                <kbd className="ml-0.5 text-xxs opacity-60 hidden @md:inline">
+                  a
+                </kbd>
+              )}
+            </button>
+          </SimpleTooltip>
+          <SimpleTooltip
+            content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
+          >
+            <button
+              onClick={() => onReject(hunk.id)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all active:scale-95 ${
+                isTrusted
+                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
+                  : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
+              }`}
+              aria-label="Reject change"
+            >
+              <svg
+                className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+              <span className="hidden @md:inline">Reject</span>
+              {isFocused && (
+                <kbd className="ml-0.5 text-xxs opacity-60 hidden @md:inline">
+                  r
+                </kbd>
+              )}
+            </button>
+          </SimpleTooltip>
+          <SimpleTooltip content="Save for later (s)">
+            <button
+              onClick={() => onSaveForLater(hunk.id)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all active:scale-95 ${
+                isTrusted
+                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-amber-500/20 hover:text-amber-400"
+                  : "text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 hover:text-amber-300"
+              }`}
+              aria-label="Save for later"
+            >
+              <svg
+                className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span className="hidden @md:inline">Later</span>
+              {isFocused && (
+                <kbd className="ml-0.5 text-xxs opacity-60 hidden @md:inline">
+                  s
+                </kbd>
+              )}
             </button>
           </SimpleTooltip>
           {/* Similar hunks modal trigger - "N like this" */}
@@ -247,32 +328,6 @@ export function HunkAnnotationPanel({
           />
         </div>
       )}
-
-      {/* Comment button - inline after approve/reject */}
-      <SimpleTooltip content="Add comment">
-        <button
-          onClick={() => {
-            const { lineNumber, side } = getFirstChangedLine(hunk);
-            onComment(lineNumber, side, hunk.id);
-          }}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
-        >
-          <svg
-            className="h-3.5 w-3.5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-            />
-          </svg>
-          <span className="hidden sm:inline">Comment</span>
-        </button>
-      </SimpleTooltip>
 
       {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
       <div className="ml-auto flex shrink-0 items-center gap-2">

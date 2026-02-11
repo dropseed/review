@@ -8,6 +8,7 @@ export interface FileHunkStatus {
   approved: number;
   trusted: number;
   rejected: number;
+  savedForLater: number;
   total: number;
 }
 

@@ -10,6 +10,7 @@ export type HunkStatus =
   | "trusted"
   | "approved"
   | "rejected"
+  | "saved_for_later"
   | "classifying";
 
 export interface MinimapMarker {
@@ -35,12 +36,18 @@ export function getHunkStatus(
   classifyingHunkIds: Set<string>,
 ): HunkStatus {
   if (classifyingHunkIds.has(hunkId)) return "classifying";
+
   const hunkState = reviewState?.hunks[hunkId];
   if (!hunkState) return "pending";
-  if (hunkState.status === "approved") return "approved";
-  if (hunkState.status === "rejected") return "rejected";
-  if (isHunkTrusted(hunkState, trustList)) return "trusted";
-  return "pending";
+
+  switch (hunkState.status) {
+    case "approved":
+    case "rejected":
+    case "saved_for_later":
+      return hunkState.status;
+    default:
+      return isHunkTrusted(hunkState, trustList) ? "trusted" : "pending";
+  }
 }
 
 // Semantic status colors
@@ -49,6 +56,7 @@ const STATUS_COLORS: Record<HunkStatus, string> = {
   trusted: "bg-status-trusted",
   approved: "bg-status-approved",
   rejected: "bg-status-rejected",
+  saved_for_later: "bg-status-saved",
   classifying: "bg-status-classifying",
 };
 

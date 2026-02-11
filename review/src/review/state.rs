@@ -109,6 +109,8 @@ pub struct HunkState {
 pub enum HunkStatus {
     Approved,
     Rejected,
+    #[serde(rename = "saved_for_later")]
+    SavedForLater,
 }
 
 impl ReviewState {
@@ -137,36 +139,31 @@ impl ReviewState {
     /// Create a summary of this review state
     pub fn to_summary(&self) -> ReviewSummary {
         let total_hunks = self.total_diff_hunks.unwrap_or(self.hunks.len());
-        let approved_hunks = self
-            .hunks
-            .values()
-            .filter(|h| matches!(h.status, Some(HunkStatus::Approved)))
-            .count();
-        let rejected_hunks = self
-            .hunks
-            .values()
-            .filter(|h| matches!(h.status, Some(HunkStatus::Rejected)))
-            .count();
-        // Count hunks with no explicit status but labels matching trust list
-        let trusted_hunks = self
-            .hunks
-            .values()
-            .filter(|h| {
-                if h.status.is_some() {
-                    return false;
-                }
-                if !h.label.is_empty() {
-                    for label in &h.label {
-                        for pattern in &self.trust_list {
-                            if matches_pattern(label, pattern) {
-                                return true;
-                            }
-                        }
+
+        // Single pass over hunks to count all status categories
+        let mut approved_hunks = 0usize;
+        let mut rejected_hunks = 0usize;
+        let mut saved_for_later_hunks = 0usize;
+        let mut trusted_hunks = 0usize;
+
+        for h in self.hunks.values() {
+            match &h.status {
+                Some(HunkStatus::Approved) => approved_hunks += 1,
+                Some(HunkStatus::Rejected) => rejected_hunks += 1,
+                Some(HunkStatus::SavedForLater) => saved_for_later_hunks += 1,
+                None => {
+                    // Count hunks with no explicit status but labels matching trust list
+                    if h.label.iter().any(|label| {
+                        self.trust_list
+                            .iter()
+                            .any(|pattern| matches_pattern(label, pattern))
+                    }) {
+                        trusted_hunks += 1;
                     }
                 }
-                false
-            })
-            .count();
+            }
+        }
+
         let reviewed_hunks = trusted_hunks + approved_hunks + rejected_hunks;
 
         let state = if rejected_hunks > 0 {
@@ -184,6 +181,7 @@ impl ReviewState {
             approved_hunks,
             reviewed_hunks,
             rejected_hunks,
+            saved_for_later_hunks,
             state,
             updated_at: self.updated_at.clone(),
         }
@@ -257,6 +255,8 @@ pub struct ReviewSummary {
     pub reviewed_hunks: usize,
     #[serde(rename = "rejectedHunks")]
     pub rejected_hunks: usize,
+    #[serde(rename = "savedForLaterHunks")]
+    pub saved_for_later_hunks: usize,
     /// Review state: "approved", "changes_requested", or null (in progress)
     pub state: Option<String>,
     #[serde(rename = "updatedAt")]

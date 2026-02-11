@@ -97,6 +97,7 @@
   --color-status-trusted: oklch(0.704 0.14 182.503);   /* teal-500 */
   --color-status-rejected: oklch(0.712 0.194 13.428);  /* rose-500 */
   --color-status-pending: oklch(0.553 0.013 58.071);   /* stone-500 */
+  --color-status-saved: oklch(0.769 0.189 70.08);      /* amber-500 - saved for later */
   --color-status-classifying: oklch(0.702 0.183 293.541); /* violet-400 */
   --color-status-ai: oklch(0.702 0.183 293.541);       /* violet-400 - AI-driven behaviors */
 

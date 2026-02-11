@@ -245,7 +245,7 @@ export interface DiffLine {
 export interface HunkState {
   label: string[]; // Classification labels, defaults to []
   reasoning?: string; // AI classification reasoning
-  status?: "approved" | "rejected"; // Explicit human decision (undefined = pending, trust computed from labels)
+  status?: "approved" | "rejected" | "saved_for_later"; // Explicit human decision (undefined = pending, trust computed from labels)
   classifiedVia?: "static" | "ai"; // Source of classification
 }
 
@@ -277,8 +277,14 @@ export function isHunkReviewed(
     return true;
   }
   if (!hunkState) return false;
-  if (hunkState.status) return true; // approved or rejected
+  if (hunkState.status === "approved" || hunkState.status === "rejected")
+    return true;
   return isHunkTrusted(hunkState, trustList);
+}
+
+// Helper to check if a hunk is saved for later
+export function isHunkSavedForLater(hunkState: HunkState | undefined): boolean {
+  return hunkState?.status === "saved_for_later";
 }
 
 // Line annotations for inline comments
@@ -390,6 +396,7 @@ export interface ReviewSummary {
   approvedHunks: number;
   reviewedHunks: number;
   rejectedHunks: number;
+  savedForLaterHunks: number;
   state: "approved" | "changes_requested" | null;
   updatedAt: string;
 }

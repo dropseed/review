@@ -11,6 +11,7 @@ export const EMPTY_HUNK_STATUS: FileHunkStatus = {
   approved: 0,
   trusted: 0,
   rejected: 0,
+  savedForLater: 0,
   total: 0,
 };
 
@@ -48,6 +49,8 @@ export function calculateFileHunkStatus(
       current.rejected++;
     } else if (hunkState?.status === "approved") {
       current.approved++;
+    } else if (hunkState?.status === "saved_for_later") {
+      current.savedForLater++;
     } else if (isHunkTrusted(hunkState, trustList)) {
       current.trusted++;
     } else if (
@@ -88,6 +91,7 @@ export function processTree(
         aggregateStatus.approved += child.hunkStatus.approved;
         aggregateStatus.trusted += child.hunkStatus.trusted;
         aggregateStatus.rejected += child.hunkStatus.rejected;
+        aggregateStatus.savedForLater += child.hunkStatus.savedForLater;
         aggregateStatus.total += child.hunkStatus.total;
       }
 
@@ -149,6 +153,7 @@ export function processTree(
 // Result type for sectioned tree processing
 export interface SectionedTreeResult {
   needsReview: ProcessedFileEntry[];
+  savedForLater: ProcessedFileEntry[];
   reviewed: ProcessedFileEntry[];
 }
 
@@ -202,6 +207,11 @@ export function processTreeWithSections(
     ),
   );
 
+  // Saved for Later: files with any saved-for-later hunks
+  const savedForLater = annotateSiblingMax(
+    compactTree(filterSection(processed, (status) => status.savedForLater > 0)),
+  );
+
   // Reviewed: files with any reviewed hunks (approved, trusted, or rejected)
   const reviewed = annotateSiblingMax(
     compactTree(
@@ -212,7 +222,7 @@ export function processTreeWithSections(
     ),
   );
 
-  return { needsReview, reviewed };
+  return { needsReview, savedForLater, reviewed };
 }
 
 // Annotate each directory entry with the max fileCount among its sibling directories

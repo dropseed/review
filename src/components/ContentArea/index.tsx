@@ -82,8 +82,6 @@ export function ContentArea() {
   const closeSplit = useReviewStore((s) => s.closeSplit);
   const swapPanes = useReviewStore((s) => s.swapPanes);
   const setSplitOrientation = useReviewStore((s) => s.setSplitOrientation);
-  const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
-
   // Split size as a fraction (0.5 = 50/50 split)
   const [splitFraction, setSplitFraction] = useState(0.5);
 
@@ -134,30 +132,6 @@ export function ContentArea() {
   if (!isSplitActive) {
     return selectedFile ? (
       <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-stone-800/50 bg-stone-900/80 shrink-0">
-          <button
-            onClick={navigateToGuide}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-stone-500 hover:text-stone-300 hover:bg-stone-800/50 transition-colors"
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Guide
-          </button>
-          <span className="text-xs text-stone-500 truncate flex-1">
-            {selectedFile}
-          </span>
-        </div>
         <FileViewer filePath={selectedFile} />
       </div>
     ) : null;
