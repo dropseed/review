@@ -418,7 +418,12 @@ pub fn should_skip_ai(hunk: &DiffHunk) -> Option<&'static str> {
         return Some("generated or minified file");
     }
 
-    // 3. Pure deletion hunks (only removed lines, no additions).
+    // 3. Prose/documentation files — no taxonomy labels apply to markdown content
+    if is_prose_file(&hunk.file_path) {
+        return Some("prose/documentation file — no matching taxonomy labels");
+    }
+
+    // 4. Pure deletion hunks (only removed lines, no additions).
     //    No AI-classified taxonomy label applies to pure deletions.
     //    (imports:removed and comments:removed are already handled by the static classifier.)
     let has_added = changed_lines.iter().any(|l| l.line_type == LineType::Added);
@@ -430,6 +435,15 @@ pub fn should_skip_ai(hunk: &DiffHunk) -> Option<&'static str> {
     }
 
     None
+}
+
+/// Check if a file is prose/documentation where no taxonomy labels apply.
+fn is_prose_file(file_path: &str) -> bool {
+    let lower = file_path.to_lowercase();
+    lower.ends_with(".md")
+        || lower.ends_with(".mdx")
+        || lower.ends_with(".rst")
+        || lower.ends_with(".txt")
 }
 
 /// Check if a file path looks like a generated/minified file that
@@ -987,6 +1001,18 @@ mod tests {
     #[test]
     fn test_skip_ai_minified_css() {
         let hunk = make_hunk("styles/app.min.css", vec![added(".a{color:red}")]);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_markdown_file() {
+        let hunk = make_hunk("README.md", vec![added("# New heading")]);
+        assert!(should_skip_ai(&hunk).is_some());
+    }
+
+    #[test]
+    fn test_skip_ai_mdx_file() {
+        let hunk = make_hunk("docs/guide.mdx", vec![added("## Setup")]);
         assert!(should_skip_ai(&hunk).is_some());
     }
 
