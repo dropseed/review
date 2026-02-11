@@ -1,63 +1,20 @@
 import type { ReviewProgress } from "../../hooks/useReviewProgress";
 
-interface StatChipProps {
-  color: string;
-  label: string;
-  count: number;
-}
-
-function StatChip({ color, label, count }: StatChipProps) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
-      <span className="text-xxs text-stone-500">{label}</span>
-      <span className="text-xxs text-stone-400 font-medium tabular-nums">
-        {count}
-      </span>
-    </div>
-  );
-}
-
-interface ProgressSegmentProps {
+function ProgressSegment({
+  count,
+  total,
+  className,
+}: {
   count: number;
   total: number;
   className: string;
-}
-
-function ProgressSegment({ count, total, className }: ProgressSegmentProps) {
+}) {
   if (count === 0) return null;
   return (
     <div
-      className={`${className} transition-all duration-300`}
+      className={`${className} transition-all duration-500 ease-out`}
       style={{ width: `${(count / total) * 100}%` }}
     />
-  );
-}
-
-const STATE_BADGE_CONFIG: Record<
-  string,
-  { label: string; colorClass: string }
-> = {
-  approved: {
-    label: "Approved",
-    colorClass: "text-emerald-300 bg-emerald-500/10",
-  },
-  changes_requested: {
-    label: "Changes Requested",
-    colorClass: "text-rose-300 bg-rose-500/10",
-  },
-};
-
-function StateBadge({ state }: { state: ReviewProgress["state"] }) {
-  if (!state) return null;
-  const config = STATE_BADGE_CONFIG[state];
-  if (!config) return null;
-  return (
-    <span
-      className={`text-xxs font-medium px-1.5 py-0.5 rounded ${config.colorClass}`}
-    >
-      {config.label}
-    </span>
   );
 }
 
@@ -72,9 +29,14 @@ export function SummaryStats({
   state,
 }: ReviewProgress) {
   return (
-    <div className="px-4 py-3">
+    <div className="px-4 pt-3 pb-1.5">
       <div className="flex items-center gap-3">
-        <div className="h-1.5 flex-1 rounded-full bg-stone-800 overflow-hidden flex">
+        <span className="text-lg font-bold tabular-nums tracking-tight text-stone-100 shrink-0">
+          {reviewedPercent}
+          <span className="text-xs font-medium text-stone-500 ml-px">%</span>
+        </span>
+
+        <div className="h-2 flex-1 rounded-full bg-stone-800 overflow-hidden flex">
           <ProgressSegment
             count={trustedHunks}
             total={totalHunks}
@@ -92,29 +54,31 @@ export function SummaryStats({
           />
         </div>
 
-        <span className="text-xs font-medium text-stone-300 tabular-nums whitespace-nowrap">
-          {reviewedPercent}%
-        </span>
-
-        <StateBadge state={state} />
+        {state === "approved" && (
+          <span className="text-xxs font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 shrink-0">
+            Approved
+          </span>
+        )}
+        {state === "changes_requested" && (
+          <span className="text-xxs font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 shrink-0">
+            Changes Requested
+          </span>
+        )}
       </div>
 
-      <div className="flex items-center gap-4 mt-2">
-        <StatChip color="bg-cyan-500" label="Trusted" count={trustedHunks} />
-        <StatChip
-          color="bg-emerald-500"
-          label="Approved"
-          count={approvedHunks}
-        />
+      <div className="flex items-center gap-3 mt-1.5 text-xxs tabular-nums">
+        <span className="text-cyan-400/70">{trustedHunks} trusted</span>
+        <span className="text-stone-700">&middot;</span>
+        <span className="text-emerald-400/70">{approvedHunks} approved</span>
         {rejectedHunks > 0 && (
-          <StatChip
-            color="bg-rose-500"
-            label="Rejected"
-            count={rejectedHunks}
-          />
+          <>
+            <span className="text-stone-700">&middot;</span>
+            <span className="text-rose-400/70">{rejectedHunks} rejected</span>
+          </>
         )}
-        <StatChip color="bg-amber-500" label="Pending" count={pendingHunks} />
-        <span className="text-xxs text-stone-600 tabular-nums ml-auto">
+        <span className="text-stone-700">&middot;</span>
+        <span className="text-stone-500">{pendingHunks} pending</span>
+        <span className="text-stone-600 ml-auto">
           {reviewedHunks}/{totalHunks} hunks
         </span>
       </div>

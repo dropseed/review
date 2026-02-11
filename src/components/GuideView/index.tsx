@@ -123,81 +123,6 @@ function SummarySection() {
   );
 }
 
-function getTaskStatusColor(status: string): string {
-  if (status === "loading") return "text-stone-400";
-  if (status === "done") return "text-emerald-400";
-  return "text-rose-400";
-}
-
-function GuideProgressBar() {
-  const classificationStatus = useReviewStore((s) => s.classificationStatus);
-  const groupingStatus = useReviewStore((s) => s.groupingStatus);
-  const summaryStatus = useReviewStore((s) => s.summaryStatus);
-
-  // Hide when all idle (guide hasn't been started)
-  if (
-    classificationStatus === "idle" &&
-    groupingStatus === "idle" &&
-    summaryStatus === "idle"
-  ) {
-    return null;
-  }
-
-  const tasks = [
-    { label: "Classification", status: classificationStatus },
-    { label: "Grouping", status: groupingStatus },
-    { label: "Summary", status: summaryStatus },
-  ];
-
-  return (
-    <div className="flex items-center gap-4 px-4 py-1.5">
-      {tasks.map((task) => {
-        if (task.status === "idle") return null;
-        return (
-          <span key={task.label} className="flex items-center gap-1.5 text-xxs">
-            {task.status === "loading" && (
-              <Spinner className="h-3 w-3 text-stone-500" />
-            )}
-            {task.status === "done" && (
-              <svg
-                className="h-3 w-3 text-emerald-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            )}
-            {task.status === "error" && (
-              <svg
-                className="h-3 w-3 text-rose-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            )}
-            <span className={getTaskStatusColor(task.status)}>
-              {task.label}
-            </span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 interface SectionConfig {
   id: string;
   title: string;
@@ -300,6 +225,10 @@ export function GuideView() {
   const activeTab = useReviewStore((s) => s.guideActiveTab);
   const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
 
+  const classificationStatus = useReviewStore((s) => s.classificationStatus);
+  const groupingStatus = useReviewStore((s) => s.groupingStatus);
+  const summaryStatus = useReviewStore((s) => s.summaryStatus);
+
   const focusedReviewUnreviewed = useFocusedReviewUnreviewed();
 
   const completedSections = useMemo(() => {
@@ -335,30 +264,30 @@ export function GuideView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* PR Context */}
-      <div className="max-w-5xl w-full mx-auto py-4 shrink-0">
+      <div className="max-w-5xl w-full mx-auto pt-4 pb-2 shrink-0">
         {githubPr && (
-          <div className="px-4 mb-4">
-            <h1 className="text-lg font-semibold text-stone-200">
-              {githubPr.title}{" "}
-              <span className="text-stone-500 font-normal">
+          <div className="px-4">
+            <h1 className="text-base font-semibold text-stone-200 leading-snug">
+              {githubPr.title}
+              <span className="text-stone-600 font-normal ml-2 text-sm">
                 #{githubPr.number}
               </span>
             </h1>
-            <div className="text-xs text-stone-500 mt-1 font-mono">
-              {githubPr.baseRefName} &larr; {githubPr.headRefName}
+            <div className="flex items-center gap-1.5 mt-1 text-xxs font-mono text-stone-500">
+              <span className="truncate">{githubPr.headRefName}</span>
+              <span className="text-stone-600 shrink-0">&rarr;</span>
+              <span className="truncate">{githubPr.baseRefName}</span>
             </div>
             {githubPr.body && (
-              <div className="mt-3 rounded-lg border border-stone-800 overflow-hidden">
-                <div className="px-4 py-3">
-                  <div className="guide-prose text-stone-300">
-                    <Markdown
-                      remarkPlugins={[remarkGfm]}
-                      urlTransform={urlTransform}
-                      components={markdownComponents}
-                    >
-                      {githubPr.body}
-                    </Markdown>
-                  </div>
+              <div className="mt-3 rounded-lg border-l-2 border-stone-700 bg-stone-800/20 px-4 py-3">
+                <div className="guide-prose text-stone-400">
+                  <Markdown
+                    remarkPlugins={[remarkGfm]}
+                    urlTransform={urlTransform}
+                    components={markdownComponents}
+                  >
+                    {githubPr.body}
+                  </Markdown>
                 </div>
               </div>
             )}
@@ -370,34 +299,40 @@ export function GuideView() {
       {contentState === "empty" && <NoChangesPrompt />}
       {contentState === "content" && (
         <>
+          {/* Progress + tabs */}
           <div className="sticky top-0 z-20 bg-stone-900/95 backdrop-blur-sm border-b border-stone-800/50 shrink-0">
             <div className="max-w-5xl w-full mx-auto">
               <SummaryStats {...progress} />
-              <GuideProgressBar />
-            </div>
-          </div>
-
-          {/* Tab bar */}
-          <div className="bg-stone-900/95 backdrop-blur-sm border-b border-stone-800/50 shrink-0">
-            <div className="max-w-5xl w-full mx-auto px-4 py-2 flex items-center gap-1 overflow-x-auto scrollbar-none">
-              {SECTIONS.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => setActiveTab(section.id)}
-                  className={getTabClasses(
-                    activeTab === section.id,
-                    completedSections.has(section.id),
-                  )}
-                >
-                  {completedSections.has(section.id) && (
-                    <span className="text-emerald-400">
-                      <CheckIcon />
-                    </span>
-                  )}
-                  {section.title}
-                </button>
-              ))}
+              <div className="px-4 pt-2 pb-2 flex items-center gap-1">
+                {SECTIONS.map((section) => {
+                  const taskLoading =
+                    (section.id === "overview" &&
+                      summaryStatus === "loading") ||
+                    (section.id === "quick-wins" &&
+                      classificationStatus === "loading") ||
+                    (section.id === "focused-review" &&
+                      groupingStatus === "loading");
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setActiveTab(section.id)}
+                      className={getTabClasses(
+                        activeTab === section.id,
+                        completedSections.has(section.id),
+                      )}
+                    >
+                      {taskLoading && <Spinner className="h-3 w-3" />}
+                      {!taskLoading && completedSections.has(section.id) && (
+                        <span className="text-emerald-400">
+                          <CheckIcon />
+                        </span>
+                      )}
+                      {section.title}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
