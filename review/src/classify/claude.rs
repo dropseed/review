@@ -153,7 +153,10 @@ pub(crate) fn run_claude_with_model(
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
     if !stderr_str.trim().is_empty() {
-        eprintln!("[run_claude_with_model] stderr (command succeeded): {}", stderr_str);
+        eprintln!(
+            "[run_claude_with_model] stderr (command succeeded): {}",
+            stderr_str
+        );
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
