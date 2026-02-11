@@ -106,7 +106,6 @@ function HighlightedLine({ tokens }: { tokens: ThemedToken[] }) {
 export function HunkPreview({
   hunk,
   hunkState,
-  compact = false,
   highlighted = false,
 }: HunkPreviewProps) {
   const changedLines = hunk.lines.filter(
@@ -115,8 +114,6 @@ export function HunkPreview({
 
   const tokenMap = useTokenizedLines(hunk);
   const status = hunkState?.status;
-  const maxLines = compact ? 4 : 12;
-
   return (
     <div
       className={`rounded-md border transition-colors ${
@@ -140,10 +137,8 @@ export function HunkPreview({
       </div>
 
       {/* Changed lines */}
-      <div
-        className={`font-mono text-xs overflow-x-auto ${compact ? "max-h-20" : "max-h-48"}`}
-      >
-        {changedLines.slice(0, maxLines).map((line, i) => {
+      <div className="font-mono text-xs overflow-x-auto">
+        {changedLines.map((line, i) => {
           const tokens = tokenMap?.get(i);
           return (
             <div
@@ -173,11 +168,6 @@ export function HunkPreview({
             </div>
           );
         })}
-        {changedLines.length > maxLines && (
-          <div className="px-3 py-1 text-xxs text-stone-500 italic">
-            +{changedLines.length - maxLines} more lines
-          </div>
-        )}
       </div>
     </div>
   );

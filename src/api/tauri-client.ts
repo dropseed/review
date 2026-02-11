@@ -285,6 +285,18 @@ export class TauriClient implements ApiClient {
     });
   }
 
+  async generateDiagram(
+    repoPath: string,
+    hunks: SummaryInput[],
+    options?: { command?: string },
+  ): Promise<string | null> {
+    return invoke<string | null>("generate_review_diagram", {
+      repoPath,
+      hunks,
+      command: options?.command,
+    });
+  }
+
   // ----- Trust patterns -----
 
   async getTrustTaxonomy(): Promise<TrustCategory[]> {

@@ -1860,8 +1860,8 @@ pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryCo
     state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Timeout for hunk grouping generation (single Claude call for entire diff).
-const GROUPING_TIMEOUT_SECS: u64 = 120;
+/// Timeout for single-call Claude operations (grouping, summary, diagram).
+const CLAUDE_CALL_TIMEOUT_SECS: u64 = 120;
 
 #[tauri::command]
 pub async fn generate_hunk_grouping(
@@ -1889,7 +1889,7 @@ pub async fn generate_hunk_grouping(
     let repo_path_buf = PathBuf::from(&repo_path);
 
     let result = timeout(
-        Duration::from_secs(GROUPING_TIMEOUT_SECS),
+        Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
             review::grouping::generate_grouping(
                 &hunks,
@@ -1902,7 +1902,7 @@ pub async fn generate_hunk_grouping(
     )
     .await
     .map_err(|_| {
-        format!("Hunk grouping generation timed out after {GROUPING_TIMEOUT_SECS} seconds")
+        format!("Hunk grouping generation timed out after {CLAUDE_CALL_TIMEOUT_SECS} seconds")
     })?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
@@ -1910,9 +1910,6 @@ pub async fn generate_hunk_grouping(
     info!("[generate_hunk_grouping] SUCCESS: {} groups", result.len());
     Ok(result)
 }
-
-/// Timeout for summary generation (single Claude call).
-const SUMMARY_TIMEOUT_SECS: u64 = 120;
 
 #[tauri::command]
 pub async fn generate_review_summary(
@@ -1937,17 +1934,59 @@ pub async fn generate_review_summary(
     let repo_path_buf = PathBuf::from(&repo_path);
 
     let result = timeout(
-        Duration::from_secs(SUMMARY_TIMEOUT_SECS),
+        Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
             review::summary::generate_summary(&hunks, &repo_path_buf, &model, command.as_deref())
         }),
     )
     .await
-    .map_err(|_| format!("Summary generation timed out after {SUMMARY_TIMEOUT_SECS} seconds"))?
+    .map_err(|_| format!("Summary generation timed out after {CLAUDE_CALL_TIMEOUT_SECS} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 
     info!("[generate_review_summary] SUCCESS: {} chars", result.len());
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn generate_review_diagram(
+    repo_path: String,
+    hunks: Vec<review::summary::SummaryInput>,
+    model: Option<String>,
+    command: Option<String>,
+) -> Result<Option<String>, String> {
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    let model = model.unwrap_or_else(|| "sonnet".to_owned());
+
+    debug!(
+        "[generate_review_diagram] repo_path={}, hunks={}, model={}, command={:?}",
+        repo_path,
+        hunks.len(),
+        model,
+        command,
+    );
+
+    let repo_path_buf = PathBuf::from(&repo_path);
+
+    let result = timeout(
+        Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
+        tokio::task::spawn_blocking(move || {
+            review::summary::generate_diagram(&hunks, &repo_path_buf, &model, command.as_deref())
+        }),
+    )
+    .await
+    .map_err(|_| format!("Diagram generation timed out after {CLAUDE_CALL_TIMEOUT_SECS} seconds"))?
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    let status = match &result {
+        None => "skipped",
+        Some(s) if s.is_empty() => "empty",
+        Some(_) => "generated",
+    };
+    info!("[generate_review_diagram] SUCCESS: {status}");
     Ok(result)
 }
 

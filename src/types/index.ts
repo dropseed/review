@@ -367,6 +367,7 @@ export interface GuideState {
   hunkIds: string[];
   generatedAt: string;
   summary?: string;
+  diagram?: string;
 }
 
 export interface ReviewState {

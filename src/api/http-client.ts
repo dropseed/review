@@ -449,6 +449,15 @@ export class HttpClient implements ApiClient {
     return "";
   }
 
+  async generateDiagram(
+    _repoPath: string,
+    _hunks: SummaryInput[],
+    _options?: { command?: string },
+  ): Promise<string | null> {
+    console.warn("[HttpClient] generateDiagram not implemented");
+    return null;
+  }
+
   // ----- Trust patterns -----
 
   async getTrustTaxonomy(): Promise<TrustCategory[]> {

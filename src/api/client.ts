@@ -192,6 +192,13 @@ export interface ApiClient {
     options?: { command?: string },
   ): Promise<string>;
 
+  /** Generate a Mermaid dependency diagram of the diff using Claude */
+  generateDiagram(
+    repoPath: string,
+    hunks: SummaryInput[],
+    options?: { command?: string },
+  ): Promise<string | null>;
+
   // ----- Trust patterns -----
 
   /** Get the built-in trust taxonomy */

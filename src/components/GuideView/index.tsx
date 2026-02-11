@@ -6,6 +6,7 @@ import { useTrustCounts } from "../../hooks/useTrustCounts";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
+import { MermaidDiagram } from "../FileViewer/MarkdownViewer/MermaidDiagram";
 import { SummaryStats } from "./SummaryStats";
 import { OverviewSection } from "./OverviewSection";
 import { QuickWinsSection } from "./QuickWinsSection";
@@ -187,8 +188,65 @@ function SummarySection() {
           )}
         </div>
       )}
+      <DiagramSection />
       <OverviewSection />
       <NextStepCta message="Start reviewing" targetTab="quick-wins" />
+    </div>
+  );
+}
+
+function DiagramSection() {
+  const guideDiagram = useReviewStore((s) => s.guideDiagram);
+  const guideDiagramError = useReviewStore((s) => s.guideDiagramError);
+  const diagramStatus = useReviewStore((s) => s.diagramStatus);
+  const isSummaryStale = useReviewStore((s) => s.isSummaryStale);
+  const generateDiagram = useReviewStore((s) => s.generateDiagram);
+
+  const stale = guideDiagram ? isSummaryStale() : false;
+
+  // Don't render anything if no diagram and not loading/error
+  if (!guideDiagram && !guideDiagramError && diagramStatus !== "loading") {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4">
+      {diagramStatus === "loading" && !guideDiagram && !guideDiagramError && (
+        <div className="rounded-lg border border-stone-800 p-4">
+          <div className="flex items-center gap-2 text-stone-500">
+            <Spinner />
+            <span className="text-xs">Generating dependency diagram…</span>
+          </div>
+        </div>
+      )}
+      {guideDiagramError && (
+        <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
+          <p className="text-xs text-rose-400">
+            Failed to generate diagram: {guideDiagramError}
+          </p>
+          <button
+            onClick={() => generateDiagram()}
+            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {guideDiagram && (
+        <div className="rounded-lg border border-stone-800 overflow-hidden">
+          <MermaidDiagram code={guideDiagram} />
+          {stale && (
+            <div className="flex items-center justify-end px-4 pb-3">
+              <button
+                onClick={() => generateDiagram()}
+                className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+              >
+                Regenerate
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

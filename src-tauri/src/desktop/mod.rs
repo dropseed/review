@@ -645,6 +645,7 @@ pub fn run() {
             commands::find_symbol_definitions,
             commands::generate_hunk_grouping,
             commands::generate_review_summary,
+            commands::generate_review_diagram,
             commands::is_dev_mode,
             commands::is_git_repo,
             commands::get_cli_install_status,
