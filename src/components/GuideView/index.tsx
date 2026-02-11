@@ -1,9 +1,11 @@
-import { type ReactNode, useEffect, useRef, useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useMemo } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
+import { useTrustCounts } from "../../hooks/useTrustCounts";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
+import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import { SummaryStats } from "./SummaryStats";
 import { OverviewSection } from "./OverviewSection";
 import { QuickWinsSection } from "./QuickWinsSection";
@@ -75,8 +77,14 @@ function SummarySection() {
   const summaryStatus = useReviewStore((s) => s.summaryStatus);
   const isSummaryStale = useReviewStore((s) => s.isSummaryStale);
   const generateSummary = useReviewStore((s) => s.generateSummary);
+  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
 
   const stale = guideSummary ? isSummaryStale() : false;
+  const showCta =
+    !guideSummary &&
+    !guideSummaryError &&
+    summaryStatus !== "loading" &&
+    claudeAvailable !== false;
 
   return (
     <div className="space-y-4">
@@ -93,6 +101,33 @@ function SummarySection() {
           <p className="text-xs text-rose-400">
             Failed to generate summary: {guideSummaryError}
           </p>
+          <button
+            onClick={() => generateSummary()}
+            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {showCta && (
+        <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
+          <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
+            <SparkleIcon className="h-4 w-4 text-purple-400" />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-stone-300">
+                AI Summary
+              </span>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Generate a summary of the changes in this review
+              </p>
+            </div>
+            <button
+              onClick={() => generateSummary()}
+              className="flex-shrink-0 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+            >
+              Generate
+            </button>
+          </div>
         </div>
       )}
       {guideSummary && (
@@ -193,6 +228,35 @@ function CheckIcon() {
   );
 }
 
+function SparkleIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+    </svg>
+  );
+}
+
+function TabBadge({
+  children,
+  variant,
+}: {
+  children: ReactNode;
+  variant: "amber" | "cyan" | "emerald";
+}) {
+  const colors = {
+    amber: "bg-amber-500/15 text-amber-400",
+    cyan: "bg-cyan-500/15 text-cyan-400",
+    emerald: "bg-emerald-500/15 text-emerald-400",
+  };
+  return (
+    <span
+      className={`text-xxs font-medium tabular-nums px-1.5 py-px rounded-full ${colors[variant]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 function getTabClasses(isActive: boolean, completed: boolean): string {
   const base =
     "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors";
@@ -217,10 +281,95 @@ function getContentState(
   return "content";
 }
 
-export function GuideView() {
+interface TabBadgeInfo {
+  sectionId: string;
+  isCompleted: boolean;
+  isLoading: boolean;
+  guideSummary: string | null;
+  trustedHunkCount: number;
+  totalHunks: number;
+  focusedReviewUnreviewed: number;
+  filesPendingCount: number;
+}
+
+function getTabBadge({
+  sectionId,
+  isCompleted,
+  isLoading,
+  guideSummary,
+  trustedHunkCount,
+  totalHunks,
+  focusedReviewUnreviewed,
+  filesPendingCount,
+}: TabBadgeInfo): ReactNode {
+  if (isLoading) return null;
+
+  switch (sectionId) {
+    case "overview":
+      if (guideSummary) {
+        return (
+          <span className="text-purple-400">
+            <SparkleIcon className="h-3 w-3" />
+          </span>
+        );
+      }
+      return null;
+
+    case "quick-wins":
+      if (isCompleted) {
+        return (
+          <span className="text-emerald-400">
+            <CheckIcon />
+          </span>
+        );
+      }
+      if (totalHunks > 0) {
+        return (
+          <TabBadge variant="cyan">
+            {trustedHunkCount}/{totalHunks}
+          </TabBadge>
+        );
+      }
+      return null;
+
+    case "focused-review":
+      if (isCompleted) {
+        return (
+          <span className="text-emerald-400">
+            <CheckIcon />
+          </span>
+        );
+      }
+      if (focusedReviewUnreviewed > 0) {
+        return <TabBadge variant="amber">{focusedReviewUnreviewed}</TabBadge>;
+      }
+      return null;
+
+    case "changed-files":
+      if (isCompleted) {
+        return (
+          <span className="text-emerald-400">
+            <CheckIcon />
+          </span>
+        );
+      }
+      if (filesPendingCount > 0) {
+        return <TabBadge variant="amber">{filesPendingCount}</TabBadge>;
+      }
+      return null;
+
+    default:
+      return null;
+  }
+}
+
+export function GuideView(): ReactNode {
   const progress = useReviewProgress();
   const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
   const loadingProgress = useReviewStore((s) => s.loadingProgress);
+  const hunks = useReviewStore((s) => s.hunks);
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const guideSummary = useReviewStore((s) => s.guideSummary);
 
   const activeTab = useReviewStore((s) => s.guideActiveTab);
   const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
@@ -230,14 +379,41 @@ export function GuideView() {
   const summaryStatus = useReviewStore((s) => s.summaryStatus);
 
   const focusedReviewUnreviewed = useFocusedReviewUnreviewed();
+  const reviewGroups = useReviewStore((s) => s.reviewGroups);
+  const { trustedHunkCount, totalHunks } = useTrustCounts();
+
+  // Count files with pending hunks for Remaining Files badge
+  const fileHunkStatusMap = useMemo(
+    () => calculateFileHunkStatus(hunks, reviewState),
+    [hunks, reviewState],
+  );
+  const filesPendingCount = useMemo(() => {
+    let count = 0;
+    for (const status of fileHunkStatusMap.values()) {
+      if (status.pending > 0) count++;
+    }
+    return count;
+  }, [fileHunkStatusMap]);
 
   const completedSections = useMemo(() => {
     const sections = new Set<string>();
-    if (focusedReviewUnreviewed === 0) {
+    if (focusedReviewUnreviewed === 0 && reviewGroups.length > 0) {
       sections.add("focused-review");
     }
+    if (progress.pendingHunks === 0 && progress.totalHunks > 0) {
+      sections.add("quick-wins");
+    }
+    if (filesPendingCount === 0 && progress.totalHunks > 0) {
+      sections.add("changed-files");
+    }
     return sections;
-  }, [focusedReviewUnreviewed]);
+  }, [
+    focusedReviewUnreviewed,
+    reviewGroups.length,
+    progress.pendingHunks,
+    progress.totalHunks,
+    filesPendingCount,
+  ]);
 
   // Auto-advance to the next incomplete tab when the current one completes
   const prevCompleted = useRef(completedSections);
@@ -257,7 +433,23 @@ export function GuideView() {
         return () => clearTimeout(timer);
       }
     }
-  }, [completedSections, activeTab]);
+  }, [completedSections, activeTab, setActiveTab]);
+
+  const isTabLoading = useCallback(
+    (sectionId: string): boolean => {
+      switch (sectionId) {
+        case "overview":
+          return summaryStatus === "loading";
+        case "quick-wins":
+          return classificationStatus === "loading";
+        case "focused-review":
+          return groupingStatus === "loading";
+        default:
+          return false;
+      }
+    },
+    [summaryStatus, classificationStatus, groupingStatus],
+  );
 
   const contentState = getContentState(progress.totalHunks, !!loadingProgress);
 
@@ -305,13 +497,19 @@ export function GuideView() {
               <SummaryStats {...progress} />
               <div className="px-4 pt-2 pb-2 flex items-center gap-1">
                 {SECTIONS.map((section) => {
-                  const taskLoading =
-                    (section.id === "overview" &&
-                      summaryStatus === "loading") ||
-                    (section.id === "quick-wins" &&
-                      classificationStatus === "loading") ||
-                    (section.id === "focused-review" &&
-                      groupingStatus === "loading");
+                  const loading = isTabLoading(section.id);
+                  const isCompleted = completedSections.has(section.id);
+                  const badge = getTabBadge({
+                    sectionId: section.id,
+                    isCompleted,
+                    isLoading: loading,
+                    guideSummary,
+                    trustedHunkCount,
+                    totalHunks,
+                    focusedReviewUnreviewed,
+                    filesPendingCount,
+                  });
+
                   return (
                     <button
                       key={section.id}
@@ -319,16 +517,12 @@ export function GuideView() {
                       onClick={() => setActiveTab(section.id)}
                       className={getTabClasses(
                         activeTab === section.id,
-                        completedSections.has(section.id),
+                        isCompleted,
                       )}
                     >
-                      {taskLoading && <Spinner className="h-3 w-3" />}
-                      {!taskLoading && completedSections.has(section.id) && (
-                        <span className="text-emerald-400">
-                          <CheckIcon />
-                        </span>
-                      )}
+                      {loading && <Spinner className="h-3 w-3" />}
                       {section.title}
+                      {badge}
                     </button>
                   );
                 })}

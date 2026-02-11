@@ -1,4 +1,4 @@
-import { useMemo, useCallback, memo } from "react";
+import { type ReactNode, useMemo, useCallback, useState, memo } from "react";
 import { useReviewStore } from "../../stores";
 import type { FileSymbolDiff, SymbolDiff, DiffHunk } from "../../types";
 import {
@@ -19,18 +19,10 @@ import { ReviewDataProvider, useReviewData } from "../ReviewDataContext";
 import { StatusLetter } from "../FilesPanel/StatusIndicators";
 import { flattenFilesWithStatus } from "../../stores/types";
 
-// ========================================================================
-// Types
-// ========================================================================
-
 interface LineStats {
   added: number;
   removed: number;
 }
-
-// ========================================================================
-// Helpers
-// ========================================================================
 
 function buildLineStatsMap(hunks: DiffHunk[]): Map<string, LineStats> {
   const map = new Map<string, LineStats>();
@@ -85,10 +77,6 @@ function getSymbolLineStats(
   return { added, removed };
 }
 
-// ========================================================================
-// Small presentational components
-// ========================================================================
-
 function LineStatsBadge({ stats }: { stats: LineStats }) {
   if (stats.added === 0 && stats.removed === 0) return null;
   return (
@@ -125,23 +113,62 @@ function FileProgressBar({ status }: { status: FileHunkStatus }) {
   );
 }
 
-// ========================================================================
-// DrillDownHeader
-// ========================================================================
-
-function DrillDownHeader() {
+function SectionHeader({
+  title,
+  fileCount,
+  pendingCount,
+  isOpen,
+  onToggle,
+  variant,
+}: {
+  title: string;
+  fileCount: number;
+  pendingCount?: number;
+  isOpen: boolean;
+  onToggle: () => void;
+  variant: "pending" | "reviewed";
+}) {
   return (
-    <div className="flex items-center mb-2">
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex items-center gap-2 w-full py-2 text-left group"
+    >
+      <svg
+        className={`w-3 h-3 text-stone-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
       <h3 className="text-xs font-medium text-stone-400 uppercase tracking-wide">
-        Changed Files
+        {title}
       </h3>
-    </div>
+      <span className="text-xxs text-stone-600 tabular-nums">
+        {fileCount} {fileCount === 1 ? "file" : "files"}
+      </span>
+      {variant === "pending" &&
+        pendingCount !== undefined &&
+        pendingCount > 0 && (
+          <span className="text-xxs font-mono tabular-nums px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
+            {pendingCount} pending
+          </span>
+        )}
+      {variant === "reviewed" && (
+        <span className="text-xxs text-emerald-500/70">done</span>
+      )}
+    </button>
   );
 }
 
-// ========================================================================
-// DrillDownFileRow
-// ========================================================================
+function fileNameColor(fileStatus?: string): string {
+  if (fileStatus === "deleted") return "text-rose-400/70";
+  if (fileStatus === "added" || fileStatus === "untracked")
+    return "text-emerald-300";
+  return "text-stone-200";
+}
 
 const DrillDownFileRow = memo(function DrillDownFileRow({
   fileDiff,
@@ -241,7 +268,6 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
           {allFileHunkIds.length}{" "}
           {allFileHunkIds.length === 1 ? "hunk" : "hunks"}
         </span>
-        <StatusBadge status={topStatus} />
         <ReviewStatusDot status={topStatus} />
       </div>
     );
@@ -268,15 +294,7 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
                 {dirPath}/
               </span>
             )}
-            <span
-              className={
-                fileStatus === "deleted"
-                  ? "text-rose-400/70 font-medium"
-                  : fileStatus === "added" || fileStatus === "untracked"
-                    ? "text-emerald-300 font-medium"
-                    : "text-stone-200 font-medium"
-              }
-            >
+            <span className={`font-medium ${fileNameColor(fileStatus)}`}>
               {fileName}
             </span>
           </button>
@@ -294,10 +312,6 @@ const DrillDownFileRow = memo(function DrillDownFileRow({
     </div>
   );
 });
-
-// ========================================================================
-// List layout — top-level hunks row
-// ========================================================================
 
 function ListTopLevelRow({
   hunkIds,
@@ -358,17 +372,16 @@ function ListTopLevelRow({
   );
 }
 
-// ========================================================================
-// DrillDownSection — main export
-// ========================================================================
-
-export function DrillDownSection() {
+export function DrillDownSection(): ReactNode {
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const files = useReviewStore((s) => s.files);
+
+  const [reviewedOpen, setReviewedOpen] = useState(false);
+  const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
 
   const hunkStates = reviewState?.hunks ?? {};
   const trustList = reviewState?.trustList ?? [];
@@ -429,9 +442,45 @@ export function DrillDownSection() {
       }
     }
 
-    result.sort((a, b) => a.filePath.localeCompare(b.filePath));
     return result;
   }, [symbolDiffs, hunks]);
+
+  // Split into "Needs Review" and "Reviewed" sections
+  const { needsReviewFiles, reviewedFiles, totalPendingHunks } = useMemo(() => {
+    const pending: FileSymbolDiff[] = [];
+    const reviewed: FileSymbolDiff[] = [];
+    let pendingHunkSum = 0;
+
+    for (const fileDiff of allChangedFiles) {
+      const status =
+        fileHunkStatusMap.get(fileDiff.filePath) ?? EMPTY_HUNK_STATUS;
+      if (status.pending > 0) {
+        pending.push(fileDiff);
+        pendingHunkSum += status.pending;
+      } else {
+        reviewed.push(fileDiff);
+      }
+    }
+
+    // Sort "Needs Review" by pending hunk count descending, alphabetical tiebreaker
+    pending.sort((a, b) => {
+      const aPending = (fileHunkStatusMap.get(a.filePath) ?? EMPTY_HUNK_STATUS)
+        .pending;
+      const bPending = (fileHunkStatusMap.get(b.filePath) ?? EMPTY_HUNK_STATUS)
+        .pending;
+      if (bPending !== aPending) return bPending - aPending;
+      return a.filePath.localeCompare(b.filePath);
+    });
+
+    // Sort "Reviewed" alphabetically
+    reviewed.sort((a, b) => a.filePath.localeCompare(b.filePath));
+
+    return {
+      needsReviewFiles: pending,
+      reviewedFiles: reviewed,
+      totalPendingHunks: pendingHunkSum,
+    };
+  }, [allChangedFiles, fileHunkStatusMap]);
 
   const contextValue = useMemo(
     () => ({ hunkStates, trustList, onNavigate: handleNavigate }),
@@ -442,33 +491,62 @@ export function DrillDownSection() {
     return null;
   }
 
+  const renderFileList = (fileDiffs: FileSymbolDiff[], dimmed?: boolean) => (
+    <div
+      className={`rounded-lg border border-stone-800 overflow-hidden ${dimmed ? "opacity-50" : ""}`}
+    >
+      {fileDiffs.map((fileDiff) => {
+        const status =
+          fileHunkStatusMap.get(fileDiff.filePath) ?? EMPTY_HUNK_STATUS;
+        const fileLineStats = getFileLineStats(
+          fileDiff.filePath,
+          hunks,
+          lineStatsMap,
+        );
+        return (
+          <DrillDownFileRow
+            key={fileDiff.filePath}
+            fileDiff={fileDiff}
+            fileHunkStatus={status}
+            fileLineStats={fileLineStats}
+            lineStatsMap={lineStatsMap}
+            allHunks={hunks}
+            fileStatus={fileStatusMap.get(fileDiff.filePath)}
+          />
+        );
+      })}
+    </div>
+  );
+
   return (
     <ReviewDataProvider value={contextValue}>
-      <div className="px-4 mb-6">
-        <DrillDownHeader />
+      <div className="space-y-2">
+        {/* Needs Review section */}
+        {needsReviewFiles.length > 0 && (
+          <div>
+            <SectionHeader
+              title="Needs Review"
+              fileCount={needsReviewFiles.length}
+              pendingCount={totalPendingHunks}
+              isOpen={needsReviewOpen}
+              onToggle={() => setNeedsReviewOpen((v) => !v)}
+              variant="pending"
+            />
+            {needsReviewOpen && renderFileList(needsReviewFiles)}
+          </div>
+        )}
 
-        {allChangedFiles.length > 0 && (
-          <div className="rounded-lg border border-stone-800 overflow-hidden">
-            {allChangedFiles.map((fileDiff) => {
-              const status =
-                fileHunkStatusMap.get(fileDiff.filePath) ?? EMPTY_HUNK_STATUS;
-              const fileLineStats = getFileLineStats(
-                fileDiff.filePath,
-                hunks,
-                lineStatsMap,
-              );
-              return (
-                <DrillDownFileRow
-                  key={fileDiff.filePath}
-                  fileDiff={fileDiff}
-                  fileHunkStatus={status}
-                  fileLineStats={fileLineStats}
-                  lineStatsMap={lineStatsMap}
-                  allHunks={hunks}
-                  fileStatus={fileStatusMap.get(fileDiff.filePath)}
-                />
-              );
-            })}
+        {/* Reviewed section */}
+        {reviewedFiles.length > 0 && (
+          <div>
+            <SectionHeader
+              title="Reviewed"
+              fileCount={reviewedFiles.length}
+              isOpen={reviewedOpen}
+              onToggle={() => setReviewedOpen((v) => !v)}
+              variant="reviewed"
+            />
+            {reviewedOpen && renderFileList(reviewedFiles, true)}
           </div>
         )}
       </div>

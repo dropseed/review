@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useReviewStore } from "../../stores";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk, HunkGroup, HunkState } from "../../types";
@@ -12,13 +12,12 @@ import {
 } from "../ui/dropdown-menu";
 import { GroupCard } from "./GroupCard";
 
-// ========================================================================
-// Helpers
-// ========================================================================
+function buildHunkMap(hunks: DiffHunk[]): Map<string, DiffHunk> {
+  const map = new Map<string, DiffHunk>();
+  for (const h of hunks) map.set(h.id, h);
+  return map;
+}
 
-/**
- * Filter a list of hunk IDs down to those that are not yet reviewed.
- */
 function getUnreviewedIds(
   ids: string[],
   hunkById: Map<string, DiffHunk>,
@@ -44,11 +43,48 @@ function getUnreviewedIds(
   return result;
 }
 
-// ========================================================================
-// FocusedReviewSection
-// ========================================================================
+function ProgressStepper({
+  total,
+  completed,
+  activeIndex,
+}: {
+  total: number;
+  completed: number;
+  activeIndex: number;
+}) {
+  if (total > 6) {
+    return (
+      <p className="text-xxs text-stone-500 text-center mt-2">
+        {completed} of {total} groups complete
+      </p>
+    );
+  }
 
-export function FocusedReviewSection() {
+  return (
+    <div className="flex items-center justify-center gap-1 mt-2">
+      {Array.from({ length: total }, (_, i) => {
+        const isComplete = i < completed;
+        const isActive = i === activeIndex;
+        let dotColor = "bg-stone-700";
+        if (isComplete) dotColor = "bg-emerald-500";
+        else if (isActive) dotColor = "bg-amber-400";
+
+        return (
+          <div key={i} className="flex items-center">
+            {i > 0 && (
+              <div
+                className={`w-4 h-px ${isComplete ? "bg-emerald-500/50" : "bg-stone-700"}`}
+              />
+            )}
+            <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function FocusedReviewSection(): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
@@ -69,12 +105,9 @@ export function FocusedReviewSection() {
   );
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
 
-  // Build hunk lookup
-  const hunkById = useMemo(() => {
-    const map = new Map<string, DiffHunk>();
-    for (const h of hunks) map.set(h.id, h);
-    return map;
-  }, [hunks]);
+  const [completedOpen, setCompletedOpen] = useState(false);
+
+  const hunkById = useMemo(() => buildHunkMap(hunks), [hunks]);
 
   const trustList = reviewState?.trustList ?? [];
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
@@ -158,6 +191,22 @@ export function FocusedReviewSection() {
     stagedFilePaths,
   ]);
 
+  // Split groups into pending and completed
+  const { pendingGroups, completedGroups } = useMemo(() => {
+    const pending: { group: HunkGroup; originalIndex: number }[] = [];
+    const completed: { group: HunkGroup; originalIndex: number }[] = [];
+    for (let i = 0; i < reviewGroups.length; i++) {
+      const group = reviewGroups[i];
+      const unreviewed = groupUnreviewedCounts.get(group.title) ?? 0;
+      if (unreviewed === 0) {
+        completed.push({ group, originalIndex: i });
+      } else {
+        pending.push({ group, originalIndex: i });
+      }
+    }
+    return { pendingGroups: pending, completedGroups: completed };
+  }, [reviewGroups, groupUnreviewedCounts]);
+
   const displayCount = useAnimatedCount(totalUnreviewed);
 
   const totalInGroups = useMemo(
@@ -177,6 +226,22 @@ export function FocusedReviewSection() {
       fireCelebrationConfetti();
     }
   }, [totalUnreviewed]);
+
+  // Auto-scroll to active group
+  const activeGroupRef = useRef<HTMLDivElement>(null);
+  const prevActiveIndex = useRef(activeGroupIndex);
+  useEffect(() => {
+    if (
+      activeGroupIndex !== prevActiveIndex.current &&
+      activeGroupRef.current
+    ) {
+      activeGroupRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+    prevActiveIndex.current = activeGroupIndex;
+  }, [activeGroupIndex]);
 
   // Staleness
   const guide = reviewState?.guide;
@@ -268,6 +333,36 @@ export function FocusedReviewSection() {
     }
   }
 
+  // Common props for GroupCard rendering
+  function renderGroupCard(
+    group: HunkGroup,
+    originalIndex: number,
+    isActive: boolean,
+    compact?: boolean,
+  ) {
+    return (
+      <GroupCard
+        key={group.title}
+        group={group}
+        isActive={isActive}
+        unreviewedCount={groupUnreviewedCounts.get(group.title) ?? 0}
+        identicalCount={groupIdenticalCounts.get(group.title) ?? 0}
+        hunkById={hunkById}
+        hunkStates={reviewState?.hunks}
+        compact={compact}
+        onApproveAll={handleApproveAll}
+        onRejectAll={handleRejectAll}
+        onUnapproveAll={handleUnapproveAll}
+        onApproveIdentical={handleApproveIdentical}
+        onApproveHunk={(id) => approveHunkIds([id])}
+        onRejectHunk={(id) => rejectHunkIds([id])}
+        onCommentHunk={handleCommentHunk}
+        onReviewIndividually={handleReviewIndividually}
+        onActivate={() => setActiveGroupIndex(originalIndex)}
+      />
+    );
+  }
+
   // Loading state
   if (groupingLoading) {
     return (
@@ -287,30 +382,8 @@ export function FocusedReviewSection() {
     );
   }
 
-  // Error state
-  if (groupingError) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="max-w-md w-full text-center space-y-4">
-          <h2 className="text-lg font-semibold text-stone-200">
-            Grouping failed
-          </h2>
-          <p className="text-sm text-red-400">{groupingError}</p>
-          <button
-            type="button"
-            onClick={generateGrouping}
-            className="px-4 py-2 text-sm font-medium rounded-md bg-stone-800 text-stone-300
-                       hover:bg-stone-700 hover:text-stone-200 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   // Empty state — no groups yet
-  if (reviewGroups.length === 0) {
+  if (reviewGroups.length === 0 && !groupingError) {
     return (
       <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
         <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
@@ -346,6 +419,22 @@ export function FocusedReviewSection() {
 
   return (
     <div className="space-y-4">
+      {/* Inline error banner */}
+      {groupingError && (
+        <div className="rounded-md bg-rose-500/10 px-3 py-2 inset-ring-1 inset-ring-rose-500/20 flex items-center gap-3">
+          <p className="text-2xs text-rose-400 flex-1">
+            Grouping failed: {groupingError}
+          </p>
+          <button
+            type="button"
+            onClick={generateGrouping}
+            className="shrink-0 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Progress header */}
       <div className="rounded-lg border border-stone-800 p-4 text-center">
         <div className="flex items-center justify-center gap-3">
@@ -367,6 +456,11 @@ export function FocusedReviewSection() {
             {reviewedInGroups} of {totalInGroups} reviewed
           </p>
         )}
+        <ProgressStepper
+          total={reviewGroups.length}
+          completed={completedGroups.length}
+          activeIndex={pendingGroups.length > 0 ? 0 : -1}
+        />
       </div>
 
       {/* Stale / regenerate */}
@@ -415,34 +509,64 @@ export function FocusedReviewSection() {
         </div>
       )}
 
-      {/* Group list */}
-      <div className="space-y-2">
-        {reviewGroups.map((group, i) => (
-          <GroupCard
-            key={group.title}
-            group={group}
-            isActive={i === activeGroupIndex}
-            unreviewedCount={groupUnreviewedCounts.get(group.title) ?? 0}
-            identicalCount={groupIdenticalCounts.get(group.title) ?? 0}
-            hunkById={hunkById}
-            hunkStates={reviewState?.hunks}
-            onApproveAll={handleApproveAll}
-            onRejectAll={handleRejectAll}
-            onUnapproveAll={handleUnapproveAll}
-            onApproveIdentical={handleApproveIdentical}
-            onApproveHunk={(id) => approveHunkIds([id])}
-            onRejectHunk={(id) => rejectHunkIds([id])}
-            onCommentHunk={handleCommentHunk}
-            onReviewIndividually={handleReviewIndividually}
-            onActivate={() => setActiveGroupIndex(i)}
-          />
-        ))}
-      </div>
+      {/* Pending groups */}
+      {pendingGroups.length > 0 && (
+        <div className="space-y-2">
+          {pendingGroups.map(({ group, originalIndex }) => (
+            <div
+              key={group.title}
+              ref={
+                originalIndex === activeGroupIndex ? activeGroupRef : undefined
+              }
+            >
+              {renderGroupCard(
+                group,
+                originalIndex,
+                originalIndex === activeGroupIndex,
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Completed groups */}
+      {completedGroups.length > 0 && (
+        <div className="rounded-lg border border-stone-800/50">
+          <button
+            type="button"
+            onClick={() => setCompletedOpen(!completedOpen)}
+            className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-stone-800/30 transition-colors"
+          >
+            <svg
+              className={`h-3 w-3 text-stone-600 transition-transform ${completedOpen ? "rotate-90" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+            <span className="text-xs text-stone-500">
+              {completedGroups.length} completed
+            </span>
+          </button>
+          {completedOpen && (
+            <div className="px-1 pb-1 space-y-0.5">
+              {completedGroups.map(({ group, originalIndex }) =>
+                renderGroupCard(group, originalIndex, false, true),
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-/** Returns the total unreviewed count across all groups, for section completion */
 export function useFocusedReviewUnreviewed(): number {
   const reviewGroups = useReviewStore((s) => s.reviewGroups);
   const hunks = useReviewStore((s) => s.hunks);
@@ -453,11 +577,7 @@ export function useFocusedReviewUnreviewed(): number {
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
   const hunkStates = reviewState?.hunks;
 
-  const hunkById = useMemo(() => {
-    const map = new Map<string, DiffHunk>();
-    for (const h of hunks) map.set(h.id, h);
-    return map;
-  }, [hunks]);
+  const hunkById = useMemo(() => buildHunkMap(hunks), [hunks]);
 
   return useMemo(() => {
     let count = 0;

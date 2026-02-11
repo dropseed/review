@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import type { HunkGroup, DiffHunk, HunkState } from "../../types";
 import { HunkPreview } from "../FileViewer/annotations/HunkPreview";
 import { NarrativeContent } from "../NarrativeContent";
@@ -102,6 +102,7 @@ interface GroupCardProps {
   hunkById: Map<string, DiffHunk>;
   hunkStates: Record<string, HunkState> | undefined;
   identicalCount: number;
+  compact?: boolean;
   onApproveAll: (group: HunkGroup) => void;
   onRejectAll: (group: HunkGroup) => void;
   onUnapproveAll: (group: HunkGroup) => void;
@@ -157,6 +158,7 @@ export function GroupCard({
   hunkById,
   hunkStates,
   identicalCount,
+  compact,
   onApproveAll,
   onRejectAll,
   onUnapproveAll,
@@ -166,7 +168,7 @@ export function GroupCard({
   onCommentHunk,
   onReviewIndividually,
   onActivate,
-}: GroupCardProps) {
+}: GroupCardProps): ReactNode {
   const isCompleted = unreviewedCount === 0;
   const colors = cardColorClasses(isCompleted, isActive);
   const isSingleHunk = group.hunkIds.length === 1;
@@ -179,6 +181,25 @@ export function GroupCard({
     }
     return files.size;
   }, [group.hunkIds, hunkById]);
+
+  // Compact mode: single-line completed group
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={onActivate}
+        className="flex items-center gap-2 w-full px-3 py-1.5 rounded-md text-left hover:bg-stone-800/30 transition-colors"
+      >
+        <span className="text-emerald-400 shrink-0">
+          <CheckIcon className="w-3 h-3" />
+        </span>
+        <span className="text-xs text-stone-500 truncate flex-1">
+          {group.title}
+        </span>
+        <span className="text-xxs text-stone-600 shrink-0">done</span>
+      </button>
+    );
+  }
 
   return (
     <div className={`rounded-lg border transition-all ${colors.border}`}>
