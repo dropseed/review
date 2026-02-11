@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useReviewStore } from "../stores";
-import type { DiffHunk, HunkState } from "../types";
+import { isHunkUnclassified, type DiffHunk, type HunkState } from "../types";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,7 @@ function buildLabelGroups(
       for (const lbl of state.label) {
         labelCounts.set(lbl, (labelCounts.get(lbl) || 0) + 1);
       }
-    } else {
+    } else if (isHunkUnclassified(state)) {
       unclassifiedCount++;
     }
   }
@@ -76,10 +76,7 @@ function getFilteredHunks(
   if (filter === null) return hunks;
 
   if (filter === "__unclassified__") {
-    return hunks.filter((h) => {
-      const state = reviewState?.hunks[h.id];
-      return !state?.label || state.label.length === 0;
-    });
+    return hunks.filter((h) => isHunkUnclassified(reviewState?.hunks[h.id]));
   }
 
   return hunks.filter((h) => {

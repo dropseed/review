@@ -1,7 +1,11 @@
 import { type ReactNode, useState, useMemo, useEffect, useRef } from "react";
 import { useReviewStore } from "../../stores";
 import { useTrustCounts } from "../../hooks/useTrustCounts";
-import { anyLabelMatchesPattern, type TrustCategory } from "../../types";
+import {
+  anyLabelMatchesPattern,
+  isHunkUnclassified,
+  type TrustCategory,
+} from "../../types";
 import { getApiClient } from "../../api";
 import { Checkbox } from "../ui/checkbox";
 import { SimpleTooltip } from "../ui/tooltip";
@@ -352,10 +356,7 @@ export function QuickWinsSection(): ReactNode {
 
   const unlabeledCount = useMemo(
     () =>
-      hunks.filter((h) => {
-        const labels = reviewState?.hunks[h.id]?.label;
-        return !labels || labels.length === 0;
-      }).length,
+      hunks.filter((h) => isHunkUnclassified(reviewState?.hunks[h.id])).length,
     [hunks, reviewState?.hunks],
   );
 

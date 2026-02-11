@@ -1,4 +1,5 @@
 import type { ApiClient } from "../../api";
+import { isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 
 export interface ClassificationSlice {
@@ -50,10 +51,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
       ? hunks.filter((h) => hunkIds.includes(h.id))
       : hunks;
 
-    const hunksToClassify = candidateHunks.filter((hunk) => {
-      const state = reviewState.hunks[hunk.id];
-      return !state?.label || state.label.length === 0;
-    });
+    const hunksToClassify = candidateHunks.filter((hunk) =>
+      isHunkUnclassified(reviewState.hunks[hunk.id]),
+    );
 
     if (hunksToClassify.length === 0) return;
 
@@ -126,11 +126,10 @@ export const createClassificationSlice: SliceCreatorWithClient<
       ? hunks.filter((h) => hunkIds.includes(h.id))
       : hunks;
 
-    // Filter out hunks that have already been classified (have labels)
-    let hunksToClassify = candidateHunks.filter((hunk) => {
-      const state = reviewState.hunks[hunk.id];
-      return !state?.label || state.label.length === 0;
-    });
+    // Filter out hunks that have already been classified (have labels or were processed)
+    let hunksToClassify = candidateHunks.filter((hunk) =>
+      isHunkUnclassified(reviewState.hunks[hunk.id]),
+    );
 
     const alreadyClassifiedCount =
       candidateHunks.length - hunksToClassify.length;

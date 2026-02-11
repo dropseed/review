@@ -249,6 +249,15 @@ export interface HunkState {
   classifiedVia?: "static" | "ai"; // Source of classification
 }
 
+// Helper to check if a hunk has not been processed by any classifier yet
+// (no labels assigned and no classifiedVia marker from static/AI classification)
+export function isHunkUnclassified(hunkState: HunkState | undefined): boolean {
+  return (
+    (!hunkState?.label || hunkState.label.length === 0) &&
+    !hunkState?.classifiedVia
+  );
+}
+
 // Helper to check if a hunk's labels match any trusted pattern
 export function isHunkTrusted(
   hunkState: HunkState | undefined,
