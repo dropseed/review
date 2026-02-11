@@ -1,6 +1,8 @@
 import type { ApiClient } from "../../api";
 import type {
   Comparison,
+  DiffHunk,
+  GlobalReviewSummary,
   ReviewState,
   ReviewSummary,
   RejectionFeedback,
@@ -88,6 +90,9 @@ export interface ReviewSlice {
   // Auto-approve staged
   setAutoApproveStaged: (enabled: boolean) => void;
 
+  // Sync total diff hunk count into review state
+  syncTotalDiffHunks: () => void;
+
   // Trust list actions
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
@@ -98,6 +103,42 @@ export interface ReviewSlice {
 
   // Refresh all data
   refresh: () => Promise<void>;
+}
+
+/**
+ * Patch the globalReviews entry for the current comparison with fresh progress data.
+ * Used after saving or syncing to keep sidebar progress accurate without a full reload.
+ */
+function patchGlobalReviewProgress(
+  get: () => {
+    repoPath: string | null;
+    comparison: Comparison;
+    hunks: DiffHunk[];
+    globalReviews: GlobalReviewSummary[];
+  },
+  set: (partial: { globalReviews: GlobalReviewSummary[] }) => void,
+  reviewState: ReviewState,
+): void {
+  const { repoPath, comparison, hunks, globalReviews } = get();
+  if (!repoPath) return;
+
+  const progress = computeReviewProgress(hunks, reviewState);
+  const patched = globalReviews.map((r) => {
+    if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
+      return {
+        ...r,
+        totalHunks: progress.totalHunks,
+        trustedHunks: progress.trustedHunks,
+        approvedHunks: progress.approvedHunks,
+        rejectedHunks: progress.rejectedHunks,
+        reviewedHunks: progress.reviewedHunks,
+        state: progress.state,
+        updatedAt: reviewState.updatedAt,
+      };
+    }
+    return r;
+  });
+  set({ globalReviews: patched });
 }
 
 interface HunkStatusGetter {
@@ -216,8 +257,14 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      const { repoPath, reviewState, hunks, comparison, globalReviews } = get();
+      let { repoPath, reviewState, hunks } = get();
       if (!repoPath || !reviewState) return;
+
+      // Ensure totalDiffHunks is set from the actual diff hunk count
+      if (hunks.length > 0 && reviewState.totalDiffHunks !== hunks.length) {
+        reviewState = { ...reviewState, totalDiffHunks: hunks.length };
+        set({ reviewState });
+      }
 
       const saveAndUpdateVersion = async (
         state: ReviewState,
@@ -237,6 +284,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
         // Version conflict: reload disk state for its version and retry
         try {
+          const { comparison } = get();
           const diskState = await client.loadReviewState(repoPath, comparison);
           const currentState = get().reviewState!;
           await saveAndUpdateVersion({
@@ -251,24 +299,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       // Patch the specific review entry in globalReviews instead of
       // doing a full loadGlobalReviews() IPC round-trip.
-      const latestReviewState = get().reviewState!;
-      const progress = computeReviewProgress(hunks, latestReviewState);
-      const updatedReviews = globalReviews.map((r) => {
-        if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
-          return {
-            ...r,
-            totalHunks: progress.totalHunks,
-            trustedHunks: progress.trustedHunks,
-            approvedHunks: progress.approvedHunks,
-            rejectedHunks: progress.rejectedHunks,
-            reviewedHunks: progress.reviewedHunks,
-            state: progress.state,
-            updatedAt: latestReviewState.updatedAt,
-          };
-        }
-        return r;
-      });
-      set({ globalReviews: updatedReviews });
+      patchGlobalReviewProgress(get, set, get().reviewState!);
     },
 
     loadSavedReviews: async () => {
@@ -519,6 +550,24 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       set({ reviewState: newState });
       debouncedSave(saveReviewState);
+    },
+
+    syncTotalDiffHunks: () => {
+      const { reviewState, hunks } = get();
+      if (
+        !reviewState ||
+        hunks.length === 0 ||
+        reviewState.totalDiffHunks === hunks.length
+      ) {
+        return;
+      }
+
+      const updated = { ...reviewState, totalDiffHunks: hunks.length };
+      set({ reviewState: updated });
+
+      // Immediately patch globalReviews so the sidebar shows correct progress
+      // (otherwise it stays inflated until the next saveReviewState call)
+      patchGlobalReviewProgress(get, set, updated);
     },
 
     addTrustPattern: (pattern) => {

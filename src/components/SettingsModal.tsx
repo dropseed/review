@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { hostname as getHostname } from "@tauri-apps/plugin-os";
@@ -10,6 +10,7 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { SimpleTooltip } from "./ui/tooltip";
 import { Switch } from "./ui/switch";
@@ -18,6 +19,86 @@ import { Slider } from "./ui/slider";
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+interface SectionHeaderProps {
+  icon: ReactNode;
+  label: string;
+}
+
+function SectionHeader({ icon, label }: SectionHeaderProps): ReactNode {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <svg
+        className="h-4 w-4 text-stone-500"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {icon}
+      </svg>
+      <span className="text-xs font-medium text-stone-300">{label}</span>
+    </div>
+  );
+}
+
+interface ToggleRowProps {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onCheckedChange,
+}: ToggleRowProps): ReactNode {
+  return (
+    <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
+      <span className="text-xs text-stone-300">{label}</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </label>
+  );
+}
+
+interface CopyableFieldProps {
+  label: string;
+  value: string;
+  copiedLabel: string | null;
+  copyId: string;
+  onCopy: (text: string, label: string) => void;
+  truncate?: boolean;
+}
+
+function CopyableField({
+  label,
+  value,
+  copiedLabel,
+  copyId,
+  onCopy,
+  truncate,
+}: CopyableFieldProps): ReactNode {
+  return (
+    <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="text-xxs text-stone-500 mb-0.5">{label}</div>
+        <code
+          className={`text-xs text-stone-400${truncate ? " block truncate" : ""}`}
+        >
+          {value}
+        </code>
+      </div>
+      <button
+        onClick={() => onCopy(value, copyId)}
+        className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-stone-500 transition-colors hover:bg-stone-700 hover:text-stone-300"
+      >
+        {copiedLabel === copyId ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
 }
 
 const THEMES: { value: string; label: string; colors: string[] }[] = [
@@ -153,24 +234,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   }, [isOpen, refreshCliStatus]);
 
-  const handleInstallCli = async () => {
+  const handleCliAction = async (command: "install_cli" | "uninstall_cli") => {
     setCliLoading(true);
     setCliError(null);
     try {
-      await invoke("install_cli");
-      await refreshCliStatus();
-    } catch (e) {
-      setCliError(String(e));
-    } finally {
-      setCliLoading(false);
-    }
-  };
-
-  const handleUninstallCli = async () => {
-    setCliLoading(true);
-    setCliError(null);
-    try {
-      await invoke("uninstall_cli");
+      await invoke(command);
       await refreshCliStatus();
     } catch (e) {
       setCliError(String(e));
@@ -198,7 +266,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex w-full max-w-md max-h-[85vh] flex-col rounded-xl overflow-hidden">
-        {/* Header */}
         <DialogHeader className="relative px-5 py-4">
           <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-teal-500/5" />
           <div className="relative flex items-center gap-3">
@@ -238,505 +305,443 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </button>
         </DialogHeader>
 
-        {/* Content */}
-        <div className="divide-y divide-stone-800/60 overflow-y-auto flex-1 min-h-0">
-          {/* Code Font Size */}
-          <div className="px-5 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <svg
-                className="h-4 w-4 text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="4 7 4 4 20 4 20 7" />
-                <line x1="9" y1="20" x2="15" y2="20" />
-                <line x1="12" y1="4" x2="12" y2="20" />
-              </svg>
-              <span className="text-xs font-medium text-stone-300">
-                Code Font Size
-              </span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-stone-800/50 px-3 py-2">
-              <div className="flex items-center gap-2">
-                {/* Decrease button */}
-                <SimpleTooltip content="Decrease font size (Cmd+-)">
-                  <button
-                    onClick={decreaseFontSize}
-                    disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
-                    className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M20 12H4"
-                      />
-                    </svg>
-                  </button>
-                </SimpleTooltip>
+        <Tabs
+          defaultValue="appearance"
+          className="flex flex-col flex-1 min-h-0"
+        >
+          <TabsList className="mx-5 mt-1 mb-0 shrink-0">
+            <TabsTrigger value="appearance">Appearance</TabsTrigger>
+            {claudeAvailable && (
+              <TabsTrigger value="classification">Classification</TabsTrigger>
+            )}
+            <TabsTrigger value="ios">iOS</TabsTrigger>
+            <TabsTrigger value="general">General</TabsTrigger>
+          </TabsList>
 
-                {/* Current size display */}
-                <div className="flex min-w-[5.5rem] flex-col items-center px-3">
-                  <span className="font-mono text-lg font-semibold text-stone-100 tabular-nums">
-                    {codeFontSize}px
-                  </span>
-                </div>
+          <div className="overflow-y-auto flex-1 min-h-0">
+            <TabsContent value="appearance">
+              <div className="divide-y divide-stone-800/60">
+                <div className="px-5 py-4">
+                  <SectionHeader
+                    label="Code Font Size"
+                    icon={
+                      <>
+                        <polyline points="4 7 4 4 20 4 20 7" />
+                        <line x1="9" y1="20" x2="15" y2="20" />
+                        <line x1="12" y1="4" x2="12" y2="20" />
+                      </>
+                    }
+                  />
+                  <div className="flex items-center justify-between rounded-lg bg-stone-800/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <SimpleTooltip content="Decrease font size (Cmd+-)">
+                        <button
+                          onClick={decreaseFontSize}
+                          disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
+                          className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M20 12H4"
+                            />
+                          </svg>
+                        </button>
+                      </SimpleTooltip>
 
-                {/* Increase button */}
-                <SimpleTooltip content="Increase font size (Cmd++)">
-                  <button
-                    onClick={increaseFontSize}
-                    disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
-                    className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 4v16m8-8H4"
-                      />
-                    </svg>
-                  </button>
-                </SimpleTooltip>
-              </div>
-
-              {/* Reset button */}
-              {codeFontSize !== CODE_FONT_SIZE_DEFAULT && (
-                <SimpleTooltip content="Reset to default (Cmd+0)">
-                  <button
-                    onClick={resetFontSize}
-                    className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
-                  >
-                    Reset
-                  </button>
-                </SimpleTooltip>
-              )}
-            </div>
-            <p className="mt-2 text-xxs text-stone-600">
-              <kbd className="rounded bg-stone-800 px-1 py-0.5">Cmd</kbd>{" "}
-              <kbd className="rounded bg-stone-800 px-1 py-0.5">+</kbd> /{" "}
-              <kbd className="rounded bg-stone-800 px-1 py-0.5">-</kbd> to
-              adjust, <kbd className="rounded bg-stone-800 px-1 py-0.5">0</kbd>{" "}
-              to reset
-            </p>
-          </div>
-
-          {/* Syntax Theme */}
-          <div className="px-5 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <svg
-                className="h-4 w-4 text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="13.5" cy="6.5" r="0.5" fill="currentColor" />
-                <circle cx="17.5" cy="10.5" r="0.5" fill="currentColor" />
-                <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
-                <circle cx="6.5" cy="12.5" r="0.5" fill="currentColor" />
-                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z" />
-              </svg>
-              <span className="text-xs font-medium text-stone-300">
-                Syntax Theme
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {THEMES.map((theme) => (
-                <button
-                  key={theme.value}
-                  onClick={() => setCodeTheme(theme.value)}
-                  className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 ${
-                    codeTheme === theme.value
-                      ? "bg-stone-800 ring-1 ring-amber-500/50"
-                      : "bg-stone-800/30 hover:bg-stone-800/60"
-                  }`}
-                >
-                  {/* Theme color preview */}
-                  <div className="flex gap-0.5">
-                    {theme.colors.map((color, i) => (
-                      <div
-                        key={i}
-                        className="h-4 w-2 first:rounded-l last:rounded-r"
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                  <span
-                    className={`text-xs font-medium transition-colors ${
-                      codeTheme === theme.value
-                        ? "text-stone-100"
-                        : "text-stone-400 group-hover:text-stone-300"
-                    }`}
-                  >
-                    {theme.label}
-                  </span>
-                  {codeTheme === theme.value && (
-                    <svg
-                      className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-500"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Classification */}
-          {claudeAvailable && (
-            <div className="px-5 py-4">
-              <div className="mb-3 flex items-center gap-2">
-                <svg
-                  className="h-4 w-4 text-stone-500"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                </svg>
-                <span className="text-xs font-medium text-stone-300">
-                  Classification
-                </span>
-              </div>
-
-              {/* Classify command */}
-              <div className="mt-3 space-y-1.5">
-                <label className="text-xxs text-stone-500 uppercase tracking-wide">
-                  Custom Command
-                </label>
-                <Input
-                  type="text"
-                  value={classifyCommand || ""}
-                  onChange={(e) => setClassifyCommand(e.target.value || null)}
-                  placeholder="claude --print --model haiku -p"
-                  className="text-xs"
-                />
-                <p className="text-xxs text-stone-600 leading-relaxed">
-                  Leave blank for default. The prompt is appended as the last
-                  argument.
-                </p>
-              </div>
-
-              {/* Batch size */}
-              <div className="mt-4 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xxs text-stone-500 uppercase tracking-wide">
-                    Batch Size
-                  </label>
-                  <span className="text-xs font-mono text-stone-300">
-                    {classifyBatchSize}
-                  </span>
-                </div>
-                <Slider
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={[classifyBatchSize]}
-                  onValueChange={([val]) => setClassifyBatchSize(val)}
-                />
-                <p className="text-xxs text-stone-600 leading-relaxed">
-                  Hunks per Claude call. Higher values use fewer API calls but
-                  may reduce accuracy.
-                </p>
-              </div>
-
-              {/* Max concurrent */}
-              <div className="mt-4 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xxs text-stone-500 uppercase tracking-wide">
-                    Max Concurrent
-                  </label>
-                  <span className="text-xs font-mono text-stone-300">
-                    {classifyMaxConcurrent}
-                  </span>
-                </div>
-                <Slider
-                  min={1}
-                  max={5}
-                  step={1}
-                  value={[classifyMaxConcurrent]}
-                  onValueChange={([val]) => setClassifyMaxConcurrent(val)}
-                />
-                <p className="text-xxs text-stone-600 leading-relaxed">
-                  Maximum parallel Claude processes. Lower values reduce system
-                  load.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Command Line (hidden in dev mode) */}
-          {!devMode && (
-            <div className="px-5 py-4">
-              <div className="mb-3 flex items-center gap-2">
-                <svg
-                  className="h-4 w-4 text-stone-500"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="4 17 10 11 4 5" />
-                  <line x1="12" y1="19" x2="20" y2="19" />
-                </svg>
-                <span className="text-xs font-medium text-stone-300">
-                  Command Line
-                </span>
-              </div>
-
-              {cliInstalled ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        <span className="text-xs text-stone-300">
-                          Installed at{" "}
-                          <code className="text-xxs text-stone-500">
-                            /usr/local/bin/review
-                          </code>
+                      <div className="flex min-w-[5.5rem] flex-col items-center px-3">
+                        <span className="font-mono text-lg font-semibold text-stone-100 tabular-nums">
+                          {codeFontSize}px
                         </span>
                       </div>
-                      {cliSymlinkTarget && (
-                        <p className="mt-1 truncate pl-3.5 text-xxs text-stone-600">
-                          {cliSymlinkTarget}
-                        </p>
-                      )}
+
+                      <SimpleTooltip content="Increase font size (Cmd++)">
+                        <button
+                          onClick={increaseFontSize}
+                          disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
+                          className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M12 4v16m8-8H4"
+                            />
+                          </svg>
+                        </button>
+                      </SimpleTooltip>
                     </div>
-                    <button
-                      onClick={handleUninstallCli}
-                      disabled={cliLoading}
-                      className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 disabled:opacity-50"
-                    >
-                      Uninstall
-                    </button>
+
+                    {codeFontSize !== CODE_FONT_SIZE_DEFAULT && (
+                      <SimpleTooltip content="Reset to default (Cmd+0)">
+                        <button
+                          onClick={resetFontSize}
+                          className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
+                        >
+                          Reset
+                        </button>
+                      </SimpleTooltip>
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
-                    <span className="text-xs text-stone-400">
-                      <code className="text-xxs">review</code> command not
-                      installed
-                    </span>
-                    <button
-                      onClick={handleInstallCli}
-                      disabled={cliLoading}
-                      className="ml-3 shrink-0 rounded-md bg-stone-700/50 px-2.5 py-1.5 text-xxs text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-50"
-                    >
-                      {cliLoading ? "Installing..." : "Install"}
-                    </button>
-                  </div>
-                  <p className="text-xxs text-stone-600 leading-relaxed">
-                    Creates a symlink at{" "}
-                    <code className="text-stone-500">
-                      /usr/local/bin/review
-                    </code>{" "}
-                    so you can run{" "}
-                    <code className="text-stone-500">review</code> from any
-                    terminal.
+                  <p className="mt-2 text-xxs text-stone-600">
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5">Cmd</kbd>{" "}
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5">+</kbd> /{" "}
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5">-</kbd> to
+                    adjust,{" "}
+                    <kbd className="rounded bg-stone-800 px-1 py-0.5">0</kbd> to
+                    reset
                   </p>
                 </div>
-              )}
 
-              {cliError && (
-                <div className="mt-2 rounded-lg bg-red-950/30 px-3 py-2 ring-1 ring-red-900/30">
-                  <p className="whitespace-pre-wrap text-xxs text-red-400/90">
-                    {cliError}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Sound Effects */}
-          <div className="px-5 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <svg
-                className="h-4 w-4 text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              </svg>
-              <span className="text-xs font-medium text-stone-300">
-                Sound Effects
-              </span>
-            </div>
-
-            <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
-              <span className="text-xs text-stone-300">
-                Enable sound effects
-              </span>
-              <Switch
-                checked={soundEffectsEnabled}
-                onCheckedChange={setSoundEffectsEnabled}
-              />
-            </label>
-            <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
-              Play sounds when approving, rejecting, and completing reviews.
-            </p>
-          </div>
-
-          {/* Companion Server */}
-          <div className="px-5 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <svg
-                className="h-4 w-4 text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-                <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-                <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-                <line x1="12" y1="20" x2="12.01" y2="20" />
-              </svg>
-              <span className="text-xs font-medium text-stone-300">
-                Companion Server
-              </span>
-            </div>
-
-            <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
-              <span className="text-xs text-stone-300">
-                Enable companion server
-              </span>
-              <Switch
-                checked={companionServerEnabled}
-                onCheckedChange={setCompanionServerEnabled}
-              />
-            </label>
-
-            {companionServerEnabled && (
-              <div className="mt-3 space-y-2">
-                {/* Server URL */}
-                <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xxs text-stone-500 mb-0.5">
-                      Server URL
-                    </div>
-                    <code className="text-xs text-stone-400">
-                      http://{machineHostname || "localhost"}:3333
-                    </code>
-                  </div>
-                  <button
-                    onClick={() =>
-                      copyToClipboard(
-                        `http://${machineHostname || "localhost"}:3333`,
-                        "url",
-                      )
+                <div className="px-5 py-4">
+                  <SectionHeader
+                    label="Syntax Theme"
+                    icon={
+                      <>
+                        <circle
+                          cx="13.5"
+                          cy="6.5"
+                          r="0.5"
+                          fill="currentColor"
+                        />
+                        <circle
+                          cx="17.5"
+                          cy="10.5"
+                          r="0.5"
+                          fill="currentColor"
+                        />
+                        <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
+                        <circle
+                          cx="6.5"
+                          cy="12.5"
+                          r="0.5"
+                          fill="currentColor"
+                        />
+                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z" />
+                      </>
                     }
-                    className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-stone-500 transition-colors hover:bg-stone-700 hover:text-stone-300"
-                  >
-                    {companionCopied === "url" ? "Copied" : "Copy"}
-                  </button>
-                </div>
-
-                {/* Auth Token */}
-                {companionServerToken && (
-                  <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xxs text-stone-500 mb-0.5">
-                        Auth Token
-                      </div>
-                      <code className="text-xs text-stone-400 block truncate">
-                        {companionServerToken}
-                      </code>
-                    </div>
-                    <button
-                      onClick={() =>
-                        copyToClipboard(companionServerToken, "token")
-                      }
-                      className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-stone-500 transition-colors hover:bg-stone-700 hover:text-stone-300"
-                    >
-                      {companionCopied === "token" ? "Copied" : "Copy"}
-                    </button>
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    {THEMES.map((theme) => (
+                      <button
+                        key={theme.value}
+                        onClick={() => setCodeTheme(theme.value)}
+                        className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 ${
+                          codeTheme === theme.value
+                            ? "bg-stone-800 ring-1 ring-amber-500/50"
+                            : "bg-stone-800/30 hover:bg-stone-800/60"
+                        }`}
+                      >
+                        <div className="flex gap-0.5">
+                          {theme.colors.map((color, i) => (
+                            <div
+                              key={i}
+                              className="h-4 w-2 first:rounded-l last:rounded-r"
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                        <span
+                          className={`text-xs font-medium transition-colors ${
+                            codeTheme === theme.value
+                              ? "text-stone-100"
+                              : "text-stone-400 group-hover:text-stone-300"
+                          }`}
+                        >
+                          {theme.label}
+                        </span>
+                        {codeTheme === theme.value && (
+                          <svg
+                            className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-500"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
                   </div>
-                )}
+                </div>
               </div>
+            </TabsContent>
+
+            {claudeAvailable && (
+              <TabsContent value="classification">
+                <div className="divide-y divide-stone-800/60">
+                  <div className="px-5 py-4">
+                    <SectionHeader
+                      label="Classification"
+                      icon={
+                        <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+                      }
+                    />
+
+                    <div className="mt-3 space-y-1.5">
+                      <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                        Custom Command
+                      </label>
+                      <Input
+                        type="text"
+                        value={classifyCommand || ""}
+                        onChange={(e) =>
+                          setClassifyCommand(e.target.value || null)
+                        }
+                        placeholder="claude --print --model haiku -p"
+                        className="text-xs"
+                      />
+                      <p className="text-xxs text-stone-600 leading-relaxed">
+                        Leave blank for default. The prompt is appended as the
+                        last argument.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                          Batch Size
+                        </label>
+                        <span className="text-xs font-mono text-stone-300">
+                          {classifyBatchSize}
+                        </span>
+                      </div>
+                      <Slider
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={[classifyBatchSize]}
+                        onValueChange={([val]) => setClassifyBatchSize(val)}
+                      />
+                      <p className="text-xxs text-stone-600 leading-relaxed">
+                        Hunks per Claude call. Higher values use fewer API calls
+                        but may reduce accuracy.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                          Max Concurrent
+                        </label>
+                        <span className="text-xs font-mono text-stone-300">
+                          {classifyMaxConcurrent}
+                        </span>
+                      </div>
+                      <Slider
+                        min={1}
+                        max={5}
+                        step={1}
+                        value={[classifyMaxConcurrent]}
+                        onValueChange={([val]) => setClassifyMaxConcurrent(val)}
+                      />
+                      <p className="text-xxs text-stone-600 leading-relaxed">
+                        Maximum parallel Claude processes. Lower values reduce
+                        system load.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
             )}
 
-            <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
-              Allows the Review mobile app to connect over your local network.
-            </p>
+            <TabsContent value="ios">
+              <div className="divide-y divide-stone-800/60">
+                <div className="px-5 py-4">
+                  <SectionHeader
+                    label="Companion Server"
+                    icon={
+                      <>
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                        <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                        <line x1="12" y1="20" x2="12.01" y2="20" />
+                      </>
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Enable companion server"
+                    checked={companionServerEnabled}
+                    onCheckedChange={setCompanionServerEnabled}
+                  />
+
+                  {companionServerEnabled && (
+                    <div className="mt-3 space-y-2">
+                      <CopyableField
+                        label="Server URL"
+                        value={`http://${machineHostname || "localhost"}:3333`}
+                        copiedLabel={companionCopied}
+                        copyId="url"
+                        onCopy={copyToClipboard}
+                      />
+                      {companionServerToken && (
+                        <CopyableField
+                          label="Auth Token"
+                          value={companionServerToken}
+                          copiedLabel={companionCopied}
+                          copyId="token"
+                          onCopy={copyToClipboard}
+                          truncate
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+                    Allows the Review mobile app to connect over your local
+                    network.
+                  </p>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="general">
+              <div className="divide-y divide-stone-800/60">
+                <div className="px-5 py-4">
+                  <SectionHeader
+                    label="Sound Effects"
+                    icon={
+                      <>
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                      </>
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Enable sound effects"
+                    checked={soundEffectsEnabled}
+                    onCheckedChange={setSoundEffectsEnabled}
+                  />
+                  <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+                    Play sounds when approving, rejecting, and completing
+                    reviews.
+                  </p>
+                </div>
+
+                {!devMode && (
+                  <div className="px-5 py-4">
+                    <SectionHeader
+                      label="Command Line"
+                      icon={
+                        <>
+                          <polyline points="4 17 10 11 4 5" />
+                          <line x1="12" y1="19" x2="20" y2="19" />
+                        </>
+                      }
+                    />
+
+                    {cliInstalled ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              <span className="text-xs text-stone-300">
+                                Installed at{" "}
+                                <code className="text-xxs text-stone-500">
+                                  /usr/local/bin/review
+                                </code>
+                              </span>
+                            </div>
+                            {cliSymlinkTarget && (
+                              <p className="mt-1 truncate pl-3.5 text-xxs text-stone-600">
+                                {cliSymlinkTarget}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleCliAction("uninstall_cli")}
+                            disabled={cliLoading}
+                            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 disabled:opacity-50"
+                          >
+                            Uninstall
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
+                          <span className="text-xs text-stone-400">
+                            <code className="text-xxs">review</code> command not
+                            installed
+                          </span>
+                          <button
+                            onClick={() => handleCliAction("install_cli")}
+                            disabled={cliLoading}
+                            className="ml-3 shrink-0 rounded-md bg-stone-700/50 px-2.5 py-1.5 text-xxs text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-50"
+                          >
+                            {cliLoading ? "Installing..." : "Install"}
+                          </button>
+                        </div>
+                        <p className="text-xxs text-stone-600 leading-relaxed">
+                          Creates a symlink at{" "}
+                          <code className="text-stone-500">
+                            /usr/local/bin/review
+                          </code>{" "}
+                          so you can run{" "}
+                          <code className="text-stone-500">review</code> from
+                          any terminal.
+                        </p>
+                      </div>
+                    )}
+
+                    {cliError && (
+                      <div className="mt-2 rounded-lg bg-red-950/30 px-3 py-2 ring-1 ring-red-900/30">
+                        <p className="whitespace-pre-wrap text-xxs text-red-400/90">
+                          {cliError}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="px-5 py-4">
+                  <SectionHeader
+                    label="Crash Reporting"
+                    icon={
+                      <>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                      </>
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Send crash reports"
+                    checked={sentryEnabled}
+                    onCheckedChange={setSentryEnabled}
+                  />
+                  <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+                    When enabled, anonymous crash reports are sent to help
+                    improve Review. Only app errors, version, and OS info are
+                    included. No repository data or file contents are ever sent.
+                  </p>
+                </div>
+              </div>
+            </TabsContent>
           </div>
+        </Tabs>
 
-          {/* Crash Reporting */}
-          <div className="px-5 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <svg
-                className="h-4 w-4 text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <span className="text-xs font-medium text-stone-300">
-                Crash Reporting
-              </span>
-            </div>
-
-            <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
-              <span className="text-xs text-stone-300">Send crash reports</span>
-              <Switch
-                checked={sentryEnabled}
-                onCheckedChange={setSentryEnabled}
-              />
-            </label>
-            <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
-              When enabled, anonymous crash reports are sent to help improve
-              Review. Only app errors, version, and OS info are included. No
-              repository data or file contents are ever sent.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
         <div className="border-t border-stone-800 bg-stone-900/50 px-5 py-3">
           <p className="text-center text-xxs text-stone-600">
             Settings are saved automatically

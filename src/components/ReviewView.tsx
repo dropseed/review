@@ -196,7 +196,7 @@ export function ReviewView({
           </div>
 
           {/* Right: review progress */}
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             {guideRecommended &&
               topLevelView !== "guide" &&
               (selectedFile || secondaryFile) && (

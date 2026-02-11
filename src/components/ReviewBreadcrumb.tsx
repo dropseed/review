@@ -54,14 +54,18 @@ export function ReviewBreadcrumb({
   const isPr = !!comparison.githubPr;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5">
       <SidebarToggle />
 
-      <span className="text-xs font-medium text-stone-300">{repoName}</span>
+      <span className="shrink-0 text-xs font-medium text-stone-300">
+        {repoName}
+      </span>
 
-      <span className="text-stone-600 text-xs">/</span>
+      <span className="shrink-0 text-stone-600 text-xs">/</span>
 
-      <span className={`text-xs text-stone-500 ${isPr ? "" : "font-mono"}`}>
+      <span
+        className={`truncate text-xs text-stone-500 ${isPr ? "" : "font-mono"}`}
+      >
         {getOverviewLabel(comparison)}
       </span>
     </div>

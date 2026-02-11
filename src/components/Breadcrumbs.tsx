@@ -11,7 +11,7 @@ export function Breadcrumbs({
 
   return (
     <nav
-      className="flex items-center whitespace-nowrap text-2xs"
+      className="flex min-w-0 items-center overflow-hidden whitespace-nowrap text-2xs"
       aria-label="File path"
     >
       {parts.map((part, index) => {
@@ -19,7 +19,7 @@ export function Breadcrumbs({
         const path = parts.slice(0, index + 1).join("/");
 
         return (
-          <span key={path} className="flex shrink-0 items-center">
+          <span key={path} className="flex items-center">
             {index > 0 && <span className="mx-1 text-stone-600">/</span>}
             {isLast ? (
               <span className="font-mono text-stone-200">{part}</span>

@@ -13,6 +13,62 @@ import {
 } from "./FocusedReviewSection";
 import { DrillDownSection } from "./DrillDownSection";
 
+function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className}`}
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="3"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
+function ExternalLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        if (href) {
+          getPlatformServices().opener.openUrl(href);
+        }
+      }}
+      className="text-cyan-400 hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/50 rounded underline underline-offset-2 cursor-pointer"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  );
+}
+
+function urlTransform(url: string): string {
+  return url.startsWith("review://") ? url : defaultUrlTransform(url);
+}
+
+const markdownComponents = {
+  a: ExternalLink,
+};
+
 function SummarySection() {
   const guideSummary = useReviewStore((s) => s.guideSummary);
   const guideSummaryError = useReviewStore((s) => s.guideSummaryError);
@@ -27,25 +83,7 @@ function SummarySection() {
       {summaryStatus === "loading" && !guideSummary && !guideSummaryError && (
         <div className="rounded-lg border border-stone-800 p-4">
           <div className="flex items-center gap-2 text-stone-500">
-            <svg
-              className="h-4 w-4 animate-spin"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="3"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
+            <Spinner />
             <span className="text-xs">Generating summary…</span>
           </div>
         </div>
@@ -59,9 +97,15 @@ function SummarySection() {
       )}
       {guideSummary && (
         <div className="rounded-lg border border-stone-800 p-4">
-          <p className="text-sm text-stone-300 leading-relaxed">
-            {guideSummary}
-          </p>
+          <div className="guide-prose text-sm text-stone-300 leading-relaxed">
+            <Markdown
+              remarkPlugins={[remarkGfm]}
+              urlTransform={urlTransform}
+              components={markdownComponents}
+            >
+              {guideSummary}
+            </Markdown>
+          </div>
           {stale && (
             <div className="flex items-center justify-end mt-2">
               <button
@@ -77,6 +121,12 @@ function SummarySection() {
       <OverviewSection />
     </div>
   );
+}
+
+function getTaskStatusColor(status: string): string {
+  if (status === "loading") return "text-stone-400";
+  if (status === "done") return "text-emerald-400";
+  return "text-rose-400";
 }
 
 function GuideProgressBar() {
@@ -106,25 +156,7 @@ function GuideProgressBar() {
         return (
           <span key={task.label} className="flex items-center gap-1.5 text-xxs">
             {task.status === "loading" && (
-              <svg
-                className="h-3 w-3 animate-spin text-stone-500"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
+              <Spinner className="h-3 w-3 text-stone-500" />
             )}
             {task.status === "done" && (
               <svg
@@ -156,15 +188,7 @@ function GuideProgressBar() {
                 />
               </svg>
             )}
-            <span
-              className={
-                task.status === "loading"
-                  ? "text-stone-400"
-                  : task.status === "done"
-                    ? "text-emerald-400"
-                    : "text-rose-400"
-              }
-            >
+            <span className={getTaskStatusColor(task.status)}>
               {task.label}
             </span>
           </span>
@@ -230,38 +254,6 @@ function NoChangesPrompt() {
   );
 }
 
-function ExternalLink({
-  href,
-  children,
-}: {
-  href?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        if (href) {
-          getPlatformServices().opener.openUrl(href);
-        }
-      }}
-      className="text-cyan-400 hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/50 rounded underline underline-offset-2 cursor-pointer"
-      rel="noopener noreferrer"
-    >
-      {children}
-    </a>
-  );
-}
-
-function urlTransform(url: string): string {
-  return url.startsWith("review://") ? url : defaultUrlTransform(url);
-}
-
-const markdownComponents = {
-  a: ExternalLink,
-};
-
 function CheckIcon() {
   return (
     <svg
@@ -310,17 +302,13 @@ export function GuideView() {
 
   const focusedReviewUnreviewed = useFocusedReviewUnreviewed();
 
-  const completedSections = useMemo(
-    () =>
-      new Set(
-        [
-          focusedReviewUnreviewed === 0 &&
-            focusedReviewUnreviewed !== undefined &&
-            "focused-review",
-        ].filter(Boolean),
-      ),
-    [focusedReviewUnreviewed],
-  );
+  const completedSections = useMemo(() => {
+    const sections = new Set<string>();
+    if (focusedReviewUnreviewed === 0) {
+      sections.add("focused-review");
+    }
+    return sections;
+  }, [focusedReviewUnreviewed]);
 
   // Auto-advance to the next incomplete tab when the current one completes
   const prevCompleted = useRef(completedSections);

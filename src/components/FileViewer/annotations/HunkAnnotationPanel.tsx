@@ -102,7 +102,7 @@ export function HunkAnnotationPanel({
     <div
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
-      className={`flex items-center gap-2 px-3 py-1.5 border-t border-stone-700/50 ${
+      className={`flex items-center gap-2 overflow-x-auto px-3 py-1.5 border-t border-stone-700/50 ${
         isFocused
           ? "border-l-[2px] border-l-white/50 border-b-[1px] border-b-white/30"
           : ""
@@ -167,7 +167,7 @@ export function HunkAnnotationPanel({
           </button>
         </SimpleTooltip>
       ) : (
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <SimpleTooltip
             content={`Reject this change (r)${isTrusted ? " (optional)" : ""}`}
           >
@@ -275,7 +275,7 @@ export function HunkAnnotationPanel({
       </SimpleTooltip>
 
       {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {/* Classifying indicator - fixed width container to prevent layout shift */}
         <div className="w-[5.5rem] flex justify-end">
           {classifyingHunkIds.has(hunk.id) && (

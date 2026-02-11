@@ -373,6 +373,7 @@ export interface ReviewState {
   updatedAt: string;
   version: number; // Version counter for optimistic concurrency control
   guide?: GuideState; // AI-generated guide state (grouping + summary)
+  totalDiffHunks?: number; // Total diff hunks (including unclassified) for accurate progress
 }
 
 // Summary of a saved review tagged with repo info (for cross-repo listing)

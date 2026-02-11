@@ -71,6 +71,14 @@ pub struct ReviewState {
     pub version: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guide: Option<GuideState>,
+    /// Total number of hunks in the diff (including unclassified).
+    /// Used by to_summary() so sidebar progress isn't inflated.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "totalDiffHunks"
+    )]
+    pub total_diff_hunks: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +124,7 @@ impl ReviewState {
             updated_at: now,
             version: 0,
             guide: None,
+            total_diff_hunks: None,
         }
     }
 
@@ -127,7 +136,7 @@ impl ReviewState {
 
     /// Create a summary of this review state
     pub fn to_summary(&self) -> ReviewSummary {
-        let total_hunks = self.hunks.len();
+        let total_hunks = self.total_diff_hunks.unwrap_or(self.hunks.len());
         let approved_hunks = self
             .hunks
             .values()
@@ -261,15 +270,19 @@ mod tests {
     // Pattern matching tests are now in crate::trust::matching::tests
     // These tests verify ReviewState integration with pattern matching
 
-    #[test]
-    fn test_review_state_new() {
-        let comparison = Comparison {
+    fn test_comparison() -> Comparison {
+        Comparison {
             old: "main".to_string(),
             new: "HEAD".to_string(),
-            working_tree: true,
+            working_tree: false,
             key: "main..HEAD".to_string(),
             github_pr: None,
-        };
+        }
+    }
+
+    #[test]
+    fn test_review_state_new() {
+        let comparison = test_comparison();
         let state = ReviewState::new(comparison.clone());
 
         assert_eq!(state.comparison.key, "main..HEAD");
@@ -281,14 +294,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_empty() {
-        let comparison = Comparison {
-            old: "main".to_string(),
-            new: "HEAD".to_string(),
-            working_tree: false,
-            key: "main..HEAD".to_string(),
-            github_pr: None,
-        };
-        let state = ReviewState::new(comparison);
+        let state = ReviewState::new(test_comparison());
         let summary = state.to_summary();
 
         assert_eq!(summary.total_hunks, 0);
@@ -297,14 +303,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_with_approved_hunks() {
-        let comparison = Comparison {
-            old: "main".to_string(),
-            new: "HEAD".to_string(),
-            working_tree: false,
-            key: "main..HEAD".to_string(),
-            github_pr: None,
-        };
-        let mut state = ReviewState::new(comparison);
+        let mut state = ReviewState::new(test_comparison());
 
         // Add an approved hunk
         state.hunks.insert(
@@ -335,14 +334,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_with_trusted_labels() {
-        let comparison = Comparison {
-            old: "main".to_string(),
-            new: "HEAD".to_string(),
-            working_tree: false,
-            key: "main..HEAD".to_string(),
-            github_pr: None,
-        };
-        let mut state = ReviewState::new(comparison);
+        let mut state = ReviewState::new(test_comparison());
         state.trust_list = vec!["imports:*".to_string()];
 
         // Add a hunk with trusted label (should count as reviewed)
@@ -370,6 +362,63 @@ mod tests {
         let summary = state.to_summary();
         assert_eq!(summary.total_hunks, 2);
         assert_eq!(summary.reviewed_hunks, 1);
+    }
+
+    #[test]
+    fn test_review_state_to_summary_uses_total_diff_hunks() {
+        let mut state = ReviewState::new(test_comparison());
+        // Simulate 200 total hunks in the diff but only 2 classified
+        state.total_diff_hunks = Some(200);
+        state.trust_list = vec!["imports:*".to_string()];
+
+        state.hunks.insert(
+            "file.rs:abc123".to_string(),
+            HunkState {
+                label: vec!["imports:added".to_string()],
+                reasoning: None,
+                status: None,
+                classified_via: None,
+            },
+        );
+        state.hunks.insert(
+            "file.rs:def456".to_string(),
+            HunkState {
+                label: vec!["code:logic".to_string()],
+                reasoning: None,
+                status: Some(HunkStatus::Approved),
+                classified_via: None,
+            },
+        );
+
+        let summary = state.to_summary();
+        // total_hunks should use total_diff_hunks (200), not self.hunks.len() (2)
+        assert_eq!(summary.total_hunks, 200);
+        assert_eq!(summary.trusted_hunks, 1);
+        assert_eq!(summary.approved_hunks, 1);
+        assert_eq!(summary.reviewed_hunks, 2);
+        // Not all 200 hunks are reviewed, so state should be None
+        assert!(summary.state.is_none());
+    }
+
+    #[test]
+    fn test_review_state_to_summary_falls_back_without_total_diff_hunks() {
+        let mut state = ReviewState::new(test_comparison());
+
+        state.hunks.insert(
+            "file.rs:abc123".to_string(),
+            HunkState {
+                label: vec![],
+                reasoning: None,
+                status: Some(HunkStatus::Approved),
+                classified_via: None,
+            },
+        );
+
+        let summary = state.to_summary();
+        assert_eq!(summary.total_hunks, 1);
+        assert_eq!(summary.approved_hunks, 1);
+        assert_eq!(summary.reviewed_hunks, 1);
+        assert_eq!(summary.state, Some("approved".to_string()));
     }
 
     #[test]

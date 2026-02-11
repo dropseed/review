@@ -17,6 +17,7 @@ export function useComparisonLoader(
   const loadRemoteInfo = useReviewStore((s) => s.loadRemoteInfo);
   const loadCommits = useReviewStore((s) => s.loadCommits);
   const classifyStaticHunks = useReviewStore((s) => s.classifyStaticHunks);
+  const syncTotalDiffHunks = useReviewStore((s) => s.syncTotalDiffHunks);
   const restoreGuideFromState = useReviewStore((s) => s.restoreGuideFromState);
   const loadSymbols = useReviewStore((s) => s.loadSymbols);
 
@@ -37,6 +38,8 @@ export function useComparisonLoader(
             loadCommits(repoPath),
           ]);
           if (cancelled) return;
+          // Sync total diff hunk count into review state for accurate sidebar progress
+          syncTotalDiffHunks();
           // Run static (rule-based) classification only — no AI on load
           classifyStaticHunks();
           // Restore guide data from persisted state (if still fresh)
@@ -65,6 +68,7 @@ export function useComparisonLoader(
     loadRemoteInfo,
     loadCommits,
     classifyStaticHunks,
+    syncTotalDiffHunks,
     restoreGuideFromState,
     loadSymbols,
     setInitialLoading,
