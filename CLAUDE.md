@@ -63,13 +63,13 @@ Review uses two storage mechanisms:
 - Persists across all repositories
 - Stored in Tauri's app data directory
 
-**Review State** (per-repo, in `.git/review/`):
+**Review State** (per-repo, in `~/.review/repos/<repo-id>/`):
 
 - `reviews/<comparison>.json` - Hunk labels, approvals, notes
-- `current-comparison.json` - Last active comparison
+- `current` - Last active comparison
 - `custom-patterns.json` - Optional user-defined trust patterns
 
-Storing review state inside `.git/` means it's automatically ignored by git and shared across worktrees. Review state includes:
+Uses `$REVIEW_HOME` if set, otherwise `~/.review/`. The repo ID is a SHA-256 hash of the canonical repo path. Review state includes:
 
 - `hunks`: Dict mapping `filepath:hash` to `{label, reasoning, approved_via}`
 - `trust_labels`: List of trusted patterns
