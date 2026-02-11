@@ -41,7 +41,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
   },
 
   classifyStaticHunks: async (hunkIds) => {
-    const { hunks, reviewState, saveReviewState } = get();
+    const { hunks, reviewState, saveReviewState, startActivity, endActivity } =
+      get();
     if (!reviewState) return;
 
     // Find unlabeled hunks
@@ -56,6 +57,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     if (hunksToClassify.length === 0) return;
 
+    startActivity("classify-static", "Classifying hunks", 50);
     try {
       const staticResponse = await client.classifyHunksStatic(hunksToClassify);
       const staticCount = Object.keys(staticResponse.classifications).length;
@@ -91,6 +93,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
       }
     } catch (err) {
       console.warn("[classifyStaticHunks] Static classification failed:", err);
+    } finally {
+      endActivity("classify-static");
     }
   },
 
@@ -104,6 +108,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
       classifyMaxConcurrent,
       saveReviewState,
       classifyGeneration,
+      startActivity,
+      updateActivity,
+      endActivity,
     } = get();
     if (!repoPath || !reviewState) return;
 
@@ -155,6 +162,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
     }
 
     // --- Static classification pre-pass ---
+    startActivity("classify-static", "Classifying hunks", 50);
     try {
       const staticResponse = await client.classifyHunksStatic(hunksToClassify);
       const staticCount = Object.keys(staticResponse.classifications).length;
@@ -216,6 +224,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
         "[classifyUnlabeledHunks] Static classification failed, falling through to AI:",
         err,
       );
+    } finally {
+      endActivity("classify-static");
     }
 
     console.log(
@@ -232,11 +242,18 @@ export const createClassificationSlice: SliceCreatorWithClient<
       ]),
     }));
 
+    const aiTotal = hunksToClassify.length;
+    let aiCompleted = 0;
+    startActivity("classify-ai", "Classifying hunks", 60);
+    updateActivity("classify-ai", { current: 0, total: aiTotal });
+
     // Set up listener for batch completion events
     const unlisten = client.onClassifyProgress((completedIds) => {
       console.log(
         `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks`,
       );
+      aiCompleted += completedIds.length;
+      updateActivity("classify-ai", { current: aiCompleted, total: aiTotal });
       set((state) => {
         const newSet = new Set(state.classifyingHunkIds);
         for (const id of completedIds) {
@@ -352,6 +369,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
       });
     } finally {
       unlisten();
+      endActivity("classify-ai");
     }
   },
 

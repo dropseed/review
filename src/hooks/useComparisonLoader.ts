@@ -13,6 +13,8 @@ export function useComparisonLoader(
   const loadFiles = useReviewStore((s) => s.loadFiles);
   const loadAllFiles = useReviewStore((s) => s.loadAllFiles);
   const loadReviewState = useReviewStore((s) => s.loadReviewState);
+  const startActivity = useReviewStore((s) => s.startActivity);
+  const endActivity = useReviewStore((s) => s.endActivity);
   const loadGitStatus = useReviewStore((s) => s.loadGitStatus);
   const loadRemoteInfo = useReviewStore((s) => s.loadRemoteInfo);
   const loadCommits = useReviewStore((s) => s.loadCommits);
@@ -27,7 +29,9 @@ export function useComparisonLoader(
       const loadData = async () => {
         try {
           // Load review state FIRST to ensure labels are available before auto-classification
+          startActivity("load-state", "Loading review state", 10);
           await loadReviewState();
+          endActivity("load-state");
           if (cancelled) return;
           // Then load files and other data in parallel
           await Promise.all([
@@ -64,6 +68,8 @@ export function useComparisonLoader(
     loadFiles,
     loadAllFiles,
     loadReviewState,
+    startActivity,
+    endActivity,
     loadGitStatus,
     loadRemoteInfo,
     loadCommits,

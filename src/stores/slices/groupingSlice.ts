@@ -224,12 +224,20 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     generateSummary: async () => {
-      const { repoPath, hunks, reviewState, classifyCommand, saveReviewState } =
-        get();
+      const {
+        repoPath,
+        hunks,
+        reviewState,
+        classifyCommand,
+        saveReviewState,
+        startActivity,
+        endActivity,
+      } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
 
       set({ guideSummaryError: null });
+      startActivity("generate-summary", "Generating summary", 55);
 
       try {
         const summaryInputs: SummaryInput[] = hunks.map((hunk) => ({
@@ -269,6 +277,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         set({
           guideSummaryError: err instanceof Error ? err.message : String(err),
         });
+      } finally {
+        endActivity("generate-summary");
       }
     },
 
@@ -318,11 +328,14 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         saveReviewState,
         symbolDiffs,
         symbolsLoaded,
+        startActivity,
+        endActivity,
       } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
 
       set({ groupingLoading: true, groupingError: null });
+      startActivity("generate-grouping", "Generating groups", 55);
 
       try {
         const { hunkDefines, hunkReferences, fileHasGrammar, modifiedSymbols } =
@@ -380,6 +393,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           groupingLoading: false,
           groupingError: err instanceof Error ? err.message : String(err),
         });
+      } finally {
+        endActivity("generate-grouping");
       }
     },
 

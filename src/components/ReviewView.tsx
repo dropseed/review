@@ -40,6 +40,7 @@ import {
   useCelebration,
 } from "../hooks";
 import { CircleProgress } from "./ui/circle-progress";
+import { ActivityBar } from "./ActivityBar";
 
 interface ReviewViewProps {
   onOpenRepo: () => Promise<void>;
@@ -69,7 +70,6 @@ export function ReviewView({
   const setClassificationsModalOpen = useReviewStore(
     (s) => s.setClassificationsModalOpen,
   );
-  const loadingProgress = useReviewStore((s) => s.loadingProgress);
   const startGuide = useReviewStore((s) => s.startGuide);
   const guideLoading = useReviewStore((s) => s.guideLoading);
   const guideRecommended = useReviewStore((s) => s.hunks.length >= 8);
@@ -183,13 +183,16 @@ export function ReviewView({
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
         <header
-          className={`flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 h-12 ${tabRailCollapsed ? "pl-[84px]" : "pl-4"}`}
+          className={`relative flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 h-12 ${tabRailCollapsed ? "pl-[84px]" : "pl-4"}`}
           data-tauri-drag-region
         >
           {/* Left: breadcrumb */}
           <div className="flex items-center gap-3 min-w-0">
             <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
           </div>
+
+          {/* Center: activity island (floating) */}
+          <ActivityBar />
 
           {/* Right: review progress */}
           <div className="flex shrink-0 items-center gap-3">
@@ -322,22 +325,6 @@ export function ReviewView({
             </SimpleTooltip>
           </div>
         </header>
-
-        {/* Loading progress bar */}
-        {loadingProgress && (
-          <div className="h-0.5 w-full overflow-hidden shrink-0">
-            {loadingProgress.phase === "hunks" && loadingProgress.total > 0 ? (
-              <div
-                className="h-full bg-amber-500/60 transition-[width] duration-300 ease-out"
-                style={{
-                  width: `${Math.round((loadingProgress.current / loadingProgress.total) * 100)}%`,
-                }}
-              />
-            ) : (
-              <div className="h-full w-1/4 bg-amber-500/40 animate-[shimmer_1.5s_ease-in-out_infinite]" />
-            )}
-          </div>
-        )}
 
         {/* Main content */}
         <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-900">

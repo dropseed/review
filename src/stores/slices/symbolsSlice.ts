@@ -26,11 +26,19 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
     symbolLinkedHunks: new Map(),
 
     loadSymbols: async () => {
-      const { repoPath, comparison, files, symbolsLoading } = get();
+      const {
+        repoPath,
+        comparison,
+        files,
+        symbolsLoading,
+        startActivity,
+        endActivity,
+      } = get();
       if (!repoPath || symbolsLoading) return;
 
       const comparisonKey = comparison.key;
       set({ symbolsLoading: true });
+      startActivity("load-symbols", "Building symbols", 40);
 
       try {
         const changedPaths = flattenFilesWithStatus(files)
@@ -73,6 +81,8 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
           symbolsLoading: false,
           symbolsLoaded: true,
         });
+      } finally {
+        endActivity("load-symbols");
       }
     },
 

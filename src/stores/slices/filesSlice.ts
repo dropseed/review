@@ -105,6 +105,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const currentPath = get().repoPath;
       if (path === currentPath) return;
 
+      get().clearAllActivities();
+
       // Reset all per-repo state when switching repositories.
       // Since all slices share one Zustand store, we can reset cross-slice
       // state here to prevent stale data from the previous repo.
@@ -155,6 +157,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     setComparison: (comparison) => {
+      get().clearAllActivities();
       // Clear stale data and signal that new data is loading.
       set({
         comparison,
@@ -199,7 +202,14 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     setHunks: (hunks) => set({ hunks }),
 
     loadFiles: async (isRefreshing = false) => {
-      const { repoPath, comparison, clearSymbols } = get();
+      const {
+        repoPath,
+        comparison,
+        clearSymbols,
+        startActivity,
+        updateActivity,
+        endActivity,
+      } = get();
       if (!repoPath) return;
 
       // Capture comparison key so we can detect if the user switched
@@ -217,8 +227,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         if (!isRefreshing) {
           set({ loadingProgress: { current: 0, total: 1, phase: "files" } });
         }
+        startActivity("load-files", "Loading files", 20);
         const phase1Start = performance.now();
         const files = await client.listFiles(repoPath, comparison);
+        endActivity("load-files");
         if (isStale()) {
           set({ loadingProgress: null });
           return;
@@ -270,6 +282,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         const failedFiles: string[] = [];
         const total = changedPaths.length;
 
+        startActivity("load-hunks", "Loading hunks", 30);
         if (changedPaths.length > 0 && client.getAllHunks) {
           // Batch mode: single IPC call for all hunks
           if (!isRefreshing) {
@@ -301,6 +314,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                   },
                 });
               }
+              updateActivity("load-hunks", { current: i + 1, total });
               if (i % 5 === 0) {
                 await new Promise((resolve) => setTimeout(resolve, 0));
               }
@@ -325,6 +339,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                 loadingProgress: { current: i + 1, total, phase: "hunks" },
               });
             }
+            updateActivity("load-hunks", { current: i + 1, total });
 
             // Yield to event loop periodically to allow UI to update
             if (i % 5 === 0) {
@@ -344,6 +359,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           }
         }
 
+        endActivity("load-hunks");
         console.log(
           `[perf] Phase 2 (load hunks): ${(performance.now() - phase2Start).toFixed(0)}ms, ${allHunks.length} hunks from ${changedPaths.length} files`,
         );
@@ -370,6 +386,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         if (!isRefreshing) {
           set({ loadingProgress: { current: 0, total: 1, phase: "moves" } });
         }
+        startActivity("detect-moves", "Detecting moves", 35);
         try {
           const result = await client.detectMovePairs(allHunks);
           if (isStale()) {
@@ -395,6 +412,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
             set({ hunks: allHunks, movePairs: [] });
           }
         }
+        endActivity("detect-moves");
         console.log(
           `[perf] Phase 3 (move detection): ${(performance.now() - phase3Start).toFixed(0)}ms`,
         );
@@ -409,6 +427,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         );
       } catch (err) {
         console.error("Failed to load files:", err);
+        // Clean up any activities that may have been started but not ended
+        endActivity("load-files");
+        endActivity("load-hunks");
+        endActivity("detect-moves");
         if (!isRefreshing) {
           set({ loadingProgress: null });
         }
