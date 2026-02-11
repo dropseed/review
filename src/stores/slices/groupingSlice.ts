@@ -178,20 +178,19 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         isSummaryStale,
         reviewGroups,
         guideSummary,
-        setTabRailCollapsed,
-        setFilesPanelCollapsed,
       } = get();
       if (hunks.length === 0) return;
-
-      // Collapse both sidebars to focus on the guide
-      setTabRailCollapsed(true);
-      setFilesPanelCollapsed(true);
 
       // Skip steps that already have fresh data
       const needsGrouping = reviewGroups.length === 0 || isGroupingStale();
       const needsSummary = guideSummary == null || isSummaryStale();
 
+      // Collapse both sidebars to focus on the guide.
+      // Use set() directly instead of setTabRailCollapsed/setFilesPanelCollapsed
+      // so the collapse is in-memory only and doesn't persist to Tauri Store.
       set({
+        tabRailCollapsed: true,
+        filesPanelCollapsed: true,
         guideLoading: true,
         topLevelView: "guide",
         classificationStatus: "loading" as const,
