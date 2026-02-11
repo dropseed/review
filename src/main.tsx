@@ -96,7 +96,7 @@ resolveLanguages([...commonLanguages])
             <AppRouter />
             <Toaster
               theme="dark"
-              position="bottom-right"
+              position="bottom-left"
               toastOptions={{
                 style: {
                   background: "#292524",
