@@ -69,18 +69,6 @@ export function FocusedReviewSection() {
   );
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
 
-  // Restore persisted grouping on mount if still fresh
-  const initializedRef = useRef(false);
-  useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
-    const grouping = reviewState?.grouping;
-    if (grouping && !isGroupingStale()) {
-      useReviewStore.setState({ reviewGroups: grouping.groups });
-    }
-  }, [reviewState?.grouping, isGroupingStale]);
-
   // Build hunk lookup
   const hunkById = useMemo(() => {
     const map = new Map<string, DiffHunk>();
@@ -191,13 +179,13 @@ export function FocusedReviewSection() {
   }, [totalUnreviewed]);
 
   // Staleness
-  const grouping = reviewState?.grouping;
-  const hasGrouping = !!grouping && grouping.groups.length > 0;
+  const guide = reviewState?.guide;
+  const hasGrouping = !!guide && guide.groups.length > 0;
   const stale = hasGrouping ? isGroupingStale() : false;
 
   const staleReason = useMemo(() => {
-    if (!stale || !grouping) return "";
-    const storedIds = new Set(grouping.hunkIds);
+    if (!stale || !guide) return "";
+    const storedIds = new Set(guide.hunkIds);
     const currentIds = new Set(hunks.map((h) => h.id));
     let added = 0;
     let removed = 0;
@@ -212,7 +200,7 @@ export function FocusedReviewSection() {
     if (removed > 0) parts.push(`${removed} removed`);
     if (parts.length === 0) return "";
     return `${parts.join(", ")} hunk${added + removed === 1 ? "" : "s"} since generated`;
-  }, [stale, grouping, hunks]);
+  }, [stale, guide, hunks]);
 
   // Handlers
   function handleApproveAll(group: HunkGroup): void {

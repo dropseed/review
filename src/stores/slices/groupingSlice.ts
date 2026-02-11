@@ -31,13 +31,12 @@ export interface GroupingSlice {
   classificationStatus: GuideTaskStatus;
   groupingStatus: GuideTaskStatus;
   summaryStatus: GuideTaskStatus;
-  // Track which hunk IDs were present when summary was generated
-  summaryHunkIds: string[] | null;
   startGuide: () => Promise<void>;
   generateSummary: () => Promise<void>;
   clearGuideSummary: () => void;
   isSummaryStale: () => boolean;
   isGuideStale: () => boolean;
+  restoreGuideFromState: () => void;
 }
 
 interface SymbolData {
@@ -151,17 +150,16 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     guideLoading: false,
     guideSummary: null,
     guideSummaryError: null,
-    classificationStatus: "idle" as GuideTaskStatus,
-    groupingStatus: "idle" as GuideTaskStatus,
-    summaryStatus: "idle" as GuideTaskStatus,
-    summaryHunkIds: null,
+    classificationStatus: "idle" as const,
+    groupingStatus: "idle" as const,
+    summaryStatus: "idle" as const,
 
     isGroupingStale: () => {
       const { reviewState, hunks } = get();
-      const grouping = reviewState?.grouping;
-      if (!grouping) return false;
+      const guide = reviewState?.guide;
+      if (!guide) return false;
 
-      const storedIds = new Set(grouping.hunkIds);
+      const storedIds = new Set(guide.hunkIds);
       const currentIds = new Set(hunks.map((h) => h.id));
 
       if (storedIds.size !== currentIds.size) return true;
@@ -176,6 +174,10 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         hunks,
         classifyUnlabeledHunks,
         generateGrouping,
+        isGroupingStale,
+        isSummaryStale,
+        reviewGroups,
+        guideSummary,
         setTabRailCollapsed,
         setFilesPanelCollapsed,
       } = get();
@@ -185,12 +187,18 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       setTabRailCollapsed(true);
       setFilesPanelCollapsed(true);
 
+      // Skip steps that already have fresh data
+      const needsGrouping = reviewGroups.length === 0 || isGroupingStale();
+      const needsSummary = guideSummary == null || isSummaryStale();
+
       set({
         guideLoading: true,
-        topLevelView: "guide" as const,
-        classificationStatus: "loading" as GuideTaskStatus,
-        groupingStatus: "loading" as GuideTaskStatus,
-        summaryStatus: "loading" as GuideTaskStatus,
+        topLevelView: "guide",
+        classificationStatus: "loading" as const,
+        groupingStatus: needsGrouping
+          ? ("loading" as const)
+          : ("done" as const),
+        summaryStatus: needsSummary ? ("loading" as const) : ("done" as const),
       });
 
       const wrap = (
@@ -201,17 +209,24 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           .then(() => set({ [field]: "done" as GuideTaskStatus }))
           .catch(() => set({ [field]: "error" as GuideTaskStatus }));
 
-      await Promise.allSettled([
+      const tasks: Promise<unknown>[] = [
         wrap(classifyUnlabeledHunks(), "classificationStatus"),
-        wrap(generateGrouping(), "groupingStatus"),
-        wrap(get().generateSummary(), "summaryStatus"),
-      ]);
+      ];
+      if (needsGrouping) {
+        tasks.push(wrap(generateGrouping(), "groupingStatus"));
+      }
+      if (needsSummary) {
+        tasks.push(wrap(get().generateSummary(), "summaryStatus"));
+      }
+
+      await Promise.allSettled(tasks);
 
       set({ guideLoading: false });
     },
 
     generateSummary: async () => {
-      const { repoPath, hunks, reviewState, classifyCommand } = get();
+      const { repoPath, hunks, reviewState, classifyCommand, saveReviewState } =
+        get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
 
@@ -229,12 +244,27 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           command: classifyCommand || undefined,
         });
 
+        const currentState = get().reviewState;
+        if (!currentState) return;
+
+        const updatedState = {
+          ...currentState,
+          guide: {
+            groups: currentState.guide?.groups ?? [],
+            hunkIds:
+              currentState.guide?.hunkIds ?? hunks.map((h) => h.id).sort(),
+            generatedAt:
+              currentState.guide?.generatedAt ?? new Date().toISOString(),
+            summary,
+          },
+          updatedAt: new Date().toISOString(),
+        };
+
         set({
+          reviewState: updatedState,
           guideSummary: summary,
-          summaryHunkIds: get()
-            .hunks.map((h) => h.id)
-            .sort(),
         });
+        await saveReviewState();
       } catch (err) {
         console.error("[generateSummary] Failed:", err);
         set({
@@ -244,21 +274,33 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     clearGuideSummary: () => {
-      set({
-        guideSummary: null,
-        guideSummaryError: null,
-        summaryHunkIds: null,
-      });
+      const { reviewState, saveReviewState } = get();
+      if (reviewState?.guide?.summary) {
+        set({
+          guideSummary: null,
+          guideSummaryError: null,
+          reviewState: {
+            ...reviewState,
+            guide: { ...reviewState.guide, summary: undefined },
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        saveReviewState();
+      } else {
+        set({ guideSummary: null, guideSummaryError: null });
+      }
     },
 
     isSummaryStale: () => {
-      const { summaryHunkIds, hunks } = get();
-      if (!summaryHunkIds) return false;
+      const { reviewState, hunks } = get();
+      const guide = reviewState?.guide;
+      if (!guide?.summary) return false;
 
+      const storedIds = guide.hunkIds;
       const currentIds = hunks.map((h) => h.id).sort();
-      if (summaryHunkIds.length !== currentIds.length) return true;
-      for (let i = 0; i < summaryHunkIds.length; i++) {
-        if (summaryHunkIds[i] !== currentIds[i]) return true;
+      if (storedIds.length !== currentIds.length) return true;
+      for (let i = 0; i < storedIds.length; i++) {
+        if (storedIds[i] !== currentIds[i]) return true;
       }
       return false;
     },
@@ -317,10 +359,11 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
         const updatedState = {
           ...currentState,
-          grouping: {
+          guide: {
             groups,
             hunkIds: hunks.map((h) => h.id).sort(),
             generatedAt: new Date().toISOString(),
+            summary: currentState.guide?.summary,
           },
           updatedAt: new Date().toISOString(),
         };
@@ -347,7 +390,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       const updatedState = {
         ...reviewState,
-        grouping: undefined,
+        guide: undefined,
         updatedAt: new Date().toISOString(),
       };
 
@@ -355,7 +398,25 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         reviewState: updatedState,
         reviewGroups: [],
         identicalHunkIds: new Map(),
+        guideSummary: null,
+        guideSummaryError: null,
       });
       saveReviewState();
+    },
+
+    restoreGuideFromState: () => {
+      const { reviewState, hunks, isGroupingStale } = get();
+      const guide = reviewState?.guide;
+      if (!guide) return;
+
+      // Check staleness — if the hunk set has changed, don't restore
+      if (isGroupingStale()) return;
+
+      const identicalHunkIds = buildIdenticalHunkIds(hunks);
+      set({
+        reviewGroups: guide.groups,
+        guideSummary: guide.summary ?? null,
+        identicalHunkIds,
+      });
     },
   });

@@ -355,10 +355,11 @@ export interface HunkGroup {
   hunkIds: string[];
 }
 
-export interface GroupingState {
+export interface GuideState {
   groups: HunkGroup[];
   hunkIds: string[];
   generatedAt: string;
+  summary?: string;
 }
 
 export interface ReviewState {
@@ -371,7 +372,7 @@ export interface ReviewState {
   createdAt: string;
   updatedAt: string;
   version: number; // Version counter for optimistic concurrency control
-  grouping?: GroupingState; // AI-generated hunk grouping
+  guide?: GuideState; // AI-generated guide state (grouping + summary)
 }
 
 // Summary of a saved review tagged with repo info (for cross-repo listing)

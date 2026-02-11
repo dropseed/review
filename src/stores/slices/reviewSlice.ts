@@ -581,7 +581,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         version: 0,
       };
 
-      set({ reviewState: newState });
+      set({
+        reviewState: newState,
+        reviewGroups: [],
+        guideSummary: null,
+        identicalHunkIds: new Map(),
+      });
       await saveReviewState();
       await refresh();
     },
@@ -639,6 +644,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       ]);
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();
+      // Restore guide data from persisted state (if still fresh)
+      get().restoreGuideFromState();
       // Reset guide progress indicators so stale badges can take over
       set({
         classificationStatus: "idle" as const,

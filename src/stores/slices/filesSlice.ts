@@ -188,7 +188,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // AI state — clear cached results and progress indicators
         guideSummary: null,
         guideSummaryError: null,
-        summaryHunkIds: null,
         classifiedHunkIds: null,
         classificationStatus: "idle" as const,
         groupingStatus: "idle" as const,

@@ -17,6 +17,7 @@ export function useComparisonLoader(
   const loadRemoteInfo = useReviewStore((s) => s.loadRemoteInfo);
   const loadCommits = useReviewStore((s) => s.loadCommits);
   const classifyStaticHunks = useReviewStore((s) => s.classifyStaticHunks);
+  const restoreGuideFromState = useReviewStore((s) => s.restoreGuideFromState);
   const loadSymbols = useReviewStore((s) => s.loadSymbols);
 
   useEffect(() => {
@@ -38,6 +39,8 @@ export function useComparisonLoader(
           if (cancelled) return;
           // Run static (rule-based) classification only — no AI on load
           classifyStaticHunks();
+          // Restore guide data from persisted state (if still fresh)
+          restoreGuideFromState();
           // Load symbols eagerly (also computes symbol-linked hunks)
           await loadSymbols();
         } catch (err) {
@@ -62,6 +65,7 @@ export function useComparisonLoader(
     loadRemoteInfo,
     loadCommits,
     classifyStaticHunks,
+    restoreGuideFromState,
     loadSymbols,
     setInitialLoading,
   ]);
