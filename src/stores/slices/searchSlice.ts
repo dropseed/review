@@ -8,6 +8,7 @@ export interface SearchSlice {
   searchResults: SearchMatch[];
   searchLoading: boolean;
   searchError: string | null;
+  searchActive: boolean;
   // Line to scroll to and highlight (null when not active)
   scrollToLine: { filePath: string; lineNumber: number } | null;
 
@@ -15,6 +16,7 @@ export interface SearchSlice {
   setSearchQuery: (query: string) => void;
   performSearch: (query: string) => Promise<void>;
   clearSearch: () => void;
+  clearSearchResults: () => void;
   clearScrollToLine: () => void;
   navigateToSearchResult: (index: number) => void;
 }
@@ -25,6 +27,7 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     searchResults: [],
     searchLoading: false,
     searchError: null,
+    searchActive: false,
     scrollToLine: null,
 
     setSearchQuery: (query) => set({ searchQuery: query }),
@@ -45,7 +48,11 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
           false, // case insensitive by default
           100, // max results
         );
-        set({ searchResults: results, searchLoading: false });
+        set({
+          searchResults: results,
+          searchLoading: false,
+          searchActive: true,
+        });
       } catch (error) {
         console.error("Search error:", error);
         set({
@@ -62,6 +69,14 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         searchResults: [],
         searchLoading: false,
         searchError: null,
+        searchActive: false,
+      }),
+
+    clearSearchResults: () =>
+      set({
+        searchResults: [],
+        searchLoading: false,
+        searchError: null,
       }),
 
     clearScrollToLine: () => set({ scrollToLine: null }),
@@ -71,13 +86,11 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
       const result = searchResults[index];
       if (!result) return;
 
-      // Auto-switch to browse if in overview
+      // Auto-switch to browse if in overview, otherwise select the file
       if (topLevelView === "guide") {
         navigateToBrowse(result.filePath);
       } else {
-        // Select the file within browse
-        const { setSelectedFile } = get();
-        setSelectedFile(result.filePath);
+        get().setSelectedFile(result.filePath);
       }
 
       // Set scroll target for line highlighting
@@ -88,18 +101,14 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         },
       });
 
-      // Find the hunk that contains this line
-      const hunkIndex = hunks.findIndex((h) => {
-        if (h.filePath !== result.filePath) return false;
-        // Check if the line is within the hunk's range
-        const hunkLines = h.lines || [];
-        for (const line of hunkLines) {
-          if (line.newLineNumber === result.lineNumber) {
-            return true;
-          }
-        }
-        return false;
-      });
+      // Find the hunk that contains this line and focus it
+      const hunkIndex = hunks.findIndex(
+        (h) =>
+          h.filePath === result.filePath &&
+          (h.lines || []).some(
+            (line) => line.newLineNumber === result.lineNumber,
+          ),
+      );
 
       if (hunkIndex >= 0) {
         set({ focusedHunkIndex: hunkIndex });

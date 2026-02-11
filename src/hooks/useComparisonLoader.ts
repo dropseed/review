@@ -22,9 +22,13 @@ export function useComparisonLoader(
   const syncTotalDiffHunks = useReviewStore((s) => s.syncTotalDiffHunks);
   const restoreGuideFromState = useReviewStore((s) => s.restoreGuideFromState);
   const loadSymbols = useReviewStore((s) => s.loadSymbols);
+  const clearSearch = useReviewStore((s) => s.clearSearch);
 
   useEffect(() => {
     if (repoPath && comparisonReady) {
+      // Clear stale search results from previous comparison
+      clearSearch();
+
       let cancelled = false;
       const loadData = async () => {
         try {
@@ -77,6 +81,7 @@ export function useComparisonLoader(
     syncTotalDiffHunks,
     restoreGuideFromState,
     loadSymbols,
+    clearSearch,
     setInitialLoading,
   ]);
 }

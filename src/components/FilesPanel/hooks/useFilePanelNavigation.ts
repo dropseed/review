@@ -67,6 +67,20 @@ export function useFilePanelNavigation({
     }
   }, [hunks.length, viewMode]);
 
+  // Auto-switch to/from search tab when searchActive changes
+  const searchActive = useReviewStore((s) => s.searchActive);
+  const tabBeforeSearch = useRef<FilesPanelTab | null>(null);
+
+  useEffect(() => {
+    if (searchActive && viewMode !== "search") {
+      tabBeforeSearch.current = viewMode;
+      setFilesPanelTab("search");
+    } else if (!searchActive && viewMode === "search") {
+      setFilesPanelTab(tabBeforeSearch.current ?? "changes");
+      tabBeforeSearch.current = null;
+    }
+  }, [searchActive, viewMode]);
+
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const fileRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 

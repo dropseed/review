@@ -33,6 +33,7 @@ import { flattenFilesWithStatus } from "../../stores/types";
 import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import { ReviewDataProvider } from "../ReviewDataContext";
 import { FilenameModal } from "./FilenameModal";
+import { SearchResultsPanel } from "./SearchResultsPanel";
 
 interface QuickActionItem {
   label: string;
@@ -522,6 +523,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return actions;
   }, [quickActionData, unapproveHunkIds, basenameCount]);
 
+  // Search state
+  const searchActive = useReviewStore((s) => s.searchActive);
+  const searchResultCount = useReviewStore((s) => s.searchResults.length);
+
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
   const [revealLabel, setRevealLabel] = useState("Reveal in Finder");
@@ -589,12 +594,36 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               <TabsTrigger value="changes">Changes</TabsTrigger>
               <TabsTrigger value="browse">Browse</TabsTrigger>
               <TabsTrigger value="commits">Commits</TabsTrigger>
+              {searchActive && (
+                <TabsTrigger value="search" className="flex items-center gap-1">
+                  <svg
+                    aria-label="Search"
+                    className="h-3.5 w-3.5 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  {searchResultCount > 0 && (
+                    <span className="ml-1 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-amber-300">
+                      {searchResultCount >= 100 ? "100+" : searchResultCount}
+                    </span>
+                  )}
+                </TabsTrigger>
+              )}
             </TabsList>
           </Tabs>
         </div>
 
         {/* Panel content based on view mode */}
-        {viewMode === "commits" ? (
+        {viewMode === "search" ? (
+          <SearchResultsPanel />
+        ) : viewMode === "commits" ? (
           <CommitsPanel
             onSelectCommit={handleCommitSelect}
             selectedCommitHash={selectedCommitHash}

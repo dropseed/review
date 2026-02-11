@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type { ReactNode } from "react";
 import { useReviewStore } from "../stores";
+import { useDebounce } from "../hooks/useDebounce";
+import { HighlightedLine } from "./ui/HighlightedLine";
+import { groupSearchResultsByFile } from "../utils/search";
 import { Dialog, DialogOverlay, DialogPortal } from "./ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
@@ -9,68 +13,22 @@ interface ContentSearchProps {
   onClose: () => void;
 }
 
-// Debounce helper
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
+function getEmptyStateMessage(query: string, isLoading: boolean): string {
+  if (!query.trim()) return "Type to search file contents...";
+  if (isLoading) return "Searching...";
+  return "No matches found";
 }
 
-// Highlight matched text in a line
-function HighlightedLine({
-  content,
-  query,
-  column,
-}: {
-  content: string;
-  query: string;
-  column: number;
-}) {
-  if (!query) {
-    return <span>{content}</span>;
-  }
-
-  // Column is 1-indexed, convert to 0-indexed
-  const matchStart = column - 1;
-  const matchEnd = matchStart + query.length;
-
-  // Ensure indices are within bounds
-  if (matchStart < 0 || matchStart >= content.length) {
-    return <span>{content}</span>;
-  }
-
-  const before = content.slice(0, matchStart);
-  const match = content.slice(matchStart, Math.min(matchEnd, content.length));
-  const after = content.slice(Math.min(matchEnd, content.length));
-
-  return (
-    <>
-      <span>{before}</span>
-      <span className="bg-amber-500/30 text-amber-200 font-medium">
-        {match}
-      </span>
-      <span>{after}</span>
-    </>
-  );
-}
-
-export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
+export function ContentSearch({
+  isOpen,
+  onClose,
+}: ContentSearchProps): ReactNode {
   const {
     searchResults,
     searchLoading,
     searchError,
     performSearch,
-    clearSearch,
+    clearSearchResults,
     navigateToSearchResult,
   } = useReviewStore();
 
@@ -87,26 +45,29 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
     if (debouncedQuery.trim()) {
       performSearch(debouncedQuery);
     } else {
-      clearSearch();
+      clearSearchResults();
     }
-  }, [debouncedQuery, performSearch, clearSearch]);
+  }, [debouncedQuery, performSearch, clearSearchResults]);
 
   // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(0);
   }, [searchResults]);
 
-  // Focus input when modal opens
+  // Pre-fill from store query when modal opens, select all for easy replacement
   useEffect(() => {
     if (isOpen) {
-      setQuery("");
+      const storeQuery = useReviewStore.getState().searchQuery;
+      setQuery(storeQuery);
       setSelectedIndex(0);
-      clearSearch();
       requestAnimationFrame(() => {
-        inputRef.current?.focus();
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
       });
     }
-  }, [isOpen, clearSearch]);
+  }, [isOpen]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -119,25 +80,10 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
     }
   }, [selectedIndex]);
 
-  // Group results by file for display
-  const groupedResults = useMemo(() => {
-    const groups = new Map<
-      string,
-      { filePath: string; matches: typeof searchResults }
-    >();
-    for (const result of searchResults) {
-      const existing = groups.get(result.filePath);
-      if (existing) {
-        existing.matches.push(result);
-      } else {
-        groups.set(result.filePath, {
-          filePath: result.filePath,
-          matches: [result],
-        });
-      }
-    }
-    return Array.from(groups.values());
-  }, [searchResults]);
+  const groupedResults = useMemo(
+    () => groupSearchResultsByFile(searchResults),
+    [searchResults],
+  );
 
   const handleSelect = useCallback(
     (index: number) => {
@@ -171,14 +117,6 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
     [searchResults, selectedIndex, handleSelect],
   );
 
-  /** Returns the appropriate message when search results are empty */
-  function getEmptyStateMessage(query: string, isLoading: boolean): string {
-    if (!query.trim()) return "Type to search file contents...";
-    if (isLoading) return "Searching...";
-    return "No matches found";
-  }
-
-  // Compute the flat index for each result in the grouped display
   let flatIndex = 0;
 
   return (
@@ -213,9 +151,12 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                     ref={inputRef}
                     type="text"
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      useReviewStore.getState().setSearchQuery(e.target.value);
+                    }}
                     onKeyDown={handleKeyDown}
-                    placeholder="Search in files…"
+                    placeholder="Search in files..."
                     aria-label="Search in files"
                     autoComplete="off"
                     autoCorrect="off"
@@ -228,7 +169,11 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                   )}
                   {query && !searchLoading && (
                     <button
-                      onClick={() => setQuery("")}
+                      onClick={() => {
+                        setQuery("");
+                        useReviewStore.getState().setSearchQuery("");
+                        clearSearchResults();
+                      }}
                       className="text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded"
                       aria-label="Clear search"
                     >
@@ -269,7 +214,7 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                   groupedResults.map((group) => (
                     <div key={group.filePath}>
                       {/* File header */}
-                      <div className="sticky top-0 bg-stone-850 border-b border-stone-800 px-4 py-1.5 flex items-center gap-2">
+                      <div className="sticky top-0 bg-stone-900 border-b border-stone-800 px-4 py-1.5 flex items-center gap-2">
                         <svg
                           aria-hidden="true"
                           className="h-3.5 w-3.5 text-stone-500 flex-shrink-0"
@@ -354,7 +299,7 @@ export function ContentSearch({ isOpen, onClose }: ContentSearchProps) {
                 </div>
                 <span>
                   {searchResults.length > 0 &&
-                    `${searchResults.length} results`}
+                    `${searchResults.length >= 100 ? "100+" : searchResults.length} results`}
                 </span>
               </div>
             </div>
