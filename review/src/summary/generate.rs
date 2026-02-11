@@ -5,7 +5,7 @@ use std::path::Path;
 
 /// Generate a summary for the given hunks using the Claude CLI.
 ///
-/// Returns a plain-text summary string.
+/// Returns a markdown summary string.
 pub fn generate_summary(
     hunks: &[SummaryInput],
     cwd: &Path,
