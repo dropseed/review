@@ -151,6 +151,11 @@ pub(crate) fn run_claude_with_model(
         return Err(ClassifyError::CommandFailed(stderr.to_string()));
     }
 
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+    if !stderr_str.trim().is_empty() {
+        eprintln!("[run_claude_with_model] stderr (command succeeded): {}", stderr_str);
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     if stdout.trim().is_empty() {
         return Err(ClassifyError::EmptyResponse);

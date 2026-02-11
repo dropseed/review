@@ -46,7 +46,13 @@ pub fn generate_grouping(
 
     // Parse the JSON response
     let mut groups: Vec<HunkGroup> =
-        serde_json::from_str(json_str).map_err(|e| ClassifyError::ParseError(e.to_string()))?;
+        serde_json::from_str(json_str).map_err(|e| {
+            ClassifyError::ParseError(format!(
+                "JSON parse error: {}. Raw output (first 500 chars): {}",
+                e,
+                &output[..output.len().min(500)]
+            ))
+        })?;
 
     // Collect all input hunk IDs
     let all_ids: HashSet<String> = hunks.iter().map(|h| h.id.clone()).collect();
