@@ -263,6 +263,25 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
   };
 
+  // Easter egg: press "?" twice within 500ms to reveal the iOS companion tab
+  const [showCompanionTab, setShowCompanionTab] = useState(false);
+  useEffect(() => {
+    if (!isOpen || showCompanionTab) return;
+    let lastQuestionMark = 0;
+    function handleKeyDown(e: KeyboardEvent): void {
+      if (e.key === "?") {
+        const now = Date.now();
+        if (now - lastQuestionMark < 500) {
+          setShowCompanionTab(true);
+        } else {
+          lastQuestionMark = now;
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, showCompanionTab]);
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex w-full max-w-md max-h-[85vh] flex-col rounded-xl overflow-hidden">
@@ -314,7 +333,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {claudeAvailable && (
               <TabsTrigger value="classification">Classification</TabsTrigger>
             )}
-            <TabsTrigger value="ios">iOS</TabsTrigger>
+            {showCompanionTab && <TabsTrigger value="ios">iOS</TabsTrigger>}
             <TabsTrigger value="general">General</TabsTrigger>
           </TabsList>
 
