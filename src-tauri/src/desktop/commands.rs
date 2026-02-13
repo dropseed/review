@@ -11,12 +11,13 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
-use review::classify::{self, ClassifyResponse, HunkInput};
+use review::ai::classify::HunkInput;
+use review::ai::grouping::{GroupingInput, ModifiedSymbolEntry};
+use review::classify::{self, ClassifyResponse};
 use review::diff::parser::{
     compute_content_hash, create_binary_hunk, create_untracked_hunk, detect_move_pairs, parse_diff,
     parse_multi_file_diff, DiffHunk, MovePair,
 };
-use review::grouping::{GroupingInput, ModifiedSymbolEntry};
 use review::review::state::{HunkGroup, ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
 use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
@@ -952,7 +953,7 @@ pub fn get_commit_detail(repo_path: String, hash: String) -> Result<CommitDetail
 
 #[tauri::command]
 pub fn check_claude_available() -> bool {
-    classify::check_claude_available()
+    review::ai::check_claude_available()
 }
 
 #[tauri::command]
@@ -998,7 +999,7 @@ pub async fn classify_hunks_with_claude(
 
     let result = timeout(
         Duration::from_secs(timeout_secs),
-        classify::classify_hunks_batched(
+        review::ai::classify::classify_hunks_batched(
             hunks,
             &repo_path_buf,
             &model,
@@ -1869,7 +1870,7 @@ pub async fn generate_hunk_grouping(
     let result = timeout(
         Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
-            review::grouping::generate_grouping(
+            review::ai::grouping::generate_grouping(
                 &hunks,
                 &repo_path_buf,
                 &model,
@@ -1892,7 +1893,7 @@ pub async fn generate_hunk_grouping(
 #[tauri::command]
 pub async fn generate_review_summary(
     repo_path: String,
-    hunks: Vec<review::summary::SummaryInput>,
+    hunks: Vec<review::ai::summary::SummaryInput>,
     model: Option<String>,
     command: Option<String>,
 ) -> Result<String, String> {
@@ -1914,7 +1915,12 @@ pub async fn generate_review_summary(
     let result = timeout(
         Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
-            review::summary::generate_summary(&hunks, &repo_path_buf, &model, command.as_deref())
+            review::ai::summary::generate_summary(
+                &hunks,
+                &repo_path_buf,
+                &model,
+                command.as_deref(),
+            )
         }),
     )
     .await
@@ -1929,7 +1935,7 @@ pub async fn generate_review_summary(
 #[tauri::command]
 pub async fn generate_review_diagram(
     repo_path: String,
-    hunks: Vec<review::summary::SummaryInput>,
+    hunks: Vec<review::ai::summary::SummaryInput>,
     model: Option<String>,
     command: Option<String>,
 ) -> Result<Option<String>, String> {
@@ -1951,7 +1957,12 @@ pub async fn generate_review_diagram(
     let result = timeout(
         Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
-            review::summary::generate_diagram(&hunks, &repo_path_buf, &model, command.as_deref())
+            review::ai::summary::generate_diagram(
+                &hunks,
+                &repo_path_buf,
+                &model,
+                command.as_deref(),
+            )
         }),
     )
     .await

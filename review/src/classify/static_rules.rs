@@ -4,7 +4,7 @@
 //! comment additions, import additions, etc.) so those hunks skip the AI call.
 //! All rules are conservative: if uncertain, return `None` and let AI handle it.
 
-use crate::classify::claude::{ClassificationResult, ClassifyResponse};
+use crate::classify::{ClassificationResult, ClassifyResponse};
 use crate::diff::parser::{DiffHunk, DiffLine, LineType};
 use std::collections::HashMap;
 

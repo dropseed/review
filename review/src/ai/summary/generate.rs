@@ -1,16 +1,7 @@
 use super::diagram_prompt::build_diagram_prompt;
 use super::prompt::{build_summary_prompt, SummaryInput};
-use crate::classify::claude::{find_claude_executable, run_claude_with_model};
-use crate::classify::ClassifyError;
+use crate::ai::{ensure_claude_available, run_claude_with_model, ClaudeError};
 use std::path::Path;
-
-/// Verify Claude is available when not using a custom command.
-fn ensure_claude_available(custom_command: Option<&str>) -> Result<(), ClassifyError> {
-    if custom_command.is_none() {
-        find_claude_executable().ok_or(ClassifyError::ClaudeNotFound)?;
-    }
-    Ok(())
-}
 
 /// Strip markdown code fences from a string. Handles both `` ```mermaid ``
 /// and bare `` ``` `` wrappers that Claude sometimes adds despite instructions.
@@ -47,7 +38,7 @@ pub fn generate_summary(
     cwd: &Path,
     model: &str,
     custom_command: Option<&str>,
-) -> Result<String, ClassifyError> {
+) -> Result<String, ClaudeError> {
     if hunks.is_empty() {
         return Ok(String::new());
     }
@@ -57,7 +48,7 @@ pub fn generate_summary(
     let prompt = build_summary_prompt(hunks);
     let output = run_claude_with_model(&prompt, cwd, model, custom_command)?;
 
-    Ok(output.trim().to_string())
+    Ok(output.trim().to_owned())
 }
 
 /// Generate a Mermaid dependency diagram for the given hunks using the Claude CLI.
@@ -69,10 +60,9 @@ pub fn generate_diagram(
     cwd: &Path,
     model: &str,
     custom_command: Option<&str>,
-) -> Result<Option<String>, ClassifyError> {
-    let prompt = match build_diagram_prompt(hunks) {
-        Some(p) => p,
-        None => return Ok(None),
+) -> Result<Option<String>, ClaudeError> {
+    let Some(prompt) = build_diagram_prompt(hunks) else {
+        return Ok(None);
     };
 
     ensure_claude_available(custom_command)?;
@@ -84,5 +74,5 @@ pub fn generate_diagram(
         return Ok(None);
     }
 
-    Ok(Some(trimmed.to_string()))
+    Ok(Some(trimmed.to_owned()))
 }

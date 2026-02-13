@@ -125,22 +125,20 @@ impl From<crate::review::storage::StorageError> for AppError {
     }
 }
 
-// Convert from ClassifyError
-impl From<crate::classify::ClassifyError> for AppError {
-    fn from(err: crate::classify::ClassifyError) -> Self {
-        use crate::classify::ClassifyError;
+// Convert from ClaudeError
+impl From<crate::ai::ClaudeError> for AppError {
+    fn from(err: crate::ai::ClaudeError) -> Self {
+        use crate::ai::ClaudeError;
         match err {
-            ClassifyError::ClaudeNotFound => AppError::classification(
+            ClaudeError::ClaudeNotFound => AppError::classification(
                 "Claude CLI not found. Install from https://claude.ai/code",
             ),
-            ClassifyError::CommandFailed(msg) => {
+            ClaudeError::CommandFailed(msg) => {
                 AppError::classification(format!("Command failed: {msg}"))
             }
-            ClassifyError::ParseError(msg) => {
-                AppError::classification(format!("Parse error: {msg}"))
-            }
-            ClassifyError::EmptyResponse => AppError::classification("Empty response from Claude"),
-            ClassifyError::Io(e) => AppError::io(e.to_string()),
+            ClaudeError::ParseError(msg) => AppError::classification(format!("Parse error: {msg}")),
+            ClaudeError::EmptyResponse => AppError::classification("Empty response from Claude"),
+            ClaudeError::Io(e) => AppError::io(e.to_string()),
         }
     }
 }
