@@ -2,7 +2,7 @@
   "name": "review",
   "private": true,
   "license": "FSL-1.1-MIT",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "type": "module",
   "scripts": {
     "dev": "vite",
