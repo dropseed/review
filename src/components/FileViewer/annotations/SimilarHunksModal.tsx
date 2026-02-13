@@ -103,7 +103,7 @@ export function SimilarHunksModal({
           onClick={() => setOpen(true)}
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-stone-500 transition-colors hover:bg-stone-700/50 hover:text-stone-300"
         >
-          <span className="tabular-nums">{totalCount} like this</span>
+          <span className="tabular-nums">{totalCount} identical</span>
         </button>
       </SimpleTooltip>
 
@@ -113,7 +113,7 @@ export function SimilarHunksModal({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <span>Similar Changes</span>
+            <span>Identical Changes</span>
             <span className="rounded-full bg-stone-700/50 px-2 py-0.5 text-xs font-normal text-stone-400 tabular-nums">
               {totalCount} hunks
             </span>
