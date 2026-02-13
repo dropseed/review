@@ -28,7 +28,7 @@ const ClassificationsModal = lazy(() =>
     default: m.ClassificationsModal,
   })),
 );
-import { ReviewBreadcrumb } from "./ReviewBreadcrumb";
+import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
@@ -159,7 +159,6 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
   // Celebration on 100% reviewed
   useCelebration();
 
-  const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
   const filesPanelCollapsed = useReviewStore((s) => s.filesPanelCollapsed);
   const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
 
@@ -172,108 +171,107 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     <div className="flex h-full flex-row bg-stone-900">
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header
-          className={`@container relative flex items-center justify-between bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] pr-4 h-12 ${tabRailCollapsed ? "pl-[84px]" : "pl-4"}`}
-          data-tauri-drag-region
-        >
-          {/* Left: breadcrumb */}
-          <div className="flex items-center gap-3 min-w-0">
-            <ReviewBreadcrumb
-              repoName={repoName}
-              comparison={comparison}
-              title={guideTitle}
-            />
-          </div>
+        <header className="@container relative bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] py-2.5">
+          {/* Top row: breadcrumb + activity + progress */}
+          <div className="flex items-center justify-between pr-4">
+            {/* Left: repo / comparison ref */}
+            <div className="min-w-0 px-4">
+              <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
+            </div>
 
-          {/* Center: activity island (floating) */}
-          <ActivityBar />
+            {/* Center: activity island (floating) */}
+            <ActivityBar />
 
-          {/* Right: review progress */}
-          <div className="flex shrink-0 items-center gap-3">
-            {totalHunks > 0 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setGuideContentMode("overview");
-                  useReviewStore.setState({ filesPanelCollapsed: false });
-                }}
-                className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
-                           hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
-              >
-                {state === "approved" && (
-                  <span className="hidden @md:inline text-xs font-medium text-emerald-400">
-                    Approved
-                  </span>
-                )}
-                {state === "changes_requested" && (
-                  <span className="hidden @md:inline text-xs font-medium text-rose-400">
-                    Changes Requested
-                  </span>
-                )}
-                <span className="font-mono text-xs tabular-nums text-stone-400">
-                  {reviewedHunks}/{totalHunks}
-                </span>
-                <SimpleTooltip
-                  content={
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                        <span>Trusted: {trustedHunks}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span>Approved: {approvedHunks}</span>
-                      </div>
-                      {rejectedHunks > 0 && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-rose-500" />
-                          <span>Rejected: {rejectedHunks}</span>
-                        </div>
-                      )}
-                    </div>
-                  }
+            {/* Right: review progress */}
+            <div className="flex shrink-0 items-center gap-3">
+              {totalHunks > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuideContentMode("overview");
+                    useReviewStore.setState({ filesPanelCollapsed: false });
+                  }}
+                  className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
+                             hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
                 >
-                  <CircleProgress
-                    percent={Math.round((reviewedHunks / totalHunks) * 100)}
-                    size={20}
-                    strokeWidth={2.5}
-                    className="shrink-0 cursor-default"
-                  />
-                </SimpleTooltip>
-              </button>
-            ) : null}
-            <SimpleTooltip
-              content={
-                filesPanelCollapsed ? "Show files panel" : "Hide files panel"
-              }
-            >
-              <button
-                type="button"
-                onClick={toggleFilesPanel}
-                className="flex items-center justify-center w-7 h-7 rounded-md
-                           hover:bg-stone-800/60 transition-colors duration-100
-                           focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
-                           text-stone-500 hover:text-stone-300"
-                aria-label={
+                  {state === "approved" && (
+                    <span className="hidden @md:inline text-xs font-medium text-emerald-400">
+                      Approved
+                    </span>
+                  )}
+                  {state === "changes_requested" && (
+                    <span className="hidden @md:inline text-xs font-medium text-rose-400">
+                      Changes Requested
+                    </span>
+                  )}
+                  <span className="font-mono text-xs tabular-nums text-stone-400">
+                    {reviewedHunks}/{totalHunks}
+                  </span>
+                  <SimpleTooltip
+                    content={
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                          <span>Trusted: {trustedHunks}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span>Approved: {approvedHunks}</span>
+                        </div>
+                        {rejectedHunks > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-rose-500" />
+                            <span>Rejected: {rejectedHunks}</span>
+                          </div>
+                        )}
+                      </div>
+                    }
+                  >
+                    <CircleProgress
+                      percent={Math.round((reviewedHunks / totalHunks) * 100)}
+                      size={20}
+                      strokeWidth={2.5}
+                      className="shrink-0 cursor-default"
+                    />
+                  </SimpleTooltip>
+                </button>
+              ) : null}
+              <SimpleTooltip
+                content={
                   filesPanelCollapsed ? "Show files panel" : "Hide files panel"
                 }
               >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+                <button
+                  type="button"
+                  onClick={toggleFilesPanel}
+                  className="flex items-center justify-center w-7 h-7 rounded-md
+                             hover:bg-stone-800/60 transition-colors duration-100
+                             focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
+                             text-stone-500 hover:text-stone-300"
+                  aria-label={
+                    filesPanelCollapsed
+                      ? "Show files panel"
+                      : "Hide files panel"
+                  }
                 >
-                  <rect x="3" y="3" width="18" height="18" rx="3" />
-                  <line x1="15" y1="3" x2="15" y2="21" />
-                </svg>
-              </button>
-            </SimpleTooltip>
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="3" />
+                    <line x1="15" y1="3" x2="15" y2="21" />
+                  </svg>
+                </button>
+              </SimpleTooltip>
+            </div>
           </div>
+          <ReviewTitle comparison={comparison} title={guideTitle} />
         </header>
 
         {/* Main content */}

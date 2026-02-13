@@ -23,7 +23,6 @@
     "log:default",
     "window-state:default",
     "updater:default",
-    "process:allow-restart",
-    "liquid-glass:default"
+    "process:allow-restart"
   ]
 }

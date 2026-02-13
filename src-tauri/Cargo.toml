@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 review = { path = "../review", features = ["symbols-dev"] }
 
 # Tauri and plugins
-tauri = { version = "2.10", features = ["macos-private-api", "devtools", "tray-icon"] }
+tauri = { version = "2.10", features = ["devtools", "tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
@@ -32,7 +32,6 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-tauri-plugin-liquid-glass = "0.1"
 
 # Desktop-specific dependencies
 log = "0.4"

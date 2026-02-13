@@ -5,6 +5,10 @@ import { SimpleTooltip } from "./ui/tooltip";
 interface ReviewBreadcrumbProps {
   repoName: string;
   comparison: Comparison;
+}
+
+interface ReviewTitleProps {
+  comparison: Comparison;
   title?: string | null;
 }
 
@@ -51,35 +55,34 @@ function getOverviewLabel(comparison: Comparison): string {
 export function ReviewBreadcrumb({
   repoName,
   comparison,
-  title,
 }: ReviewBreadcrumbProps) {
   const isPr = !!comparison.githubPr;
-  const displayTitle = comparison.githubPr?.title || title;
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-2.5">
       <SidebarToggle />
+      <div className="flex items-center gap-1.5">
+        <span className="shrink-0 text-xs font-medium text-stone-300">
+          {repoName}
+        </span>
+        <span className="shrink-0 text-stone-600 text-xs">/</span>
+        <span
+          className={`shrink-0 text-xs text-stone-400 ${isPr ? "font-medium" : "font-mono"}`}
+        >
+          {getOverviewLabel(comparison)}
+        </span>
+      </div>
+    </div>
+  );
+}
 
-      <span className="shrink-0 text-xs font-medium text-stone-300">
-        {repoName}
-      </span>
+export function ReviewTitle({ comparison, title }: ReviewTitleProps) {
+  const displayTitle = comparison.githubPr?.title || title;
+  if (!displayTitle) return null;
 
-      <span className="shrink-0 text-stone-600 text-xs">/</span>
-
-      <span
-        className={`shrink-0 text-xs text-stone-500 ${isPr ? "" : "font-mono truncate"}`}
-      >
-        {getOverviewLabel(comparison)}
-      </span>
-
-      {displayTitle && (
-        <>
-          <span className="shrink-0 text-stone-700 text-xs">&mdash;</span>
-          <span className="truncate text-xs text-stone-500">
-            {displayTitle}
-          </span>
-        </>
-      )}
+  return (
+    <div className="truncate text-sm font-medium text-stone-200 leading-tight px-4 mt-1">
+      {displayTitle}
     </div>
   );
 }

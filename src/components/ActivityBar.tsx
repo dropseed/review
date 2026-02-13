@@ -85,7 +85,7 @@ export function ActivityBar() {
       ref={ref}
       className={`absolute left-1/2 top-1.5 -translate-x-1/2 z-10 transition-opacity duration-500 ${primaryActivity ? "opacity-100" : "opacity-0"}`}
     >
-      <div className="rounded-2xl border border-white/[0.08] bg-stone-950/80 backdrop-blur-md shadow-lg">
+      <div className="rounded-2xl border border-white/[0.08] bg-stone-950 shadow-lg">
         {/* Primary row */}
         <div
           className="flex items-center gap-2 px-3 py-1 cursor-default"

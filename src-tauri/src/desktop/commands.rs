@@ -1188,7 +1188,6 @@ pub async fn open_repo_window(
     comparison_key: Option<String>,
 ) -> Result<(), String> {
     use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-    use tauri_plugin_liquid_glass::{GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt};
 
     // Handle empty repo_path for creating a new blank window (welcome page)
     if repo_path.is_empty() {
@@ -1219,23 +1218,13 @@ pub async fn open_repo_window(
             })
             .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
 
-        let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
+        WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
             .title("Review")
             .inner_size(width, height)
             .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
             .tabbing_identifier("review-main")
-            .transparent(true)
             .build()
             .map_err(|e: tauri::Error| e.to_string())?;
-
-        let _ = app.liquid_glass().set_effect(
-            &window,
-            LiquidGlassConfig {
-                enabled: true,
-                variant: GlassMaterialVariant::Sidebar,
-                ..Default::default()
-            },
-        );
 
         return Ok(());
     }
@@ -1293,18 +1282,8 @@ pub async fn open_repo_window(
         .inner_size(width, height)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         .tabbing_identifier("review-main")
-        .transparent(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
-
-    let _ = app.liquid_glass().set_effect(
-        &window,
-        LiquidGlassConfig {
-            enabled: true,
-            variant: GlassMaterialVariant::Sidebar,
-            ..Default::default()
-        },
-    );
 
     let _ = window.set_focus();
 

@@ -12,7 +12,6 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Loading...",
@@ -22,10 +21,7 @@
         "fullscreen": false,
         "minWidth": 800,
         "minHeight": 600,
-        "tabbingIdentifier": "review-main",
-        "transparent": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "tabbingIdentifier": "review-main"
       }
     ],
     "security": {

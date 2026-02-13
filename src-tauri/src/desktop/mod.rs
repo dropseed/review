@@ -113,7 +113,6 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(SentryConsent(consent.clone()))
-        .plugin(tauri_plugin_liquid_glass::init())
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -172,24 +171,6 @@ pub fn run() {
                     if let Some(serde_json::Value::Bool(true)) = store.get("sentryEnabled") {
                         consent.store(true, Ordering::Relaxed);
                     }
-                }
-            }
-
-            // Apply Liquid Glass effect to the main window
-            {
-                use tauri::Manager;
-                use tauri_plugin_liquid_glass::{
-                    GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt,
-                };
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = app.liquid_glass().set_effect(
-                        &window,
-                        LiquidGlassConfig {
-                            enabled: true,
-                            variant: GlassMaterialVariant::Sidebar,
-                            ..Default::default()
-                        },
-                    );
                 }
             }
 

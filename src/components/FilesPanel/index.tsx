@@ -64,7 +64,7 @@ function SectionHeader({
 }: {
   title: string;
   icon?: React.ReactNode;
-  badge?: number;
+  badge?: number | string;
   badgeColor?: "amber" | "emerald" | "cyan";
   isOpen: boolean;
   onToggle: () => void;
@@ -119,7 +119,7 @@ function SectionHeader({
               </svg>
               {icon}
               <span className="flex-1">{title}</span>
-              {badge !== undefined && badge > 0 && (
+              {badge !== undefined && badge !== 0 && (
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeColors[badgeColor]}`}
                 >
@@ -285,7 +285,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   );
 
   // Section collapse state
-  const [trustOpen, setTrustOpen] = useState(true);
+  const [trustOpen, setTrustOpen] = useState(false);
   const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
   const [savedForLaterOpen, setSavedForLaterOpen] = useState(true);
   const [reviewedOpen, setReviewedOpen] = useState(true);
@@ -562,6 +562,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const knownPatternIds = useKnownPatternIds();
   const { trustedHunkCount, trustableHunkCount } =
     useTrustCounts(knownPatternIds);
+  const setTrustList = useReviewStore((s) => s.setTrustList);
   const classifying = useReviewStore((s) => s.classifying);
   const classifyUnlabeledHunks = useReviewStore(
     (s) => s.classifyUnlabeledHunks,
@@ -578,8 +579,50 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     [hunks, reviewState?.hunks],
   );
 
+  const matchedPatternIds = useMemo(() => {
+    if (!knownPatternIds || knownPatternIds.size === 0)
+      return new Set<string>();
+    const matched = new Set<string>();
+    for (const hunk of hunks) {
+      const labels = reviewState?.hunks[hunk.id]?.label ?? [];
+      for (const label of labels) {
+        if (knownPatternIds.has(label)) matched.add(label);
+      }
+    }
+    return matched;
+  }, [hunks, reviewState?.hunks, knownPatternIds]);
+
   const trustQuickActions = useMemo(() => {
     const actions: QuickActionItem[] = [];
+
+    // Trust/untrust all matched patterns
+    const currentTrustList = reviewState?.trustList ?? [];
+    const currentTrustSet = new Set(currentTrustList);
+    const matchedArray = Array.from(matchedPatternIds);
+    const allTrusted =
+      matchedArray.length > 0 &&
+      matchedArray.every((id) => currentTrustSet.has(id));
+
+    if (matchedArray.length > 0) {
+      if (allTrusted) {
+        actions.push({
+          label: "Untrust all",
+          count: matchedArray.length,
+          onAction: () => setTrustList([]),
+        });
+      } else {
+        actions.push({
+          label: "Trust all",
+          count: matchedArray.length,
+          onAction: () => {
+            const merged = new Set([...currentTrustList, ...matchedArray]);
+            setTrustList([...merged]);
+          },
+        });
+      }
+    }
+
+    // Classification actions
     const stale = isClassificationStale();
     if (classifying) {
       // No actions while classifying
@@ -610,6 +653,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     hunks.length,
     classifyUnlabeledHunks,
     reclassifyHunks,
+    matchedPatternIds,
+    reviewState?.trustList,
+    setTrustList,
   ]);
 
   // Group unreviewed counts
@@ -666,6 +712,17 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const stale = hasGrouping && isGroupingStale();
   const hasGroups = reviewGroups.length > 0;
   const hasPrBody = !!githubPr?.body;
+
+  const groupsQuickActions = useMemo((): QuickActionItem[] => {
+    if (groupingLoading) return [];
+    return [
+      {
+        label: hasGroups ? "Regenerate groups" : "Generate groups",
+        count: hunks.length,
+        onAction: () => generateGrouping(),
+      },
+    ];
+  }, [groupingLoading, hasGroups, hunks.length, generateGrouping]);
 
   // Search state
   const searchActive = useReviewStore((s) => s.searchActive);
@@ -974,9 +1031,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               </svg>
                             )
                           }
-                          badge={
-                            trustedHunkCount > 0 ? trustedHunkCount : undefined
-                          }
+                          badge={`${trustedHunkCount}/${trustableHunkCount}`}
                           badgeColor="cyan"
                           isOpen={trustOpen}
                           onToggle={() => setTrustOpen(!trustOpen)}
@@ -990,7 +1045,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       {/* Groups section */}
                       {(hasGroups || groupingLoading || groupingError) && (
                         <SectionHeader
-                          title="Groups"
+                          title="Guided Review"
                           icon={
                             groupingLoading ? (
                               <svg
@@ -1031,6 +1086,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           isOpen={groupsOpen}
                           onToggle={() => setGroupsOpen(!groupsOpen)}
                           showTopBorder={false}
+                          quickActions={groupsQuickActions}
                         >
                           {/* Group error */}
                           {groupingError && (
