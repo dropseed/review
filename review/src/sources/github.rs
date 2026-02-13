@@ -193,6 +193,44 @@ impl std::fmt::Display for GhError {
 impl std::error::Error for GhError {}
 
 // ---------------------------------------------------------------------------
+// PR status (for freshness checks)
+// ---------------------------------------------------------------------------
+
+/// Lightweight PR status for freshness checks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrStatus {
+    pub state: String,        // OPEN, MERGED, CLOSED
+    pub head_ref_oid: String, // SHA of the PR head commit
+}
+
+impl GhCliProvider {
+    /// Get the current status (state + head SHA) of a pull request.
+    pub fn get_pr_status(&self, number: u32) -> Result<PrStatus, GhError> {
+        let output = Command::new("gh")
+            .args([
+                "pr",
+                "view",
+                &number.to_string(),
+                "--json",
+                "state,headRefOid",
+            ])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GhError::Io(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GhError::Command(stderr.into_owned()));
+        }
+
+        let status: PrStatus =
+            serde_json::from_slice(&output.stdout).map_err(|e| GhError::Parse(e.to_string()))?;
+        Ok(status)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

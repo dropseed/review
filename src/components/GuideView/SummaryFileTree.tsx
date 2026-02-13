@@ -158,6 +158,20 @@ export function SummaryFileTree() {
     });
   };
 
+  const diffStats = useMemo(() => {
+    let additions = 0;
+    let deletions = 0;
+    const filePaths = new Set<string>();
+    for (const hunk of hunks) {
+      filePaths.add(hunk.filePath);
+      for (const line of hunk.lines) {
+        if (line.type === "added") additions++;
+        else if (line.type === "removed") deletions++;
+      }
+    }
+    return { fileCount: filePaths.size, additions, deletions };
+  }, [hunks]);
+
   if (tree.length === 0) return null;
 
   return (
@@ -165,6 +179,13 @@ export function SummaryFileTree() {
       <h3 className="text-xs font-medium text-stone-500 uppercase tracking-wide pb-2 mb-1">
         Changed Files
       </h3>
+      <div className="flex items-center gap-2 text-xs tabular-nums mb-2">
+        <span className="text-stone-400">
+          {diffStats.fileCount} {diffStats.fileCount === 1 ? "file" : "files"}
+        </span>
+        <span className="text-emerald-400/70">+{diffStats.additions}</span>
+        <span className="text-rose-400/70">-{diffStats.deletions}</span>
+      </div>
       <div className="space-y-px">
         {tree.map((entry) => (
           <CompactNode

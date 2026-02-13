@@ -15,8 +15,6 @@
     "desktop": "tauri dev --no-dev-server"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
     "@excalidraw/excalidraw": "^0.18.0",
     "@pierre/diffs": "^1.0.10",
     "@radix-ui/react-checkbox": "^1.3.3",

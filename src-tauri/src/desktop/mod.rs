@@ -509,6 +509,7 @@ pub fn run() {
             commands::uninstall_cli,
             commands::set_sentry_consent,
             commands::update_menu_state,
+            commands::check_reviews_freshness,
             commands::generate_companion_token,
             commands::start_companion_server,
             commands::stop_companion_server,

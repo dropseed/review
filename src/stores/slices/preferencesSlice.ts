@@ -44,8 +44,8 @@ const defaults = {
   soundEffectsEnabled: true,
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
-  pinnedReviewKeys: [] as string[],
   reviewSortOrder: "updated" as ReviewSortOrder,
+  inactiveReviewSortOrder: "updated" as ReviewSortOrder,
   companionServerEnabled: false,
   companionServerToken: null as string | null,
 };
@@ -88,11 +88,9 @@ export interface PreferencesSlice {
   // Files panel (right sidebar)
   filesPanelCollapsed: boolean;
 
-  // Pinned reviews (ordered array of "repoPath:comparisonKey" strings)
-  pinnedReviewKeys: string[];
-
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
+  inactiveReviewSortOrder: ReviewSortOrder;
 
   // Companion server
   companionServerEnabled: boolean;
@@ -135,13 +133,9 @@ export interface PreferencesSlice {
   setFilesPanelCollapsed: (collapsed: boolean) => void;
   toggleFilesPanel: () => void;
 
-  // Pinned reviews actions
-  pinReview: (key: string) => void;
-  unpinReview: (key: string) => void;
-  reorderPinnedReviews: (keys: string[]) => void;
-
   // Review sort order actions
   setReviewSortOrder: (order: ReviewSortOrder) => void;
+  setInactiveReviewSortOrder: (order: ReviewSortOrder) => void;
 
   // Companion server actions
   setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
@@ -170,8 +164,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   soundEffectsEnabled: defaults.soundEffectsEnabled,
   tabRailCollapsed: defaults.tabRailCollapsed,
   filesPanelCollapsed: defaults.filesPanelCollapsed,
-  pinnedReviewKeys: defaults.pinnedReviewKeys,
   reviewSortOrder: defaults.reviewSortOrder,
+  inactiveReviewSortOrder: defaults.inactiveReviewSortOrder,
   companionServerEnabled: defaults.companionServerEnabled,
   companionServerToken: defaults.companionServerToken,
 
@@ -244,12 +238,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     const filesPanelCollapsed =
       (await storage.get<boolean>("filesPanelCollapsed")) ??
       defaults.filesPanelCollapsed;
-    const pinnedReviewKeys =
-      (await storage.get<string[]>("pinnedReviewKeys")) ??
-      defaults.pinnedReviewKeys;
     const reviewSortOrder =
       (await storage.get<ReviewSortOrder>("reviewSortOrder")) ??
       defaults.reviewSortOrder;
+    const inactiveReviewSortOrder =
+      (await storage.get<ReviewSortOrder>("inactiveReviewSortOrder")) ??
+      defaults.inactiveReviewSortOrder;
     const companionServerEnabled =
       (await storage.get<boolean>("companionServerEnabled")) ??
       defaults.companionServerEnabled;
@@ -293,8 +287,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       soundEffectsEnabled,
       tabRailCollapsed,
       filesPanelCollapsed,
-      pinnedReviewKeys,
       reviewSortOrder,
+      inactiveReviewSortOrder,
       companionServerEnabled,
       companionServerToken,
     });
@@ -410,29 +404,14 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("filesPanelCollapsed", collapsed);
   },
 
-  pinReview: (key) => {
-    const current = get().pinnedReviewKeys;
-    if (current.includes(key)) return;
-    const updated = [...current, key];
-    set({ pinnedReviewKeys: updated });
-    storage.set("pinnedReviewKeys", updated);
-  },
-
-  unpinReview: (key) => {
-    const current = get().pinnedReviewKeys;
-    const updated = current.filter((k) => k !== key);
-    set({ pinnedReviewKeys: updated });
-    storage.set("pinnedReviewKeys", updated);
-  },
-
-  reorderPinnedReviews: (keys) => {
-    set({ pinnedReviewKeys: keys });
-    storage.set("pinnedReviewKeys", keys);
-  },
-
   setReviewSortOrder: (order) => {
     set({ reviewSortOrder: order });
     storage.set("reviewSortOrder", order);
+  },
+
+  setInactiveReviewSortOrder: (order) => {
+    set({ inactiveReviewSortOrder: order });
+    storage.set("inactiveReviewSortOrder", order);
   },
 
   setCompanionServerEnabled: async (enabled) => {

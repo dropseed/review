@@ -66,13 +66,12 @@ interface TabRailItemProps {
   review: GlobalReviewSummary;
   repoName: string;
   defaultBranch?: string;
-  isPinned?: boolean;
+  isInactive?: boolean;
   avatarUrl?: string | null;
   sortOrder?: ReviewSortOrder;
   diffStats?: DiffShortStat;
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
-  onTogglePin?: (review: GlobalReviewSummary) => void;
 }
 
 /** Value-based comparison so items skip re-render when globalReviews is reconstructed. */
@@ -85,9 +84,7 @@ function arePropsEqual(
   if (prev.review.comparison.key !== next.review.comparison.key) return false;
   if (prev.review.updatedAt !== next.review.updatedAt) return false;
   if (prev.review.totalHunks !== next.review.totalHunks) return false;
-  if (prev.review.trustedHunks !== next.review.trustedHunks) return false;
-  if (prev.review.approvedHunks !== next.review.approvedHunks) return false;
-  if (prev.review.rejectedHunks !== next.review.rejectedHunks) return false;
+  if (prev.review.reviewedHunks !== next.review.reviewedHunks) return false;
   if (prev.review.repoName !== next.review.repoName) return false;
   if (
     prev.review.comparison.githubPr?.number !==
@@ -102,7 +99,7 @@ function arePropsEqual(
   // Scalar props
   if (prev.repoName !== next.repoName) return false;
   if (prev.defaultBranch !== next.defaultBranch) return false;
-  if (prev.isPinned !== next.isPinned) return false;
+  if (prev.isInactive !== next.isInactive) return false;
   if (prev.avatarUrl !== next.avatarUrl) return false;
   if (prev.sortOrder !== next.sortOrder) return false;
   // DiffStats (object ref may change)
@@ -111,7 +108,6 @@ function arePropsEqual(
   // Callbacks
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
-  if (prev.onTogglePin !== next.onTogglePin) return false;
   return true;
 }
 
@@ -119,13 +115,12 @@ export const TabRailItem = memo(function TabRailItem({
   review,
   repoName,
   defaultBranch,
-  isPinned,
+  isInactive,
   avatarUrl,
   sortOrder,
   diffStats,
   onActivate,
   onDelete,
-  onTogglePin,
 }: TabRailItemProps) {
   const isActive = useReviewStore(
     (s) =>
@@ -169,12 +164,10 @@ export const TabRailItem = memo(function TabRailItem({
 
   const reviewedPercent =
     review.totalHunks > 0
-      ? Math.round(
-          ((review.trustedHunks + review.approvedHunks + review.rejectedHunks) /
-            review.totalHunks) *
-            100,
-        )
+      ? Math.round((review.reviewedHunks / review.totalHunks) * 100)
       : 0;
+
+  const showProgress = !isInactive && review.totalHunks > 0;
 
   const age = formatAge(review.updatedAt);
 
@@ -202,7 +195,8 @@ export const TabRailItem = memo(function TabRailItem({
         onContextMenu={handleContextMenu}
         className={`group relative w-full text-left px-2 py-1.5 rounded-md mb-px cursor-default
                     transition-colors duration-100
-                    ${isActive ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"}`}
+                    ${isActive ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"}
+                    ${isInactive ? "opacity-60" : ""}`}
         aria-current={isActive ? "true" : undefined}
         title={titleText}
       >
@@ -212,12 +206,16 @@ export const TabRailItem = memo(function TabRailItem({
         )}
 
         <div className="flex items-center gap-1.5 min-w-0">
-          {avatarUrl && (
-            <img
-              src={avatarUrl}
-              alt=""
-              className="h-3 w-3 shrink-0 rounded-sm"
-            />
+          {showProgress ? (
+            <CircleProgress percent={reviewedPercent} />
+          ) : (
+            avatarUrl && (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="h-3 w-3 shrink-0 rounded-sm"
+              />
+            )
           )}
           <span className="text-xs text-stone-500 truncate min-w-0">
             {review.repoName}
@@ -242,9 +240,6 @@ export const TabRailItem = memo(function TabRailItem({
               className="col-start-1 row-start-1 flex items-center gap-1.5
                              transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
             >
-              {review.totalHunks > 0 && (
-                <CircleProgress percent={reviewedPercent} />
-              )}
               {sortOrder === "size" && diffStats ? (
                 <span className="text-2xs tabular-nums">
                   <span className="text-[var(--color-diff-added)]">
@@ -293,21 +288,6 @@ export const TabRailItem = memo(function TabRailItem({
             className="fixed z-50 min-w-[160px] rounded-lg border border-white/[0.08] bg-stone-800/90 backdrop-blur-xl py-1 shadow-xl"
             style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
-            {onTogglePin && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowContextMenu(false);
-                    onTogglePin(review);
-                  }}
-                  className="w-full px-3 py-1.5 text-left text-xs text-stone-300 hover:bg-white/[0.08] transition-colors"
-                >
-                  {isPinned ? "Unpin Review" : "Pin Review"}
-                </button>
-                <div className="my-1 h-px bg-white/[0.06]" />
-              </>
-            )}
             <button
               type="button"
               onClick={() => {

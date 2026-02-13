@@ -2,10 +2,21 @@ import type {
   Comparison,
   DiffShortStat,
   GlobalReviewSummary,
+  ReviewFreshnessInput,
 } from "../../types";
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveRepoIdentity } from "../../utils/repo-identity";
+
+/** A diff is considered active when it has any changed files, additions, or deletions. */
+function isDiffActive(stat: DiffShortStat): boolean {
+  return stat.fileCount > 0 || stat.additions > 0 || stat.deletions > 0;
+}
+
+/** Build the composite key used to track per-review state (stats, freshness, etc.). */
+function reviewKey(review: GlobalReviewSummary): string {
+  return `${review.repoPath}:${review.comparison.key}`;
+}
 
 export interface ActiveReviewKey {
   repoPath: string;
@@ -24,6 +35,11 @@ export interface GlobalReviewsSlice {
   activeReviewKey: ActiveReviewKey | null;
   repoMetadata: Record<string, RepoMetadata>;
   reviewDiffStats: Record<string, DiffShortStat>;
+  reviewActiveState: Record<string, boolean>;
+  reviewCachedShas: Record<
+    string,
+    { oldSha: string | null; newSha: string | null }
+  >;
 
   loadGlobalReviews: () => Promise<void>;
   setActiveReviewKey: (key: ActiveReviewKey | null) => void;
@@ -35,6 +51,7 @@ export interface GlobalReviewsSlice {
     repoPath: string,
     comparison: Comparison,
   ) => Promise<void>;
+  checkReviewsFreshness: () => Promise<void>;
 }
 
 export const createGlobalReviewsSlice: SliceCreatorWithClient<
@@ -45,6 +62,8 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   activeReviewKey: null,
   repoMetadata: {},
   reviewDiffStats: {},
+  reviewActiveState: {},
+  reviewCachedShas: {},
 
   loadGlobalReviews: async () => {
     set({ globalReviewsLoading: true });
@@ -113,7 +132,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
             review.repoPath,
             review.comparison,
           );
-          return { key: `${review.repoPath}:${review.comparison.key}`, stat };
+          return { key: reviewKey(review), stat };
         }),
       );
       const newStats: Record<string, DiffShortStat> = {};
@@ -123,6 +142,13 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         }
       }
       set({ reviewDiffStats: newStats });
+
+      // Seed reviewActiveState from diff stats
+      const activeState: Record<string, boolean> = {};
+      for (const [key, stat] of Object.entries(newStats)) {
+        activeState[key] = isDiffActive(stat);
+      }
+      set({ reviewActiveState: activeState });
     } catch (err) {
       console.error("Failed to load global reviews:", err);
       set({ globalReviewsLoading: false });
@@ -156,6 +182,50 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       await get().loadGlobalReviews();
     } catch (err) {
       console.error("Failed to delete review:", err);
+    }
+  },
+
+  checkReviewsFreshness: async () => {
+    const { globalReviews, reviewCachedShas } = get();
+    if (globalReviews.length === 0) return;
+
+    const inputs: ReviewFreshnessInput[] = globalReviews.map((review) => {
+      const key = reviewKey(review);
+      const cached = reviewCachedShas[key];
+      return {
+        repoPath: review.repoPath,
+        comparison: review.comparison,
+        cachedOldSha: cached?.oldSha ?? null,
+        cachedNewSha: cached?.newSha ?? null,
+      };
+    });
+
+    try {
+      const results = await client.checkReviewsFreshness(inputs);
+      const newActiveState = { ...get().reviewActiveState };
+      const newCachedShas = { ...get().reviewCachedShas };
+      const newDiffStats = { ...get().reviewDiffStats };
+
+      for (const result of results) {
+        newActiveState[result.key] = result.isActive;
+        if (result.oldSha !== null || result.newSha !== null) {
+          newCachedShas[result.key] = {
+            oldSha: result.oldSha,
+            newSha: result.newSha,
+          };
+        }
+        if (result.diffStats) {
+          newDiffStats[result.key] = result.diffStats;
+        }
+      }
+
+      set({
+        reviewActiveState: newActiveState,
+        reviewCachedShas: newCachedShas,
+        reviewDiffStats: newDiffStats,
+      });
+    } catch (err) {
+      console.error("Failed to check reviews freshness:", err);
     }
   },
 });

@@ -87,7 +87,7 @@ impl LocalGitSource {
 
     /// Resolve a ref to a commit SHA hash, falling back to the empty tree
     /// if the ref doesn't exist (e.g., HEAD in an empty repo with no commits).
-    fn resolve_ref_or_empty_tree(&self, git_ref: &str) -> String {
+    pub fn resolve_ref_or_empty_tree(&self, git_ref: &str) -> String {
         match self.run_git(&["rev-parse", "--verify", git_ref]) {
             Ok(output) => output.trim().to_owned(),
             Err(_) => Self::EMPTY_TREE.to_owned(),
@@ -150,7 +150,7 @@ impl LocalGitSource {
             total_del += d;
         }
 
-        // Working tree changes
+        // Working tree changes (tracked modifications + untracked files)
         if comparison.working_tree {
             let head = self.resolve_ref_or_empty_tree("HEAD");
             let output = self.run_git(&["diff", "--shortstat", &head])?;
@@ -158,6 +158,11 @@ impl LocalGitSource {
             total_files += f;
             total_add += a;
             total_del += d;
+
+            // Untracked files aren't in git diff output but are part of the review
+            if let Ok(untracked) = self.get_untracked_files() {
+                total_files += untracked.len() as u32;
+            }
         }
 
         Ok(DiffShortStat {

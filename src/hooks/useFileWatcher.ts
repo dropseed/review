@@ -11,12 +11,14 @@ export function useFileWatcher(comparisonReady: boolean) {
   const loadReviewState = useReviewStore((s) => s.loadReviewState);
   const refresh = useReviewStore((s) => s.refresh);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
+  const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
 
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
   const loadReviewStateRef = useRef(loadReviewState);
   const refreshRef = useRef(refresh);
   const loadGlobalReviewsRef = useRef(loadGlobalReviews);
+  const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
   const comparisonReadyRef = useRef(comparisonReady);
   const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -25,8 +27,16 @@ export function useFileWatcher(comparisonReady: boolean) {
     loadReviewStateRef.current = loadReviewState;
     refreshRef.current = refresh;
     loadGlobalReviewsRef.current = loadGlobalReviews;
+    checkReviewsFreshnessRef.current = checkReviewsFreshness;
     comparisonReadyRef.current = comparisonReady;
-  }, [repoPath, loadReviewState, refresh, loadGlobalReviews, comparisonReady]);
+  }, [
+    repoPath,
+    loadReviewState,
+    refresh,
+    loadGlobalReviews,
+    checkReviewsFreshness,
+    comparisonReady,
+  ]);
 
   // Start file watcher when repo is loaded
   useEffect(() => {
@@ -104,6 +114,8 @@ export function useFileWatcher(comparisonReady: boolean) {
             refreshRef.current();
           }, 2000);
         }
+        // Always update sidebar freshness on git changes
+        checkReviewsFreshnessRef.current();
       }),
     );
     console.log("[watcher] Listening for git-changed");
