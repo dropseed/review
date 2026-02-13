@@ -96,17 +96,6 @@ pub struct ExpandedContextResult {
     pub end_line: u32,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ComparisonParam {
-    pub old: String,
-    pub new: String,
-    #[serde(rename = "workingTree")]
-    pub working_tree: bool,
-    pub key: String,
-    #[serde(rename = "githubPr", default)]
-    pub github_pr: Option<review::sources::github::GitHubPrRef>,
-}
-
 // --- Helper Functions ---
 
 fn get_image_mime_type(extension: &str) -> Option<&'static str> {
@@ -959,17 +948,6 @@ pub fn list_commits(
 pub fn get_commit_detail(repo_path: String, hash: String) -> Result<CommitDetail, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_commit_detail(&hash).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn get_current_comparison(repo_path: String) -> Result<Option<Comparison>, String> {
-    storage::get_current_comparison(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn set_current_comparison(repo_path: String, comparison: Comparison) -> Result<(), String> {
-    storage::set_current_comparison(&PathBuf::from(&repo_path), &comparison)
-        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

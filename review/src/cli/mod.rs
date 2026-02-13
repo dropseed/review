@@ -13,7 +13,7 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub repo: Option<String>,
 
-    /// Comparison spec (optional, uses current if not specified)
+    /// Comparison spec (optional, auto-detects from branches if not specified)
     pub spec: Option<String>,
 }
 
@@ -53,24 +53,15 @@ pub fn run(cli: Cli) -> Result<(), String> {
     };
 
     // Persist review state so the GUI finds it on launch
-    storage::set_current_comparison(&path, &comparison).map_err(|e| e.to_string())?;
     storage::ensure_review_exists(&path, &comparison).map_err(|e| e.to_string())?;
 
     open_app(&repo_path, &comparison.key)
 }
 
-/// Get the current comparison, or auto-detect one from the repo's default and current branches.
+/// Auto-detect the comparison from the repo's default and current branches.
 ///
-/// Falls back to `<default_branch>..<current_branch>` with working tree auto-included.
+/// Returns `<default_branch>..<current_branch>` with working tree auto-included.
 fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> {
-    // Try saved comparison first
-    if let Some(comparison) =
-        storage::get_current_comparison(repo_path).map_err(|e| e.to_string())?
-    {
-        return Ok(comparison);
-    }
-
-    // Auto-detect: default branch vs current branch with working tree
     let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
     let default_branch = source
         .get_default_branch()

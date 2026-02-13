@@ -12,7 +12,6 @@
 //!       repo.json                     # { canonical_path, display_name }
 //!       reviews/
 //!         <comparison-key>.json       # ReviewState
-//!       current                       # Current comparison JSON
 //!       custom-patterns.json          # Repo-specific trust overrides
 //! ```
 

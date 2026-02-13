@@ -202,10 +202,6 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
         // Server info
         ("GET", "/info") => handle_get_info(),
 
-        // Current comparison
-        ("GET", "/comparison") => handle_get_comparison(&query),
-        ("POST", "/comparison") => handle_set_comparison(&query, body.as_deref()),
-
         // Trust taxonomy
         ("GET", "/taxonomy") => handle_get_taxonomy(&query),
 
@@ -608,49 +604,9 @@ fn handle_get_info() -> Response<Cursor<Vec<u8>>> {
     })
 }
 
-fn handle_get_comparison(query: &str) -> Response<Cursor<Vec<u8>>> {
-    let params = parse_query(query);
-    let repo_path = match get_repo_path(&params) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-
-    match commands::get_current_comparison(repo_path) {
-        Ok(comparison) => json_response(&ComparisonResponse { comparison }),
-        Err(e) => error_response(500, &e),
-    }
-}
-
-fn handle_set_comparison(query: &str, body: Option<&str>) -> Response<Cursor<Vec<u8>>> {
-    let params = parse_query(query);
-    let repo_path = match get_repo_path(&params) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-
-    let Some(body) = body else {
-        return error_response(400, "Missing request body");
-    };
-
-    let request: SetComparisonRequest = match serde_json::from_str(body) {
-        Ok(r) => r,
-        Err(e) => return error_response(400, &format!("Invalid JSON: {e}")),
-    };
-
-    match commands::set_current_comparison(repo_path, request.comparison) {
-        Ok(()) => json_response(&SuccessResponse { success: true }),
-        Err(e) => error_response(500, &e),
-    }
-}
-
 #[derive(Deserialize)]
 struct DetectMovesRequest {
     hunks: Vec<DiffHunk>,
-}
-
-#[derive(Deserialize)]
-struct SetComparisonRequest {
-    comparison: Comparison,
 }
 
 fn handle_get_all_hunks(body: Option<&str>) -> Response<Cursor<Vec<u8>>> {
@@ -750,11 +706,6 @@ struct RawStatusResponse {
 #[derive(Serialize)]
 struct SuccessResponse {
     success: bool,
-}
-
-#[derive(Serialize)]
-struct ComparisonResponse {
-    comparison: Option<Comparison>,
 }
 
 #[derive(Serialize)]

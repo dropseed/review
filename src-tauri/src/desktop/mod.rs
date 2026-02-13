@@ -482,8 +482,6 @@ pub fn run() {
             commands::ensure_review_exists,
             commands::list_all_reviews_global,
             commands::get_review_storage_path,
-            commands::get_current_comparison,
-            commands::set_current_comparison,
             commands::open_repo_window,
             commands::check_claude_available,
             commands::classify_hunks_with_claude,

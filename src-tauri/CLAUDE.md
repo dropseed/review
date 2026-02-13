@@ -22,7 +22,7 @@ Key command groups:
 - **Classification**: `classify_hunks_with_claude`, `classify_hunks_static`, `detect_hunks_move_pairs`
 - **Trust**: `get_trust_taxonomy`, `get_trust_taxonomy_with_custom`, `match_trust_pattern`
 - **Symbols**: `get_file_symbol_diffs`, `get_file_symbols`
-- **Navigation**: `get_current_comparison`, `set_current_comparison`, `open_repo_window`
+- **Navigation**: `open_repo_window`
 - **GitHub**: `check_github_available`, `list_pull_requests`
 - **Misc**: `search_file_contents`, `generate_narrative`, `write_text_file`, `append_to_file`
 

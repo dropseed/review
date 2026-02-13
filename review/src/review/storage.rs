@@ -24,11 +24,6 @@ fn get_storage_dir(repo_path: &Path) -> Result<PathBuf, StorageError> {
     Ok(central::get_repo_storage_dir(repo_path)?.join("reviews"))
 }
 
-/// Get the file path for storing the current comparison (centralized).
-fn get_current_comparison_path(repo_path: &Path) -> Result<PathBuf, StorageError> {
-    Ok(central::get_repo_storage_dir(repo_path)?.join("current"))
-}
-
 /// A review summary tagged with repo information (for cross-repo listing).
 #[derive(Debug, Clone, Serialize)]
 pub struct GlobalReviewSummary {
@@ -141,37 +136,6 @@ pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), St
     }
 
     let content = serde_json::to_string_pretty(state)?;
-    fs::write(&path, content)?;
-
-    Ok(())
-}
-
-/// Get the current comparison (persisted across sessions)
-pub fn get_current_comparison(repo_path: &Path) -> Result<Option<Comparison>, StorageError> {
-    let path = get_current_comparison_path(repo_path)?;
-
-    if path.exists() {
-        let content = fs::read_to_string(&path)?;
-        let comparison: Comparison = serde_json::from_str(&content)?;
-        Ok(Some(comparison))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Set the current comparison (persisted across sessions)
-pub fn set_current_comparison(
-    repo_path: &Path,
-    comparison: &Comparison,
-) -> Result<(), StorageError> {
-    let path = get_current_comparison_path(repo_path)?;
-
-    // Ensure parent directory exists
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let content = serde_json::to_string_pretty(comparison)?;
     fs::write(&path, content)?;
 
     Ok(())
@@ -415,25 +379,5 @@ mod tests {
         // Should not error when deleting non-existent review
         let result = delete_review(&repo_path, &comparison);
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_current_comparison_roundtrip() {
-        let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
-        let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
-
-        // Initially no current comparison
-        let current = get_current_comparison(&repo_path).unwrap();
-        assert!(current.is_none());
-
-        // Set current comparison
-        set_current_comparison(&repo_path, &comparison).unwrap();
-
-        // Get it back
-        let current = get_current_comparison(&repo_path).unwrap();
-        assert!(current.is_some());
-        assert_eq!(current.unwrap().key, comparison.key);
     }
 }

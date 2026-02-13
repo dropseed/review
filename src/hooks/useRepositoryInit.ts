@@ -216,15 +216,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         addRecentRepository(path);
         storeRepoPath(path);
 
-        // Resolve and navigate to review route.
-        // Check if the CLI set a current comparison (via `review open`).
+        // Resolve and navigate to review route
         const { routePrefix } = await resolveRepoIdentity(path);
-        const saved = await apiClient
-          .getCurrentComparison(path)
-          .catch(() => null);
-        const { key, comparison } = saved
-          ? { key: saved.key, comparison: saved }
-          : await getDefaultComparison(path);
+        const { key, comparison } = await getDefaultComparison(path);
         setActiveReviewKey({
           repoPath: path,
           comparisonKey: key,

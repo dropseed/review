@@ -446,12 +446,6 @@ export class TauriClient implements ApiClient {
     };
   }
 
-  // ----- Comparison -----
-
-  async getCurrentComparison(repoPath: string): Promise<Comparison | null> {
-    return invoke<Comparison | null>("get_current_comparison", { repoPath });
-  }
-
   // ----- Window/App -----
 
   async openRepoWindow(repoPath: string): Promise<void> {
