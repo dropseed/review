@@ -155,7 +155,7 @@ export function DiffMinimap({
         return (
           <div
             key={marker.id}
-            className={`absolute left-0.5 right-0.5 rounded-[2px] transition-all cursor-pointer hover:left-0 hover:right-0 ${colorClass}${pulseClass}${focusRing}`}
+            className={`absolute left-0.5 right-0.5 rounded-[2px] transition-[left,right] cursor-pointer hover:left-0 hover:right-0 ${colorClass}${pulseClass}${focusRing}`}
             style={{
               top: `${marker.topFraction * 100}%`,
               height: `${marker.heightFraction * 100}%`,

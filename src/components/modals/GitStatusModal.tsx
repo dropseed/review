@@ -131,7 +131,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
         {/* Raw output */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           <pre className="p-4 font-mono text-2xs leading-relaxed text-stone-300 whitespace-pre-wrap">
-            {rawStatus || "Loading..."}
+            {rawStatus || "Loading\u2026"}
           </pre>
         </div>
       </DialogContent>

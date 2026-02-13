@@ -13,7 +13,7 @@ function AnnotationItem({
   onDelete: () => void;
 }) {
   return (
-    <div className="group relative rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-stone-700/80 hover:bg-stone-800/40 transition-all duration-150">
+    <div className="group relative rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-stone-700/80 hover:bg-stone-800/40 transition-colors duration-150">
       <SimpleTooltip content="Go to this line">
         <button
           onClick={onGoTo}
@@ -46,7 +46,7 @@ function AnnotationItem({
       <SimpleTooltip content="Delete comment">
         <button
           onClick={onDelete}
-          className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-all duration-150 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-500/50"
+          className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-500/50"
           aria-label="Delete comment"
         >
           <svg
@@ -164,7 +164,7 @@ export function FeedbackPanelContent({
               <SimpleTooltip key={item.hunkId} content="Go to this change">
                 <button
                   onClick={() => onGoToRejectedHunk(item.filePath)}
-                  className="w-full text-left p-2.5 min-w-0 rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-rose-500/30 hover:bg-stone-800/40 transition-all duration-150 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-rose-500/50"
+                  className="w-full text-left p-2.5 min-w-0 rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-rose-500/30 hover:bg-stone-800/40 transition-colors duration-150 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-rose-500/50"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-rose-500/70 flex-shrink-0" />

@@ -6,8 +6,8 @@ import { HighlightedLine } from "../ui/HighlightedLine";
 import { groupSearchResultsByFile } from "../../utils/search";
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
-  if (!query.trim()) return "Type to search file contents...";
-  if (isLoading) return "Searching...";
+  if (!query.trim()) return "Type to search file contents\u2026";
+  if (isLoading) return "Searching\u2026";
   return "No matches found";
 }
 
@@ -74,7 +74,7 @@ export function SearchResultsPanel(): ReactNode {
               setQuery(e.target.value);
               useReviewStore.getState().setSearchQuery(e.target.value);
             }}
-            placeholder="Search in files..."
+            placeholder="Search in files\u2026"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -172,7 +172,10 @@ export function SearchResultsPanel(): ReactNode {
 
       {/* Footer */}
       {searchResults.length > 0 && (
-        <div className="border-t border-stone-800/50 px-3 py-1.5 text-xxs text-stone-500">
+        <div
+          className="border-t border-stone-800/50 px-3 py-1.5 text-xxs text-stone-500"
+          aria-live="polite"
+        >
           {searchResults.length >= 100 ? "100+" : searchResults.length} result
           {searchResults.length !== 1 ? "s" : ""} in {groupedResults.length}{" "}
           file

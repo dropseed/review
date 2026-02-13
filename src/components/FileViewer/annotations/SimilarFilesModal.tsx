@@ -201,7 +201,7 @@ export function SimilarFilesModal({
         <SimpleTooltip content={`${totalFileCount} files named "${basename}"`}>
           <button
             onClick={() => setOpen(true)}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-stone-500 transition-all hover:bg-stone-700/50 hover:text-stone-300"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-stone-500 transition-colors hover:bg-stone-700/50 hover:text-stone-300"
           >
             <span className="tabular-nums">
               {totalFileCount} {basename}
@@ -334,7 +334,7 @@ export function SimilarFilesModal({
           <div className="flex items-center gap-2">
             <button
               onClick={handleRejectAll}
-              className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-all hover:bg-rose-500/25 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"
@@ -353,7 +353,7 @@ export function SimilarFilesModal({
             </button>
             <button
               onClick={handleApproveAll}
-              className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-all hover:bg-emerald-500/30 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"

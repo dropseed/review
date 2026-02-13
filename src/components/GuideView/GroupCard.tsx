@@ -202,7 +202,7 @@ export function GroupCard({
   }
 
   return (
-    <div className={`rounded-lg border transition-all ${colors.border}`}>
+    <div className={`rounded-lg border transition-colors ${colors.border}`}>
       <button
         type="button"
         onClick={onActivate}

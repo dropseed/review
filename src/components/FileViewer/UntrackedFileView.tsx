@@ -171,7 +171,7 @@ export function UntrackedFileView({
         <SimpleTooltip content="Click to unapprove">
           <button
             onClick={() => unapproveHunk(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-all hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30 animate-in fade-in zoom-in-95 duration-200"
+            className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30 animate-in fade-in zoom-in-95 duration-200"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -197,7 +197,7 @@ export function UntrackedFileView({
         <SimpleTooltip content="Click to clear rejection">
           <button
             onClick={() => unrejectHunk(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-300 transition-all hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30 animate-in fade-in zoom-in-95 duration-200"
+            className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30 animate-in fade-in zoom-in-95 duration-200"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -223,7 +223,7 @@ export function UntrackedFileView({
         <SimpleTooltip content="Reject this change">
           <button
             onClick={() => rejectHunk(hunk.id)}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all active:scale-95 ${
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors active:scale-95 ${
               isTrusted
                 ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
                 : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
@@ -249,7 +249,7 @@ export function UntrackedFileView({
         <SimpleTooltip content="Approve this change">
           <button
             onClick={() => approveHunk(hunk.id)}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-all active:scale-95 ${
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors active:scale-95 ${
               isTrusted
                 ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
                 : "text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-300"
@@ -283,7 +283,7 @@ export function UntrackedFileView({
     return (
       <SimpleTooltip content="Add comment">
         <button
-          className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-all hover:bg-sky-500 hover:scale-110"
+          className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-colors hover:bg-sky-500 hover:scale-110"
           onClick={() => {
             const hoveredLine = getHoveredLine();
             if (!hoveredLine) return;
@@ -328,7 +328,7 @@ export function UntrackedFileView({
             <SimpleTooltip content={`Jump to source in ${pairedHunk.filePath}`}>
               <button
                 onClick={() => setSelectedFile(pairedHunk.filePath)}
-                className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-all hover:bg-sky-500/25"
+                className="flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-500/25"
               >
                 <svg
                   className="h-3 w-3"

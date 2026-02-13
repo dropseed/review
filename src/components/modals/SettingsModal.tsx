@@ -458,7 +458,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       <button
                         key={theme.value}
                         onClick={() => setCodeTheme(theme.value)}
-                        className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 ${
+                        className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${
                           codeTheme === theme.value
                             ? "bg-stone-800 ring-1 ring-amber-500/50"
                             : "bg-stone-800/30 hover:bg-stone-800/60"
@@ -708,7 +708,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             disabled={cliLoading}
                             className="ml-3 shrink-0 rounded-md bg-stone-700/50 px-2.5 py-1.5 text-xxs text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-50"
                           >
-                            {cliLoading ? "Installing..." : "Install"}
+                            {cliLoading ? "Installing\u2026" : "Install"}
                           </button>
                         </div>
                         <p className="text-xxs text-stone-600 leading-relaxed">

@@ -12,7 +12,7 @@ function ProgressSegment({
   if (count === 0) return null;
   return (
     <div
-      className={`${className} transition-all duration-500 ease-out`}
+      className={`${className} transition-[width] duration-500 ease-out`}
       style={{ width: `${(count / total) * 100}%` }}
     />
   );

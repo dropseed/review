@@ -493,7 +493,7 @@ export function FocusedReviewSection(): ReactNode {
         </div>
         <div className="mt-2 h-1.5 bg-stone-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-amber-500/50 rounded-full transition-all duration-500 ease-out"
+            className="h-full bg-amber-500/50 rounded-full transition-[width] duration-500 ease-out"
             style={{ width: `${percent}%` }}
           />
         </div>

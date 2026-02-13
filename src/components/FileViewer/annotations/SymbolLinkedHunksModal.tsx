@@ -157,7 +157,7 @@ export function SymbolLinkedHunksModal({
       >
         <button
           onClick={() => onNavigateToHunk(defHunk.id)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-sky-500/80 transition-all hover:bg-stone-700/50 hover:text-sky-400"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-sky-500/80 transition-colors hover:bg-stone-700/50 hover:text-sky-400"
         >
           <svg
             className="h-3 w-3"
@@ -226,7 +226,7 @@ export function SymbolLinkedHunksModal({
       >
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-amber-500/80 transition-all hover:bg-stone-700/50 hover:text-amber-400"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-amber-500/80 transition-colors hover:bg-stone-700/50 hover:text-amber-400"
         >
           <code className="font-mono">{primary.symbolName}</code>
           <span className="text-stone-600">({totalRefs})</span>
@@ -363,7 +363,7 @@ export function SymbolLinkedHunksModal({
             <div className="flex items-center gap-2">
               <button
                 onClick={handleRejectAll}
-                className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-all hover:bg-rose-500/25 active:scale-[0.98]"
+                className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
               >
                 <svg
                   className="h-4 w-4"
@@ -382,7 +382,7 @@ export function SymbolLinkedHunksModal({
               </button>
               <button
                 onClick={handleApproveAll}
-                className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-all hover:bg-emerald-500/30 active:scale-[0.98]"
+                className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
               >
                 <svg
                   className="h-4 w-4"

@@ -424,7 +424,7 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Find file..."
+                    placeholder="Find file\u2026"
                     aria-label="Find file"
                     spellCheck={false}
                     autoCorrect="off"

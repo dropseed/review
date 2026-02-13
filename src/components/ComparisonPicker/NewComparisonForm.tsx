@@ -230,7 +230,7 @@ export function NewComparisonForm({
             disabled={branchesLoading}
             baseValue={baseRef}
             existingComparisonKeys={existingComparisonKeys}
-            placeholder="Compare..."
+            placeholder="Compare\u2026"
             pullRequests={pullRequests}
           />
 
@@ -241,7 +241,7 @@ export function NewComparisonForm({
             disabled={!baseRef || !compareRef || branchesLoading}
             className="group/btn btn-interactive relative shrink-0 rounded-lg bg-gradient-to-r from-sage-500 to-sage-400 px-5 py-2
                      text-sm font-semibold text-stone-950
-                     transition-all duration-200
+                     transition-colors duration-200
                      hover:from-sage-400 hover:to-sage-400 hover:shadow-lg hover:shadow-sage-500/30 hover:-translate-y-0.5
                      focus:outline-hidden focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-stone-900
                      disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none disabled:from-sage-600 disabled:to-sage-600

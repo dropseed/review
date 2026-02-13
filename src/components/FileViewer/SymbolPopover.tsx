@@ -55,7 +55,7 @@ function truncatePath(path: string, maxLen = 50): string {
   if (path.length <= maxLen) return path;
   const parts = path.split("/");
   if (parts.length <= 2) return path;
-  return ".../" + parts.slice(-2).join("/");
+  return "\u2026/" + parts.slice(-2).join("/");
 }
 
 export function SymbolPopover({

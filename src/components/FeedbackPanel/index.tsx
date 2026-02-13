@@ -95,7 +95,7 @@ export function FeedbackPanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="absolute bottom-4 right-4 z-[30] flex items-center gap-2 rounded-full bg-stone-900/95 backdrop-blur-xl border border-stone-700/50 shadow-xl px-3.5 py-2 text-stone-300 hover:bg-stone-800/95 hover:border-stone-600/50 transition-all duration-150"
+        className="absolute bottom-4 right-4 z-[30] flex items-center gap-2 rounded-full bg-stone-900/95 backdrop-blur-xl border border-stone-700/50 shadow-xl px-3.5 py-2 text-stone-300 hover:bg-stone-800/95 hover:border-stone-600/50 transition-colors duration-150"
       >
         <ChatBubbleIcon />
         <span className="text-xs font-medium">Review Notes</span>
@@ -105,8 +105,8 @@ export function FeedbackPanel() {
   }
 
   const copyButtonClass = copied
-    ? "btn w-full text-xs transition-all bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
-    : "btn w-full text-xs transition-all bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20";
+    ? "btn w-full text-xs transition-colors bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
+    : "btn w-full text-xs transition-colors bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20";
 
   return (
     <div className="absolute bottom-4 right-4 z-[30] w-80 max-h-[28rem] flex flex-col rounded-xl bg-stone-900/95 backdrop-blur-xl border border-stone-700/50 shadow-xl overflow-hidden">

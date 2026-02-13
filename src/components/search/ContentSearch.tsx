@@ -14,8 +14,8 @@ interface ContentSearchProps {
 }
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
-  if (!query.trim()) return "Type to search file contents...";
-  if (isLoading) return "Searching...";
+  if (!query.trim()) return "Type to search file contents\u2026";
+  if (isLoading) return "Searching\u2026";
   return "No matches found";
 }
 
@@ -157,7 +157,7 @@ export function ContentSearch({
                       useReviewStore.getState().setSearchQuery(e.target.value);
                     }}
                     onKeyDown={handleKeyDown}
-                    placeholder="Search in files..."
+                    placeholder="Search in files\u2026"
                     aria-label="Search in files"
                     autoComplete="off"
                     autoCorrect="off"
@@ -298,7 +298,7 @@ export function ContentSearch({
                     <span className="ml-0.5">close</span>
                   </span>
                 </div>
-                <span>
+                <span aria-live="polite">
                   {searchResults.length > 0 &&
                     `${searchResults.length >= 100 ? "100+" : searchResults.length} results`}
                 </span>

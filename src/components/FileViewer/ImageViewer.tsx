@@ -147,7 +147,7 @@ export function ImageViewer({
             <div className="flex items-center rounded bg-stone-800/30 p-0.5">
               <button
                 onClick={() => setDiffMode("side-by-side")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                   diffMode === "side-by-side"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -157,7 +157,7 @@ export function ImageViewer({
               </button>
               <button
                 onClick={() => setDiffMode("overlay")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                   diffMode === "overlay"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -167,7 +167,7 @@ export function ImageViewer({
               </button>
               <button
                 onClick={() => setDiffMode("single")}
-                className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+                className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                   diffMode === "single"
                     ? "bg-stone-700/50 text-stone-200"
                     : "text-stone-500 hover:text-stone-300"
@@ -198,7 +198,7 @@ export function ImageViewer({
           <div className="flex items-center rounded bg-stone-800/30 p-0.5">
             <button
               onClick={() => setZoom("fit")}
-              className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+              className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "fit"
                   ? "bg-stone-700/50 text-stone-200"
                   : "text-stone-500 hover:text-stone-300"
@@ -208,7 +208,7 @@ export function ImageViewer({
             </button>
             <button
               onClick={() => setZoom("50")}
-              className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+              className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "50"
                   ? "bg-stone-700/50 text-stone-200"
                   : "text-stone-500 hover:text-stone-300"
@@ -218,7 +218,7 @@ export function ImageViewer({
             </button>
             <button
               onClick={() => setZoom("100")}
-              className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+              className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "100"
                   ? "bg-stone-700/50 text-stone-200"
                   : "text-stone-500 hover:text-stone-300"
@@ -228,7 +228,7 @@ export function ImageViewer({
             </button>
             <button
               onClick={() => setZoom("200")}
-              className={`rounded px-2 py-0.5 text-xxs font-medium transition-all ${
+              className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "200"
                   ? "bg-stone-700/50 text-stone-200"
                   : "text-stone-500 hover:text-stone-300"

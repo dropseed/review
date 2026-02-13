@@ -471,7 +471,7 @@ export function QuickWinsSection(): ReactNode {
         </div>
         <div className="mt-2 h-1.5 bg-stone-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-cyan-500/50 rounded-full transition-all duration-500 ease-out"
+            className="h-full bg-cyan-500/50 rounded-full transition-[width] duration-500 ease-out"
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -495,7 +495,10 @@ export function QuickWinsSection(): ReactNode {
           </button>
         )}
         {classifying && (
-          <span className="flex items-center gap-1.5 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50">
+          <span
+            className="flex items-center gap-1.5 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50"
+            aria-live="polite"
+          >
             <SpinnerIcon className="h-3 w-3 animate-spin" />
             Classifying...
           </span>

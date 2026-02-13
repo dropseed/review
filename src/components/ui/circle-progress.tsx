@@ -58,7 +58,7 @@ export function CircleProgress({
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           transform={`rotate(-90 ${center} ${center})`}
-          className="transition-all duration-300"
+          className="transition-[stroke-dashoffset] duration-300"
         />
       )}
     </svg>

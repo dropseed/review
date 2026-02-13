@@ -50,7 +50,7 @@ export function HunkPreviewModal({
               </div>
               <div className="mt-1 font-mono text-xxs text-stone-600 truncate group-hover:text-stone-500">
                 {hunk.content.split("\n").slice(0, 2).join(" ").slice(0, 120)}
-                {hunk.content.length > 120 && "..."}
+                {hunk.content.length > 120 && "\u2026"}
               </div>
             </button>
           ))}
@@ -86,7 +86,7 @@ export function InlineHunkPreviewList({
           </div>
           <div className="mt-0.5 font-mono text-xxs text-stone-600 truncate group-hover:text-stone-500">
             {hunk.content.split("\n").slice(0, 2).join(" ").slice(0, 100)}
-            {hunk.content.length > 100 && "..."}
+            {hunk.content.length > 100 && "\u2026"}
           </div>
         </button>
       ))}

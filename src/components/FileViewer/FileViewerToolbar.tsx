@@ -34,7 +34,7 @@ function ToggleButtonGroup<T extends string>({
         <button
           key={optionValue}
           onClick={() => onChange(optionValue)}
-          className={`rounded px-2 py-0.5 text-xxs font-medium transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+          className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
             value === optionValue
               ? "bg-stone-700/50 text-stone-200"
               : "text-stone-500 hover:text-stone-300"

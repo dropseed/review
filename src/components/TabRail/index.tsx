@@ -83,6 +83,18 @@ function SortMenu({
 }) {
   const [open, setOpen] = useState(false);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
   return (
     <div className="relative">
       <button
@@ -91,6 +103,8 @@ function SortMenu({
         className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
                    transition-colors duration-100"
         aria-label="Sort reviews"
+        aria-expanded={open}
+        aria-haspopup="true"
       >
         <svg
           className="h-3 w-3"
@@ -109,12 +123,26 @@ function SortMenu({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl">
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setOpen(false);
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Close menu"
+          />
+          <div
+            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl"
+            role="menu"
+          >
             {SORT_OPTIONS.map(([value, label]) => (
               <button
                 key={value}
                 type="button"
+                role="menuitem"
                 onClick={() => {
                   onSetSortOrder(value);
                   setOpen(false);
