@@ -142,7 +142,14 @@ fn open_app(repo_path: &str, comparison_key: &str) -> Result<(), String> {
             if !app_path.exists() {
                 return None;
             }
+            // Launch with a clean environment so the app doesn't inherit
+            // unwanted variables from the caller (e.g. CLAUDECODE when
+            // invoked via `! review` inside Claude Code).
             let result = Command::new("open")
+                .env_clear()
+                .env("HOME", std::env::var("HOME").unwrap_or_default())
+                .env("USER", std::env::var("USER").unwrap_or_default())
+                .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
                 .arg("-a")
                 .arg(app_path)
                 .arg("--args")
