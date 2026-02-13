@@ -6,7 +6,7 @@ import { useTrustCounts } from "../../hooks/useTrustCounts";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
-import { MermaidDiagram } from "../FileViewer/MarkdownViewer/MermaidDiagram";
+import { ExcalidrawDiagram } from "./ExcalidrawDiagram";
 import { SummaryStats } from "./SummaryStats";
 import { OverviewSection } from "./OverviewSection";
 import { QuickWinsSection } from "./QuickWinsSection";
@@ -203,6 +203,7 @@ function DiagramSection() {
   const generateDiagram = useReviewStore((s) => s.generateDiagram);
 
   const stale = guideDiagram ? isSummaryStale() : false;
+  const isValidJson = guideDiagram?.trimStart().startsWith("{") ?? false;
 
   // Don't render anything if no diagram and not loading/error
   if (!guideDiagram && !guideDiagramError && diagramStatus !== "loading") {
@@ -215,7 +216,7 @@ function DiagramSection() {
         <div className="rounded-lg border border-stone-800 p-4">
           <div className="flex items-center gap-2 text-stone-500">
             <Spinner />
-            <span className="text-xs">Generating dependency diagram…</span>
+            <span className="text-xs">Generating diagram…</span>
           </div>
         </div>
       )}
@@ -232,9 +233,23 @@ function DiagramSection() {
           </button>
         </div>
       )}
-      {guideDiagram && (
+      {guideDiagram && !isValidJson && (
+        <div className="rounded-lg border border-stone-800 p-4">
+          <p className="text-xs text-stone-400">Diagram format has changed.</p>
+          <button
+            onClick={() => generateDiagram()}
+            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+          >
+            Regenerate
+          </button>
+        </div>
+      )}
+      {guideDiagram && isValidJson && (
         <div className="rounded-lg border border-stone-800 overflow-hidden">
-          <MermaidDiagram code={guideDiagram} />
+          <ExcalidrawDiagram
+            sceneJson={guideDiagram}
+            onRetry={() => generateDiagram()}
+          />
           {stale && (
             <div className="flex items-center justify-end px-4 pb-3">
               <button

@@ -192,7 +192,7 @@ export interface ApiClient {
     options?: { command?: string },
   ): Promise<string>;
 
-  /** Generate a Mermaid dependency diagram of the diff using Claude */
+  /** Generate an Excalidraw diagram of the diff using Claude */
   generateDiagram(
     repoPath: string,
     hunks: SummaryInput[],

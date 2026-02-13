@@ -3,13 +3,15 @@ use super::prompt::{build_summary_prompt, SummaryInput};
 use crate::ai::{ensure_claude_available, run_claude_with_model, ClaudeError};
 use std::path::Path;
 
-/// Strip markdown code fences from a string. Handles both `` ```mermaid ``
+/// Strip markdown code fences from a string. Handles `` ```json ``, `` ```mermaid ``,
 /// and bare `` ``` `` wrappers that Claude sometimes adds despite instructions.
 fn strip_markdown_fences(s: &str) -> &str {
     let s = s.trim();
 
-    // Check for opening fence: ```mermaid or ```
-    let after_fence = if let Some(rest) = s.strip_prefix("```mermaid") {
+    // Check for opening fence: ```json, ```mermaid, or bare ```
+    let after_fence = if let Some(rest) = s.strip_prefix("```json") {
+        rest
+    } else if let Some(rest) = s.strip_prefix("```mermaid") {
         rest
     } else if s.starts_with("```") && !s[3..].starts_with('`') {
         &s[3..]
@@ -51,10 +53,10 @@ pub fn generate_summary(
     Ok(output.trim().to_owned())
 }
 
-/// Generate a Mermaid dependency diagram for the given hunks using the Claude CLI.
+/// Generate an Excalidraw JSON diagram for the given hunks using the Claude CLI.
 ///
-/// Returns `Ok(None)` when the diagram is skipped (fewer than 2 files, or Claude
-/// responded with "NONE").
+/// Returns `Ok(None)` when the diagram is skipped (fewer than 2 files, Claude
+/// responded with "NONE", or the output is not valid Excalidraw JSON).
 pub fn generate_diagram(
     hunks: &[SummaryInput],
     cwd: &Path,
@@ -74,5 +76,11 @@ pub fn generate_diagram(
         return Ok(None);
     }
 
-    Ok(Some(trimmed.to_owned()))
+    // Validate that the output is valid JSON with an "elements" array.
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(val) if val.get("elements").and_then(|e| e.as_array()).is_some() => {
+            Ok(Some(trimmed.to_owned()))
+        }
+        _ => Ok(None),
+    }
 }

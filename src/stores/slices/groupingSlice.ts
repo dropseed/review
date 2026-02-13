@@ -280,7 +280,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         ...(needsDiagram
           ? {
               guideDiagramError: null,
-              diagramStatus: "loading" as GuideTaskStatus,
+              diagramStatus: "loading" as const,
             }
           : {}),
       });
@@ -316,14 +316,14 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           set({
             reviewState: updatedState,
             guideSummary: summary,
-            summaryStatus: "done" as GuideTaskStatus,
+            summaryStatus: "done" as const,
           });
           await saveReviewState();
         } catch (err) {
           console.error("[generateSummary] Failed:", err);
           set({
             guideSummaryError: err instanceof Error ? err.message : String(err),
-            summaryStatus: "error" as GuideTaskStatus,
+            summaryStatus: "error" as const,
           });
         }
       })();
@@ -338,12 +338,20 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     generateDiagram: async () => {
-      const { repoPath, hunks, reviewState, classifyCommand, saveReviewState } =
-        get();
+      const {
+        repoPath,
+        hunks,
+        reviewState,
+        classifyCommand,
+        saveReviewState,
+        startActivity,
+        endActivity,
+      } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
 
       set({ guideDiagramError: null, diagramStatus: "loading" as const });
+      startActivity("generate-diagram", "Generating diagram", 55);
 
       try {
         const diagram = await client.generateDiagram(
@@ -372,44 +380,45 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         set({
           reviewState: updatedState,
           guideDiagram: diagram,
-          diagramStatus: "done" as GuideTaskStatus,
+          diagramStatus: "done" as const,
         });
         await saveReviewState();
       } catch (err) {
         console.error("[generateDiagram] Failed:", err);
         set({
           guideDiagramError: err instanceof Error ? err.message : String(err),
-          diagramStatus: "error" as GuideTaskStatus,
+          diagramStatus: "error" as const,
         });
+      } finally {
+        endActivity("generate-diagram");
       }
     },
 
     clearGuideSummary: () => {
       const { reviewState, saveReviewState } = get();
-      if (reviewState?.guide?.summary || reviewState?.guide?.diagram) {
-        set({
-          guideSummary: null,
-          guideSummaryError: null,
-          guideDiagram: null,
-          guideDiagramError: null,
+      const hadPersistedData =
+        reviewState?.guide?.summary || reviewState?.guide?.diagram;
+
+      set({
+        guideSummary: null,
+        guideSummaryError: null,
+        guideDiagram: null,
+        guideDiagramError: null,
+        ...(hadPersistedData && {
           reviewState: {
             ...reviewState,
             guide: {
-              ...reviewState.guide!,
+              ...reviewState!.guide!,
               summary: undefined,
               diagram: undefined,
             },
             updatedAt: new Date().toISOString(),
           },
-        });
+        }),
+      });
+
+      if (hadPersistedData) {
         saveReviewState();
-      } else {
-        set({
-          guideSummary: null,
-          guideSummaryError: null,
-          guideDiagram: null,
-          guideDiagramError: null,
-        });
       }
     },
 
