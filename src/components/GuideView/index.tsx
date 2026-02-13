@@ -2,14 +2,14 @@ import { type ReactNode, useCallback, useEffect, useRef, useMemo } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
-import { useTrustCounts } from "../../hooks/useTrustCounts";
+import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import { ExcalidrawDiagram } from "./ExcalidrawDiagram";
 import { SummaryFileTree } from "./SummaryFileTree";
 import { SummaryStats } from "./SummaryStats";
-import { QuickWinsSection } from "./QuickWinsSection";
+import { TrustSection } from "./TrustSection";
 import {
   FocusedReviewSection,
   useFocusedReviewUnreviewed,
@@ -276,7 +276,7 @@ interface SectionConfig {
 
 const SECTIONS: SectionConfig[] = [
   { id: "overview", title: "Overview", component: () => <SummarySection /> },
-  { id: "quick-wins", title: "Trust", component: () => <QuickWinsSection /> },
+  { id: "trust", title: "Trust", component: () => <TrustSection /> },
   {
     id: "focused-review",
     title: "Guided Review",
@@ -406,7 +406,7 @@ interface TabBadgeInfo {
   guideSummary: string | null;
   hasPrBody: boolean;
   trustedHunkCount: number;
-  totalHunks: number;
+  trustableHunkCount: number;
   focusedReviewUnreviewed: number;
   filesPendingCount: number;
 }
@@ -424,7 +424,7 @@ function getTabBadge({
   guideSummary,
   hasPrBody,
   trustedHunkCount,
-  totalHunks,
+  trustableHunkCount,
   focusedReviewUnreviewed,
   filesPendingCount,
 }: TabBadgeInfo): ReactNode {
@@ -442,12 +442,12 @@ function getTabBadge({
       }
       return null;
 
-    case "quick-wins":
+    case "trust":
       if (isCompleted) return completedBadge;
-      if (totalHunks > 0) {
+      if (trustableHunkCount > 0) {
         return (
           <TabBadge variant="cyan">
-            {trustedHunkCount}/{totalHunks}
+            {trustedHunkCount}/{trustableHunkCount}
           </TabBadge>
         );
       }
@@ -491,7 +491,9 @@ export function GuideView(): ReactNode {
 
   const focusedReviewUnreviewed = useFocusedReviewUnreviewed();
   const reviewGroups = useReviewStore((s) => s.reviewGroups);
-  const { trustedHunkCount, totalHunks } = useTrustCounts();
+  const knownPatternIds = useKnownPatternIds();
+  const { trustedHunkCount, trustableHunkCount } =
+    useTrustCounts(knownPatternIds);
 
   // Count files with pending hunks for Remaining Files badge
   const fileHunkStatusMap = useMemo(
@@ -512,7 +514,7 @@ export function GuideView(): ReactNode {
       sections.add("focused-review");
     }
     if (progress.pendingHunks === 0 && progress.totalHunks > 0) {
-      sections.add("quick-wins");
+      sections.add("trust");
     }
     if (filesPendingCount === 0 && progress.totalHunks > 0) {
       sections.add("changed-files");
@@ -551,7 +553,7 @@ export function GuideView(): ReactNode {
       switch (sectionId) {
         case "overview":
           return summaryStatus === "loading";
-        case "quick-wins":
+        case "trust":
           return classificationStatus === "loading";
         case "focused-review":
           return groupingStatus === "loading";
@@ -619,7 +621,7 @@ export function GuideView(): ReactNode {
                     guideSummary,
                     hasPrBody,
                     trustedHunkCount,
-                    totalHunks,
+                    trustableHunkCount,
                     focusedReviewUnreviewed,
                     filesPendingCount,
                   });

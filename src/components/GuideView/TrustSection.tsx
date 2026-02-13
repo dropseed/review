@@ -1,6 +1,6 @@
 import { type ReactNode, useState, useMemo, useEffect, useRef } from "react";
 import { useReviewStore } from "../../stores";
-import { useTrustCounts } from "../../hooks/useTrustCounts";
+import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import {
   anyLabelMatchesPattern,
   isHunkUnclassified,
@@ -10,7 +10,6 @@ import { getApiClient } from "../../api";
 import { Checkbox } from "../ui/checkbox";
 import { SimpleTooltip } from "../ui/tooltip";
 import { playApproveSound, playBulkSound } from "../../utils/sounds";
-import { useAnimatedCount } from "../../hooks/useAnimatedCount";
 import {
   HunkPreviewModal,
   InlineHunkPreviewList,
@@ -139,11 +138,7 @@ function PatternRow({
         type="button"
         onClick={() => onToggle(pattern.id, !pattern.trusted)}
         className={`group flex items-center gap-3 w-full px-3 py-2 rounded-lg text-left transition-colors ${
-          pattern.trusted
-            ? "bg-cyan-500/8 hover:bg-cyan-500/12"
-            : muted
-              ? "opacity-40 hover:opacity-60"
-              : "hover:bg-stone-800/50"
+          muted ? "opacity-60 hover:opacity-80" : "hover:bg-stone-800/50"
         }`}
       >
         <Checkbox
@@ -152,19 +147,11 @@ function PatternRow({
           tabIndex={-1}
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={`text-xs font-medium ${pattern.trusted ? "text-cyan-300" : "text-stone-300"}`}
-            >
-              {pattern.name}
-            </span>
-            {!pattern.trusted && pattern.count > 0 && (
-              <span className="text-xxs text-stone-600 italic">
-                Would auto-approve {pattern.count} hunk
-                {pattern.count !== 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
+          <span
+            className={`text-xs font-medium ${pattern.trusted ? "text-cyan-300" : "text-stone-300"}`}
+          >
+            {pattern.name}
+          </span>
           <p className="text-xxs text-stone-500 truncate">
             {pattern.description}
           </p>
@@ -203,121 +190,11 @@ function PatternRow({
   );
 }
 
-interface CategorySectionProps {
-  categoryName: string;
-  patterns: PatternInfo[];
-  totalMatches: number;
-  onTogglePattern: (id: string, trusted: boolean) => void;
-  onToggleCategory: (trusted: boolean) => void;
-  allTrusted: boolean;
-  someTrusted: boolean;
-  expandedPatternId: string | null;
-  onExpandToggle: (id: string) => void;
-  getPreviewHunks: (patternId: string) => PreviewHunk[];
-  onSelectHunk: (filePath: string, hunkId: string) => void;
-  onShowAllModal: (patternId: string) => void;
-}
-
-function CategorySection({
-  categoryName,
-  patterns,
-  totalMatches,
-  onTogglePattern,
-  onToggleCategory,
-  allTrusted,
-  someTrusted,
-  expandedPatternId,
-  onExpandToggle,
-  getPreviewHunks,
-  onSelectHunk,
-  onShowAllModal,
-}: CategorySectionProps) {
-  const [isOpen, setIsOpen] = useState(() => totalMatches > 0);
-  const prevTotalMatches = useRef(totalMatches);
-  useEffect(() => {
-    const prev = prevTotalMatches.current;
-    prevTotalMatches.current = totalMatches;
-    // Auto-expand when matches appear (e.g., after classification runs)
-    if (prev === 0 && totalMatches > 0) {
-      setIsOpen(true);
-    }
-  }, [totalMatches]);
-
-  return (
-    <div>
-      {/* Category header */}
-      <div className="flex items-center gap-2 px-3 py-2">
-        <button
-          type="button"
-          onClick={() => onToggleCategory(!allTrusted)}
-          className="flex items-center gap-2 flex-1 min-w-0"
-        >
-          <Checkbox
-            className="h-3.5 w-3.5 shrink-0 pointer-events-none"
-            checked={allTrusted ? true : someTrusted ? "indeterminate" : false}
-            tabIndex={-1}
-          />
-          <span className="text-xs font-medium text-stone-300">
-            {categoryName}
-          </span>
-        </button>
-        <span className="text-xxs text-stone-600 tabular-nums shrink-0">
-          {totalMatches > 0
-            ? `${totalMatches} hunk${totalMatches !== 1 ? "s" : ""} matched`
-            : ""}
-        </span>
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="shrink-0 p-0.5 text-stone-600 hover:text-stone-400 transition-colors"
-        >
-          <svg
-            className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Pattern rows */}
-      {isOpen && (
-        <div className="ml-2">
-          {patterns.map((pattern) => (
-            <PatternRow
-              key={pattern.id}
-              pattern={pattern}
-              onToggle={onTogglePattern}
-              onExpandToggle={onExpandToggle}
-              isExpanded={expandedPatternId === pattern.id}
-              previewHunks={
-                expandedPatternId === pattern.id
-                  ? getPreviewHunks(pattern.id)
-                  : []
-              }
-              onSelectHunk={onSelectHunk}
-              onShowAllModal={onShowAllModal}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function QuickWinsSection(): ReactNode {
+export function TrustSection(): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
-  const setTrustList = useReviewStore((s) => s.setTrustList);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
@@ -333,6 +210,7 @@ export function QuickWinsSection(): ReactNode {
     null,
   );
   const [modalPatternId, setModalPatternId] = useState<string | null>(null);
+  const [showZeroMatch, setShowZeroMatch] = useState(false);
 
   // Load taxonomy on mount
   useEffect(() => {
@@ -350,18 +228,9 @@ export function QuickWinsSection(): ReactNode {
     [trustCategories, hunks, reviewState?.hunks, trustList],
   );
 
-  // Group patterns by category
-  const categorizedPatterns = useMemo(() => {
-    const map = new Map<string, PatternInfo[]>();
-    for (const p of patterns) {
-      const list = map.get(p.categoryId) ?? [];
-      list.push(p);
-      map.set(p.categoryId, list);
-    }
-    return map;
-  }, [patterns]);
-
-  const { trustedHunkCount } = useTrustCounts();
+  const knownPatternIds = useKnownPatternIds();
+  const { trustedHunkCount, trustableHunkCount } =
+    useTrustCounts(knownPatternIds);
 
   const unlabeledCount = useMemo(
     () =>
@@ -369,10 +238,22 @@ export function QuickWinsSection(): ReactNode {
     [hunks, reviewState?.hunks],
   );
 
-  // Animated display count
-  const displayCount = useAnimatedCount(trustedHunkCount);
+  // Split patterns into visible (has matches or trusted) and zero-match hidden
+  const { visiblePatterns, zeroMatchPatterns } = useMemo(() => {
+    const visible: PatternInfo[] = [];
+    const zeroMatch: PatternInfo[] = [];
+    for (const p of patterns) {
+      if (p.count > 0 || p.trusted) {
+        visible.push(p);
+      } else {
+        zeroMatch.push(p);
+      }
+    }
+    return { visiblePatterns: visible, zeroMatchPatterns: zeroMatch };
+  }, [patterns]);
+
   const percent =
-    hunks.length > 0 ? (trustedHunkCount / hunks.length) * 100 : 0;
+    trustableHunkCount > 0 ? (trustedHunkCount / trustableHunkCount) * 100 : 0;
 
   // Sound effects on trust changes
   const prevCountRef = useRef(trustedHunkCount);
@@ -394,6 +275,7 @@ export function QuickWinsSection(): ReactNode {
   };
 
   const allClassified = unlabeledCount === 0;
+  const stale = isClassificationStale();
 
   const getPreviewHunks = (patternId: string): PreviewHunk[] => {
     return hunks
@@ -457,24 +339,55 @@ export function QuickWinsSection(): ReactNode {
     setModalPatternId(patternId);
   };
 
+  // Render flat pattern list with lightweight category headers
+  const renderPatternList = (patternList: PatternInfo[]) => {
+    const elements: ReactNode[] = [];
+    let lastCategoryId = "";
+
+    for (const pattern of patternList) {
+      if (pattern.categoryId !== lastCategoryId) {
+        lastCategoryId = pattern.categoryId;
+        elements.push(
+          <div
+            key={`cat-${pattern.categoryId}`}
+            className="px-3 pt-3 pb-1 text-xxs font-medium uppercase tracking-wider text-stone-600"
+          >
+            {pattern.categoryName}
+          </div>,
+        );
+      }
+      elements.push(
+        <PatternRow
+          key={pattern.id}
+          pattern={pattern}
+          onToggle={handleToggle}
+          onExpandToggle={handleExpandToggle}
+          isExpanded={expandedPatternId === pattern.id}
+          previewHunks={
+            expandedPatternId === pattern.id ? getPreviewHunks(pattern.id) : []
+          }
+          onSelectHunk={handleSelectHunk}
+          onShowAllModal={handleShowAllModal}
+        />,
+      );
+    }
+
+    return elements;
+  };
+
   return (
     <div className="space-y-4">
-      {/* Running tally */}
-      <div className="rounded-lg border border-stone-800 p-4 text-center">
-        <div className="flex items-center justify-center gap-3">
-          <span className="text-3xl font-semibold tabular-nums text-cyan-400">
-            {displayCount}
-          </span>
-          <span className="text-sm text-stone-500">
-            of {hunks.length} hunks auto-approved
-          </span>
-        </div>
-        <div className="mt-2 h-1.5 bg-stone-800 rounded-full overflow-hidden">
+      {/* Compact inline progress */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-1.5 bg-stone-800 rounded-full overflow-hidden">
           <div
             className="h-full bg-cyan-500/50 rounded-full transition-[width] duration-500 ease-out"
             style={{ width: `${percent}%` }}
           />
         </div>
+        <span className="text-xs text-stone-500 tabular-nums shrink-0">
+          {trustedHunkCount} of {trustableHunkCount} trustable hunks
+        </span>
       </div>
 
       {/* Error banner */}
@@ -486,15 +399,7 @@ export function QuickWinsSection(): ReactNode {
 
       {/* Toolbar */}
       <div className="flex items-center flex-wrap gap-2">
-        {unlabeledCount > 0 && !classifying && (
-          <button
-            onClick={() => classifyUnlabeledHunks()}
-            className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
-          >
-            Classify {unlabeledCount} unclassified
-          </button>
-        )}
-        {classifying && (
+        {classifying ? (
           <span
             className="flex items-center gap-1.5 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50"
             aria-live="polite"
@@ -502,15 +407,28 @@ export function QuickWinsSection(): ReactNode {
             <SpinnerIcon className="h-3 w-3 animate-spin" />
             Classifying...
           </span>
-        )}
-        {allClassified && !classifying && (
+        ) : stale ? (
+          <button
+            onClick={() => classifyUnlabeledHunks()}
+            className="flex items-center gap-1 rounded-md bg-amber-500/15 px-2.5 py-1 text-2xs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
+          >
+            Reclassify (stale)
+          </button>
+        ) : unlabeledCount > 0 ? (
+          <button
+            onClick={() => classifyUnlabeledHunks()}
+            className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
+          >
+            Classify {unlabeledCount} unclassified
+          </button>
+        ) : allClassified ? (
           <button
             onClick={() => reclassifyHunks()}
             className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
           >
             Reclassify
           </button>
-        )}
+        ) : null}
         <div className="flex-1" />
         {!claudeAvailable && (
           <SimpleTooltip content="Claude CLI not found. Install it to enable AI classification.">
@@ -531,71 +449,27 @@ export function QuickWinsSection(): ReactNode {
             </span>
           </SimpleTooltip>
         )}
-        {isClassificationStale() && !classifying && (
-          <button
-            onClick={() => classifyUnlabeledHunks()}
-            className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
-          >
-            Reclassify
-          </button>
-        )}
       </div>
 
-      {/* Category-grouped pattern list */}
+      {/* Flat pattern list */}
       {trustCategories.length > 0 && (
-        <div className="rounded-lg border border-stone-800 overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2.5 border-b border-stone-800">
-            <h3 className="text-xs font-medium text-stone-400">
-              Trust patterns
-            </h3>
-          </div>
-          <div className="divide-y divide-stone-800/50 p-1">
-            {trustCategories.map((category) => {
-              const catPatterns = categorizedPatterns.get(category.id) ?? [];
-              const totalMatches = catPatterns.reduce(
-                (sum, p) => sum + p.count,
-                0,
-              );
-              const trustedInCategory = catPatterns.filter(
-                (p) => p.trusted,
-              ).length;
-              const allTrusted =
-                catPatterns.length > 0 &&
-                trustedInCategory === catPatterns.length;
-              const someTrusted = trustedInCategory > 0 && !allTrusted;
+        <div>
+          {renderPatternList(visiblePatterns)}
 
-              const handleToggleCategory = (trusted: boolean) => {
-                const ids = catPatterns.map((p) => p.id);
-                if (trusted) {
-                  // Trust all in category
-                  const newList = [...new Set([...trustList, ...ids])];
-                  setTrustList(newList);
-                } else {
-                  // Untrust all in category
-                  const idsSet = new Set(ids);
-                  setTrustList(trustList.filter((id) => !idsSet.has(id)));
-                }
-              };
-
-              return (
-                <CategorySection
-                  key={category.id}
-                  categoryName={category.name}
-                  patterns={catPatterns}
-                  totalMatches={totalMatches}
-                  onTogglePattern={handleToggle}
-                  onToggleCategory={handleToggleCategory}
-                  allTrusted={allTrusted}
-                  someTrusted={someTrusted}
-                  expandedPatternId={expandedPatternId}
-                  onExpandToggle={handleExpandToggle}
-                  getPreviewHunks={getPreviewHunks}
-                  onSelectHunk={handleSelectHunk}
-                  onShowAllModal={handleShowAllModal}
-                />
-              );
-            })}
-          </div>
+          {zeroMatchPatterns.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowZeroMatch(!showZeroMatch)}
+                className="w-full px-3 py-2 text-xxs text-stone-600 hover:text-stone-400 transition-colors text-left"
+              >
+                {showZeroMatch
+                  ? "Hide patterns with no matches"
+                  : `Show ${zeroMatchPatterns.length} more pattern${zeroMatchPatterns.length !== 1 ? "s" : ""} with no matches`}
+              </button>
+              {showZeroMatch && renderPatternList(zeroMatchPatterns)}
+            </>
+          )}
         </div>
       )}
 
