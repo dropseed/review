@@ -4,25 +4,27 @@ import { ContentArea } from "./ContentArea";
 import { FeedbackPanel } from "./FeedbackPanel";
 
 const DebugModal = lazy(() =>
-  import("./DebugModal").then((m) => ({ default: m.DebugModal })),
+  import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
 );
 const SettingsModal = lazy(() =>
-  import("./SettingsModal").then((m) => ({ default: m.SettingsModal })),
+  import("./modals/SettingsModal").then((m) => ({ default: m.SettingsModal })),
 );
 const CommitDetailModal = lazy(() =>
-  import("./CommitDetailModal").then((m) => ({ default: m.CommitDetailModal })),
+  import("./modals/CommitDetailModal").then((m) => ({
+    default: m.CommitDetailModal,
+  })),
 );
 const FileFinder = lazy(() =>
-  import("./FileFinder").then((m) => ({ default: m.FileFinder })),
+  import("./search/FileFinder").then((m) => ({ default: m.FileFinder })),
 );
 const ContentSearch = lazy(() =>
-  import("./ContentSearch").then((m) => ({ default: m.ContentSearch })),
+  import("./search/ContentSearch").then((m) => ({ default: m.ContentSearch })),
 );
 const SymbolSearch = lazy(() =>
-  import("./SymbolSearch").then((m) => ({ default: m.SymbolSearch })),
+  import("./search/SymbolSearch").then((m) => ({ default: m.SymbolSearch })),
 );
 const ClassificationsModal = lazy(() =>
-  import("./ClassificationsModal").then((m) => ({
+  import("./modals/ClassificationsModal").then((m) => ({
     default: m.ClassificationsModal,
   })),
 );

@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
-import { useReviewStore } from "../stores";
-import { isHunkUnclassified, type DiffHunk, type HunkState } from "../types";
+import { useReviewStore } from "../../stores";
+import { isHunkUnclassified, type DiffHunk, type HunkState } from "../../types";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "./ui/dialog";
+} from "../ui/dialog";
 
 interface ClassificationsModalProps {
   isOpen: boolean;

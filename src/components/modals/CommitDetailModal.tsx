@@ -1,9 +1,9 @@
 import { PatchDiff } from "@pierre/diffs/react";
 import { useEffect, useMemo, useState } from "react";
-import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
-import type { CommitDetail } from "../types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { getApiClient } from "../../api";
+import { useReviewStore } from "../../stores";
+import type { CommitDetail } from "../../types";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface CommitDetailModalProps {
   isOpen: boolean;

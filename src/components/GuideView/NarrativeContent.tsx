@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useReviewStore } from "../stores";
-import { SimpleTooltip } from "./ui/tooltip";
-import { getPlatformServices } from "../platform";
-import { calculateFileHunkStatus } from "./FilesPanel/FileTree.utils";
+import { useReviewStore } from "../../stores";
+import { SimpleTooltip } from "../ui/tooltip";
+import { getPlatformServices } from "../../platform";
+import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 
 /**
  * Shared narrative markdown renderer.

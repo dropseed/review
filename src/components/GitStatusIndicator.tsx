@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useReviewStore } from "../stores";
 import { SimpleTooltip } from "./ui/tooltip";
-import { GitStatusModal } from "./GitStatusModal";
+import { GitStatusModal } from "./modals/GitStatusModal";
 
 // Branch icon component
 function BranchIcon({ className }: { className?: string }) {

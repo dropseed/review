@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { useReviewStore } from "../stores";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { useReviewStore } from "../../stores";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 function highlightJson(json: string): React.ReactNode[] {
   const lines = json.split("\n");

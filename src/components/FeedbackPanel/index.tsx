@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { useFeedbackPanel } from "../hooks";
-import { useReviewStore } from "../stores";
+import { useFeedbackPanel } from "../../hooks";
+import { useReviewStore } from "../../stores";
 import { FeedbackPanelContent } from "./FeedbackPanelContent";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "./ui/dropdown-menu";
+} from "../ui/dropdown-menu";
 
 function ChatBubbleIcon() {
   return (

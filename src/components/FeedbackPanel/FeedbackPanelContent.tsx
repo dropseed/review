@@ -1,6 +1,6 @@
-import type { LineAnnotation } from "../types";
-import { SimpleTooltip } from "./ui/tooltip";
-import { Textarea } from "./ui/textarea";
+import type { LineAnnotation } from "../../types";
+import { SimpleTooltip } from "../ui/tooltip";
+import { Textarea } from "../ui/textarea";
 
 // Annotation list item with refined hover states
 function AnnotationItem({

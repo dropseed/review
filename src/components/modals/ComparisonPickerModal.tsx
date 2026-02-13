@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Comparison } from "../types";
-import { useReviewStore } from "../stores";
-import { getApiClient } from "../api";
-import { getPlatformServices } from "../platform";
-import { initLogPath, clearLog } from "../utils/logger";
-import { resolveRepoIdentity } from "../utils/repo-identity";
-import { RepoSelect } from "./ComparisonPicker/RepoSelect";
-import { NewComparisonForm } from "./ComparisonPicker/NewComparisonForm";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import type { Comparison } from "../../types";
+import { useReviewStore } from "../../stores";
+import { getApiClient } from "../../api";
+import { getPlatformServices } from "../../platform";
+import { initLogPath, clearLog } from "../../utils/logger";
+import { resolveRepoIdentity } from "../../utils/repo-identity";
+import { RepoSelect } from "../ComparisonPicker/RepoSelect";
+import { NewComparisonForm } from "../ComparisonPicker/NewComparisonForm";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface ComparisonPickerModalProps {
   isOpen: boolean;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useReviewStore } from "../stores";
-import type { FileEntry } from "../types";
-import { Dialog, DialogOverlay, DialogPortal } from "./ui/dialog";
+import { useReviewStore } from "../../stores";
+import type { FileEntry } from "../../types";
+import { Dialog, DialogOverlay, DialogPortal } from "../ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 

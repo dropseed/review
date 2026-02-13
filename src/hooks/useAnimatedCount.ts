@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
  */
 export function useAnimatedCount(target: number, duration = 400): number {
   const [display, setDisplay] = useState(target);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number>(undefined);
 
   useEffect(() => {
     const from = display;

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type JSX } from "react";
 import { File as PierreFile } from "@pierre/diffs/react";
 import type { LineAnnotation as PierreLineAnnotation } from "@pierre/diffs/react";
 import { SimpleTooltip } from "../ui/tooltip";

@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo } from "react";
 import type { HunkGroup, DiffHunk, HunkState } from "../../types";
 import { HunkPreview } from "../FileViewer/annotations/HunkPreview";
-import { NarrativeContent } from "../NarrativeContent";
+import { NarrativeContent } from "./NarrativeContent";
 
 function CheckIcon({
   className = "w-3.5 h-3.5",

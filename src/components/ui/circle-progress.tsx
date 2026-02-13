@@ -1,20 +1,21 @@
-import React from "react";
+import type React from "react";
 
 interface CircleProgressProps {
   percent: number;
   size?: number;
   strokeWidth?: number;
   className?: string;
+  ref?: React.Ref<SVGSVGElement>;
 }
 
 /** SVG circular progress indicator using brand colors. */
-export const CircleProgress = React.forwardRef<
-  SVGSVGElement,
-  CircleProgressProps
->(function CircleProgress(
-  { percent, size = 14, strokeWidth = 2, className },
+export function CircleProgress({
+  percent,
+  size = 14,
+  strokeWidth = 2,
+  className,
   ref,
-) {
+}: CircleProgressProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percent / 100) * circumference;
@@ -62,4 +63,4 @@ export const CircleProgress = React.forwardRef<
       )}
     </svg>
   );
-});
+}

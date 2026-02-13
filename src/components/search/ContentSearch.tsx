@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { ReactNode } from "react";
-import { useReviewStore } from "../stores";
-import { useDebounce } from "../hooks/useDebounce";
-import { HighlightedLine } from "./ui/HighlightedLine";
-import { groupSearchResultsByFile } from "../utils/search";
-import { Dialog, DialogOverlay, DialogPortal } from "./ui/dialog";
+import { useReviewStore } from "../../stores";
+import { useDebounce } from "../../hooks/useDebounce";
+import { HighlightedLine } from "../ui/HighlightedLine";
+import { groupSearchResultsByFile } from "../../utils/search";
+import { Dialog, DialogOverlay, DialogPortal } from "../ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 

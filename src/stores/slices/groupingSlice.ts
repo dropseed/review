@@ -11,7 +11,7 @@ import type {
   SummaryInput,
   SymbolDiff,
 } from "../../types";
-import { getChangedLinesKey } from "../../utils/changedLinesKey";
+import { getChangedLinesKey } from "../../utils/changed-lines-key";
 
 export type GuideTaskStatus = "idle" | "loading" | "done" | "error";
 

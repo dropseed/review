@@ -24,3 +24,7 @@ export { useFeedbackPanel } from "./useFeedbackPanel";
 export { useMenuState } from "./useMenuState";
 export { useCmdKeyHeld } from "./useCmdKeyHeld";
 export { useSymbolNavigation } from "./useSymbolNavigation";
+export { useAnimatedCount } from "./useAnimatedCount";
+export { useDebounce } from "./useDebounce";
+export { useTrustCounts } from "./useTrustCounts";
+export { useReviewFreshness } from "./useReviewFreshness";

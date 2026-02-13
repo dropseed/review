@@ -3,7 +3,7 @@ import { useReviewStore } from "../../stores";
 import type { DiffHunk, HunkState } from "../../types";
 import { isHunkReviewed } from "../../types";
 import type { SymbolLinkedHunk } from "../../utils/symbolLinkedHunks";
-import { getChangedLinesKey } from "../../utils/changedLinesKey";
+import { getChangedLinesKey } from "../../utils/changed-lines-key";
 import { HunkPreview } from "../FileViewer/annotations/HunkPreview";
 import {
   Dialog,

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
+import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { FileContent } from "../../types";
 import { isHunkReviewed } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
@@ -14,6 +15,7 @@ import {
   AnnotationDisplay,
 } from "./annotations/AnnotationEditor";
 import { SymbolPopover } from "./SymbolPopover";
+import type { ContentMode } from "./content-mode";
 
 const CMD_HOVER_STYLE_ID = "cmd-hover-style";
 const CMD_HOVER_CSS = `code span { cursor: pointer; } code span:hover { text-decoration: underline; }`;
@@ -23,21 +25,23 @@ interface FileViewerProps {
 }
 
 export function FileViewer({ filePath }: FileViewerProps) {
-  const comparison = useReviewStore((s) => s.comparison);
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const codeTheme = useReviewStore((s) => s.codeTheme);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const allHunks = useReviewStore((s) => s.hunks);
-  const refreshGeneration = useReviewStore((s) => s.refreshGeneration);
-  const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
-  const scrollToLine = useReviewStore((s) => s.scrollToLine);
-  const clearScrollToLine = useReviewStore((s) => s.clearScrollToLine);
-  const addAnnotation = useReviewStore((s) => s.addAnnotation);
-  const updateAnnotation = useReviewStore((s) => s.updateAnnotation);
-  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
-  const viewMode = useReviewStore((s) => s.diffViewMode);
-  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
+  const {
+    comparison,
+    repoPath,
+    codeTheme,
+    codeFontSize,
+    reviewState,
+    allHunks,
+    refreshGeneration,
+    focusedHunkIndex,
+    scrollToLine,
+    clearScrollToLine,
+    addAnnotation,
+    updateAnnotation,
+    deleteAnnotation,
+    viewMode,
+    classifyingHunkIds,
+  } = useFileViewerState();
 
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
 
@@ -415,16 +419,22 @@ export function FileViewer({ filePath }: FileViewerProps) {
     isImage ||
     (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
 
+  const contentMode: ContentMode = showImageViewer
+    ? { type: "image" }
+    : isSvg
+      ? { type: "svg", hasRendered: !!fileContent.imageDataUrl }
+      : isUntracked
+        ? { type: "untracked" }
+        : hasChanges
+          ? { type: "diff", viewMode }
+          : { type: "plain" };
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
       <FileViewerToolbar
         filePath={filePath}
+        contentMode={contentMode}
         hasChanges={hasChanges}
-        isUntracked={isUntracked}
-        isImage={isImage}
-        isSvg={isSvg}
-        hasImageDataUrl={!!fileContent.imageDataUrl}
-        showImageViewer={!!showImageViewer}
         reviewProgress={reviewProgress}
         effectiveLanguage={effectiveLanguage}
         detectedLanguage={detectedLanguage}
@@ -492,20 +502,17 @@ export function FileViewer({ filePath }: FileViewerProps) {
         )}
         <div
           ref={setScrollNode}
-          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-900 ${hasChanges && !showImageViewer ? "scrollbar-none" : "scrollbar-thin"}`}
+          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-900 ${contentMode.type === "diff" || contentMode.type === "untracked" ? "scrollbar-none" : "scrollbar-thin"}`}
         >
           <FileContentRenderer
             filePath={filePath}
             fileContent={fileContent}
-            viewMode={viewMode}
+            contentMode={contentMode}
             codeTheme={codeTheme}
             fontSizeCSS={fontSizeCSS}
             focusedHunkId={focusedHunkId}
             effectiveLanguage={effectiveLanguage}
             markdownViewMode={markdownViewMode}
-            showImageViewer={!!showImageViewer}
-            isUntracked={isUntracked}
-            hasChanges={hasChanges}
             highlightLine={highlightLine}
             lineHeight={lineHeight}
             onViewInFile={setHighlightLine}
@@ -515,7 +522,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
             deleteAnnotation={deleteAnnotation}
           />
         </div>
-        {hasChanges && !showImageViewer && (
+        {(contentMode.type === "diff" || contentMode.type === "untracked") && (
           <DiffMinimap
             markers={minimapMarkers}
             scrollContainer={scrollNode}

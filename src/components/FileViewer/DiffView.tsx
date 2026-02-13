@@ -18,7 +18,7 @@ import {
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
-import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changedLinesKey";
+import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import {
   NewAnnotationEditor,
@@ -603,7 +603,7 @@ export function DiffView({
   const hasFileContents = oldContent != null || newContent != null;
 
   // Use areFilesEqual to prevent unnecessary re-renders when file contents haven't changed
-  const oldFileRef = useRef<FileContents | undefined>();
+  const oldFileRef = useRef<FileContents | undefined>(undefined);
   const oldFile = useMemo<FileContents | undefined>(() => {
     const nextFile = hasFileContents
       ? {
@@ -620,7 +620,7 @@ export function DiffView({
     return nextFile;
   }, [hasFileContents, fileName, oldContent, language]);
 
-  const newFileRef = useRef<FileContents | undefined>();
+  const newFileRef = useRef<FileContents | undefined>(undefined);
   const newFile = useMemo<FileContents | undefined>(() => {
     const nextFile = hasFileContents
       ? {
@@ -752,7 +752,7 @@ export function DiffView({
   };
 
   // Memoize diffOptions with custom equality check to prevent unnecessary re-renders
-  const diffOptionsRef = useRef<DiffOptionsType>();
+  const diffOptionsRef = useRef<DiffOptionsType>(undefined);
   const diffOptions = useMemo<DiffOptionsType>(() => {
     const nextOptions: DiffOptionsType = {
       diffStyle: viewMode,

@@ -19,12 +19,12 @@ import type { GlobalReviewSummary, DiffShortStat } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 
 const ComparisonPickerModal = lazy(() =>
-  import("../ComparisonPickerModal").then((m) => ({
+  import("../modals/ComparisonPickerModal").then((m) => ({
     default: m.ComparisonPickerModal,
   })),
 );
 const SettingsModal = lazy(() =>
-  import("../SettingsModal").then((m) => ({ default: m.SettingsModal })),
+  import("../modals/SettingsModal").then((m) => ({ default: m.SettingsModal })),
 );
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";

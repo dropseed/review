@@ -2,19 +2,19 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { hostname as getHostname } from "@tauri-apps/plugin-os";
-import { useReviewStore } from "../stores";
+import { useReviewStore } from "../../stores";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_STEP,
-} from "../utils/preferences";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
-import { Input } from "./ui/input";
-import { SimpleTooltip } from "./ui/tooltip";
-import { Switch } from "./ui/switch";
-import { Slider } from "./ui/slider";
+} from "../../utils/preferences";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
+import { Input } from "../ui/input";
+import { SimpleTooltip } from "../ui/tooltip";
+import { Switch } from "../ui/switch";
+import { Slider } from "../ui/slider";
 
 interface SettingsModalProps {
   isOpen: boolean;

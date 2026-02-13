@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { Breadcrumbs } from "../Breadcrumbs";
@@ -15,6 +15,7 @@ import { isMarkdownFile, type SupportedLanguages } from "./languageMap";
 import { LanguageSelector } from "./LanguageSelector";
 import { DiffOptionsPopover } from "./DiffOptionsPopover";
 import { SimilarFilesModal } from "./annotations/SimilarFilesModal";
+import type { ContentMode } from "./content-mode";
 
 interface ToggleButtonGroupProps<T extends string> {
   options: [T, string, string?][];
@@ -72,12 +73,8 @@ const DIFF_VIEW_OPTIONS: [DiffViewMode, string][] = [
 
 interface FileViewerToolbarProps {
   filePath: string;
+  contentMode: ContentMode;
   hasChanges: boolean;
-  isUntracked: boolean;
-  isImage: boolean;
-  isSvg: boolean;
-  hasImageDataUrl: boolean;
-  showImageViewer: boolean;
   reviewProgress: { reviewed: number; total: number };
   effectiveLanguage: SupportedLanguages | undefined;
   detectedLanguage: SupportedLanguages | undefined;
@@ -93,12 +90,8 @@ interface FileViewerToolbarProps {
 
 export const FileViewerToolbar = memo(function FileViewerToolbar({
   filePath,
+  contentMode,
   hasChanges,
-  isUntracked,
-  isImage,
-  isSvg,
-  hasImageDataUrl,
-  showImageViewer,
   reviewProgress,
   effectiveLanguage,
   detectedLanguage,
@@ -163,7 +156,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   };
 
   function renderFileStatusBadge(): JSX.Element | null {
-    if (isUntracked) {
+    if (contentMode.type === "untracked") {
       return (
         <>
           <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
@@ -239,8 +232,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
     );
   }
 
-  const showDiffControls =
-    !isImage && !showImageViewer && !isUntracked && hasChanges;
+  const showDiffControls = contentMode.type === "diff";
 
   return (
     <div className="@container flex items-center justify-between border-b border-stone-800/50 bg-stone-900 px-3 py-1.5">
@@ -250,7 +242,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           onNavigateToDirectory={revealDirectoryInTree}
         />
         <div className="flex shrink-0 items-center gap-2">
-          {!isImage && !hasChanges && (
+          {contentMode.type === "plain" && (
             <LanguageSelector
               language={effectiveLanguage}
               detectedLanguage={detectedLanguage}
@@ -381,7 +373,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
             onChange={onMarkdownViewModeChange}
           />
         )}
-        {isSvg && hasImageDataUrl && (
+        {contentMode.type === "svg" && contentMode.hasRendered && (
           <ToggleButtonGroup
             options={SVG_VIEW_OPTIONS}
             value={svgViewMode}
