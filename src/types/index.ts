@@ -375,6 +375,7 @@ export interface GuideState {
   groups: HunkGroup[];
   hunkIds: string[];
   generatedAt: string;
+  title?: string;
   summary?: string;
   diagram?: string;
 }
@@ -522,6 +523,22 @@ export interface SearchMatch {
 export interface RemoteInfo {
   name: string;
   browseUrl: string;
+}
+
+// Review freshness checking
+export interface ReviewFreshnessInput {
+  repoPath: string;
+  comparison: Comparison;
+  cachedOldSha: string | null;
+  cachedNewSha: string | null;
+}
+
+export interface ReviewFreshnessResult {
+  key: string;
+  isActive: boolean;
+  oldSha: string | null;
+  newSha: string | null;
+  diffStats: DiffShortStat | null;
 }
 
 // Lightweight diff statistics from git diff --shortstat

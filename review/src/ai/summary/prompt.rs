@@ -18,6 +18,8 @@ pub fn build_summary_prompt(hunks: &[SummaryInput]) -> String {
         "You are a code-review assistant. Given a set of diff hunks from a code review, \
          write a short bullet-point summary of what this diff does.\n\n\
          ## Rules\n\n\
+         - On the VERY FIRST line, write a short descriptive title (under 10 words, no prefix, no quotes, no markdown formatting).\n\
+         - Leave a blank line between the title and the bullet points.\n\
          - Use 3-5 markdown bullet points, one key change per bullet.\n\
          - Each bullet must be ONE short sentence (under 15 words). No compound sentences.\n\
          - Start each bullet with a bold key phrase, then a short description.\n\

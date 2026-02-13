@@ -27,7 +27,7 @@ use review::sources::traits::{
 };
 use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 
@@ -1673,6 +1673,186 @@ pub fn search_file_contents(
     Ok(results)
 }
 
+// --- Review freshness checking ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewFreshnessInput {
+    pub repo_path: String,
+    pub comparison: Comparison,
+    pub cached_old_sha: Option<String>,
+    pub cached_new_sha: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewFreshnessResult {
+    pub key: String,
+    pub is_active: bool,
+    pub old_sha: Option<String>,
+    pub new_sha: Option<String>,
+    pub diff_stats: Option<DiffShortStat>,
+}
+
+#[tauri::command]
+pub async fn check_reviews_freshness(
+    reviews: Vec<ReviewFreshnessInput>,
+) -> Vec<ReviewFreshnessResult> {
+    let handles: Vec<_> = reviews
+        .into_iter()
+        .map(|input| tokio::task::spawn_blocking(move || check_single_review_freshness(input)))
+        .collect();
+
+    let mut results = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(e) => {
+                error!("[check_reviews_freshness] task panicked: {e}");
+            }
+        }
+    }
+    results
+}
+
+/// A diff is considered active when it has any changed files, additions, or deletions.
+fn is_diff_active(stats: &Option<DiffShortStat>) -> bool {
+    stats
+        .as_ref()
+        .is_some_and(|s| s.file_count > 0 || s.additions > 0 || s.deletions > 0)
+}
+
+fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshnessResult {
+    let key = format!("{}:{}", input.repo_path, input.comparison.key);
+
+    // PR comparisons: check state via gh CLI
+    if let Some(ref pr) = input.comparison.github_pr {
+        let provider = GhCliProvider::new(PathBuf::from(&input.repo_path));
+        match provider.get_pr_status(pr.number) {
+            Ok(status) => {
+                let is_merged_or_closed = status.state == "MERGED" || status.state == "CLOSED";
+                if is_merged_or_closed {
+                    return ReviewFreshnessResult {
+                        key,
+                        is_active: false,
+                        old_sha: None,
+                        new_sha: Some(status.head_ref_oid),
+                        diff_stats: None,
+                    };
+                }
+                // PR is open — check if head SHA changed
+                let sha_unchanged = input
+                    .cached_new_sha
+                    .as_deref()
+                    .is_some_and(|cached| cached == status.head_ref_oid);
+                if sha_unchanged {
+                    // No change, keep previous state (assume active since PR is open)
+                    return ReviewFreshnessResult {
+                        key,
+                        is_active: true,
+                        old_sha: input.cached_old_sha,
+                        new_sha: Some(status.head_ref_oid),
+                        diff_stats: None,
+                    };
+                }
+                // Head changed — re-check diff stats
+                let source = match LocalGitSource::new(PathBuf::from(&input.repo_path)) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        return ReviewFreshnessResult {
+                            key,
+                            is_active: true, // PR is open, assume active
+                            old_sha: None,
+                            new_sha: Some(status.head_ref_oid),
+                            diff_stats: None,
+                        };
+                    }
+                };
+                let stats = source.get_diff_shortstat(&input.comparison).ok();
+                return ReviewFreshnessResult {
+                    key,
+                    is_active: is_diff_active(&stats),
+                    old_sha: None,
+                    new_sha: Some(status.head_ref_oid),
+                    diff_stats: stats,
+                };
+            }
+            Err(_) => {
+                // gh unavailable — default to inactive
+                return ReviewFreshnessResult {
+                    key,
+                    is_active: false,
+                    old_sha: None,
+                    new_sha: None,
+                    diff_stats: None,
+                };
+            }
+        }
+    }
+
+    // Local comparisons: resolve SHAs and compare with cache
+    let source = match LocalGitSource::new(PathBuf::from(&input.repo_path)) {
+        Ok(s) => s,
+        Err(_) => {
+            return ReviewFreshnessResult {
+                key,
+                is_active: false,
+                old_sha: None,
+                new_sha: None,
+                diff_stats: None,
+            };
+        }
+    };
+
+    // Working tree comparisons always need re-check (can't fingerprint cheaply)
+    if input.comparison.working_tree {
+        let stats = source.get_diff_shortstat(&input.comparison).ok();
+        return ReviewFreshnessResult {
+            key,
+            is_active: is_diff_active(&stats),
+            old_sha: None,
+            new_sha: None,
+            diff_stats: stats,
+        };
+    }
+
+    // Non-working-tree local comparisons: use SHA fingerprinting
+    let resolved_old = source.resolve_ref_or_empty_tree(&input.comparison.old);
+    let resolved_new = source.resolve_ref_or_empty_tree(&input.comparison.new);
+
+    let old_unchanged = input
+        .cached_old_sha
+        .as_deref()
+        .is_some_and(|cached| cached == resolved_old);
+    let new_unchanged = input
+        .cached_new_sha
+        .as_deref()
+        .is_some_and(|cached| cached == resolved_new);
+
+    if old_unchanged && new_unchanged {
+        // SHAs haven't changed — skip re-check, keep previous state
+        // We don't know previous is_active, but the frontend tracks that separately
+        // Return with no diff_stats to signal "no change"
+        return ReviewFreshnessResult {
+            key,
+            is_active: resolved_old != resolved_new, // same SHA = empty diff = inactive
+            old_sha: Some(resolved_old),
+            new_sha: Some(resolved_new),
+            diff_stats: None,
+        };
+    }
+
+    // SHAs changed — re-check diff stats
+    let stats = source.get_diff_shortstat(&input.comparison).ok();
+    ReviewFreshnessResult {
+        key,
+        is_active: is_diff_active(&stats),
+        old_sha: Some(resolved_old),
+        new_sha: Some(resolved_new),
+        diff_stats: stats,
+    }
+}
+
 // --- Dev mode detection ---
 
 #[tauri::command]
@@ -1896,7 +2076,7 @@ pub async fn generate_review_summary(
     hunks: Vec<review::ai::summary::SummaryInput>,
     model: Option<String>,
     command: Option<String>,
-) -> Result<String, String> {
+) -> Result<review::ai::summary::SummaryResult, String> {
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -1928,7 +2108,11 @@ pub async fn generate_review_summary(
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 
-    info!("[generate_review_summary] SUCCESS: {} chars", result.len());
+    info!(
+        "[generate_review_summary] SUCCESS: title={} chars, summary={} chars",
+        result.title.len(),
+        result.summary.len()
+    );
     Ok(result)
 }
 

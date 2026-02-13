@@ -35,6 +35,8 @@ import type {
   HunkGroup,
   ModifiedSymbolEntry,
   SummaryInput,
+  ReviewFreshnessInput,
+  ReviewFreshnessResult,
 } from "../types";
 
 const DEFAULT_BASE_URL = "http://localhost:3333";
@@ -444,9 +446,9 @@ export class HttpClient implements ApiClient {
     _repoPath: string,
     _hunks: SummaryInput[],
     _options?: { command?: string },
-  ): Promise<string> {
+  ): Promise<{ title: string; summary: string }> {
     console.warn("[HttpClient] generateSummary not implemented");
-    return "";
+    return { title: "", summary: "" };
   }
 
   async generateDiagram(
@@ -571,6 +573,19 @@ export class HttpClient implements ApiClient {
   async openRepoWindow(_repoPath: string): Promise<void> {
     // Can't open windows from browser
     console.warn("[HttpClient] openRepoWindow not available in browser");
+  }
+
+  async checkReviewsFreshness(
+    reviews: ReviewFreshnessInput[],
+  ): Promise<ReviewFreshnessResult[]> {
+    // In browser mode, return all as active
+    return reviews.map((r) => ({
+      key: `${r.repoPath}:${r.comparison.key}`,
+      isActive: true,
+      oldSha: null,
+      newSha: null,
+      diffStats: null,
+    }));
   }
 
   async isGitRepo(_path: string): Promise<boolean> {

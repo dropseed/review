@@ -35,6 +35,8 @@ import type {
   HunkGroup,
   ModifiedSymbolEntry,
   SummaryInput,
+  ReviewFreshnessInput,
+  ReviewFreshnessResult,
 } from "../types";
 
 export interface ApiClient {
@@ -190,7 +192,7 @@ export interface ApiClient {
     repoPath: string,
     hunks: SummaryInput[],
     options?: { command?: string },
-  ): Promise<string>;
+  ): Promise<{ title: string; summary: string }>;
 
   /** Generate an Excalidraw diagram of the diff using Claude */
   generateDiagram(
@@ -258,6 +260,11 @@ export interface ApiClient {
 
   /** Open a new window for a repository */
   openRepoWindow(repoPath: string): Promise<void>;
+
+  /** Batch-check whether each review's diff is still non-empty */
+  checkReviewsFreshness(
+    reviews: ReviewFreshnessInput[],
+  ): Promise<ReviewFreshnessResult[]>;
 
   /** Check if a path is a git repository */
   isGitRepo(path: string): Promise<boolean>;

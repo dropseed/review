@@ -444,9 +444,11 @@ function getTabBadge({
 export function GuideView(): ReactNode {
   const progress = useReviewProgress();
   const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
+  const comparison = useReviewStore((s) => s.reviewState?.comparison);
   const loadingProgress = useReviewStore((s) => s.loadingProgress);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
+  const guideTitle = useReviewStore((s) => s.guideTitle);
   const guideSummary = useReviewStore((s) => s.guideSummary);
 
   const activeTab = useReviewStore((s) => s.guideActiveTab);
@@ -559,6 +561,20 @@ export function GuideView(): ReactNode {
                     {githubPr.body}
                   </Markdown>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+        {!githubPr && guideTitle && (
+          <div className="px-4">
+            <h1 className="text-base font-semibold text-stone-200 leading-snug">
+              {guideTitle}
+            </h1>
+            {comparison && (
+              <div className="flex items-center gap-1.5 mt-1 text-xxs font-mono text-stone-500">
+                <span className="truncate">{comparison.old}</span>
+                <span className="text-stone-600 shrink-0">&rarr;</span>
+                <span className="truncate">{comparison.new}</span>
               </div>
             )}
           </div>

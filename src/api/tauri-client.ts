@@ -37,6 +37,8 @@ import type {
   HunkGroup,
   ModifiedSymbolEntry,
   SummaryInput,
+  ReviewFreshnessInput,
+  ReviewFreshnessResult,
 } from "../types";
 
 export class TauriClient implements ApiClient {
@@ -277,12 +279,15 @@ export class TauriClient implements ApiClient {
     repoPath: string,
     hunks: SummaryInput[],
     options?: { command?: string },
-  ): Promise<string> {
-    return invoke<string>("generate_review_summary", {
-      repoPath,
-      hunks,
-      command: options?.command,
-    });
+  ): Promise<{ title: string; summary: string }> {
+    return invoke<{ title: string; summary: string }>(
+      "generate_review_summary",
+      {
+        repoPath,
+        hunks,
+        command: options?.command,
+      },
+    );
   }
 
   async generateDiagram(
@@ -365,11 +370,15 @@ export class TauriClient implements ApiClient {
 
   // ----- Events -----
 
-  onClassifyProgress(callback: (completedIds: string[]) => void): () => void {
+  /** Subscribe to a Tauri event, returning a synchronous unsubscribe function. */
+  private listenForEvent<T>(
+    eventName: string,
+    callback: (payload: T) => void,
+  ): () => void {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
 
-    listen<string[]>("classify:batch-complete", (event) => {
+    listen<T>(eventName, (event) => {
       if (!cancelled) callback(event.payload);
     })
       .then((fn) => {
@@ -380,7 +389,7 @@ export class TauriClient implements ApiClient {
         }
       })
       .catch((err) => {
-        console.error("Failed to listen for classify progress:", err);
+        console.error(`Failed to listen for ${eventName}:`, err);
       });
 
     return () => {
@@ -390,66 +399,32 @@ export class TauriClient implements ApiClient {
         unlisten = null;
       }
     };
+  }
+
+  onClassifyProgress(callback: (completedIds: string[]) => void): () => void {
+    return this.listenForEvent("classify:batch-complete", callback);
   }
 
   onReviewStateChanged(callback: (repoPath: string) => void): () => void {
-    let unlisten: UnlistenFn | null = null;
-    let cancelled = false;
-
-    listen<string>("review-state-changed", (event) => {
-      if (!cancelled) callback(event.payload);
-    })
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to listen for review state changes:", err);
-      });
-
-    return () => {
-      cancelled = true;
-      if (unlisten) {
-        unlisten();
-        unlisten = null;
-      }
-    };
+    return this.listenForEvent("review-state-changed", callback);
   }
 
   onGitChanged(callback: (repoPath: string) => void): () => void {
-    let unlisten: UnlistenFn | null = null;
-    let cancelled = false;
-
-    listen<string>("git-changed", (event) => {
-      if (!cancelled) callback(event.payload);
-    })
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to listen for git changes:", err);
-      });
-
-    return () => {
-      cancelled = true;
-      if (unlisten) {
-        unlisten();
-        unlisten = null;
-      }
-    };
+    return this.listenForEvent("git-changed", callback);
   }
 
   // ----- Window/App -----
 
   async openRepoWindow(repoPath: string): Promise<void> {
     await invoke("open_repo_window", { repoPath });
+  }
+
+  async checkReviewsFreshness(
+    reviews: ReviewFreshnessInput[],
+  ): Promise<ReviewFreshnessResult[]> {
+    return invoke<ReviewFreshnessResult[]>("check_reviews_freshness", {
+      reviews,
+    });
   }
 
   async isGitRepo(path: string): Promise<boolean> {

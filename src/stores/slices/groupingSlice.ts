@@ -26,6 +26,7 @@ export interface GroupingSlice {
 
   // Guide state
   guideLoading: boolean;
+  guideTitle: string | null;
   guideSummary: string | null;
   guideSummaryError: string | null;
   guideDiagram: string | null;
@@ -168,6 +169,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     // Guide state
     guideLoading: false,
+    guideTitle: null,
     guideSummary: null,
     guideSummaryError: null,
     guideDiagram: null,
@@ -290,7 +292,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       const summaryPromise = (async () => {
         try {
-          const summary = await client.generateSummary(
+          const { title, summary } = await client.generateSummary(
             repoPath,
             summaryInputs,
             { command: classifyCommand || undefined },
@@ -307,6 +309,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
                 currentState.guide?.hunkIds ?? hunks.map((h) => h.id).sort(),
               generatedAt:
                 currentState.guide?.generatedAt ?? new Date().toISOString(),
+              title: title || undefined,
               summary,
               diagram: currentState.guide?.diagram,
             },
@@ -315,6 +318,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
           set({
             reviewState: updatedState,
+            guideTitle: title || null,
             guideSummary: summary,
             summaryStatus: "done" as const,
           });
@@ -371,6 +375,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
               currentState.guide?.hunkIds ?? hunks.map((h) => h.id).sort(),
             generatedAt:
               currentState.guide?.generatedAt ?? new Date().toISOString(),
+            title: currentState.guide?.title,
             summary: currentState.guide?.summary,
             diagram: diagram ?? undefined,
           },
@@ -400,6 +405,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         reviewState?.guide?.summary || reviewState?.guide?.diagram;
 
       set({
+        guideTitle: null,
         guideSummary: null,
         guideSummaryError: null,
         guideDiagram: null,
@@ -409,6 +415,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
             ...reviewState,
             guide: {
               ...reviewState!.guide!,
+              title: undefined,
               summary: undefined,
               diagram: undefined,
             },
@@ -515,6 +522,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
             groups,
             hunkIds: hunks.map((h) => h.id).sort(),
             generatedAt: new Date().toISOString(),
+            title: currentState.guide?.title,
             summary: currentState.guide?.summary,
             diagram: currentState.guide?.diagram,
           },
@@ -553,6 +561,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         reviewState: updatedState,
         reviewGroups: [],
         identicalHunkIds: new Map(),
+        guideTitle: null,
         guideSummary: null,
         guideSummaryError: null,
         guideDiagram: null,
@@ -572,6 +581,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const identicalHunkIds = buildIdenticalHunkIds(hunks);
       set({
         reviewGroups: guide.groups,
+        guideTitle: guide.title ?? null,
         guideSummary: guide.summary ?? null,
         guideDiagram: guide.diagram ?? null,
         identicalHunkIds,
