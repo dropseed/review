@@ -1,5 +1,5 @@
 //! Companion HTTP server for mobile app connectivity.
-//! Listens on 0.0.0.0:3333 so mobile devices on the same network can connect.
+//! Listens on 0.0.0.0:<port> so mobile devices on the same network can connect.
 
 use super::commands;
 use review::diff::parser::DiffHunk;
@@ -16,8 +16,7 @@ use tiny_http::{Header, Request, Response, Server};
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
 static SERVER_INSTANCE: Mutex<Option<Server>> = Mutex::new(None);
 static AUTH_TOKEN: Mutex<Option<String>> = Mutex::new(None);
-
-const PORT: u16 = 3333;
+static CURRENT_PORT: Mutex<u16> = Mutex::new(3333);
 
 /// Set the bearer token required for authentication.
 /// Pass `None` to disable authentication.
@@ -29,10 +28,14 @@ pub fn set_auth_token(token: Option<String>) {
 
 /// Start the companion server in a background thread.
 /// Only starts if not already running.
-pub fn start() {
+pub fn start(port: u16) {
     if SERVER_RUNNING.swap(true, Ordering::SeqCst) {
         eprintln!("[companion_server] Already running");
         return;
+    }
+
+    if let Ok(mut guard) = CURRENT_PORT.lock() {
+        *guard = port;
     }
 
     thread::spawn(|| {
@@ -41,6 +44,11 @@ pub fn start() {
         }
         SERVER_RUNNING.store(false, Ordering::SeqCst);
     });
+}
+
+/// Get the port the companion server is (or will be) listening on.
+pub fn get_port() -> u16 {
+    CURRENT_PORT.lock().map(|g| *g).unwrap_or(3333)
 }
 
 /// Stop the companion server if it is running.
@@ -58,7 +66,8 @@ pub fn is_running() -> bool {
 }
 
 fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = format!("0.0.0.0:{PORT}");
+    let port = get_port();
+    let addr = format!("0.0.0.0:{port}");
     let server = Server::http(&addr).map_err(|e| format!("Failed to bind: {e}"))?;
 
     eprintln!("[companion_server] Listening on http://{addr}");
@@ -210,6 +219,9 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
 
         // Move detection
         ("POST", "/detect-moves") => handle_detect_moves(body.as_deref()),
+
+        // Diff stats
+        ("GET", "/diff/shortstat") => handle_diff_shortstat(&query),
 
         // GitHub
         ("GET", "/github/available") => handle_github_available(&query),
@@ -602,6 +614,23 @@ fn handle_get_info() -> Response<Cursor<Vec<u8>>> {
         hostname,
         repos,
     })
+}
+
+fn handle_diff_shortstat(query: &str) -> Response<Cursor<Vec<u8>>> {
+    let params = parse_query(query);
+    let repo_path = match get_repo_path(&params) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let comparison = match get_comparison_from_query(&params) {
+        Some(c) => c,
+        None => return error_response(400, "Missing comparison params (old, new)"),
+    };
+
+    match commands::get_diff_shortstat(repo_path, comparison) {
+        Ok(stats) => json_response(&stats),
+        Err(e) => error_response(500, &e),
+    }
 }
 
 #[derive(Deserialize)]

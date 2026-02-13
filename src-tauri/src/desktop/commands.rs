@@ -2153,7 +2153,7 @@ pub fn generate_companion_token() -> String {
 
 #[tauri::command]
 pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String> {
-    use super::companion_server;
+    use super::{companion_server, tray};
     use tauri_plugin_store::StoreExt;
 
     let store = app_handle
@@ -2162,23 +2162,50 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
     let token = store
         .get("companionServerToken")
         .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let port = store
+        .get("companionServerPort")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u16)
+        .unwrap_or(3333);
 
     if let Some(ref t) = token {
         companion_server::set_auth_token(Some(t.clone()));
     }
-    companion_server::start();
+    companion_server::start(port);
+    tray::show(&app_handle);
     Ok(())
 }
 
 #[tauri::command]
-pub fn stop_companion_server() {
-    use super::companion_server;
+pub fn stop_companion_server(app_handle: tauri::AppHandle) {
+    use super::{companion_server, tray};
     companion_server::stop();
     companion_server::set_auth_token(None);
+    tray::hide(&app_handle);
 }
 
 #[tauri::command]
 pub fn get_companion_server_status() -> bool {
     use super::companion_server;
     companion_server::is_running()
+}
+
+#[tauri::command]
+pub fn get_tailscale_ip() -> Option<String> {
+    std::process::Command::new("tailscale")
+        .args(["ip", "-4"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if ip.is_empty() {
+                    None
+                } else {
+                    Some(ip)
+                }
+            } else {
+                None
+            }
+        })
 }

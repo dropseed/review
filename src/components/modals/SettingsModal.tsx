@@ -167,11 +167,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     (s) => s.setCompanionServerEnabled,
   );
   const companionServerToken = useReviewStore((s) => s.companionServerToken);
+  const companionServerPort = useReviewStore((s) => s.companionServerPort);
+  const setCompanionServerPort = useReviewStore(
+    (s) => s.setCompanionServerPort,
+  );
   const generateCompanionServerToken = useReviewStore(
     (s) => s.generateCompanionServerToken,
   );
 
   const [machineHostname, setMachineHostname] = useState<string>("");
+  const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
   const [companionCopied, setCompanionCopied] = useState<string | null>(null);
 
   useEffect(() => {
@@ -181,6 +186,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         .catch(() => setMachineHostname("localhost"));
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && companionServerEnabled) {
+      invoke<string | null>("get_tailscale_ip")
+        .then(setTailscaleIp)
+        .catch(() => setTailscaleIp(null));
+    } else {
+      setTailscaleIp(null);
+    }
+  }, [isOpen, companionServerEnabled]);
 
   // Auto-generate token if enabled but no token exists
   useEffect(() => {
@@ -603,13 +618,38 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                   {companionServerEnabled && (
                     <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
+                        <label className="text-xxs text-stone-500">Port</label>
+                        <Input
+                          type="number"
+                          min={1024}
+                          max={65535}
+                          value={companionServerPort}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (val >= 1024 && val <= 65535) {
+                              setCompanionServerPort(val);
+                            }
+                          }}
+                          className="w-24 text-xs text-right"
+                        />
+                      </div>
                       <CopyableField
                         label="Server URL"
-                        value={`http://${machineHostname || "localhost"}:3333`}
+                        value={`http://${machineHostname || "localhost"}:${companionServerPort}`}
                         copiedLabel={companionCopied}
                         copyId="url"
                         onCopy={copyToClipboard}
                       />
+                      {tailscaleIp && (
+                        <CopyableField
+                          label="Tailscale URL"
+                          value={`http://${tailscaleIp}:${companionServerPort}`}
+                          copiedLabel={companionCopied}
+                          copyId="tailscale-url"
+                          onCopy={copyToClipboard}
+                        />
+                      )}
                       {companionServerToken && (
                         <CopyableField
                           label="Auth Token"

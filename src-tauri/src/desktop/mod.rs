@@ -7,6 +7,7 @@
 
 pub mod commands;
 pub mod companion_server;
+pub mod tray;
 pub mod watchers;
 
 // Re-export commands for convenient access
@@ -495,6 +496,7 @@ pub fn run() {
             commands::start_companion_server,
             commands::stop_companion_server,
             commands::get_companion_server_status,
+            commands::get_tailscale_ip,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

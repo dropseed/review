@@ -38,6 +38,7 @@ const defaults = {
   inactiveReviewSortOrder: "updated" as ReviewSortOrder,
   companionServerEnabled: false,
   companionServerToken: null as string | null,
+  companionServerPort: 3333,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
 };
@@ -87,6 +88,7 @@ export interface PreferencesSlice {
   // Companion server
   companionServerEnabled: boolean;
   companionServerToken: string | null;
+  companionServerPort: number;
 
   // Guide side nav
   guideSideNavCollapsed: boolean;
@@ -136,6 +138,7 @@ export interface PreferencesSlice {
   // Companion server actions
   setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
   setCompanionServerToken: (token: string | null) => void;
+  setCompanionServerPort: (port: number) => Promise<void>;
   generateCompanionServerToken: () => Promise<string>;
 
   // Guide side nav actions
@@ -168,6 +171,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   inactiveReviewSortOrder: defaults.inactiveReviewSortOrder,
   companionServerEnabled: defaults.companionServerEnabled,
   companionServerToken: defaults.companionServerToken,
+  companionServerPort: defaults.companionServerPort,
   guideSideNavCollapsed: defaults.guideSideNavCollapsed,
   guideSideNavWidth: defaults.guideSideNavWidth,
 
@@ -228,6 +232,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       rawInactiveReviewSortOrder,
       rawCompanionServerEnabled,
       rawCompanionServerToken,
+      rawCompanionServerPort,
       rawDiffLineDiffType,
       rawDiffIndicators,
       rawNeedsReviewDisplayMode,
@@ -251,6 +256,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.get<ReviewSortOrder>("inactiveReviewSortOrder"),
       storage.get<boolean>("companionServerEnabled"),
       storage.get<string | null>("companionServerToken"),
+      storage.get<number>("companionServerPort"),
       storage.get<DiffLineDiffType>("diffLineDiffType"),
       storage.get<DiffIndicators>("diffIndicators"),
       storage.get<ChangesDisplayMode>("needsReviewDisplayMode"),
@@ -280,6 +286,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       rawCompanionServerEnabled ?? defaults.companionServerEnabled;
     const companionServerToken =
       rawCompanionServerToken ?? defaults.companionServerToken;
+    const companionServerPort =
+      rawCompanionServerPort ?? defaults.companionServerPort;
     const diffLineDiffType = rawDiffLineDiffType ?? defaults.diffLineDiffType;
     const diffIndicators = rawDiffIndicators ?? defaults.diffIndicators;
     // Migrate from the old single "changesDisplayMode" key
@@ -320,6 +328,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       inactiveReviewSortOrder,
       companionServerEnabled,
       companionServerToken,
+      companionServerPort,
       guideSideNavCollapsed,
       guideSideNavWidth,
     });
@@ -340,6 +349,13 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       "--ui-scale",
       String(fontSize / CODE_FONT_SIZE_DEFAULT),
     );
+
+    // Start companion server if it was previously enabled
+    if (companionServerEnabled) {
+      invoke("start_companion_server").catch((e) => {
+        console.error("Failed to start companion server on load:", e);
+      });
+    }
   },
 
   revealFileInTree: (path) => {
@@ -462,6 +478,20 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   setCompanionServerToken: (token) => {
     set({ companionServerToken: token });
     storage.set("companionServerToken", token);
+  },
+
+  setCompanionServerPort: async (port) => {
+    set({ companionServerPort: port });
+    storage.set("companionServerPort", port);
+    // Restart the server if it's currently running so the new port takes effect
+    if (get().companionServerEnabled) {
+      try {
+        await invoke("stop_companion_server");
+        await invoke("start_companion_server");
+      } catch (e) {
+        console.error("Failed to restart companion server with new port:", e);
+      }
+    }
   },
 
   generateCompanionServerToken: async () => {

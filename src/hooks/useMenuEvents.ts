@@ -139,6 +139,15 @@ export function useMenuEvents({
       ["menu:find-symbols", () => setShowSymbolSearch(true)],
       ["menu:search-in-files", () => setShowContentSearch(true)],
       ["menu:toggle-sidebar", () => toggleTabRail()],
+      // Companion server stopped from tray menu — sync UI state
+      // (server already stopped by Rust, so just update the store)
+      [
+        "companion-server:stopped",
+        () => {
+          useReviewStore.setState({ companionServerEnabled: false });
+          platform.storage.set("companionServerEnabled", false);
+        },
+      ],
       [
         "menu:new-review",
         () => {
