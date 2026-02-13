@@ -9,26 +9,13 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable";
 import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
+import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
-import { SortableTabRailItem } from "./SortableTabRailItem";
-import type { GlobalReviewSummary } from "../../types";
+import type { GlobalReviewSummary, DiffShortStat } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 
 const ComparisonPickerModal = lazy(() =>
@@ -48,9 +35,105 @@ const SORT_OPTIONS: [ReviewSortOrder, string][] = [
   ["size", "Size"],
 ];
 
-/** Derive the unique key used for pinning, stats lookup, etc. */
+/** Derive the unique key used for stats lookup, active state, etc. */
 function reviewKey(review: GlobalReviewSummary): string {
   return `${review.repoPath}:${review.comparison.key}`;
+}
+
+/** Sort reviews by the given order. */
+function sortReviews(
+  reviews: GlobalReviewSummary[],
+  order: ReviewSortOrder,
+  diffStats: Record<string, DiffShortStat>,
+): GlobalReviewSummary[] {
+  switch (order) {
+    case "repo":
+      return [...reviews].sort((a, b) => {
+        const nameCmp = a.repoName.localeCompare(b.repoName);
+        if (nameCmp !== 0) return nameCmp;
+        return (
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      });
+    case "size":
+      return [...reviews].sort((a, b) => {
+        const statsA = diffStats[reviewKey(a)];
+        const statsB = diffStats[reviewKey(b)];
+        const sizeA = statsA
+          ? statsA.additions + statsA.deletions
+          : a.totalHunks;
+        const sizeB = statsB
+          ? statsB.additions + statsB.deletions
+          : b.totalHunks;
+        return sizeB - sizeA;
+      });
+    case "updated":
+    default:
+      return reviews;
+  }
+}
+
+/** Sort menu button + dropdown. */
+function SortMenu({
+  sortOrder,
+  onSetSortOrder,
+}: {
+  sortOrder: ReviewSortOrder;
+  onSetSortOrder: (order: ReviewSortOrder) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
+                   transition-colors duration-100"
+        aria-label="Sort reviews"
+      >
+        <svg
+          className="h-3 w-3"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 6h18" />
+          <path d="M7 12h10" />
+          <path d="M10 18h4" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl">
+            {SORT_OPTIONS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  onSetSortOrder(value);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
+                  ${
+                    sortOrder === value
+                      ? "text-stone-200 bg-white/[0.06]"
+                      : "text-stone-400 hover:text-stone-200 hover:bg-white/[0.04]"
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 interface FooterVersionInfoProps {
@@ -122,90 +205,59 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
-  const pinnedReviewKeys = useReviewStore((s) => s.pinnedReviewKeys);
-  const pinReview = useReviewStore((s) => s.pinReview);
-  const unpinReview = useReviewStore((s) => s.unpinReview);
-  const reorderPinnedReviews = useReviewStore((s) => s.reorderPinnedReviews);
   const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
+  const inactiveReviewSortOrder = useReviewStore(
+    (s) => s.inactiveReviewSortOrder,
+  );
+  const setInactiveReviewSortOrder = useReviewStore(
+    (s) => s.setInactiveReviewSortOrder,
+  );
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
+  const reviewActiveState = useReviewStore((s) => s.reviewActiveState);
 
-  const [showSortMenu, setShowSortMenu] = useState(false);
+  // Live progress for the current review — derived directly from store state
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const hunks = useReviewStore((s) => s.hunks);
+  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  const liveProgress = useMemo(
+    () => (reviewState ? computeReviewProgress(hunks, reviewState) : null),
+    [hunks, reviewState],
   );
 
-  const pinnedKeySet = useMemo(
-    () => new Set(pinnedReviewKeys),
-    [pinnedReviewKeys],
-  );
+  const [inactiveCollapsed, setInactiveCollapsed] = useState(true);
 
-  const reviewsByKey = useMemo(() => {
-    const map = new Map<string, GlobalReviewSummary>();
+  // Split into active / inactive
+  const { activeReviews, inactiveReviews } = useMemo(() => {
+    const active: GlobalReviewSummary[] = [];
+    const inactive: GlobalReviewSummary[] = [];
     for (const review of globalReviews) {
-      map.set(reviewKey(review), review);
+      const key = reviewKey(review);
+      // Default to active if state is unknown (loading / not yet checked)
+      const isActive = reviewActiveState[key] ?? true;
+      if (isActive) {
+        active.push(review);
+      } else {
+        inactive.push(review);
+      }
     }
-    return map;
-  }, [globalReviews]);
+    return { activeReviews: active, inactiveReviews: inactive };
+  }, [globalReviews, reviewActiveState]);
 
-  const pinnedReviews = useMemo(
-    () =>
-      pinnedReviewKeys
-        .map((key) => ({ key, review: reviewsByKey.get(key) }))
-        .filter(
-          (item): item is { key: string; review: GlobalReviewSummary } =>
-            item.review !== undefined,
-        ),
-    [pinnedReviewKeys, reviewsByKey],
+  const sortedActive = useMemo(
+    () => sortReviews(activeReviews, reviewSortOrder, reviewDiffStats),
+    [activeReviews, reviewSortOrder, reviewDiffStats],
   );
 
-  const unpinnedReviews = useMemo(() => {
-    const filtered = globalReviews.filter(
-      (r) => !pinnedKeySet.has(reviewKey(r)),
-    );
-    switch (reviewSortOrder) {
-      case "repo":
-        return [...filtered].sort((a, b) => {
-          const nameCmp = a.repoName.localeCompare(b.repoName);
-          if (nameCmp !== 0) return nameCmp;
-          return (
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-          );
-        });
-      case "size":
-        return [...filtered].sort((a, b) => {
-          const statsA = reviewDiffStats[reviewKey(a)];
-          const statsB = reviewDiffStats[reviewKey(b)];
-          const sizeA = statsA
-            ? statsA.additions + statsA.deletions
-            : a.totalHunks;
-          const sizeB = statsB
-            ? statsB.additions + statsB.deletions
-            : b.totalHunks;
-          return sizeB - sizeA;
-        });
-      case "updated":
-      default:
-        return filtered;
-    }
-  }, [globalReviews, pinnedKeySet, reviewSortOrder, reviewDiffStats]);
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (over && active.id !== over.id) {
-        const oldIndex = pinnedReviewKeys.indexOf(active.id as string);
-        const newIndex = pinnedReviewKeys.indexOf(over.id as string);
-        reorderPinnedReviews(arrayMove(pinnedReviewKeys, oldIndex, newIndex));
-      }
-    },
-    [pinnedReviewKeys, reorderPinnedReviews],
+  const sortedInactive = useMemo(
+    () =>
+      sortReviews(inactiveReviews, inactiveReviewSortOrder, reviewDiffStats),
+    [inactiveReviews, inactiveReviewSortOrder, reviewDiffStats],
   );
 
   const handleDeleteReview = useCallback(
     (review: GlobalReviewSummary) => {
-      unpinReview(reviewKey(review));
       deleteGlobalReview(review.repoPath, review.comparison);
       const active = useReviewStore.getState().activeReviewKey;
       if (
@@ -215,35 +267,35 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
         navigateRef.current("/");
       }
     },
-    [deleteGlobalReview, unpinReview],
+    [deleteGlobalReview],
   );
 
-  const handleTogglePin = useCallback(
-    (review: GlobalReviewSummary) => {
-      const key = reviewKey(review);
-      if (pinnedKeySet.has(key)) {
-        unpinReview(key);
-      } else {
-        pinReview(key);
-      }
-    },
-    [pinnedKeySet, pinReview, unpinReview],
-  );
-
-  function itemPropsFor(review: GlobalReviewSummary, isPinned: boolean) {
+  function itemPropsFor(
+    review: GlobalReviewSummary,
+    isInactive: boolean,
+    currentSortOrder: ReviewSortOrder,
+  ) {
     const meta = repoMetadata[review.repoPath];
     const key = reviewKey(review);
+
+    // For the currently-open review, override progress fields with live store state
+    const isCurrentReview =
+      activeReviewKey?.repoPath === review.repoPath &&
+      activeReviewKey?.comparisonKey === review.comparison.key;
+
+    const effectiveReview =
+      isCurrentReview && liveProgress ? { ...review, ...liveProgress } : review;
+
     return {
-      review,
+      review: effectiveReview,
       repoName: meta?.routePrefix ?? review.repoName,
       defaultBranch: meta?.defaultBranch,
-      isPinned,
+      isInactive,
       avatarUrl: meta?.avatarUrl,
-      sortOrder: isPinned ? undefined : reviewSortOrder,
+      sortOrder: currentSortOrder,
       diffStats: reviewDiffStats[key],
       onActivate: onActivateReview,
       onDelete: handleDeleteReview,
-      onTogglePin: handleTogglePin,
     };
   }
 
@@ -285,100 +337,76 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
         </div>
       )}
 
-      {/* Pinned section */}
-      {pinnedReviews.length > 0 && (
+      {/* Active section */}
+      {sortedActive.length > 0 && (
         <>
-          <div className="px-2 pt-1 pb-0.5">
+          <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
             <span className="text-[9px] uppercase tracking-wider text-stone-600">
-              Pinned
+              Active
             </span>
+            <SortMenu
+              sortOrder={reviewSortOrder}
+              onSetSortOrder={setReviewSortOrder}
+            />
           </div>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={pinnedReviews.map((p) => p.key)}
-              strategy={verticalListSortingStrategy}
-            >
-              {pinnedReviews.map(({ key, review }) => (
-                <SortableTabRailItem
-                  key={key}
-                  id={key}
-                  {...itemPropsFor(review, true)}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
-          <div className="h-2" />
+          {sortedActive.map((review) => {
+            const key = reviewKey(review);
+            return (
+              <TabRailItem
+                key={key}
+                {...itemPropsFor(review, false, reviewSortOrder)}
+              />
+            );
+          })}
         </>
       )}
 
-      {/* All Reviews section */}
-      {unpinnedReviews.length > 0 && (
-        <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
-          <span className="text-[9px] uppercase tracking-wider text-stone-600">
-            All Reviews
-          </span>
-          <div className="relative">
+      {/* Inactive section */}
+      {sortedInactive.length > 0 && (
+        <>
+          {sortedActive.length > 0 && <div className="h-2" />}
+          <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => setShowSortMenu((prev) => !prev)}
-              className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
-                         transition-colors duration-100"
-              aria-label="Sort reviews"
+              onClick={() => setInactiveCollapsed((prev) => !prev)}
+              className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-stone-600 hover:text-stone-400 transition-colors duration-100"
             >
               <svg
-                className="h-3 w-3"
+                className={`h-2.5 w-2.5 transition-transform duration-150 ${inactiveCollapsed ? "-rotate-90" : ""}`}
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 aria-hidden="true"
               >
-                <path d="M3 6h18" />
-                <path d="M7 12h10" />
-                <path d="M10 18h4" />
+                <polyline points="6 9 12 15 18 9" />
               </svg>
+              Inactive
+              <span className="ml-0.5 text-[9px] tabular-nums text-stone-700">
+                {sortedInactive.length}
+              </span>
             </button>
-            {showSortMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowSortMenu(false)}
-                />
-                <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl">
-                  {SORT_OPTIONS.map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => {
-                        setReviewSortOrder(value);
-                        setShowSortMenu(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
-                        ${
-                          reviewSortOrder === value
-                            ? "text-stone-200 bg-white/[0.06]"
-                            : "text-stone-400 hover:text-stone-200 hover:bg-white/[0.04]"
-                        }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </>
+            {!inactiveCollapsed && (
+              <SortMenu
+                sortOrder={inactiveReviewSortOrder}
+                onSetSortOrder={setInactiveReviewSortOrder}
+              />
             )}
           </div>
-        </div>
+          {!inactiveCollapsed &&
+            sortedInactive.map((review) => {
+              const key = reviewKey(review);
+              return (
+                <TabRailItem
+                  key={key}
+                  {...itemPropsFor(review, true, inactiveReviewSortOrder)}
+                />
+              );
+            })}
+        </>
       )}
-      {unpinnedReviews.map((review) => {
-        const key = reviewKey(review);
-        return <TabRailItem key={key} {...itemPropsFor(review, false)} />;
-      })}
     </div>
   );
 }

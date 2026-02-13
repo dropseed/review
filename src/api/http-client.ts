@@ -332,6 +332,7 @@ export class HttpClient implements ApiClient {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         version: 0,
+        totalDiffHunks: 0,
       };
       this.reviewStates.set(key, emptyState);
       return emptyState;

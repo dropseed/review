@@ -74,13 +74,10 @@ pub struct ReviewState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guide: Option<GuideState>,
     /// Total number of hunks in the diff (including unclassified).
-    /// Used by `to_summary()` so sidebar progress isn't inflated.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "totalDiffHunks"
-    )]
-    pub total_diff_hunks: Option<usize>,
+    /// Used by `to_summary()` for accurate progress. Defaults to 0 for
+    /// legacy data; `syncTotalDiffHunks` sets the real count when opened.
+    #[serde(default, rename = "totalDiffHunks")]
+    pub total_diff_hunks: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,7 +125,7 @@ impl ReviewState {
             updated_at: now,
             version: 0,
             guide: None,
-            total_diff_hunks: None,
+            total_diff_hunks: 0,
         }
     }
 
@@ -140,7 +137,7 @@ impl ReviewState {
 
     /// Create a summary of this review state
     pub fn to_summary(&self) -> ReviewSummary {
-        let total_hunks = self.total_diff_hunks.unwrap_or(self.hunks.len());
+        let total_hunks = self.total_diff_hunks;
 
         // Single pass over hunks to count all status categories
         let mut approved_hunks = 0usize;
@@ -306,6 +303,7 @@ mod tests {
     #[test]
     fn test_review_state_to_summary_with_approved_hunks() {
         let mut state = ReviewState::new(test_comparison());
+        state.total_diff_hunks = 2;
 
         // Add an approved hunk
         state.hunks.insert(
@@ -337,6 +335,7 @@ mod tests {
     #[test]
     fn test_review_state_to_summary_with_trusted_labels() {
         let mut state = ReviewState::new(test_comparison());
+        state.total_diff_hunks = 2;
         state.trust_list = vec!["imports:*".to_string()];
 
         // Add a hunk with trusted label (should count as reviewed)
@@ -370,7 +369,7 @@ mod tests {
     fn test_review_state_to_summary_uses_total_diff_hunks() {
         let mut state = ReviewState::new(test_comparison());
         // Simulate 200 total hunks in the diff but only 2 classified
-        state.total_diff_hunks = Some(200);
+        state.total_diff_hunks = 200;
         state.trust_list = vec!["imports:*".to_string()];
 
         state.hunks.insert(
@@ -403,8 +402,9 @@ mod tests {
     }
 
     #[test]
-    fn test_review_state_to_summary_falls_back_without_total_diff_hunks() {
+    fn test_review_state_to_summary_without_total_diff_hunks_defaults_to_zero() {
         let mut state = ReviewState::new(test_comparison());
+        // total_diff_hunks defaults to 0 — progress shows empty until synced
 
         state.hunks.insert(
             "file.rs:abc123".to_string(),
@@ -417,10 +417,11 @@ mod tests {
         );
 
         let summary = state.to_summary();
-        assert_eq!(summary.total_hunks, 1);
+        assert_eq!(summary.total_hunks, 0);
         assert_eq!(summary.approved_hunks, 1);
         assert_eq!(summary.reviewed_hunks, 1);
-        assert_eq!(summary.state, Some("approved".to_string()));
+        // reviewed > total: not "approved" state (incomplete data)
+        assert!(summary.state.is_none());
     }
 
     #[test]

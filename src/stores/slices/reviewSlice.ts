@@ -155,6 +155,7 @@ interface HunkStatusGetter {
 /**
  * Shared helper to update hunk statuses (approve/unapprove/reject/unreject).
  * Applies status changes and triggers a debounced save.
+ * Sidebar progress is derived live from store state in TabRailList.
  */
 function updateHunkStatuses(
   get: () => HunkStatusGetter,
@@ -187,13 +188,13 @@ function updateHunkStatuses(
     }
   }
 
-  set({
-    reviewState: {
-      ...reviewState,
-      hunks: newHunks,
-      updatedAt: new Date().toISOString(),
-    },
-  });
+  const newState = {
+    ...reviewState,
+    hunks: newHunks,
+    updatedAt: new Date().toISOString(),
+  };
+  set({ reviewState: newState });
+
   debouncedSave(saveReviewState);
 
   // Sound feedback
@@ -233,7 +234,7 @@ function pushHunkUndo(
 
 /** Collect hunk IDs for all files under the given directory path. */
 function getDirHunkIds(
-  get: () => HunkStatusGetter & { hunks: { id: string; filePath: string }[] },
+  get: () => { hunks: { id: string; filePath: string }[] },
   dirPath: string,
 ): string[] {
   const prefix = dirPath + "/";
@@ -282,6 +283,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             version: 0,
+            totalDiffHunks: 0,
           },
         });
       }
@@ -659,6 +661,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         createdAt: now,
         updatedAt: now,
         version: 0,
+        totalDiffHunks: 0,
       };
 
       set({
