@@ -7,8 +7,8 @@ import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
 import { ExcalidrawDiagram } from "./ExcalidrawDiagram";
+import { SummaryFileTree } from "./SummaryFileTree";
 import { SummaryStats } from "./SummaryStats";
-import { OverviewSection } from "./OverviewSection";
 import { QuickWinsSection } from "./QuickWinsSection";
 import {
   FocusedReviewSection,
@@ -72,40 +72,6 @@ const markdownComponents = {
   a: ExternalLink,
 };
 
-function NextStepCta({
-  message,
-  targetTab,
-}: {
-  message: string;
-  targetTab: string;
-}) {
-  const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
-  return (
-    <button
-      type="button"
-      onClick={() => setActiveTab(targetTab)}
-      className="group flex items-center gap-2 w-full rounded-lg border border-stone-700/50 px-4 py-3 mt-4 text-left hover:border-stone-600 hover:bg-stone-800/30 transition-colors"
-    >
-      <span className="text-xs text-stone-400 group-hover:text-stone-300 transition-colors">
-        {message}
-      </span>
-      <svg
-        className="w-3.5 h-3.5 text-stone-600 group-hover:text-stone-400 transition-colors ml-auto shrink-0"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M13 7l5 5m0 0l-5 5m5-5H6"
-        />
-      </svg>
-    </button>
-  );
-}
-
 function SummarySection() {
   const guideSummary = useReviewStore((s) => s.guideSummary);
   const guideSummaryError = useReviewStore((s) => s.guideSummaryError);
@@ -122,75 +88,79 @@ function SummarySection() {
     claudeAvailable !== false;
 
   return (
-    <div className="space-y-4">
-      {summaryStatus === "loading" && !guideSummary && !guideSummaryError && (
-        <div className="rounded-lg border border-stone-800 p-4">
-          <div className="flex items-center gap-2 text-stone-500">
-            <Spinner />
-            <span className="text-xs">Generating summary…</span>
-          </div>
-        </div>
-      )}
-      {guideSummaryError && (
-        <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
-          <p className="text-xs text-rose-400">
-            Failed to generate summary: {guideSummaryError}
-          </p>
-          <button
-            onClick={() => generateSummary()}
-            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-      {showCta && (
-        <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
-          <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
-            <SparkleIcon className="h-4 w-4 text-purple-400" />
-            <div className="flex-1 min-w-0">
-              <span className="text-sm font-medium text-stone-300">
-                AI Summary
-              </span>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Generate a summary of the changes in this review
-              </p>
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(14rem,18rem)] gap-6">
+      <div className="space-y-4 min-w-0">
+        {summaryStatus === "loading" && !guideSummary && !guideSummaryError && (
+          <div className="rounded-lg border border-stone-800 p-4">
+            <div className="flex items-center gap-2 text-stone-500">
+              <Spinner />
+              <span className="text-xs">Generating summary…</span>
             </div>
+          </div>
+        )}
+        {guideSummaryError && (
+          <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
+            <p className="text-xs text-rose-400">
+              Failed to generate summary: {guideSummaryError}
+            </p>
             <button
               onClick={() => generateSummary()}
-              className="flex-shrink-0 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+              className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
             >
-              Generate
+              Retry
             </button>
           </div>
-        </div>
-      )}
-      {guideSummary && (
-        <div className="rounded-lg border border-stone-800 p-4">
-          <div className="guide-prose text-sm text-stone-300 leading-relaxed">
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              urlTransform={urlTransform}
-              components={markdownComponents}
-            >
-              {guideSummary}
-            </Markdown>
-          </div>
-          {stale && (
-            <div className="flex items-center justify-end mt-2">
+        )}
+        {showCta && (
+          <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
+            <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
+              <SparkleIcon className="h-4 w-4 text-purple-400" />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-stone-300">
+                  AI Summary
+                </span>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Generate a summary of the changes in this review
+                </p>
+              </div>
               <button
                 onClick={() => generateSummary()}
-                className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                className="flex-shrink-0 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
               >
-                Regenerate
+                Generate
               </button>
             </div>
-          )}
-        </div>
-      )}
-      <DiagramSection />
-      <OverviewSection />
-      <NextStepCta message="Start reviewing" targetTab="quick-wins" />
+          </div>
+        )}
+        {guideSummary && (
+          <div className="rounded-lg border border-stone-800 p-4">
+            <div className="guide-prose text-sm text-stone-300 leading-relaxed">
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                urlTransform={urlTransform}
+                components={markdownComponents}
+              >
+                {guideSummary}
+              </Markdown>
+            </div>
+            {stale && (
+              <div className="flex items-center justify-end mt-2">
+                <button
+                  onClick={() => generateSummary()}
+                  className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                >
+                  Regenerate
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        <DiagramSection />
+      </div>
+
+      <div className="lg:sticky lg:top-16 lg:self-start">
+        <SummaryFileTree />
+      </div>
     </div>
   );
 }
