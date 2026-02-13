@@ -2,6 +2,9 @@ import type { ApiClient } from "../../api";
 import { isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 
+/** Singleton empty set -- preserves reference equality to avoid spurious re-renders. */
+export const EMPTY_CLASSIFYING_SET = new Set<string>();
+
 export interface ClassificationSlice {
   // Classification state
   claudeAvailable: boolean | null;
@@ -25,7 +28,7 @@ export interface ClassificationSlice {
 export const classificationResetState = {
   classifying: false,
   classificationError: null,
-  classifyingHunkIds: new Set(),
+  classifyingHunkIds: EMPTY_CLASSIFYING_SET,
   classifiedHunkIds: null,
 } satisfies Partial<ClassificationSlice>;
 
@@ -53,7 +56,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     // Find unlabeled hunks
     const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
-    let candidateHunks = hunkIdSet
+    const candidateHunks = hunkIdSet
       ? hunks.filter((h) => hunkIdSet.has(h.id))
       : hunks;
 
@@ -129,7 +132,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     // Find hunks to classify - filter to specified ids if provided, then filter out already-labeled
     const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
-    let candidateHunks = hunkIdSet
+    const candidateHunks = hunkIdSet
       ? hunks.filter((h) => hunkIdSet.has(h.id))
       : hunks;
 

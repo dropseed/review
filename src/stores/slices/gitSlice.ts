@@ -2,6 +2,9 @@ import type { ApiClient } from "../../api";
 import type { GitStatusSummary, RemoteInfo } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 
+/** Singleton empty set -- preserves reference equality to avoid spurious re-renders. */
+export const EMPTY_STAGED_SET = new Set<string>();
+
 export interface GitSlice {
   // Git state
   gitStatus: GitStatusSummary | null;
@@ -16,7 +19,7 @@ export interface GitSlice {
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
   (client: ApiClient) => (set, get) => ({
     gitStatus: null,
-    stagedFilePaths: new Set<string>(),
+    stagedFilePaths: EMPTY_STAGED_SET,
     remoteInfo: null,
 
     loadGitStatus: async () => {
@@ -29,7 +32,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
         set({ gitStatus: status, stagedFilePaths: staged });
       } catch (err) {
         console.error("Failed to load git status:", err);
-        set({ gitStatus: null, stagedFilePaths: new Set<string>() });
+        set({ gitStatus: null, stagedFilePaths: EMPTY_STAGED_SET });
       }
     },
 

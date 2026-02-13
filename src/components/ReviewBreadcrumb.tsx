@@ -5,6 +5,7 @@ import { SimpleTooltip } from "./ui/tooltip";
 interface ReviewBreadcrumbProps {
   repoName: string;
   comparison: Comparison;
+  title?: string | null;
 }
 
 function SidebarToggle() {
@@ -50,8 +51,10 @@ function getOverviewLabel(comparison: Comparison): string {
 export function ReviewBreadcrumb({
   repoName,
   comparison,
+  title,
 }: ReviewBreadcrumbProps) {
   const isPr = !!comparison.githubPr;
+  const displayTitle = comparison.githubPr?.title || title;
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
@@ -64,10 +67,19 @@ export function ReviewBreadcrumb({
       <span className="shrink-0 text-stone-600 text-xs">/</span>
 
       <span
-        className={`truncate text-xs text-stone-500 ${isPr ? "" : "font-mono"}`}
+        className={`shrink-0 text-xs text-stone-500 ${isPr ? "" : "font-mono truncate"}`}
       >
         {getOverviewLabel(comparison)}
       </span>
+
+      {displayTitle && (
+        <>
+          <span className="shrink-0 text-stone-700 text-xs">&mdash;</span>
+          <span className="truncate text-xs text-stone-500">
+            {displayTitle}
+          </span>
+        </>
+      )}
     </div>
   );
 }

@@ -67,16 +67,16 @@ export function useKeyboardNavigation() {
 
       switch (event.key) {
         case "j":
-          // In overview, switch to browse first
-          if (state.topLevelView === "guide") {
+          // In guide content, switch to browse first
+          if (state.guideContentMode !== null) {
             state.navigateToBrowse();
           }
           // Navigate to next hunk (handles file switching automatically)
           state.nextHunk();
           break;
         case "k":
-          // In overview, switch to browse first
-          if (state.topLevelView === "guide") {
+          // In guide content, switch to browse first
+          if (state.guideContentMode !== null) {
             state.navigateToBrowse();
           }
           // Navigate to previous hunk (handles file switching automatically)

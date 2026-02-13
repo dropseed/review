@@ -82,12 +82,13 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     clearScrollToLine: () => set({ scrollToLine: null }),
 
     navigateToSearchResult: (index) => {
-      const { searchResults, navigateToBrowse, topLevelView, hunks } = get();
+      const { searchResults, navigateToBrowse, guideContentMode, hunks } =
+        get();
       const result = searchResults[index];
       if (!result) return;
 
-      // Auto-switch to browse if in overview, otherwise select the file
-      if (topLevelView === "guide") {
+      // Auto-switch to browse if in guide content, otherwise select the file
+      if (guideContentMode !== null) {
         navigateToBrowse(result.filePath);
       } else {
         get().setSelectedFile(result.filePath);

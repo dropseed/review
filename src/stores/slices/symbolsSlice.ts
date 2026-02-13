@@ -7,6 +7,9 @@ import {
   type SymbolLinkedHunk,
 } from "../../utils/symbolLinkedHunks";
 
+/** Singleton empty map -- preserves reference equality to avoid spurious re-renders. */
+const EMPTY_SYMBOL_MAP = new Map<string, SymbolLinkedHunk[]>();
+
 export interface SymbolsSlice {
   symbolDiffs: FileSymbolDiff[];
   symbolsLoading: boolean;
@@ -23,7 +26,7 @@ export const symbolsResetState = {
   symbolDiffs: [],
   symbolsLoading: false,
   symbolsLoaded: false,
-  symbolLinkedHunks: new Map(),
+  symbolLinkedHunks: EMPTY_SYMBOL_MAP,
 } satisfies Partial<SymbolsSlice>;
 
 export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
@@ -53,7 +56,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         if (changedPaths.length === 0) {
           set({
             symbolDiffs: [],
-            symbolLinkedHunks: new Map(),
+            symbolLinkedHunks: EMPTY_SYMBOL_MAP,
             symbolsLoading: false,
             symbolsLoaded: true,
           });
@@ -82,7 +85,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         console.error("Failed to load symbols:", err);
         set({
           symbolDiffs: [],
-          symbolLinkedHunks: new Map(),
+          symbolLinkedHunks: EMPTY_SYMBOL_MAP,
           symbolsLoading: false,
           symbolsLoaded: true,
         });
@@ -94,7 +97,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
     clearSymbols: () => {
       set({
         symbolDiffs: [],
-        symbolLinkedHunks: new Map(),
+        symbolLinkedHunks: EMPTY_SYMBOL_MAP,
         symbolsLoaded: false,
       });
     },

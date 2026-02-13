@@ -6,6 +6,7 @@ import { makeComparison } from "../../types";
 import { groupingResetState } from "./groupingSlice";
 import { symbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
+import { EMPTY_STAGED_SET } from "./gitSlice";
 
 // Default comparison: main..HEAD with working tree changes
 const defaultComparison: Comparison = makeComparison("main", "HEAD", true);
@@ -127,7 +128,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
-        topLevelView: "browse",
+        guideContentMode: null,
         secondaryFile: null,
         focusedPane: "primary",
         groupingSidebarOpen: false,
@@ -137,25 +138,22 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         searchLoading: false,
         searchError: null,
         scrollToLine: null,
-        // Classification
-        classifying: false,
-        classificationError: null,
-        classifyingHunkIds: new Set<string>(),
-        classifyGeneration: get().classifyGeneration + 1,
         // Review
         reviewState: null,
         // Undo
         undoStack: [],
         // Git
         gitStatus: null,
-        stagedFilePaths: new Set<string>(),
+        stagedFilePaths: EMPTY_STAGED_SET,
         // History
         commits: [],
         commitsLoaded: false,
-        // Symbols
-        symbolDiffs: [],
-        symbolsLoading: false,
-        symbolsLoaded: false,
+        // Other slices -- spread their reset states
+        ...symbolsResetState,
+        ...groupingResetState,
+        ...classificationResetState,
+        // Override: increment generation to cancel in-flight classifications
+        classifyGeneration: get().classifyGeneration + 1,
       });
     },
 
@@ -175,7 +173,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
-        topLevelView: "browse",
+        guideContentMode: null,
         secondaryFile: null,
         focusedPane: "primary",
         groupingSidebarOpen: false,

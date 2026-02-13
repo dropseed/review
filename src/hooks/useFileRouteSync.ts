@@ -9,7 +9,7 @@ import { useReviewStore } from "../stores";
  *
  * - URL → Store: On mount or browser back/forward, reads the file path from
  *   the URL splat and calls navigateToBrowse.
- * - Store → URL: On selectedFile/topLevelView change, updates the URL via
+ * - Store → URL: On selectedFile/guideContentMode change, updates the URL via
  *   navigate(path, { replace: true }) to keep history clean during j/k nav.
  *
  * Uses isSyncingRef to prevent infinite loops between the two directions.
@@ -20,7 +20,7 @@ export function useFileRouteSync() {
   const params = useParams();
 
   const selectedFile = useReviewStore((s) => s.selectedFile);
-  const topLevelView = useReviewStore((s) => s.topLevelView);
+  const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const flatFileList = useReviewStore((s) => s.flatFileList);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
@@ -66,13 +66,13 @@ export function useFileRouteSync() {
   }, [urlFilePath, flatFileList, navigateToBrowse]);
 
   // --- Store → URL ---
-  // When selectedFile or topLevelView changes, update the URL.
+  // When selectedFile or guideContentMode changes, update the URL.
   // Skip URL updates in guide mode to avoid a race condition where the
   // URL change triggers the URL → Store sync which calls navigateToBrowse(),
   // immediately overriding the guide view.
   useEffect(() => {
     if (isSyncingRef.current) return;
-    if (topLevelView !== "browse") return;
+    if (guideContentMode !== null) return;
     if (!owner || !repo || !comparisonKey) return;
 
     const basePath = `/${owner}/${repo}/review/${comparisonKey}`;
@@ -87,7 +87,7 @@ export function useFileRouteSync() {
     }
   }, [
     selectedFile,
-    topLevelView,
+    guideContentMode,
     owner,
     repo,
     comparisonKey,

@@ -126,10 +126,10 @@ export interface SymbolNavigationState {
  * Handles both guide view (navigateToBrowse) and browse view (setSelectedFile).
  */
 function navigateToFileAndLine(filePath: string, lineNumber: number): void {
-  const { topLevelView, navigateToBrowse, setSelectedFile } =
+  const { guideContentMode, navigateToBrowse, setSelectedFile } =
     useReviewStore.getState();
 
-  if (topLevelView === "guide") {
+  if (guideContentMode !== null) {
     navigateToBrowse(filePath);
   } else {
     setSelectedFile(filePath);

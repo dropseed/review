@@ -24,6 +24,7 @@ import {
 } from "../../components/ui/dropdown-menu";
 import {
   isHunkTrusted,
+  isHunkReviewed,
   type CommitEntry,
   type FileSymbolDiff,
 } from "../../types";
@@ -34,6 +35,8 @@ import { FilenameModal } from "./FilenameModal";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection } from "./FileListSection";
+import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
+import { TrustSection } from "../GuideView/TrustSection";
 
 interface QuickActionItem {
   label: string;
@@ -93,7 +96,11 @@ function SectionHeader({
     </svg>
   );
 
-  const hasMenuItems = displayMode && onSetDisplayMode;
+  const hasMenuItems =
+    (displayMode && onSetDisplayMode) ||
+    (quickActions && quickActions.length > 0) ||
+    onApproveAll ||
+    onUnapproveAll;
 
   return (
     <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
@@ -121,7 +128,7 @@ function SectionHeader({
               )}
             </button>
           </CollapsibleTrigger>
-          {isOpen && hasMenuItems && (
+          {hasMenuItems && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center justify-center w-6 h-6 mr-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
@@ -138,32 +145,36 @@ function SectionHeader({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {/* Display mode */}
-                <DropdownMenuItem onClick={() => onSetDisplayMode!("tree")}>
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 16 16"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
-                  </svg>
-                  Tree view
-                  {displayMode === "tree" && checkIcon}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onSetDisplayMode!("flat")}>
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 16 16"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
-                  </svg>
-                  Flat view
-                  {displayMode === "flat" && checkIcon}
-                </DropdownMenuItem>
+                {displayMode && onSetDisplayMode && (
+                  <>
+                    <DropdownMenuItem onClick={() => onSetDisplayMode("tree")}>
+                      <svg
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 16 16"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
+                      </svg>
+                      Tree view
+                      {displayMode === "tree" && checkIcon}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onSetDisplayMode("flat")}>
+                      <svg
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 16 16"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
+                      </svg>
+                      Flat view
+                      {displayMode === "flat" && checkIcon}
+                    </DropdownMenuItem>
+                  </>
+                )}
 
                 {/* Expand/collapse (tree mode only) */}
                 {displayMode === "tree" && onExpandAll && onCollapseAll && (
@@ -274,6 +285,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   );
 
   // Section collapse state
+  const [trustOpen, setTrustOpen] = useState(true);
   const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
   const [savedForLaterOpen, setSavedForLaterOpen] = useState(true);
   const [reviewedOpen, setReviewedOpen] = useState(true);
@@ -528,6 +540,133 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return actions;
   }, [quickActionData, unapproveHunkIds, basenameCount]);
 
+  // Guide state
+  const reviewGroups = useReviewStore((s) => s.reviewGroups);
+  const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
+  const setActiveGroupIndex = useReviewStore((s) => s.setActiveGroupIndex);
+  const guideContentMode = useReviewStore((s) => s.guideContentMode);
+  const setGuideContentMode = useReviewStore((s) => s.setGuideContentMode);
+  const groupingLoading = useReviewStore((s) => s.groupingLoading);
+  const groupingError = useReviewStore((s) => s.groupingError);
+  const generateGrouping = useReviewStore((s) => s.generateGrouping);
+  const isGroupingStale = useReviewStore((s) => s.isGroupingStale);
+  const startGuide = useReviewStore((s) => s.startGuide);
+  const guideLoading = useReviewStore((s) => s.guideLoading);
+  const guideSummary = useReviewStore((s) => s.guideSummary);
+  const summaryStatus = useReviewStore((s) => s.summaryStatus);
+  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
+  const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
+  const [groupsOpen, setGroupsOpen] = useState(true);
+
+  // Trust section
+  const knownPatternIds = useKnownPatternIds();
+  const { trustedHunkCount, trustableHunkCount } =
+    useTrustCounts(knownPatternIds);
+  const classifying = useReviewStore((s) => s.classifying);
+  const classifyUnlabeledHunks = useReviewStore(
+    (s) => s.classifyUnlabeledHunks,
+  );
+  const reclassifyHunks = useReviewStore((s) => s.reclassifyHunks);
+  const isClassificationStale = useReviewStore((s) => s.isClassificationStale);
+
+  const unlabeledCount = useMemo(
+    () =>
+      hunks.filter((h) => {
+        const state = reviewState?.hunks[h.id];
+        return !state?.label || state.label.length === 0;
+      }).length,
+    [hunks, reviewState?.hunks],
+  );
+
+  const trustQuickActions = useMemo(() => {
+    const actions: QuickActionItem[] = [];
+    const stale = isClassificationStale();
+    if (classifying) {
+      // No actions while classifying
+    } else if (stale) {
+      actions.push({
+        label: "Reclassify (stale)",
+        count: hunks.length,
+        onAction: () => classifyUnlabeledHunks(),
+      });
+    } else if (unlabeledCount > 0) {
+      actions.push({
+        label: "Classify unclassified",
+        count: unlabeledCount,
+        onAction: () => classifyUnlabeledHunks(),
+      });
+    } else if (hunks.length > 0) {
+      actions.push({
+        label: "Reclassify all",
+        count: hunks.length,
+        onAction: () => reclassifyHunks(),
+      });
+    }
+    return actions;
+  }, [
+    classifying,
+    isClassificationStale,
+    unlabeledCount,
+    hunks.length,
+    classifyUnlabeledHunks,
+    reclassifyHunks,
+  ]);
+
+  // Group unreviewed counts
+  const trustList = reviewState?.trustList ?? [];
+  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+  const hunkStates = reviewState?.hunks;
+
+  const groupUnreviewedCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const group of reviewGroups) {
+      let count = 0;
+      for (const id of group.hunkIds) {
+        const hunk = hunks.find((h) => h.id === id);
+        if (
+          hunk &&
+          !isHunkReviewed(hunkStates?.[id], trustList, {
+            autoApproveStaged,
+            stagedFilePaths,
+            filePath: hunk.filePath,
+          })
+        ) {
+          count++;
+        }
+      }
+      counts.set(group.title, count);
+    }
+    return counts;
+  }, [
+    reviewGroups,
+    hunks,
+    hunkStates,
+    trustList,
+    autoApproveStaged,
+    stagedFilePaths,
+  ]);
+
+  const totalGroupUnreviewed = useMemo(() => {
+    let count = 0;
+    for (const c of groupUnreviewedCounts.values()) count += c;
+    return count;
+  }, [groupUnreviewedCounts]);
+
+  const handleGroupClick = useCallback(
+    (index: number) => {
+      setActiveGroupIndex(index);
+      setGuideContentMode("group");
+    },
+    [setActiveGroupIndex, setGuideContentMode],
+  );
+
+  // Staleness
+  const guide = reviewState?.guide;
+  const hasGrouping = guide != null && guide.groups.length > 0;
+  const stale = hasGrouping && isGroupingStale();
+  const hasGroups = reviewGroups.length > 0;
+  const hasPrBody = !!githubPr?.body;
+
   // Search state
   const searchActive = useReviewStore((s) => s.searchActive);
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
@@ -704,6 +843,301 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     </div>
                   ) : (
                     <>
+                      {/* Start Guided Review CTA (when no groups yet) */}
+                      {!hasGroups && !groupingLoading && hunks.length > 0 && (
+                        <div className="border-b border-stone-800/50 px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={startGuide}
+                            disabled={guideLoading}
+                            className="flex items-center gap-1.5 w-full rounded-md bg-violet-500/15 px-2.5 py-1.5 text-xs font-medium text-violet-300 border border-violet-500/20 hover:bg-violet-500/25 transition-colors disabled:opacity-50"
+                          >
+                            {guideLoading ? (
+                              <svg
+                                className="h-3.5 w-3.5 animate-spin"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="h-3.5 w-3.5"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                              >
+                                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                              </svg>
+                            )}
+                            {guideLoading ? "Starting…" : "Start Guided Review"}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Overview nav item (when guide has content) */}
+                      {(hasGroups || guideSummary || hasPrBody) && (
+                        <button
+                          type="button"
+                          onClick={() => setGuideContentMode("overview")}
+                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium transition-colors border-b border-stone-800/50 ${
+                            guideContentMode === "overview"
+                              ? "bg-amber-500/10 text-amber-400"
+                              : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/50"
+                          }`}
+                        >
+                          {summaryStatus === "loading" && (
+                            <svg
+                              className="h-3 w-3 animate-spin"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              />
+                            </svg>
+                          )}
+                          <span className="truncate">Overview</span>
+                          {summaryStatus !== "loading" &&
+                            guideSummary &&
+                            !hasPrBody && (
+                              <span className="text-purple-400 ml-auto shrink-0">
+                                <svg
+                                  className="h-3 w-3"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                                </svg>
+                              </span>
+                            )}
+                        </button>
+                      )}
+
+                      {/* Trust section */}
+                      {trustableHunkCount > 0 && (
+                        <SectionHeader
+                          title={`Trust${classifying ? "ing…" : ""}`}
+                          icon={
+                            classifying ? (
+                              <svg
+                                className="h-3.5 w-3.5 text-cyan-500 animate-spin"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="h-3.5 w-3.5 text-cyan-500"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                              </svg>
+                            )
+                          }
+                          badge={
+                            trustedHunkCount > 0 ? trustedHunkCount : undefined
+                          }
+                          badgeColor="cyan"
+                          isOpen={trustOpen}
+                          onToggle={() => setTrustOpen(!trustOpen)}
+                          showTopBorder={false}
+                          quickActions={trustQuickActions}
+                        >
+                          <TrustSection />
+                        </SectionHeader>
+                      )}
+
+                      {/* Groups section */}
+                      {(hasGroups || groupingLoading || groupingError) && (
+                        <SectionHeader
+                          title="Groups"
+                          icon={
+                            groupingLoading ? (
+                              <svg
+                                className="h-3.5 w-3.5 text-violet-400 animate-spin"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="h-3.5 w-3.5 text-violet-400"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                              >
+                                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                              </svg>
+                            )
+                          }
+                          badge={
+                            hasGroups && totalGroupUnreviewed > 0
+                              ? totalGroupUnreviewed
+                              : undefined
+                          }
+                          badgeColor="amber"
+                          isOpen={groupsOpen}
+                          onToggle={() => setGroupsOpen(!groupsOpen)}
+                          showTopBorder={false}
+                        >
+                          {/* Group error */}
+                          {groupingError && (
+                            <div className="px-3 py-1.5">
+                              <div className="rounded bg-rose-500/10 px-2 py-1.5 inset-ring-1 inset-ring-rose-500/20">
+                                <p className="text-xxs text-rose-400 mb-1">
+                                  Failed: {groupingError}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => generateGrouping()}
+                                  className="text-xxs text-stone-400 hover:text-stone-300 transition-colors"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Loading state */}
+                          {groupingLoading && !hasGroups && (
+                            <div className="px-3 py-3 text-center">
+                              <span className="text-xxs text-stone-500">
+                                Generating groups…
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Stale indicator */}
+                          {stale && !groupingLoading && (
+                            <div className="px-3 py-1">
+                              <button
+                                onClick={() => generateGrouping()}
+                                className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                              >
+                                Stale — regenerate
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Group items */}
+                          <div className="py-0.5">
+                            {reviewGroups.map((group, i) => {
+                              const unreviewedCount =
+                                groupUnreviewedCounts.get(group.title) ?? 0;
+                              const isCompleted = unreviewedCount === 0;
+                              const isActive =
+                                guideContentMode === "group" &&
+                                activeGroupIndex === i;
+                              return (
+                                <button
+                                  key={group.title}
+                                  type="button"
+                                  onClick={() => handleGroupClick(i)}
+                                  className={`flex items-center gap-1.5 w-full px-3 py-1.5 text-xs transition-colors ${
+                                    isActive
+                                      ? "bg-amber-500/10 text-amber-300"
+                                      : isCompleted
+                                        ? "text-stone-600 hover:text-stone-400 hover:bg-stone-800/30"
+                                        : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/30"
+                                  }`}
+                                >
+                                  {isCompleted ? (
+                                    <span className="text-emerald-500 shrink-0">
+                                      <svg
+                                        className="w-3 h-3"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth={3}
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          d="M5 13l4 4L19 7"
+                                        />
+                                      </svg>
+                                    </span>
+                                  ) : (
+                                    <span className="w-4 text-center text-xxs text-stone-600 shrink-0 tabular-nums">
+                                      {i + 1}
+                                    </span>
+                                  )}
+                                  <span className="truncate flex-1 text-left">
+                                    {group.title}
+                                  </span>
+                                  {!isCompleted && unreviewedCount > 0 && (
+                                    <span className="text-xxs text-amber-400/70 tabular-nums shrink-0">
+                                      {unreviewedCount}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* All groups done */}
+                          {hasGroups && totalGroupUnreviewed === 0 && (
+                            <div className="px-3 py-1.5">
+                              <span className="text-xxs text-emerald-400 font-medium">
+                                All groups reviewed
+                              </span>
+                            </div>
+                          )}
+                        </SectionHeader>
+                      )}
+
                       {/* Needs Review section */}
                       <SectionHeader
                         title="Needs Review"

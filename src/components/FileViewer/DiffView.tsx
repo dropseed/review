@@ -150,6 +150,8 @@ interface DiffViewProps {
   focusedHunkId?: string | null;
   /** Language override for syntax highlighting */
   language?: SupportedLanguages;
+  /** Whether to expand all unchanged sections (default: true for full file view) */
+  expandUnchanged?: boolean;
 }
 
 export function DiffView({
@@ -164,6 +166,7 @@ export function DiffView({
   newContent,
   focusedHunkId,
   language,
+  expandUnchanged: expandUnchangedProp = true,
 }: DiffViewProps) {
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -290,34 +293,29 @@ export function DiffView({
     });
   }, [hunks, hunkStates, hunkById]);
 
-  // Content key for grouping identical changes across files for batch operations.
-  const getChangedLinesKey = useCallback((hunk: DiffHunk): string => {
-    return getChangedLinesKeyUtil(hunk);
-  }, []);
-
   // Build lookup from changed-lines key to hunk IDs for batch operations.
   // Groups identical changes across different files for "approve all identical" feature.
   const changedLinesKeyToHunkIds = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const h of allHunks) {
-      const key = getChangedLinesKey(h);
+      const key = getChangedLinesKeyUtil(h);
       if (!key) continue;
       const ids = map.get(key) ?? [];
       ids.push(h.id);
       map.set(key, ids);
     }
     return map;
-  }, [allHunks, getChangedLinesKey]);
+  }, [allHunks]);
 
   // Get similar hunks for a given hunk (same changed lines, different context/files)
   const getSimilarHunks = useCallback(
     (hunk: DiffHunk): DiffHunk[] => {
-      const key = getChangedLinesKey(hunk);
+      const key = getChangedLinesKeyUtil(hunk);
       if (!key) return [hunk];
       const ids = changedLinesKeyToHunkIds.get(key) ?? [hunk.id];
       return ids.map((id) => hunkById.get(id)).filter(Boolean) as DiffHunk[];
     },
-    [getChangedLinesKey, changedLinesKeyToHunkIds, hunkById],
+    [changedLinesKeyToHunkIds, hunkById],
   );
 
   // Build annotations for user comments
@@ -738,16 +736,16 @@ export function DiffView({
         dark: theme,
         light: theme,
       },
-      themeType: "dark" as const,
+      themeType: "dark",
       diffIndicators: prefDiffIndicators,
       disableBackground: false,
       enableHoverUtility: true,
       enableLineSelection: true,
       onLineSelectionEnd: handleLineSelectionEnd,
       unsafeCSS: fontSizeCSS + annotationHighlightCSS,
-      expandUnchanged: true,
+      expandUnchanged: expandUnchangedProp,
       expansionLineCount: 20,
-      hunkSeparators: "line-info" as const,
+      hunkSeparators: "line-info",
       // Performance optimizations
       tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
       maxLineDiffLength: 500, // Skip word-level diff for long lines
@@ -770,6 +768,7 @@ export function DiffView({
     annotationHighlightCSS,
     lineDiffType,
     handleLineSelectionEnd,
+    expandUnchangedProp,
   ]);
 
   // Stable renderHoverUtility using ref pattern to avoid re-renders

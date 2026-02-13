@@ -37,7 +37,7 @@ export function useFilePanelNavigation({
     clearFileToReveal,
     directoryToReveal,
     clearDirectoryToReveal,
-    topLevelView,
+    guideContentMode,
     navigateToBrowse,
   } = useReviewStore();
 
@@ -66,6 +66,19 @@ export function useFilePanelNavigation({
       setFilesPanelTab("changes");
     }
   }, [hunks.length, viewMode]);
+
+  // Auto-switch to Changes tab when guide mode is activated
+  const changesViewMode = useReviewStore((s) => s.changesViewMode);
+  const prevChangesViewMode = useRef(changesViewMode);
+
+  useEffect(() => {
+    const wasGuide = prevChangesViewMode.current === "guide";
+    prevChangesViewMode.current = changesViewMode;
+
+    if (changesViewMode === "guide" && !wasGuide) {
+      setFilesPanelTab("changes");
+    }
+  }, [changesViewMode]);
 
   // Auto-switch to/from search tab only on searchActive transitions
   const searchActive = useReviewStore((s) => s.searchActive);
@@ -167,14 +180,14 @@ export function useFilePanelNavigation({
 
   const handleSelectFile = useCallback(
     (path: string) => {
-      if (topLevelView === "guide") {
-        // Auto-switch from overview to browse when clicking a file in sidebar
+      if (guideContentMode !== null) {
+        // Auto-switch from guide content to file view when clicking a file in sidebar
         navigateToBrowse(path);
       } else {
         setSelectedFile(path);
       }
     },
-    [setSelectedFile, topLevelView, navigateToBrowse],
+    [setSelectedFile, guideContentMode, navigateToBrowse],
   );
 
   const expandAll = useCallback((allDirPaths: Set<string>) => {

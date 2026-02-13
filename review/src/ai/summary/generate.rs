@@ -120,9 +120,9 @@ pub fn generate_diagram(
         return Ok(None);
     }
 
-    // Validate that the output is valid JSON with an "elements" array.
+    // Validate that the output is valid JSON with a "nodes" array.
     match serde_json::from_str::<serde_json::Value>(trimmed) {
-        Ok(val) if val.get("elements").and_then(|e| e.as_array()).is_some() => {
+        Ok(val) if val.get("nodes").and_then(|n| n.as_array()).is_some() => {
             Ok(Some(trimmed.to_owned()))
         }
         _ => Ok(None),

@@ -17,6 +17,7 @@ import {
   playBulkSound,
 } from "../../utils/sounds";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
+import { groupingResetState } from "./groupingSlice";
 
 // ========================================================================
 // Review Slice
@@ -676,7 +677,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         reviewState: newState,
         reviewGroups: [],
         guideSummary: null,
-        identicalHunkIds: new Map(),
+        identicalHunkIds: groupingResetState.identicalHunkIds,
       });
       await saveReviewState();
       await refresh();

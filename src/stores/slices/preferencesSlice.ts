@@ -38,6 +38,8 @@ const defaults = {
   inactiveReviewSortOrder: "updated" as ReviewSortOrder,
   companionServerEnabled: false,
   companionServerToken: null as string | null,
+  guideSideNavCollapsed: false,
+  guideSideNavWidth: 240,
 };
 
 export interface PreferencesSlice {
@@ -86,6 +88,10 @@ export interface PreferencesSlice {
   companionServerEnabled: boolean;
   companionServerToken: string | null;
 
+  // Guide side nav
+  guideSideNavCollapsed: boolean;
+  guideSideNavWidth: number;
+
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
@@ -131,6 +137,11 @@ export interface PreferencesSlice {
   setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
   setCompanionServerToken: (token: string | null) => void;
   generateCompanionServerToken: () => Promise<string>;
+
+  // Guide side nav actions
+  setGuideSideNavCollapsed: (collapsed: boolean) => void;
+  toggleGuideSideNav: () => void;
+  setGuideSideNavWidth: (width: number) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -157,6 +168,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   inactiveReviewSortOrder: defaults.inactiveReviewSortOrder,
   companionServerEnabled: defaults.companionServerEnabled,
   companionServerToken: defaults.companionServerToken,
+  guideSideNavCollapsed: defaults.guideSideNavCollapsed,
+  guideSideNavWidth: defaults.guideSideNavWidth,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
@@ -221,6 +234,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       rawReviewedDisplayMode,
       rawChangesDisplayMode,
       rawDiffViewMode,
+      rawGuideSideNavCollapsed,
+      rawGuideSideNavWidth,
     ] = await Promise.all([
       storage.get<number>("codeFontSize"),
       storage.get<string>("codeTheme"),
@@ -242,6 +257,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.get<ChangesDisplayMode>("reviewedDisplayMode"),
       storage.get<ChangesDisplayMode>("changesDisplayMode"),
       storage.get<string>("diffViewMode"),
+      storage.get<boolean>("guideSideNavCollapsed"),
+      storage.get<number>("guideSideNavWidth"),
     ]);
 
     const fontSize = rawFontSize ?? defaults.codeFontSize;
@@ -278,6 +295,10 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       (rawDiffViewMode as DiffViewMode) ?? defaults.diffViewMode;
     // Migrate legacy "file" mode to "new"
     if ((diffViewMode as string) === "file") diffViewMode = "new";
+    const guideSideNavCollapsed =
+      rawGuideSideNavCollapsed ?? defaults.guideSideNavCollapsed;
+    const guideSideNavWidth =
+      rawGuideSideNavWidth ?? defaults.guideSideNavWidth;
 
     set({
       codeFontSize: fontSize,
@@ -299,6 +320,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       inactiveReviewSortOrder,
       companionServerEnabled,
       companionServerToken,
+      guideSideNavCollapsed,
+      guideSideNavWidth,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
@@ -446,5 +469,21 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     set({ companionServerToken: token });
     storage.set("companionServerToken", token);
     return token;
+  },
+
+  setGuideSideNavCollapsed: (collapsed) => {
+    set({ guideSideNavCollapsed: collapsed });
+    storage.set("guideSideNavCollapsed", collapsed);
+  },
+
+  toggleGuideSideNav: () => {
+    const collapsed = !get().guideSideNavCollapsed;
+    set({ guideSideNavCollapsed: collapsed });
+    storage.set("guideSideNavCollapsed", collapsed);
+  },
+
+  setGuideSideNavWidth: (width) => {
+    set({ guideSideNavWidth: width });
+    storage.set("guideSideNavWidth", width);
   },
 });

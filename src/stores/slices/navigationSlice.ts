@@ -19,7 +19,8 @@ import type { ReviewStore, SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
-export type TopLevelView = "guide" | "browse";
+export type GuideContentMode = "overview" | "group" | null;
+export type ChangesViewMode = "files" | "guide";
 
 export interface NavigationSlice {
   // Navigation state
@@ -27,8 +28,13 @@ export interface NavigationSlice {
   focusedHunkIndex: number;
   scrollDrivenNavigation: boolean;
 
-  // View hierarchy: guide vs browse
-  topLevelView: TopLevelView;
+  // Guide content mode: what ContentArea shows when guide content is active
+  guideContentMode: GuideContentMode;
+  setGuideContentMode: (mode: GuideContentMode) => void;
+
+  // Sub-mode within the Changes tab
+  changesViewMode: ChangesViewMode;
+  setChangesViewMode: (mode: ChangesViewMode) => void;
 
   // Split view state
   secondaryFile: string | null;
@@ -42,10 +48,8 @@ export interface NavigationSlice {
   nextHunk: () => void;
   prevHunk: () => void;
 
-  // View hierarchy actions
-  setTopLevelView: (view: TopLevelView) => void;
+  // Navigation actions
   navigateToBrowse: (filePath?: string) => void;
-  navigateToGuide: () => void;
 
   // Split view actions
   setSecondaryFile: (path: string | null) => void;
@@ -86,10 +90,6 @@ export interface NavigationSlice {
   // Active group index in focused review section
   activeGroupIndex: number;
   setActiveGroupIndex: (index: number) => void;
-
-  // Guide tab persistence
-  guideActiveTab: string;
-  setGuideActiveTab: (tab: string) => void;
 }
 
 /**
@@ -148,8 +148,11 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   focusedHunkIndex: 0,
   scrollDrivenNavigation: false,
 
-  // View hierarchy
-  topLevelView: "browse",
+  // Guide content mode
+  guideContentMode: null,
+
+  // Changes view mode
+  changesViewMode: "files",
 
   // Split view state
   secondaryFile: null,
@@ -168,9 +171,17 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
     // If split is active and secondary pane is focused, update secondary instead
     if (secondaryFile !== null && focusedPane === "secondary") {
-      set({ secondaryFile: path, focusedHunkIndex: newFocusedHunkIndex });
+      set({
+        secondaryFile: path,
+        focusedHunkIndex: newFocusedHunkIndex,
+        guideContentMode: null,
+      });
     } else {
-      set({ selectedFile: path, focusedHunkIndex: newFocusedHunkIndex });
+      set({
+        selectedFile: path,
+        focusedHunkIndex: newFocusedHunkIndex,
+        guideContentMode: null,
+      });
     }
   },
 
@@ -232,12 +243,15 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     }
   },
 
-  // View hierarchy actions
-  setTopLevelView: (view) => set({ topLevelView: view }),
+  // Guide content mode
+  setGuideContentMode: (mode) => set({ guideContentMode: mode }),
+
+  // Changes view mode
+  setChangesViewMode: (mode) => set({ changesViewMode: mode }),
 
   navigateToBrowse: (filePath?) => {
     if (filePath === undefined) {
-      set({ topLevelView: "browse" });
+      set({ guideContentMode: null });
       return;
     }
 
@@ -245,13 +259,12 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     const targetHunkIndex = findFirstUnreviewedHunkIndex(filePath, state);
 
     set({
-      topLevelView: "browse",
+      guideContentMode: null,
       selectedFile: filePath,
+      filesPanelCollapsed: false,
       ...(targetHunkIndex >= 0 && { focusedHunkIndex: targetHunkIndex }),
     });
   },
-
-  navigateToGuide: () => set({ topLevelView: "guide" }),
 
   // Split view actions
   setSecondaryFile: (path) => set({ secondaryFile: path }),
@@ -349,8 +362,4 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Active group index
   activeGroupIndex: 0,
   setActiveGroupIndex: (index) => set({ activeGroupIndex: index }),
-
-  // Guide tab persistence
-  guideActiveTab: "overview",
-  setGuideActiveTab: (tab) => set({ guideActiveTab: tab }),
 });

@@ -15,6 +15,9 @@ import type {
 } from "../../types";
 import { getChangedLinesKey } from "../../utils/changed-lines-key";
 
+/** Singleton empty map -- preserves reference equality to avoid spurious re-renders. */
+const EMPTY_IDENTICAL_MAP = new Map<string, string[]>();
+
 export type GuideTaskStatus = "idle" | "loading" | "done" | "error";
 
 export interface GroupingSlice {
@@ -201,7 +204,7 @@ export const groupingResetState = {
   groupingLoading: false,
   groupingError: null,
   reviewGroups: [],
-  identicalHunkIds: new Map(),
+  identicalHunkIds: EMPTY_IDENTICAL_MAP,
   guideLoading: false,
   guideTitle: null,
   guideSummary: null,
@@ -236,6 +239,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     startGuide: async () => {
       const {
         hunks,
+        comparison,
         classifyUnlabeledHunks,
         generateGrouping,
         isGroupingStale,
@@ -246,19 +250,19 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       } = get();
       if (hunks.length === 0) return;
 
+      const comparisonKey = comparison.key;
+
       // Skip steps that already have fresh data
       const needsGrouping = reviewGroups.length === 0 || isGroupingStale();
       const needsSummary = guideSummary == null || isSummaryStale();
       const needsDiagram = guideDiagram == null || isSummaryStale();
 
-      // Collapse both sidebars to focus on the guide.
-      // Use set() directly instead of setTabRailCollapsed/setFilesPanelCollapsed
-      // so the collapse is in-memory only and doesn't persist to Tauri Store.
+      // Open the sidebar and switch to guide mode in the Changes tab
       set({
-        tabRailCollapsed: true,
-        filesPanelCollapsed: true,
+        filesPanelCollapsed: false,
+        changesViewMode: "guide",
+        guideContentMode: "overview",
         guideLoading: true,
-        topLevelView: "guide",
         classificationStatus: "loading",
         groupingStatus: needsGrouping ? "loading" : "done",
         summaryStatus: needsSummary ? "loading" : "done",
@@ -292,6 +296,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       await Promise.allSettled(tasks);
 
+      if (get().comparison.key !== comparisonKey) return;
       set({ guideLoading: false });
     },
 
@@ -299,6 +304,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const {
         repoPath,
         hunks,
+        comparison,
         reviewState,
         classifyCommand,
         saveReviewState,
@@ -310,6 +316,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
+
+      const comparisonKey = comparison.key;
 
       const needsDiagram = guideDiagram == null || isSummaryStaleCheck();
       const pr = reviewState.comparison.githubPr;
@@ -358,6 +366,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           const finalTitle = prTitle || title;
           const finalSummary = prBody || summary;
 
+          if (get().comparison.key !== comparisonKey) return;
           const currentState = get().reviewState;
           if (!currentState) return;
 
@@ -393,6 +402,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const {
         repoPath,
         hunks,
+        comparison,
         reviewState,
         classifyCommand,
         saveReviewState,
@@ -401,6 +411,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
+
+      const comparisonKey = comparison.key;
 
       set({ guideDiagramError: null, diagramStatus: "loading" });
       startActivity("generate-diagram", "Generating diagram", 55);
@@ -412,6 +424,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           { command: classifyCommand || undefined },
         );
 
+        if (get().comparison.key !== comparisonKey) return;
         const currentState = get().reviewState;
         if (!currentState) return;
 
@@ -505,6 +518,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const {
         repoPath,
         hunks,
+        comparison,
         reviewState,
         classifyCommand,
         saveReviewState,
@@ -515,6 +529,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
+
+      const comparisonKey = comparison.key;
 
       set({ groupingLoading: true, groupingError: null });
       startActivity("generate-grouping", "Generating groups", 55);
@@ -545,6 +561,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           modifiedSymbols:
             modifiedSymbols.length > 0 ? modifiedSymbols : undefined,
         });
+
+        if (get().comparison.key !== comparisonKey) return;
 
         const identicalHunkIds = buildIdenticalHunkIds(hunks);
 
@@ -586,7 +604,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       set({
         reviewState: updatedState,
         reviewGroups: [],
-        identicalHunkIds: new Map(),
+        identicalHunkIds: EMPTY_IDENTICAL_MAP,
         guideTitle: null,
         guideSummary: null,
         guideSummaryError: null,

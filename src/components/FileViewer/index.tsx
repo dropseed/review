@@ -142,6 +142,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
   const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">(
     "code",
   );
+
   // Language override for syntax highlighting
   const [languageOverride, setLanguageOverride] = useState<
     SupportedLanguages | undefined
@@ -419,15 +420,14 @@ export function FileViewer({ filePath }: FileViewerProps) {
     isImage ||
     (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
 
-  const contentMode: ContentMode = showImageViewer
-    ? { type: "image" }
-    : isSvg
-      ? { type: "svg", hasRendered: !!fileContent.imageDataUrl }
-      : isUntracked
-        ? { type: "untracked" }
-        : hasChanges
-          ? { type: "diff", viewMode }
-          : { type: "plain" };
+  const contentMode: ContentMode = (() => {
+    if (showImageViewer) return { type: "image" } as const;
+    if (isSvg)
+      return { type: "svg", hasRendered: !!fileContent.imageDataUrl } as const;
+    if (isUntracked) return { type: "untracked" } as const;
+    if (hasChanges) return { type: "diff", viewMode } as const;
+    return { type: "plain" } as const;
+  })();
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">

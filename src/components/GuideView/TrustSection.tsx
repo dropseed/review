@@ -1,14 +1,9 @@
 import { type ReactNode, useState, useMemo, useEffect, useRef } from "react";
 import { useReviewStore } from "../../stores";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
-import {
-  anyLabelMatchesPattern,
-  isHunkUnclassified,
-  type TrustCategory,
-} from "../../types";
+import { anyLabelMatchesPattern, type TrustCategory } from "../../types";
 import { getApiClient } from "../../api";
 import { Checkbox } from "../ui/checkbox";
-import { SimpleTooltip } from "../ui/tooltip";
 import { playApproveSound, playBulkSound } from "../../utils/sounds";
 import {
   HunkPreviewModal,
@@ -32,7 +27,6 @@ function buildPatternList(
   hunkStates: Record<string, { label?: string[] }> | undefined,
   trustList: string[],
 ): PatternInfo[] {
-  // Build a set of known pattern IDs for O(1) lookup
   const knownPatternIds = new Set<string>();
   for (const category of categories) {
     for (const pattern of category.patterns) {
@@ -40,7 +34,6 @@ function buildPatternList(
     }
   }
 
-  // Iterate hunks once, increment counts by label (O(hunks * labels_per_hunk))
   const counts = new Map<string, number>();
   for (const hunk of hunks) {
     const labels = hunkStates?.[hunk.id]?.label ?? [];
@@ -51,7 +44,6 @@ function buildPatternList(
     }
   }
 
-  // Convert trustList to Set for O(1) membership checks
   const trustSet = new Set(trustList);
 
   const result: PatternInfo[] = [];
@@ -72,55 +64,6 @@ function buildPatternList(
   return result;
 }
 
-function getCountBadgeClassName(
-  isExpanded: boolean,
-  isTrusted: boolean,
-  hasCount: boolean,
-): string {
-  const base =
-    "font-mono text-xs tabular-nums shrink-0 rounded px-1 py-px transition-colors";
-  if (isExpanded) {
-    return `${base} bg-stone-600 text-stone-200`;
-  }
-  if (!hasCount) {
-    return `${base} text-stone-700`;
-  }
-  if (isTrusted) {
-    return `${base} text-cyan-400 hover:bg-cyan-500/15 hover:text-cyan-300`;
-  }
-  return `${base} text-stone-500 hover:bg-stone-700 hover:text-stone-400`;
-}
-
-function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="3"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
-}
-
-interface PatternRowProps {
-  pattern: PatternInfo;
-  onToggle: (id: string, trusted: boolean) => void;
-  onExpandToggle: (id: string) => void;
-  isExpanded: boolean;
-  previewHunks: PreviewHunk[];
-  onSelectHunk: (filePath: string, hunkId: string) => void;
-  onShowAllModal: (patternId: string) => void;
-}
-
 function PatternRow({
   pattern,
   onToggle,
@@ -129,7 +72,15 @@ function PatternRow({
   previewHunks,
   onSelectHunk,
   onShowAllModal,
-}: PatternRowProps) {
+}: {
+  pattern: PatternInfo;
+  onToggle: (id: string, trusted: boolean) => void;
+  onExpandToggle: (id: string) => void;
+  isExpanded: boolean;
+  previewHunks: PreviewHunk[];
+  onSelectHunk: (filePath: string, hunkId: string) => void;
+  onShowAllModal: (patternId: string) => void;
+}): ReactNode {
   const muted = pattern.count === 0;
 
   return (
@@ -137,48 +88,46 @@ function PatternRow({
       <button
         type="button"
         onClick={() => onToggle(pattern.id, !pattern.trusted)}
-        className={`group flex items-center gap-3 w-full px-3 py-2 rounded-lg text-left transition-colors ${
-          muted ? "opacity-60 hover:opacity-80" : "hover:bg-stone-800/50"
+        className={`group flex items-center gap-2 w-full px-2 py-1 rounded text-left transition-colors ${
+          muted ? "opacity-50 hover:opacity-70" : "hover:bg-stone-800/50"
         }`}
       >
         <Checkbox
-          className="h-3.5 w-3.5 shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-stone-500"
+          className="h-3 w-3 shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-stone-500"
           checked={pattern.trusted}
           tabIndex={-1}
         />
-        <div className="flex-1 min-w-0">
-          <span
-            className={`text-xs font-medium ${pattern.trusted ? "text-cyan-300" : "text-stone-300"}`}
-          >
-            {pattern.name}
-          </span>
-          <p className="text-xxs text-stone-500 truncate">
-            {pattern.description}
-          </p>
-        </div>
-        {pattern.count > 0 && (
+        <span
+          className={`flex-1 min-w-0 truncate text-xs ${pattern.trusted ? "text-cyan-300" : "text-stone-300"}`}
+          title={pattern.description}
+        >
+          {pattern.name}
+        </span>
+        {pattern.count > 0 ? (
           <span
             onClick={(e) => {
               e.stopPropagation();
               onExpandToggle(pattern.id);
             }}
-            className={getCountBadgeClassName(
-              isExpanded,
-              pattern.trusted,
-              true,
-            )}
+            className={`font-mono text-xxs tabular-nums shrink-0 rounded px-1 py-px transition-colors ${
+              isExpanded
+                ? "bg-stone-600 text-stone-200"
+                : pattern.trusted
+                  ? "text-cyan-400/70 hover:bg-cyan-500/15 hover:text-cyan-300"
+                  : "text-stone-600 hover:bg-stone-700 hover:text-stone-400"
+            }`}
           >
             {pattern.count}
           </span>
-        )}
-        {pattern.count === 0 && (
-          <span className={getCountBadgeClassName(false, false, false)}>0</span>
+        ) : (
+          <span className="font-mono text-xxs tabular-nums shrink-0 text-stone-700 px-1">
+            0
+          </span>
         )}
       </button>
 
-      {/* Inline preview */}
       {isExpanded && previewHunks.length > 0 && (
-        <div className="ml-9 mr-3 mt-1 mb-2">
+        <div className="ml-7 mr-2 mt-0.5 mb-1">
           <InlineHunkPreviewList
             hunks={previewHunks}
             onSelectHunk={onSelectHunk}
@@ -196,14 +145,7 @@ export function TrustSection(): ReactNode {
   const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const classifying = useReviewStore((s) => s.classifying);
   const classificationError = useReviewStore((s) => s.classificationError);
-  const classifyUnlabeledHunks = useReviewStore(
-    (s) => s.classifyUnlabeledHunks,
-  );
-  const reclassifyHunks = useReviewStore((s) => s.reclassifyHunks);
-  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
-  const isClassificationStale = useReviewStore((s) => s.isClassificationStale);
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
   const [expandedPatternId, setExpandedPatternId] = useState<string | null>(
@@ -212,7 +154,6 @@ export function TrustSection(): ReactNode {
   const [modalPatternId, setModalPatternId] = useState<string | null>(null);
   const [showZeroMatch, setShowZeroMatch] = useState(false);
 
-  // Load taxonomy on mount
   useEffect(() => {
     getApiClient()
       .getTrustTaxonomy()
@@ -229,16 +170,8 @@ export function TrustSection(): ReactNode {
   );
 
   const knownPatternIds = useKnownPatternIds();
-  const { trustedHunkCount, trustableHunkCount } =
-    useTrustCounts(knownPatternIds);
+  const { trustedHunkCount } = useTrustCounts(knownPatternIds);
 
-  const unlabeledCount = useMemo(
-    () =>
-      hunks.filter((h) => isHunkUnclassified(reviewState?.hunks[h.id])).length,
-    [hunks, reviewState?.hunks],
-  );
-
-  // Split patterns into visible (has matches or trusted) and zero-match hidden
   const { visiblePatterns, zeroMatchPatterns } = useMemo(() => {
     const visible: PatternInfo[] = [];
     const zeroMatch: PatternInfo[] = [];
@@ -251,9 +184,6 @@ export function TrustSection(): ReactNode {
     }
     return { visiblePatterns: visible, zeroMatchPatterns: zeroMatch };
   }, [patterns]);
-
-  const percent =
-    trustableHunkCount > 0 ? (trustedHunkCount / trustableHunkCount) * 100 : 0;
 
   // Sound effects on trust changes
   const prevCountRef = useRef(trustedHunkCount);
@@ -273,9 +203,6 @@ export function TrustSection(): ReactNode {
     if (trusted) addTrustPattern(id);
     else removeTrustPattern(id);
   };
-
-  const allClassified = unlabeledCount === 0;
-  const stale = isClassificationStale();
 
   const getPreviewHunks = (patternId: string): PreviewHunk[] => {
     return hunks
@@ -304,7 +231,6 @@ export function TrustSection(): ReactNode {
       }));
   }, [hunks, reviewState?.hunks, modalPatternId]);
 
-  // Build a Map<patternId, pattern> for O(1) lookups by ID
   const patternById = useMemo(() => {
     const map = new Map<string, { name: string }>();
     for (const category of trustCategories) {
@@ -339,7 +265,6 @@ export function TrustSection(): ReactNode {
     setModalPatternId(patternId);
   };
 
-  // Render flat pattern list with lightweight category headers
   const renderPatternList = (patternList: PatternInfo[]) => {
     const elements: ReactNode[] = [];
     let lastCategoryId = "";
@@ -350,7 +275,7 @@ export function TrustSection(): ReactNode {
         elements.push(
           <div
             key={`cat-${pattern.categoryId}`}
-            className="px-3 pt-3 pb-1 text-xxs font-medium uppercase tracking-wider text-stone-600"
+            className="px-2 pt-2 pb-0.5 text-xxs font-medium uppercase tracking-wider text-stone-600"
           >
             {pattern.categoryName}
           </div>,
@@ -376,82 +301,15 @@ export function TrustSection(): ReactNode {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Compact inline progress */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1 h-1.5 bg-stone-800 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-cyan-500/50 rounded-full transition-[width] duration-500 ease-out"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-        <span className="text-xs text-stone-500 tabular-nums shrink-0">
-          {trustedHunkCount} of {trustableHunkCount} trustable hunks
-        </span>
-      </div>
-
+    <div>
       {/* Error banner */}
       {classificationError && (
-        <div className="rounded-md bg-rose-500/10 px-2.5 py-1.5 text-2xs text-rose-400 inset-ring-1 inset-ring-rose-500/20">
+        <div className="rounded bg-rose-500/10 px-2 py-1 mb-1 text-xxs text-rose-400 inset-ring-1 inset-ring-rose-500/20">
           {classificationError}
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex items-center flex-wrap gap-2">
-        {classifying ? (
-          <span
-            className="flex items-center gap-1.5 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50"
-            aria-live="polite"
-          >
-            <SpinnerIcon className="h-3 w-3 animate-spin" />
-            Classifying...
-          </span>
-        ) : stale ? (
-          <button
-            onClick={() => classifyUnlabeledHunks()}
-            className="flex items-center gap-1 rounded-md bg-amber-500/15 px-2.5 py-1 text-2xs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
-          >
-            Reclassify (stale)
-          </button>
-        ) : unlabeledCount > 0 ? (
-          <button
-            onClick={() => classifyUnlabeledHunks()}
-            className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
-          >
-            Classify {unlabeledCount} unclassified
-          </button>
-        ) : allClassified ? (
-          <button
-            onClick={() => reclassifyHunks()}
-            className="rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors whitespace-nowrap"
-          >
-            Reclassify
-          </button>
-        ) : null}
-        <div className="flex-1" />
-        {!claudeAvailable && (
-          <SimpleTooltip content="Claude CLI not found. Install it to enable AI classification.">
-            <span className="text-stone-600">
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-                />
-              </svg>
-            </span>
-          </SimpleTooltip>
-        )}
-      </div>
-
-      {/* Flat pattern list */}
+      {/* Pattern list */}
       {trustCategories.length > 0 && (
         <div>
           {renderPatternList(visiblePatterns)}
@@ -461,11 +319,11 @@ export function TrustSection(): ReactNode {
               <button
                 type="button"
                 onClick={() => setShowZeroMatch(!showZeroMatch)}
-                className="w-full px-3 py-2 text-xxs text-stone-600 hover:text-stone-400 transition-colors text-left"
+                className="w-full px-2 py-1.5 text-xxs text-stone-600 hover:text-stone-400 transition-colors text-left"
               >
                 {showZeroMatch
-                  ? "Hide patterns with no matches"
-                  : `Show ${zeroMatchPatterns.length} more pattern${zeroMatchPatterns.length !== 1 ? "s" : ""} with no matches`}
+                  ? "Hide no-match patterns"
+                  : `${zeroMatchPatterns.length} more with no matches`}
               </button>
               {showZeroMatch && renderPatternList(zeroMatchPatterns)}
             </>
@@ -474,17 +332,10 @@ export function TrustSection(): ReactNode {
       )}
 
       {/* Empty state */}
-      {trustCategories.length === 0 && !classifying && unlabeledCount === 0 && (
-        <div className="rounded-lg border border-dashed border-stone-700 p-8 text-center">
-          <p className="text-xs text-stone-500">
-            No classified patterns found. All hunks may need manual review.
-          </p>
-        </div>
-      )}
-
-      {/* Next step CTA */}
-      {allClassified && !classifying && trustedHunkCount > 0 && (
-        <TrustNextStepCta count={trustedHunkCount} />
+      {trustCategories.length === 0 && visiblePatterns.length === 0 && (
+        <p className="px-2 py-2 text-xxs text-stone-600">
+          No patterns classified yet.
+        </p>
       )}
 
       {/* Hunk preview modal */}
@@ -497,34 +348,5 @@ export function TrustSection(): ReactNode {
         />
       )}
     </div>
-  );
-}
-
-function TrustNextStepCta({ count }: { count: number }) {
-  const setActiveTab = useReviewStore((s) => s.setGuideActiveTab);
-  return (
-    <button
-      type="button"
-      onClick={() => setActiveTab("focused-review")}
-      className="group flex items-center gap-2 w-full rounded-lg border border-stone-700/50 px-4 py-3 text-left hover:border-stone-600 hover:bg-stone-800/30 transition-colors"
-    >
-      <span className="text-xs text-stone-400 group-hover:text-stone-300 transition-colors">
-        {count} {count === 1 ? "hunk" : "hunks"} auto-approved. Continue to
-        Guided Review
-      </span>
-      <svg
-        className="w-3.5 h-3.5 text-stone-600 group-hover:text-stone-400 transition-colors ml-auto shrink-0"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M13 7l5 5m0 0l-5 5m5-5H6"
-        />
-      </svg>
-    </button>
   );
 }
