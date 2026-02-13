@@ -40,6 +40,23 @@ function reviewKey(review: GlobalReviewSummary): string {
   return `${review.repoPath}:${review.comparison.key}`;
 }
 
+/** Compare two reviews by updatedAt descending (most recent first). */
+function compareByUpdated(
+  a: GlobalReviewSummary,
+  b: GlobalReviewSummary,
+): number {
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+}
+
+/** Get the total changed lines for a review, falling back to hunk count. */
+function reviewSize(
+  review: GlobalReviewSummary,
+  diffStats: Record<string, DiffShortStat>,
+): number {
+  const stats = diffStats[reviewKey(review)];
+  return stats ? stats.additions + stats.deletions : review.totalHunks;
+}
+
 /** Sort reviews by the given order. */
 function sortReviews(
   reviews: GlobalReviewSummary[],
@@ -49,27 +66,15 @@ function sortReviews(
   switch (order) {
     case "repo":
       return [...reviews].sort((a, b) => {
-        const nameCmp = a.repoName.localeCompare(b.repoName);
-        if (nameCmp !== 0) return nameCmp;
-        return (
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
+        return a.repoName.localeCompare(b.repoName) || compareByUpdated(a, b);
       });
     case "size":
       return [...reviews].sort((a, b) => {
-        const statsA = diffStats[reviewKey(a)];
-        const statsB = diffStats[reviewKey(b)];
-        const sizeA = statsA
-          ? statsA.additions + statsA.deletions
-          : a.totalHunks;
-        const sizeB = statsB
-          ? statsB.additions + statsB.deletions
-          : b.totalHunks;
-        return sizeB - sizeA;
+        return reviewSize(b, diffStats) - reviewSize(a, diffStats);
       });
     case "updated":
     default:
-      return reviews;
+      return [...reviews].sort(compareByUpdated);
   }
 }
 
