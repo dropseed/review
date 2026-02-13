@@ -43,16 +43,11 @@ import { CircleProgress } from "./ui/circle-progress";
 import { ActivityBar } from "./ActivityBar";
 
 interface ReviewViewProps {
-  onOpenRepo: () => Promise<void>;
   onNewWindow: () => Promise<void>;
   comparisonReady: boolean;
 }
 
-export function ReviewView({
-  onOpenRepo,
-  onNewWindow,
-  comparisonReady,
-}: ReviewViewProps) {
+export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
   const hunks = useReviewStore((s) => s.hunks);
@@ -142,7 +137,6 @@ export function ReviewView({
   useMenuEvents({
     handleClose,
     handleNewTab,
-    handleOpenRepo: onOpenRepo,
     handleNewWindow: onNewWindow,
     handleRefresh,
     setShowDebugModal,

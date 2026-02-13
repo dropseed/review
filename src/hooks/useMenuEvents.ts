@@ -11,7 +11,6 @@ import {
 interface UseMenuEventsOptions {
   handleClose: () => void;
   handleNewTab: () => void;
-  handleOpenRepo: () => void;
   handleNewWindow: () => void;
   handleRefresh: () => void;
   setShowDebugModal: (show: boolean) => void;
@@ -28,7 +27,6 @@ interface UseMenuEventsOptions {
 export function useMenuEvents({
   handleClose,
   handleNewTab,
-  handleOpenRepo,
   handleNewWindow,
   handleRefresh,
   setShowDebugModal,
@@ -50,7 +48,6 @@ export function useMenuEvents({
   // Refs to avoid stale closures
   const handleCloseRef = useRef(handleClose);
   const handleNewTabRef = useRef(handleNewTab);
-  const handleOpenRepoRef = useRef(handleOpenRepo);
   const handleNewWindowRef = useRef(handleNewWindow);
   const handleRefreshRef = useRef(handleRefresh);
   const codeFontSizeRef = useRef(codeFontSize);
@@ -59,7 +56,6 @@ export function useMenuEvents({
   useEffect(() => {
     handleCloseRef.current = handleClose;
     handleNewTabRef.current = handleNewTab;
-    handleOpenRepoRef.current = handleOpenRepo;
     handleNewWindowRef.current = handleNewWindow;
     handleRefreshRef.current = handleRefresh;
     codeFontSizeRef.current = codeFontSize;
@@ -67,7 +63,6 @@ export function useMenuEvents({
   }, [
     handleClose,
     handleNewTab,
-    handleOpenRepo,
     handleNewWindow,
     handleRefresh,
     codeFontSize,
@@ -105,9 +100,9 @@ export function useMenuEvents({
         },
       ],
       // Menu actions
+      // Note: menu:open-repo is handled globally in AppShell (router.tsx)
       ["menu:close", () => handleCloseRef.current()],
       ["menu:new-tab", () => handleNewTabRef.current()],
-      ["menu:open-repo", () => handleOpenRepoRef.current()],
       ["menu:new-window", () => handleNewWindowRef.current()],
       ["menu:show-debug", () => setShowDebugModal(true)],
       ["menu:open-settings", () => setShowSettingsModal(true)],

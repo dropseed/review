@@ -20,6 +20,7 @@ import {
   useMenuState,
   type RepoStatus,
 } from "./hooks";
+import { useReviewFreshness } from "./hooks/useReviewFreshness";
 
 /**
  * AppShell — layout wrapper that provides global effects and the ?repo= bootstrap.
@@ -80,6 +81,7 @@ function AppShell() {
   }, []);
 
   useMenuState();
+  useReviewFreshness();
 
   useComparisonLoader(comparisonReady, setInitialLoading);
 
@@ -189,8 +191,7 @@ function EmptyTabState() {
 
 /** Review UI — shown at /:owner/:repo/review/:comparisonKey */
 function ReviewRoute() {
-  const { repoPath, comparisonReady, handleOpenRepo, handleNewWindow } =
-    useAppContext();
+  const { repoPath, comparisonReady, handleNewWindow } = useAppContext();
 
   useFileRouteSync();
 
@@ -200,7 +201,6 @@ function ReviewRoute() {
 
   return (
     <ReviewView
-      onOpenRepo={handleOpenRepo}
       onNewWindow={handleNewWindow}
       comparisonReady={comparisonReady}
     />
