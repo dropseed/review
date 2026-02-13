@@ -40,6 +40,8 @@ export function ActivityBar() {
   const activities = useReviewStore((s) => s.activities);
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
 
   // Sort by priority descending
   const sorted = [...activities.values()].sort(
@@ -64,17 +66,17 @@ export function ActivityBar() {
     if (sorted.length <= 1) setExpanded(false);
   }, [sorted.length]);
 
-  // Close on outside click
+  // Close on outside click — listener attached once, checks ref to avoid churn
   useEffect(() => {
-    if (!expanded) return;
     const handleClick = (e: MouseEvent) => {
+      if (!expandedRef.current) return;
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setExpanded(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [expanded]);
+  }, []);
 
   if (!visible) return null;
 

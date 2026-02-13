@@ -101,12 +101,13 @@ export function useFilePanelNavigation({
       }
       setExpandedPaths(pathsToExpand);
 
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
         const ref = fileRefs.current.get(targetPath);
         if (ref) {
           ref.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }, 100);
+      return () => clearTimeout(timerId);
     },
     [expandedPaths],
   );
@@ -114,8 +115,9 @@ export function useFilePanelNavigation({
   // Reveal file in tree
   useEffect(() => {
     if (!fileToReveal) return;
-    expandAndScrollTo(fileToReveal, false);
+    const cleanup = expandAndScrollTo(fileToReveal, false);
     clearFileToReveal();
+    return cleanup;
   }, [fileToReveal, clearFileToReveal, expandAndScrollTo]);
 
   // Reveal directory in tree (from breadcrumb clicks)
@@ -130,8 +132,9 @@ export function useFilePanelNavigation({
       setFilesPanelTab("browse");
     }
 
-    expandAndScrollTo(directoryToReveal, true);
+    const cleanup = expandAndScrollTo(directoryToReveal, true);
     clearDirectoryToReveal();
+    return cleanup;
   }, [
     directoryToReveal,
     clearDirectoryToReveal,

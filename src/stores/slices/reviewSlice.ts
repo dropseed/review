@@ -232,6 +232,18 @@ function pushHunkUndo(
   });
 }
 
+/** Collect hunk IDs for a specific file path. */
+function getFileHunkIds(
+  hunks: { id: string; filePath: string }[],
+  filePath: string,
+): string[] {
+  const ids: string[] = [];
+  for (const h of hunks) {
+    if (h.filePath === filePath) ids.push(h.id);
+  }
+  return ids;
+}
+
 /** Collect hunk IDs for all files under the given directory path. */
 function getDirHunkIds(
   get: () => { hunks: { id: string; filePath: string }[] },
@@ -386,21 +398,18 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveAllFileHunks: (filePath) => {
-      const { hunks } = get();
-      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      const ids = getFileHunkIds(get().hunks, filePath);
       updateHunkStatuses(get, set, ids, "approved");
       get().advanceToNextUnreviewedFile();
     },
 
     unapproveAllFileHunks: (filePath) => {
-      const { hunks } = get();
-      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      const ids = getFileHunkIds(get().hunks, filePath);
       updateHunkStatuses(get, set, ids, undefined, { skipMissing: true });
     },
 
     rejectAllFileHunks: (filePath) => {
-      const { hunks } = get();
-      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      const ids = getFileHunkIds(get().hunks, filePath);
       updateHunkStatuses(get, set, ids, "rejected");
       get().advanceToNextUnreviewedFile();
     },
@@ -446,8 +455,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveAllFileHunksForLater: (filePath) => {
-      const { hunks } = get();
-      const ids = hunks.filter((h) => h.filePath === filePath).map((h) => h.id);
+      const ids = getFileHunkIds(get().hunks, filePath);
       updateHunkStatuses(get, set, ids, "saved_for_later");
     },
 

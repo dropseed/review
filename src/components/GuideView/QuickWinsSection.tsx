@@ -33,30 +33,39 @@ function buildPatternList(
   hunkStates: Record<string, { label?: string[] }> | undefined,
   trustList: string[],
 ): PatternInfo[] {
-  const counts: Record<string, number> = {};
+  // Build a set of known pattern IDs for O(1) lookup
+  const knownPatternIds = new Set<string>();
+  for (const category of categories) {
+    for (const pattern of category.patterns) {
+      knownPatternIds.add(pattern.id);
+    }
+  }
+
+  // Iterate hunks once, increment counts by label (O(hunks * labels_per_hunk))
+  const counts = new Map<string, number>();
   for (const hunk of hunks) {
     const labels = hunkStates?.[hunk.id]?.label ?? [];
-    for (const category of categories) {
-      for (const pattern of category.patterns) {
-        if (anyLabelMatchesPattern(labels, pattern.id)) {
-          counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
-        }
+    for (const label of labels) {
+      if (knownPatternIds.has(label)) {
+        counts.set(label, (counts.get(label) ?? 0) + 1);
       }
     }
   }
 
+  // Convert trustList to Set for O(1) membership checks
+  const trustSet = new Set(trustList);
+
   const result: PatternInfo[] = [];
   for (const category of categories) {
     for (const pattern of category.patterns) {
-      const count = counts[pattern.id] ?? 0;
       result.push({
         id: pattern.id,
         name: pattern.name,
         description: pattern.description,
         categoryId: category.id,
         categoryName: category.name,
-        count,
-        trusted: trustList.includes(pattern.id),
+        count: counts.get(pattern.id) ?? 0,
+        trusted: trustSet.has(pattern.id),
       });
     }
   }
@@ -413,13 +422,21 @@ export function QuickWinsSection(): ReactNode {
       }));
   }, [hunks, reviewState?.hunks, modalPatternId]);
 
+  // Build a Map<patternId, pattern> for O(1) lookups by ID
+  const patternById = useMemo(() => {
+    const map = new Map<string, { name: string }>();
+    for (const category of trustCategories) {
+      for (const pattern of category.patterns) {
+        map.set(pattern.id, pattern);
+      }
+    }
+    return map;
+  }, [trustCategories]);
+
   const modalPatternName = useMemo(() => {
     if (!modalPatternId) return "";
-    const allPatterns = trustCategories.flatMap((c) => c.patterns);
-    return (
-      allPatterns.find((p) => p.id === modalPatternId)?.name ?? modalPatternId
-    );
-  }, [modalPatternId, trustCategories]);
+    return patternById.get(modalPatternId)?.name ?? modalPatternId;
+  }, [modalPatternId, patternById]);
 
   const handleSelectHunk = (filePath: string, hunkId: string) => {
     navigateToBrowse(filePath);

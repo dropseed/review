@@ -71,6 +71,7 @@ export function computeSymbolLinkedHunks(
 
   // Link referencing hunks to defining hunks (bidirectional)
   const result = new Map<string, SymbolLinkedHunk[]>();
+  const seen = new Set<string>();
 
   for (const [refHunkId, refs] of hunkToRefs) {
     for (const { symbolName, lineNumbers } of refs) {
@@ -86,12 +87,10 @@ export function computeSymbolLinkedHunks(
         if (identicalPairs.has(`${refHunkId}:${defHunkId}`)) continue;
 
         // Add: refHunk -> defHunk (referencing hunk points to definition)
-        const refEntries = result.get(refHunkId) ?? [];
-        if (
-          !refEntries.some(
-            (e) => e.hunkId === defHunkId && e.symbolName === symbolName,
-          )
-        ) {
+        const refKey = `${refHunkId}:${defHunkId}:${symbolName}`;
+        if (!seen.has(refKey)) {
+          seen.add(refKey);
+          const refEntries = result.get(refHunkId) ?? [];
           refEntries.push({
             hunkId: defHunkId,
             symbolName,
@@ -102,12 +101,10 @@ export function computeSymbolLinkedHunks(
         }
 
         // Add: defHunk -> refHunk (definition hunk points to references)
-        const defEntries = result.get(defHunkId) ?? [];
-        if (
-          !defEntries.some(
-            (e) => e.hunkId === refHunkId && e.symbolName === symbolName,
-          )
-        ) {
+        const defKey = `${defHunkId}:${refHunkId}:${symbolName}`;
+        if (!seen.has(defKey)) {
+          seen.add(defKey);
+          const defEntries = result.get(defHunkId) ?? [];
           defEntries.push({
             hunkId: refHunkId,
             symbolName,

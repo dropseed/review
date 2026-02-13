@@ -47,8 +47,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
     if (!reviewState) return;
 
     // Find unlabeled hunks
-    let candidateHunks = hunkIds
-      ? hunks.filter((h) => hunkIds.includes(h.id))
+    const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
+    let candidateHunks = hunkIdSet
+      ? hunks.filter((h) => hunkIdSet.has(h.id))
       : hunks;
 
     const hunksToClassify = candidateHunks.filter((hunk) =>
@@ -122,8 +123,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
     const { classifyingHunkIds } = get();
 
     // Find hunks to classify - filter to specified ids if provided, then filter out already-labeled
-    let candidateHunks = hunkIds
-      ? hunks.filter((h) => hunkIds.includes(h.id))
+    const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
+    let candidateHunks = hunkIdSet
+      ? hunks.filter((h) => hunkIdSet.has(h.id))
       : hunks;
 
     // Filter out hunks that have already been classified (have labels or were processed)
@@ -377,8 +379,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
     if (!repoPath || !reviewState) return;
 
     // Determine which hunks to reclassify
-    const targetHunks = hunkIds
-      ? hunks.filter((h) => hunkIds.includes(h.id))
+    const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
+    const targetHunks = hunkIdSet
+      ? hunks.filter((h) => hunkIdSet.has(h.id))
       : hunks;
 
     if (targetHunks.length === 0) return;

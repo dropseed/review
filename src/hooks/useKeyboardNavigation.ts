@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { useReviewStore } from "../stores";
 
 /**
@@ -11,27 +11,8 @@ import { useReviewStore } from "../stores";
  * double-firing.
  */
 export function useKeyboardNavigation() {
-  const hunks = useReviewStore((s) => s.hunks);
-  const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
-  const nextHunk = useReviewStore((s) => s.nextHunk);
-  const prevHunk = useReviewStore((s) => s.prevHunk);
-  const approveHunk = useReviewStore((s) => s.approveHunk);
-  const rejectHunk = useReviewStore((s) => s.rejectHunk);
-  const setPendingCommentHunkId = useReviewStore(
-    (s) => s.setPendingCommentHunkId,
-  );
-  const nextHunkInFile = useReviewStore((s) => s.nextHunkInFile);
-  const secondaryFile = useReviewStore((s) => s.secondaryFile);
-  const closeSplit = useReviewStore((s) => s.closeSplit);
-  const setSplitOrientation = useReviewStore((s) => s.setSplitOrientation);
-  const splitOrientation = useReviewStore((s) => s.splitOrientation);
-  const topLevelView = useReviewStore((s) => s.topLevelView);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const saveHunkForLater = useReviewStore((s) => s.saveHunkForLater);
-  const undo = useReviewStore((s) => s.undo);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       // Don't capture keys when typing in inputs
       if (
         event.target instanceof HTMLInputElement ||
@@ -55,10 +36,12 @@ export function useKeyboardNavigation() {
         return;
       }
 
+      const state = useReviewStore.getState();
+
       // Escape: close split view
-      if (event.key === "Escape" && secondaryFile !== null) {
+      if (event.key === "Escape" && state.secondaryFile !== null) {
         event.preventDefault();
-        closeSplit();
+        state.closeSplit();
         return;
       }
 
@@ -69,8 +52,8 @@ export function useKeyboardNavigation() {
         event.key === "\\"
       ) {
         event.preventDefault();
-        setSplitOrientation(
-          splitOrientation === "horizontal" ? "vertical" : "horizontal",
+        state.setSplitOrientation(
+          state.splitOrientation === "horizontal" ? "vertical" : "horizontal",
         );
         return;
       }
@@ -85,63 +68,43 @@ export function useKeyboardNavigation() {
       switch (event.key) {
         case "j":
           // In overview, switch to browse first
-          if (topLevelView === "guide") {
-            navigateToBrowse();
+          if (state.topLevelView === "guide") {
+            state.navigateToBrowse();
           }
           // Navigate to next hunk (handles file switching automatically)
-          nextHunk();
+          state.nextHunk();
           break;
         case "k":
           // In overview, switch to browse first
-          if (topLevelView === "guide") {
-            navigateToBrowse();
+          if (state.topLevelView === "guide") {
+            state.navigateToBrowse();
           }
           // Navigate to previous hunk (handles file switching automatically)
-          prevHunk();
+          state.prevHunk();
           break;
         case "a":
         case "r":
         case "s": {
-          const focusedHunk = hunks[focusedHunkIndex];
+          const focusedHunk = state.hunks[state.focusedHunkIndex];
           if (!focusedHunk) break;
           if (event.key === "a") {
-            approveHunk(focusedHunk.id);
-            nextHunkInFile();
+            state.approveHunk(focusedHunk.id);
+            state.nextHunkInFile();
           } else if (event.key === "r") {
-            rejectHunk(focusedHunk.id);
-            setPendingCommentHunkId(focusedHunk.id);
+            state.rejectHunk(focusedHunk.id);
+            state.setPendingCommentHunkId(focusedHunk.id);
           } else {
-            saveHunkForLater(focusedHunk.id);
+            state.saveHunkForLater(focusedHunk.id);
           }
           break;
         }
         case "z":
-          undo();
+          state.undo();
           break;
       }
-    },
-    [
-      nextHunk,
-      prevHunk,
-      hunks,
-      focusedHunkIndex,
-      approveHunk,
-      rejectHunk,
-      saveHunkForLater,
-      setPendingCommentHunkId,
-      nextHunkInFile,
-      secondaryFile,
-      closeSplit,
-      setSplitOrientation,
-      splitOrientation,
-      topLevelView,
-      navigateToBrowse,
-      undo,
-    ],
-  );
+    };
 
-  useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  }, []);
 }

@@ -60,12 +60,13 @@ export function ContentSearch({
       const storeQuery = useReviewStore.getState().searchQuery;
       setQuery(storeQuery);
       setSelectedIndex(0);
-      requestAnimationFrame(() => {
+      const rafId = requestAnimationFrame(() => {
         if (inputRef.current) {
           inputRef.current.focus();
           inputRef.current.select();
         }
       });
+      return () => cancelAnimationFrame(rafId);
     }
   }, [isOpen]);
 

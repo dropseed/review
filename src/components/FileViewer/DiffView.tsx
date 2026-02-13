@@ -165,32 +165,14 @@ export function DiffView({
   focusedHunkId,
   language,
 }: DiffViewProps) {
+  // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
-  const approveHunk = useReviewStore((s) => s.approveHunk);
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
-  const unapproveHunk = useReviewStore((s) => s.unapproveHunk);
-  const rejectHunk = useReviewStore((s) => s.rejectHunk);
-  const unrejectHunk = useReviewStore((s) => s.unrejectHunk);
-  const saveHunkForLater = useReviewStore((s) => s.saveHunkForLater);
-  const unsaveHunkForLater = useReviewStore((s) => s.unsaveHunkForLater);
   const allHunks = useReviewStore((s) => s.hunks);
-  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
-  const addAnnotation = useReviewStore((s) => s.addAnnotation);
-  const updateAnnotation = useReviewStore((s) => s.updateAnnotation);
-  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
   const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
-  const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
-  const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
-  const reclassifyHunks = useReviewStore((s) => s.reclassifyHunks);
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
-  const setPendingCommentHunkId = useReviewStore(
-    (s) => s.setPendingCommentHunkId,
-  );
-  const nextHunkInFile = useReviewStore((s) => s.nextHunkInFile);
   const symbolLinkedHunks = useReviewStore((s) => s.symbolLinkedHunks);
 
   // Ref to track focused hunk element for scrolling
@@ -235,8 +217,8 @@ export function DiffView({
 
     const { lineNumber, side } = getFirstChangedLine(targetHunk);
     setNewAnnotationLine({ lineNumber, side, hunkId: pendingCommentHunkId });
-    setPendingCommentHunkId(null);
-  }, [pendingCommentHunkId, hunks, newAnnotationLine, setPendingCommentHunkId]);
+    useReviewStore.getState().setPendingCommentHunkId(null);
+  }, [pendingCommentHunkId, hunks, newAnnotationLine]);
 
   const filePath = hunks[0]?.filePath ?? "";
 
@@ -394,6 +376,7 @@ export function DiffView({
   // Handle saving a new annotation
   const handleSaveNewAnnotation = (content: string) => {
     if (!newAnnotationLine) return;
+    const { addAnnotation, nextHunkInFile } = useReviewStore.getState();
     addAnnotation(
       filePath,
       newAnnotationLine.lineNumber,
@@ -416,14 +399,13 @@ export function DiffView({
   };
 
   // Render annotation for each type - use ref pattern for stable function reference
-  // Store all dependencies in a ref so the callback can access latest values
+  // Store non-store dependencies in a ref so the callback can access latest values
+  // without causing re-renders. Store action functions are accessed via getState() at call time.
   const renderAnnotationDepsRef = useRef<{
     handleSaveNewAnnotation: typeof handleSaveNewAnnotation;
     setNewAnnotationLine: typeof setNewAnnotationLine;
     editingAnnotationId: typeof editingAnnotationId;
     setEditingAnnotationId: typeof setEditingAnnotationId;
-    updateAnnotation: typeof updateAnnotation;
-    deleteAnnotation: typeof deleteAnnotation;
     hunks: typeof hunks;
     getSimilarHunks: typeof getSimilarHunks;
     focusedHunkId: typeof focusedHunkId;
@@ -432,22 +414,9 @@ export function DiffView({
     classifyingHunkIds: typeof classifyingHunkIds;
     claudeAvailable: typeof claudeAvailable;
     hunkStates: typeof hunkStates;
-    approveHunk: typeof approveHunk;
-    nextHunkInFile: typeof nextHunkInFile;
-    unapproveHunk: typeof unapproveHunk;
-    rejectHunk: typeof rejectHunk;
-    unrejectHunk: typeof unrejectHunk;
-    saveHunkForLater: typeof saveHunkForLater;
-    unsaveHunkForLater: typeof unsaveHunkForLater;
-    addTrustPattern: typeof addTrustPattern;
-    removeTrustPattern: typeof removeTrustPattern;
-    reclassifyHunks: typeof reclassifyHunks;
     handleCopyHunk: typeof handleCopyHunk;
     onViewInFile: typeof onViewInFile;
-    approveHunkIds: typeof approveHunkIds;
-    rejectHunkIds: typeof rejectHunkIds;
     hunkById: typeof hunkById;
-    setSelectedFile: typeof setSelectedFile;
     newAnnotationLine: typeof newAnnotationLine;
     symbolLinkedHunks: typeof symbolLinkedHunks;
   }>(null!);
@@ -456,8 +425,6 @@ export function DiffView({
     setNewAnnotationLine,
     editingAnnotationId,
     setEditingAnnotationId,
-    updateAnnotation,
-    deleteAnnotation,
     hunks,
     getSimilarHunks,
     focusedHunkId,
@@ -466,22 +433,9 @@ export function DiffView({
     classifyingHunkIds,
     claudeAvailable,
     hunkStates,
-    approveHunk,
-    nextHunkInFile,
-    unapproveHunk,
-    rejectHunk,
-    unrejectHunk,
-    saveHunkForLater,
-    unsaveHunkForLater,
-    addTrustPattern,
-    removeTrustPattern,
-    reclassifyHunks,
     handleCopyHunk,
     onViewInFile,
-    approveHunkIds,
-    rejectHunkIds,
     hunkById,
-    setSelectedFile,
     newAnnotationLine,
     symbolLinkedHunks,
   };
@@ -508,12 +462,14 @@ export function DiffView({
               isEditing={deps.editingAnnotationId === userAnnotation.id}
               onEdit={() => deps.setEditingAnnotationId(userAnnotation.id)}
               onSave={(content) => {
-                deps.updateAnnotation(userAnnotation.id, content);
+                useReviewStore
+                  .getState()
+                  .updateAnnotation(userAnnotation.id, content);
                 deps.setEditingAnnotationId(null);
               }}
               onCancel={() => deps.setEditingAnnotationId(null)}
               onDelete={() => {
-                deps.deleteAnnotation(userAnnotation.id);
+                useReviewStore.getState().deleteAnnotation(userAnnotation.id);
                 deps.setEditingAnnotationId(null);
               }}
             />
@@ -543,49 +499,71 @@ export function DiffView({
               hunkById={deps.hunkById}
               allHunkStates={deps.hunkStates ?? {}}
               onApprove={(hunkId) => {
-                deps.approveHunk(hunkId);
-                deps.nextHunkInFile();
+                const s = useReviewStore.getState();
+                s.approveHunk(hunkId);
+                s.nextHunkInFile();
               }}
-              onUnapprove={deps.unapproveHunk}
+              onUnapprove={(hunkId) =>
+                useReviewStore.getState().unapproveHunk(hunkId)
+              }
               onReject={(hunkId) => {
-                deps.rejectHunk(hunkId);
+                const s = useReviewStore.getState();
+                s.rejectHunk(hunkId);
                 const targetHunk = deps.hunks.find((h) => h.id === hunkId);
                 if (targetHunk && !deps.newAnnotationLine) {
                   const { lineNumber, side } = getFirstChangedLine(targetHunk);
                   deps.setNewAnnotationLine({ lineNumber, side, hunkId });
                 }
               }}
-              onUnreject={deps.unrejectHunk}
-              onSaveForLater={deps.saveHunkForLater}
-              onUnsaveForLater={deps.unsaveHunkForLater}
+              onUnreject={(hunkId) =>
+                useReviewStore.getState().unrejectHunk(hunkId)
+              }
+              onSaveForLater={(hunkId) =>
+                useReviewStore.getState().saveHunkForLater(hunkId)
+              }
+              onUnsaveForLater={(hunkId) =>
+                useReviewStore.getState().unsaveHunkForLater(hunkId)
+              }
               onApprovePair={(hunkIds) => {
-                deps.approveHunkIds(hunkIds);
-                deps.nextHunkInFile();
+                const s = useReviewStore.getState();
+                s.approveHunkIds(hunkIds);
+                s.nextHunkInFile();
               }}
               onRejectPair={(hunkIds) => {
-                deps.rejectHunkIds(hunkIds);
-                deps.nextHunkInFile();
+                const s = useReviewStore.getState();
+                s.rejectHunkIds(hunkIds);
+                s.nextHunkInFile();
               }}
               onComment={(lineNumber, side, hunkId) =>
                 deps.setNewAnnotationLine({ lineNumber, side, hunkId })
               }
-              onAddTrustPattern={deps.addTrustPattern}
-              onRemoveTrustPattern={deps.removeTrustPattern}
-              onReclassifyHunks={deps.reclassifyHunks}
+              onAddTrustPattern={(pattern) =>
+                useReviewStore.getState().addTrustPattern(pattern)
+              }
+              onRemoveTrustPattern={(pattern) =>
+                useReviewStore.getState().removeTrustPattern(pattern)
+              }
+              onReclassifyHunks={(hunkIds) =>
+                useReviewStore.getState().reclassifyHunks(hunkIds)
+              }
               onCopyHunk={deps.handleCopyHunk}
               onViewInFile={deps.onViewInFile}
               onApproveAllSimilar={(hunkIds) => {
-                deps.approveHunkIds(hunkIds);
-                deps.nextHunkInFile();
+                const s = useReviewStore.getState();
+                s.approveHunkIds(hunkIds);
+                s.nextHunkInFile();
               }}
               onRejectAllSimilar={(hunkIds) => {
-                deps.rejectHunkIds(hunkIds);
-                deps.nextHunkInFile();
+                const s = useReviewStore.getState();
+                s.rejectHunkIds(hunkIds);
+                s.nextHunkInFile();
               }}
               onNavigateToHunk={(hunkId) => {
                 const targetHunk = deps.hunkById.get(hunkId);
                 if (targetHunk) {
-                  deps.setSelectedFile(targetHunk.filePath);
+                  useReviewStore
+                    .getState()
+                    .setSelectedFile(targetHunk.filePath);
                 }
               }}
             />
