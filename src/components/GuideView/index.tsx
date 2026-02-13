@@ -44,7 +44,7 @@ function ErrorPanel({
   );
 }
 
-function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+function Spinner({ className = "h-4 w-4" }: { className?: string }): ReactNode {
   return (
     <svg
       className={`animate-spin ${className}`}
@@ -74,7 +74,7 @@ function ExternalLink({
 }: {
   href?: string;
   children?: ReactNode;
-}) {
+}): ReactNode {
   return (
     <a
       href={href}
@@ -107,10 +107,17 @@ function SummarySection(): ReactNode {
   const isSummaryStale = useReviewStore((s) => s.isSummaryStale);
   const generateSummary = useReviewStore((s) => s.generateSummary);
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
+  const prBody = useReviewStore(
+    (s) => s.reviewState?.comparison?.githubPr?.body,
+  );
+
+  // Use PR body as summary content when available (even before guide runs)
+  const displaySummary = guideSummary || prBody || null;
 
   const stale = guideSummary ? isSummaryStale() : false;
+  // Don't show the AI generate CTA if the PR already has a description
   const showCta =
-    !guideSummary &&
+    !displaySummary &&
     !guideSummaryError &&
     summaryStatus !== "loading" &&
     claudeAvailable !== false;
@@ -118,14 +125,16 @@ function SummarySection(): ReactNode {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(14rem,18rem)] gap-6">
       <div className="space-y-4 min-w-0">
-        {summaryStatus === "loading" && !guideSummary && !guideSummaryError && (
-          <div className="rounded-lg border border-stone-800 p-4">
-            <div className="flex items-center gap-2 text-stone-500">
-              <Spinner />
-              <span className="text-xs">Generating summary…</span>
+        {summaryStatus === "loading" &&
+          !displaySummary &&
+          !guideSummaryError && (
+            <div className="rounded-lg border border-stone-800 p-4">
+              <div className="flex items-center gap-2 text-stone-500">
+                <Spinner />
+                <span className="text-xs">Generating summary…</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {guideSummaryError && (
           <ErrorPanel
             message={`Failed to generate summary: ${guideSummaryError}`}
@@ -153,7 +162,7 @@ function SummarySection(): ReactNode {
             </div>
           </div>
         )}
-        {guideSummary && (
+        {displaySummary && (
           <div className="rounded-lg border border-stone-800 p-4">
             <div className="guide-prose text-sm text-stone-300 leading-relaxed">
               <Markdown
@@ -161,10 +170,10 @@ function SummarySection(): ReactNode {
                 urlTransform={urlTransform}
                 components={markdownComponents}
               >
-                {guideSummary}
+                {displaySummary}
               </Markdown>
             </div>
-            {stale && (
+            {stale && !prBody && (
               <div className="flex items-center justify-end mt-2">
                 <button
                   onClick={() => generateSummary()}
@@ -266,7 +275,7 @@ interface SectionConfig {
 }
 
 const SECTIONS: SectionConfig[] = [
-  { id: "overview", title: "Summary", component: () => <SummarySection /> },
+  { id: "overview", title: "Overview", component: () => <SummarySection /> },
   { id: "quick-wins", title: "Trust", component: () => <QuickWinsSection /> },
   {
     id: "focused-review",
@@ -280,7 +289,11 @@ const SECTIONS: SectionConfig[] = [
   },
 ];
 
-function DiffLinePlaceholder({ lineNumber }: { lineNumber: number }) {
+function DiffLinePlaceholder({
+  lineNumber,
+}: {
+  lineNumber: number;
+}): ReactNode {
   return (
     <div className="flex gap-2 items-center">
       <span className="w-4 text-right font-mono text-xxs text-stone-600">
@@ -291,7 +304,7 @@ function DiffLinePlaceholder({ lineNumber }: { lineNumber: number }) {
   );
 }
 
-function NoChangesPrompt() {
+function NoChangesPrompt(): ReactNode {
   return (
     <div className="flex-1 flex items-center justify-center pb-16">
       <div className="flex flex-col items-center max-w-sm">
@@ -315,7 +328,7 @@ function NoChangesPrompt() {
   );
 }
 
-function CheckIcon() {
+function CheckIcon(): ReactNode {
   return (
     <svg
       className="w-3 h-3"
@@ -329,7 +342,11 @@ function CheckIcon() {
   );
 }
 
-function SparkleIcon({ className = "h-4 w-4" }: { className?: string }) {
+function SparkleIcon({
+  className = "h-4 w-4",
+}: {
+  className?: string;
+}): ReactNode {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
@@ -343,7 +360,7 @@ function TabBadge({
 }: {
   children: ReactNode;
   variant: "amber" | "cyan" | "emerald";
-}) {
+}): ReactNode {
   const colors = {
     amber: "bg-amber-500/15 text-amber-400",
     cyan: "bg-cyan-500/15 text-cyan-400",
@@ -387,17 +404,25 @@ interface TabBadgeInfo {
   isCompleted: boolean;
   isLoading: boolean;
   guideSummary: string | null;
+  hasPrBody: boolean;
   trustedHunkCount: number;
   totalHunks: number;
   focusedReviewUnreviewed: number;
   filesPendingCount: number;
 }
 
+const completedBadge = (
+  <span className="text-emerald-400">
+    <CheckIcon />
+  </span>
+);
+
 function getTabBadge({
   sectionId,
   isCompleted,
   isLoading,
   guideSummary,
+  hasPrBody,
   trustedHunkCount,
   totalHunks,
   focusedReviewUnreviewed,
@@ -407,7 +432,8 @@ function getTabBadge({
 
   switch (sectionId) {
     case "overview":
-      if (guideSummary) {
+      // Show sparkle only for AI-generated summaries, not PR descriptions
+      if (guideSummary && !hasPrBody) {
         return (
           <span className="text-purple-400">
             <SparkleIcon className="h-3 w-3" />
@@ -417,13 +443,7 @@ function getTabBadge({
       return null;
 
     case "quick-wins":
-      if (isCompleted) {
-        return (
-          <span className="text-emerald-400">
-            <CheckIcon />
-          </span>
-        );
-      }
+      if (isCompleted) return completedBadge;
       if (totalHunks > 0) {
         return (
           <TabBadge variant="cyan">
@@ -434,26 +454,14 @@ function getTabBadge({
       return null;
 
     case "focused-review":
-      if (isCompleted) {
-        return (
-          <span className="text-emerald-400">
-            <CheckIcon />
-          </span>
-        );
-      }
+      if (isCompleted) return completedBadge;
       if (focusedReviewUnreviewed > 0) {
         return <TabBadge variant="amber">{focusedReviewUnreviewed}</TabBadge>;
       }
       return null;
 
     case "changed-files":
-      if (isCompleted) {
-        return (
-          <span className="text-emerald-400">
-            <CheckIcon />
-          </span>
-        );
-      }
+      if (isCompleted) return completedBadge;
       if (filesPendingCount > 0) {
         return <TabBadge variant="amber">{filesPendingCount}</TabBadge>;
       }
@@ -554,6 +562,7 @@ export function GuideView(): ReactNode {
     [summaryStatus, classificationStatus, groupingStatus],
   );
 
+  const hasPrBody = !!githubPr?.body;
   const contentState = getContentState(progress.totalHunks, !!loadingProgress);
 
   return (
@@ -573,19 +582,6 @@ export function GuideView(): ReactNode {
               <span className="text-stone-600 shrink-0">&rarr;</span>
               <span className="truncate">{githubPr.baseRefName}</span>
             </div>
-            {githubPr.body && (
-              <div className="mt-3 rounded-lg border-l-2 border-stone-700 bg-stone-800/20 px-4 py-3">
-                <div className="guide-prose text-stone-400">
-                  <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    urlTransform={urlTransform}
-                    components={markdownComponents}
-                  >
-                    {githubPr.body}
-                  </Markdown>
-                </div>
-              </div>
-            )}
           </div>
         )}
         {!githubPr && guideTitle && (
@@ -621,6 +617,7 @@ export function GuideView(): ReactNode {
                     isCompleted,
                     isLoading: loading,
                     guideSummary,
+                    hasPrBody,
                     trustedHunkCount,
                     totalHunks,
                     focusedReviewUnreviewed,
