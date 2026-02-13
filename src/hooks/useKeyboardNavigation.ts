@@ -27,7 +27,6 @@ export function useKeyboardNavigation() {
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const topLevelView = useReviewStore((s) => s.topLevelView);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const navigateToGuide = useReviewStore((s) => s.navigateToGuide);
   const saveHunkForLater = useReviewStore((s) => s.saveHunkForLater);
   const undo = useReviewStore((s) => s.undo);
 
@@ -56,23 +55,11 @@ export function useKeyboardNavigation() {
         return;
       }
 
-      // Escape: close split → toggle between browse and guide
-      if (event.key === "Escape") {
-        if (secondaryFile !== null) {
-          event.preventDefault();
-          closeSplit();
-          return;
-        }
-        if (topLevelView === "browse") {
-          event.preventDefault();
-          navigateToGuide();
-          return;
-        }
-        if (topLevelView === "guide") {
-          event.preventDefault();
-          navigateToBrowse();
-          return;
-        }
+      // Escape: close split view
+      if (event.key === "Escape" && secondaryFile !== null) {
+        event.preventDefault();
+        closeSplit();
+        return;
       }
 
       // Cmd/Ctrl+Shift+\ to toggle split orientation
@@ -149,7 +136,6 @@ export function useKeyboardNavigation() {
       splitOrientation,
       topLevelView,
       navigateToBrowse,
-      navigateToGuide,
       undo,
     ],
   );

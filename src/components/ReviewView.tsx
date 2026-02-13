@@ -95,17 +95,15 @@ export function ReviewView({
     }
   }, [refresh, isRefreshing]);
 
-  // Close handler: cascading close (split -> browse -> overview -> window)
+  // Close handler: cascading close (split -> window)
   const handleClose = useCallback(async () => {
     if (secondaryFile !== null) {
       closeSplit();
-    } else if (topLevelView === "browse") {
-      navigateToGuide();
     } else {
       const platform = getPlatformServices();
       await platform.window.close();
     }
-  }, [secondaryFile, topLevelView, closeSplit, navigateToGuide]);
+  }, [secondaryFile, closeSplit]);
 
   // New tab handler: open a new tab with the current repo
   const handleNewTab = useCallback(async () => {
@@ -132,7 +130,7 @@ export function ReviewView({
       const idx = hunkIndexMap.get(hunkId);
       if (idx !== undefined) useReviewStore.setState({ focusedHunkIndex: idx });
     },
-    [hunkIndexMap, navigateToBrowse],
+    [hunkIndexMap, navigateToBrowse, setClassificationsModalOpen],
   );
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({

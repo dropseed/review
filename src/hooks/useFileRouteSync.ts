@@ -27,7 +27,7 @@ export function useFileRouteSync() {
   const isSyncingRef = useRef(false);
 
   // Run a callback while suppressing the other sync direction.
-  // Resets the flag on the next microtask to avoid infinite loops.
+  // Resets the flag on the next macrotask to avoid infinite loops.
   function runSync(fn: () => void): void {
     isSyncingRef.current = true;
     fn();
@@ -67,18 +67,19 @@ export function useFileRouteSync() {
 
   // --- Store → URL ---
   // When selectedFile or topLevelView changes, update the URL.
+  // Skip URL updates in guide mode to avoid a race condition where the
+  // URL change triggers the URL → Store sync which calls navigateToBrowse(),
+  // immediately overriding the guide view.
   useEffect(() => {
     if (isSyncingRef.current) return;
+    if (topLevelView !== "browse") return;
     if (!owner || !repo || !comparisonKey) return;
 
     const basePath = `/${owner}/${repo}/review/${comparisonKey}`;
 
-    let targetPath: string;
-    if (topLevelView === "browse" && selectedFile) {
-      targetPath = `${basePath}/file/${selectedFile}`;
-    } else {
-      targetPath = basePath;
-    }
+    const targetPath = selectedFile
+      ? `${basePath}/file/${selectedFile}`
+      : basePath;
 
     // Only navigate if the path actually changed
     if (location.pathname !== targetPath) {
