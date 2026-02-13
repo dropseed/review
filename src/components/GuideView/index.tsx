@@ -15,6 +15,34 @@ import {
   useFocusedReviewUnreviewed,
 } from "./FocusedReviewSection";
 import { DrillDownSection } from "./DrillDownSection";
+import { CopyErrorButton } from "./CopyErrorButton";
+
+interface ErrorPanelProps {
+  message: string;
+  onRetry: () => void;
+  retryLabel?: string;
+}
+
+function ErrorPanel({
+  message,
+  onRetry,
+  retryLabel = "Retry",
+}: ErrorPanelProps): ReactNode {
+  return (
+    <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
+      <p className="text-xs text-rose-400">{message}</p>
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          onClick={onRetry}
+          className="text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+        >
+          {retryLabel}
+        </button>
+        <CopyErrorButton error={message} />
+      </div>
+    </div>
+  );
+}
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -72,7 +100,7 @@ const markdownComponents = {
   a: ExternalLink,
 };
 
-function SummarySection() {
+function SummarySection(): ReactNode {
   const guideSummary = useReviewStore((s) => s.guideSummary);
   const guideSummaryError = useReviewStore((s) => s.guideSummaryError);
   const summaryStatus = useReviewStore((s) => s.summaryStatus);
@@ -99,17 +127,10 @@ function SummarySection() {
           </div>
         )}
         {guideSummaryError && (
-          <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
-            <p className="text-xs text-rose-400">
-              Failed to generate summary: {guideSummaryError}
-            </p>
-            <button
-              onClick={() => generateSummary()}
-              className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
+          <ErrorPanel
+            message={`Failed to generate summary: ${guideSummaryError}`}
+            onRetry={() => generateSummary()}
+          />
         )}
         {showCta && (
           <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
@@ -165,7 +186,7 @@ function SummarySection() {
   );
 }
 
-function DiagramSection() {
+function DiagramSection(): ReactNode {
   const guideDiagram = useReviewStore((s) => s.guideDiagram);
   const guideDiagramError = useReviewStore((s) => s.guideDiagramError);
   const diagramStatus = useReviewStore((s) => s.diagramStatus);
@@ -174,9 +195,11 @@ function DiagramSection() {
 
   const stale = guideDiagram ? isSummaryStale() : false;
   const isValidJson = guideDiagram?.trimStart().startsWith("{") ?? false;
+  const skipped =
+    !guideDiagram && !guideDiagramError && diagramStatus === "done";
 
-  // Don't render anything if no diagram and not loading/error
-  if (!guideDiagram && !guideDiagramError && diagramStatus !== "loading") {
+  // Don't render anything if never attempted
+  if (!guideDiagram && !guideDiagramError && diagramStatus === "idle") {
     return null;
   }
 
@@ -190,18 +213,18 @@ function DiagramSection() {
           </div>
         </div>
       )}
-      {guideDiagramError && (
-        <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
-          <p className="text-xs text-rose-400">
-            Failed to generate diagram: {guideDiagramError}
+      {skipped && (
+        <div className="rounded-lg border border-stone-800/50 p-3">
+          <p className="text-xxs text-stone-600">
+            Diagram was skipped for this review.
           </p>
-          <button
-            onClick={() => generateDiagram()}
-            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
-          >
-            Retry
-          </button>
         </div>
+      )}
+      {guideDiagramError && (
+        <ErrorPanel
+          message={`Failed to generate diagram: ${guideDiagramError}`}
+          onRetry={() => generateDiagram()}
+        />
       )}
       {guideDiagram && !isValidJson && (
         <div className="rounded-lg border border-stone-800 p-4">

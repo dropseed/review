@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { SimpleTooltip } from "../ui/tooltip";
+import { CopyErrorButton } from "./CopyErrorButton";
 
 interface ExcalidrawDiagramProps {
   sceneJson: string;
@@ -13,7 +20,7 @@ const MAX_ZOOM = 3;
 export function ExcalidrawDiagram({
   sceneJson,
   onRetry,
-}: ExcalidrawDiagramProps) {
+}: ExcalidrawDiagramProps): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,19 +80,10 @@ export function ExcalidrawDiagram({
       setError(null);
 
       try {
-        let elements;
-        try {
-          const parsed = JSON.parse(sceneJson);
-          elements = parsed.elements;
-          if (!Array.isArray(elements)) {
-            throw new Error("Missing elements array in diagram JSON");
-          }
-        } catch (parseErr) {
-          throw new Error(
-            parseErr instanceof Error
-              ? parseErr.message
-              : "Invalid diagram JSON",
-          );
+        const parsed = JSON.parse(sceneJson);
+        const elements = parsed.elements;
+        if (!Array.isArray(elements)) {
+          throw new Error("Missing elements array in diagram JSON");
         }
 
         // Sanitize: arrows/lines need a valid points array
@@ -149,14 +147,17 @@ export function ExcalidrawDiagram({
           <span className="text-sm font-medium">Diagram render error</span>
         </div>
         <p className="text-xs text-rose-300/80">{error}</p>
-        {onRetry && (
-          <button
-            onClick={onRetry}
-            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
-          >
-            Regenerate
-          </button>
-        )}
+        <div className="mt-2 flex items-center gap-3">
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+            >
+              Regenerate
+            </button>
+          )}
+          <CopyErrorButton error={error} />
+        </div>
       </div>
     );
   }
