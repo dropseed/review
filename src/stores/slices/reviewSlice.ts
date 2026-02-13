@@ -723,11 +723,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Increment refresh generation to trigger re-fetches in components like FileViewer
       set({ refreshGeneration: get().refreshGeneration + 1 });
 
-      // Load review state FIRST to ensure labels are available before classification
-      await loadReviewState();
-      // Then load files, git status, and commits
-      // Pass isRefreshing=true to suppress loading progress indicators and batch state updates
+      // Load data in parallel; pass isRefreshing=true to suppress progress indicators
       await Promise.all([
+        loadReviewState(),
         loadFiles(true),
         loadAllFiles(),
         loadGitStatus(),
@@ -735,13 +733,11 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       ]);
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();
-      // Restore guide data from persisted state (if still fresh)
       get().restoreGuideFromState();
-      // Reset guide progress indicators so stale badges can take over
       set({
-        classificationStatus: "idle" as const,
-        groupingStatus: "idle" as const,
-        summaryStatus: "idle" as const,
+        classificationStatus: "idle",
+        groupingStatus: "idle",
+        summaryStatus: "idle",
       });
     },
   });

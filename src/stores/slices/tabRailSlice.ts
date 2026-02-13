@@ -125,8 +125,8 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         repoMetadata: newMetadata,
       });
 
-      // Fetch diff stats in parallel (fire-and-forget, non-blocking)
-      const statsResults = await Promise.allSettled(
+      // Fetch diff stats in background (fire-and-forget, non-blocking)
+      Promise.allSettled(
         reviews.map(async (review) => {
           const stat = await client.getDiffShortStat(
             review.repoPath,
@@ -134,21 +134,18 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           );
           return { key: reviewKey(review), stat };
         }),
-      );
-      const newStats: Record<string, DiffShortStat> = {};
-      for (const result of statsResults) {
-        if (result.status === "fulfilled") {
-          newStats[result.value.key] = result.value.stat;
+      ).then((statsResults) => {
+        const newStats: Record<string, DiffShortStat> = {};
+        const activeState: Record<string, boolean> = {};
+        for (const result of statsResults) {
+          if (result.status === "fulfilled") {
+            const { key, stat } = result.value;
+            newStats[key] = stat;
+            activeState[key] = isDiffActive(stat);
+          }
         }
-      }
-      set({ reviewDiffStats: newStats });
-
-      // Seed reviewActiveState from diff stats
-      const activeState: Record<string, boolean> = {};
-      for (const [key, stat] of Object.entries(newStats)) {
-        activeState[key] = isDiffActive(stat);
-      }
-      set({ reviewActiveState: activeState });
+        set({ reviewDiffStats: newStats, reviewActiveState: activeState });
+      });
     } catch (err) {
       console.error("Failed to load global reviews:", err);
       set({ globalReviewsLoading: false });

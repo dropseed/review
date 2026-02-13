@@ -40,14 +40,15 @@ export function useComparisonLoader(
 
     async function loadData(): Promise<void> {
       try {
-        // Load review state FIRST to ensure labels are available before auto-classification
+        // Load review state and files in parallel
+        // (review state is only needed by classifyStaticHunks, which runs after both complete)
         startActivity("load-state", "Loading review state", 10);
-        await loadReviewState();
-        endActivity("load-state");
-        if (cancelled) return;
-
-        // Then load files and other data in parallel
-        await Promise.all([loadFiles(), loadAllFiles(), loadGitStatus()]);
+        await Promise.all([
+          loadReviewState().then(() => endActivity("load-state")),
+          loadFiles(),
+          loadAllFiles(),
+          loadGitStatus(),
+        ]);
         if (cancelled) return;
 
         // Sync total diff hunk count into review state for accurate sidebar progress

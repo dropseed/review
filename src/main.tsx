@@ -16,8 +16,6 @@ import { initSentry } from "./utils/sentry";
 import { initializeLogger } from "./utils/logger";
 import { useReviewStore } from "./stores";
 
-// Preload syntax highlighting languages for @pierre/diffs
-// This ensures languages are resolved before components render
 import { resolveLanguages } from "@pierre/diffs";
 import { WorkerPoolContextProvider, useWorkerPool } from "@pierre/diffs/react";
 const commonLanguages = [
@@ -40,8 +38,7 @@ const commonLanguages = [
   "cpp",
 ] as const;
 
-// Keeps the worker pool's syntax highlighting theme in sync with user preferences
-function WorkerPoolThemeSync() {
+function WorkerPoolThemeSync(): null {
   const pool = useWorkerPool();
   const codeTheme = useReviewStore((s) => s.codeTheme);
 
@@ -63,53 +60,50 @@ initializeLogger();
 // Read the initial theme so workers start with the right one
 const initialTheme = useReviewStore.getState().codeTheme;
 
-// Wait for languages to resolve before rendering the app
-// This fixes syntax highlighting not working in production builds
-resolveLanguages([...commonLanguages])
-  .catch((err) => {
-    console.warn(
-      "[main] Failed to preload syntax highlighting languages:",
-      err,
-    );
-  })
-  .finally(() => {
-    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-      <React.StrictMode>
-        <ErrorBoundary>
-          <WorkerPoolContextProvider
-            poolOptions={{
-              workerFactory: () =>
-                new Worker(
-                  new URL("@pierre/diffs/worker/worker.js", import.meta.url),
-                  { type: "module" },
-                ),
-              poolSize: Math.min(navigator.hardwareConcurrency || 4, 8),
-            }}
-            highlighterOptions={{
-              langs: [...commonLanguages],
-              theme: { dark: initialTheme, light: initialTheme },
-              lineDiffType: "word-alt",
-              tokenizeMaxLineLength: 1000,
-            }}
-          >
-            <WorkerPoolThemeSync />
-            <AppRouter />
-            <Toaster
-              theme="dark"
-              position="bottom-left"
-              toastOptions={{
-                style: {
-                  background: "#292524",
-                  color: "#e7e5e4",
-                  border: "1px solid rgba(168, 162, 158, 0.15)",
-                },
-              }}
-            />
-          </WorkerPoolContextProvider>
-        </ErrorBoundary>
-      </React.StrictMode>,
-    );
-  });
+// Pre-resolve common languages in background to warm the cache.
+// WorkerPoolContextProvider calls resolveLanguages() itself during init,
+// so syntax highlighting works regardless of whether this finishes first.
+resolveLanguages([...commonLanguages]).catch((err) => {
+  console.warn("[main] Failed to preload syntax highlighting languages:", err);
+});
+
+// Render immediately — don't block on language resolution
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <ErrorBoundary>
+      <WorkerPoolContextProvider
+        poolOptions={{
+          workerFactory: () =>
+            new Worker(
+              new URL("@pierre/diffs/worker/worker.js", import.meta.url),
+              { type: "module" },
+            ),
+          poolSize: Math.min(navigator.hardwareConcurrency || 4, 8),
+        }}
+        highlighterOptions={{
+          langs: [...commonLanguages],
+          theme: { dark: initialTheme, light: initialTheme },
+          lineDiffType: "word-alt",
+          tokenizeMaxLineLength: 1000,
+        }}
+      >
+        <WorkerPoolThemeSync />
+        <AppRouter />
+        <Toaster
+          theme="dark"
+          position="bottom-left"
+          toastOptions={{
+            style: {
+              background: "#292524",
+              color: "#e7e5e4",
+              border: "1px solid rgba(168, 162, 158, 0.15)",
+            },
+          }}
+        />
+      </WorkerPoolContextProvider>
+    </ErrorBoundary>
+  </React.StrictMode>,
+);
 
 // Remove initial loading indicator
 document.getElementById("initial-loader")?.remove();

@@ -57,7 +57,7 @@ function shouldSkipFile(path: string): boolean {
 export interface LoadingProgress {
   current: number;
   total: number;
-  phase: "pending" | "files" | "hunks" | "moves";
+  phase: "pending" | "files" | "hunks";
 }
 
 export interface FilesSlice {
@@ -372,41 +372,12 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           return;
         }
 
-        // Phase 3: Detect move pairs
-        const phase3Start = performance.now();
-        if (!isRefreshing) {
-          set({ loadingProgress: { current: 0, total: 1, phase: "moves" } });
+        // Set hunks immediately so the UI becomes interactive
+        if (isRefreshing) {
+          set({ files, flatFileList, hunks: allHunks, movePairs: [] });
+        } else {
+          set({ hunks: allHunks, movePairs: [] });
         }
-        startActivity("detect-moves", "Detecting moves", 35);
-        try {
-          const result = await client.detectMovePairs(allHunks);
-          if (isStale()) {
-            set({ loadingProgress: null });
-            return;
-          }
-          if (isRefreshing) {
-            // Single batched update: files + hunks + movePairs together
-            set({
-              files,
-              flatFileList,
-              hunks: result.hunks,
-              movePairs: result.pairs,
-            });
-          } else {
-            set({ hunks: result.hunks, movePairs: result.pairs });
-          }
-        } catch (err) {
-          console.error("Failed to detect move pairs:", err);
-          if (isRefreshing) {
-            set({ files, flatFileList, hunks: allHunks, movePairs: [] });
-          } else {
-            set({ hunks: allHunks, movePairs: [] });
-          }
-        }
-        endActivity("detect-moves");
-        console.log(
-          `[perf] Phase 3 (move detection): ${(performance.now() - phase3Start).toFixed(0)}ms`,
-        );
 
         // Clear progress
         if (!isRefreshing) {
@@ -416,12 +387,27 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         console.log(
           `[perf] Total loadFiles: ${(performance.now() - loadStart).toFixed(0)}ms`,
         );
+
+        // Fire-and-forget: detect move pairs in background
+        const phase3Start = performance.now();
+        client
+          .detectMovePairs(allHunks)
+          .then((result) => {
+            if (!isStale()) {
+              set({ hunks: result.hunks, movePairs: result.pairs });
+            }
+            console.log(
+              `[perf] Phase 3 (move detection, background): ${(performance.now() - phase3Start).toFixed(0)}ms`,
+            );
+          })
+          .catch((err) => {
+            console.error("Failed to detect move pairs:", err);
+          });
       } catch (err) {
         console.error("Failed to load files:", err);
         // Clean up any activities that may have been started but not ended
         endActivity("load-files");
         endActivity("load-hunks");
-        endActivity("detect-moves");
         if (!isRefreshing) {
           set({ loadingProgress: null });
         }

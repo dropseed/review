@@ -5,29 +5,19 @@ import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
 import { setSoundEnabled } from "../../utils/sounds";
 
-// Font size constants
 export const CODE_FONT_SIZE_DEFAULT = 11;
 export const CODE_FONT_SIZE_MIN = 8;
 export const CODE_FONT_SIZE_MAX = 32;
 export const CODE_FONT_SIZE_STEP = 1;
 
-// Max number of recent repositories to keep
 const MAX_RECENT_REPOS = 5;
 
-// Diff display option types
 export type DiffLineDiffType = "word" | "word-alt" | "char" | "none";
 export type DiffIndicators = "classic" | "bars" | "none";
-
-// Changes display mode type
 export type ChangesDisplayMode = "tree" | "flat";
-
-// Diff view mode type
 export type DiffViewMode = "unified" | "split" | "old" | "new";
-
-// Review sort order type
 export type ReviewSortOrder = "updated" | "repo" | "size";
 
-// Preference defaults
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeTheme: "github-dark",
@@ -146,7 +136,6 @@ export interface PreferencesSlice {
 export const createPreferencesSlice: SliceCreatorWithStorage<
   PreferencesSlice
 > = (storage: StorageService) => (set, get) => ({
-  // Initial state
   codeFontSize: defaults.codeFontSize,
   codeTheme: defaults.codeTheme,
   fileToReveal: null,
@@ -211,63 +200,82 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   loadPreferences: async () => {
-    const fontSize =
-      (await storage.get<number>("codeFontSize")) ?? defaults.codeFontSize;
-    const theme =
-      (await storage.get<string>("codeTheme")) ?? defaults.codeTheme;
-    const classifyCmd =
-      (await storage.get<string | null>("classifyCommand")) ??
-      defaults.classifyCommand;
-    const batchSize =
-      (await storage.get<number>("classifyBatchSize")) ??
-      defaults.classifyBatchSize;
-    const maxConcurrent =
-      (await storage.get<number>("classifyMaxConcurrent")) ??
-      defaults.classifyMaxConcurrent;
-    const recentRepos =
-      (await storage.get<RecentRepo[]>("recentRepositories")) ??
-      defaults.recentRepositories;
-    const sentryEnabled =
-      (await storage.get<boolean>("sentryEnabled")) ?? defaults.sentryEnabled;
+    const [
+      rawFontSize,
+      rawTheme,
+      rawClassifyCmd,
+      rawBatchSize,
+      rawMaxConcurrent,
+      rawRecentRepos,
+      rawSentryEnabled,
+      rawSoundEffectsEnabled,
+      rawTabRailCollapsed,
+      rawFilesPanelCollapsed,
+      rawReviewSortOrder,
+      rawInactiveReviewSortOrder,
+      rawCompanionServerEnabled,
+      rawCompanionServerToken,
+      rawDiffLineDiffType,
+      rawDiffIndicators,
+      rawNeedsReviewDisplayMode,
+      rawReviewedDisplayMode,
+      rawChangesDisplayMode,
+      rawDiffViewMode,
+    ] = await Promise.all([
+      storage.get<number>("codeFontSize"),
+      storage.get<string>("codeTheme"),
+      storage.get<string | null>("classifyCommand"),
+      storage.get<number>("classifyBatchSize"),
+      storage.get<number>("classifyMaxConcurrent"),
+      storage.get<RecentRepo[]>("recentRepositories"),
+      storage.get<boolean>("sentryEnabled"),
+      storage.get<boolean>("soundEffectsEnabled"),
+      storage.get<boolean>("tabRailCollapsed"),
+      storage.get<boolean>("filesPanelCollapsed"),
+      storage.get<ReviewSortOrder>("reviewSortOrder"),
+      storage.get<ReviewSortOrder>("inactiveReviewSortOrder"),
+      storage.get<boolean>("companionServerEnabled"),
+      storage.get<string | null>("companionServerToken"),
+      storage.get<DiffLineDiffType>("diffLineDiffType"),
+      storage.get<DiffIndicators>("diffIndicators"),
+      storage.get<ChangesDisplayMode>("needsReviewDisplayMode"),
+      storage.get<ChangesDisplayMode>("reviewedDisplayMode"),
+      storage.get<ChangesDisplayMode>("changesDisplayMode"),
+      storage.get<string>("diffViewMode"),
+    ]);
+
+    const fontSize = rawFontSize ?? defaults.codeFontSize;
+    const theme = rawTheme ?? defaults.codeTheme;
+    const classifyCmd = rawClassifyCmd ?? defaults.classifyCommand;
+    const batchSize = rawBatchSize ?? defaults.classifyBatchSize;
+    const maxConcurrent = rawMaxConcurrent ?? defaults.classifyMaxConcurrent;
+    const recentRepos = rawRecentRepos ?? defaults.recentRepositories;
+    const sentryEnabled = rawSentryEnabled ?? defaults.sentryEnabled;
     const soundEffectsEnabled =
-      (await storage.get<boolean>("soundEffectsEnabled")) ??
-      defaults.soundEffectsEnabled;
-    const tabRailCollapsed =
-      (await storage.get<boolean>("tabRailCollapsed")) ??
-      defaults.tabRailCollapsed;
+      rawSoundEffectsEnabled ?? defaults.soundEffectsEnabled;
+    const tabRailCollapsed = rawTabRailCollapsed ?? defaults.tabRailCollapsed;
     const filesPanelCollapsed =
-      (await storage.get<boolean>("filesPanelCollapsed")) ??
-      defaults.filesPanelCollapsed;
-    const reviewSortOrder =
-      (await storage.get<ReviewSortOrder>("reviewSortOrder")) ??
-      defaults.reviewSortOrder;
+      rawFilesPanelCollapsed ?? defaults.filesPanelCollapsed;
+    const reviewSortOrder = rawReviewSortOrder ?? defaults.reviewSortOrder;
     const inactiveReviewSortOrder =
-      (await storage.get<ReviewSortOrder>("inactiveReviewSortOrder")) ??
-      defaults.inactiveReviewSortOrder;
+      rawInactiveReviewSortOrder ?? defaults.inactiveReviewSortOrder;
     const companionServerEnabled =
-      (await storage.get<boolean>("companionServerEnabled")) ??
-      defaults.companionServerEnabled;
+      rawCompanionServerEnabled ?? defaults.companionServerEnabled;
     const companionServerToken =
-      (await storage.get<string | null>("companionServerToken")) ??
-      defaults.companionServerToken;
-    const diffLineDiffType =
-      (await storage.get<DiffLineDiffType>("diffLineDiffType")) ??
-      defaults.diffLineDiffType;
-    const diffIndicators =
-      (await storage.get<DiffIndicators>("diffIndicators")) ??
-      defaults.diffIndicators;
+      rawCompanionServerToken ?? defaults.companionServerToken;
+    const diffLineDiffType = rawDiffLineDiffType ?? defaults.diffLineDiffType;
+    const diffIndicators = rawDiffIndicators ?? defaults.diffIndicators;
+    // Migrate from the old single "changesDisplayMode" key
     const needsReviewDisplayMode =
-      (await storage.get<ChangesDisplayMode>("needsReviewDisplayMode")) ??
-      // Migrate from the old single key
-      (await storage.get<ChangesDisplayMode>("changesDisplayMode")) ??
+      rawNeedsReviewDisplayMode ??
+      rawChangesDisplayMode ??
       defaults.needsReviewDisplayMode;
     const reviewedDisplayMode =
-      (await storage.get<ChangesDisplayMode>("reviewedDisplayMode")) ??
-      (await storage.get<ChangesDisplayMode>("changesDisplayMode")) ??
+      rawReviewedDisplayMode ??
+      rawChangesDisplayMode ??
       defaults.reviewedDisplayMode;
     let diffViewMode: DiffViewMode =
-      ((await storage.get<string>("diffViewMode")) as DiffViewMode) ??
-      defaults.diffViewMode;
+      (rawDiffViewMode as DiffViewMode) ?? defaults.diffViewMode;
     // Migrate legacy "file" mode to "new"
     if ((diffViewMode as string) === "file") diffViewMode = "new";
 
