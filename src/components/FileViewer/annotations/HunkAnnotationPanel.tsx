@@ -13,21 +13,37 @@ import { MovePairModal } from "./MovePairModal";
 import { SymbolLinkedHunksModal } from "./SymbolLinkedHunksModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
 
-/** Returns the appropriate background class for a hunk based on its review status */
-function getHunkBackgroundClass(
-  status: "approved" | "rejected" | "saved_for_later" | "trusted" | "pending",
-): string {
+type ReviewStatus =
+  | "approved"
+  | "rejected"
+  | "saved_for_later"
+  | "trusted"
+  | "pending";
+
+function getReviewStatus(
+  hunkState: HunkState | undefined,
+  trustList: string[],
+): ReviewStatus {
+  if (hunkState?.status === "rejected") return "rejected";
+  if (hunkState?.status === "approved") return "approved";
+  if (hunkState?.status === "saved_for_later") return "saved_for_later";
+  if (!hunkState?.status && isHunkTrusted(hunkState, trustList))
+    return "trusted";
+  return "pending";
+}
+
+function getHunkBackgroundClass(status: ReviewStatus): string {
   switch (status) {
     case "rejected":
       return "bg-rose-500/10";
     case "approved":
-      return "bg-emerald-500/5";
+      return "bg-emerald-500/8";
     case "saved_for_later":
       return "bg-amber-500/10";
     case "trusted":
-      return "bg-sky-500/5";
+      return "bg-sky-500/8";
     case "pending":
-      return "bg-stone-800/80";
+      return "bg-stone-800/90";
   }
 }
 
@@ -102,31 +118,22 @@ export function HunkAnnotationPanel({
   onRejectAllSimilar,
   onNavigateToHunk,
 }: HunkAnnotationPanelProps) {
-  const isApproved = hunkState?.status === "approved";
-  const isRejected = hunkState?.status === "rejected";
-  const isSavedForLater = hunkState?.status === "saved_for_later";
-  const isTrusted = !hunkState?.status && isHunkTrusted(hunkState, trustList);
+  const reviewStatus = getReviewStatus(hunkState, trustList);
+  const isApproved = reviewStatus === "approved";
+  const isRejected = reviewStatus === "rejected";
+  const isSavedForLater = reviewStatus === "saved_for_later";
+  const isTrusted = reviewStatus === "trusted";
   const isFocused = hunk.id === focusedHunkId;
 
-  const reviewStatus = isRejected
-    ? ("rejected" as const)
-    : isApproved
-      ? ("approved" as const)
-      : isSavedForLater
-        ? ("saved_for_later" as const)
-        : isTrusted
-          ? ("trusted" as const)
-          : ("pending" as const);
+  const borderClass = isFocused
+    ? "border border-stone-600/60 ring-1 ring-white/25"
+    : "border border-stone-700/40";
 
   return (
     <div
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
-      className={`@container flex items-center gap-2 overflow-x-auto px-3 py-1.5 border-t border-stone-700/50 ${
-        isFocused
-          ? "border-l-[2px] border-l-white/50 border-b-[1px] border-b-white/30"
-          : ""
-      } ${getHunkBackgroundClass(reviewStatus)}`}
+      className={`@container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 ${borderClass} ${getHunkBackgroundClass(reviewStatus)}`}
     >
       {/* Move pair indicator */}
       {pairedHunk && (
