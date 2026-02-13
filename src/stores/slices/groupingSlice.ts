@@ -196,24 +196,27 @@ function buildIdenticalHunkIds(hunks: DiffHunk[]): Map<string, string[]> {
   return identicalHunkIds;
 }
 
+/** State that must be cleared when switching comparisons. */
+export const groupingResetState = {
+  groupingLoading: false,
+  groupingError: null,
+  reviewGroups: [],
+  identicalHunkIds: new Map(),
+  guideLoading: false,
+  guideTitle: null,
+  guideSummary: null,
+  guideSummaryError: null,
+  guideDiagram: null,
+  guideDiagramError: null,
+  classificationStatus: "idle",
+  groupingStatus: "idle",
+  summaryStatus: "idle",
+  diagramStatus: "idle",
+} satisfies Partial<GroupingSlice>;
+
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
   (client: ApiClient) => (set, get) => ({
-    groupingLoading: false,
-    groupingError: null,
-    reviewGroups: [],
-    identicalHunkIds: new Map(),
-
-    // Guide state
-    guideLoading: false,
-    guideTitle: null,
-    guideSummary: null,
-    guideSummaryError: null,
-    guideDiagram: null,
-    guideDiagramError: null,
-    classificationStatus: "idle" as const,
-    groupingStatus: "idle" as const,
-    summaryStatus: "idle" as const,
-    diagramStatus: "idle" as const,
+    ...groupingResetState,
 
     isGroupingStale: () => {
       const { reviewState, hunks } = get();

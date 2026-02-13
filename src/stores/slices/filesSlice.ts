@@ -3,6 +3,9 @@ import type { Comparison, FileEntry, DiffHunk, MovePair } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { makeComparison } from "../../types";
+import { groupingResetState } from "./groupingSlice";
+import { symbolsResetState } from "./symbolsSlice";
+import { classificationResetState } from "./classificationSlice";
 
 // Default comparison: main..HEAD with working tree changes
 const defaultComparison: Comparison = makeComparison("main", "HEAD", true);
@@ -161,13 +164,15 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       // Clear stale data and signal that new data is loading.
       set({
         comparison,
+        // Files slice own state
         files: [],
         flatFileList: [],
         hunks: [],
         movePairs: [],
         allFiles: [],
+        allFilesLoading: false,
         loadingProgress: { phase: "pending", current: 0, total: 0 },
-        // Navigation — reset to browse on comparison switch
+        // Navigation
         selectedFile: null,
         focusedHunkIndex: 0,
         topLevelView: "browse",
@@ -177,24 +182,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         // Review
         reviewState: null,
         undoStack: [],
-        // Symbols — reset loading guards so new load isn't blocked
-        symbolsLoading: false,
-        symbolsLoaded: false,
-        symbolDiffs: [],
-        symbolLinkedHunks: new Map(),
-        // All files — reset loading guard
-        allFilesLoading: false,
-        // Grouping — reset loading guard and stale data
-        groupingLoading: false,
-        reviewGroups: [],
-        identicalHunkIds: new Map(),
-        // AI state — clear cached results and progress indicators
-        guideSummary: null,
-        guideSummaryError: null,
-        classifiedHunkIds: null,
-        classificationStatus: "idle" as const,
-        groupingStatus: "idle" as const,
-        summaryStatus: "idle" as const,
+        // Other slices — spread their reset states
+        ...symbolsResetState,
+        ...groupingResetState,
+        ...classificationResetState,
       });
     },
 

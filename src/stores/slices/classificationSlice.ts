@@ -21,15 +21,20 @@ export interface ClassificationSlice {
   isClassificationStale: () => boolean;
 }
 
+/** State that must be cleared when switching comparisons (excludes claudeAvailable which is global). */
+export const classificationResetState = {
+  classifying: false,
+  classificationError: null,
+  classifyingHunkIds: new Set(),
+  classifiedHunkIds: null,
+} satisfies Partial<ClassificationSlice>;
+
 export const createClassificationSlice: SliceCreatorWithClient<
   ClassificationSlice
 > = (client: ApiClient) => (set, get) => ({
   claudeAvailable: null,
-  classifying: false,
-  classificationError: null,
-  classifyingHunkIds: new Set<string>(),
+  ...classificationResetState,
   classifyGeneration: 0,
-  classifiedHunkIds: null,
 
   checkClaudeAvailable: async () => {
     try {

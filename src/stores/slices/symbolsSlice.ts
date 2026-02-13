@@ -18,12 +18,17 @@ export interface SymbolsSlice {
   symbolLinkedHunks: Map<string, SymbolLinkedHunk[]>;
 }
 
+/** State that must be cleared when switching comparisons. */
+export const symbolsResetState = {
+  symbolDiffs: [],
+  symbolsLoading: false,
+  symbolsLoaded: false,
+  symbolLinkedHunks: new Map(),
+} satisfies Partial<SymbolsSlice>;
+
 export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
   (client: ApiClient) => (set, get) => ({
-    symbolDiffs: [],
-    symbolsLoading: false,
-    symbolsLoaded: false,
-    symbolLinkedHunks: new Map(),
+    ...symbolsResetState,
 
     loadSymbols: async () => {
       const {
