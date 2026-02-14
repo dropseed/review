@@ -42,17 +42,17 @@ function ConnectionGuard({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: "#0c0a09" }}>
       <QueryClientProvider client={queryClient}>
         <ConnectionGuard>
           <Stack
             screenOptions={{
               headerShown: false,
-              ...(process.env.EXPO_OS === "ios" && {
-                headerTransparent: true,
-                headerBlurEffect: "systemChromeMaterial",
-                headerLargeTitleShadowVisible: false,
-              }),
+              headerBackButtonDisplayMode: "minimal",
+              headerStyle: { backgroundColor: "#1c1917" },
+              headerTintColor: "#fafaf9",
+              headerTitleStyle: { color: "#fafaf9" },
+              contentStyle: { backgroundColor: "#0c0a09" },
             }}
           >
             <Stack.Screen
@@ -64,14 +64,13 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="(tabs)"
-              options={{ headerShown: false, headerBackTitle: "" }}
+              options={{ headerShown: false }}
             />
             <Stack.Screen
               name="review/[key]"
               options={{
                 headerShown: true,
                 title: "Review",
-                headerBackTitle: "",
               }}
             />
             <Stack.Screen
@@ -79,7 +78,16 @@ export default function RootLayout() {
               options={{
                 headerShown: true,
                 title: "File",
-                headerBackTitle: "",
+              }}
+            />
+            <Stack.Screen
+              name="settings"
+              options={{
+                headerShown: true,
+                title: "Settings",
+                presentation: "modal",
+                headerStyle: { backgroundColor: "#1c1917" },
+                headerTintColor: "#fafaf9",
               }}
             />
           </Stack>

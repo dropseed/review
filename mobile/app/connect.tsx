@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,15 +7,50 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Animated,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useConnectionStore } from "../stores/connection";
+
+// Desktop palette
+const stone = {
+  950: "#0c0a09",
+  900: "#1c1917",
+  800: "#292524",
+  700: "#44403c",
+  600: "#57534e",
+  500: "#78716c",
+  400: "#a8a29e",
+  300: "#d6d3d1",
+  200: "#e7e5e3",
+  50: "#fafaf9",
+};
+const amber = {
+  500: "#d9923a",
+  600: "#b8792e",
+};
+const sage = {
+  400: "#7aad8a",
+  900: "#1a2e20",
+};
 
 export default function ConnectScreen() {
   const { connect, isLoading, error, serverInfo } = useConnectionStore();
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [success, setSuccess] = useState(false);
+  const tokenRef = useRef<TextInput>(null);
+
+  // Subtle fade-in animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  useState(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+  });
 
   const handleConnect = async () => {
     if (!url.trim() || !token.trim()) return;
@@ -28,88 +63,116 @@ export default function ConnectScreen() {
     }
   };
 
+  const canSubmit = url.trim() && token.trim() && !isLoading;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={process.env.EXPO_OS === "ios" ? "padding" : "height"}
-      >
-        <View style={styles.content}>
-          <View style={styles.iconContainer}>
-            <Text style={styles.icon}>{"</>"}</Text>
-          </View>
-          <Text style={styles.title}>Review</Text>
-          <Text style={styles.subtitle}>Connect to your desktop app</Text>
+    <View style={styles.root}>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={process.env.EXPO_OS === "ios" ? "padding" : "height"}
+        >
+          <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+            {/* Brand mark */}
+            <View style={styles.brandSection}>
+              <Image
+                source={require("../assets/icon.png")}
+                style={styles.appIcon}
+              />
+              <Text style={styles.title}>Review</Text>
+              <Text style={styles.subtitle}>
+                Connect to your desktop companion
+              </Text>
+            </View>
 
-          <View style={styles.form}>
-            <Text style={styles.label}>Server URL</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="http://macbook.local:3333"
-              placeholderTextColor="#8e8e93"
-              value={url}
-              onChangeText={setUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              returnKeyType="next"
-            />
-
-            <Text style={styles.label}>Auth Token</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Paste token from desktop app"
-              placeholderTextColor="#8e8e93"
-              value={token}
-              onChangeText={setToken}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              returnKeyType="go"
-              onSubmitEditing={handleConnect}
-            />
-
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            {success && serverInfo ? (
-              <View style={styles.successContainer}>
-                <Text style={styles.successText}>
-                  Connected to {serverInfo.hostname}
-                </Text>
-                <Text style={styles.successDetail}>
-                  v{serverInfo.version} -- {serverInfo.repos.length} repo
-                  {serverInfo.repos.length !== 1 ? "s" : ""}
-                </Text>
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Server URL</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="http://macbook.local:3333"
+                    placeholderTextColor={stone[600]}
+                    value={url}
+                    onChangeText={setUrl}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    returnKeyType="next"
+                    onSubmitEditing={() => tokenRef.current?.focus()}
+                    selectionColor={amber[500]}
+                  />
+                </View>
               </View>
-            ) : null}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                (!url.trim() || !token.trim() || isLoading) &&
-                  styles.buttonDisabled,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={handleConnect}
-              disabled={!url.trim() || !token.trim() || isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Connect</Text>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Auth Token</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    ref={tokenRef}
+                    style={styles.input}
+                    placeholder="Paste token from desktop app"
+                    placeholderTextColor={stone[600]}
+                    value={token}
+                    onChangeText={setToken}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    returnKeyType="go"
+                    onSubmitEditing={handleConnect}
+                    selectionColor={amber[500]}
+                  />
+                </View>
+              </View>
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              {success && serverInfo ? (
+                <View style={styles.successContainer}>
+                  <View style={styles.successDot} />
+                  <View style={styles.successTextGroup}>
+                    <Text style={styles.successText}>
+                      Connected to {serverInfo.hostname}
+                    </Text>
+                    <Text style={styles.successDetail}>
+                      v{serverInfo.version} · {serverInfo.repos.length} repo
+                      {serverInfo.repos.length !== 1 ? "s" : ""}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  !canSubmit && styles.buttonDisabled,
+                  pressed && canSubmit && styles.buttonPressed,
+                ]}
+                onPress={handleConnect}
+                disabled={!canSubmit}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={stone[900]} size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>Connect</Text>
+                )}
+              </Pressable>
+            </View>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: stone[950],
+  },
   safeArea: {
     flex: 1,
-    backgroundColor: "#f2f2f7",
   },
   container: {
     flex: 1,
@@ -117,101 +180,117 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
   },
-  iconContainer: {
-    alignSelf: "center",
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    borderCurve: "continuous",
-    backgroundColor: "#007AFF",
+
+  // Brand
+  brandSection: {
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 48,
   },
-  icon: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#fff",
+  appIcon: {
+    width: 64,
+    height: 64,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 34,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 4,
-    color: "#000",
+    fontSize: 28,
+    fontWeight: "600",
+    color: stone[50],
+    letterSpacing: -0.5,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 17,
-    color: "#8e8e93",
-    textAlign: "center",
-    marginBottom: 40,
+    fontSize: 15,
+    color: stone[500],
+    letterSpacing: 0.1,
   },
+
+  // Form
   form: {
-    gap: 8,
+    gap: 16,
+  },
+  fieldGroup: {
+    gap: 6,
   },
   label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#3c3c43",
+    fontSize: 12,
+    fontWeight: "500",
+    color: stone[500],
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: 8,
-    marginLeft: 4,
+    letterSpacing: 0.8,
+    marginLeft: 2,
+  },
+  inputWrapper: {
+    borderWidth: 1,
+    borderColor: "rgba(168, 162, 158, 0.2)",
+    borderRadius: 10,
+    borderCurve: "continuous",
+    backgroundColor: stone[900],
   },
   input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#c6c6c8",
-    borderRadius: 10,
-    borderCurve: "continuous",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 17,
-    backgroundColor: "#fff",
-    color: "#000",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    color: stone[50],
   },
+
+  // Feedback
   error: {
-    color: "#ff3b30",
-    fontSize: 14,
+    color: "#d45a52",
+    fontSize: 13,
     textAlign: "center",
-    marginTop: 8,
   },
   successContainer: {
-    backgroundColor: "#f0fdf4",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: sage[900],
+    borderWidth: 1,
+    borderColor: "rgba(122, 173, 138, 0.2)",
     borderRadius: 10,
     borderCurve: "continuous",
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  successDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: sage[400],
+  },
+  successTextGroup: {
+    flex: 1,
+  },
+  successText: {
+    color: sage[400],
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  successDetail: {
+    color: stone[500],
+    fontSize: 12,
+    marginTop: 1,
+  },
+
+  // Button
+  button: {
+    backgroundColor: amber[500],
+    borderRadius: 10,
+    borderCurve: "continuous",
+    paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
   },
-  successText: {
-    color: "#10b981",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  successDetail: {
-    color: "#6b7280",
-    fontSize: 13,
-    marginTop: 2,
-  },
-  button: {
-    backgroundColor: "#007AFF",
-    borderRadius: 12,
-    borderCurve: "continuous",
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 24,
-  },
   buttonDisabled: {
-    opacity: 0.5,
+    opacity: 0.4,
   },
   buttonPressed: {
-    opacity: 0.8,
+    backgroundColor: amber[600],
   },
   buttonText: {
-    color: "#fff",
-    fontSize: 17,
+    color: stone[950],
+    fontSize: 16,
     fontWeight: "600",
   },
 });

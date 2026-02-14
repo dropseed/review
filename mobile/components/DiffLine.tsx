@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from "react-native";
 import type { DiffLine as DiffLineType } from "../api/types";
+import { stone } from "../lib/colors";
 import { monoFont } from "../lib/utils";
 
 interface DiffLineProps {
@@ -7,15 +8,15 @@ interface DiffLineProps {
 }
 
 const bgColors: Record<string, string> = {
-  added: "#dcfce7",
-  removed: "#fee2e2",
+  added: "rgba(34, 197, 94, 0.12)",
+  removed: "rgba(239, 68, 68, 0.12)",
   context: "transparent",
 };
 
 const textColors: Record<string, string> = {
-  added: "#166534",
-  removed: "#991b1b",
-  context: "#374151",
+  added: "#4ade80",
+  removed: "#fb7185",
+  context: stone[400],
 };
 
 const prefixes: Record<string, string> = {
@@ -29,13 +30,13 @@ export function DiffLine({ line }: DiffLineProps) {
     <View style={[styles.line, { backgroundColor: bgColors[line.type] }]}>
       <Text style={styles.lineNumber}>
         {line.type !== "added"
-          ? String(line.oldLineNumber ?? "").padStart(4)
-          : "    "}
+          ? String(line.oldLineNumber ?? "").padStart(3)
+          : "   "}
       </Text>
       <Text style={styles.lineNumber}>
         {line.type !== "removed"
-          ? String(line.newLineNumber ?? "").padStart(4)
-          : "    "}
+          ? String(line.newLineNumber ?? "").padStart(3)
+          : "   "}
       </Text>
       <Text
         style={[styles.prefix, { color: textColors[line.type] }]}
@@ -59,12 +60,12 @@ const styles = StyleSheet.create({
     minHeight: 20,
   },
   lineNumber: {
-    width: 36,
-    fontSize: 11,
+    width: 28,
+    fontSize: 10,
     fontFamily: monoFont,
-    color: "#9ca3af",
+    color: stone[600],
     textAlign: "right",
-    paddingRight: 4,
+    paddingRight: 3,
     fontVariant: ["tabular-nums"],
   },
   prefix: {

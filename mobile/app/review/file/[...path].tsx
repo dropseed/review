@@ -10,6 +10,7 @@ import { useLocalSearchParams, Stack } from "expo-router";
 import { useFile, useReviewState, useSaveReviewState } from "../../../api/hooks";
 import { HunkView } from "../../../components/HunkView";
 import { decodeReviewKey, monoFont } from "../../../lib/utils";
+import { stone } from "../../../lib/colors";
 import type { ReviewState } from "../../../api/types";
 
 export default function FileDiffScreen() {
@@ -34,10 +35,9 @@ export default function FileDiffScreen() {
     () =>
       params
         ? {
-            old: params.old,
-            new: params.new,
-            workingTree: params.workingTree,
-            key: `${params.old}..${params.new}`,
+            base: params.base,
+            head: params.head,
+            key: `${params.base}..${params.head}`,
           }
         : undefined,
     [params]
@@ -86,7 +86,7 @@ export default function FileDiffScreen() {
       <>
         <Stack.Screen options={{ title: fileName }} />
         <View style={styles.centered}>
-          <ActivityIndicator size="large" />
+          <ActivityIndicator size="large" color={stone[400]} />
         </View>
       </>
     );
@@ -166,7 +166,7 @@ export default function FileDiffScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: "#f2f2f7",
+    backgroundColor: stone[950],
   },
   content: {
     paddingBottom: 40,
@@ -175,12 +175,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: stone[950],
   },
   filePath: {
     fontSize: 13,
-    color: "#666",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    color: stone[500],
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   emptyContainer: {
     padding: 32,
@@ -188,17 +189,15 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 15,
-    color: "#999",
+    color: stone[500],
   },
   errorText: {
     fontSize: 16,
     color: "#f43f5e",
   },
   codeBlock: {
-    backgroundColor: "#fff",
-    marginHorizontal: 8,
-    borderRadius: 8,
-    borderCurve: "continuous",
+    backgroundColor: stone[900],
+    marginHorizontal: 0,
     overflow: "hidden",
     paddingVertical: 8,
   },
@@ -211,7 +210,7 @@ const styles = StyleSheet.create({
     width: 44,
     fontSize: 12,
     fontFamily: monoFont,
-    color: "#9ca3af",
+    color: stone[600],
     textAlign: "right",
     paddingRight: 12,
     fontVariant: ["tabular-nums"],
@@ -219,7 +218,7 @@ const styles = StyleSheet.create({
   codeLineContent: {
     fontSize: 12,
     fontFamily: monoFont,
-    color: "#1f2937",
+    color: stone[300],
     paddingRight: 16,
   },
 });

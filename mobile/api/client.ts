@@ -1,6 +1,7 @@
 import type {
   Comparison,
   DiffHunk,
+  DiffShortStat,
   FileContent,
   FileEntry,
   GlobalReviewSummary,
@@ -55,12 +56,9 @@ export class ApiClient {
 
   private buildComparisonQuery(comparison: Comparison): string {
     const parts = [
-      `old=${encodeURIComponent(comparison.old)}`,
-      `new=${encodeURIComponent(comparison.new)}`,
+      `base=${encodeURIComponent(comparison.base)}`,
+      `head=${encodeURIComponent(comparison.head)}`,
     ];
-    if (comparison.workingTree) {
-      parts.push("workingTree=true");
-    }
     return parts.join("&");
   }
 
@@ -124,6 +122,23 @@ export class ApiClient {
 
   async saveState(repoPath: string, state: ReviewState): Promise<void> {
     await this.postJson(`/state?${this.buildRepoQuery(repoPath)}`, state);
+  }
+
+  async getDiffShortStat(
+    repoPath: string,
+    comparison: Comparison
+  ): Promise<DiffShortStat> {
+    return this.fetchJson<DiffShortStat>(
+      `/diff/shortstat?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison)}`
+    );
+  }
+
+  async getRemoteInfo(
+    repoPath: string
+  ): Promise<{ name: string; browseUrl: string }> {
+    return this.fetchJson(
+      `/remote-info?${this.buildRepoQuery(repoPath)}`
+    );
   }
 
   async getTaxonomy(repoPath: string): Promise<TrustCategory[]> {

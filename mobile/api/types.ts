@@ -9,11 +9,9 @@ export interface GitHubPrRef {
 }
 
 export interface Comparison {
-  old: string;
-  new: string;
-  workingTree: boolean;
+  base: string;
+  head: string;
   key: string;
-  githubPr?: GitHubPrRef;
 }
 
 export interface FileEntry {
@@ -76,12 +74,14 @@ export interface ReviewState {
   createdAt: string;
   updatedAt: string;
   version: number;
+  githubPr?: GitHubPrRef;
 }
 
 export interface GlobalReviewSummary {
   repoPath: string;
   repoName: string;
   comparison: Comparison;
+  githubPr?: GitHubPrRef;
   totalHunks: number;
   trustedHunks: number;
   approvedHunks: number;
@@ -93,6 +93,7 @@ export interface GlobalReviewSummary {
 
 export interface ReviewSummary {
   comparison: Comparison;
+  githubPr?: GitHubPrRef;
   totalHunks: number;
   trustedHunks: number;
   approvedHunks: number;
@@ -123,6 +124,12 @@ export interface TrustCategory {
   id: string;
   name: string;
   patterns: TrustPattern[];
+}
+
+export interface DiffShortStat {
+  fileCount: number;
+  additions: number;
+  deletions: number;
 }
 
 export interface ServerInfo {

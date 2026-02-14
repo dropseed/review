@@ -2,20 +2,18 @@ export const monoFont = process.env.EXPO_OS === "ios" ? "Menlo" : "monospace";
 
 export function encodeReviewKey(
   repoPath: string,
-  old: string,
-  newRef: string,
-  workingTree: boolean
+  base: string,
+  head: string,
 ): string {
   return btoa(
-    JSON.stringify({ repo: repoPath, old, new: newRef, workingTree })
+    JSON.stringify({ repo: repoPath, base, head })
   );
 }
 
 export function decodeReviewKey(key: string): {
   repo: string;
-  old: string;
-  new: string;
-  workingTree: boolean;
+  base: string;
+  head: string;
 } {
   return JSON.parse(atob(key));
 }

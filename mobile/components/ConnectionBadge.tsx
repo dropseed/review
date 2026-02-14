@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from "react-native";
 import { useConnectionStore } from "../stores/connection";
+import { stone } from "../lib/colors";
 
 export function ConnectionBadge() {
   const { isConnected, serverInfo } = useConnectionStore();
@@ -32,10 +33,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   connected: {
-    backgroundColor: "#f0fdf4",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
   },
   disconnected: {
-    backgroundColor: "#fff1f2",
+    backgroundColor: "rgba(244, 63, 94, 0.15)",
   },
   dot: {
     width: 8,
@@ -45,6 +46,6 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 13,
     fontWeight: "500",
-    color: "#333",
+    color: stone[300],
   },
 });

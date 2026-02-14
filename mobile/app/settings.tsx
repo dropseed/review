@@ -1,7 +1,7 @@
 import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from "react-native";
-import { useConnectionStore } from "../../../stores/connection";
-import { ConnectionBadge } from "../../../components/ConnectionBadge";
-import { stone, borderSubtle } from "../../../lib/colors";
+import { useConnectionStore } from "../stores/connection";
+import { ConnectionBadge } from "../components/ConnectionBadge";
+import { stone, borderSubtle } from "../lib/colors";
 
 export default function SettingsScreen() {
   const { serverUrl, serverInfo, disconnect } = useConnectionStore();

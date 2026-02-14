@@ -10,12 +10,13 @@ import {
 import * as Haptics from "expo-haptics";
 import type { DiffHunk, HunkState } from "../api/types";
 import { DiffLine } from "./DiffLine";
-import { colors } from "../lib/colors";
+import { colors, stone, borderSubtle } from "../lib/colors";
 import { monoFont } from "../lib/utils";
 
 interface HunkViewProps {
   hunk: DiffHunk;
   hunkState?: HunkState;
+  trusted?: boolean;
   onApprove: () => void;
   onReject: () => void;
 }
@@ -25,6 +26,7 @@ const SWIPE_THRESHOLD = 80;
 export function HunkView({
   hunk,
   hunkState,
+  trusted,
   onApprove,
   onReject,
 }: HunkViewProps) {
@@ -60,7 +62,9 @@ export function HunkView({
       ? colors.approved
       : status === "rejected"
         ? colors.rejected
-        : "#e5e5ea";
+        : trusted
+          ? colors.trusted
+          : stone[700];
 
   return (
     <View style={styles.container}>
@@ -155,15 +159,13 @@ export function HunkView({
 const styles = StyleSheet.create({
   container: {
     marginVertical: 6,
-    marginHorizontal: 8,
+    marginHorizontal: 0,
   },
   swipeBackground: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    borderRadius: 8,
-    borderCurve: "continuous",
     overflow: "hidden",
   },
   swipeAction: {
@@ -188,27 +190,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   hunk: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    borderCurve: "continuous",
+    backgroundColor: stone[900],
     borderLeftWidth: 3,
     overflow: "hidden",
-    boxShadow: "0px 1px 3px rgba(0, 0, 0, 0.06)",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#f9fafb",
+    backgroundColor: stone[800],
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#e5e5ea",
+    borderBottomColor: borderSubtle,
     gap: 8,
   },
   headerText: {
     fontSize: 11,
     fontFamily: monoFont,
-    color: "#6b7280",
+    color: stone[500],
     flex: 1,
     fontVariant: ["tabular-nums"],
   },
@@ -218,7 +217,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   labelPill: {
-    backgroundColor: "#ede9fe",
+    backgroundColor: "rgba(167, 139, 250, 0.15)",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -226,7 +225,7 @@ const styles = StyleSheet.create({
   },
   labelText: {
     fontSize: 10,
-    color: "#7c3aed",
+    color: "#c4b5fd",
     fontWeight: "500",
   },
   lines: {
@@ -235,7 +234,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#e5e5ea",
+    borderTopColor: borderSubtle,
   },
   actionButton: {
     flex: 1,

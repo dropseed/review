@@ -1,5 +1,5 @@
-import { View, Text, Pressable, StyleSheet } from "react-native";
-import { colors } from "../lib/colors";
+import { Text, Pressable, StyleSheet } from "react-native";
+import { colors, stone, borderSubtle } from "../lib/colors";
 
 interface FileListItemProps {
   name: string;
@@ -34,34 +34,40 @@ export function FileListItem({
   reviewedCount,
   onPress,
 }: FileListItemProps) {
-  const statusColor = status ? statusColors[status] ?? "#999" : "#999";
+  const statusColor = status ? statusColors[status] ?? stone[500] : stone[500];
   const statusLabel = status ? statusLabels[status] ?? "?" : "?";
   const allReviewed = hunkCount > 0 && reviewedCount >= hunkCount;
+
+  // Split path into directory and filename
+  const lastSlash = path.lastIndexOf("/");
+  const dir = lastSlash > 0 ? path.substring(0, lastSlash + 1) : "";
+  const fileName = lastSlash >= 0 ? path.substring(lastSlash + 1) : name;
 
   return (
     <Pressable
       style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
       onPress={onPress}
     >
-      <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
-        <Text style={[styles.statusText, { color: statusColor }]}>
-          {statusLabel}
-        </Text>
-      </View>
-      <View style={styles.info}>
+      <Text style={[styles.statusLetter, { color: statusColor }]}>
+        {statusLabel}
+      </Text>
+      <Text
+        style={[styles.path, allReviewed && styles.pathReviewed]}
+        numberOfLines={1}
+      >
+        {dir ? <Text style={styles.dir}>{dir}</Text> : null}
+        {fileName}
+      </Text>
+      {hunkCount > 0 && (
         <Text
-          style={[styles.name, allReviewed && styles.nameReviewed]}
-          numberOfLines={1}
+          style={[
+            styles.count,
+            allReviewed && styles.countReviewed,
+          ]}
         >
-          {name}
+          {reviewedCount}/{hunkCount}
         </Text>
-        <Text style={styles.path} numberOfLines={1}>
-          {path}
-        </Text>
-        <Text style={styles.hunkCount}>
-          {reviewedCount}/{hunkCount} hunks
-        </Text>
-      </View>
+      )}
       <Text style={styles.chevron}>&rsaquo;</Text>
     </Pressable>
   );
@@ -71,52 +77,46 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: "#fff",
+    backgroundColor: stone[900],
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#e5e5ea",
+    borderBottomColor: borderSubtle,
   },
   itemPressed: {
-    backgroundColor: "#f2f2f7",
+    backgroundColor: stone[800],
   },
-  statusBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderCurve: "continuous",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  statusText: {
+  statusLetter: {
+    width: 16,
     fontSize: 13,
     fontWeight: "700",
-  },
-  info: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: "500",
-    marginBottom: 1,
-  },
-  nameReviewed: {
-    color: "#999",
+    marginRight: 8,
   },
   path: {
-    fontSize: 12,
-    color: "#8e8e93",
-    marginBottom: 2,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    color: stone[50],
   },
-  hunkCount: {
+  pathReviewed: {
+    color: stone[500],
+  },
+  dir: {
+    color: stone[500],
+    fontWeight: "400",
+  },
+  count: {
     fontSize: 13,
-    color: "#999",
+    color: stone[500],
     fontVariant: ["tabular-nums"],
+    marginLeft: 8,
+  },
+  countReviewed: {
+    color: colors.approved,
   },
   chevron: {
     fontSize: 22,
-    color: "#c7c7cc",
+    color: stone[600],
     marginLeft: 8,
   },
 });

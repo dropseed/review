@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { useConnectionStore } from "../stores/connection";
 import { ApiClient } from "./client";
-import type { Comparison, DiffHunk, ReviewState } from "./types";
+import type { Comparison, DiffHunk, DiffShortStat, GlobalReviewSummary, ReviewState } from "./types";
 
 function useApiClient(): ApiClient | null {
   const { serverUrl, authToken, isConnected } = useConnectionStore();
@@ -80,6 +80,44 @@ export function useReviewState(
   });
 }
 
+/** Resolve avatar URLs for each unique repo by fetching remote info. */
+export function useRepoAvatars(reviews: GlobalReviewSummary[] | undefined) {
+  const client = useApiClient();
+
+  const repoPaths = [
+    ...new Set((reviews ?? []).map((r) => r.repoPath)),
+  ];
+
+  return useQuery({
+    queryKey: ["repoAvatars", repoPaths],
+    queryFn: async () => {
+      if (!client || !reviews) return {};
+      const results: Record<string, string | null> = {};
+      await Promise.all(
+        repoPaths.map(async (repoPath) => {
+          try {
+            const info = await client.getRemoteInfo(repoPath);
+            if (info.browseUrl) {
+              const url = new URL(info.browseUrl);
+              const org = url.pathname.split("/")[1];
+              if (org) {
+                results[repoPath] = `${url.origin}/${org}.png?size=64`;
+                return;
+              }
+            }
+          } catch {
+            // Skip
+          }
+          results[repoPath] = null;
+        })
+      );
+      return results;
+    },
+    enabled: !!client && !!reviews && reviews.length > 0,
+    staleTime: 300_000,
+  });
+}
+
 export function useSaveReviewState() {
   const { serverUrl, authToken } = useConnectionStore();
   const queryClient = useQueryClient();
@@ -113,6 +151,50 @@ export function useSaveReviewState() {
       });
       queryClient.invalidateQueries({ queryKey: ["reviewsGlobal"] });
     },
+  });
+}
+
+function isDiffActive(stat: DiffShortStat): boolean {
+  return stat.fileCount > 0 || stat.additions > 0 || stat.deletions > 0;
+}
+
+export interface ReviewDiffInfo {
+  isActive: boolean;
+  stats: DiffShortStat | null;
+}
+
+/** Fetch diff stats for each review and return a map of review key → diff info. */
+export function useReviewDiffStats(reviews: GlobalReviewSummary[] | undefined) {
+  const client = useApiClient();
+
+  const keys = (reviews ?? []).map(
+    (r) => `${r.repoPath}:${r.comparison.key}`
+  );
+
+  return useQuery({
+    queryKey: ["reviewDiffStats", keys],
+    queryFn: async () => {
+      if (!client || !reviews) return {};
+      const results: Record<string, ReviewDiffInfo> = {};
+      await Promise.all(
+        reviews.map(async (review) => {
+          const key = `${review.repoPath}:${review.comparison.key}`;
+          try {
+            const stats = await client.getDiffShortStat(
+              review.repoPath,
+              review.comparison
+            );
+            results[key] = { isActive: isDiffActive(stats), stats };
+          } catch {
+            // Default to active if we can't fetch stats
+            results[key] = { isActive: true, stats: null };
+          }
+        })
+      );
+      return results;
+    },
+    enabled: !!client && !!reviews && reviews.length > 0,
+    staleTime: 60_000,
   });
 }
 
