@@ -52,6 +52,7 @@ struct ReviewState: Codable, Sendable {
     let createdAt: String
     var updatedAt: String
     var version: Int
+    var totalDiffHunks: Int
     let githubPr: GitHubPrRef?
 
     init(from decoder: Decoder) throws {
@@ -64,6 +65,7 @@ struct ReviewState: Codable, Sendable {
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+        totalDiffHunks = try container.decodeIfPresent(Int.self, forKey: .totalDiffHunks) ?? 0
         githubPr = try container.decodeIfPresent(GitHubPrRef.self, forKey: .githubPr)
     }
 }

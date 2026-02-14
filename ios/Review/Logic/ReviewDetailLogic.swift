@@ -53,8 +53,21 @@ func countTrustedHunks(filePath: String, hunks: [DiffHunk], reviewState: ReviewS
 struct ReviewDetailStats {
     let fileCount: Int
     let totalHunks: Int
-    let reviewedHunkCount: Int
-    let trustedHunkCount: Int
+    let trustedHunks: Int
+    let approvedHunks: Int
+    let rejectedHunks: Int
+
+    var reviewedHunks: Int { trustedHunks + approvedHunks + rejectedHunks }
+    var pendingHunks: Int { totalHunks - reviewedHunks }
+    var reviewedPercent: Int {
+        totalHunks > 0 ? Int(round(Double(reviewedHunks) / Double(totalHunks) * 100)) : 0
+    }
+
+    var state: String? {
+        if rejectedHunks > 0 { return "changes_requested" }
+        if reviewedHunks == totalHunks && totalHunks > 0 { return "approved" }
+        return nil
+    }
 }
 
 struct ReviewDetailSection: Identifiable {
@@ -98,17 +111,18 @@ func computeSections(changedFiles: [FileEntry], hunks: [DiffHunk], reviewState: 
 }
 
 func computeStats(hunks: [DiffHunk], reviewState: ReviewState?, fileCount: Int) -> ReviewDetailStats {
-    var reviewedHunkCount = 0
-    var trustedHunkCount = 0
+    var trustedHunks = 0
+    var approvedHunks = 0
+    var rejectedHunks = 0
 
     if let reviewState {
         for hunk in hunks {
             let status = getHunkReviewStatus(reviewState.hunks[hunk.id], trustList: reviewState.trustList)
-            if status == .trusted {
-                trustedHunkCount += 1
-                reviewedHunkCount += 1
-            } else if status != .pending {
-                reviewedHunkCount += 1
+            switch status {
+            case .trusted: trustedHunks += 1
+            case .approved: approvedHunks += 1
+            case .rejected: rejectedHunks += 1
+            case .pending: break
             }
         }
     }
@@ -116,7 +130,8 @@ func computeStats(hunks: [DiffHunk], reviewState: ReviewState?, fileCount: Int) 
     return ReviewDetailStats(
         fileCount: fileCount,
         totalHunks: hunks.count,
-        reviewedHunkCount: reviewedHunkCount,
-        trustedHunkCount: trustedHunkCount
+        trustedHunks: trustedHunks,
+        approvedHunks: approvedHunks,
+        rejectedHunks: rejectedHunks
     )
 }

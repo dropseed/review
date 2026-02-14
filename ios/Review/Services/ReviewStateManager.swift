@@ -54,6 +54,24 @@ final class ReviewStateManager {
         scheduleSave()
     }
 
+    func setTrustPatterns(_ patterns: [String]) {
+        guard var state = reviewState else { return }
+
+        state.trustList = patterns
+        state.updatedAt = ISO8601DateFormatter().string(from: Date())
+        reviewState = state
+
+        scheduleSave()
+    }
+
+    func syncTotalDiffHunks(_ count: Int) {
+        guard var state = reviewState, count > 0, state.totalDiffHunks != count else { return }
+        state.totalDiffHunks = count
+        state.updatedAt = ISO8601DateFormatter().string(from: Date())
+        reviewState = state
+        scheduleSave()
+    }
+
     func updateNotes(_ notes: String) {
         guard var state = reviewState else { return }
 

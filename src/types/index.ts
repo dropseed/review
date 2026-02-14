@@ -393,6 +393,7 @@ export interface ReviewState {
 export interface GlobalReviewSummary extends ReviewSummary {
   repoPath: string;
   repoName: string;
+  diffStats?: DiffShortStat;
 }
 
 // Summary of a saved review (for start screen listing)

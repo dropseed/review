@@ -121,32 +121,23 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         }
       }
 
+      // Build diff stats and active state from inline data
+      const newStats: Record<string, DiffShortStat> = {};
+      const activeState: Record<string, boolean> = {};
+      for (const review of reviews) {
+        if (review.diffStats) {
+          const key = reviewKey(review);
+          newStats[key] = review.diffStats;
+          activeState[key] = isDiffActive(review.diffStats);
+        }
+      }
+
       set({
         globalReviews: reviews,
         globalReviewsLoading: false,
         repoMetadata: newMetadata,
-      });
-
-      // Fetch diff stats in background (fire-and-forget, non-blocking)
-      Promise.allSettled(
-        reviews.map(async (review) => {
-          const stat = await client.getDiffShortStat(
-            review.repoPath,
-            review.comparison,
-          );
-          return { key: reviewKey(review), stat };
-        }),
-      ).then((statsResults) => {
-        const newStats: Record<string, DiffShortStat> = {};
-        const activeState: Record<string, boolean> = {};
-        for (const result of statsResults) {
-          if (result.status === "fulfilled") {
-            const { key, stat } = result.value;
-            newStats[key] = stat;
-            activeState[key] = isDiffActive(stat);
-          }
-        }
-        set({ reviewDiffStats: newStats, reviewActiveState: activeState });
+        reviewDiffStats: newStats,
+        reviewActiveState: activeState,
       });
     } catch (err) {
       console.error("Failed to load global reviews:", err);

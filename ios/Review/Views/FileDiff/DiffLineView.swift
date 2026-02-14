@@ -33,18 +33,17 @@ struct DiffLineView: View {
                 .multilineTextAlignment(.center)
 
             // Content
-            if let highlightedContent {
-                Text(highlightedContent)
-                    .font(.system(size: 12, design: .monospaced))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text(line.content)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(textColor)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if let highlightedContent {
+                    Text(highlightedContent)
+                } else {
+                    Text(line.content)
+                        .foregroundStyle(textColor)
+                }
             }
+            .font(.system(size: 12, design: .monospaced))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 1)
         .frame(minHeight: 20)

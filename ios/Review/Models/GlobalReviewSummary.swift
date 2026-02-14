@@ -14,6 +14,7 @@ struct GlobalReviewSummary: Codable, Identifiable, Hashable, Sendable {
     let rejectedHunks: Int
     let state: ReviewOverallState?
     let updatedAt: String
+    let diffStats: DiffShortStat?
 
     enum ReviewOverallState: String, Codable, Sendable {
         case approved

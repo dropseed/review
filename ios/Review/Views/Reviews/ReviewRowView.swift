@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ReviewRowView: View {
     let review: GlobalReviewSummary
-    let diffStats: DiffShortStat?
     let avatarURL: URL?
 
     private var progress: Double {
@@ -17,26 +16,33 @@ struct ReviewRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Avatar
-            if let url = avatarURL {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
+        HStack(spacing: 10) {
+            // Avatar with optional progress ring overlay
+            ZStack(alignment: .bottomTrailing) {
+                if let url = avatarURL {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        initialsView
+                    }
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
                     initialsView
                 }
-                .frame(width: 36, height: 36)
-                .clipShape(Circle())
-            } else {
-                initialsView
+
+                if progress > 0 {
+                    ProgressCircle(progress: progress, size: 14, strokeWidth: 2)
+                        .background(Circle().fill(.black).padding(-1))
+                        .offset(x: 3, y: 3)
+                }
             }
 
-            // Main content
             VStack(alignment: .leading, spacing: 2) {
                 // Repo name + status badge
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(review.repoName)
                         .font(.body.weight(.semibold))
                         .lineLimit(1)
@@ -44,72 +50,67 @@ struct ReviewRowView: View {
                     if let state = review.state {
                         StatusBadge(state: state)
                     }
-                }
 
-                // Comparison label
-                Text(comparisonLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                // Meta line
-                HStack(spacing: 0) {
-                    if let stats = diffStats {
-                        Text("\(stats.fileCount) file\(stats.fileCount != 1 ? "s" : "")")
-                            .foregroundStyle(.secondary)
-
-                        Text(" +\(stats.additions)")
-                            .foregroundStyle(.green)
-                            .fontWeight(.medium)
-
-                        Text(" -\(stats.deletions)")
-                            .foregroundStyle(.red)
-                            .fontWeight(.medium)
-
-                        Text(" \u{00B7} ")
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Text("\(review.reviewedHunks)/\(review.totalHunks) reviewed")
-                        .foregroundStyle(.secondary)
-
-                    Text(" \u{00B7} ")
-                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
 
                     Text(formatRelativeTime(review.updatedAt))
-                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
-                .font(.caption)
-                .monospacedDigit()
 
-                // Progress bar
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(.tertiary.opacity(0.3))
-                            .frame(height: 3)
+                // Comparison + diff stats on one line
+                HStack(spacing: 0) {
+                    Text(comparisonLabel)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
 
-                        Capsule()
-                            .fill(Color.statusApproved)
-                            .frame(width: geometry.size.width * progress, height: 3)
+                    if let stats = review.diffStats, stats.additions > 0 || stats.deletions > 0 {
+                        Text("  +\(stats.additions)")
+                            .foregroundStyle(.green)
+                        Text(" -\(stats.deletions)")
+                            .foregroundStyle(.red)
                     }
                 }
-                .frame(height: 3)
-                .padding(.top, 4)
+                .font(.subheadline)
+                .monospacedDigit()
             }
         }
         .padding(.vertical, 4)
     }
 
     private var initialsView: some View {
-        Circle()
+        RoundedRectangle(cornerRadius: 8)
             .fill(.quaternary)
             .frame(width: 36, height: 36)
             .overlay {
                 Text(String(review.repoName.prefix(2)).uppercased())
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
+    }
+}
+
+// MARK: - Progress Circle
+
+private struct ProgressCircle: View {
+    let progress: Double
+    var size: CGFloat = 20
+    var strokeWidth: CGFloat = 2.5
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.tertiary.opacity(0.3), lineWidth: strokeWidth)
+
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    progress >= 1.0 ? Color.orange : Color.statusApproved,
+                    style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
     }
 }
 

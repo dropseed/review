@@ -42,7 +42,10 @@
 		AABF0115 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000115 /* SettingsView.swift */; };
 		AABF0116 /* ErrorBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000116 /* ErrorBannerView.swift */; };
 		AABF0117 /* ImageDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000117 /* ImageDiffView.swift */; };
+		AABF0118 /* ConnectionStatusBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000118 /* ConnectionStatusBanner.swift */; };
 		AABF0072 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000072 /* SyntaxHighlighter.swift */; };
+		AABF0044 /* HunkGapComputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000044 /* HunkGapComputation.swift */; };
+		AABF0119 /* ExpandContextButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000119 /* ExpandContextButton.swift */; };
 		AABF0200 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AAPKD0001 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
@@ -83,7 +86,10 @@
 		AA000115 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA000116 /* ErrorBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerView.swift; sourceTree = "<group>"; };
 		AA000117 /* ImageDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDiffView.swift; sourceTree = "<group>"; };
+		AA000118 /* ConnectionStatusBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStatusBanner.swift; sourceTree = "<group>"; };
 		AA000072 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
+		AA000044 /* HunkGapComputation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HunkGapComputation.swift; sourceTree = "<group>"; };
+		AA000119 /* ExpandContextButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandContextButton.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +159,7 @@
 				AA000041 /* TrustMatching.swift */,
 				AA000042 /* TreeUtils.swift */,
 				AA000043 /* ReviewDetailLogic.swift */,
+				AA000044 /* HunkGapComputation.swift */,
 			);
 			path = Logic;
 			sourceTree = "<group>";
@@ -160,6 +167,7 @@
 		AA000050 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AA000118 /* ConnectionStatusBanner.swift */,
 				AA000116 /* ErrorBannerView.swift */,
 				AA000051 /* Connect */,
 				AA000052 /* Reviews */,
@@ -209,6 +217,7 @@
 				AA000113 /* AnnotationEditorView.swift */,
 				AA000114 /* AnnotationBubbleView.swift */,
 				AA000117 /* ImageDiffView.swift */,
+				AA000119 /* ExpandContextButton.swift */,
 			);
 			path = FileDiff;
 			sourceTree = "<group>";
@@ -363,7 +372,10 @@
 				AABF0115 /* SettingsView.swift in Sources */,
 				AABF0116 /* ErrorBannerView.swift in Sources */,
 				AABF0117 /* ImageDiffView.swift in Sources */,
+				AABF0118 /* ConnectionStatusBanner.swift in Sources */,
 				AABF0072 /* SyntaxHighlighter.swift in Sources */,
+				AABF0044 /* HunkGapComputation.swift in Sources */,
+				AABF0119 /* ExpandContextButton.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

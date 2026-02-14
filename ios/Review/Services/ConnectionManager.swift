@@ -1,20 +1,35 @@
 import Foundation
 import Observation
 
+enum ConnectionStatus: Equatable {
+    case disconnected
+    case connected
+    case connectionLost
+    case reconnected
+}
+
 @MainActor
 @Observable
 final class ConnectionManager {
     var serverURL: String = ""
-    var isConnected: Bool = false
+    var status: ConnectionStatus = .disconnected
     var isLoading: Bool = false
     var isRestoring: Bool = false
     var error: String?
     var serverInfo: ServerInfo?
 
+    var isConnected: Bool {
+        status == .connected || status == .reconnected
+    }
+
     private(set) var apiClient: APIClient?
 
     private static let serverURLKey = "serverURL"
     private static let tokenKey = "authToken"
+
+    private var healthCheckTask: Task<Void, Never>?
+    private var consecutiveFailures = 0
+    private static let maxFailuresBeforeLost = 2
 
     var hasSavedCredentials: Bool {
         KeychainHelper.read(key: Self.tokenKey) != nil
@@ -42,7 +57,8 @@ final class ConnectionManager {
             do {
                 let info = try await client.getInfo()
                 serverInfo = info
-                isConnected = true
+                status = .connected
+                startHealthCheck()
             } catch {
                 apiClient = nil
                 self.error = "Could not reconnect: \(error.localizedDescription)"
@@ -67,8 +83,9 @@ final class ConnectionManager {
             serverURL = cleanURL
             apiClient = client
             serverInfo = info
-            isConnected = true
+            status = .connected
             isLoading = false
+            startHealthCheck()
         } catch {
             isLoading = false
             self.error = error.localizedDescription
@@ -77,13 +94,61 @@ final class ConnectionManager {
     }
 
     func disconnect() {
+        stopHealthCheck()
+
         KeychainHelper.delete(key: Self.serverURLKey)
         KeychainHelper.delete(key: Self.tokenKey)
 
         serverURL = ""
         apiClient = nil
         serverInfo = nil
-        isConnected = false
+        status = .disconnected
         error = nil
+    }
+
+    // MARK: - Health Check
+
+    private func startHealthCheck() {
+        stopHealthCheck()
+        consecutiveFailures = 0
+
+        healthCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { break }
+                await self?.performHealthCheck()
+            }
+        }
+    }
+
+    private func stopHealthCheck() {
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+    }
+
+    private func performHealthCheck() async {
+        guard let client = apiClient else { return }
+
+        do {
+            _ = try await client.getHealth()
+            consecutiveFailures = 0
+
+            if status == .connectionLost {
+                status = .reconnected
+                // Auto-clear to .connected after 3 seconds
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    if status == .reconnected {
+                        status = .connected
+                    }
+                }
+            }
+        } catch {
+            consecutiveFailures += 1
+
+            if consecutiveFailures >= Self.maxFailuresBeforeLost && status != .connectionLost {
+                status = .connectionLost
+            }
+        }
     }
 }

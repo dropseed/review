@@ -1,6 +1,7 @@
 use super::central;
 use super::state::{ReviewState, ReviewSummary};
 use crate::sources::github::GitHubPrRef;
+use crate::sources::local_git::{DiffShortStat, LocalGitSource};
 use crate::sources::traits::Comparison;
 use serde::Serialize;
 use std::fs;
@@ -34,6 +35,8 @@ pub struct GlobalReviewSummary {
     pub repo_path: String,
     #[serde(rename = "repoName")]
     pub repo_name: String,
+    #[serde(rename = "diffStats")]
+    pub diff_stats: Option<DiffShortStat>,
 }
 
 /// List all reviews across all registered repos.
@@ -47,13 +50,21 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
         if !repo_path.exists() {
             continue;
         }
+
+        let source = LocalGitSource::new(repo_path.clone()).ok();
+
         match list_saved_reviews(&repo_path) {
             Ok(summaries) => {
                 for summary in summaries {
+                    let diff_stats = source
+                        .as_ref()
+                        .and_then(|s| s.get_diff_shortstat(&summary.comparison).ok());
+
                     all.push(GlobalReviewSummary {
                         summary,
                         repo_path: entry.path.clone(),
                         repo_name: entry.name.clone(),
+                        diff_stats,
                     });
                 }
             }

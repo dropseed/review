@@ -7,10 +7,10 @@ struct ContentView: View {
         Group {
             if connectionManager.isRestoring {
                 ProgressView("Reconnecting...")
-            } else if connectionManager.isConnected {
-                ReviewsListView()
-            } else {
+            } else if connectionManager.status == .disconnected {
                 ConnectView()
+            } else {
+                ReviewsListView()
             }
         }
         .preferredColorScheme(.dark)

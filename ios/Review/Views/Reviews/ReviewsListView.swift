@@ -3,11 +3,26 @@ import SwiftUI
 struct ReviewsListView: View {
     @Environment(ConnectionManager.self) private var connectionManager
     @State private var reviews: [GlobalReviewSummary] = []
-    @State private var diffStats: [String: DiffShortStat] = [:]
     @State private var avatarURLs: [String: URL] = [:]
     @State private var isLoading = true
     @State private var error: String?
     @State private var showSettings = false
+
+    /// A review is considered active when its diff has any changed files, additions, or deletions.
+    /// Reviews without stats default to active (shown).
+    private var activeReviews: [GlobalReviewSummary] {
+        reviews.filter { review in
+            guard let stats = review.diffStats else { return true }
+            return stats.fileCount > 0 || stats.additions > 0 || stats.deletions > 0
+        }
+    }
+
+    private var inactiveReviews: [GlobalReviewSummary] {
+        reviews.filter { review in
+            guard let stats = review.diffStats else { return false }
+            return stats.fileCount == 0 && stats.additions == 0 && stats.deletions == 0
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -25,20 +40,34 @@ struct ReviewsListView: View {
                             Task { await loadReviews() }
                         }
                     }
-                } else if reviews.isEmpty {
+                } else if activeReviews.isEmpty && inactiveReviews.isEmpty {
                     ContentUnavailableView {
                         Label("No Reviews", systemImage: "doc.text.magnifyingglass")
                     } description: {
                         Text("Start a review in the desktop app to see it here.")
                     }
                 } else {
-                    List(reviews) { review in
-                        NavigationLink(value: review) {
-                            ReviewRowView(
-                                review: review,
-                                diffStats: diffStats[review.id],
-                                avatarURL: avatarURLs[review.repoPath]
-                            )
+                    List {
+                        ForEach(activeReviews) { review in
+                            NavigationLink(value: review) {
+                                ReviewRowView(
+                                    review: review,
+                                    avatarURL: avatarURLs[review.repoPath]
+                                )
+                            }
+                        }
+
+                        if !inactiveReviews.isEmpty {
+                            Section("Inactive") {
+                                ForEach(inactiveReviews) { review in
+                                    NavigationLink(value: review) {
+                                        ReviewRowView(
+                                            review: review,
+                                            avatarURL: avatarURLs[review.repoPath]
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -60,6 +89,9 @@ struct ReviewsListView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .safeAreaInset(edge: .top) {
+                ConnectionStatusBanner()
+            }
             .navigationDestination(for: GlobalReviewSummary.self) { review in
                 ReviewDetailView(review: review)
                     .environment(connectionManager)
@@ -75,6 +107,11 @@ struct ReviewsListView: View {
     }
 
     private func loadReviews() async {
+        guard connectionManager.status != .connectionLost else {
+            isLoading = false
+            return
+        }
+
         guard let client = connectionManager.apiClient else {
             error = "Not connected"
             isLoading = false
@@ -87,29 +124,12 @@ struct ReviewsListView: View {
             error = nil
             isLoading = false
 
-            await loadDiffStats(client: client, reviews: fetched)
             await loadAvatarURLs(client: client, reviews: fetched)
         } catch {
             if reviews.isEmpty {
                 self.error = error.localizedDescription
             }
             isLoading = false
-        }
-    }
-
-    private func loadDiffStats(client: APIClient, reviews: [GlobalReviewSummary]) async {
-        for review in reviews {
-            let key = review.id
-            if diffStats[key] != nil { continue }
-            do {
-                let stats = try await client.getDiffShortStat(
-                    repoPath: review.repoPath,
-                    comparison: review.comparison
-                )
-                diffStats[key] = stats
-            } catch {
-                // Silently skip — row will display without stats
-            }
         }
     }
 
@@ -133,7 +153,6 @@ struct ReviewsListView: View {
               let url = URL(string: browseUrl) else {
             return nil
         }
-        // browseUrl is like "https://github.com/org/repo"
         let components = url.pathComponents
         guard components.count >= 2 else { return nil }
         let org = components[1]

@@ -14,9 +14,9 @@ struct SettingsView: View {
                         Spacer()
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(connectionManager.isConnected ? .green : .red)
+                                .fill(statusColor)
                                 .frame(width: 8, height: 8)
-                            Text(connectionManager.isConnected ? "Connected" : "Disconnected")
+                            Text(statusText)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -95,6 +95,30 @@ struct SettingsView: View {
             } message: {
                 Text("Are you sure you want to disconnect from the server?")
             }
+        }
+    }
+}
+
+extension SettingsView {
+    private var statusColor: Color {
+        switch connectionManager.status {
+        case .connected, .reconnected:
+            return .green
+        case .connectionLost:
+            return .orange
+        case .disconnected:
+            return .red
+        }
+    }
+
+    private var statusText: String {
+        switch connectionManager.status {
+        case .connected, .reconnected:
+            return "Connected"
+        case .connectionLost:
+            return "Connection Lost"
+        case .disconnected:
+            return "Disconnected"
         }
     }
 }

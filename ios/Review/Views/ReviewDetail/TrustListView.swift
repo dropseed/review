@@ -10,6 +10,31 @@ struct TrustListView: View {
     @State private var isLoading = true
     @State private var loadError: String?
 
+    private var allPatternIds: [String] {
+        categories.flatMap { $0.patterns.map(\.id) }
+    }
+
+    private var allTrusted: Bool {
+        guard let trustList = stateManager.reviewState?.trustList else { return false }
+        let all = allPatternIds
+        return !all.isEmpty && all.allSatisfy { trustList.contains($0) }
+    }
+
+    private var totalMatchingHunks: Int {
+        guard let state = stateManager.reviewState else { return 0 }
+        let all = allPatternIds
+        var count = 0
+        for hunk in hunks {
+            if let hunkState = state.hunks[hunk.id] {
+                let matches = hunkState.label.contains { label in
+                    all.contains { matchesPattern(label, $0) }
+                }
+                if matches { count += 1 }
+            }
+        }
+        return count
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -29,6 +54,32 @@ struct TrustListView: View {
                 ContentUnavailableView("No Trust Patterns", systemImage: "shield", description: Text("No trust taxonomy found."))
             } else {
                 List {
+                    Section {
+                        Toggle(isOn: Binding(
+                            get: { allTrusted },
+                            set: { newValue in
+                                if newValue {
+                                    stateManager.setTrustPatterns(allPatternIds)
+                                } else {
+                                    stateManager.setTrustPatterns([])
+                                }
+                            }
+                        )) {
+                            HStack {
+                                Text("Trust All")
+                                    .fontWeight(.medium)
+                                if totalMatchingHunks > 0 {
+                                    Text("\(totalMatchingHunks) hunks")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(.fill.tertiary)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+
                     ForEach(categories) { category in
                         Section(category.name) {
                             ForEach(category.patterns) { pattern in

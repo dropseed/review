@@ -45,3 +45,7 @@ Native Swift/SwiftUI iOS companion app. Connects to the desktop Review app's com
 ### Server Dependency
 
 Requires the desktop Review app running with its companion server (`scripts/dev`). The iOS app connects via URL + token entered on the Connect screen.
+
+## Design Philosophy
+
+This app should look and feel like a modern, native iOS app. Follow Apple's [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) and [Liquid Glass guidelines](https://developer.apple.com/design/human-interface-guidelines/liquid-glass) closely. Prefer native SwiftUI components and platform conventions over custom implementations. The app targets iOS 26+ so use the latest APIs and visual treatments available.

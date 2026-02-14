@@ -168,22 +168,23 @@ struct HunkCardView: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20)
                     .onChanged { value in
-                        // Only track horizontal drags — ignore vertical swipes
-                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                        guard isHorizontalDrag(value) else { return }
                         dragOffset = value.translation.width
                         if !dragTriggered && abs(dragOffset) > swipeThreshold {
                             dragTriggered = true
                         }
                     }
                     .onEnded { value in
-                        if value.translation.width > swipeThreshold && abs(value.translation.width) > abs(value.translation.height) {
-                            let generator = UINotificationFeedbackGenerator()
-                            generator.notificationOccurred(.success)
-                            onApprove()
-                        } else if value.translation.width < -swipeThreshold && abs(value.translation.width) > abs(value.translation.height) {
-                            let generator = UINotificationFeedbackGenerator()
-                            generator.notificationOccurred(.warning)
-                            onReject()
+                        if isHorizontalDrag(value) {
+                            if value.translation.width > swipeThreshold {
+                                let generator = UINotificationFeedbackGenerator()
+                                generator.notificationOccurred(.success)
+                                onApprove()
+                            } else if value.translation.width < -swipeThreshold {
+                                let generator = UINotificationFeedbackGenerator()
+                                generator.notificationOccurred(.warning)
+                                onReject()
+                            }
                         }
                         dragTriggered = false
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -198,6 +199,11 @@ struct HunkCardView: View {
             let code = hunk.lines.map(\.content).joined(separator: "\n")
             highlightedLines = await SyntaxHighlighter.highlightLines(code: code, fileExtension: fileExtension)
         }
+    }
+
+    /// Returns true when the drag gesture is primarily horizontal (not vertical scrolling).
+    private func isHorizontalDrag(_ value: DragGesture.Value) -> Bool {
+        abs(value.translation.width) > abs(value.translation.height)
     }
 
     private func annotationsForLine(_ line: DiffLine) -> [LineAnnotation] {
