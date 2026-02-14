@@ -8,14 +8,7 @@ struct ContentView: View {
             if connectionManager.isRestoring {
                 ProgressView("Reconnecting...")
             } else if connectionManager.isConnected {
-                TabView {
-                    Tab("Reviews", systemImage: "list.bullet") {
-                        ReviewsListView()
-                    }
-                    Tab("Settings", systemImage: "gear") {
-                        SettingsView()
-                    }
-                }
+                ReviewsListView()
             } else {
                 ConnectView()
             }

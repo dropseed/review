@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(ConnectionManager.self) private var connectionManager
+    @Environment(\.dismiss) private var dismiss
     @State private var showDisconnectConfirmation = false
 
     var body: some View {
@@ -75,6 +76,13 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
             .confirmationDialog(
                 "Disconnect",
                 isPresented: $showDisconnectConfirmation,

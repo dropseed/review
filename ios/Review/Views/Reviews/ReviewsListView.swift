@@ -7,6 +7,7 @@ struct ReviewsListView: View {
     @State private var avatarURLs: [String: URL] = [:]
     @State private var isLoading = true
     @State private var error: String?
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -47,6 +48,18 @@ struct ReviewsListView: View {
                 }
             }
             .navigationTitle("Reviews")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gear")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
             .navigationDestination(for: GlobalReviewSummary.self) { review in
                 ReviewDetailView(review: review)
                     .environment(connectionManager)
