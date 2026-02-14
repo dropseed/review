@@ -89,6 +89,22 @@ export class HttpClient implements ApiClient {
     return response.json();
   }
 
+  private async putJson<T>(path: string, body: unknown): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    console.log(`[HttpClient] PUT ${url}`);
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...this.authHeaders() },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`HTTP ${response.status}: ${error}`);
+    }
+    return response.json();
+  }
+
   private async deleteRequest<T>(path: string): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     console.log(`[HttpClient] DELETE ${url}`);
@@ -108,19 +124,8 @@ export class HttpClient implements ApiClient {
     return `repo=${encodeURIComponent(repoPath)}`;
   }
 
-  private buildComparisonQuery(
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ): string {
-    const parts = [
-      `base=${encodeURIComponent(comparison.base)}`,
-      `head=${encodeURIComponent(comparison.head)}`,
-    ];
-    if (githubPr) {
-      parts.push(`prNumber=${githubPr.number}`);
-      parts.push(`prTitle=${encodeURIComponent(githubPr.title)}`);
-    }
-    return parts.join("&");
+  private buildComparisonPath(comparison: Comparison): string {
+    return `${encodeURIComponent(comparison.base)}..${encodeURIComponent(comparison.head)}`;
   }
 
   private getComparisonKey(comparison: Comparison): string {
@@ -130,14 +135,14 @@ export class HttpClient implements ApiClient {
   // ----- Git operations -----
 
   async getCurrentRepo(): Promise<string> {
-    const result = await this.fetchJson<{ path: string }>("/repo");
+    const result = await this.fetchJson<{ path: string }>("/git/repo");
     return result.path;
   }
 
   async getCurrentBranch(repoPath: string): Promise<string> {
     try {
       const result = await this.fetchJson<{ branch: string }>(
-        `/current-branch?${this.buildRepoQuery(repoPath)}`,
+        `/git/branch/current?${this.buildRepoQuery(repoPath)}`,
       );
       return result.branch;
     } catch {
@@ -150,7 +155,7 @@ export class HttpClient implements ApiClient {
   async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
     try {
       return await this.fetchJson<RemoteInfo>(
-        `/remote-info?${this.buildRepoQuery(repoPath)}`,
+        `/git/remote?${this.buildRepoQuery(repoPath)}`,
       );
     } catch {
       return null;
@@ -160,7 +165,7 @@ export class HttpClient implements ApiClient {
   async getDefaultBranch(repoPath: string): Promise<string> {
     try {
       const result = await this.fetchJson<{ branch: string }>(
-        `/default-branch?${this.buildRepoQuery(repoPath)}`,
+        `/git/branch/default?${this.buildRepoQuery(repoPath)}`,
       );
       return result.branch;
     } catch {
@@ -170,13 +175,13 @@ export class HttpClient implements ApiClient {
 
   async listBranches(repoPath: string): Promise<BranchList> {
     return this.fetchJson<BranchList>(
-      `/branches?${this.buildRepoQuery(repoPath)}`,
+      `/git/branches?${this.buildRepoQuery(repoPath)}`,
     );
   }
 
   async getGitStatus(repoPath: string): Promise<GitStatusSummary> {
     return this.fetchJson<GitStatusSummary>(
-      `/status?${this.buildRepoQuery(repoPath)}`,
+      `/git/status?${this.buildRepoQuery(repoPath)}`,
     );
   }
 
@@ -184,7 +189,7 @@ export class HttpClient implements ApiClient {
     // Try to get raw status from server
     try {
       const result = await this.fetchJson<{ raw: string }>(
-        `/status/raw?${this.buildRepoQuery(repoPath)}`,
+        `/git/status/raw?${this.buildRepoQuery(repoPath)}`,
       );
       return result.raw;
     } catch {
@@ -193,11 +198,13 @@ export class HttpClient implements ApiClient {
   }
 
   async getDiffShortStat(
-    _repoPath: string,
-    _comparison: Comparison,
+    repoPath: string,
+    comparison: Comparison,
   ): Promise<DiffShortStat> {
-    console.warn("[HttpClient] getDiffShortStat not implemented");
-    return { fileCount: 0, additions: 0, deletions: 0 };
+    const compPath = this.buildComparisonPath(comparison);
+    return this.fetchJson<DiffShortStat>(
+      `/comparisons/${compPath}/diff/shortstat?${this.buildRepoQuery(repoPath)}`,
+    );
   }
 
   async listCommits(
@@ -208,12 +215,12 @@ export class HttpClient implements ApiClient {
     let query = this.buildRepoQuery(repoPath);
     if (limit != null) query += `&limit=${limit}`;
     if (branch) query += `&branch=${encodeURIComponent(branch)}`;
-    return this.fetchJson<CommitEntry[]>(`/commits?${query}`);
+    return this.fetchJson<CommitEntry[]>(`/git/commits?${query}`);
   }
 
   async getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail> {
     return this.fetchJson<CommitDetail>(
-      `/commit?${this.buildRepoQuery(repoPath)}&hash=${encodeURIComponent(hash)}`,
+      `/git/commits/${encodeURIComponent(hash)}?${this.buildRepoQuery(repoPath)}`,
     );
   }
 
@@ -245,10 +252,11 @@ export class HttpClient implements ApiClient {
   async listFiles(
     repoPath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
+    _githubPr?: GitHubPrRef,
   ): Promise<FileEntry[]> {
+    const compPath = this.buildComparisonPath(comparison);
     return this.fetchJson<FileEntry[]>(
-      `/files?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison, githubPr)}`,
+      `/comparisons/${compPath}/files?${this.buildRepoQuery(repoPath)}`,
     );
   }
 
@@ -256,8 +264,9 @@ export class HttpClient implements ApiClient {
     repoPath: string,
     comparison: Comparison,
   ): Promise<FileEntry[]> {
+    const compPath = this.buildComparisonPath(comparison);
     return this.fetchJson<FileEntry[]>(
-      `/files?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison)}&all=true`,
+      `/comparisons/${compPath}/files?${this.buildRepoQuery(repoPath)}&all=true`,
     );
   }
 
@@ -266,7 +275,7 @@ export class HttpClient implements ApiClient {
     dirPath: string,
   ): Promise<FileEntry[]> {
     return this.fetchJson<FileEntry[]>(
-      `/directory?${this.buildRepoQuery(repoPath)}&path=${encodeURIComponent(dirPath)}`,
+      `/directories/${encodeURIComponent(dirPath)}?${this.buildRepoQuery(repoPath)}`,
     );
   }
 
@@ -274,10 +283,11 @@ export class HttpClient implements ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
+    _githubPr?: GitHubPrRef,
   ): Promise<FileContent> {
+    const compPath = this.buildComparisonPath(comparison);
     return this.fetchJson<FileContent>(
-      `/file?${this.buildRepoQuery(repoPath)}&path=${encodeURIComponent(filePath)}&${this.buildComparisonQuery(comparison, githubPr)}`,
+      `/comparisons/${compPath}/files/${encodeURIComponent(filePath)}?${this.buildRepoQuery(repoPath)}`,
     );
   }
 
@@ -320,8 +330,9 @@ export class HttpClient implements ApiClient {
 
     // Try to load from server
     try {
+      const compPath = this.buildComparisonPath(comparison);
       const state = await this.fetchJson<ReviewState>(
-        `/state?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison)}`,
+        `/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`,
       );
       this.reviewStates.set(key, state);
       return state;
@@ -351,7 +362,11 @@ export class HttpClient implements ApiClient {
 
     // Try to save to server (may not be implemented yet)
     try {
-      await this.postJson(`/state?${this.buildRepoQuery(repoPath)}`, updated);
+      const compPath = this.buildComparisonPath(state.comparison);
+      await this.putJson(
+        `/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`,
+        updated,
+      );
     } catch (err) {
       console.warn("[HttpClient] Failed to save state to server:", err);
       // State is still saved locally in memory
@@ -376,8 +391,9 @@ export class HttpClient implements ApiClient {
 
     // Try to delete from server
     try {
+      const compPath = this.buildComparisonPath(comparison);
       await this.deleteRequest(
-        `/state?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison)}`,
+        `/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`,
       );
     } catch (err) {
       console.warn("[HttpClient] Failed to delete state from server:", err);
@@ -393,7 +409,7 @@ export class HttpClient implements ApiClient {
   }
 
   async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {
-    return this.fetchJson<GlobalReviewSummary[]>("/reviews/global");
+    return this.fetchJson<GlobalReviewSummary[]>("/reviews");
   }
 
   async getReviewStoragePath(_repoPath: string): Promise<string> {
@@ -426,9 +442,10 @@ export class HttpClient implements ApiClient {
   async detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse> {
     // Try server-side detection
     try {
-      return await this.postJson<DetectMovePairsResponse>("/detect-moves", {
-        hunks,
-      });
+      return await this.postJson<DetectMovePairsResponse>(
+        "/actions/detect-moves",
+        { hunks },
+      );
     } catch {
       // Fallback: return hunks as-is with no pairs
       return { pairs: [], hunks };

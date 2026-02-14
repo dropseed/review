@@ -71,14 +71,24 @@ struct APIClient: Sendable {
         _ = try await request(path: path, method: "POST", body: bodyData)
     }
 
+    private func putJSON<T: Decodable>(path: String, body: some Encodable) async throws -> T {
+        let bodyData = try encoder.encode(body)
+        let data = try await request(path: path, method: "PUT", body: bodyData)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
     private func buildRepoQuery(_ repoPath: String) -> String {
         "repo=\(repoPath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? repoPath)"
     }
 
-    private func buildComparisonQuery(_ comparison: Comparison) -> String {
-        let base = comparison.base.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? comparison.base
-        let head = comparison.head.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? comparison.head
-        return "base=\(base)&head=\(head)"
+    private func buildComparisonPath(_ comparison: Comparison) -> String {
+        let base = comparison.base.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? comparison.base
+        let head = comparison.head.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? comparison.head
+        return "\(base)..\(head)"
     }
 
     // MARK: - Health
@@ -101,48 +111,54 @@ struct APIClient: Sendable {
     // MARK: - Reviews
 
     func getReviewsGlobal() async throws -> [GlobalReviewSummary] {
-        try await fetchJSON(path: "/reviews/global")
+        try await fetchJSON(path: "/reviews")
     }
 
     // MARK: - Files
 
     func getFiles(repoPath: String, comparison: Comparison) async throws -> [FileEntry] {
-        try await fetchJSON(path: "/files?\(buildRepoQuery(repoPath))&\(buildComparisonQuery(comparison))")
+        let compPath = buildComparisonPath(comparison)
+        return try await fetchJSON(path: "/comparisons/\(compPath)/files?\(buildRepoQuery(repoPath))")
     }
 
     func getFile(repoPath: String, filePath: String, comparison: Comparison) async throws -> FileContent {
-        let encodedPath = filePath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? filePath
-        return try await fetchJSON(path: "/file?\(buildRepoQuery(repoPath))&path=\(encodedPath)&\(buildComparisonQuery(comparison))")
+        let compPath = buildComparisonPath(comparison)
+        let encodedPath = filePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filePath
+        return try await fetchJSON(path: "/comparisons/\(compPath)/files/\(encodedPath)?\(buildRepoQuery(repoPath))")
     }
 
     // MARK: - Hunks
 
     func getAllHunks(repoPath: String, comparison: Comparison, filePaths: [String]) async throws -> [DiffHunk] {
-        let body = AllHunksRequest(repo: repoPath, comparison: comparison, filePaths: filePaths)
-        return try await postJSON(path: "/hunks", body: body)
+        let compPath = buildComparisonPath(comparison)
+        let body = AllHunksRequest(filePaths: filePaths)
+        return try await postJSON(path: "/comparisons/\(compPath)/hunks?\(buildRepoQuery(repoPath))", body: body)
     }
 
     // MARK: - State
 
     func getState(repoPath: String, comparison: Comparison) async throws -> ReviewState {
-        try await fetchJSON(path: "/state?\(buildRepoQuery(repoPath))&\(buildComparisonQuery(comparison))")
+        let compPath = buildComparisonPath(comparison)
+        return try await fetchJSON(path: "/comparisons/\(compPath)/review?\(buildRepoQuery(repoPath))")
     }
 
     func saveState(repoPath: String, state: ReviewState) async throws -> UInt64 {
-        let response: SaveStateResponse = try await postJSON(path: "/state?\(buildRepoQuery(repoPath))", body: state)
+        let compPath = buildComparisonPath(state.comparison)
+        let response: SaveStateResponse = try await putJSON(path: "/comparisons/\(compPath)/review?\(buildRepoQuery(repoPath))", body: state)
         return response.version
     }
 
     // MARK: - Diff Stats
 
     func getDiffShortStat(repoPath: String, comparison: Comparison) async throws -> DiffShortStat {
-        try await fetchJSON(path: "/diff/shortstat?\(buildRepoQuery(repoPath))&\(buildComparisonQuery(comparison))")
+        let compPath = buildComparisonPath(comparison)
+        return try await fetchJSON(path: "/comparisons/\(compPath)/diff/shortstat?\(buildRepoQuery(repoPath))")
     }
 
     // MARK: - Remote Info
 
     func getRemoteInfo(repoPath: String) async throws -> RemoteInfo {
-        try await fetchJSON(path: "/remote-info?\(buildRepoQuery(repoPath))")
+        try await fetchJSON(path: "/git/remote?\(buildRepoQuery(repoPath))")
     }
 
     // MARK: - Taxonomy
@@ -164,8 +180,6 @@ struct RemoteInfo: Codable, Sendable {
 }
 
 struct AllHunksRequest: Codable, Sendable {
-    let repo: String
-    let comparison: Comparison
     let filePaths: [String]
 }
 
