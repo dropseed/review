@@ -34,7 +34,6 @@ final class ReviewStateManager {
         var hunkState = state.hunks[hunkId] ?? HunkState(label: [])
         hunkState.status = (hunkState.status == status) ? nil : status
         state.hunks[hunkId] = hunkState
-        state.version += 1
         state.updatedAt = ISO8601DateFormatter().string(from: Date())
         reviewState = state
 
@@ -49,7 +48,6 @@ final class ReviewStateManager {
         } else {
             state.trustList.append(pattern)
         }
-        state.version += 1
         state.updatedAt = ISO8601DateFormatter().string(from: Date())
         reviewState = state
 
@@ -60,7 +58,6 @@ final class ReviewStateManager {
         guard var state = reviewState else { return }
 
         state.notes = notes
-        state.version += 1
         state.updatedAt = ISO8601DateFormatter().string(from: Date())
         reviewState = state
 
@@ -71,7 +68,6 @@ final class ReviewStateManager {
         guard var state = reviewState else { return }
 
         state.annotations.append(annotation)
-        state.version += 1
         state.updatedAt = ISO8601DateFormatter().string(from: Date())
         reviewState = state
 
@@ -93,7 +89,6 @@ final class ReviewStateManager {
                 createdAt: old.createdAt
             )
             state.annotations[index] = updated
-            state.version += 1
             state.updatedAt = ISO8601DateFormatter().string(from: Date())
             reviewState = state
 
@@ -105,7 +100,6 @@ final class ReviewStateManager {
         guard var state = reviewState else { return }
 
         state.annotations.removeAll { $0.id == id }
-        state.version += 1
         state.updatedAt = ISO8601DateFormatter().string(from: Date())
         reviewState = state
 
@@ -130,10 +124,34 @@ final class ReviewStateManager {
 
         isSaving = true
         do {
-            try await client.saveState(repoPath: repoPath, state: state)
+            let newVersion = try await client.saveState(repoPath: repoPath, state: state)
+            reviewState?.version = Int(newVersion)
+        } catch {
+            let errorMessage = "\(error)"
+            if errorMessage.contains("Version conflict") {
+                // Reload disk state to get current version, then retry
+                await retryAfterConflict()
+            } else {
+                self.error = "Save failed: \(error.localizedDescription)"
+            }
+        }
+        isSaving = false
+    }
+
+    private func retryAfterConflict() async {
+        guard let state = reviewState,
+              let client = apiClient,
+              let repoPath = repoPath else { return }
+
+        do {
+            let diskState = try await client.getState(repoPath: repoPath, comparison: state.comparison)
+            // Update local version from disk, keep our local changes
+            var retryState = state
+            retryState.version = diskState.version
+            let newVersion = try await client.saveState(repoPath: repoPath, state: retryState)
+            reviewState?.version = Int(newVersion)
         } catch {
             self.error = "Save failed: \(error.localizedDescription)"
         }
-        isSaving = false
     }
 }

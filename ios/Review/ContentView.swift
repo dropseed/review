@@ -5,7 +5,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if connectionManager.isConnected {
+            if connectionManager.isRestoring {
+                ProgressView("Reconnecting...")
+            } else if connectionManager.isConnected {
                 TabView {
                     Tab("Reviews", systemImage: "list.bullet") {
                         ReviewsListView()

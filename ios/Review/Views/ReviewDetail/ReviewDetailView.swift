@@ -106,7 +106,8 @@ struct ReviewDetailView: View {
             FileDiffView(
                 filePath: destination.filePath,
                 repoPath: destination.repoPath,
-                comparison: destination.comparison
+                comparison: destination.comparison,
+                initialMode: destination.mode
             )
             .environment(connectionManager)
             .environment(stateManager)

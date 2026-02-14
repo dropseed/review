@@ -2,9 +2,10 @@ import SwiftUI
 
 struct ConnectView: View {
     @Environment(ConnectionManager.self) private var connectionManager
-    @State private var url = ""
-    @State private var token = ""
+    @State private var url: String = ""
+    @State private var token: String = ""
     @State private var showSuccess = false
+    @State private var didLoadURL = false
 
     private var canSubmit: Bool {
         !url.trimmingCharacters(in: .whitespaces).isEmpty
@@ -110,6 +111,12 @@ struct ConnectView: View {
             Spacer()
         }
         .padding(.horizontal, 28)
+        .onAppear {
+            if !didLoadURL, !connectionManager.serverURL.isEmpty {
+                url = connectionManager.serverURL
+                didLoadURL = true
+            }
+        }
     }
 
     private func handleConnect() {

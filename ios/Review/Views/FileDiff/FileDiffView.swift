@@ -7,6 +7,7 @@ struct FileDiffView: View {
     let filePath: String
     let repoPath: String
     let comparison: Comparison
+    var initialMode: FileDiffMode = .changes
 
     @State private var fileContent: FileContent?
     @State private var isLoading = true
@@ -47,7 +48,13 @@ struct FileDiffView: View {
                         }
                     }
                 } else if let fileContent {
-                    if isBrowseMode {
+                    if fileContent.isImage {
+                        ImageDiffView(
+                            imageDataUrl: fileContent.imageDataUrl,
+                            oldImageDataUrl: fileContent.oldImageDataUrl,
+                            filePath: filePath
+                        )
+                    } else if isBrowseMode {
                         browseView(content: fileContent.content)
                     } else {
                         changesView(hunks: fileContent.hunks)
@@ -59,14 +66,15 @@ struct FileDiffView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Picker("Mode", selection: $isBrowseMode) {
-                    Label("Changes", systemImage: "plus.forwardslash.minus")
-                        .tag(false)
-                    Label("Browse", systemImage: "doc.text")
-                        .tag(true)
+                Button {
+                    isBrowseMode.toggle()
+                } label: {
+                    Image(systemName: isBrowseMode ? "plus.forwardslash.minus" : "doc.text")
                 }
-                .pickerStyle(.menu)
             }
+        }
+        .onAppear {
+            isBrowseMode = initialMode == .browse
         }
         .task {
             await loadFile()
@@ -134,16 +142,16 @@ struct FileDiffView: View {
     private func browseView(content: String) -> some View {
         let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
-        ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 0) {
-                Text(filePath)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+        VStack(spacing: 0) {
+            Text(filePath)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
 
-                VStack(spacing: 0) {
+            ScrollView([.horizontal, .vertical]) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                         HStack(spacing: 0) {
                             Text("\(index + 1)")
@@ -156,6 +164,7 @@ struct FileDiffView: View {
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(.primary.opacity(0.8))
                                 .textSelection(.enabled)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                         .padding(.vertical, 1)
                         .frame(minHeight: 20, alignment: .leading)

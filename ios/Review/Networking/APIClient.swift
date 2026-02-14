@@ -128,8 +128,9 @@ struct APIClient: Sendable {
         try await fetchJSON(path: "/state?\(buildRepoQuery(repoPath))&\(buildComparisonQuery(comparison))")
     }
 
-    func saveState(repoPath: String, state: ReviewState) async throws {
-        try await postJSONNoResponse(path: "/state?\(buildRepoQuery(repoPath))", body: state)
+    func saveState(repoPath: String, state: ReviewState) async throws -> UInt64 {
+        let response: SaveStateResponse = try await postJSON(path: "/state?\(buildRepoQuery(repoPath))", body: state)
+        return response.version
     }
 
     // MARK: - Diff Stats
@@ -166,4 +167,8 @@ struct AllHunksRequest: Codable, Sendable {
     let repo: String
     let comparison: Comparison
     let filePaths: [String]
+}
+
+struct SaveStateResponse: Codable, Sendable {
+    let version: UInt64
 }

@@ -41,6 +41,7 @@
 		AABF0114 /* AnnotationBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000114 /* AnnotationBubbleView.swift */; };
 		AABF0115 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000115 /* SettingsView.swift */; };
 		AABF0116 /* ErrorBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000116 /* ErrorBannerView.swift */; };
+		AABF0117 /* ImageDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000117 /* ImageDiffView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -79,6 +80,7 @@
 		AA000114 /* AnnotationBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationBubbleView.swift; sourceTree = "<group>"; };
 		AA000115 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA000116 /* ErrorBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerView.swift; sourceTree = "<group>"; };
+		AA000117 /* ImageDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDiffView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -202,6 +204,7 @@
 				AA000112 /* DiffLineView.swift */,
 				AA000113 /* AnnotationEditorView.swift */,
 				AA000114 /* AnnotationBubbleView.swift */,
+				AA000117 /* ImageDiffView.swift */,
 			);
 			path = FileDiff;
 			sourceTree = "<group>";
@@ -348,6 +351,7 @@
 				AABF0114 /* AnnotationBubbleView.swift in Sources */,
 				AABF0115 /* SettingsView.swift in Sources */,
 				AABF0116 /* ErrorBannerView.swift in Sources */,
+				AABF0117 /* ImageDiffView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

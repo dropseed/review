@@ -45,4 +45,10 @@ struct FileContent: Codable, Sendable {
     let diffPatch: String
     let hunks: [DiffHunk]
     let contentType: ContentType
+    let imageDataUrl: String?
+    let oldImageDataUrl: String?
+
+    var isImage: Bool {
+        contentType == .image || (contentType == .svg && imageDataUrl != nil)
+    }
 }

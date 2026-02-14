@@ -7,6 +7,7 @@ final class ConnectionManager {
     var serverURL: String = ""
     var isConnected: Bool = false
     var isLoading: Bool = false
+    var isRestoring: Bool = false
     var error: String?
     var serverInfo: ServerInfo?
 
@@ -15,7 +16,15 @@ final class ConnectionManager {
     private static let serverURLKey = "serverURL"
     private static let tokenKey = "authToken"
 
+    var hasSavedCredentials: Bool {
+        KeychainHelper.read(key: Self.tokenKey) != nil
+    }
+
     init() {
+        // Restore URL immediately (non-async)
+        if let savedURL = KeychainHelper.read(key: Self.serverURLKey) {
+            serverURL = savedURL
+        }
         restoreConnection()
     }
 
@@ -25,9 +34,9 @@ final class ConnectionManager {
             return
         }
 
-        serverURL = savedURL
         let client = APIClient(baseURL: savedURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")), token: savedToken)
         apiClient = client
+        isRestoring = true
 
         Task {
             do {
@@ -35,10 +44,10 @@ final class ConnectionManager {
                 serverInfo = info
                 isConnected = true
             } catch {
-                // Saved credentials are stale — don't auto-connect
                 apiClient = nil
                 self.error = "Could not reconnect: \(error.localizedDescription)"
             }
+            isRestoring = false
         }
     }
 
