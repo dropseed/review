@@ -5,27 +5,6 @@ struct FileRowView: View {
     let hunkCount: Int
     let reviewedCount: Int
 
-    private var statusColor: Color {
-        switch file.status {
-        case .added, .untracked: return .fileAdded
-        case .modified: return .fileModified
-        case .deleted: return .fileDeleted
-        case .renamed: return .fileRenamed
-        default: return .secondary
-        }
-    }
-
-    private var statusLabel: String {
-        switch file.status {
-        case .added: return "A"
-        case .modified: return "M"
-        case .deleted: return "D"
-        case .renamed: return "R"
-        case .untracked: return "U"
-        default: return "?"
-        }
-    }
-
     private var allReviewed: Bool {
         hunkCount > 0 && reviewedCount >= hunkCount
     }
@@ -44,9 +23,9 @@ struct FileRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(statusLabel)
+            Text(file.status?.label ?? "?")
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(statusColor)
+                .foregroundStyle(file.status?.color ?? .secondary)
                 .frame(width: 16)
 
             Text(directory)

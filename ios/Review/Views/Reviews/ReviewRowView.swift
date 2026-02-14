@@ -35,7 +35,7 @@ struct ReviewRowView: View {
 
                 if progress > 0 {
                     ProgressCircle(progress: progress, size: 14, strokeWidth: 2)
-                        .background(Circle().fill(.black).padding(-1))
+                        .background(Circle().fill(Color(.systemBackground)).padding(-1))
                         .offset(x: 3, y: 3)
                 }
             }
@@ -139,38 +139,17 @@ private struct StatusBadge: View {
 // MARK: - Relative Time Formatting
 
 func formatRelativeTime(_ dateString: String) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-    // Try with fractional seconds first, then without
-    guard let date = formatter.date(from: dateString) ?? {
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: dateString)
+    guard let date = isoFormatter.date(from: dateString) ?? {
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        return isoFormatter.date(from: dateString)
     }() else {
         return dateString
     }
 
-    let now = Date()
-    let diff = now.timeIntervalSince(date)
-
-    if diff < 60 {
-        return "just now"
-    }
-
-    let minutes = Int(diff / 60)
-    if minutes < 60 {
-        return "\(minutes)m ago"
-    }
-
-    let hours = Int(diff / 3600)
-    if hours < 24 {
-        return "\(hours)h ago"
-    }
-
-    let days = Int(diff / 86400)
-    if days < 30 {
-        return "\(days)d ago"
-    }
-
-    return date.formatted(date: .abbreviated, time: .omitted)
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .abbreviated
+    return formatter.localizedString(for: date, relativeTo: Date())
 }

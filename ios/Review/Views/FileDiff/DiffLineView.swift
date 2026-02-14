@@ -10,7 +10,7 @@ struct DiffLineView: View {
             // Old line number
             Text(line.type != .added ? formattedLineNumber(line.oldLineNumber) : "")
                 .frame(width: 28, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.monoSmall)
                 .foregroundStyle(Color.secondary.opacity(0.6))
                 .padding(.trailing, 3)
                 .contentShape(Rectangle())
@@ -19,7 +19,7 @@ struct DiffLineView: View {
             // New line number
             Text(line.type != .removed ? formattedLineNumber(line.newLineNumber) : "")
                 .frame(width: 28, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.monoSmall)
                 .foregroundStyle(Color.secondary.opacity(0.6))
                 .padding(.trailing, 3)
                 .contentShape(Rectangle())
@@ -28,7 +28,7 @@ struct DiffLineView: View {
             // Prefix
             Text(prefix)
                 .frame(width: 14)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.monoBody)
                 .foregroundStyle(textColor)
                 .multilineTextAlignment(.center)
 
@@ -41,7 +41,7 @@ struct DiffLineView: View {
                         .foregroundStyle(textColor)
                 }
             }
-            .font(.system(size: 12, design: .monospaced))
+            .font(.monoBody)
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -60,16 +60,16 @@ struct DiffLineView: View {
 
     private var textColor: Color {
         switch line.type {
-        case .added: .green
-        case .removed: .red
+        case .added: .diffAdded
+        case .removed: .diffRemoved
         case .context: .secondary
         }
     }
 
     private var backgroundColor: Color {
         switch line.type {
-        case .added: .green.opacity(0.12)
-        case .removed: .red.opacity(0.12)
+        case .added: .diffAddedBackground
+        case .removed: .diffRemovedBackground
         case .context: .clear
         }
     }
@@ -88,5 +88,5 @@ struct DiffLineView: View {
         DiffLineView(line: DiffLine(type: .context, content: "let z = 4", oldLineNumber: 12, newLineNumber: 12))
     }
     .padding()
-    .background(.black)
+    .background(Color(.systemBackground))
 }

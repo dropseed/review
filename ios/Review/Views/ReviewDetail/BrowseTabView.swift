@@ -77,9 +77,9 @@ struct FileTreeNodeView: View {
 
         HStack(spacing: 8) {
             if let status = entry.status {
-                Text(statusLabel(for: status))
+                Text(status.label)
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundStyle(statusColor(for: status))
+                    .foregroundStyle(status.color)
                     .frame(width: 16)
             }
 
@@ -97,24 +97,4 @@ struct FileTreeNodeView: View {
         }
     }
 
-    private func statusLabel(for status: FileEntry.FileStatus) -> String {
-        switch status {
-        case .added: return "A"
-        case .modified: return "M"
-        case .deleted: return "D"
-        case .renamed: return "R"
-        case .untracked: return "U"
-        case .gitignored: return "I"
-        }
-    }
-
-    private func statusColor(for status: FileEntry.FileStatus) -> Color {
-        switch status {
-        case .added, .untracked: return .fileAdded
-        case .modified: return .fileModified
-        case .deleted: return .fileDeleted
-        case .renamed: return .fileRenamed
-        case .gitignored: return .secondary
-        }
-    }
 }

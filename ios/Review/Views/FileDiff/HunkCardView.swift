@@ -98,7 +98,7 @@ struct HunkCardView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(white: 0.15))
+                .background(Color.cardHeaderBackground)
 
                 Divider()
 
@@ -156,14 +156,13 @@ struct HunkCardView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .background(Color(white: 0.11))
+            .background(Color.cardBackground)
             .overlay(
                 Rectangle()
                     .fill(borderColor)
                     .frame(width: 3),
                 alignment: .leading
             )
-            .clipShape(RoundedRectangle(cornerRadius: 0))
             .offset(x: dragOffset)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20)

@@ -27,11 +27,11 @@ struct NotesView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .background(Color(.systemGray6))
+            .background(Color(.tertiarySystemFill))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color(.systemGray4), lineWidth: 1)
+                    .stroke(Color(.separator), lineWidth: 1)
             )
             .padding()
         }

@@ -270,11 +270,11 @@ struct FileDiffView: View {
                 .padding(.vertical, 8)
 
             ScrollView([.horizontal, .vertical]) {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                         HStack(spacing: 0) {
                             Text("\(index + 1)")
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(.monoBody)
                                 .foregroundStyle(.secondary.opacity(0.5))
                                 .frame(width: 44, alignment: .trailing)
                                 .padding(.trailing, 12)
@@ -287,7 +287,7 @@ struct FileDiffView: View {
                                         .foregroundStyle(.primary.opacity(0.8))
                                 }
                             }
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.monoBody)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: true, vertical: false)
                         }

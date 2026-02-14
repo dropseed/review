@@ -47,7 +47,7 @@ struct ExpandContextButton: View {
         .padding(.vertical, 5)
         .background(
             Capsule()
-                .fill(Color(white: 0.14))
+                .fill(Color.expandButtonBackground)
         )
         .overlay(
             Capsule()

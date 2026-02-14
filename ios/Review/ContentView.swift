@@ -13,6 +13,5 @@ struct ContentView: View {
                 ReviewsListView()
             }
         }
-        .preferredColorScheme(.dark)
     }
 }

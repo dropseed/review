@@ -12,7 +12,7 @@ struct AnnotationBubbleView: View {
 
             Text(annotation.content)
                 .font(.system(size: 12))
-                .foregroundStyle(.primary.opacity(0.9))
+                .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if onEdit != nil {
@@ -53,5 +53,5 @@ struct AnnotationBubbleView: View {
             onEdit: {}
         )
     }
-    .background(.black)
+    .background(Color(.systemBackground))
 }

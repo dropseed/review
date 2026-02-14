@@ -12,11 +12,24 @@ struct FileDiffDestination: Hashable {
     let mode: FileDiffMode
 }
 
+enum ReviewTab: Int, CaseIterable {
+    case changes, browse, trust, notes
+
+    var title: String {
+        switch self {
+        case .changes: "Changes"
+        case .browse: "Browse"
+        case .trust: "Trust"
+        case .notes: "Notes"
+        }
+    }
+}
+
 struct ReviewDetailView: View {
     @Environment(ConnectionManager.self) private var connectionManager
     let review: GlobalReviewSummary
 
-    @State private var selectedTab = 0
+    @State private var selectedTab: ReviewTab = .changes
     @State private var files: [FileEntry] = []
     @State private var hunks: [DiffHunk] = []
     @State private var stateManager = ReviewStateManager()
@@ -29,8 +42,6 @@ struct ReviewDetailView: View {
     private var changedFiles: [FileEntry] {
         flattenFiles(files).filter { hasChangeStatus($0.status) }
     }
-
-    private let tabs = ["Changes", "Browse", "Trust", "Notes"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,8 +71,8 @@ struct ReviewDetailView: View {
                 StatsHeaderView(hunks: hunks, fileCount: changedFiles.count)
 
                 Picker("Tab", selection: $selectedTab) {
-                    ForEach(Array(tabs.enumerated()), id: \.offset) { index, tab in
-                        Text(tab).tag(index)
+                    ForEach(ReviewTab.allCases, id: \.self) { tab in
+                        Text(tab.title).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -105,14 +116,14 @@ struct ReviewDetailView: View {
     @ViewBuilder
     private var tabContent: some View {
         switch selectedTab {
-        case 0:
+        case .changes:
             ChangesTabWrapper(
                 changedFiles: changedFiles,
                 hunks: hunks,
                 repoPath: repoPath,
                 comparison: comparison
             )
-        case 1:
+        case .browse:
             BrowseTabWrapper(
                 files: files,
                 changedFiles: changedFiles,
@@ -120,15 +131,13 @@ struct ReviewDetailView: View {
                 repoPath: repoPath,
                 comparison: comparison
             )
-        case 2:
+        case .trust:
             TrustListView(
                 repoPath: repoPath,
                 hunks: hunks
             )
-        case 3:
+        case .notes:
             NotesView()
-        default:
-            EmptyView()
         }
     }
 
@@ -242,7 +251,7 @@ private struct StatsHeaderView: View {
                     }
                     .frame(height: 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.08))
+                    .background(Color.progressTrackBackground)
                     .clipShape(Capsule())
                 }
                 .frame(height: 6)
