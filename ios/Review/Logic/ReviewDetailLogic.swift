@@ -32,7 +32,7 @@ func countReviewedHunks(filePath: String, hunks: [DiffHunk], reviewState: Review
     for hunk in hunks {
         if hunk.filePath != filePath { continue }
         let status = getHunkReviewStatus(reviewState.hunks[hunk.id], trustList: reviewState.trustList)
-        if status != .pending { count += 1 }
+        if status != .pending && status != .savedForLater { count += 1 }
     }
     return count
 }
@@ -56,9 +56,10 @@ struct ReviewDetailStats {
     let trustedHunks: Int
     let approvedHunks: Int
     let rejectedHunks: Int
+    let savedForLaterHunks: Int
 
     var reviewedHunks: Int { trustedHunks + approvedHunks + rejectedHunks }
-    var pendingHunks: Int { totalHunks - reviewedHunks }
+    var pendingHunks: Int { totalHunks - reviewedHunks - savedForLaterHunks }
     var reviewedPercent: Int {
         totalHunks > 0 ? Int(round(Double(reviewedHunks) / Double(totalHunks) * 100)) : 0
     }
@@ -114,6 +115,7 @@ func computeStats(hunks: [DiffHunk], reviewState: ReviewState?, fileCount: Int) 
     var trustedHunks = 0
     var approvedHunks = 0
     var rejectedHunks = 0
+    var savedForLaterHunks = 0
 
     if let reviewState {
         for hunk in hunks {
@@ -122,6 +124,7 @@ func computeStats(hunks: [DiffHunk], reviewState: ReviewState?, fileCount: Int) 
             case .trusted: trustedHunks += 1
             case .approved: approvedHunks += 1
             case .rejected: rejectedHunks += 1
+            case .savedForLater: savedForLaterHunks += 1
             case .pending: break
             }
         }
@@ -132,6 +135,7 @@ func computeStats(hunks: [DiffHunk], reviewState: ReviewState?, fileCount: Int) 
         totalHunks: hunks.count,
         trustedHunks: trustedHunks,
         approvedHunks: approvedHunks,
-        rejectedHunks: rejectedHunks
+        rejectedHunks: rejectedHunks,
+        savedForLaterHunks: savedForLaterHunks
     )
 }

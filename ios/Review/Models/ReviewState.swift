@@ -25,6 +25,7 @@ struct HunkState: Codable, Hashable, Sendable {
 enum HunkStatus: String, Codable, Sendable {
     case approved
     case rejected
+    case savedForLater = "saved_for_later"
 }
 
 struct LineAnnotation: Codable, Identifiable, Hashable, Sendable {
@@ -43,6 +44,23 @@ struct LineAnnotation: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+struct HunkGroup: Codable, Identifiable, Hashable, Sendable {
+    let title: String
+    let description: String
+    let hunkIds: [String]
+    let phase: String?
+
+    var id: String { title }
+}
+
+struct GuideState: Codable, Hashable, Sendable {
+    let groups: [HunkGroup]
+    let hunkIds: [String]
+    let generatedAt: String
+    let title: String?
+    let summary: String?
+}
+
 struct ReviewState: Codable, Sendable {
     let comparison: Comparison
     var hunks: [String: HunkState]
@@ -54,6 +72,7 @@ struct ReviewState: Codable, Sendable {
     var version: Int
     var totalDiffHunks: Int
     let githubPr: GitHubPrRef?
+    var guide: GuideState?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -67,5 +86,6 @@ struct ReviewState: Codable, Sendable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
         totalDiffHunks = try container.decodeIfPresent(Int.self, forKey: .totalDiffHunks) ?? 0
         githubPr = try container.decodeIfPresent(GitHubPrRef.self, forKey: .githubPr)
+        guide = try container.decodeIfPresent(GuideState.self, forKey: .guide)
     }
 }

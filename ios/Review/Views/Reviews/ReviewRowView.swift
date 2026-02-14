@@ -40,8 +40,8 @@ struct ReviewRowView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                // Repo name + status badge
+            VStack(spacing: 2) {
+                // Top row: repo name + time
                 HStack(spacing: 6) {
                     Text(review.repoName)
                         .font(.body.weight(.semibold))
@@ -58,21 +58,29 @@ struct ReviewRowView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Comparison + diff stats on one line
+                // Bottom row: comparison + file stats
                 HStack(spacing: 0) {
                     Text(comparisonLabel)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    if let stats = review.diffStats, stats.additions > 0 || stats.deletions > 0 {
-                        Text("  +\(stats.additions)")
-                            .foregroundStyle(.green)
-                        Text(" -\(stats.deletions)")
-                            .foregroundStyle(.red)
+                    Spacer(minLength: 0)
+
+                    if let stats = review.diffStats, stats.fileCount > 0 {
+                        HStack(spacing: 2) {
+                            Text("\(stats.fileCount) \(stats.fileCount == 1 ? "file" : "files")")
+                                .foregroundStyle(.tertiary)
+                            if stats.additions > 0 || stats.deletions > 0 {
+                                Text("+\(stats.additions)")
+                                    .foregroundStyle(.green)
+                                Text("-\(stats.deletions)")
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .monospacedDigit()
                     }
                 }
                 .font(.subheadline)
-                .monospacedDigit()
             }
         }
         .padding(.vertical, 4)

@@ -41,7 +41,9 @@ struct ExpandContextButton: View {
                 .font(.system(size: 9, weight: .semibold))
             Text(label)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .lineLimit(1)
         }
+        .fixedSize()
         .foregroundStyle(Color.secondary.opacity(0.8))
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

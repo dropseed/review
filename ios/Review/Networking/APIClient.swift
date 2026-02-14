@@ -14,7 +14,7 @@ struct APIClient: Sendable {
         return encoder
     }
 
-    private func request(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    private func request(path: String, method: String = "GET", body: Data? = nil, timeout: TimeInterval? = nil) async throws -> Data {
         guard let url = URL(string: "\(baseURL)\(path)") else {
             throw APIError.invalidURL
         }
@@ -22,6 +22,9 @@ struct APIClient: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let timeout {
+            request.timeoutInterval = timeout
+        }
 
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -166,6 +169,48 @@ struct APIClient: Sendable {
     func getTaxonomy(repoPath: String) async throws -> [TrustCategory] {
         try await fetchJSON(path: "/taxonomy?\(buildRepoQuery(repoPath))")
     }
+
+    // MARK: - Guide Generation
+
+    func generateGroups(repoPath: String, comparison: Comparison, hunks: [DiffHunk], reviewState: ReviewState?) async throws -> [HunkGroup] {
+        let compPath = buildComparisonPath(comparison)
+        let inputs = hunks.map { hunk in
+            GroupingHunkInput(
+                id: hunk.id,
+                filePath: hunk.filePath,
+                content: hunk.content,
+                label: reviewState?.hunks[hunk.id]?.label
+            )
+        }
+        let body = GenerateGroupsRequest(hunks: inputs)
+        let bodyData = try encoder.encode(body)
+        let data = try await request(path: "/comparisons/\(compPath)/guide/groups?\(buildRepoQuery(repoPath))", method: "POST", body: bodyData, timeout: 180)
+        do {
+            return try decoder.decode([HunkGroup].self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
+    func generateSummary(repoPath: String, comparison: Comparison, hunks: [DiffHunk], reviewState: ReviewState?) async throws -> SummaryResult {
+        let compPath = buildComparisonPath(comparison)
+        let inputs = hunks.map { hunk in
+            SummaryHunkInput(
+                id: hunk.id,
+                filePath: hunk.filePath,
+                content: hunk.content,
+                label: reviewState?.hunks[hunk.id]?.label
+            )
+        }
+        let body = GenerateSummaryRequest(hunks: inputs)
+        let bodyData = try encoder.encode(body)
+        let data = try await request(path: "/comparisons/\(compPath)/guide/summary?\(buildRepoQuery(repoPath))", method: "POST", body: bodyData, timeout: 180)
+        do {
+            return try decoder.decode(SummaryResult.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
 }
 
 // MARK: - Request/Response Types
@@ -185,4 +230,31 @@ struct AllHunksRequest: Codable, Sendable {
 
 struct SaveStateResponse: Codable, Sendable {
     let version: UInt64
+}
+
+struct GroupingHunkInput: Codable, Sendable {
+    let id: String
+    let filePath: String
+    let content: String
+    let label: [String]?
+}
+
+struct SummaryHunkInput: Codable, Sendable {
+    let id: String
+    let filePath: String
+    let content: String
+    let label: [String]?
+}
+
+struct GenerateGroupsRequest: Codable, Sendable {
+    let hunks: [GroupingHunkInput]
+}
+
+struct GenerateSummaryRequest: Codable, Sendable {
+    let hunks: [SummaryHunkInput]
+}
+
+struct SummaryResult: Codable, Sendable {
+    let title: String
+    let summary: String
 }

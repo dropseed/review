@@ -3,6 +3,7 @@ import Foundation
 enum HunkReviewStatus: String, Sendable {
     case approved
     case rejected
+    case savedForLater
     case trusted
     case pending
 }
@@ -33,6 +34,7 @@ func isHunkTrusted(_ hunkState: HunkState?, trustList: [String]) -> Bool {
 func getHunkReviewStatus(_ hunkState: HunkState?, trustList: [String]) -> HunkReviewStatus {
     if hunkState?.status == .approved { return .approved }
     if hunkState?.status == .rejected { return .rejected }
+    if hunkState?.status == .savedForLater { return .savedForLater }
     if isHunkTrusted(hunkState, trustList: trustList) { return .trusted }
     return .pending
 }

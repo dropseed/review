@@ -5,6 +5,7 @@ extension Color {
     static let statusApproved = Color.green
     static let statusRejected = Color.red
     static let statusTrusted = Color.blue
+    static let statusSavedForLater = Color.orange
     static let statusPending = Color.secondary
 
     // MARK: - Diff Colors

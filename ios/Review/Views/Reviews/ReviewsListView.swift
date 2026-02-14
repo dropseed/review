@@ -70,7 +70,7 @@ struct ReviewsListView: View {
                             }
                         }
                     }
-                    .listStyle(.plain)
+                    .listStyle(.insetGrouped)
                     .refreshable {
                         await loadReviews()
                     }

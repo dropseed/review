@@ -12,14 +12,21 @@ struct FileDiffDestination: Hashable {
     let mode: FileDiffMode
 }
 
+struct GroupDetailDestination: Hashable {
+    let group: HunkGroup
+    let repoPath: String
+    let comparison: Comparison
+}
+
 enum ReviewTab: Int, CaseIterable {
-    case changes, browse, trust
+    case changes, browse, trust, guide
 
     var title: String {
         switch self {
         case .changes: "Changes"
         case .browse: "Browse"
         case .trust: "Trust"
+        case .guide: "Guide"
         }
     }
 }
@@ -32,6 +39,7 @@ struct ReviewDetailView: View {
     @State private var files: [FileEntry] = []
     @State private var hunks: [DiffHunk] = []
     @State private var stateManager = ReviewStateManager()
+    @State private var guideManager = GuideManager()
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var showFeedbackPanel = false
@@ -103,9 +111,25 @@ struct ReviewDetailView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
         }
-        .navigationTitle(review.repoName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    Text(review.repoName)
+                        .font(.subheadline.weight(.semibold))
+                    if let pr = review.githubPr {
+                        Text("PR #\(pr.number): \(pr.title)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text("\(review.comparison.base)..\(review.comparison.head)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
             if stateManager.isSaving {
                 ToolbarItem(placement: .topBarTrailing) {
                     ProgressView()
@@ -123,10 +147,20 @@ struct ReviewDetailView: View {
             .environment(connectionManager)
             .environment(stateManager)
         }
+        .navigationDestination(for: GroupDetailDestination.self) { destination in
+            GroupDetailView(
+                group: destination.group,
+                repoPath: destination.repoPath,
+                comparison: destination.comparison
+            )
+            .environment(connectionManager)
+            .environment(stateManager)
+        }
         .refreshable {
             await loadData()
         }
         .environment(stateManager)
+        .environment(guideManager)
         .task {
             await loadData()
         }
@@ -156,6 +190,12 @@ struct ReviewDetailView: View {
             TrustListView(
                 repoPath: repoPath,
                 hunks: hunks
+            )
+        case .guide:
+            GuideTabView(
+                hunks: hunks,
+                repoPath: repoPath,
+                comparison: comparison
             )
         }
     }

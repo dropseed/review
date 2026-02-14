@@ -47,6 +47,10 @@
 		AABF0072 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000072 /* SyntaxHighlighter.swift */; };
 		AABF0044 /* HunkGapComputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000044 /* HunkGapComputation.swift */; };
 		AABF0119 /* ExpandContextButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000119 /* ExpandContextButton.swift */; };
+		AABF0033 /* GuideManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000033 /* GuideManager.swift */; };
+		AABF0122 /* GuideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000122 /* GuideTabView.swift */; };
+		AABF0123 /* GroupRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000123 /* GroupRowView.swift */; };
+		AABF0124 /* GroupDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000124 /* GroupDetailView.swift */; };
 		AABF0200 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AAPKD0001 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
@@ -92,6 +96,10 @@
 		AA000072 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
 		AA000044 /* HunkGapComputation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HunkGapComputation.swift; sourceTree = "<group>"; };
 		AA000119 /* ExpandContextButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandContextButton.swift; sourceTree = "<group>"; };
+		AA000033 /* GuideManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideManager.swift; sourceTree = "<group>"; };
+		AA000122 /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
+		AA000123 /* GroupRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRowView.swift; sourceTree = "<group>"; };
+		AA000124 /* GroupDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -151,6 +159,7 @@
 			children = (
 				AA000031 /* ConnectionManager.swift */,
 				AA000032 /* ReviewStateManager.swift */,
+				AA000033 /* GuideManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -207,6 +216,9 @@
 				AA000108 /* TrustListView.swift */,
 				AA000120 /* FeedbackButton.swift */,
 				AA000121 /* FeedbackPanelView.swift */,
+				AA000122 /* GuideTabView.swift */,
+				AA000123 /* GroupRowView.swift */,
+				AA000124 /* GroupDetailView.swift */,
 			);
 			path = ReviewDetail;
 			sourceTree = "<group>";
@@ -380,6 +392,10 @@
 				AABF0072 /* SyntaxHighlighter.swift in Sources */,
 				AABF0044 /* HunkGapComputation.swift in Sources */,
 				AABF0119 /* ExpandContextButton.swift in Sources */,
+				AABF0033 /* GuideManager.swift in Sources */,
+				AABF0122 /* GuideTabView.swift in Sources */,
+				AABF0123 /* GroupRowView.swift in Sources */,
+				AABF0124 /* GroupDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

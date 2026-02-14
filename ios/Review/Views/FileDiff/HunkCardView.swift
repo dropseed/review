@@ -7,14 +7,11 @@ struct HunkCardView: View {
     let annotations: [LineAnnotation]
     let onApprove: () -> Void
     let onReject: () -> Void
+    let onSaveForLater: () -> Void
     var onTapLineNumber: ((_ lineNumber: Int, _ side: LineAnnotation.AnnotationSide) -> Void)?
     var onEditAnnotation: ((_ annotation: LineAnnotation) -> Void)?
 
     @State private var highlightedLines: [AttributedString]?
-    @State private var dragOffset: CGFloat = 0
-    @State private var dragTriggered = false
-
-    private let swipeThreshold: CGFloat = 80
 
     init(
         hunk: DiffHunk,
@@ -23,6 +20,7 @@ struct HunkCardView: View {
         annotations: [LineAnnotation] = [],
         onApprove: @escaping () -> Void,
         onReject: @escaping () -> Void,
+        onSaveForLater: @escaping () -> Void,
         onTapLineNumber: ((_ lineNumber: Int, _ side: LineAnnotation.AnnotationSide) -> Void)? = nil,
         onEditAnnotation: ((_ annotation: LineAnnotation) -> Void)? = nil
     ) {
@@ -32,6 +30,7 @@ struct HunkCardView: View {
         self.annotations = annotations
         self.onApprove = onApprove
         self.onReject = onReject
+        self.onSaveForLater = onSaveForLater
         self.onTapLineNumber = onTapLineNumber
         self.onEditAnnotation = onEditAnnotation
     }
@@ -40,158 +39,100 @@ struct HunkCardView: View {
     private var labels: [String] { hunkState?.label ?? [] }
 
     private var borderColor: Color {
-        if status == .approved { return .green }
-        if status == .rejected { return .red }
-        if trusted { return .blue }
+        if status == .approved { return .statusApproved }
+        if status == .rejected { return .statusRejected }
+        if status == .savedForLater { return .statusSavedForLater }
+        if trusted { return .statusTrusted }
         return .gray.opacity(0.5)
     }
 
     var body: some View {
-        ZStack {
-            // Swipe background
-            HStack {
-                // Approve indicator (right swipe)
-                HStack {
-                    Text("Approve")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.leading, 16)
-                    Spacer()
-                }
-                .frame(maxHeight: .infinity)
-                .background(.green)
+        VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 8) {
+                Text("@@ -\(hunk.oldStart),\(hunk.oldCount) +\(hunk.newStart),\(hunk.newCount) @@")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
-                // Reject indicator (left swipe)
-                HStack {
-                    Spacer()
-                    Text("Reject")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.trailing, 16)
-                }
-                .frame(maxHeight: .infinity)
-                .background(.red)
-            }
-
-            // Card
-            VStack(spacing: 0) {
-                // Header
-                HStack(spacing: 8) {
-                    Text("@@ -\(hunk.oldStart),\(hunk.oldCount) +\(hunk.newStart),\(hunk.newCount) @@")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    if !labels.isEmpty {
-                        HStack(spacing: 4) {
-                            ForEach(labels, id: \.self) { label in
-                                Text(label)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(Color.purple.opacity(0.9))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.purple.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                            }
+                if !labels.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(labels, id: \.self) { label in
+                            Text(label)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.purple.opacity(0.9))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                         }
                     }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cardHeaderBackground)
+
+            Divider()
+
+            // Diff lines with inline annotations
+            VStack(spacing: 0) {
+                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
+                    DiffLineView(
+                        line: line,
+                        highlightedContent: highlightedLines?[safe: index]
+                    ) {
+                        let lineNum = line.newLineNumber ?? line.oldLineNumber ?? 0
+                        let side: LineAnnotation.AnnotationSide = line.type == .removed ? .old : .new
+                        onTapLineNumber?(lineNum, side)
+                    }
+
+                    // Show annotations for this line
+                    ForEach(annotationsForLine(line)) { annotation in
+                        AnnotationBubbleView(annotation: annotation) {
+                            onEditAnnotation?(annotation)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            // Action buttons or status banner
+            if let status {
+                statusBanner(status: status)
+            } else {
+                HStack(spacing: 8) {
+                    actionButton(
+                        icon: "checkmark.circle.fill",
+                        label: "Approve",
+                        color: .statusApproved,
+                        action: onApprove
+                    )
+                    actionButton(
+                        icon: "xmark.circle.fill",
+                        label: "Reject",
+                        color: .statusRejected,
+                        action: onReject
+                    )
+                    actionButton(
+                        icon: "clock.fill",
+                        label: "Later",
+                        color: .statusSavedForLater,
+                        action: onSaveForLater
+                    )
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.cardHeaderBackground)
-
-                Divider()
-
-                // Diff lines with inline annotations
-                VStack(spacing: 0) {
-                    ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
-                        DiffLineView(
-                            line: line,
-                            highlightedContent: highlightedLines?[safe: index]
-                        ) {
-                            let lineNum = line.newLineNumber ?? line.oldLineNumber ?? 0
-                            let side: LineAnnotation.AnnotationSide = line.type == .removed ? .old : .new
-                            onTapLineNumber?(lineNum, side)
-                        }
-
-                        // Show annotations for this line
-                        ForEach(annotationsForLine(line)) { annotation in
-                            AnnotationBubbleView(annotation: annotation) {
-                                onEditAnnotation?(annotation)
-                            }
-                        }
-                    }
-                }
-
-                Divider()
-
-                // Action buttons
-                HStack(spacing: 0) {
-                    Button {
-                        let generator = UIImpactFeedbackGenerator(style: .light)
-                        generator.impactOccurred()
-                        onApprove()
-                    } label: {
-                        Text("Approve")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(status == .approved ? .white : .green)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(status == .approved ? .green : .clear)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        let generator = UIImpactFeedbackGenerator(style: .light)
-                        generator.impactOccurred()
-                        onReject()
-                    } label: {
-                        Text("Reject")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(status == .rejected ? .white : .red)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(status == .rejected ? .red : .clear)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
-            .background(Color.cardBackground)
-            .overlay(
-                Rectangle()
-                    .fill(borderColor)
-                    .frame(width: 3),
-                alignment: .leading
-            )
-            .offset(x: dragOffset)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        guard isHorizontalDrag(value) else { return }
-                        dragOffset = value.translation.width
-                        if !dragTriggered && abs(dragOffset) > swipeThreshold {
-                            dragTriggered = true
-                        }
-                    }
-                    .onEnded { value in
-                        if isHorizontalDrag(value) {
-                            if value.translation.width > swipeThreshold {
-                                let generator = UINotificationFeedbackGenerator()
-                                generator.notificationOccurred(.success)
-                                onApprove()
-                            } else if value.translation.width < -swipeThreshold {
-                                let generator = UINotificationFeedbackGenerator()
-                                generator.notificationOccurred(.warning)
-                                onReject()
-                            }
-                        }
-                        dragTriggered = false
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            dragOffset = 0
-                        }
-                    }
-            )
         }
+        .background(Color.cardBackground)
+        .overlay(
+            Rectangle()
+                .fill(borderColor)
+                .frame(width: 3),
+            alignment: .leading
+        )
         .padding(.vertical, 6)
         .task {
             let fileExtension = hunk.filePath.split(separator: ".").last.map(String.init)
@@ -200,9 +141,64 @@ struct HunkCardView: View {
         }
     }
 
-    /// Returns true when the drag gesture is primarily horizontal (not vertical scrolling).
-    private func isHorizontalDrag(_ value: DragGesture.Value) -> Bool {
-        abs(value.translation.width) > abs(value.translation.height)
+    private func statusBanner(status: HunkStatus) -> some View {
+        let config: (icon: String, label: String, color: Color) = switch status {
+        case .approved: ("checkmark.circle.fill", "Approved", .statusApproved)
+        case .rejected: ("xmark.circle.fill", "Rejected", .statusRejected)
+        case .savedForLater: ("clock.fill", "Saved for Later", .statusSavedForLater)
+        }
+
+        return HStack {
+            Image(systemName: config.icon)
+                .font(.system(size: 14, weight: .semibold))
+            Text(config.label)
+                .font(.system(size: 13, weight: .semibold))
+
+            Spacer()
+
+            Button {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+                // Tapping the active status again clears it
+                switch status {
+                case .approved: onApprove()
+                case .rejected: onReject()
+                case .savedForLater: onSaveForLater()
+                }
+            } label: {
+                Text("Change")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(config.color)
+    }
+
+    private func actionButton(icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(color)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func annotationsForLine(_ line: DiffLine) -> [LineAnnotation] {

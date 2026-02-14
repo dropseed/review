@@ -40,6 +40,20 @@ final class ReviewStateManager {
         scheduleSave()
     }
 
+    func setHunkStatuses(hunkIds: [String], status: HunkStatus?) {
+        guard var state = reviewState, !hunkIds.isEmpty else { return }
+
+        for hunkId in hunkIds {
+            var hunkState = state.hunks[hunkId] ?? HunkState(label: [])
+            hunkState.status = status
+            state.hunks[hunkId] = hunkState
+        }
+        state.updatedAt = ISO8601DateFormatter().string(from: Date())
+        reviewState = state
+
+        scheduleSave()
+    }
+
     func toggleTrustPattern(_ pattern: String) {
         guard var state = reviewState else { return }
 
@@ -67,6 +81,14 @@ final class ReviewStateManager {
     func syncTotalDiffHunks(_ count: Int) {
         guard var state = reviewState, count > 0, state.totalDiffHunks != count else { return }
         state.totalDiffHunks = count
+        state.updatedAt = ISO8601DateFormatter().string(from: Date())
+        reviewState = state
+        scheduleSave()
+    }
+
+    func updateGuide(_ guide: GuideState?) {
+        guard var state = reviewState else { return }
+        state.guide = guide
         state.updatedAt = ISO8601DateFormatter().string(from: Date())
         reviewState = state
         scheduleSave()

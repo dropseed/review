@@ -4,7 +4,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
 
-use super::handlers::{actions, comparisons, git, github, health, reviews, taxonomy};
+use super::handlers::{actions, comparisons, git, github, guide, health, reviews, taxonomy};
 use super::middleware::{auth, log_request};
 use super::state::SharedState;
 
@@ -56,6 +56,15 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/github/prs", get(github::list_prs))
         // --- Actions ---
         .route("/actions/detect-moves", post(actions::detect_moves))
+        // --- Guide generation ---
+        .route(
+            "/comparisons/{comp}/guide/groups",
+            post(guide::generate_groups),
+        )
+        .route(
+            "/comparisons/{comp}/guide/summary",
+            post(guide::generate_summary),
+        )
         // --- Middleware ---
         .layer(axum::middleware::from_fn(log_request))
         .layer(axum::middleware::from_fn_with_state(state.clone(), auth))

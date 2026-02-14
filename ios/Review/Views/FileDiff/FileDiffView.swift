@@ -19,6 +19,9 @@ struct FileDiffView: View {
     @State private var expandedRanges: [String: ExpandedRange] = [:]
     private let expandChunkSize = 20
 
+    // Feedback panel state
+    @State private var showFeedbackPanel = false
+
     // Annotation sheet state
     @State private var showAnnotationEditor = false
     @State private var annotationLineNumber = 0
@@ -27,6 +30,14 @@ struct FileDiffView: View {
 
     private var fileName: String {
         filePath.split(separator: "/").last.map(String.init) ?? filePath
+    }
+
+    private var feedbackCount: Int {
+        guard let state = stateManager.reviewState else { return 0 }
+        let rejectedCount = state.hunks.values.filter { $0.status == .rejected }.count
+        let annotationCount = state.annotations.count
+        let hasNotes = !state.notes.isEmpty ? 1 : 0
+        return rejectedCount + annotationCount + hasNotes
     }
 
     var body: some View {
@@ -67,6 +78,19 @@ struct FileDiffView: View {
                 }
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            FeedbackButton(count: feedbackCount) {
+                showFeedbackPanel = true
+            }
+            .padding()
+        }
+        .sheet(isPresented: $showFeedbackPanel) {
+            FeedbackPanelView()
+                .environment(stateManager)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
+        }
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -76,6 +100,37 @@ struct FileDiffView: View {
                 } label: {
                     Image(systemName: isBrowseMode ? "plus.forwardslash.minus" : "doc.text")
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Section("Set All Hunks") {
+                        Button {
+                            applyBulkStatus(.approved)
+                        } label: {
+                            Label("Approve All", systemImage: "checkmark.circle")
+                        }
+                        Button {
+                            applyBulkStatus(.rejected)
+                        } label: {
+                            Label("Reject All", systemImage: "xmark.circle")
+                        }
+                        Button {
+                            applyBulkStatus(.savedForLater)
+                        } label: {
+                            Label("Save All for Later", systemImage: "bookmark")
+                        }
+                    }
+                    Section {
+                        Button(role: .destructive) {
+                            applyBulkStatus(nil)
+                        } label: {
+                            Label("Reset All", systemImage: "arrow.counterclockwise")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .disabled(fileContent?.hunks.isEmpty ?? true)
             }
         }
         .onAppear {
@@ -143,6 +198,7 @@ struct FileDiffView: View {
                             annotations: hunkAnnotations,
                             onApprove: { stateManager.setHunkStatus(hunkId: hunk.id, status: .approved) },
                             onReject: { stateManager.setHunkStatus(hunkId: hunk.id, status: .rejected) },
+                            onSaveForLater: { stateManager.setHunkStatus(hunkId: hunk.id, status: .savedForLater) },
                             onTapLineNumber: { lineNumber, side in
                                 annotationLineNumber = lineNumber
                                 annotationSide = side
@@ -309,6 +365,12 @@ struct FileDiffView: View {
     private func isHunkTrustedCheck(_ hunk: DiffHunk) -> Bool {
         guard let state = stateManager.reviewState else { return false }
         return isHunkTrusted(state.hunks[hunk.id], trustList: state.trustList)
+    }
+
+    private func applyBulkStatus(_ status: HunkStatus?) {
+        guard let hunks = fileContent?.hunks else { return }
+        let hunkIds = hunks.map(\.id)
+        stateManager.setHunkStatuses(hunkIds: hunkIds, status: status)
     }
 
     private func loadFile() async {
