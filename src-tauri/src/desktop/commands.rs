@@ -2213,20 +2213,23 @@ pub fn get_companion_server_status() -> bool {
 
 #[tauri::command]
 pub fn get_tailscale_ip() -> Option<String> {
-    std::process::Command::new("tailscale")
-        .args(["ip", "-4"])
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if ip.is_empty() {
-                    None
-                } else {
-                    Some(ip)
-                }
-            } else {
-                None
-            }
-        })
+    // Try the Tailscale CLI from PATH first, then fall back to the macOS app bundle path
+    // (GUI apps launched from Finder/Dock don't inherit the shell PATH)
+    let candidates = [
+        "tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ];
+    candidates.iter().find_map(|cmd| {
+        let output = std::process::Command::new(cmd)
+            .args(["ip", "-4"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())?;
+        let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if ip.is_empty() {
+            None
+        } else {
+            Some(ip)
+        }
+    })
 }
