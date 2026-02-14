@@ -25,13 +25,7 @@ fn main() {
 
     let source = LocalGitSource::new(repo_path).expect("not a git repo");
 
-    let comparison = Comparison {
-        old: old_ref.clone(),
-        new: new_ref.clone(),
-        working_tree: false,
-        key: format!("{old_ref}..{new_ref}"),
-        github_pr: None,
-    };
+    let comparison = Comparison::new(old_ref.clone(), new_ref.clone());
 
     let files = source.list_files(&comparison).expect("list_files failed");
     let changed_paths = collect_changed_paths(&files);

@@ -46,16 +46,22 @@ pub enum ChangeStatus {
     Copied,
 }
 
-/// A comparison specification using the simplified VS Code model
+/// A comparison specification: base..head diff.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comparison {
-    pub old: String, // Base ref (e.g., "main")
-    pub new: String, // Compare ref (e.g., "HEAD")
-    #[serde(rename = "workingTree")]
-    pub working_tree: bool, // Include uncommitted working tree changes (auto-detected)
-    pub key: String, // Unique key for storage, e.g., "main..HEAD"
-    #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
-    pub github_pr: Option<super::github::GitHubPrRef>, // Optional GitHub PR reference
+    pub base: String, // Base ref (e.g., "main"), or "" for empty tree (snapshots)
+    pub head: String, // Head ref (e.g., "feature")
+    pub key: String,  // Always "{base}..{head}"
+}
+
+impl Comparison {
+    /// Create a new comparison, deriving the key from base and head.
+    pub fn new(base: impl Into<String>, head: impl Into<String>) -> Self {
+        let base = base.into();
+        let head = head.into();
+        let key = format!("{base}..{head}");
+        Self { base, head, key }
+    }
 }
 
 /// A file entry in the tree

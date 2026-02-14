@@ -64,6 +64,15 @@ impl LocalGitSource {
         Ok(Self { repo_path })
     }
 
+    /// Check if the comparison head is the current branch, meaning working
+    /// tree changes (staged + unstaged + untracked) should be included in diffs.
+    pub fn include_working_tree(&self, comparison: &Comparison) -> bool {
+        match self.get_current_branch() {
+            Ok(branch) => comparison.head == branch,
+            Err(_) => false, // detached HEAD or error — committed diff only
+        }
+    }
+
     /// Get the current branch name
     pub fn get_current_branch(&self) -> Result<String, LocalGitError> {
         if let Ok(output) = self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"]) {
@@ -135,25 +144,22 @@ impl LocalGitSource {
         let mut total_add: u32 = 0;
         let mut total_del: u32 = 0;
 
-        // Committed diff
-        if comparison.old != comparison.new || !comparison.working_tree {
-            let base = match self.get_merge_base(&comparison.old, &comparison.new) {
-                Ok(base) => base,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
+        if self.include_working_tree(comparison) {
+            // Working tree: committed diff (base..HEAD) + uncommitted changes (HEAD vs working tree)
+            let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
+            let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
+                Ok(b) => b,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
             };
-            let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
-            let range = format!("{base}..{resolved_new}");
+            let range = format!("{merge_base}..{resolved_head}");
             let output = self.run_git(&["diff", "--shortstat", &range])?;
             let (f, a, d) = parse_shortstat(&output);
             total_files += f;
             total_add += a;
             total_del += d;
-        }
 
-        // Working tree changes (tracked modifications + untracked files)
-        if comparison.working_tree {
-            let head = self.resolve_ref_or_empty_tree("HEAD");
-            let output = self.run_git(&["diff", "--shortstat", &head])?;
+            // Uncommitted changes (HEAD vs working tree)
+            let output = self.run_git(&["diff", "--shortstat", &resolved_head])?;
             let (f, a, d) = parse_shortstat(&output);
             total_files += f;
             total_add += a;
@@ -163,6 +169,19 @@ impl LocalGitSource {
             if let Ok(untracked) = self.get_untracked_files() {
                 total_files += untracked.len() as u32;
             }
+        } else {
+            // Committed diff between base and head refs
+            let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
+                Ok(b) => b,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
+            };
+            let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
+            let range = format!("{merge_base}..{resolved_head}");
+            let output = self.run_git(&["diff", "--shortstat", &range])?;
+            let (f, a, d) = parse_shortstat(&output);
+            total_files += f;
+            total_add += a;
+            total_del += d;
         }
 
         Ok(DiffShortStat {
@@ -511,31 +530,35 @@ impl LocalGitSource {
     ) -> Result<HashMap<String, FileStatus>, LocalGitError> {
         let mut changes = HashMap::new();
 
-        // Get committed changes between old and new refs
-        // Use merge-base to handle divergent branches properly
-        let base = match self.get_merge_base(&comparison.old, &comparison.new) {
-            Ok(base) => base,
-            Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
-        };
-
-        // Get committed changes
-        if comparison.old != comparison.new || !comparison.working_tree {
-            let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
-            let range = format!("{base}..{resolved_new}");
+        if self.include_working_tree(comparison) {
+            // Working tree: committed changes (base..HEAD) + uncommitted changes
+            let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
+            let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
+                Ok(b) => b,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
+            };
+            let range = format!("{merge_base}..{resolved_head}");
             let output = self.run_git(&["diff", "--name-status", &range])?;
             self.parse_name_status(&output, &mut changes);
-        }
 
-        // If working_tree is true, also include uncommitted changes
-        if comparison.working_tree {
-            // Get unstaged changes (working tree vs index)
+            // Unstaged changes (working tree vs index)
             let unstaged_output = self.run_git(&["diff", "--name-status"])?;
             self.parse_name_status(&unstaged_output, &mut changes);
 
-            // Get staged changes (index vs HEAD)
-            let head = self.resolve_ref_or_empty_tree("HEAD");
-            let staged_output = self.run_git(&["diff", "--name-status", "--cached", &head])?;
+            // Staged changes (index vs HEAD)
+            let staged_output =
+                self.run_git(&["diff", "--name-status", "--cached", &resolved_head])?;
             self.parse_name_status(&staged_output, &mut changes);
+        } else {
+            // Committed diff between base and head refs
+            let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
+                Ok(b) => b,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
+            };
+            let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
+            let range = format!("{merge_base}..{resolved_head}");
+            let output = self.run_git(&["diff", "--name-status", &range])?;
+            self.parse_name_status(&output, &mut changes);
         }
 
         Ok(changes)
@@ -585,7 +608,7 @@ impl LocalGitSource {
         let mut file_status = self.get_changed_files(comparison)?;
 
         // Add untracked files
-        if comparison.working_tree {
+        if self.include_working_tree(comparison) {
             if let Ok(untracked) = self.get_untracked_files() {
                 for path in untracked {
                     file_status.entry(path).or_insert(FileStatus::Untracked);
@@ -1097,7 +1120,7 @@ impl DiffSource for LocalGitSource {
         let mut file_status = self.get_changed_files(comparison)?;
 
         // Add untracked files (these are important for review)
-        if comparison.working_tree {
+        if self.include_working_tree(comparison) {
             if let Ok(untracked) = self.get_untracked_files() {
                 for path in untracked {
                     file_status.entry(path).or_insert(FileStatus::Untracked);
@@ -1129,39 +1152,36 @@ impl DiffSource for LocalGitSource {
     ) -> Result<String, Self::Error> {
         let mut all_diffs = String::new();
 
-        // Get committed diff between old and new refs
-        if comparison.old != comparison.new || !comparison.working_tree {
-            // Get merge-base for proper 3-way diff on divergent branches
-            let base = match self.get_merge_base(&comparison.old, &comparison.new) {
-                Ok(base) => base,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.old),
+        if self.include_working_tree(comparison) {
+            // Working tree: committed diff (base..HEAD) + uncommitted changes (HEAD vs working tree)
+            let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
+            let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
+                Ok(b) => b,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
             };
 
-            let resolved_new = self.resolve_ref_or_empty_tree(&comparison.new);
-            let range = format!("{base}..{resolved_new}");
+            // Committed diff: base..HEAD
+            let range = format!("{merge_base}..{resolved_head}");
             let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &range];
-
             if let Some(path) = file_path {
                 args.push("--");
                 args.push(path);
             }
-
             if let Ok(output) = self.run_git(&args) {
                 all_diffs.push_str(&output);
             }
-        }
 
-        // If working_tree is true, also get uncommitted changes
-        if comparison.working_tree {
-            // Get combined staged + unstaged changes (HEAD vs working tree)
-            let head = self.resolve_ref_or_empty_tree("HEAD");
-            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &head];
-
+            // Uncommitted changes: HEAD vs working tree
+            let mut args = vec![
+                "diff",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                &resolved_head,
+            ];
             if let Some(path) = file_path {
                 args.push("--");
                 args.push(path);
             }
-
             if let Ok(output) = self.run_git(&args) {
                 if !output.is_empty() {
                     if !all_diffs.is_empty() {
@@ -1169,6 +1189,22 @@ impl DiffSource for LocalGitSource {
                     }
                     all_diffs.push_str(&output);
                 }
+            }
+        } else {
+            // Committed diff between base and head refs
+            let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
+                Ok(b) => b,
+                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
+            };
+            let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
+            let range = format!("{merge_base}..{resolved_head}");
+            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &range];
+            if let Some(path) = file_path {
+                args.push("--");
+                args.push(path);
+            }
+            if let Ok(output) = self.run_git(&args) {
+                all_diffs.push_str(&output);
             }
         }
 

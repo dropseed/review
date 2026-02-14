@@ -48,68 +48,46 @@ pub fn run(cli: Cli) -> Result<(), String> {
 
     // Resolve comparison: from spec or auto-detect
     let comparison = match cli.spec {
-        Some(spec) => parse_comparison_spec(&path, &spec, false)?,
+        Some(spec) => parse_comparison_spec(&path, &spec)?,
         None => get_or_detect_comparison(&path)?,
     };
 
     // Persist review state so the GUI finds it on launch
-    storage::ensure_review_exists(&path, &comparison).map_err(|e| e.to_string())?;
+    storage::ensure_review_exists(&path, &comparison, None).map_err(|e| e.to_string())?;
 
     open_app(&repo_path, &comparison.key)
 }
 
 /// Auto-detect the comparison from the repo's default and current branches.
 ///
-/// Returns `<default_branch>..<current_branch>` with working tree auto-included.
+/// Returns `<default_branch>..<current_branch>`.
 fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> {
     let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
     let default_branch = source
         .get_default_branch()
         .unwrap_or_else(|_| "main".to_owned());
-    let current_branch = source.get_current_branch().map_err(|e| e.to_string())?;
+    let current_branch = source
+        .get_current_branch()
+        .unwrap_or_else(|_| "HEAD".to_owned());
 
-    let key = format!("{default_branch}..{current_branch}");
-    Ok(Comparison {
-        old: default_branch,
-        new: current_branch,
-        working_tree: true,
-        key,
-        github_pr: None,
-    })
+    Ok(Comparison::new(default_branch, current_branch))
 }
 
 /// Parse a comparison spec (e.g. "main..feature") into a `Comparison`.
-fn parse_comparison_spec(
-    repo_path: &Path,
-    spec: &str,
-    working_tree: bool,
-) -> Result<Comparison, String> {
+fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comparison, String> {
     let (base, head) = if spec.contains("..") {
         let parts: Vec<&str> = spec.splitn(2, "..").collect();
         (parts[0].to_owned(), parts[1].to_owned())
     } else {
-        // Single ref means compare against it with working tree
+        // Single ref: compare default branch against the given ref
         let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
         let default_branch = source
             .get_default_branch()
             .unwrap_or_else(|_| "main".to_owned());
-
-        if working_tree {
-            (spec.to_owned(), "HEAD".to_owned())
-        } else {
-            (default_branch, spec.to_owned())
-        }
+        (default_branch, spec.to_owned())
     };
 
-    let key = format!("{base}..{head}");
-
-    Ok(Comparison {
-        old: base,
-        new: head,
-        working_tree,
-        key,
-        github_pr: None,
-    })
+    Ok(Comparison::new(base, head))
 }
 
 /// Path to the signal file used to communicate a repo path to the running app.

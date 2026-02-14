@@ -102,9 +102,7 @@ function SummarySection(): ReactNode {
   const isSummaryStale = useReviewStore((s) => s.isSummaryStale);
   const generateSummary = useReviewStore((s) => s.generateSummary);
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
-  const prBody = useReviewStore(
-    (s) => s.reviewState?.comparison?.githubPr?.body,
-  );
+  const prBody = useReviewStore((s) => s.reviewState?.githubPr?.body);
 
   const displaySummary = guideSummary || prBody || null;
   const stale = guideSummary ? isSummaryStale() : false;

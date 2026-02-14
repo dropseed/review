@@ -78,6 +78,13 @@ pub struct ReviewState {
     /// legacy data; `syncTotalDiffHunks` sets the real count when opened.
     #[serde(default, rename = "totalDiffHunks")]
     pub total_diff_hunks: usize,
+    /// Optional GitHub PR reference (moved from Comparison).
+    #[serde(
+        rename = "githubPr",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub github_pr: Option<crate::sources::github::GitHubPrRef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +133,7 @@ impl ReviewState {
             version: 0,
             guide: None,
             total_diff_hunks: 0,
+            github_pr: None,
         }
     }
 
@@ -183,6 +191,7 @@ impl ReviewState {
             saved_for_later_hunks,
             state,
             updated_at: self.updated_at.clone(),
+            github_pr: self.github_pr.clone(),
         }
     }
 }
@@ -260,6 +269,13 @@ pub struct ReviewSummary {
     pub state: Option<String>,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    /// Optional GitHub PR reference
+    #[serde(
+        rename = "githubPr",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub github_pr: Option<crate::sources::github::GitHubPrRef>,
 }
 
 #[cfg(test)]
@@ -270,13 +286,7 @@ mod tests {
     // These tests verify ReviewState integration with pattern matching
 
     fn test_comparison() -> Comparison {
-        Comparison {
-            old: "main".to_string(),
-            new: "HEAD".to_string(),
-            working_tree: false,
-            key: "main..HEAD".to_string(),
-            github_pr: None,
-        }
+        Comparison::new("main", "HEAD")
     }
 
     #[test]

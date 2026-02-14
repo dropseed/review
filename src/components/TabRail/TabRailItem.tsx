@@ -15,12 +15,12 @@ function formatBranchComparison(
   defaultBranch?: string,
 ): string {
   const baseIsDefault =
-    defaultBranch !== undefined && comparison.old === defaultBranch;
+    defaultBranch !== undefined && comparison.base === defaultBranch;
 
   if (baseIsDefault) {
-    return comparison.new;
+    return comparison.head;
   }
-  return `${comparison.old}..${comparison.new}`;
+  return `${comparison.base}..${comparison.head}`;
 }
 
 /** Format a date as relative age: "2m", "3h", "5d", "2w", "3mo" */
@@ -86,16 +86,9 @@ function arePropsEqual(
   if (prev.review.totalHunks !== next.review.totalHunks) return false;
   if (prev.review.reviewedHunks !== next.review.reviewedHunks) return false;
   if (prev.review.repoName !== next.review.repoName) return false;
-  if (
-    prev.review.comparison.githubPr?.number !==
-    next.review.comparison.githubPr?.number
-  )
+  if (prev.review.githubPr?.number !== next.review.githubPr?.number)
     return false;
-  if (
-    prev.review.comparison.githubPr?.title !==
-    next.review.comparison.githubPr?.title
-  )
-    return false;
+  if (prev.review.githubPr?.title !== next.review.githubPr?.title) return false;
   // Scalar props
   if (prev.repoName !== next.repoName) return false;
   if (prev.defaultBranch !== next.defaultBranch) return false;
@@ -131,7 +124,7 @@ export const TabRailItem = memo(function TabRailItem({
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  const pr = review.comparison.githubPr;
+  const pr = review.githubPr;
   const isPr = pr != null;
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {

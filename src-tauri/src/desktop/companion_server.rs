@@ -295,38 +295,24 @@ fn parse_query(query: &str) -> std::collections::HashMap<String, String> {
 fn get_comparison_from_query(
     params: &std::collections::HashMap<String, String>,
 ) -> Option<Comparison> {
-    let old = params.get("old")?.clone();
-    let new = params.get("new")?.clone();
-    let working_tree = params.get("workingTree").is_some_and(|v| v == "true");
+    let base = params.get("base")?.clone();
+    let head = params.get("head")?.clone();
+    Some(Comparison::new(base, head))
+}
 
-    // Check for optional PR params
-    let github_pr = params
-        .get("prNumber")
-        .and_then(|n| n.parse::<u32>().ok())
-        .map(|number| {
-            let title = params.get("prTitle").cloned().unwrap_or_default();
-            review::sources::github::GitHubPrRef {
-                number,
-                title,
-                head_ref_name: new.clone(),
-                base_ref_name: old.clone(),
-                body: None,
-            }
-        });
-
-    // Build the key the same way the frontend does
-    let key = if github_pr.is_some() {
-        format!("pr-{}", github_pr.as_ref().unwrap().number)
-    } else {
-        format!("{old}..{new}")
-    };
-
-    Some(Comparison {
-        old,
-        new,
-        working_tree,
-        key,
-        github_pr,
+fn get_github_pr_from_query(
+    params: &std::collections::HashMap<String, String>,
+) -> Option<review::sources::github::GitHubPrRef> {
+    let number = params.get("prNumber")?.parse::<u32>().ok()?;
+    let title = params.get("prTitle").cloned().unwrap_or_default();
+    let base = params.get("base").cloned().unwrap_or_default();
+    let head = params.get("head").cloned().unwrap_or_default();
+    Some(review::sources::github::GitHubPrRef {
+        number,
+        title,
+        head_ref_name: head,
+        base_ref_name: base,
+        body: None,
     })
 }
 
@@ -372,10 +358,11 @@ fn handle_list_files(query: &str) -> Response<Cursor<Vec<u8>>> {
     };
 
     let Some(comparison) = get_comparison_from_query(&params) else {
-        return error_response(400, "Missing comparison params (old, new)");
+        return error_response(400, "Missing comparison params (base, head)");
     };
+    let github_pr = get_github_pr_from_query(&params);
 
-    match commands::list_files_sync(repo_path, comparison) {
+    match commands::list_files_sync(repo_path, comparison, github_pr) {
         Ok(files) => json_response(&files),
         Err(e) => error_response(500, &e),
     }
@@ -389,7 +376,7 @@ fn handle_get_state(query: &str) -> Response<Cursor<Vec<u8>>> {
     };
 
     let Some(comparison) = get_comparison_from_query(&params) else {
-        return error_response(400, "Missing comparison params (old, new)");
+        return error_response(400, "Missing comparison params (base, head)");
     };
 
     match commands::load_review_state(repo_path, comparison) {
@@ -424,10 +411,11 @@ fn handle_get_file(query: &str) -> Response<Cursor<Vec<u8>>> {
     };
 
     let Some(comparison) = get_comparison_from_query(&params) else {
-        return error_response(400, "Missing comparison params (old, new)");
+        return error_response(400, "Missing comparison params (base, head)");
     };
+    let github_pr = get_github_pr_from_query(&params);
 
-    match commands::get_file_content_sync(repo_path, file_path, comparison) {
+    match commands::get_file_content_sync(repo_path, file_path, comparison, github_pr) {
         Ok(content) => json_response(&content),
         Err(e) => error_response(500, &e),
     }
@@ -580,7 +568,7 @@ fn handle_delete_state(query: &str) -> Response<Cursor<Vec<u8>>> {
     };
 
     let Some(comparison) = get_comparison_from_query(&params) else {
-        return error_response(400, "Missing comparison params (old, new)");
+        return error_response(400, "Missing comparison params (base, head)");
     };
 
     match commands::delete_review(repo_path, comparison) {
@@ -631,7 +619,7 @@ fn handle_diff_shortstat(query: &str) -> Response<Cursor<Vec<u8>>> {
     };
     let comparison = match get_comparison_from_query(&params) {
         Some(c) => c,
-        None => return error_response(400, "Missing comparison params (old, new)"),
+        None => return error_response(400, "Missing comparison params (base, head)"),
     };
 
     match commands::get_diff_shortstat(repo_path, comparison) {

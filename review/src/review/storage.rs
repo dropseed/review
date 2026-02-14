@@ -1,5 +1,6 @@
 use super::central;
 use super::state::{ReviewState, ReviewSummary};
+use crate::sources::github::GitHubPrRef;
 use crate::sources::traits::Comparison;
 use serde::Serialize;
 use std::fs;
@@ -189,13 +190,18 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
 
 /// Create a review file on disk if it doesn't already exist.
 /// Used to make new reviews immediately visible in the sidebar.
-pub fn ensure_review_exists(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
+pub fn ensure_review_exists(
+    repo_path: &Path,
+    comparison: &Comparison,
+    github_pr: Option<GitHubPrRef>,
+) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
     let filename = comparison_filename(comparison);
     let path = storage_dir.join(&filename);
 
     if !path.exists() {
-        let state = ReviewState::new(comparison.clone());
+        let mut state = ReviewState::new(comparison.clone());
+        state.github_pr = github_pr;
         save_review_state(repo_path, &state)?;
     }
 
@@ -223,13 +229,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_comparison() -> Comparison {
-        Comparison {
-            old: "main".to_string(),
-            new: "HEAD".to_string(),
-            working_tree: true,
-            key: "main..HEAD".to_string(),
-            github_pr: None,
-        }
+        Comparison::new("main", "HEAD")
     }
 
     /// Create a test repo and set REVIEW_HOME to a temp dir.
@@ -325,20 +325,8 @@ mod tests {
         let repo_path = temp_dir.path().to_path_buf();
 
         // Create and save two reviews
-        let comparison1 = Comparison {
-            old: "main".to_string(),
-            new: "feature-1".to_string(),
-            working_tree: false,
-            key: "main..feature-1".to_string(),
-            github_pr: None,
-        };
-        let comparison2 = Comparison {
-            old: "main".to_string(),
-            new: "feature-2".to_string(),
-            working_tree: false,
-            key: "main..feature-2".to_string(),
-            github_pr: None,
-        };
+        let comparison1 = Comparison::new("main", "feature-1");
+        let comparison2 = Comparison::new("main", "feature-2");
 
         save_review_state(&repo_path, &ReviewState::new(comparison1)).unwrap();
         save_review_state(&repo_path, &ReviewState::new(comparison2)).unwrap();

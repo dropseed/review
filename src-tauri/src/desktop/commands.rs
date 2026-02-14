@@ -20,7 +20,7 @@ use review::diff::parser::{
 };
 use review::review::state::{HunkGroup, ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
-use review::sources::github::{GhCliProvider, GitHubProvider, PullRequest};
+use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch};
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
@@ -184,8 +184,9 @@ pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String>
 pub async fn list_files(
     repo_path: String,
     comparison: Comparison,
+    github_pr: Option<GitHubPrRef>,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || list_files_sync(repo_path, comparison))
+    tokio::task::spawn_blocking(move || list_files_sync(repo_path, comparison, github_pr))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -194,12 +195,13 @@ pub async fn list_files(
 pub fn list_files_sync(
     repo_path: String,
     comparison: Comparison,
+    github_pr: Option<GitHubPrRef>,
 ) -> Result<Vec<FileEntry>, String> {
     let t0 = Instant::now();
     debug!("[list_files] repo_path={repo_path}, comparison={comparison:?}");
 
     // PR routing: use gh CLI to get file list
-    if let Some(ref pr) = comparison.github_pr {
+    if let Some(ref pr) = github_pr {
         let provider = GhCliProvider::new(PathBuf::from(&repo_path));
         let files = provider
             .get_pull_request_files(pr.number)
@@ -302,10 +304,13 @@ pub async fn get_file_content(
     repo_path: String,
     file_path: String,
     comparison: Comparison,
+    github_pr: Option<GitHubPrRef>,
 ) -> Result<FileContent, String> {
-    tokio::task::spawn_blocking(move || get_file_content_sync(repo_path, file_path, comparison))
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || {
+        get_file_content_sync(repo_path, file_path, comparison, github_pr)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Synchronous implementation of `get_file_content`, callable from blocking contexts.
@@ -313,6 +318,7 @@ pub fn get_file_content_sync(
     repo_path: String,
     file_path: String,
     comparison: Comparison,
+    github_pr: Option<GitHubPrRef>,
 ) -> Result<FileContent, String> {
     let t0 = Instant::now();
     debug!(
@@ -320,7 +326,7 @@ pub fn get_file_content_sync(
     );
 
     // PR routing: get diff from gh CLI and content from local git refs
-    if let Some(ref pr) = comparison.github_pr {
+    if let Some(ref pr) = github_pr {
         return get_file_content_for_pr(&repo_path, &file_path, pr);
     }
 
@@ -382,7 +388,7 @@ pub fn get_file_content_sync(
             parse_diff(&diff_output, &file_path)
         };
 
-        let old_ref = &comparison.old;
+        let old_ref = &comparison.base;
         let old_content = match source.get_file_bytes(&file_path, old_ref) {
             Ok(bytes) => String::from_utf8(bytes).ok(),
             Err(_) => None,
@@ -461,10 +467,10 @@ pub fn get_file_content_sync(
         let old_image_data_url = if diff_output.is_empty() {
             None
         } else {
-            let old_ref = if comparison.working_tree {
+            let old_ref = if source.include_working_tree(&comparison) {
                 "HEAD".to_owned()
             } else {
-                comparison.old.clone()
+                comparison.base.clone()
             };
 
             match source.get_file_bytes(&file_path, &old_ref) {
@@ -546,12 +552,12 @@ pub fn get_file_content_sync(
 
     let (old_content, final_content) = if diff_output.is_empty() {
         (None, content)
-    } else if comparison.working_tree {
-        // Use comparison.old (the base ref) for old content, not HEAD.
+    } else if source.include_working_tree(&comparison) {
+        // Use comparison.base (the base ref) for old content, not HEAD.
         // When comparing e.g. main..feature+working-tree, HEAD points to the
         // feature branch, so using HEAD would make old == new (both from feature),
         // causing MultiFileDiff to show zero changes.
-        let old_ref = &comparison.old;
+        let old_ref = &comparison.base;
         let old = match source.get_file_bytes(&file_path, old_ref) {
             Ok(bytes) => {
                 debug!(
@@ -567,11 +573,11 @@ pub fn get_file_content_sync(
         };
         (old, content)
     } else {
-        let old = match source.get_file_bytes(&file_path, &comparison.old) {
+        let old = match source.get_file_bytes(&file_path, &comparison.base) {
             Ok(bytes) => {
                 debug!(
                     "[get_file_content] got old content from {}: {} bytes",
-                    comparison.old,
+                    comparison.base,
                     bytes.len()
                 );
                 String::from_utf8(bytes).ok()
@@ -579,16 +585,16 @@ pub fn get_file_content_sync(
             Err(e) => {
                 debug!(
                     "[get_file_content] no old version at {}: {}",
-                    comparison.old, e
+                    comparison.base, e
                 );
                 None
             }
         };
-        let new = match source.get_file_bytes(&file_path, &comparison.new) {
+        let new = match source.get_file_bytes(&file_path, &comparison.head) {
             Ok(bytes) => {
                 debug!(
                     "[get_file_content] got new content from {}: {} bytes",
-                    comparison.new,
+                    comparison.head,
                     bytes.len()
                 );
                 String::from_utf8(bytes).ok()
@@ -596,7 +602,7 @@ pub fn get_file_content_sync(
             Err(e) => {
                 debug!(
                     "[get_file_content] no new version at {}: {}",
-                    comparison.new, e
+                    comparison.head, e
                 );
                 None
             }
@@ -829,9 +835,13 @@ pub fn get_all_hunks_sync(
 }
 
 #[tauri::command]
-pub fn get_diff(repo_path: String, comparison: Comparison) -> Result<String, String> {
+pub fn get_diff(
+    repo_path: String,
+    comparison: Comparison,
+    github_pr: Option<GitHubPrRef>,
+) -> Result<String, String> {
     // PR routing: use gh CLI to get diff
-    if let Some(ref pr) = comparison.github_pr {
+    if let Some(ref pr) = github_pr {
         let provider = GhCliProvider::new(PathBuf::from(&repo_path));
         return provider
             .get_pull_request_diff(pr.number)
@@ -879,8 +889,12 @@ pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn ensure_review_exists(repo_path: String, comparison: Comparison) -> Result<(), String> {
-    storage::ensure_review_exists(&PathBuf::from(&repo_path), &comparison)
+pub fn ensure_review_exists(
+    repo_path: String,
+    comparison: Comparison,
+    github_pr: Option<GitHubPrRef>,
+) -> Result<(), String> {
+    storage::ensure_review_exists(&PathBuf::from(&repo_path), &comparison, github_pr)
         .map_err(|e| e.to_string())
 }
 
@@ -1120,6 +1134,7 @@ pub fn get_expanded_context(
     comparison: Comparison,
     start_line: u32,
     end_line: u32,
+    github_pr: Option<GitHubPrRef>,
 ) -> Result<ExpandedContextResult, String> {
     debug!(
         "[get_expanded_context] file={file_path}, lines {start_line}-{end_line}, comparison={comparison:?}"
@@ -1128,12 +1143,12 @@ pub fn get_expanded_context(
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
     // For PRs, use the head ref name (best-effort)
-    let git_ref = if let Some(ref pr) = comparison.github_pr {
+    let git_ref = if let Some(ref pr) = github_pr {
         pr.head_ref_name.clone()
-    } else if comparison.working_tree {
+    } else if source.include_working_tree(&comparison) {
         "HEAD".to_owned()
     } else {
-        comparison.new.clone()
+        comparison.head.clone()
     };
 
     let lines = source
@@ -1309,10 +1324,10 @@ pub async fn get_file_symbol_diffs(
         })?;
 
         // Determine the git refs for old and new sides
-        let old_ref = if comparison.working_tree {
+        let old_ref = if source.include_working_tree(&comparison) {
             "HEAD".to_owned()
         } else {
-            comparison.old.clone()
+            comparison.base.clone()
         };
 
         // Single git diff call for all files instead of one per file
@@ -1342,12 +1357,12 @@ pub async fn get_file_symbol_diffs(
                             .and_then(|bytes| String::from_utf8(bytes).ok());
 
                         // Get new content
-                        let new_content = if comparison.working_tree {
+                        let new_content = if source.include_working_tree(&comparison) {
                             let full_path = PathBuf::from(repo_path).join(file_path);
                             std::fs::read_to_string(&full_path).ok()
                         } else {
                             source
-                                .get_file_bytes(file_path, &comparison.new)
+                                .get_file_bytes(file_path, &comparison.head)
                                 .ok()
                                 .and_then(|bytes| String::from_utf8(bytes).ok())
                         };
@@ -1659,6 +1674,7 @@ pub fn search_file_contents(
 pub struct ReviewFreshnessInput {
     pub repo_path: String,
     pub comparison: Comparison,
+    pub github_pr: Option<GitHubPrRef>,
     pub cached_old_sha: Option<String>,
     pub cached_new_sha: Option<String>,
 }
@@ -1705,7 +1721,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
     let key = format!("{}:{}", input.repo_path, input.comparison.key);
 
     // PR comparisons: check state via gh CLI
-    if let Some(ref pr) = input.comparison.github_pr {
+    if let Some(ref pr) = input.github_pr {
         let provider = GhCliProvider::new(PathBuf::from(&input.repo_path));
         match provider.get_pr_status(pr.number) {
             Ok(status) => {
@@ -1784,7 +1800,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
     };
 
     // Working tree comparisons always need re-check (can't fingerprint cheaply)
-    if input.comparison.working_tree {
+    if source.include_working_tree(&input.comparison) {
         let stats = source.get_diff_shortstat(&input.comparison).ok();
         return ReviewFreshnessResult {
             key,
@@ -1796,8 +1812,8 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
     }
 
     // Non-working-tree local comparisons: use SHA fingerprinting
-    let resolved_old = source.resolve_ref_or_empty_tree(&input.comparison.old);
-    let resolved_new = source.resolve_ref_or_empty_tree(&input.comparison.new);
+    let resolved_old = source.resolve_ref_or_empty_tree(&input.comparison.base);
+    let resolved_new = source.resolve_ref_or_empty_tree(&input.comparison.head);
 
     let old_unchanged = input
         .cached_old_sha

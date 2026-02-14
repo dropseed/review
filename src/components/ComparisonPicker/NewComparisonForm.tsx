@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Comparison, BranchList, PullRequest } from "../../types";
-import { makeComparison, makePrComparison } from "../../types";
+import type {
+  Comparison,
+  GitHubPrRef,
+  BranchList,
+  PullRequest,
+} from "../../types";
+import { makeComparison, makeComparisonFromPr } from "../../types";
 import { BranchSelect, PR_PREFIX } from "./BranchSelect";
 import { getApiClient } from "../../api";
 
 interface NewComparisonFormProps {
   repoPath: string;
-  onSelectReview: (comparison: Comparison) => void;
+  onSelectReview: (comparison: Comparison, githubPr?: GitHubPrRef) => void;
   existingComparisonKeys: string[];
   branches?: BranchList | null;
   defaultBranch?: string | null;
@@ -53,7 +58,6 @@ export function NewComparisonForm({
 
   const [baseRef, setBaseRef] = useState("");
   const [compareRef, setCompareRef] = useState("");
-  const [currentBranch, setCurrentBranch] = useState("HEAD");
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
   const [smartDefaultSet, setSmartDefaultSet] = useState(false);
 
@@ -66,7 +70,6 @@ export function NewComparisonForm({
     setCompareRef("");
     setPullRequests([]);
     setBranchesLocal({ local: [], remote: [], stashes: [] });
-    setCurrentBranch("HEAD");
   }, [repoPath]);
 
   useEffect(() => {
@@ -93,8 +96,6 @@ export function NewComparisonForm({
         client.listSavedReviews(repoPath),
       ])
         .then(([curBranch, reviews]) => {
-          setCurrentBranch(curBranch);
-
           if (!smartDefaultSet && defaultBranchProp && branchesProp) {
             const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
             const smartDefault = pickSmartDefault(
@@ -125,7 +126,6 @@ export function NewComparisonForm({
       .then(([branchList, defBranch, curBranch, reviews]) => {
         setBranchesLocal(branchList);
         setBaseRef(defBranch);
-        setCurrentBranch(curBranch);
 
         const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
         const smartDefault = pickSmartDefault(
@@ -155,16 +155,15 @@ export function NewComparisonForm({
       const prNumber = parseInt(compareRef.slice(PR_PREFIX.length, -2), 10);
       const pr = pullRequests.find((p) => p.number === prNumber);
       if (pr) {
-        onSelectReview(makePrComparison(pr));
+        const { comparison, githubPr } = makeComparisonFromPr(pr);
+        onSelectReview(comparison, githubPr);
       }
       return;
     }
 
-    // Include uncommitted changes when comparing the current branch
-    const isWorkingTree = compareRef === currentBranch;
-    const comparison = makeComparison(baseRef, compareRef, isWorkingTree);
+    const comparison = makeComparison(baseRef, compareRef);
     onSelectReview(comparison);
-  }, [baseRef, compareRef, currentBranch, onSelectReview, pullRequests]);
+  }, [baseRef, compareRef, onSelectReview, pullRequests]);
 
   const handleFormKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
