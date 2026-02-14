@@ -1,0 +1,574 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AABF0001 /* ReviewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001 /* ReviewApp.swift */; };
+		AABF0002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002 /* ContentView.swift */; };
+		AABF0011 /* Comparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000011 /* Comparison.swift */; };
+		AABF0012 /* FileEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000012 /* FileEntry.swift */; };
+		AABF0013 /* DiffTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000013 /* DiffTypes.swift */; };
+		AABF0014 /* ReviewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000014 /* ReviewState.swift */; };
+		AABF0015 /* GlobalReviewSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000015 /* GlobalReviewSummary.swift */; };
+		AABF0016 /* ServerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000016 /* ServerTypes.swift */; };
+		AABF0021 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000021 /* APIClient.swift */; };
+		AABF0022 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000022 /* APIError.swift */; };
+		AABF0031 /* ConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000031 /* ConnectionManager.swift */; };
+		AABF0032 /* ReviewStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000032 /* ReviewStateManager.swift */; };
+		AABF0041 /* TrustMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000041 /* TrustMatching.swift */; };
+		AABF0042 /* TreeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000042 /* TreeUtils.swift */; };
+		AABF0043 /* ReviewDetailLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000043 /* ReviewDetailLogic.swift */; };
+		AABF0061 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000061 /* AppTheme.swift */; };
+		AABF0071 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* KeychainHelper.swift */; };
+		AABF0080 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000080 /* Assets.xcassets */; };
+		AABF0101 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000101 /* ConnectView.swift */; };
+		AABF0102 /* ReviewsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000102 /* ReviewsListView.swift */; };
+		AABF0103 /* ReviewRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000103 /* ReviewRowView.swift */; };
+		AABF0104 /* ReviewDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000104 /* ReviewDetailView.swift */; };
+		AABF0105 /* ChangesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000105 /* ChangesTabView.swift */; };
+		AABF0106 /* BrowseTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000106 /* BrowseTabView.swift */; };
+		AABF0107 /* FileRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000107 /* FileRowView.swift */; };
+		AABF0108 /* TrustListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000108 /* TrustListView.swift */; };
+		AABF0109 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000109 /* NotesView.swift */; };
+		AABF0110 /* FileDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000110 /* FileDiffView.swift */; };
+		AABF0111 /* HunkCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000111 /* HunkCardView.swift */; };
+		AABF0112 /* DiffLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000112 /* DiffLineView.swift */; };
+		AABF0113 /* AnnotationEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000113 /* AnnotationEditorView.swift */; };
+		AABF0114 /* AnnotationBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000114 /* AnnotationBubbleView.swift */; };
+		AABF0115 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000115 /* SettingsView.swift */; };
+		AABF0116 /* ErrorBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000116 /* ErrorBannerView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		62ECDBBB2F4026EA00EE2AE9 /* Review.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Review.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000001 /* ReviewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewApp.swift; sourceTree = "<group>"; };
+		AA000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AA000011 /* Comparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Comparison.swift; sourceTree = "<group>"; };
+		AA000012 /* FileEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileEntry.swift; sourceTree = "<group>"; };
+		AA000013 /* DiffTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffTypes.swift; sourceTree = "<group>"; };
+		AA000014 /* ReviewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewState.swift; sourceTree = "<group>"; };
+		AA000015 /* GlobalReviewSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalReviewSummary.swift; sourceTree = "<group>"; };
+		AA000016 /* ServerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerTypes.swift; sourceTree = "<group>"; };
+		AA000021 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		AA000022 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
+		AA000031 /* ConnectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionManager.swift; sourceTree = "<group>"; };
+		AA000032 /* ReviewStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewStateManager.swift; sourceTree = "<group>"; };
+		AA000041 /* TrustMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMatching.swift; sourceTree = "<group>"; };
+		AA000042 /* TreeUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreeUtils.swift; sourceTree = "<group>"; };
+		AA000043 /* ReviewDetailLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewDetailLogic.swift; sourceTree = "<group>"; };
+		AA000061 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		AA000071 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		AA000080 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA000101 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
+		AA000102 /* ReviewsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewsListView.swift; sourceTree = "<group>"; };
+		AA000103 /* ReviewRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewRowView.swift; sourceTree = "<group>"; };
+		AA000104 /* ReviewDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewDetailView.swift; sourceTree = "<group>"; };
+		AA000105 /* ChangesTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangesTabView.swift; sourceTree = "<group>"; };
+		AA000106 /* BrowseTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseTabView.swift; sourceTree = "<group>"; };
+		AA000107 /* FileRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileRowView.swift; sourceTree = "<group>"; };
+		AA000108 /* TrustListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustListView.swift; sourceTree = "<group>"; };
+		AA000109 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		AA000110 /* FileDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDiffView.swift; sourceTree = "<group>"; };
+		AA000111 /* HunkCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HunkCardView.swift; sourceTree = "<group>"; };
+		AA000112 /* DiffLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffLineView.swift; sourceTree = "<group>"; };
+		AA000113 /* AnnotationEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationEditorView.swift; sourceTree = "<group>"; };
+		AA000114 /* AnnotationBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationBubbleView.swift; sourceTree = "<group>"; };
+		AA000115 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA000116 /* ErrorBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AAFRM0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA000000 /* Review */ = {
+			isa = PBXGroup;
+			children = (
+				AA000001 /* ReviewApp.swift */,
+				AA000002 /* ContentView.swift */,
+				AA000010 /* Models */,
+				AA000020 /* Networking */,
+				AA000030 /* Services */,
+				AA000040 /* Logic */,
+				AA000050 /* Views */,
+				AA000060 /* Theme */,
+				AA000070 /* Utilities */,
+				AA000080 /* Assets.xcassets */,
+				AA000090 /* Preview Content */,
+			);
+			path = Review;
+			sourceTree = "<group>";
+		};
+		AA000010 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				AA000011 /* Comparison.swift */,
+				AA000012 /* FileEntry.swift */,
+				AA000013 /* DiffTypes.swift */,
+				AA000014 /* ReviewState.swift */,
+				AA000015 /* GlobalReviewSummary.swift */,
+				AA000016 /* ServerTypes.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		AA000020 /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				AA000021 /* APIClient.swift */,
+				AA000022 /* APIError.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		AA000030 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AA000031 /* ConnectionManager.swift */,
+				AA000032 /* ReviewStateManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		AA000040 /* Logic */ = {
+			isa = PBXGroup;
+			children = (
+				AA000041 /* TrustMatching.swift */,
+				AA000042 /* TreeUtils.swift */,
+				AA000043 /* ReviewDetailLogic.swift */,
+			);
+			path = Logic;
+			sourceTree = "<group>";
+		};
+		AA000050 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA000116 /* ErrorBannerView.swift */,
+				AA000051 /* Connect */,
+				AA000052 /* Reviews */,
+				AA000053 /* ReviewDetail */,
+				AA000054 /* FileDiff */,
+				AA000055 /* Settings */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA000051 /* Connect */ = {
+			isa = PBXGroup;
+			children = (
+				AA000101 /* ConnectView.swift */,
+			);
+			path = Connect;
+			sourceTree = "<group>";
+		};
+		AA000052 /* Reviews */ = {
+			isa = PBXGroup;
+			children = (
+				AA000102 /* ReviewsListView.swift */,
+				AA000103 /* ReviewRowView.swift */,
+			);
+			path = Reviews;
+			sourceTree = "<group>";
+		};
+		AA000053 /* ReviewDetail */ = {
+			isa = PBXGroup;
+			children = (
+				AA000104 /* ReviewDetailView.swift */,
+				AA000105 /* ChangesTabView.swift */,
+				AA000106 /* BrowseTabView.swift */,
+				AA000107 /* FileRowView.swift */,
+				AA000108 /* TrustListView.swift */,
+				AA000109 /* NotesView.swift */,
+			);
+			path = ReviewDetail;
+			sourceTree = "<group>";
+		};
+		AA000054 /* FileDiff */ = {
+			isa = PBXGroup;
+			children = (
+				AA000110 /* FileDiffView.swift */,
+				AA000111 /* HunkCardView.swift */,
+				AA000112 /* DiffLineView.swift */,
+				AA000113 /* AnnotationEditorView.swift */,
+				AA000114 /* AnnotationBubbleView.swift */,
+			);
+			path = FileDiff;
+			sourceTree = "<group>";
+		};
+		AA000055 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				AA000115 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		AA000060 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				AA000061 /* AppTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		AA000070 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				AA000071 /* KeychainHelper.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		AA000090 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		AAFFFFFF = {
+			isa = PBXGroup;
+			children = (
+				AA000000 /* Review */,
+				62ECDBBB2F4026EA00EE2AE9 /* Review.app */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AATGT0001 /* Review */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AACFG0010 /* Build configuration list for PBXNativeTarget "Review" */;
+			buildPhases = (
+				AASRC0001 /* Sources */,
+				AAFRM0001 /* Frameworks */,
+				AARES0001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Review;
+			productName = Review;
+			productReference = 62ECDBBB2F4026EA00EE2AE9 /* Review.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AAPRJ0001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					AATGT0001 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+				};
+			};
+			buildConfigurationList = AACFG0001 /* Build configuration list for PBXProject "Review" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AAFFFFFF;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AAFFFFFF;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AATGT0001 /* Review */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AARES0001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AABF0080 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AASRC0001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AABF0001 /* ReviewApp.swift in Sources */,
+				AABF0002 /* ContentView.swift in Sources */,
+				AABF0011 /* Comparison.swift in Sources */,
+				AABF0012 /* FileEntry.swift in Sources */,
+				AABF0013 /* DiffTypes.swift in Sources */,
+				AABF0014 /* ReviewState.swift in Sources */,
+				AABF0015 /* GlobalReviewSummary.swift in Sources */,
+				AABF0016 /* ServerTypes.swift in Sources */,
+				AABF0021 /* APIClient.swift in Sources */,
+				AABF0022 /* APIError.swift in Sources */,
+				AABF0031 /* ConnectionManager.swift in Sources */,
+				AABF0032 /* ReviewStateManager.swift in Sources */,
+				AABF0041 /* TrustMatching.swift in Sources */,
+				AABF0042 /* TreeUtils.swift in Sources */,
+				AABF0043 /* ReviewDetailLogic.swift in Sources */,
+				AABF0061 /* AppTheme.swift in Sources */,
+				AABF0071 /* KeychainHelper.swift in Sources */,
+				AABF0101 /* ConnectView.swift in Sources */,
+				AABF0102 /* ReviewsListView.swift in Sources */,
+				AABF0103 /* ReviewRowView.swift in Sources */,
+				AABF0104 /* ReviewDetailView.swift in Sources */,
+				AABF0105 /* ChangesTabView.swift in Sources */,
+				AABF0106 /* BrowseTabView.swift in Sources */,
+				AABF0107 /* FileRowView.swift in Sources */,
+				AABF0108 /* TrustListView.swift in Sources */,
+				AABF0109 /* NotesView.swift in Sources */,
+				AABF0110 /* FileDiffView.swift in Sources */,
+				AABF0111 /* HunkCardView.swift in Sources */,
+				AABF0112 /* DiffLineView.swift in Sources */,
+				AABF0113 /* AnnotationEditorView.swift in Sources */,
+				AABF0114 /* AnnotationBubbleView.swift in Sources */,
+				AABF0115 /* SettingsView.swift in Sources */,
+				AABF0116 /* ErrorBannerView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AACFG0002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = XU33B862HJ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		AACFG0003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = XU33B862HJ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AACFG0011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Review/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Review/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Review;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dropseed.review;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AACFG0012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Review/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Review/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Review;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dropseed.review;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AACFG0001 /* Build configuration list for PBXProject "Review" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AACFG0002 /* Debug */,
+				AACFG0003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AACFG0010 /* Build configuration list for PBXNativeTarget "Review" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AACFG0011 /* Debug */,
+				AACFG0012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AAPRJ0001 /* Project object */;
+}
