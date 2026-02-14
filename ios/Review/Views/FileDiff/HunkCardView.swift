@@ -10,6 +10,7 @@ struct HunkCardView: View {
     var onTapLineNumber: ((_ lineNumber: Int, _ side: LineAnnotation.AnnotationSide) -> Void)?
     var onEditAnnotation: ((_ annotation: LineAnnotation) -> Void)?
 
+    @State private var highlightedLines: [AttributedString]?
     @State private var dragOffset: CGFloat = 0
     @State private var dragTriggered = false
 
@@ -104,7 +105,10 @@ struct HunkCardView: View {
                 // Diff lines with inline annotations
                 VStack(spacing: 0) {
                     ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
-                        DiffLineView(line: line) {
+                        DiffLineView(
+                            line: line,
+                            highlightedContent: highlightedLines?[safe: index]
+                        ) {
                             let lineNum = line.newLineNumber ?? line.oldLineNumber ?? 0
                             let side: LineAnnotation.AnnotationSide = line.type == .removed ? .old : .new
                             onTapLineNumber?(lineNum, side)
@@ -161,20 +165,22 @@ struct HunkCardView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 0))
             .offset(x: dragOffset)
-            .gesture(
-                DragGesture()
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
                     .onChanged { value in
+                        // Only track horizontal drags — ignore vertical swipes
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         dragOffset = value.translation.width
                         if !dragTriggered && abs(dragOffset) > swipeThreshold {
                             dragTriggered = true
                         }
                     }
                     .onEnded { value in
-                        if value.translation.width > swipeThreshold {
+                        if value.translation.width > swipeThreshold && abs(value.translation.width) > abs(value.translation.height) {
                             let generator = UINotificationFeedbackGenerator()
                             generator.notificationOccurred(.success)
                             onApprove()
-                        } else if value.translation.width < -swipeThreshold {
+                        } else if value.translation.width < -swipeThreshold && abs(value.translation.width) > abs(value.translation.height) {
                             let generator = UINotificationFeedbackGenerator()
                             generator.notificationOccurred(.warning)
                             onReject()
@@ -187,6 +193,11 @@ struct HunkCardView: View {
             )
         }
         .padding(.vertical, 6)
+        .task {
+            let fileExtension = hunk.filePath.split(separator: ".").last.map(String.init)
+            let code = hunk.lines.map(\.content).joined(separator: "\n")
+            highlightedLines = await SyntaxHighlighter.highlightLines(code: code, fileExtension: fileExtension)
+        }
     }
 
     private func annotationsForLine(_ line: DiffLine) -> [LineAnnotation] {
@@ -195,5 +206,11 @@ struct HunkCardView: View {
             let expectedSide: LineAnnotation.AnnotationSide = line.type == .removed ? .old : .new
             return annotation.lineNumber == lineNum && annotation.side == expectedSide
         }
+    }
+}
+
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

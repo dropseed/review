@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DiffLineView: View {
     let line: DiffLine
+    var highlightedContent: AttributedString?
     var onTapLineNumber: (() -> Void)?
 
     var body: some View {
@@ -32,11 +33,18 @@ struct DiffLineView: View {
                 .multilineTextAlignment(.center)
 
             // Content
-            Text(line.content)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(textColor)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if let highlightedContent {
+                Text(highlightedContent)
+                    .font(.system(size: 12, design: .monospaced))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(line.content)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(textColor)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(.vertical, 1)
         .frame(minHeight: 20)

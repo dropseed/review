@@ -13,6 +13,7 @@ struct FileDiffView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var isBrowseMode = false
+    @State private var highlightedLines: [AttributedString]?
 
     // Annotation sheet state
     @State private var showAnnotationEditor = false
@@ -78,6 +79,10 @@ struct FileDiffView: View {
         }
         .task {
             await loadFile()
+            if let content = fileContent?.content {
+                let ext = filePath.split(separator: ".").last.map(String.init)
+                highlightedLines = await SyntaxHighlighter.highlightLines(code: content, fileExtension: ext)
+            }
         }
         .sheet(isPresented: $showAnnotationEditor) {
             AnnotationEditorView(
@@ -160,11 +165,18 @@ struct FileDiffView: View {
                                 .frame(width: 44, alignment: .trailing)
                                 .padding(.trailing, 12)
 
-                            Text(line.isEmpty ? " " : line)
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(.primary.opacity(0.8))
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: true, vertical: false)
+                            if let highlighted = highlightedLines?[safe: index] {
+                                Text(highlighted)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            } else {
+                                Text(line.isEmpty ? " " : line)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(.primary.opacity(0.8))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
                         }
                         .padding(.vertical, 1)
                         .frame(minHeight: 20, alignment: .leading)

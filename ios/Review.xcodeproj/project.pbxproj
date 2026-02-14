@@ -42,6 +42,8 @@
 		AABF0115 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000115 /* SettingsView.swift */; };
 		AABF0116 /* ErrorBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000116 /* ErrorBannerView.swift */; };
 		AABF0117 /* ImageDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000117 /* ImageDiffView.swift */; };
+		AABF0072 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000072 /* SyntaxHighlighter.swift */; };
+		AABF0200 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AAPKD0001 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -81,6 +83,7 @@
 		AA000115 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA000116 /* ErrorBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerView.swift; sourceTree = "<group>"; };
 		AA000117 /* ImageDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDiffView.swift; sourceTree = "<group>"; };
+		AA000072 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +91,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AABF0200 /* HighlightSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -229,6 +233,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000071 /* KeychainHelper.swift */,
+				AA000072 /* SyntaxHighlighter.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -264,6 +269,9 @@
 			dependencies = (
 			);
 			name = Review;
+			packageProductDependencies = (
+				AAPKD0001 /* HighlightSwift */,
+			);
 			productName = Review;
 			productReference = 62ECDBBB2F4026EA00EE2AE9 /* Review.app */;
 			productType = "com.apple.product-type.application";
@@ -292,6 +300,9 @@
 			);
 			mainGroup = AAFFFFFF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AAPKG0001 /* XCRemoteSwiftPackageReference "HighlightSwift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AAFFFFFF;
 			projectDirPath = "";
@@ -352,6 +363,7 @@
 				AABF0115 /* SettingsView.swift in Sources */,
 				AABF0116 /* ErrorBannerView.swift in Sources */,
 				AABF0117 /* ImageDiffView.swift in Sources */,
+				AABF0072 /* SyntaxHighlighter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -573,6 +585,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AAPKG0001 /* XCRemoteSwiftPackageReference "HighlightSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/appstefan/HighlightSwift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AAPKD0001 /* HighlightSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AAPKG0001 /* XCRemoteSwiftPackageReference "HighlightSwift" */;
+			productName = HighlightSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AAPRJ0001 /* Project object */;
 }
