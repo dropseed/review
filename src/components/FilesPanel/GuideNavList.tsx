@@ -122,7 +122,7 @@ export function GuideNavList(): ReactNode {
   const guideSummary = useReviewStore((s) => s.guideSummary);
   const startGuide = useReviewStore((s) => s.startGuide);
   const guideLoading = useReviewStore((s) => s.guideLoading);
-  const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
+  const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
 
   const hunkById = useMemo(() => buildHunkMap(hunks), [hunks]);
   const trustList = reviewState?.trustList ?? [];

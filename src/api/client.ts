@@ -10,6 +10,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  GitHubPrRef,
   PullRequest,
   CommitEntry,
   CommitDetail,
@@ -90,7 +91,11 @@ export interface ApiClient {
   // ----- File operations -----
 
   /** List files that have changes in the comparison */
-  listFiles(repoPath: string, comparison: Comparison): Promise<FileEntry[]>;
+  listFiles(
+    repoPath: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ): Promise<FileEntry[]>;
 
   /** List all files in the repository (for file finder) */
   listAllFiles(repoPath: string, comparison: Comparison): Promise<FileEntry[]>;
@@ -106,6 +111,7 @@ export interface ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ): Promise<FileContent>;
 
   /** Batch-load all hunks for multiple files in a single call */
@@ -122,6 +128,7 @@ export interface ApiClient {
     comparison: Comparison,
     startLine: number,
     endLine: number,
+    githubPr?: GitHubPrRef,
   ): Promise<ExpandedContext>;
 
   /** Search file contents using git grep */
@@ -150,7 +157,11 @@ export interface ApiClient {
   deleteReview(repoPath: string, comparison: Comparison): Promise<void>;
 
   /** Create an empty review file on disk if it doesn't already exist */
-  ensureReviewExists(repoPath: string, comparison: Comparison): Promise<void>;
+  ensureReviewExists(
+    repoPath: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ): Promise<void>;
 
   /** List all reviews across all registered repos */
   listAllReviewsGlobal(): Promise<GlobalReviewSummary[]>;

@@ -156,30 +156,24 @@ export interface PullRequest {
 
 // Comparison - what we're reviewing
 export interface Comparison {
-  old: string; // Base ref (e.g., "main")
-  new: string; // Compare ref (e.g., "HEAD")
-  workingTree: boolean; // Include uncommitted working tree changes (auto-detected)
-  key: string; // Unique key for storage, e.g., "main..HEAD"
-  githubPr?: GitHubPrRef; // Optional GitHub PR reference
+  base: string; // Base ref (e.g., "main")
+  head: string; // Head ref (e.g., "feature")
+  key: string; // Always "{base}..{head}"
 }
 
 // Helper to create a Comparison object
-export function makeComparison(
-  old: string,
-  newRef: string,
-  workingTree: boolean,
-): Comparison {
-  const key = `${old}..${newRef}`;
-  return { old, new: newRef, workingTree, key };
+export function makeComparison(base: string, head: string): Comparison {
+  const key = `${base}..${head}`;
+  return { base, head, key };
 }
 
-// Helper to create a Comparison for a GitHub PR
-export function makePrComparison(pr: PullRequest): Comparison {
+// Helper to create a Comparison and GitHubPrRef from a PullRequest
+export function makeComparisonFromPr(pr: PullRequest): {
+  comparison: Comparison;
+  githubPr: GitHubPrRef;
+} {
   return {
-    old: pr.baseRefName,
-    new: pr.headRefName,
-    workingTree: false,
-    key: `pr-${pr.number}`,
+    comparison: makeComparison(pr.baseRefName, pr.headRefName),
     githubPr: {
       number: pr.number,
       title: pr.title,
@@ -392,6 +386,7 @@ export interface ReviewState {
   version: number; // Version counter for optimistic concurrency control
   guide?: GuideState; // AI-generated guide state (grouping + summary)
   totalDiffHunks: number; // Total diff hunks (including unclassified) for accurate progress
+  githubPr?: GitHubPrRef; // Optional GitHub PR reference
 }
 
 // Summary of a saved review tagged with repo info (for cross-repo listing)
@@ -411,6 +406,7 @@ export interface ReviewSummary {
   savedForLaterHunks: number;
   state: "approved" | "changes_requested" | null;
   updatedAt: string;
+  githubPr?: GitHubPrRef; // Optional GitHub PR reference
 }
 
 // Trust patterns
@@ -529,6 +525,7 @@ export interface RemoteInfo {
 export interface ReviewFreshnessInput {
   repoPath: string;
   comparison: Comparison;
+  githubPr?: GitHubPrRef;
   cachedOldSha: string | null;
   cachedNewSha: string | null;
 }

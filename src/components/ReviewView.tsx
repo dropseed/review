@@ -271,7 +271,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
               </SimpleTooltip>
             </div>
           </div>
-          <ReviewTitle comparison={comparison} title={guideTitle} />
+          <ReviewTitle title={guideTitle} />
         </header>
 
         {/* Main content */}

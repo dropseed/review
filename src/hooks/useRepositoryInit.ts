@@ -34,18 +34,16 @@ function getUrlParams(): {
 }
 
 // Parse comparison key back into a Comparison object
-// Key format: "old..new"
+// Key format: "base..head" (base may be empty for snapshots)
 export function parseComparisonKey(key: string): Comparison | null {
-  const parts = key.split("..");
-  if (parts.length !== 2) return null;
+  const dotIdx = key.indexOf("..");
+  if (dotIdx === -1) return null;
 
-  const [oldRef, newRef] = parts;
-  if (!oldRef || !newRef) return null;
+  const base = key.slice(0, dotIdx);
+  const head = key.slice(dotIdx + 2);
+  if (!head) return null;
 
-  // Default to including working tree changes (matches getDefaultComparison behavior).
-  // The key format doesn't encode workingTree, so we assume true — the Rust diff
-  // layer uses this flag to decide whether to include uncommitted changes.
-  return makeComparison(oldRef, newRef, true);
+  return makeComparison(base, head);
 }
 
 /**
@@ -60,9 +58,8 @@ async function getDefaultComparison(
     apiClient.getDefaultBranch(repoPath).catch(() => "main"),
     apiClient.getCurrentBranch(repoPath).catch(() => "HEAD"),
   ]);
-  const key = `${defaultBranch}..${currentBranch}`;
-  const comparison = makeComparison(defaultBranch, currentBranch, true);
-  return { key, comparison };
+  const comparison = makeComparison(defaultBranch, currentBranch);
+  return { key: comparison.key, comparison };
 }
 
 /**

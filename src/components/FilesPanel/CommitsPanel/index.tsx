@@ -118,10 +118,10 @@ export function CommitsPanel({
       {/* Comparison range header */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-800 bg-stone-900 px-3 py-1.5">
         <div className="flex items-center gap-1 text-xs min-w-0">
-          <span className="text-stone-400 truncate">{comparison.old}</span>
+          <span className="text-stone-400 truncate">{comparison.base}</span>
           <span className="text-stone-600 flex-shrink-0">..</span>
           <span className={`${compareRefColor} truncate`}>
-            {comparison.new}
+            {comparison.head}
           </span>
         </div>
         <span className="text-xxs text-stone-600 tabular-nums flex-shrink-0 ml-2">

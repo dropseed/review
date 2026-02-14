@@ -159,6 +159,7 @@ export function GroupDiffViewer({
             repoPath,
             filePath,
             comparison,
+            reviewState?.githubPr,
           );
           return { filePath, content };
         } catch {

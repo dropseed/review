@@ -1,4 +1,4 @@
-import type { Comparison } from "../types";
+import type { Comparison, GitHubPrRef } from "../types";
 import { useReviewStore } from "../stores";
 import { SimpleTooltip } from "./ui/tooltip";
 
@@ -8,7 +8,6 @@ interface ReviewBreadcrumbProps {
 }
 
 interface ReviewTitleProps {
-  comparison: Comparison;
   title?: string | null;
 }
 
@@ -47,16 +46,20 @@ function SidebarToggle() {
   );
 }
 
-function getOverviewLabel(comparison: Comparison): string {
-  if (comparison.githubPr) return `PR #${comparison.githubPr.number}`;
-  return `${comparison.old}..${comparison.new}`;
+function getOverviewLabel(
+  comparison: Comparison,
+  githubPr?: GitHubPrRef,
+): string {
+  if (githubPr) return `PR #${githubPr.number}`;
+  return `${comparison.base}..${comparison.head}`;
 }
 
 export function ReviewBreadcrumb({
   repoName,
   comparison,
 }: ReviewBreadcrumbProps) {
-  const isPr = !!comparison.githubPr;
+  const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
+  const isPr = !!githubPr;
 
   return (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -69,15 +72,16 @@ export function ReviewBreadcrumb({
         <span
           className={`shrink-0 text-xs text-stone-400 ${isPr ? "font-medium" : "font-mono"}`}
         >
-          {getOverviewLabel(comparison)}
+          {getOverviewLabel(comparison, githubPr)}
         </span>
       </div>
     </div>
   );
 }
 
-export function ReviewTitle({ comparison, title }: ReviewTitleProps) {
-  const displayTitle = comparison.githubPr?.title || title;
+export function ReviewTitle({ title }: ReviewTitleProps) {
+  const githubPrTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
+  const displayTitle = githubPrTitle || title;
   if (!displayTitle) return null;
 
   return (

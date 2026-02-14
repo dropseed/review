@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Comparison } from "../../types";
+import type { Comparison, GitHubPrRef } from "../../types";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
@@ -67,7 +67,7 @@ export function ComparisonPickerModal({
   }, []);
 
   const handleSelectComparison = useCallback(
-    async (comparison: Comparison) => {
+    async (comparison: Comparison, githubPr?: GitHubPrRef) => {
       if (!selectedRepoPath) return;
 
       const { routePrefix } = await resolveRepoIdentity(selectedRepoPath);
@@ -81,7 +81,7 @@ export function ComparisonPickerModal({
         repoPath: selectedRepoPath,
         comparisonKey: comparison.key,
       });
-      await ensureReviewExists(selectedRepoPath, comparison);
+      await ensureReviewExists(selectedRepoPath, comparison, githubPr);
 
       navigate(`/${routePrefix}/review/${comparison.key}`);
       onClose();

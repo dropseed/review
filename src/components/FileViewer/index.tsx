@@ -291,7 +291,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
     setError(null);
 
     getApiClient()
-      .getFileContent(repoPath, filePath, comparison)
+      .getFileContent(repoPath, filePath, comparison, reviewState?.githubPr)
       .then((result) => {
         if (!cancelled) {
           setFileContent(result);

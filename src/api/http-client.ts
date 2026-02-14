@@ -10,6 +10,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  GitHubPrRef,
   PullRequest,
   CommitEntry,
   CommitDetail,
@@ -107,23 +108,23 @@ export class HttpClient implements ApiClient {
     return `repo=${encodeURIComponent(repoPath)}`;
   }
 
-  private buildComparisonQuery(comparison: Comparison): string {
+  private buildComparisonQuery(
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ): string {
     const parts = [
-      `old=${encodeURIComponent(comparison.old)}`,
-      `new=${encodeURIComponent(comparison.new)}`,
+      `base=${encodeURIComponent(comparison.base)}`,
+      `head=${encodeURIComponent(comparison.head)}`,
     ];
-    if (comparison.workingTree) {
-      parts.push("workingTree=true");
-    }
-    if (comparison.githubPr) {
-      parts.push(`prNumber=${comparison.githubPr.number}`);
-      parts.push(`prTitle=${encodeURIComponent(comparison.githubPr.title)}`);
+    if (githubPr) {
+      parts.push(`prNumber=${githubPr.number}`);
+      parts.push(`prTitle=${encodeURIComponent(githubPr.title)}`);
     }
     return parts.join("&");
   }
 
   private getComparisonKey(comparison: Comparison): string {
-    return comparison.key || `${comparison.old}..${comparison.new}`;
+    return comparison.key || `${comparison.base}..${comparison.head}`;
   }
 
   // ----- Git operations -----
@@ -244,9 +245,10 @@ export class HttpClient implements ApiClient {
   async listFiles(
     repoPath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ): Promise<FileEntry[]> {
     return this.fetchJson<FileEntry[]>(
-      `/files?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison)}`,
+      `/files?${this.buildRepoQuery(repoPath)}&${this.buildComparisonQuery(comparison, githubPr)}`,
     );
   }
 
@@ -272,9 +274,10 @@ export class HttpClient implements ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ): Promise<FileContent> {
     return this.fetchJson<FileContent>(
-      `/file?${this.buildRepoQuery(repoPath)}&path=${encodeURIComponent(filePath)}&${this.buildComparisonQuery(comparison)}`,
+      `/file?${this.buildRepoQuery(repoPath)}&path=${encodeURIComponent(filePath)}&${this.buildComparisonQuery(comparison, githubPr)}`,
     );
   }
 
@@ -284,6 +287,7 @@ export class HttpClient implements ApiClient {
     _comparison: Comparison,
     startLine: number,
     endLine: number,
+    _githubPr?: GitHubPrRef,
   ): Promise<ExpandedContext> {
     // Not implemented in HTTP server yet - return empty
     console.warn("[HttpClient] getExpandedContext not implemented");
@@ -383,6 +387,7 @@ export class HttpClient implements ApiClient {
   async ensureReviewExists(
     _repoPath: string,
     _comparison: Comparison,
+    _githubPr?: GitHubPrRef,
   ): Promise<void> {
     // In HTTP mode, review state is managed in-memory; no-op
   }

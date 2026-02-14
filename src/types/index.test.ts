@@ -7,33 +7,22 @@ import {
 } from "./index";
 
 describe("makeComparison", () => {
-  it("creates a basic comparison with workingTree=false", () => {
-    const result = makeComparison("main", "HEAD", false);
+  it("creates a basic comparison", () => {
+    const result = makeComparison("main", "HEAD");
     expect(result).toEqual({
-      old: "main",
-      new: "HEAD",
-      workingTree: false,
-      key: "main..HEAD",
-    });
-  });
-
-  it("creates a working tree comparison", () => {
-    const result = makeComparison("main", "HEAD", true);
-    expect(result).toEqual({
-      old: "main",
-      new: "HEAD",
-      workingTree: true,
+      base: "main",
+      head: "HEAD",
       key: "main..HEAD",
     });
   });
 
   it("same-branch comparison produces correct key", () => {
-    const result = makeComparison("main", "main", true);
+    const result = makeComparison("main", "main");
     expect(result.key).toBe("main..main");
   });
 
   it("handles branch names with slashes", () => {
-    const result = makeComparison("origin/main", "feature/my-branch", false);
+    const result = makeComparison("origin/main", "feature/my-branch");
     expect(result.key).toBe("origin/main..feature/my-branch");
   });
 });

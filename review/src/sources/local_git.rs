@@ -1172,12 +1172,7 @@ impl DiffSource for LocalGitSource {
             }
 
             // Uncommitted changes: HEAD vs working tree
-            let mut args = vec![
-                "diff",
-                "--src-prefix=a/",
-                "--dst-prefix=b/",
-                &resolved_head,
-            ];
+            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &resolved_head];
             if let Some(path) = file_path {
                 args.push("--");
                 args.push(path);

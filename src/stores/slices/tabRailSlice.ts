@@ -1,6 +1,7 @@
 import type {
   Comparison,
   DiffShortStat,
+  GitHubPrRef,
   GlobalReviewSummary,
   ReviewFreshnessInput,
 } from "../../types";
@@ -46,6 +47,7 @@ export interface GlobalReviewsSlice {
   ensureReviewExists: (
     repoPath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ) => Promise<void>;
   deleteGlobalReview: (
     repoPath: string,
@@ -156,9 +158,9 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     set({ activeReviewKey: key });
   },
 
-  ensureReviewExists: async (repoPath, comparison) => {
+  ensureReviewExists: async (repoPath, comparison, githubPr) => {
     try {
-      await client.ensureReviewExists(repoPath, comparison);
+      await client.ensureReviewExists(repoPath, comparison, githubPr);
     } catch (err) {
       console.error("Failed to ensure review exists:", err);
     }

@@ -320,7 +320,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const comparisonKey = comparison.key;
 
       const needsDiagram = guideDiagram == null || isSummaryStaleCheck();
-      const pr = reviewState.comparison.githubPr;
+      const pr = reviewState.githubPr;
       const prTitle = pr?.title || null;
       const prBody = pr?.body || null;
 

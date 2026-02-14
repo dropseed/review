@@ -164,7 +164,10 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
                 }
                 None => {
                     // No token configured — reject all non-health requests
-                    request.respond(error_response(401, "Unauthorized: no auth token configured"))?;
+                    request.respond(error_response(
+                        401,
+                        "Unauthorized: no auth token configured",
+                    ))?;
                     return Ok(());
                 }
             }

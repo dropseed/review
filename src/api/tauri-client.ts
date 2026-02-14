@@ -12,6 +12,7 @@ import type {
   BranchList,
   GitStatusSummary,
   Comparison,
+  GitHubPrRef,
   PullRequest,
   CommitEntry,
   CommitDetail,
@@ -117,8 +118,13 @@ export class TauriClient implements ApiClient {
   async listFiles(
     repoPath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ): Promise<FileEntry[]> {
-    return invoke<FileEntry[]>("list_files", { repoPath, comparison });
+    return invoke<FileEntry[]>("list_files", {
+      repoPath,
+      comparison,
+      githubPr: githubPr ?? null,
+    });
   }
 
   async listAllFiles(
@@ -142,11 +148,13 @@ export class TauriClient implements ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ): Promise<FileContent> {
     return invoke<FileContent>("get_file_content", {
       repoPath,
       filePath,
       comparison,
+      githubPr: githubPr ?? null,
     });
   }
 
@@ -168,6 +176,7 @@ export class TauriClient implements ApiClient {
     comparison: Comparison,
     startLine: number,
     endLine: number,
+    githubPr?: GitHubPrRef,
   ): Promise<ExpandedContext> {
     return invoke<ExpandedContext>("get_expanded_context", {
       repoPath,
@@ -175,6 +184,7 @@ export class TauriClient implements ApiClient {
       comparison,
       startLine,
       endLine,
+      githubPr: githubPr ?? null,
     });
   }
 
@@ -216,8 +226,13 @@ export class TauriClient implements ApiClient {
   async ensureReviewExists(
     repoPath: string,
     comparison: Comparison,
+    githubPr?: GitHubPrRef,
   ): Promise<void> {
-    await invoke("ensure_review_exists", { repoPath, comparison });
+    await invoke("ensure_review_exists", {
+      repoPath,
+      comparison,
+      githubPr: githubPr ?? null,
+    });
   }
 
   async listAllReviewsGlobal(): Promise<GlobalReviewSummary[]> {

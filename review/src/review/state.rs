@@ -79,11 +79,7 @@ pub struct ReviewState {
     #[serde(default, rename = "totalDiffHunks")]
     pub total_diff_hunks: usize,
     /// Optional GitHub PR reference (moved from Comparison).
-    #[serde(
-        rename = "githubPr",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
     pub github_pr: Option<crate::sources::github::GitHubPrRef>,
 }
 
@@ -270,11 +266,7 @@ pub struct ReviewSummary {
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
     /// Optional GitHub PR reference
-    #[serde(
-        rename = "githubPr",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
     pub github_pr: Option<crate::sources::github::GitHubPrRef>,
 }
 

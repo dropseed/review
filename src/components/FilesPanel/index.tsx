@@ -555,7 +555,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const guideSummary = useReviewStore((s) => s.guideSummary);
   const summaryStatus = useReviewStore((s) => s.summaryStatus);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
-  const githubPr = useReviewStore((s) => s.reviewState?.comparison?.githubPr);
+  const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
   const [groupsOpen, setGroupsOpen] = useState(true);
 
   // Trust section

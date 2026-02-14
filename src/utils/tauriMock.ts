@@ -138,26 +138,21 @@ function buildRepoQuery(params: Record<string, unknown>): string {
 function buildComparisonQuery(comparison: unknown): string {
   if (!comparison) return "";
   const c = comparison as {
-    old: string;
-    new: string;
-    working_tree?: boolean;
-    workingTree?: boolean;
+    base: string;
+    head: string;
   };
   const parts = [
-    `old=${encodeURIComponent(c.old)}`,
-    `new=${encodeURIComponent(c.new)}`,
+    `base=${encodeURIComponent(c.base)}`,
+    `head=${encodeURIComponent(c.head)}`,
   ];
-  if (c.working_tree || c.workingTree) {
-    parts.push("workingTree=true");
-  }
   return parts.join("&");
 }
 
 // Helper to build comparison key for storage
 function buildComparisonKey(comparison: unknown): string {
   if (!comparison) return "default";
-  const c = comparison as { old: string; new: string; key?: string };
-  return c.key || `${c.old}..${c.new}`;
+  const c = comparison as { base: string; head: string; key?: string };
+  return c.key || `${c.base}..${c.head}`;
 }
 
 // Fetch JSON from companion server

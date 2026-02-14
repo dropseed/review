@@ -20,7 +20,7 @@ export default defineConfig({
     strictPort: true,
     watch: {
       // Tell vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      cwd: path.resolve(__dirname, "src"),
     },
   },
 });

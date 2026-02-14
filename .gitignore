@@ -22,7 +22,14 @@ npm-debug.log*
 .env.local
 .env.*.local
 
+# Claude skills (installed per-project)
+.claude/skills/
+
 # Tauri
 src-tauri/WixTools/
 src-tauri/binaries/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
 

@@ -8,8 +8,8 @@ import { symbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
 import { EMPTY_STAGED_SET } from "./gitSlice";
 
-// Default comparison: main..HEAD with working tree changes
-const defaultComparison: Comparison = makeComparison("main", "HEAD", true);
+// Default comparison: main..HEAD
+const defaultComparison: Comparison = makeComparison("main", "HEAD");
 
 // ========================================================================
 // Skip Patterns
@@ -218,7 +218,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
         startActivity("load-files", "Loading files", 20);
         const phase1Start = performance.now();
-        const files = await client.listFiles(repoPath, comparison);
+        const githubPr = get().reviewState?.githubPr;
+        const files = await client.listFiles(repoPath, comparison, githubPr);
         endActivity("load-files");
         if (isStale()) {
           set({ loadingProgress: null });
@@ -312,6 +313,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                   repoPath,
                   filePath,
                   comparison,
+                  githubPr,
                 );
                 allHunks.push(...content.hunks);
               } catch {
@@ -340,6 +342,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                 repoPath,
                 filePath,
                 comparison,
+                githubPr,
               );
               allHunks.push(...content.hunks);
             } catch (err) {
