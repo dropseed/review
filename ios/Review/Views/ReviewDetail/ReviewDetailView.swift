@@ -13,14 +13,13 @@ struct FileDiffDestination: Hashable {
 }
 
 enum ReviewTab: Int, CaseIterable {
-    case changes, browse, trust, notes
+    case changes, browse, trust
 
     var title: String {
         switch self {
         case .changes: "Changes"
         case .browse: "Browse"
         case .trust: "Trust"
-        case .notes: "Notes"
         }
     }
 }
@@ -35,12 +34,21 @@ struct ReviewDetailView: View {
     @State private var stateManager = ReviewStateManager()
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showFeedbackPanel = false
 
     private var repoPath: String { review.repoPath }
     private var comparison: Comparison { review.comparison }
 
     private var changedFiles: [FileEntry] {
         flattenFiles(files).filter { hasChangeStatus($0.status) }
+    }
+
+    private var feedbackCount: Int {
+        guard let state = stateManager.reviewState else { return 0 }
+        let rejectedCount = state.hunks.values.filter { $0.status == .rejected }.count
+        let annotationCount = state.annotations.count
+        let hasNotes = !state.notes.isEmpty ? 1 : 0
+        return rejectedCount + annotationCount + hasNotes
     }
 
     var body: some View {
@@ -81,6 +89,19 @@ struct ReviewDetailView: View {
 
                 tabContent
             }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            FeedbackButton(count: feedbackCount) {
+                showFeedbackPanel = true
+            }
+            .padding()
+        }
+        .sheet(isPresented: $showFeedbackPanel) {
+            FeedbackPanelView()
+                .environment(stateManager)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
         }
         .navigationTitle(review.repoName)
         .navigationBarTitleDisplayMode(.inline)
@@ -136,8 +157,6 @@ struct ReviewDetailView: View {
                 repoPath: repoPath,
                 hunks: hunks
             )
-        case .notes:
-            NotesView()
         }
     }
 
@@ -248,6 +267,7 @@ private struct StatsHeaderView: View {
                         segment(count: stats.trustedHunks, total: stats.totalHunks, width: geometry.size.width, color: .cyan)
                         segment(count: stats.approvedHunks, total: stats.totalHunks, width: geometry.size.width, color: .green)
                         segment(count: stats.rejectedHunks, total: stats.totalHunks, width: geometry.size.width, color: .red)
+                        segment(count: stats.savedForLaterHunks, total: stats.totalHunks, width: geometry.size.width, color: .orange)
                     }
                     .frame(height: 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -283,6 +303,11 @@ private struct StatsHeaderView: View {
                     Text("·").foregroundStyle(.tertiary)
                     Text("\(stats.rejectedHunks) rejected")
                         .foregroundStyle(.red.opacity(0.7))
+                }
+                if stats.savedForLaterHunks > 0 {
+                    Text("·").foregroundStyle(.tertiary)
+                    Text("\(stats.savedForLaterHunks) saved")
+                        .foregroundStyle(.orange.opacity(0.7))
                 }
                 Text("·").foregroundStyle(.tertiary)
                 Text("\(stats.pendingHunks) pending")
