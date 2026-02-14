@@ -2161,16 +2161,21 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
         .map_err(|e| e.to_string())?;
     let token = store
         .get("companionServerToken")
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| {
+            // Generate and persist a token if none exists
+            let t = generate_companion_token();
+            store.set("companionServerToken", serde_json::json!(t));
+            let _ = store.save();
+            t
+        });
     let port = store
         .get("companionServerPort")
         .and_then(|v| v.as_u64())
         .map(|v| v as u16)
         .unwrap_or(3333);
 
-    if let Some(ref t) = token {
-        companion_server::set_auth_token(Some(t.clone()));
-    }
+    companion_server::set_auth_token(Some(token));
     companion_server::start(port);
     tray::show(&app_handle);
     Ok(())

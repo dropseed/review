@@ -143,21 +143,28 @@ fn handle_request(mut request: Request) -> Result<(), Box<dyn std::error::Error 
     // Check bearer token authentication (skip for health check and debug builds)
     if path != "/health" && !cfg!(debug_assertions) {
         if let Ok(guard) = AUTH_TOKEN.lock() {
-            if let Some(ref token) = *guard {
-                let auth_header = request
-                    .headers()
-                    .iter()
-                    .find(|h| {
-                        h.field
-                            .as_str()
-                            .as_str()
-                            .eq_ignore_ascii_case("authorization")
-                    })
-                    .map(|h| h.value.as_str().to_string());
+            match *guard {
+                Some(ref token) => {
+                    let auth_header = request
+                        .headers()
+                        .iter()
+                        .find(|h| {
+                            h.field
+                                .as_str()
+                                .as_str()
+                                .eq_ignore_ascii_case("authorization")
+                        })
+                        .map(|h| h.value.as_str().to_string());
 
-                let expected = format!("Bearer {}", token);
-                if auth_header.as_deref() != Some(expected.as_str()) {
-                    request.respond(error_response(401, "Unauthorized"))?;
+                    let expected = format!("Bearer {}", token);
+                    if auth_header.as_deref() != Some(expected.as_str()) {
+                        request.respond(error_response(401, "Unauthorized"))?;
+                        return Ok(());
+                    }
+                }
+                None => {
+                    // No token configured — reject all non-health requests
+                    request.respond(error_response(401, "Unauthorized: no auth token configured"))?;
                     return Ok(());
                 }
             }
