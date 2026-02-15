@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct ReviewsListView: View {
     @Environment(ConnectionManager.self) private var connectionManager
@@ -123,6 +124,8 @@ struct ReviewsListView: View {
             reviews = fetched
             error = nil
             isLoading = false
+
+            try? await UNUserNotificationCenter.current().setBadgeCount(activeReviews.count)
 
             await loadAvatarURLs(client: client, reviews: fetched)
         } catch {
