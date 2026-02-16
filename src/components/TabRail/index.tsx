@@ -17,6 +17,7 @@ import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
 import type { GlobalReviewSummary, DiffShortStat } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
+import { SidebarPanelIcon } from "../ui/icons";
 
 const ComparisonPickerModal = lazy(() =>
   import("../modals/ComparisonPickerModal").then((m) => ({
@@ -28,25 +29,6 @@ const SettingsModal = lazy(() =>
 );
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
-
-/** Sidebar panel icon used for show/hide sidebar toggle buttons. */
-function SidebarIcon() {
-  return (
-    <svg
-      className="w-3.5 h-3.5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <line x1="9" y1="3" x2="9" y2="21" />
-    </svg>
-  );
-}
 
 const SORT_OPTIONS: [ReviewSortOrder, string][] = [
   ["updated", "Last updated"],
@@ -582,7 +564,7 @@ export const TabRail = memo(function TabRail({
                          text-stone-500 hover:text-stone-300"
               aria-label="Hide sidebar"
             >
-              <SidebarIcon />
+              <SidebarPanelIcon className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -656,19 +638,6 @@ export const TabRail = memo(function TabRail({
           />
         )}
       </nav>
-
-      {collapsed && (
-        <button
-          type="button"
-          onClick={toggleTabRail}
-          className="flex items-center justify-center w-8 h-8 shrink-0
-                     text-stone-600 hover:text-stone-300 hover:bg-white/[0.06]
-                     transition-colors duration-100 rounded-md my-2 ml-1"
-          aria-label="Show sidebar"
-        >
-          <SidebarIcon />
-        </button>
-      )}
 
       {comparisonPickerOpen && (
         <Suspense fallback={null}>

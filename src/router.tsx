@@ -8,6 +8,7 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
+import { SidebarPanelIcon } from "./components/ui/icons";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -131,6 +132,8 @@ function useAppContext() {
 /** Empty state — shown at "/" when no tab is active */
 function EmptyTabState() {
   const { repoStatus, repoError, handleOpenRepo } = useAppContext();
+  const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
   if (repoStatus === "error") {
     return (
@@ -171,9 +174,21 @@ function EmptyTabState() {
 
   return (
     <div
-      className="flex h-full items-center justify-center"
+      className="relative flex h-full items-center justify-center"
       data-tauri-drag-region
     >
+      {tabRailCollapsed && (
+        <button
+          type="button"
+          onClick={toggleTabRail}
+          className="absolute top-2.5 left-2 flex items-center justify-center w-7 h-7 rounded-md
+                     hover:bg-stone-800/60 transition-colors duration-100
+                     text-stone-500 hover:text-stone-300"
+          aria-label="Show sidebar"
+        >
+          <SidebarPanelIcon />
+        </button>
+      )}
       <div className="flex flex-col items-center gap-3 text-center px-6">
         <p className="text-sm text-stone-500">
           Open a repository to start reviewing
