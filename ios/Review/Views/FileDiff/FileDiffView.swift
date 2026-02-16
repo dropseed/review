@@ -15,14 +15,11 @@ struct FileDiffView: View {
     @State private var isBrowseMode = false
     @State private var highlightedLines: [AttributedString]?
 
-    // Expand context state
     @State private var expandedRanges: [String: ExpandedRange] = [:]
     private let expandChunkSize = 20
 
-    // Feedback panel state
     @State private var showFeedbackPanel = false
-
-    // Annotation sheet state
+    @State private var showOverviewPanel = false
     @State private var showAnnotationEditor = false
     @State private var annotationLineNumber = 0
     @State private var annotationSide: LineAnnotation.AnnotationSide = .new
@@ -33,11 +30,7 @@ struct FileDiffView: View {
     }
 
     private var feedbackCount: Int {
-        guard let state = stateManager.reviewState else { return 0 }
-        let rejectedCount = state.hunks.values.filter { $0.status == .rejected }.count
-        let annotationCount = state.annotations.count
-        let hasNotes = !state.notes.isEmpty ? 1 : 0
-        return rejectedCount + annotationCount + hasNotes
+        computeFeedbackCount(reviewState: stateManager.reviewState)
     }
 
     var body: some View {
@@ -78,11 +71,30 @@ struct FileDiffView: View {
                 }
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            Button {
+                showOverviewPanel = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 20))
+                    .frame(width: 48, height: 48)
+                    .glassEffect(.regular.interactive())
+            }
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+            .padding()
+        }
         .overlay(alignment: .bottomTrailing) {
             FeedbackButton(count: feedbackCount) {
                 showFeedbackPanel = true
             }
             .padding()
+        }
+        .sheet(isPresented: $showOverviewPanel) {
+            ReviewOverviewPanel()
+                .environment(stateManager)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: $showFeedbackPanel) {
             FeedbackPanelView()
@@ -182,15 +194,13 @@ struct FileDiffView: View {
                         .padding(.top, 40)
                 } else {
                     let gaps = computeGaps(hunks: hunks, newLineCount: newLineCount, oldLineCount: oldLineCount)
+                    let hunkAnnotations = fileAnnotations.filter { $0.filePath == filePath }
 
                     ForEach(Array(hunks.enumerated()), id: \.element.id) { index, hunk in
-                        // Gap before this hunk
                         if let gap = gapBefore(index: index, gaps: gaps) {
                             expandableGapView(gap: gap)
                         }
 
-                        // The hunk itself
-                        let hunkAnnotations = fileAnnotations.filter { $0.filePath == filePath }
                         HunkCardView(
                             hunk: hunk,
                             hunkState: stateManager.reviewState?.hunks[hunk.id],
@@ -213,7 +223,6 @@ struct FileDiffView: View {
                             }
                         )
 
-                        // Gap after last hunk
                         if index == hunks.count - 1, let gap = gapAfter(gaps: gaps) {
                             expandableGapView(gap: gap)
                         }
@@ -253,7 +262,6 @@ struct FileDiffView: View {
 
         if totalLines > 0, let content = fileContent?.content {
             VStack(spacing: 0) {
-                // Top expanded lines
                 if range.topExpanded > 0 {
                     let lines = extractContextLines(
                         from: content,
@@ -266,7 +274,6 @@ struct FileDiffView: View {
                     }
                 }
 
-                // Expand button
                 if remaining > 0 {
                     ExpandContextButton(
                         remainingLines: remaining,
@@ -277,7 +284,6 @@ struct FileDiffView: View {
                     }
                 }
 
-                // Bottom expanded lines
                 if range.bottomExpanded > 0 {
                     let bottomStart = gap.newEndLine - range.bottomExpanded + 1
                     let oldBottomStart = gap.oldEndLine - range.bottomExpanded + 1

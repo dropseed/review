@@ -43,6 +43,7 @@ struct ReviewDetailView: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var showFeedbackPanel = false
+    @State private var showOverviewPanel = false
 
     private var repoPath: String { review.repoPath }
     private var comparison: Comparison { review.comparison }
@@ -52,11 +53,7 @@ struct ReviewDetailView: View {
     }
 
     private var feedbackCount: Int {
-        guard let state = stateManager.reviewState else { return 0 }
-        let rejectedCount = state.hunks.values.filter { $0.status == .rejected }.count
-        let annotationCount = state.annotations.count
-        let hasNotes = !state.notes.isEmpty ? 1 : 0
-        return rejectedCount + annotationCount + hasNotes
+        computeFeedbackCount(reviewState: stateManager.reviewState)
     }
 
     var body: some View {
@@ -98,11 +95,30 @@ struct ReviewDetailView: View {
                 tabContent
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            Button {
+                showOverviewPanel = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 20))
+                    .frame(width: 48, height: 48)
+                    .glassEffect(.regular.interactive())
+            }
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+            .padding()
+        }
         .overlay(alignment: .bottomTrailing) {
             FeedbackButton(count: feedbackCount) {
                 showFeedbackPanel = true
             }
             .padding()
+        }
+        .sheet(isPresented: $showOverviewPanel) {
+            ReviewOverviewPanel()
+                .environment(stateManager)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: $showFeedbackPanel) {
             FeedbackPanelView()
@@ -165,8 +181,6 @@ struct ReviewDetailView: View {
             await loadData()
         }
     }
-
-    // statsHeader is now StatsHeaderView (separate observation scope)
 
     @ViewBuilder
     private var tabContent: some View {

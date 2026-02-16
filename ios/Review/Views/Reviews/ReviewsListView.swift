@@ -8,25 +8,31 @@ struct ReviewsListView: View {
     @State private var isLoading = true
     @State private var error: String?
     @State private var showSettings = false
+    @State private var showNewReview = false
+    @State private var navigationPath = NavigationPath()
 
     /// A review is considered active when its diff has any changed files, additions, or deletions.
     /// Reviews without stats default to active (shown).
     private var activeReviews: [GlobalReviewSummary] {
-        reviews.filter { review in
-            guard let stats = review.diffStats else { return true }
-            return stats.fileCount > 0 || stats.additions > 0 || stats.deletions > 0
+        reviews.filter { $0.diffStats?.hasChanges ?? true }
+    }
+
+    private var uniqueRepos: [RepoInfo] {
+        let allReviews = (connectionManager.serverInfo?.repos ?? []) + reviews
+        var seen = Set<String>()
+        return allReviews.compactMap { review in
+            seen.insert(review.repoPath).inserted
+                ? RepoInfo(path: review.repoPath, name: review.repoName)
+                : nil
         }
     }
 
     private var inactiveReviews: [GlobalReviewSummary] {
-        reviews.filter { review in
-            guard let stats = review.diffStats else { return false }
-            return stats.fileCount == 0 && stats.additions == 0 && stats.deletions == 0
-        }
+        reviews.filter { $0.diffStats.map { !$0.hasChanges } ?? false }
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if isLoading && reviews.isEmpty {
                     ProgressView()
@@ -45,29 +51,15 @@ struct ReviewsListView: View {
                     ContentUnavailableView {
                         Label("No Reviews", systemImage: "doc.text.magnifyingglass")
                     } description: {
-                        Text("Start a review in the desktop app to see it here.")
+                        Text("Tap + to start a new review.")
                     }
                 } else {
                     List {
-                        ForEach(activeReviews) { review in
-                            NavigationLink(value: review) {
-                                ReviewRowView(
-                                    review: review,
-                                    avatarURL: avatarURLs[review.repoPath]
-                                )
-                            }
-                        }
+                        reviewRows(activeReviews)
 
                         if !inactiveReviews.isEmpty {
                             Section("Inactive") {
-                                ForEach(inactiveReviews) { review in
-                                    NavigationLink(value: review) {
-                                        ReviewRowView(
-                                            review: review,
-                                            avatarURL: avatarURLs[review.repoPath]
-                                        )
-                                    }
-                                }
+                                reviewRows(inactiveReviews)
                             }
                         }
                     }
@@ -79,6 +71,14 @@ struct ReviewsListView: View {
             }
             .navigationTitle("Reviews")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showNewReview = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(!connectionManager.isConnected)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
@@ -86,6 +86,18 @@ struct ReviewsListView: View {
                         Image(systemName: "gear")
                     }
                 }
+            }
+            .sheet(isPresented: $showNewReview) {
+                NewReviewView(
+                    repos: uniqueRepos,
+                    onStartReview: { summary in
+                        Task {
+                            await loadReviews()
+                            navigationPath.append(summary)
+                        }
+                    }
+                )
+                .environment(connectionManager)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -102,6 +114,24 @@ struct ReviewsListView: View {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(30))
                     await loadReviews()
+                }
+            }
+        }
+    }
+
+    private func reviewRows(_ reviews: [GlobalReviewSummary]) -> some View {
+        ForEach(reviews) { review in
+            NavigationLink(value: review) {
+                ReviewRowView(
+                    review: review,
+                    avatarURL: avatarURLs[review.repoPath]
+                )
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    Task { await deleteReview(review) }
+                } label: {
+                    Label("Delete", systemImage: "trash")
                 }
             }
         }
@@ -133,6 +163,17 @@ struct ReviewsListView: View {
                 self.error = error.localizedDescription
             }
             isLoading = false
+        }
+    }
+
+    private func deleteReview(_ review: GlobalReviewSummary) async {
+        guard let client = connectionManager.apiClient else { return }
+
+        do {
+            try await client.deleteReview(repoPath: review.repoPath, comparison: review.comparison)
+            reviews.removeAll { $0.id == review.id }
+        } catch {
+            // Silently fail — next refresh will restore the list
         }
     }
 

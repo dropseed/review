@@ -11,7 +11,13 @@ struct HunkCardView: View {
     var onTapLineNumber: ((_ lineNumber: Int, _ side: LineAnnotation.AnnotationSide) -> Void)?
     var onEditAnnotation: ((_ annotation: LineAnnotation) -> Void)?
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var highlightedLines: [AttributedString]?
+
+    private var useSplitView: Bool {
+        verticalSizeClass == .compact || horizontalSizeClass == .regular
+    }
 
     init(
         hunk: DiffHunk,
@@ -39,16 +45,16 @@ struct HunkCardView: View {
     private var labels: [String] { hunkState?.label ?? [] }
 
     private var borderColor: Color {
-        if status == .approved { return .statusApproved }
-        if status == .rejected { return .statusRejected }
-        if status == .savedForLater { return .statusSavedForLater }
-        if trusted { return .statusTrusted }
-        return .gray.opacity(0.5)
+        switch status {
+        case .approved: .statusApproved
+        case .rejected: .statusRejected
+        case .savedForLater: .statusSavedForLater
+        case nil: trusted ? .statusTrusted : .gray.opacity(0.5)
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack(spacing: 8) {
                 Text("@@ -\(hunk.oldStart),\(hunk.oldCount) +\(hunk.newStart),\(hunk.newCount) @@")
                     .font(.system(size: 11, design: .monospaced))
@@ -75,30 +81,14 @@ struct HunkCardView: View {
 
             Divider()
 
-            // Diff lines with inline annotations
-            VStack(spacing: 0) {
-                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
-                    DiffLineView(
-                        line: line,
-                        highlightedContent: highlightedLines?[safe: index]
-                    ) {
-                        let lineNum = line.newLineNumber ?? line.oldLineNumber ?? 0
-                        let side: LineAnnotation.AnnotationSide = line.type == .removed ? .old : .new
-                        onTapLineNumber?(lineNum, side)
-                    }
-
-                    // Show annotations for this line
-                    ForEach(annotationsForLine(line)) { annotation in
-                        AnnotationBubbleView(annotation: annotation) {
-                            onEditAnnotation?(annotation)
-                        }
-                    }
-                }
+            if useSplitView {
+                splitDiffContent
+            } else {
+                unifiedDiffContent
             }
 
             Divider()
 
-            // Action buttons or status banner
             if let status {
                 statusBanner(status: status)
             } else {
@@ -141,6 +131,67 @@ struct HunkCardView: View {
         }
     }
 
+    private var unifiedDiffContent: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(spacing: 0) {
+                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
+                    DiffLineView(
+                        line: line,
+                        highlightedContent: highlightedLines?[safe: index]
+                    ) {
+                        let lineNum = line.newLineNumber ?? line.oldLineNumber ?? 0
+                        let side: LineAnnotation.AnnotationSide = line.type == .removed ? .old : .new
+                        onTapLineNumber?(lineNum, side)
+                    }
+
+                    ForEach(annotationsForLine(line)) { annotation in
+                        AnnotationBubbleView(annotation: annotation) {
+                            onEditAnnotation?(annotation)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var splitDiffContent: some View {
+        VStack(spacing: 0) {
+            let pairedRows = pairLinesForSplitDiff(hunk.lines)
+            ForEach(pairedRows) { row in
+                SplitDiffLineView(
+                    row: row,
+                    oldHighlight: row.oldSourceIndex.flatMap { highlightedLines?[safe: $0] },
+                    newHighlight: row.newSourceIndex.flatMap { highlightedLines?[safe: $0] }
+                ) {
+                    if let line = row.old {
+                        let lineNum = line.oldLineNumber ?? 0
+                        onTapLineNumber?(lineNum, .old)
+                    }
+                } onTapNewLineNumber: {
+                    if let line = row.new {
+                        let lineNum = line.newLineNumber ?? 0
+                        onTapLineNumber?(lineNum, .new)
+                    }
+                }
+
+                ForEach(splitRowAnnotations(for: row)) { annotation in
+                    AnnotationBubbleView(annotation: annotation) {
+                        onEditAnnotation?(annotation)
+                    }
+                }
+            }
+        }
+    }
+
+    private func splitRowAnnotations(for row: SplitDiffRow) -> [LineAnnotation] {
+        if row.old?.type == .context, let old = row.old {
+            return annotationsForLine(old)
+        }
+        let oldAnnotations = row.old.map { annotationsForLine($0) } ?? []
+        let newAnnotations = row.new.map { annotationsForLine($0) } ?? []
+        return oldAnnotations + newAnnotations
+    }
+
     private func statusBanner(status: HunkStatus) -> some View {
         let config: (icon: String, label: String, color: Color) = switch status {
         case .approved: ("checkmark.circle.fill", "Approved", .statusApproved)
@@ -159,7 +210,6 @@ struct HunkCardView: View {
             Button {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
-                // Tapping the active status again clears it
                 switch status {
                 case .approved: onApprove()
                 case .rejected: onReject()
@@ -193,10 +243,7 @@ struct HunkCardView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(color)
-            )
+            .background(color, in: Capsule())
         }
         .buttonStyle(.plain)
     }

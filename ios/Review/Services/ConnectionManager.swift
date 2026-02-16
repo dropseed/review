@@ -24,8 +24,8 @@ final class ConnectionManager {
 
     private(set) var apiClient: APIClient?
 
-    private static let serverURLKey = "serverURL"
-    private static let tokenKey = "authToken"
+    static let serverURLKey = "serverURL"
+    static let tokenKey = "authToken"
 
     private var healthCheckTask: Task<Void, Never>?
     private var consecutiveFailures = 0

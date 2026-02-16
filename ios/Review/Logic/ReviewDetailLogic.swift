@@ -111,6 +111,14 @@ func computeSections(changedFiles: [FileEntry], hunks: [DiffHunk], reviewState: 
     return result
 }
 
+func computeFeedbackCount(reviewState: ReviewState?) -> Int {
+    guard let state = reviewState else { return 0 }
+    let rejectedCount = state.hunks.values.filter { $0.status == .rejected }.count
+    let annotationCount = state.annotations.count
+    let hasNotes = !state.notes.isEmpty ? 1 : 0
+    return rejectedCount + annotationCount + hasNotes
+}
+
 func computeStats(hunks: [DiffHunk], reviewState: ReviewState?, fileCount: Int) -> ReviewDetailStats {
     var trustedHunks = 0
     var approvedHunks = 0

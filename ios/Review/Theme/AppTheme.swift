@@ -33,6 +33,26 @@ extension Font {
     static let monoBody = Font.system(size: 12, design: .monospaced)
 }
 
+// MARK: - Diff Line Colors
+
+extension DiffLine.LineType {
+    var textColor: Color {
+        switch self {
+        case .added: .diffAdded
+        case .removed: .diffRemoved
+        case .context: .secondary
+        }
+    }
+
+    var backgroundColor: Color {
+        switch self {
+        case .added: .diffAddedBackground
+        case .removed: .diffRemovedBackground
+        case .context: .clear
+        }
+    }
+}
+
 // MARK: - File Status Display
 
 extension FileEntry.FileStatus {

@@ -101,6 +101,10 @@ pub async fn get_review(
     axum::extract::Path(comp): axum::extract::Path<String>,
 ) -> Result<Json<ReviewState>, ApiError> {
     let comparison = parse_comparison(&comp)?;
+    // Ensure the review file exists on disk so the desktop file watcher
+    // detects it and the review appears in the sidebar immediately.
+    commands::ensure_review_exists(repo.clone(), comparison.clone(), None)
+        .map_err(ApiError::Internal)?;
     let state = commands::load_review_state(repo, comparison).map_err(ApiError::Internal)?;
     Ok(Json(state))
 }

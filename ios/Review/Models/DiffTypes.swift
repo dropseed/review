@@ -30,6 +30,10 @@ struct DiffShortStat: Codable, Hashable, Sendable {
     let fileCount: Int
     let additions: Int
     let deletions: Int
+
+    var hasChanges: Bool {
+        fileCount > 0 || additions > 0 || deletions > 0
+    }
 }
 
 enum ContentType: String, Codable, Sendable {

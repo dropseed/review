@@ -112,8 +112,13 @@ struct ConnectView: View {
         }
         .padding(.horizontal, 28)
         .onAppear {
-            if !didLoadURL, !connectionManager.serverURL.isEmpty {
-                url = connectionManager.serverURL
+            if !didLoadURL {
+                if !connectionManager.serverURL.isEmpty {
+                    url = connectionManager.serverURL
+                }
+                if let savedToken = KeychainHelper.read(key: ConnectionManager.tokenKey) {
+                    token = savedToken
+                }
                 didLoadURL = true
             }
         }

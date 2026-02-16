@@ -7,71 +7,36 @@ struct DiffLineView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Old line number
-            Text(line.type != .added ? formattedLineNumber(line.oldLineNumber) : "")
-                .frame(width: 28, alignment: .trailing)
-                .font(.monoSmall)
-                .foregroundStyle(Color.secondary.opacity(0.6))
-                .padding(.trailing, 3)
-                .contentShape(Rectangle())
-                .onTapGesture { onTapLineNumber?() }
+            HStack(spacing: 0) {
+                Text(line.type != .added ? formattedLineNumber(line.oldLineNumber) : "")
+                    .frame(width: 28, alignment: .trailing)
+                    .font(.monoSmall)
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .padding(.trailing, 3)
 
-            // New line number
-            Text(line.type != .removed ? formattedLineNumber(line.newLineNumber) : "")
-                .frame(width: 28, alignment: .trailing)
-                .font(.monoSmall)
-                .foregroundStyle(Color.secondary.opacity(0.6))
-                .padding(.trailing, 3)
-                .contentShape(Rectangle())
-                .onTapGesture { onTapLineNumber?() }
+                Text(line.type != .removed ? formattedLineNumber(line.newLineNumber) : "")
+                    .frame(width: 28, alignment: .trailing)
+                    .font(.monoSmall)
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .padding(.trailing, 6)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { onTapLineNumber?() }
 
-            // Prefix
-            Text(prefix)
-                .frame(width: 14)
-                .font(.monoBody)
-                .foregroundStyle(textColor)
-                .multilineTextAlignment(.center)
-
-            // Content
             Group {
                 if let highlightedContent {
                     Text(highlightedContent)
                 } else {
                     Text(line.content)
-                        .foregroundStyle(textColor)
+                        .foregroundStyle(line.type.textColor)
                 }
             }
             .font(.monoBody)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.vertical, 1)
-        .frame(minHeight: 20)
-        .background(backgroundColor)
-    }
-
-    private var prefix: String {
-        switch line.type {
-        case .added: "+"
-        case .removed: "-"
-        case .context: " "
-        }
-    }
-
-    private var textColor: Color {
-        switch line.type {
-        case .added: .diffAdded
-        case .removed: .diffRemoved
-        case .context: .secondary
-        }
-    }
-
-    private var backgroundColor: Color {
-        switch line.type {
-        case .added: .diffAddedBackground
-        case .removed: .diffRemovedBackground
-        case .context: .clear
-        }
+        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+        .background(line.type.backgroundColor)
     }
 
     private func formattedLineNumber(_ number: Int?) -> String {

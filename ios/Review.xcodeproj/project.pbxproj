@@ -51,6 +51,10 @@
 		AABF0122 /* GuideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000122 /* GuideTabView.swift */; };
 		AABF0123 /* GroupRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000123 /* GroupRowView.swift */; };
 		AABF0124 /* GroupDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000124 /* GroupDetailView.swift */; };
+		AABF0125 /* ReviewOverviewPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000125 /* ReviewOverviewPanel.swift */; };
+		AABF0045 /* SplitDiffPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000045 /* SplitDiffPairing.swift */; };
+		AABF0130 /* SplitDiffLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000130 /* SplitDiffLineView.swift */; };
+		AABF0131 /* NewReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000131 /* NewReviewView.swift */; };
 		AABF0200 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AAPKD0001 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
@@ -95,11 +99,15 @@
 		AA000118 /* ConnectionStatusBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStatusBanner.swift; sourceTree = "<group>"; };
 		AA000072 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
 		AA000044 /* HunkGapComputation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HunkGapComputation.swift; sourceTree = "<group>"; };
+		AA000045 /* SplitDiffPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitDiffPairing.swift; sourceTree = "<group>"; };
 		AA000119 /* ExpandContextButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandContextButton.swift; sourceTree = "<group>"; };
+		AA000130 /* SplitDiffLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitDiffLineView.swift; sourceTree = "<group>"; };
+		AA000131 /* NewReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewReviewView.swift; sourceTree = "<group>"; };
 		AA000033 /* GuideManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideManager.swift; sourceTree = "<group>"; };
 		AA000122 /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
 		AA000123 /* GroupRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRowView.swift; sourceTree = "<group>"; };
 		AA000124 /* GroupDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDetailView.swift; sourceTree = "<group>"; };
+		AA000125 /* ReviewOverviewPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewOverviewPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -171,6 +179,7 @@
 				AA000042 /* TreeUtils.swift */,
 				AA000043 /* ReviewDetailLogic.swift */,
 				AA000044 /* HunkGapComputation.swift */,
+				AA000045 /* SplitDiffPairing.swift */,
 			);
 			path = Logic;
 			sourceTree = "<group>";
@@ -202,6 +211,7 @@
 			children = (
 				AA000102 /* ReviewsListView.swift */,
 				AA000103 /* ReviewRowView.swift */,
+				AA000131 /* NewReviewView.swift */,
 			);
 			path = Reviews;
 			sourceTree = "<group>";
@@ -219,6 +229,7 @@
 				AA000122 /* GuideTabView.swift */,
 				AA000123 /* GroupRowView.swift */,
 				AA000124 /* GroupDetailView.swift */,
+				AA000125 /* ReviewOverviewPanel.swift */,
 			);
 			path = ReviewDetail;
 			sourceTree = "<group>";
@@ -233,6 +244,7 @@
 				AA000114 /* AnnotationBubbleView.swift */,
 				AA000117 /* ImageDiffView.swift */,
 				AA000119 /* ExpandContextButton.swift */,
+				AA000130 /* SplitDiffLineView.swift */,
 			);
 			path = FileDiff;
 			sourceTree = "<group>";
@@ -391,11 +403,15 @@
 				AABF0118 /* ConnectionStatusBanner.swift in Sources */,
 				AABF0072 /* SyntaxHighlighter.swift in Sources */,
 				AABF0044 /* HunkGapComputation.swift in Sources */,
+				AABF0045 /* SplitDiffPairing.swift in Sources */,
 				AABF0119 /* ExpandContextButton.swift in Sources */,
+				AABF0130 /* SplitDiffLineView.swift in Sources */,
 				AABF0033 /* GuideManager.swift in Sources */,
 				AABF0122 /* GuideTabView.swift in Sources */,
 				AABF0123 /* GroupRowView.swift in Sources */,
 				AABF0124 /* GroupDetailView.swift in Sources */,
+				AABF0125 /* ReviewOverviewPanel.swift in Sources */,
+				AABF0131 /* NewReviewView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

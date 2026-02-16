@@ -151,6 +151,11 @@ struct APIClient: Sendable {
         return response.version
     }
 
+    func deleteReview(repoPath: String, comparison: Comparison) async throws {
+        let compPath = buildComparisonPath(comparison)
+        _ = try await request(path: "/comparisons/\(compPath)/review?\(buildRepoQuery(repoPath))", method: "DELETE")
+    }
+
     // MARK: - Diff Stats
 
     func getDiffShortStat(repoPath: String, comparison: Comparison) async throws -> DiffShortStat {
@@ -164,6 +169,26 @@ struct APIClient: Sendable {
         try await fetchJSON(path: "/git/remote?\(buildRepoQuery(repoPath))")
     }
 
+    // MARK: - Branches & GitHub
+
+    func getBranches(repoPath: String) async throws -> BranchList {
+        try await fetchJSON(path: "/git/branches?\(buildRepoQuery(repoPath))")
+    }
+
+    func getDefaultBranch(repoPath: String) async throws -> String {
+        let response: BranchResponse = try await fetchJSON(path: "/git/branch/default?\(buildRepoQuery(repoPath))")
+        return response.branch
+    }
+
+    func checkGitHubAvailable(repoPath: String) async throws -> Bool {
+        let response: AvailableResponse = try await fetchJSON(path: "/github/available?\(buildRepoQuery(repoPath))")
+        return response.available
+    }
+
+    func listPullRequests(repoPath: String) async throws -> [PullRequest] {
+        try await fetchJSON(path: "/github/prs?\(buildRepoQuery(repoPath))")
+    }
+
     // MARK: - Taxonomy
 
     func getTaxonomy(repoPath: String) async throws -> [TrustCategory] {
@@ -174,15 +199,7 @@ struct APIClient: Sendable {
 
     func generateGroups(repoPath: String, comparison: Comparison, hunks: [DiffHunk], reviewState: ReviewState?) async throws -> [HunkGroup] {
         let compPath = buildComparisonPath(comparison)
-        let inputs = hunks.map { hunk in
-            GroupingHunkInput(
-                id: hunk.id,
-                filePath: hunk.filePath,
-                content: hunk.content,
-                label: reviewState?.hunks[hunk.id]?.label
-            )
-        }
-        let body = GenerateGroupsRequest(hunks: inputs)
+        let body = GenerateGroupsRequest(hunks: buildHunkInputs(hunks: hunks, reviewState: reviewState))
         let bodyData = try encoder.encode(body)
         let data = try await request(path: "/comparisons/\(compPath)/guide/groups?\(buildRepoQuery(repoPath))", method: "POST", body: bodyData, timeout: 180)
         do {
@@ -194,21 +211,24 @@ struct APIClient: Sendable {
 
     func generateSummary(repoPath: String, comparison: Comparison, hunks: [DiffHunk], reviewState: ReviewState?) async throws -> SummaryResult {
         let compPath = buildComparisonPath(comparison)
-        let inputs = hunks.map { hunk in
-            SummaryHunkInput(
-                id: hunk.id,
-                filePath: hunk.filePath,
-                content: hunk.content,
-                label: reviewState?.hunks[hunk.id]?.label
-            )
-        }
-        let body = GenerateSummaryRequest(hunks: inputs)
+        let body = GenerateSummaryRequest(hunks: buildHunkInputs(hunks: hunks, reviewState: reviewState))
         let bodyData = try encoder.encode(body)
         let data = try await request(path: "/comparisons/\(compPath)/guide/summary?\(buildRepoQuery(repoPath))", method: "POST", body: bodyData, timeout: 180)
         do {
             return try decoder.decode(SummaryResult.self, from: data)
         } catch {
             throw APIError.decodingError(error)
+        }
+    }
+
+    private func buildHunkInputs(hunks: [DiffHunk], reviewState: ReviewState?) -> [HunkInput] {
+        hunks.map { hunk in
+            HunkInput(
+                id: hunk.id,
+                filePath: hunk.filePath,
+                content: hunk.content,
+                label: reviewState?.hunks[hunk.id]?.label
+            )
         }
     }
 }
@@ -232,14 +252,7 @@ struct SaveStateResponse: Codable, Sendable {
     let version: UInt64
 }
 
-struct GroupingHunkInput: Codable, Sendable {
-    let id: String
-    let filePath: String
-    let content: String
-    let label: [String]?
-}
-
-struct SummaryHunkInput: Codable, Sendable {
+struct HunkInput: Codable, Sendable {
     let id: String
     let filePath: String
     let content: String
@@ -247,11 +260,11 @@ struct SummaryHunkInput: Codable, Sendable {
 }
 
 struct GenerateGroupsRequest: Codable, Sendable {
-    let hunks: [GroupingHunkInput]
+    let hunks: [HunkInput]
 }
 
 struct GenerateSummaryRequest: Codable, Sendable {
-    let hunks: [SummaryHunkInput]
+    let hunks: [HunkInput]
 }
 
 struct SummaryResult: Codable, Sendable {
