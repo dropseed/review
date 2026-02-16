@@ -105,6 +105,9 @@ export interface ReviewSlice {
   removeTrustPattern: (pattern: string) => void;
   setTrustList: (patterns: string[]) => void;
 
+  // Clear feedback (notes + annotations only)
+  clearFeedback: () => void;
+
   // Reset review
   resetReview: () => Promise<void>;
 
@@ -649,6 +652,21 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const newState = {
         ...reviewState,
         trustList: patterns,
+        updatedAt: new Date().toISOString(),
+      };
+
+      set({ reviewState: newState });
+      debouncedSave(saveReviewState);
+    },
+
+    clearFeedback: () => {
+      const { reviewState, saveReviewState } = get();
+      if (!reviewState) return;
+
+      const newState = {
+        ...reviewState,
+        notes: "",
+        annotations: [],
         updatedAt: new Date().toISOString(),
       };
 

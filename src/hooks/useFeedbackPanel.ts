@@ -112,6 +112,7 @@ export interface FeedbackPanelState {
   feedbackCount: number;
   copied: boolean;
   copyFeedbackToClipboard: () => Promise<void>;
+  clearFeedback: () => void;
 }
 
 /**
@@ -123,6 +124,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
   const hunks = useReviewStore((s) => s.hunks);
   const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
   const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const clearFeedback = useReviewStore((s) => s.clearFeedback);
   const revealFileInTree = useReviewStore((s) => s.revealFileInTree);
 
   const [isExpanded, setIsExpanded] = useState(false);
@@ -183,5 +185,6 @@ export function useFeedbackPanel(): FeedbackPanelState {
     feedbackCount,
     copied,
     copyFeedbackToClipboard,
+    clearFeedback,
   };
 }
