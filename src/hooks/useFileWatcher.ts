@@ -78,7 +78,7 @@ export function useFileWatcher(comparisonReady: boolean) {
 
     // Review state changed externally
     unlistenFns.push(
-      apiClient.onReviewStateChanged((eventRepoPath) => {
+      apiClient.onReviewStateChanged(async (eventRepoPath) => {
         console.log(
           "[watcher] Received review-state-changed event:",
           eventRepoPath,
@@ -100,30 +100,26 @@ export function useFileWatcher(comparisonReady: boolean) {
           const activeKey = activeReviewKeyRef.current;
           const comp = comparisonRef.current;
           if (activeKey && comp) {
-            apiClient
-              .reviewExists(eventRepoPath, comp)
-              .then((exists) => {
-                if (!exists) {
-                  console.log(
-                    "[watcher] Active review was deleted externally, clearing active key",
-                  );
-                  setActiveReviewKeyRef.current(null);
-                } else {
-                  console.log("[watcher] Reloading review state...");
-                  loadReviewStateRef.current();
-                }
-              })
-              .catch(() => {
-                // If the check fails, fall back to reloading
-                loadReviewStateRef.current();
-              })
-              .finally(() => {
-                loadGlobalReviewsRef.current();
-              });
-            return;
+            let exists = false;
+            try {
+              exists = await apiClient.reviewExists(eventRepoPath, comp);
+            } catch {
+              // If the check fails, fall back to reloading
+            }
+
+            if (!exists) {
+              console.log(
+                "[watcher] Active review was deleted externally, clearing active key",
+              );
+              setActiveReviewKeyRef.current(null);
+            } else {
+              console.log("[watcher] Reloading review state...");
+              loadReviewStateRef.current();
+            }
+          } else {
+            console.log("[watcher] Reloading review state...");
+            loadReviewStateRef.current();
           }
-          console.log("[watcher] Reloading review state...");
-          loadReviewStateRef.current();
         }
         // Refresh sidebar for external review state changes
         loadGlobalReviewsRef.current();

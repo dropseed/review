@@ -728,7 +728,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       await Promise.all([
         loadReviewState(),
         loadFiles(true),
-        loadAllFiles(),
+        loadAllFiles(true),
         loadGitStatus(),
         repoPath ? refreshCommits(repoPath) : Promise.resolve(),
       ]);

@@ -86,7 +86,7 @@ export interface FilesSlice {
 
   // Loading
   loadFiles: (isRefreshing?: boolean) => Promise<void>;
-  loadAllFiles: () => Promise<void>;
+  loadAllFiles: (isRefreshing?: boolean) => Promise<void>;
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
 }
@@ -415,12 +415,14 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       }
     },
 
-    loadAllFiles: async () => {
+    loadAllFiles: async (isRefreshing = false) => {
       const { repoPath, comparison } = get();
       if (!repoPath) return;
 
       const comparisonKey = comparison.key;
-      set({ allFilesLoading: true });
+      if (!isRefreshing) {
+        set({ allFilesLoading: true });
+      }
       try {
         const allFiles = await client.listAllFiles(repoPath, comparison);
         if (get().comparison.key !== comparisonKey) {
