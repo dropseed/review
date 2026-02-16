@@ -6,9 +6,6 @@ import { FeedbackPanel } from "./FeedbackPanel";
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
 );
-const SettingsModal = lazy(() =>
-  import("./modals/SettingsModal").then((m) => ({ default: m.SettingsModal })),
-);
 const CommitDetailModal = lazy(() =>
   import("./modals/CommitDetailModal").then((m) => ({
     default: m.CommitDetailModal,
@@ -69,7 +66,6 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showContentSearch, setShowContentSearch] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
@@ -138,7 +134,6 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     handleNewWindow: onNewWindow,
     handleRefresh,
     setShowDebugModal,
-    setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
     setShowSymbolSearch,
@@ -321,16 +316,6 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
           <DebugModal
             isOpen={showDebugModal}
             onClose={() => setShowDebugModal(false)}
-          />
-        </Suspense>
-      )}
-
-      {/* Settings Modal */}
-      {showSettingsModal && (
-        <Suspense fallback={null}>
-          <SettingsModal
-            isOpen={showSettingsModal}
-            onClose={() => setShowSettingsModal(false)}
           />
         </Suspense>
       )}

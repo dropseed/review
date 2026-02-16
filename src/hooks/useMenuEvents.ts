@@ -14,7 +14,6 @@ interface UseMenuEventsOptions {
   handleNewWindow: () => void;
   handleRefresh: () => void;
   setShowDebugModal: (show: boolean) => void;
-  setShowSettingsModal: (show: boolean) => void;
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
   setShowSymbolSearch: (show: boolean) => void;
@@ -30,7 +29,6 @@ export function useMenuEvents({
   handleNewWindow,
   handleRefresh,
   setShowDebugModal,
-  setShowSettingsModal,
   setShowFileFinder,
   setShowContentSearch,
   setShowSymbolSearch,
@@ -105,7 +103,7 @@ export function useMenuEvents({
       ["menu:new-tab", () => handleNewTabRef.current()],
       ["menu:new-window", () => handleNewWindowRef.current()],
       ["menu:show-debug", () => setShowDebugModal(true)],
-      ["menu:open-settings", () => setShowSettingsModal(true)],
+      // Note: menu:open-settings is handled globally in TabRail (always mounted)
       ["menu:refresh", () => handleRefreshRef.current()],
       // Zoom controls
       [
@@ -166,7 +164,6 @@ export function useMenuEvents({
     };
   }, [
     setShowDebugModal,
-    setShowSettingsModal,
     setShowFileFinder,
     setShowContentSearch,
     setShowSymbolSearch,

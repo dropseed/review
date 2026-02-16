@@ -460,6 +460,14 @@ export const TabRail = memo(function TabRail({
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const { updateAvailable, installing, installUpdate } = useAutoUpdater();
 
+  // Listen for menu:open-settings globally (TabRail is always mounted)
+  useEffect(() => {
+    const platform = getPlatformServices();
+    return platform.menuEvents.on("menu:open-settings", () =>
+      setShowSettings(true),
+    );
+  }, []);
+
   const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
   const setComparisonPickerOpen = useReviewStore(
     (s) => s.setComparisonPickerOpen,
