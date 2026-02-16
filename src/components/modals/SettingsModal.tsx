@@ -174,10 +174,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const generateCompanionServerToken = useReviewStore(
     (s) => s.generateCompanionServerToken,
   );
+  const companionServerFingerprint = useReviewStore(
+    (s) => s.companionServerFingerprint,
+  );
+  const regenerateCompanionCertificate = useReviewStore(
+    (s) => s.regenerateCompanionCertificate,
+  );
 
   const [machineHostname, setMachineHostname] = useState<string>("");
   const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
   const [companionCopied, setCompanionCopied] = useState<string | null>(null);
+  const [companionQrSvg, setCompanionQrSvg] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -207,6 +214,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     companionServerEnabled,
     companionServerToken,
     generateCompanionServerToken,
+  ]);
+
+  // Generate QR code when companion server is enabled and we have all the data
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !companionServerEnabled ||
+      !companionServerToken ||
+      !companionServerFingerprint ||
+      !machineHostname
+    ) {
+      setCompanionQrSvg(null);
+      return;
+    }
+    const url = tailscaleIp
+      ? `https://${tailscaleIp}:${companionServerPort}`
+      : `https://${machineHostname}:${companionServerPort}`;
+    invoke<string>("generate_companion_qr", { url })
+      .then(setCompanionQrSvg)
+      .catch(() => setCompanionQrSvg(null));
+  }, [
+    isOpen,
+    companionServerEnabled,
+    companionServerToken,
+    companionServerFingerprint,
+    companionServerPort,
+    machineHostname,
+    tailscaleIp,
   ]);
 
   const copyToClipboard = useCallback(async (text: string, label: string) => {
@@ -278,25 +313,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
   };
 
-  // Easter egg: press "?" twice within 500ms to reveal the iOS companion tab
-  const [showCompanionTab, setShowCompanionTab] = useState(false);
-  useEffect(() => {
-    if (!isOpen || showCompanionTab) return;
-    let lastQuestionMark = 0;
-    function handleKeyDown(e: KeyboardEvent): void {
-      if (e.key === "?") {
-        const now = Date.now();
-        if (now - lastQuestionMark < 500) {
-          setShowCompanionTab(true);
-        } else {
-          lastQuestionMark = now;
-        }
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, showCompanionTab]);
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex w-full max-w-md max-h-[85vh] flex-col rounded-xl overflow-hidden">
@@ -348,7 +364,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {claudeAvailable && (
               <TabsTrigger value="classification">Classification</TabsTrigger>
             )}
-            {showCompanionTab && <TabsTrigger value="ios">iOS</TabsTrigger>}
+            <TabsTrigger value="ios">iOS</TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
           </TabsList>
 
@@ -618,6 +634,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                   {companionServerEnabled && (
                     <div className="mt-3 space-y-2">
+                      {companionQrSvg && (
+                        <div className="flex justify-center">
+                          <div className="rounded-lg bg-white p-2">
+                            <img
+                              src={`data:image/svg+xml;utf8,${encodeURIComponent(companionQrSvg)}`}
+                              alt="QR code for iOS pairing"
+                              className="block h-auto w-full"
+                            />
+                          </div>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
                         <label className="text-xxs text-stone-500">Port</label>
                         <Input
@@ -636,7 +663,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       </div>
                       <CopyableField
                         label="Server URL"
-                        value={`http://${machineHostname || "localhost"}:${companionServerPort}`}
+                        value={`https://${machineHostname || "localhost"}:${companionServerPort}`}
                         copiedLabel={companionCopied}
                         copyId="url"
                         onCopy={copyToClipboard}
@@ -644,7 +671,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       {tailscaleIp && (
                         <CopyableField
                           label="Tailscale URL"
-                          value={`http://${tailscaleIp}:${companionServerPort}`}
+                          value={`https://${tailscaleIp}:${companionServerPort}`}
                           copiedLabel={companionCopied}
                           copyId="tailscale-url"
                           onCopy={copyToClipboard}
@@ -660,6 +687,22 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                           truncate
                         />
                       )}
+                      {companionServerFingerprint && (
+                        <CopyableField
+                          label="Certificate Fingerprint"
+                          value={companionServerFingerprint}
+                          copiedLabel={companionCopied}
+                          copyId="fingerprint"
+                          onCopy={copyToClipboard}
+                          truncate
+                        />
+                      )}
+                      <button
+                        onClick={() => regenerateCompanionCertificate()}
+                        className="mt-1 w-full rounded-lg bg-stone-800/30 px-3 py-2 text-xs text-stone-500 transition-colors hover:bg-stone-800/50 hover:text-stone-300"
+                      >
+                        Regenerate Certificate
+                      </button>
                     </div>
                   )}
 

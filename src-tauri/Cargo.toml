@@ -45,10 +45,15 @@ notify-debouncer-mini = "0.4"
 ignore = "0.4"
 chrono = "0.4"
 axum = "0.8"
+axum-server = { version = "0.8", features = ["tls-rustls"] }
+rustls = { version = "0.23", features = ["ring"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tower = "0.5"
+rcgen = "0.13"
+sha2 = "0.10"
 getrandom = "0.2"
 sentry = "0.35"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [features]
 default = []

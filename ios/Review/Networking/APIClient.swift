@@ -3,6 +3,7 @@ import Foundation
 struct APIClient: Sendable {
     let baseURL: String
     let token: String
+    let session: URLSession
 
     private var decoder: JSONDecoder {
         let decoder = JSONDecoder()
@@ -33,7 +34,7 @@ struct APIClient: Sendable {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
             throw APIError.networkError(error)
         }
@@ -101,7 +102,7 @@ struct APIClient: Sendable {
         guard let url = URL(string: "\(baseURL)/health") else {
             throw APIError.invalidURL
         }
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await session.data(from: url)
         return try decoder.decode(HealthResponse.self, from: data)
     }
 

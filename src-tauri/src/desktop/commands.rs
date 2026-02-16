@@ -2170,6 +2170,7 @@ pub fn generate_companion_token() -> String {
 #[tauri::command]
 pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     use super::{companion_server, tray};
+    use tauri::Manager;
     use tauri_plugin_store::StoreExt;
 
     let store = app_handle
@@ -2191,8 +2192,22 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
         .map(|v| v as u16)
         .unwrap_or(3333);
 
+    // Ensure TLS certificate exists
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
+    let cert = companion_server::tls::ensure_certificate(&app_data_dir)?;
+
+    // Store fingerprint so frontend can display it
+    store.set(
+        "companionServerFingerprint",
+        serde_json::json!(cert.fingerprint),
+    );
+    let _ = store.save();
+
     companion_server::set_auth_token(Some(token));
-    companion_server::start(port);
+    companion_server::start(port, cert.cert_path, cert.key_path);
     tray::show(&app_handle);
     Ok(())
 }
@@ -2209,6 +2224,82 @@ pub fn stop_companion_server(app_handle: tauri::AppHandle) {
 pub fn get_companion_server_status() -> bool {
     use super::companion_server;
     companion_server::is_running()
+}
+
+#[tauri::command]
+pub fn get_companion_fingerprint(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_store::StoreExt;
+
+    let store = app_handle
+        .store("preferences.json")
+        .map_err(|e| e.to_string())?;
+    Ok(store
+        .get("companionServerFingerprint")
+        .and_then(|v| v.as_str().map(|s| s.to_string())))
+}
+
+#[tauri::command]
+pub fn regenerate_companion_certificate(app_handle: tauri::AppHandle) -> Result<String, String> {
+    use super::companion_server;
+    use tauri::Manager;
+    use tauri_plugin_store::StoreExt;
+
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
+
+    // Delete old certificate files
+    companion_server::tls::delete_certificate(&app_data_dir);
+
+    // Generate new certificate
+    let cert = companion_server::tls::ensure_certificate(&app_data_dir)?;
+
+    // Update stored fingerprint
+    let store = app_handle
+        .store("preferences.json")
+        .map_err(|e| e.to_string())?;
+    store.set(
+        "companionServerFingerprint",
+        serde_json::json!(cert.fingerprint),
+    );
+    let _ = store.save();
+
+    Ok(cert.fingerprint)
+}
+
+#[tauri::command]
+pub fn generate_companion_qr(app_handle: tauri::AppHandle, url: String) -> Result<String, String> {
+    use qrcode::render::svg;
+    use qrcode::QrCode;
+    use tauri_plugin_store::StoreExt;
+
+    let store = app_handle
+        .store("preferences.json")
+        .map_err(|e| e.to_string())?;
+
+    let token = store
+        .get("companionServerToken")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .ok_or_else(|| "No companion server token configured".to_owned())?;
+
+    let fingerprint = store
+        .get("companionServerFingerprint")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .ok_or_else(|| "No companion server fingerprint available".to_owned())?;
+
+    let payload = serde_json::json!({
+        "url": url,
+        "token": token,
+        "fingerprint": fingerprint,
+    });
+
+    let code = QrCode::new(payload.to_string().as_bytes())
+        .map_err(|e| format!("Failed to generate QR code: {e}"))?;
+
+    let svg = code.render::<svg::Color>().min_dimensions(200, 200).build();
+
+    Ok(svg)
 }
 
 #[tauri::command]

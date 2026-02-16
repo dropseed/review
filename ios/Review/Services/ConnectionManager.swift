@@ -26,6 +26,7 @@ final class ConnectionManager {
 
     static let serverURLKey = "serverURL"
     static let tokenKey = "authToken"
+    static let fingerprintKey = "certFingerprint"
 
     private var healthCheckTask: Task<Void, Never>?
     private var consecutiveFailures = 0
@@ -33,6 +34,7 @@ final class ConnectionManager {
 
     var hasSavedCredentials: Bool {
         KeychainHelper.read(key: Self.tokenKey) != nil
+            && KeychainHelper.read(key: Self.fingerprintKey) != nil
     }
 
     init() {
@@ -45,11 +47,14 @@ final class ConnectionManager {
 
     private func restoreConnection() {
         guard let savedURL = KeychainHelper.read(key: Self.serverURLKey),
-              let savedToken = KeychainHelper.read(key: Self.tokenKey) else {
+              let savedToken = KeychainHelper.read(key: Self.tokenKey),
+              let savedFingerprint = KeychainHelper.read(key: Self.fingerprintKey) else {
             return
         }
 
-        let client = APIClient(baseURL: savedURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")), token: savedToken)
+        let delegate = CertificatePinningDelegate(fingerprint: savedFingerprint)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        let client = APIClient(baseURL: savedURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")), token: savedToken, session: session)
         apiClient = client
         isRestoring = true
 
@@ -67,18 +72,21 @@ final class ConnectionManager {
         }
     }
 
-    func connect(url: String, token: String) async throws {
+    func connect(url: String, token: String, fingerprint: String) async throws {
         isLoading = true
         error = nil
 
         let cleanURL = url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let client = APIClient(baseURL: cleanURL, token: token)
+        let delegate = CertificatePinningDelegate(fingerprint: fingerprint)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        let client = APIClient(baseURL: cleanURL, token: token, session: session)
 
         do {
             let info = try await client.getInfo()
 
             KeychainHelper.save(key: Self.serverURLKey, value: cleanURL)
             KeychainHelper.save(key: Self.tokenKey, value: token)
+            KeychainHelper.save(key: Self.fingerprintKey, value: fingerprint)
 
             serverURL = cleanURL
             apiClient = client
@@ -98,6 +106,7 @@ final class ConnectionManager {
 
         KeychainHelper.delete(key: Self.serverURLKey)
         KeychainHelper.delete(key: Self.tokenKey)
+        KeychainHelper.delete(key: Self.fingerprintKey)
 
         serverURL = ""
         apiClient = nil

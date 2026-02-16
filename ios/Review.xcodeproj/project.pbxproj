@@ -17,6 +17,7 @@
 		AABF0016 /* ServerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000016 /* ServerTypes.swift */; };
 		AABF0021 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000021 /* APIClient.swift */; };
 		AABF0022 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000022 /* APIError.swift */; };
+		AABF0023 /* CertificatePinningDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000023 /* CertificatePinningDelegate.swift */; };
 		AABF0031 /* ConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000031 /* ConnectionManager.swift */; };
 		AABF0032 /* ReviewStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000032 /* ReviewStateManager.swift */; };
 		AABF0041 /* TrustMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000041 /* TrustMatching.swift */; };
@@ -55,6 +56,7 @@
 		AABF0045 /* SplitDiffPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000045 /* SplitDiffPairing.swift */; };
 		AABF0130 /* SplitDiffLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000130 /* SplitDiffLineView.swift */; };
 		AABF0131 /* NewReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000131 /* NewReviewView.swift */; };
+		AABF0132 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000132 /* QRScannerView.swift */; };
 		AABF0200 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AAPKD0001 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
@@ -70,6 +72,7 @@
 		AA000016 /* ServerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerTypes.swift; sourceTree = "<group>"; };
 		AA000021 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		AA000022 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
+		AA000023 /* CertificatePinningDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificatePinningDelegate.swift; sourceTree = "<group>"; };
 		AA000031 /* ConnectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionManager.swift; sourceTree = "<group>"; };
 		AA000032 /* ReviewStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewStateManager.swift; sourceTree = "<group>"; };
 		AA000041 /* TrustMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMatching.swift; sourceTree = "<group>"; };
@@ -103,6 +106,7 @@
 		AA000119 /* ExpandContextButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandContextButton.swift; sourceTree = "<group>"; };
 		AA000130 /* SplitDiffLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitDiffLineView.swift; sourceTree = "<group>"; };
 		AA000131 /* NewReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewReviewView.swift; sourceTree = "<group>"; };
+		AA000132 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		AA000033 /* GuideManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideManager.swift; sourceTree = "<group>"; };
 		AA000122 /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
 		AA000123 /* GroupRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRowView.swift; sourceTree = "<group>"; };
@@ -158,6 +162,7 @@
 			children = (
 				AA000021 /* APIClient.swift */,
 				AA000022 /* APIError.swift */,
+				AA000023 /* CertificatePinningDelegate.swift */,
 			);
 			path = Networking;
 			sourceTree = "<group>";
@@ -202,6 +207,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000101 /* ConnectView.swift */,
+				AA000132 /* QRScannerView.swift */,
 			);
 			path = Connect;
 			sourceTree = "<group>";
@@ -375,6 +381,7 @@
 				AABF0016 /* ServerTypes.swift in Sources */,
 				AABF0021 /* APIClient.swift in Sources */,
 				AABF0022 /* APIError.swift in Sources */,
+				AABF0023 /* CertificatePinningDelegate.swift in Sources */,
 				AABF0031 /* ConnectionManager.swift in Sources */,
 				AABF0032 /* ReviewStateManager.swift in Sources */,
 				AABF0041 /* TrustMatching.swift in Sources */,
@@ -412,6 +419,7 @@
 				AABF0124 /* GroupDetailView.swift in Sources */,
 				AABF0125 /* ReviewOverviewPanel.swift in Sources */,
 				AABF0131 /* NewReviewView.swift in Sources */,
+				AABF0132 /* QRScannerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

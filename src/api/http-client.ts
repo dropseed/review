@@ -40,7 +40,7 @@ import type {
   ReviewFreshnessResult,
 } from "../types";
 
-const DEFAULT_BASE_URL = "http://localhost:3333";
+const DEFAULT_BASE_URL = "https://localhost:3333";
 
 export class HttpClient implements ApiClient {
   private baseUrl: string;

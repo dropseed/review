@@ -1,5 +1,5 @@
-//! Companion HTTP server for mobile app connectivity.
-//! Listens on 0.0.0.0:<port> so mobile devices on the same network can connect.
+//! Companion HTTPS server for mobile app connectivity.
+//! Listens on 0.0.0.0:<port> with TLS so mobile devices on the same network can connect securely.
 
 mod error;
 mod extractors;
@@ -7,14 +7,17 @@ mod handlers;
 mod middleware;
 mod router;
 mod state;
+pub mod tls;
 
+use log::{error, info, warn};
 use state::{AppState, SharedState};
+use std::net::{Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::sync::watch;
 
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
-static SHUTDOWN_TX: Mutex<Option<watch::Sender<bool>>> = Mutex::new(None);
+static SHUTDOWN_HANDLE: Mutex<Option<axum_server::Handle<SocketAddr>>> = Mutex::new(None);
 static AUTH_TOKEN: Mutex<Option<String>> = Mutex::new(None);
 static CURRENT_PORT: Mutex<u16> = Mutex::new(3333);
 
@@ -28,11 +31,17 @@ pub fn set_auth_token(token: Option<String>) {
 
 /// Start the companion server as an async task.
 /// Only starts if not already running.
-pub fn start(port: u16) {
+pub fn start(port: u16, cert_path: PathBuf, key_path: PathBuf) {
     if SERVER_RUNNING.swap(true, Ordering::SeqCst) {
-        eprintln!("[companion_server] Already running");
+        warn!("Already running");
         return;
     }
+
+    info!(
+        "Starting on port {port}, cert={}, key={}",
+        cert_path.display(),
+        key_path.display()
+    );
 
     if let Ok(mut guard) = CURRENT_PORT.lock() {
         *guard = port;
@@ -40,14 +49,14 @@ pub fn start(port: u16) {
 
     let token = AUTH_TOKEN.lock().ok().and_then(|g| g.clone());
 
-    let (tx, rx) = watch::channel(false);
-    if let Ok(mut guard) = SHUTDOWN_TX.lock() {
-        *guard = Some(tx);
+    let handle = axum_server::Handle::new();
+    if let Ok(mut guard) = SHUTDOWN_HANDLE.lock() {
+        *guard = Some(handle.clone());
     }
 
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = run_server(port, token, rx).await {
-            eprintln!("[companion_server] Server error: {e}");
+        if let Err(e) = run_server(port, token, handle, cert_path, key_path).await {
+            error!("Server error: {e}");
         }
         SERVER_RUNNING.store(false, Ordering::SeqCst);
     });
@@ -60,9 +69,10 @@ pub fn get_port() -> u16 {
 
 /// Stop the companion server if it is running.
 pub fn stop() {
-    if let Ok(mut guard) = SHUTDOWN_TX.lock() {
-        if let Some(tx) = guard.take() {
-            let _ = tx.send(true);
+    if let Ok(mut guard) = SHUTDOWN_HANDLE.lock() {
+        if let Some(handle) = guard.take() {
+            info!("Shutting down");
+            handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
         }
     }
 }
@@ -75,21 +85,32 @@ pub fn is_running() -> bool {
 async fn run_server(
     port: u16,
     token: Option<String>,
-    mut shutdown_rx: watch::Receiver<bool>,
+    handle: axum_server::Handle<SocketAddr>,
+    cert_path: PathBuf,
+    key_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let state: SharedState = Arc::new(AppState { auth_token: token });
 
     let app = router::build_router(state);
+    let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
 
-    let addr = format!("0.0.0.0:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    eprintln!("[companion_server] Listening on http://{addr}");
+    // rustls 0.23 requires an explicit crypto provider; install ring if not yet set.
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.wait_for(|&v| v).await;
-            eprintln!("[companion_server] Shutting down");
-        })
+    let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path)
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to load TLS config from {}: {e}",
+                cert_path.display()
+            )
+        })?;
+
+    info!("Listening on https://{addr}");
+
+    axum_server::bind_rustls(addr, tls_config)
+        .handle(handle)
+        .serve(app.into_make_service())
         .await?;
 
     Ok(())

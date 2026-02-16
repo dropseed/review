@@ -39,6 +39,7 @@ const defaults = {
   companionServerEnabled: false,
   companionServerToken: null as string | null,
   companionServerPort: 3333,
+  companionServerFingerprint: null as string | null,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
 };
@@ -89,6 +90,7 @@ export interface PreferencesSlice {
   companionServerEnabled: boolean;
   companionServerToken: string | null;
   companionServerPort: number;
+  companionServerFingerprint: string | null;
 
   // Guide side nav
   guideSideNavCollapsed: boolean;
@@ -140,6 +142,7 @@ export interface PreferencesSlice {
   setCompanionServerToken: (token: string | null) => void;
   setCompanionServerPort: (port: number) => Promise<void>;
   generateCompanionServerToken: () => Promise<string>;
+  regenerateCompanionCertificate: () => Promise<void>;
 
   // Guide side nav actions
   setGuideSideNavCollapsed: (collapsed: boolean) => void;
@@ -172,6 +175,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   companionServerEnabled: defaults.companionServerEnabled,
   companionServerToken: defaults.companionServerToken,
   companionServerPort: defaults.companionServerPort,
+  companionServerFingerprint: defaults.companionServerFingerprint,
   guideSideNavCollapsed: defaults.guideSideNavCollapsed,
   guideSideNavWidth: defaults.guideSideNavWidth,
 
@@ -233,6 +237,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       rawCompanionServerEnabled,
       rawCompanionServerToken,
       rawCompanionServerPort,
+      rawCompanionServerFingerprint,
       rawDiffLineDiffType,
       rawDiffIndicators,
       rawNeedsReviewDisplayMode,
@@ -257,6 +262,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.get<boolean>("companionServerEnabled"),
       storage.get<string | null>("companionServerToken"),
       storage.get<number>("companionServerPort"),
+      storage.get<string | null>("companionServerFingerprint"),
       storage.get<DiffLineDiffType>("diffLineDiffType"),
       storage.get<DiffIndicators>("diffIndicators"),
       storage.get<ChangesDisplayMode>("needsReviewDisplayMode"),
@@ -288,6 +294,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       rawCompanionServerToken ?? defaults.companionServerToken;
     const companionServerPort =
       rawCompanionServerPort ?? defaults.companionServerPort;
+    const companionServerFingerprint =
+      rawCompanionServerFingerprint ?? defaults.companionServerFingerprint;
     const diffLineDiffType = rawDiffLineDiffType ?? defaults.diffLineDiffType;
     const diffIndicators = rawDiffIndicators ?? defaults.diffIndicators;
     // Migrate from the old single "changesDisplayMode" key
@@ -329,6 +337,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       companionServerEnabled,
       companionServerToken,
       companionServerPort,
+      companionServerFingerprint,
       guideSideNavCollapsed,
       guideSideNavWidth,
     });
@@ -467,6 +476,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     try {
       if (enabled) {
         await invoke("start_companion_server");
+        // Fetch fingerprint after server starts (cert is generated on start)
+        const fingerprint = await invoke<string | null>(
+          "get_companion_fingerprint",
+        );
+        set({ companionServerFingerprint: fingerprint });
       } else {
         await invoke("stop_companion_server");
       }
@@ -488,6 +502,10 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       try {
         await invoke("stop_companion_server");
         await invoke("start_companion_server");
+        const fingerprint = await invoke<string | null>(
+          "get_companion_fingerprint",
+        );
+        set({ companionServerFingerprint: fingerprint });
       } catch (e) {
         console.error("Failed to restart companion server with new port:", e);
       }
@@ -499,6 +517,22 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     set({ companionServerToken: token });
     storage.set("companionServerToken", token);
     return token;
+  },
+
+  regenerateCompanionCertificate: async () => {
+    try {
+      const fingerprint = await invoke<string>(
+        "regenerate_companion_certificate",
+      );
+      set({ companionServerFingerprint: fingerprint });
+      // Restart the server if running so it uses the new cert
+      if (get().companionServerEnabled) {
+        await invoke("stop_companion_server");
+        await invoke("start_companion_server");
+      }
+    } catch (e) {
+      console.error("Failed to regenerate certificate:", e);
+    }
   },
 
   setGuideSideNavCollapsed: (collapsed) => {

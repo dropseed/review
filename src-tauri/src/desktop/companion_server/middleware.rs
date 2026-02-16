@@ -4,16 +4,13 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use log::debug;
 
 use super::state::SharedState;
 
 /// Log every request method and path.
 pub async fn log_request(request: Request, next: Next) -> Response {
-    eprintln!(
-        "[companion_server] {} {}",
-        request.method(),
-        request.uri().path()
-    );
+    debug!("{} {}", request.method(), request.uri().path());
     next.run(request).await
 }
 

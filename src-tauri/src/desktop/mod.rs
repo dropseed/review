@@ -496,6 +496,9 @@ pub fn run() {
             commands::start_companion_server,
             commands::stop_companion_server,
             commands::get_companion_server_status,
+            commands::get_companion_fingerprint,
+            commands::regenerate_companion_certificate,
+            commands::generate_companion_qr,
             commands::get_tailscale_ip,
         ])
         .build(tauri::generate_context!())
