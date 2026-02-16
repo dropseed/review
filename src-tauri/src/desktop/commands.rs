@@ -2320,6 +2320,9 @@ pub fn get_tailscale_ip() -> Option<String> {
         if ip.is_empty() {
             None
         } else {
+            // Validate it looks like an IPv4 address — the Tailscale CLI on macOS
+            // can exit 0 but print an error message to stdout instead of an IP.
+            ip.parse::<std::net::Ipv4Addr>().ok()?;
             Some(ip)
         }
     })
