@@ -8,8 +8,8 @@ node -e "
 const fs = require('fs');
 const svg = fs.readFileSync('app-icon.svg', 'utf8');
 
-// Dark background variant for app icons (with padding so pills are inset)
-const pad = 100;
+// Dark background variant for app icons (small padding — macOS applies its own mask)
+const pad = 25;
 const size = 512 + pad * 2;
 const dark = svg
   .replace('viewBox=\"0 0 512 512\"', 'viewBox=\"' + -pad + ' ' + -pad + ' ' + size + ' ' + size + '\"')
