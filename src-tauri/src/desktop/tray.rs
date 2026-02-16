@@ -21,7 +21,7 @@ pub fn show(app: &AppHandle) {
         return;
     }
 
-    let icon = match load_icon(true) {
+    let icon = match load_icon() {
         Ok(i) => i,
         Err(e) => {
             log::error!("[tray] Failed to load icon: {e}");
@@ -45,6 +45,7 @@ pub fn show(app: &AppHandle) {
 
     match TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
+        .icon_as_template(true)
         .tooltip(&format!("{app_name} — Companion server running"))
         .menu(&menu)
         .show_menu_on_left_click(true)
@@ -141,20 +142,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
     }
 }
 
-fn load_icon(active: bool) -> Result<Image<'static>, Box<dyn std::error::Error>> {
-    #[cfg(debug_assertions)]
-    let bytes: &[u8] = if active {
-        include_bytes!("../../icons/tray-active-dev.png")
-    } else {
-        include_bytes!("../../icons/tray-idle-dev.png")
-    };
-
-    #[cfg(not(debug_assertions))]
-    let bytes: &[u8] = if active {
-        include_bytes!("../../icons/tray-active.png")
-    } else {
-        include_bytes!("../../icons/tray-idle.png")
-    };
-
+fn load_icon() -> Result<Image<'static>, Box<dyn std::error::Error>> {
+    let bytes: &[u8] = include_bytes!("../../icons/tray-icon@2x.png");
     Image::from_bytes(bytes).map_err(|e| e.to_string().into())
 }
