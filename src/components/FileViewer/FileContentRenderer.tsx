@@ -149,6 +149,13 @@ export function FileContentRenderer({
       }
 
       // Diff view (unified or split)
+      // For large files, collapse unchanged sections to improve performance.
+      // Users can expand sections on demand via the expand buttons.
+      const totalLines =
+        (fileContent.oldContent?.split("\n").length ?? 0) +
+        (fileContent.content?.split("\n").length ?? 0);
+      const expandUnchanged = totalLines <= 2500;
+
       return (
         <DiffView
           diffPatch={fileContent.diffPatch}
@@ -162,6 +169,7 @@ export function FileContentRenderer({
           newContent={fileContent.content}
           focusedHunkId={focusedHunkId}
           language={effectiveLanguage}
+          expandUnchanged={expandUnchanged}
         />
       );
     }
