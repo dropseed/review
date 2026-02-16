@@ -791,7 +791,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             disabled={cliLoading}
                             className="ml-3 shrink-0 rounded-md bg-stone-700/50 px-2.5 py-1.5 text-xxs text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-50"
                           >
-                            {cliLoading ? "Installing\u2026" : "Install"}
+                            {cliLoading ? "Installing…" : "Install"}
                           </button>
                         </div>
                         <p className="text-xxs text-stone-600 leading-relaxed">

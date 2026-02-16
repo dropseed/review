@@ -108,7 +108,7 @@ function getDisplayName(
     const pr = pullRequests.find((p) => p.number === prNumber);
     if (pr) {
       const shortTitle =
-        pr.title.length > 20 ? pr.title.slice(0, 20) + "\u2026" : pr.title;
+        pr.title.length > 20 ? pr.title.slice(0, 20) + "…" : pr.title;
       return `#${pr.number} ${shortTitle}`;
     }
   }
@@ -118,7 +118,7 @@ function getDisplayName(
   if (stash) {
     const shortMessage =
       stash.message.length > 25
-        ? stash.message.slice(0, 25) + "\u2026"
+        ? stash.message.slice(0, 25) + "…"
         : stash.message;
     return `${stash.ref}: ${shortMessage}`;
   }
@@ -173,7 +173,7 @@ export const BranchSelect = memo(function BranchSelect({
       if (isExistingComparison(stash.ref)) return;
       const shortMessage =
         stash.message.length > 20
-          ? stash.message.slice(0, 20) + "\u2026"
+          ? stash.message.slice(0, 20) + "…"
           : stash.message;
       opts.push({
         value: stash.ref,
@@ -352,7 +352,7 @@ export const BranchSelect = memo(function BranchSelect({
           <span
             className={`block truncate ${showPlaceholder ? "text-stone-500" : ""}`}
           >
-            {displayText || placeholder || "Select\u2026"}
+            {displayText || placeholder || "Select…"}
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
             <svg
@@ -389,7 +389,7 @@ export const BranchSelect = memo(function BranchSelect({
               setHighlightedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search branches\u2026"
+            placeholder="Search branches…"
             className="py-1.5 text-sm"
             aria-label="Search branches"
           />

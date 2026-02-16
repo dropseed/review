@@ -229,7 +229,7 @@ export function NewComparisonForm({
             disabled={branchesLoading}
             baseValue={baseRef}
             existingComparisonKeys={existingComparisonKeys}
-            placeholder="Compare\u2026"
+            placeholder="Compare…"
             pullRequests={pullRequests}
           />
 

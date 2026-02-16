@@ -501,7 +501,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     }
     if (basenameCount > 0) {
       actions.push({
-        label: "Approve by filename\u2026",
+        label: "Approve by filename…",
         count: basenameCount,
         onAction: () => {
           setFilenameModalMode("approve");
@@ -531,7 +531,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     }
     if (basenameCount > 0) {
       actions.push({
-        label: "Unapprove by filename\u2026",
+        label: "Unapprove by filename…",
         count: basenameCount,
         onAction: () => {
           setFilenameModalMode("unapprove");

@@ -14,8 +14,8 @@ interface ContentSearchProps {
 }
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
-  if (!query.trim()) return "Type to search file contents\u2026";
-  if (isLoading) return "Searching\u2026";
+  if (!query.trim()) return "Type to search file contents…";
+  if (isLoading) return "Searching…";
   return "No matches found";
 }
 
@@ -157,7 +157,7 @@ export function ContentSearch({
                       useReviewStore.getState().setSearchQuery(e.target.value);
                     }}
                     onKeyDown={handleKeyDown}
-                    placeholder="Search in files\u2026"
+                    placeholder="Search in files…"
                     aria-label="Search in files"
                     autoComplete="off"
                     autoCorrect="off"

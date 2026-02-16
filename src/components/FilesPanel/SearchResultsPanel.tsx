@@ -6,8 +6,8 @@ import { HighlightedLine } from "../ui/HighlightedLine";
 import { groupSearchResultsByFile } from "../../utils/search";
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
-  if (!query.trim()) return "Type to search file contents\u2026";
-  if (isLoading) return "Searching\u2026";
+  if (!query.trim()) return "Type to search file contents…";
+  if (isLoading) return "Searching…";
   return "No matches found";
 }
 
@@ -74,7 +74,7 @@ export function SearchResultsPanel(): ReactNode {
               setQuery(e.target.value);
               useReviewStore.getState().setSearchQuery(e.target.value);
             }}
-            placeholder="Search in files\u2026"
+            placeholder="Search in files…"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"

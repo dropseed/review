@@ -401,7 +401,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
   const emptyMessage = !selectedFile
     ? "Select a file first"
     : loading
-      ? "Loading symbols\u2026"
+      ? "Loading symbols…"
       : !fileDiff && !allSymbols
         ? "No symbols available"
         : query
@@ -441,7 +441,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Search symbols\u2026"
+                    placeholder="Search symbols…"
                     aria-label="Search symbols"
                     className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden"
                   />

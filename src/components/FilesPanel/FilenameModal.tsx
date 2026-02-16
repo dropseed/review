@@ -153,7 +153,7 @@ export function FilenameModal({
               setQuery(e.target.value);
               setSelectedBasename(null);
             }}
-            placeholder="Search filenames\u2026"
+            placeholder="Search filenames…"
             className="w-full rounded-md border border-stone-700 bg-stone-800/50 px-3 py-1.5 text-sm text-stone-200 placeholder:text-stone-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
             autoFocus
           />
