@@ -1162,7 +1162,13 @@ impl DiffSource for LocalGitSource {
 
             // Committed diff: base..HEAD
             let range = format!("{merge_base}..{resolved_head}");
-            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &range];
+            let mut args = vec![
+                "diff",
+                "--histogram",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                &range,
+            ];
             if let Some(path) = file_path {
                 args.push("--");
                 args.push(path);
@@ -1172,7 +1178,13 @@ impl DiffSource for LocalGitSource {
             }
 
             // Uncommitted changes: HEAD vs working tree
-            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &resolved_head];
+            let mut args = vec![
+                "diff",
+                "--histogram",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                &resolved_head,
+            ];
             if let Some(path) = file_path {
                 args.push("--");
                 args.push(path);
@@ -1193,7 +1205,13 @@ impl DiffSource for LocalGitSource {
             };
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
-            let mut args = vec!["diff", "--src-prefix=a/", "--dst-prefix=b/", &range];
+            let mut args = vec![
+                "diff",
+                "--histogram",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                &range,
+            ];
             if let Some(path) = file_path {
                 args.push("--");
                 args.push(path);
