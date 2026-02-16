@@ -554,12 +554,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         onChange={(e) =>
                           setClassifyCommand(e.target.value || null)
                         }
-                        placeholder="claude --print --model haiku -p"
+                        placeholder="claude --print --model haiku"
                         className="text-xs"
                       />
                       <p className="text-xxs text-stone-600 leading-relaxed">
-                        Leave blank for default. The prompt is appended as the
-                        last argument.
+                        Leave blank for default. The prompt is sent via stdin.
                       </p>
                     </div>
 

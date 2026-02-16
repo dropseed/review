@@ -2,8 +2,9 @@ pub mod classify;
 pub mod grouping;
 pub mod summary;
 
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -152,62 +153,69 @@ pub(crate) fn find_claude_executable() -> Option<String> {
 
 /// Run claude CLI with the given prompt and model, or use a custom command.
 ///
+/// The prompt is piped via stdin to avoid OS argument length limits
+/// (`ARG_MAX` ~1MB on macOS) which caused failures on large reviews.
+///
 /// # Security Warning
 ///
 /// The `custom_command` parameter allows arbitrary shell command execution.
 /// This is intentionally provided to allow users to use alternative AI backends
 /// or custom wrappers, but it should only be set by the user through trusted
 /// configuration (the app's settings UI). The command receives the full prompt
-/// as an argument, so ensure the command itself is trusted.
-///
-/// The prompt is passed as a final argument to the command, not through a shell,
-/// which provides some protection against injection, but the command itself
-/// is executed as specified.
+/// via stdin, so ensure the command itself is trusted.
 pub(crate) fn run_claude_with_model(
     prompt: &str,
     cwd: &Path,
     model: &str,
     custom_command: Option<&str>,
 ) -> Result<String, ClaudeError> {
-    let output = if let Some(cmd) = custom_command {
-        // Parse the custom command and append the prompt as the last argument
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
+    // Build the Command differently depending on custom vs default CLI,
+    // but share all the spawn/stdin/wait logic below.
+    let mut cmd = if let Some(custom) = custom_command {
+        let parts: Vec<&str> = custom.split_whitespace().collect();
         if parts.is_empty() {
             return Err(ClaudeError::CommandFailed(
                 "Custom command is empty".to_owned(),
             ));
         }
-        let program = parts[0];
-        let mut args: Vec<&str> = parts[1..].to_vec();
-        args.push(prompt);
-
-        Command::new(program)
-            .args(&args)
-            .current_dir(cwd)
-            .env_remove("CLAUDECODE")
-            .output()
-            .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?
+        let mut c = Command::new(parts[0]);
+        c.args(&parts[1..]);
+        c
     } else {
-        // Use default claude CLI
         let claude_path = find_claude_executable().ok_or(ClaudeError::ClaudeNotFound)?;
-
-        Command::new(&claude_path)
-            .args([
-                "--print",
-                "--model",
-                model,
-                "--setting-sources",
-                "",
-                "--disable-slash-commands",
-                "--strict-mcp-config",
-                "-p",
-                prompt,
-            ])
-            .current_dir(cwd)
-            .env_remove("CLAUDECODE")
-            .output()
-            .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?
+        let mut c = Command::new(claude_path);
+        c.args([
+            "--print",
+            "--model",
+            model,
+            "--setting-sources",
+            "",
+            "--disable-slash-commands",
+            "--strict-mcp-config",
+        ]);
+        c
     };
+
+    // Pipe the prompt via stdin to avoid OS argument length limits
+    // (ARG_MAX ~1MB on macOS) which caused failures on large reviews.
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .current_dir(cwd)
+        .env_remove("CLAUDECODE")
+        .spawn()
+        .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(prompt.as_bytes()).map_err(|e| {
+            ClaudeError::CommandFailed(format!("Failed to write prompt to stdin: {e}"))
+        })?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
