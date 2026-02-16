@@ -174,52 +174,50 @@ export const createClassificationSlice: SliceCreatorWithClient<
     startActivity("classify-static", "Classifying hunks", 50);
     try {
       const staticResponse = await client.classifyHunksStatic(hunksToClassify);
-      const staticCount = Object.keys(staticResponse.classifications).length;
+      const staticIds = new Set(Object.keys(staticResponse.classifications));
+      const skippedIds = new Set(staticResponse.skippedHunkIds ?? []);
 
-      if (staticCount > 0) {
+      if (staticIds.size > 0) {
         console.log(
-          `[classifyUnlabeledHunks] Static classifier matched ${staticCount} hunks`,
+          `[classifyUnlabeledHunks] Static classifier matched ${staticIds.size} hunks`,
         );
+      }
+      if (skippedIds.size > 0) {
+        console.log(
+          `[classifyUnlabeledHunks] Skipping ${skippedIds.size} hunks (unlikely to match AI labels)`,
+        );
+      }
 
-        // Apply static classifications to review state
+      // Apply static classifications and mark skipped hunks in review state
+      const handledIds = new Set([...staticIds, ...skippedIds]);
+      if (handledIds.size > 0) {
         const currentState = get().reviewState;
         if (currentState) {
           const updatedHunks = { ...currentState.hunks };
-          for (const [hunkId, classification] of Object.entries(
-            staticResponse.classifications,
-          )) {
+
+          for (const hunkId of handledIds) {
+            const classification = staticResponse.classifications[hunkId];
+            const existing = updatedHunks[hunkId];
             updatedHunks[hunkId] = {
-              ...updatedHunks[hunkId],
-              label: classification.label,
-              reasoning: classification.reasoning,
+              ...existing,
+              label: classification?.label ?? existing?.label ?? [],
+              reasoning: classification?.reasoning,
               classifiedVia: "static",
             };
           }
 
-          const updatedState = {
-            ...currentState,
-            hunks: updatedHunks,
-            updatedAt: new Date().toISOString(),
-          };
-
-          set({ reviewState: updatedState });
+          set({
+            reviewState: {
+              ...currentState,
+              hunks: updatedHunks,
+              updatedAt: new Date().toISOString(),
+            },
+          });
           await saveReviewState();
         }
 
-        // Remove statically classified hunks from the list
-        const staticIds = new Set(Object.keys(staticResponse.classifications));
-        hunksToClassify = hunksToClassify.filter((h) => !staticIds.has(h.id));
-
-        // Remove hunks that heuristics determined should skip AI
-        const skippedIds = new Set(staticResponse.skippedHunkIds ?? []);
-        if (skippedIds.size > 0) {
-          console.log(
-            `[classifyUnlabeledHunks] Skipping ${skippedIds.size} hunks (unlikely to match AI labels)`,
-          );
-          hunksToClassify = hunksToClassify.filter(
-            (h) => !skippedIds.has(h.id),
-          );
-        }
+        // Remove classified and skipped hunks from AI candidates
+        hunksToClassify = hunksToClassify.filter((h) => !handledIds.has(h.id));
 
         if (hunksToClassify.length === 0) {
           console.log(
@@ -314,16 +312,16 @@ export const createClassificationSlice: SliceCreatorWithClient<
       const freshState = get().reviewState;
       if (!freshState) return;
 
-      // Apply classifications
+      // Apply classifications — mark ALL hunks that were sent to AI,
+      // not just those with results, so they won't be retried.
       const newHunks = { ...freshState.hunks };
-      for (const [hunkId, classification] of Object.entries(
-        response.classifications,
-      )) {
-        const existingHunk = newHunks[hunkId];
-        newHunks[hunkId] = {
-          ...existingHunk,
-          label: classification.label,
-          reasoning: classification.reasoning,
+      for (const id of newClassifyingIds) {
+        const classification = response.classifications[id];
+        const existing = newHunks[id];
+        newHunks[id] = {
+          ...existing,
+          label: classification?.label ?? existing?.label ?? [],
+          reasoning: classification?.reasoning,
           classifiedVia: "ai",
         };
       }
