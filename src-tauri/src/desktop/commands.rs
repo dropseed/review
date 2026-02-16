@@ -889,6 +889,11 @@ pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), St
 }
 
 #[tauri::command]
+pub fn review_exists(repo_path: String, comparison: Comparison) -> Result<bool, String> {
+    storage::review_exists(&PathBuf::from(&repo_path), &comparison).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn ensure_review_exists(
     repo_path: String,
     comparison: Comparison,

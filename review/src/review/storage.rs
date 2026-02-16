@@ -219,6 +219,13 @@ pub fn ensure_review_exists(
     Ok(())
 }
 
+/// Check whether a review file exists on disk for the given comparison.
+pub fn review_exists(repo_path: &Path, comparison: &Comparison) -> Result<bool, StorageError> {
+    let storage_dir = get_storage_dir(repo_path)?;
+    let filename = comparison_filename(comparison);
+    Ok(storage_dir.join(&filename).exists())
+}
+
 /// Delete a saved review
 pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
@@ -366,6 +373,29 @@ mod tests {
         // Verify it's gone
         let reviews = list_saved_reviews(&repo_path).unwrap();
         assert!(reviews.is_empty());
+    }
+
+    #[test]
+    fn test_review_exists() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        // Should not exist initially
+        assert!(!review_exists(&repo_path, &comparison).unwrap());
+
+        // Save a review
+        save_review_state(&repo_path, &ReviewState::new(comparison.clone())).unwrap();
+
+        // Should exist now
+        assert!(review_exists(&repo_path, &comparison).unwrap());
+
+        // Delete it
+        delete_review(&repo_path, &comparison).unwrap();
+
+        // Should not exist again
+        assert!(!review_exists(&repo_path, &comparison).unwrap());
     }
 
     #[test]

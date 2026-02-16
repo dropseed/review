@@ -12,6 +12,9 @@ export function useFileWatcher(comparisonReady: boolean) {
   const refresh = useReviewStore((s) => s.refresh);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
+  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+  const comparison = useReviewStore((s) => s.comparison);
+  const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
 
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
@@ -21,6 +24,9 @@ export function useFileWatcher(comparisonReady: boolean) {
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
   const comparisonReadyRef = useRef(comparisonReady);
   const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeReviewKeyRef = useRef(activeReviewKey);
+  const comparisonRef = useRef(comparison);
+  const setActiveReviewKeyRef = useRef(setActiveReviewKey);
 
   useEffect(() => {
     repoPathRef.current = repoPath;
@@ -29,6 +35,9 @@ export function useFileWatcher(comparisonReady: boolean) {
     loadGlobalReviewsRef.current = loadGlobalReviews;
     checkReviewsFreshnessRef.current = checkReviewsFreshness;
     comparisonReadyRef.current = comparisonReady;
+    activeReviewKeyRef.current = activeReviewKey;
+    comparisonRef.current = comparison;
+    setActiveReviewKeyRef.current = setActiveReviewKey;
   }, [
     repoPath,
     loadReviewState,
@@ -36,6 +45,9 @@ export function useFileWatcher(comparisonReady: boolean) {
     loadGlobalReviews,
     checkReviewsFreshness,
     comparisonReady,
+    activeReviewKey,
+    comparison,
+    setActiveReviewKey,
   ]);
 
   // Start file watcher when repo is loaded
@@ -83,6 +95,33 @@ export function useFileWatcher(comparisonReady: boolean) {
           return;
         }
         if (eventRepoPath === repoPathRef.current) {
+          // Check if the active review still exists on disk before reloading.
+          // If it was deleted externally, clear the active key (same as internal delete).
+          const activeKey = activeReviewKeyRef.current;
+          const comp = comparisonRef.current;
+          if (activeKey && comp) {
+            apiClient
+              .reviewExists(eventRepoPath, comp)
+              .then((exists) => {
+                if (!exists) {
+                  console.log(
+                    "[watcher] Active review was deleted externally, clearing active key",
+                  );
+                  setActiveReviewKeyRef.current(null);
+                } else {
+                  console.log("[watcher] Reloading review state...");
+                  loadReviewStateRef.current();
+                }
+              })
+              .catch(() => {
+                // If the check fails, fall back to reloading
+                loadReviewStateRef.current();
+              })
+              .finally(() => {
+                loadGlobalReviewsRef.current();
+              });
+            return;
+          }
           console.log("[watcher] Reloading review state...");
           loadReviewStateRef.current();
         }

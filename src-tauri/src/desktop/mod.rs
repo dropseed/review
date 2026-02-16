@@ -461,6 +461,7 @@ pub fn run() {
             commands::save_review_state,
             commands::list_saved_reviews,
             commands::delete_review,
+            commands::review_exists,
             commands::ensure_review_exists,
             commands::list_all_reviews_global,
             commands::get_review_storage_path,

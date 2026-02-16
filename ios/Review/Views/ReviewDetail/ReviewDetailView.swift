@@ -33,6 +33,7 @@ enum ReviewTab: Int, CaseIterable {
 
 struct ReviewDetailView: View {
     @Environment(ConnectionManager.self) private var connectionManager
+    @Environment(\.dismiss) private var dismiss
     let review: GlobalReviewSummary
 
     @State private var selectedTab: ReviewTab = .changes
@@ -44,6 +45,7 @@ struct ReviewDetailView: View {
     @State private var loadError: String?
     @State private var showFeedbackPanel = false
     @State private var showOverviewPanel = false
+    @State private var reviewDeleted = false
 
     private var repoPath: String { review.repoPath }
     private var comparison: Comparison { review.comparison }
@@ -239,6 +241,13 @@ struct ReviewDetailView: View {
             }
 
             stateManager.syncTotalDiffHunks(hunks.count)
+        } catch let error as APIError {
+            if case .httpError(statusCode: 404, _) = error {
+                reviewDeleted = true
+                dismiss()
+                return
+            }
+            loadError = error.localizedDescription
         } catch {
             loadError = error.localizedDescription
         }

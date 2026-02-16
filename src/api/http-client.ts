@@ -400,6 +400,20 @@ export class HttpClient implements ApiClient {
     }
   }
 
+  async reviewExists(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<boolean> {
+    try {
+      const compPath = this.buildComparisonPath(comparison);
+      const url = `${this.baseUrl}/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`;
+      const response = await fetch(url, { headers: this.authHeaders() });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async ensureReviewExists(
     _repoPath: string,
     _comparison: Comparison,

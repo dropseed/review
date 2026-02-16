@@ -223,6 +223,13 @@ export class TauriClient implements ApiClient {
     await invoke("delete_review", { repoPath, comparison });
   }
 
+  async reviewExists(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<boolean> {
+    return invoke<boolean>("review_exists", { repoPath, comparison });
+  }
+
   async ensureReviewExists(
     repoPath: string,
     comparison: Comparison,

@@ -101,10 +101,13 @@ pub async fn get_review(
     axum::extract::Path(comp): axum::extract::Path<String>,
 ) -> Result<Json<ReviewState>, ApiError> {
     let comparison = parse_comparison(&comp)?;
-    // Ensure the review file exists on disk so the desktop file watcher
-    // detects it and the review appears in the sidebar immediately.
-    commands::ensure_review_exists(repo.clone(), comparison.clone(), None)
-        .map_err(ApiError::Internal)?;
+    // Check if the review exists on disk — return 404 if it was deleted
+    // rather than recreating it (which would resurrect deleted reviews).
+    let exists =
+        commands::review_exists(repo.clone(), comparison.clone()).map_err(ApiError::Internal)?;
+    if !exists {
+        return Err(ApiError::NotFound("Review not found".to_string()));
+    }
     let state = commands::load_review_state(repo, comparison).map_err(ApiError::Internal)?;
     Ok(Json(state))
 }
