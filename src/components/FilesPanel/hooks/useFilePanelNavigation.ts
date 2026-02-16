@@ -80,6 +80,19 @@ export function useFilePanelNavigation({
     }
   }, [changesViewMode]);
 
+  // Auto-switch away from git tab when working tree is no longer included
+  const gitStatus = useReviewStore((s) => s.gitStatus);
+  const comparison = useReviewStore((s) => s.comparison);
+
+  useEffect(() => {
+    if (viewMode !== "git") return;
+    const showGitTab =
+      gitStatus !== null && comparison.head === gitStatus.currentBranch;
+    if (!showGitTab) {
+      setFilesPanelTab("changes");
+    }
+  }, [viewMode, gitStatus, comparison.head]);
+
   // Auto-switch to/from search tab only on searchActive transitions
   const searchActive = useReviewStore((s) => s.searchActive);
   const tabBeforeSearch = useRef<FilesPanelTab | null>(null);

@@ -1,6 +1,6 @@
 import type { FileEntry } from "../../types";
 
-export type FilesPanelTab = "changes" | "browse" | "commits" | "search";
+export type FilesPanelTab = "changes" | "browse" | "commits" | "search" | "git";
 
 // Hunk status for a file
 export interface FileHunkStatus {

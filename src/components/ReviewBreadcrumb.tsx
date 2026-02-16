@@ -1,5 +1,6 @@
 import type { Comparison, GitHubPrRef } from "../types";
 import { useReviewStore } from "../stores";
+import { GitStatusCounts } from "./GitStatusCounts";
 import { SimpleTooltip } from "./ui/tooltip";
 
 interface ReviewBreadcrumbProps {
@@ -59,7 +60,15 @@ export function ReviewBreadcrumb({
   comparison,
 }: ReviewBreadcrumbProps) {
   const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
+  const gitStatus = useReviewStore((s) => s.gitStatus);
   const isPr = !!githubPr;
+
+  const stagedCount = gitStatus?.staged.length ?? 0;
+  const unstagedCount = gitStatus?.unstaged.length ?? 0;
+  const untrackedCount = gitStatus?.untracked.length ?? 0;
+  const showWorkingTree =
+    gitStatus?.currentBranch === comparison.head &&
+    stagedCount + unstagedCount + untrackedCount > 0;
 
   return (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -74,6 +83,20 @@ export function ReviewBreadcrumb({
         >
           {getOverviewLabel(comparison, githubPr)}
         </span>
+        {showWorkingTree && (
+          <SimpleTooltip content="Includes uncommitted working tree changes">
+            <span className="flex items-center gap-1 ml-0.5">
+              <span className="text-xxs text-amber-400/70 font-medium">
+                working tree
+              </span>
+              <GitStatusCounts
+                staged={stagedCount}
+                unstaged={unstagedCount}
+                untracked={untrackedCount}
+              />
+            </span>
+          </SimpleTooltip>
+        )}
       </div>
     </div>
   );

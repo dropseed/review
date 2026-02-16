@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useReviewStore } from "../stores";
+import { GitStatusCounts } from "./GitStatusCounts";
 import { SimpleTooltip } from "./ui/tooltip";
 import { GitStatusModal } from "./modals/GitStatusModal";
 
-// Branch icon component
 function BranchIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -52,20 +52,13 @@ export function GitStatusIndicator() {
             {gitStatus.currentBranch}
           </span>
 
-          {/* Status badges - more compact for status bar */}
-          {stagedCount > 0 && (
-            <span className="ml-1 font-mono text-xxs font-medium tabular-nums text-emerald-400">
-              +{stagedCount}
-            </span>
-          )}
-          {unstagedCount > 0 && (
-            <span className="ml-0.5 font-mono text-xxs font-medium tabular-nums text-amber-400">
-              ~{unstagedCount}
-            </span>
-          )}
-          {untrackedCount > 0 && (
-            <span className="ml-0.5 font-mono text-xxs font-medium tabular-nums text-stone-500">
-              ?{untrackedCount}
+          {hasChanges && (
+            <span className="ml-0.5 flex items-center gap-0.5">
+              <GitStatusCounts
+                staged={stagedCount}
+                unstaged={unstagedCount}
+                untracked={untrackedCount}
+              />
             </span>
           )}
         </button>

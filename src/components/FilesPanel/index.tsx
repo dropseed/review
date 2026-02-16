@@ -8,6 +8,7 @@ import {
 } from "./hooks";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
+import { GitStatusCounts } from "../../components/GitStatusCounts";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
@@ -33,6 +34,7 @@ import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import { ReviewDataProvider } from "../ReviewDataContext";
 import { FilenameModal } from "./FilenameModal";
 import { SearchResultsPanel } from "./SearchResultsPanel";
+import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection } from "./FileListSection";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
@@ -728,6 +730,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const searchActive = useReviewStore((s) => s.searchActive);
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
 
+  // Git status tab
+  const gitStatus = useReviewStore((s) => s.gitStatus);
+  const comparison = useReviewStore((s) => s.comparison);
+  const showGitTab =
+    gitStatus !== null && comparison.head === gitStatus.currentBranch;
+  const gitTabCount =
+    (gitStatus?.staged.length ?? 0) +
+    (gitStatus?.unstaged.length ?? 0) +
+    (gitStatus?.untracked.length ?? 0);
+
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
   const [revealLabel, setRevealLabel] = useState("Reveal in Finder");
@@ -833,6 +845,20 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
             >
               <TabsList aria-label="File view mode">
+                {showGitTab && gitStatus && (
+                  <TabsTrigger value="git" className="flex items-center gap-1">
+                    Git
+                    {gitTabCount > 0 && (
+                      <span className="ml-0.5 flex items-center gap-0.5">
+                        <GitStatusCounts
+                          staged={gitStatus.staged.length}
+                          unstaged={gitStatus.unstaged.length}
+                          untracked={gitStatus.untracked.length}
+                        />
+                      </span>
+                    )}
+                  </TabsTrigger>
+                )}
                 <TabsTrigger value="changes">Changes</TabsTrigger>
                 <TabsTrigger value="browse">Browse</TabsTrigger>
                 <TabsTrigger value="commits">Commits</TabsTrigger>
@@ -868,6 +894,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           {/* Panel content based on view mode */}
           {viewMode === "search" ? (
             <SearchResultsPanel />
+          ) : viewMode === "git" ? (
+            <GitStatusPanel onSelectFile={handleSelectFile} />
           ) : viewMode === "commits" ? (
             <CommitsPanel
               onSelectCommit={handleCommitSelect}
