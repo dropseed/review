@@ -143,19 +143,20 @@ After analyzing all hunks, return JSON on its own line:
 // Classification logic (merged from classify/claude.rs)
 // ---------------------------------------------------------------------------
 
-/// Filter out invalid labels and return only valid taxonomy pattern IDs
+/// Filter out invalid labels and return only valid taxonomy pattern IDs.
 fn validate_labels(result: ClassificationResult) -> ClassificationResult {
     let valid_labels: Vec<String> = result
         .label
         .into_iter()
         .filter(|label| {
-            let is_valid = is_valid_pattern_id(label);
-            if !is_valid {
+            if is_valid_pattern_id(label) {
+                true
+            } else {
                 eprintln!(
                     "[validate_labels] Filtered out invalid label: '{label}' - not in taxonomy"
                 );
+                false
             }
-            is_valid
         })
         .collect();
 
@@ -179,7 +180,7 @@ pub(crate) fn classify_single_hunk(
     custom_command: Option<&str>,
 ) -> Result<(String, ClassificationResult), ClaudeError> {
     let prompt = build_single_hunk_prompt(hunk);
-    let output = run_claude_with_model(&prompt, repo_path, model, custom_command)?;
+    let output = run_claude_with_model(&prompt, repo_path, model, custom_command, &[])?;
     let result = extract_single_classification(&output)?;
     let validated = validate_labels(result);
     Ok((hunk.id.clone(), validated))
@@ -216,12 +217,13 @@ fn classify_batch(
     }
 
     let prompt = build_batch_prompt(hunks);
-    let output = run_claude_with_model(&prompt, repo_path, model, custom_command)?;
+    let output = run_claude_with_model(&prompt, repo_path, model, custom_command, &[])?;
     extract_batch_classifications(&output)
 }
 
 /// Classify hunks in batches using Claude CLI
 /// The on_batch_complete callback is called after each batch finishes with the IDs that were classified
+/// and the classification results for that batch (empty map on error).
 pub async fn classify_hunks_batched<F>(
     hunks: Vec<HunkInput>,
     repo_path: &Path,
@@ -232,7 +234,7 @@ pub async fn classify_hunks_batched<F>(
     on_batch_complete: F,
 ) -> Result<ClassifyResponse, ClaudeError>
 where
-    F: Fn(Vec<String>) + Send + Sync + 'static,
+    F: Fn(Vec<String>, HashMap<String, ClassificationResult>) + Send + Sync + 'static,
 {
     if hunks.is_empty() {
         return Ok(ClassifyResponse {
@@ -281,8 +283,12 @@ where
                 .await
                 .map_err(|e| ClaudeError::CommandFailed(format!("Task join error: {e}")))?;
 
-                // Call the callback with the batch IDs that were processed
-                callback(batch_ids);
+                // Call the callback with the batch IDs and results (empty map on error)
+                let batch_results = match &result {
+                    Ok(classifications) => classifications.clone(),
+                    Err(_) => HashMap::new(),
+                };
+                callback(batch_ids, batch_results);
 
                 result
             })

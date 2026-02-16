@@ -19,18 +19,8 @@ import {
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { groupingResetState } from "./groupingSlice";
 
-// ========================================================================
-// Review Slice
-// ========================================================================
-//
-// This slice manages review state (approvals, rejections, trust list, etc.).
-// Move pair approval is handled explicitly via approveHunkIds/rejectHunkIds
-// called from the MovePairModal, which passes both hunk IDs directly.
-//
-// ========================================================================
-
-// Debounced save operation
-const debouncedSave = createDebouncedFn(500);
+// Debounced save operation (exported so cancelPendingSaves can cancel it)
+export const debouncedSave = createDebouncedFn(500);
 
 // Track when we last saved to ignore file watcher events from our own writes
 let lastSaveTimestamp = 0;
@@ -259,6 +249,32 @@ function getDirHunkIds(
     .map((h) => h.id);
 }
 
+/**
+ * Merge partial fields into the current reviewState, set updatedAt, and trigger a debounced save.
+ * Returns false if reviewState is null (no update performed).
+ */
+function patchReviewState(
+  get: () => {
+    reviewState: ReviewState | null;
+    saveReviewState: () => Promise<void>;
+  },
+  set: (partial: { reviewState: ReviewState }) => void,
+  patch: Partial<ReviewState>,
+): boolean {
+  const { reviewState, saveReviewState } = get();
+  if (!reviewState) return false;
+
+  set({
+    reviewState: {
+      ...reviewState,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  debouncedSave(saveReviewState);
+  return true;
+}
+
 export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
   (client: ApiClient) => (set, get) => ({
     reviewState: null,
@@ -306,8 +322,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      let { repoPath, reviewState, hunks } = get();
+      let { repoPath, reviewState, hunks, comparison } = get();
       if (!repoPath || !reviewState) return;
+
+      // Defense-in-depth: skip save if review state belongs to a different comparison
+      // (catches races where a stale debounced save fires after switching)
+      if (reviewState.comparison.key !== comparison.key) return;
 
       // Ensure totalDiffHunks is set from the actual diff hunk count
       if (hunks.length > 0 && reviewState.totalDiffHunks !== hunks.length) {
@@ -473,42 +493,20 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     setHunkLabel: (hunkId, label) => {
-      const { reviewState, saveReviewState } = get();
+      const { reviewState } = get();
       if (!reviewState) return;
 
-      const existingHunk = reviewState.hunks[hunkId];
       const labels = Array.isArray(label) ? label : [label];
-
-      const newHunks = {
-        ...reviewState.hunks,
-        [hunkId]: {
-          ...existingHunk,
-          label: labels,
+      patchReviewState(get, set, {
+        hunks: {
+          ...reviewState.hunks,
+          [hunkId]: { ...reviewState.hunks[hunkId], label: labels },
         },
-      };
-
-      const newState = {
-        ...reviewState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      });
     },
 
     setReviewNotes: (notes) => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const newState = {
-        ...reviewState,
-        notes,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      patchReviewState(get, set, { notes });
     },
 
     addAnnotation: (filePath, lineNumber, side, content, endLineNumber?) => {
@@ -540,39 +538,23 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     updateAnnotation: (annotationId, content) => {
-      const { reviewState, saveReviewState } = get();
+      const { reviewState } = get();
       if (!reviewState) return;
 
       const annotations = (reviewState.annotations ?? []).map((a) =>
         a.id === annotationId ? { ...a, content } : a,
       );
-
-      const newState = {
-        ...reviewState,
-        annotations,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      patchReviewState(get, set, { annotations });
     },
 
     deleteAnnotation: (annotationId) => {
-      const { reviewState, saveReviewState } = get();
+      const { reviewState } = get();
       if (!reviewState) return;
 
       const annotations = (reviewState.annotations ?? []).filter(
         (a) => a.id !== annotationId,
       );
-
-      const newState = {
-        ...reviewState,
-        annotations,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      patchReviewState(get, set, { annotations });
     },
 
     getAnnotationsForFile: (filePath) => {
@@ -584,17 +566,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     setAutoApproveStaged: (enabled) => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const newState = {
-        ...reviewState,
-        autoApproveStaged: enabled,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      patchReviewState(get, set, { autoApproveStaged: enabled });
     },
 
     syncTotalDiffHunks: () => {
@@ -616,62 +588,29 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     addTrustPattern: (pattern) => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
+      const { reviewState } = get();
+      if (!reviewState || reviewState.trustList.includes(pattern)) return;
 
-      if (reviewState.trustList.includes(pattern)) return;
-
-      const newState = {
-        ...reviewState,
+      patchReviewState(get, set, {
         trustList: [...reviewState.trustList, pattern],
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      });
     },
 
     removeTrustPattern: (pattern) => {
-      const { reviewState, saveReviewState } = get();
+      const { reviewState } = get();
       if (!reviewState) return;
 
-      const newState = {
-        ...reviewState,
+      patchReviewState(get, set, {
         trustList: reviewState.trustList.filter((p) => p !== pattern),
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      });
     },
 
     setTrustList: (patterns) => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const newState = {
-        ...reviewState,
-        trustList: patterns,
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      patchReviewState(get, set, { trustList: patterns });
     },
 
     clearFeedback: () => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
-
-      const newState = {
-        ...reviewState,
-        notes: "",
-        annotations: [],
-        updatedAt: new Date().toISOString(),
-      };
-
-      set({ reviewState: newState });
-      debouncedSave(saveReviewState);
+      patchReviewState(get, set, { notes: "", annotations: [] });
     },
 
     resetReview: async () => {

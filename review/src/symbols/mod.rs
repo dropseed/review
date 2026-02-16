@@ -3,6 +3,7 @@
 //! Parses source files to extract symbol definitions (functions, classes,
 //! structs, traits, etc.) and maps diff hunks to the symbols they affect.
 
+pub mod cache;
 pub mod extractor;
 
 use serde::{Deserialize, Serialize};
@@ -67,7 +68,7 @@ pub struct FileSymbolMap {
 }
 
 /// Whether a symbol was added, removed, or modified.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum SymbolChangeType {
     Added,
@@ -76,7 +77,7 @@ pub enum SymbolChangeType {
 }
 
 /// A line range within a file (1-based, inclusive).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LineRange {
     #[serde(rename = "startLine")]
     pub start_line: u32,
@@ -85,7 +86,7 @@ pub struct LineRange {
 }
 
 /// A symbol that has changed between old and new versions.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolDiff {
     pub name: String,
     pub kind: Option<SymbolKind>,
@@ -101,7 +102,7 @@ pub struct SymbolDiff {
 }
 
 /// A reference to a modified symbol found within a hunk.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolReference {
     #[serde(rename = "symbolName")]
     pub symbol_name: String,
@@ -114,7 +115,7 @@ pub struct SymbolReference {
 }
 
 /// Symbol-level diff for a single file.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSymbolDiff {
     #[serde(rename = "filePath")]
     pub file_path: String,

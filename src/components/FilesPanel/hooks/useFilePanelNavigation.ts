@@ -30,16 +30,16 @@ function directoryExistsInTree(
 export function useFilePanelNavigation({
   sectionedFiles,
 }: UseFilePanelNavigationOptions) {
-  const {
-    selectedFile,
-    setSelectedFile,
-    fileToReveal,
-    clearFileToReveal,
-    directoryToReveal,
-    clearDirectoryToReveal,
-    guideContentMode,
-    navigateToBrowse,
-  } = useReviewStore();
+  const selectedFile = useReviewStore((s) => s.selectedFile);
+  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
+  const fileToReveal = useReviewStore((s) => s.fileToReveal);
+  const clearFileToReveal = useReviewStore((s) => s.clearFileToReveal);
+  const directoryToReveal = useReviewStore((s) => s.directoryToReveal);
+  const clearDirectoryToReveal = useReviewStore(
+    (s) => s.clearDirectoryToReveal,
+  );
+  const guideContentMode = useReviewStore((s) => s.guideContentMode);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const hunks = useReviewStore((s) => s.hunks);
   const [viewMode, setFilesPanelTab] = useState<FilesPanelTab>(
@@ -79,6 +79,21 @@ export function useFilePanelNavigation({
       setFilesPanelTab("changes");
     }
   }, [changesViewMode]);
+
+  // Handle external tab switch requests (e.g., from header Git status indicator)
+  const requestedFilesPanelTab = useReviewStore(
+    (s) => s.requestedFilesPanelTab,
+  );
+  const clearRequestedFilesPanelTab = useReviewStore(
+    (s) => s.clearRequestedFilesPanelTab,
+  );
+  useEffect(() => {
+    if (requestedFilesPanelTab) {
+      setFilesPanelTab(requestedFilesPanelTab as FilesPanelTab);
+      userHasChosenFilesPanelTab.current = true;
+      clearRequestedFilesPanelTab();
+    }
+  }, [requestedFilesPanelTab, clearRequestedFilesPanelTab]);
 
   // Auto-switch away from git tab when working tree is no longer included
   const gitStatus = useReviewStore((s) => s.gitStatus);

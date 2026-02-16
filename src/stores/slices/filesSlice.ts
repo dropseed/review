@@ -1,31 +1,39 @@
 import type { ApiClient } from "../../api";
-import type { Comparison, FileEntry, DiffHunk, MovePair } from "../../types";
+import type {
+  Comparison,
+  FileEntry,
+  DiffHunk,
+  MovePair,
+  SearchMatch,
+  CommitEntry,
+} from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { makeComparison } from "../../types";
+import type { UndoEntry } from "./undoSlice";
 import { groupingResetState } from "./groupingSlice";
 import { symbolsResetState } from "./symbolsSlice";
-import { classificationResetState } from "./classificationSlice";
+import {
+  classificationResetState,
+  debouncedClassifySave,
+} from "./classificationSlice";
 import { EMPTY_STAGED_SET } from "./gitSlice";
+import { debouncedSave } from "./reviewSlice";
+import { debouncedUndoSave } from "./undoSlice";
+
+/** Cancel all pending debounced saves to prevent stale writes after switching reviews. */
+export function cancelPendingSaves(): void {
+  debouncedSave.cancel();
+  debouncedUndoSave.cancel();
+  debouncedClassifySave.cancel();
+}
 
 // Default comparison: main..HEAD
 const defaultComparison: Comparison = makeComparison("main", "HEAD");
 
-// ========================================================================
-// Skip Patterns
-// ========================================================================
-//
 // IMPORTANT: These patterns MUST stay in sync with the Rust implementation
-// in compare/src/filters.rs. The patterns filter out build artifacts and
-// other files that aren't useful to review.
-//
-// Note: The API client has an async `shouldSkipFile()` method that calls
-// the Rust implementation. However, we use a synchronous version here
-// because it's called in a tight loop during file collection. The patterns
-// are identical in both implementations.
-//
-// ========================================================================
-
+// in compare/src/filters.rs. A synchronous version is used here (instead of
+// the async ApiClient.shouldSkipFile) because it runs in a tight loop.
 const SKIP_PATTERNS = [
   /^target\//, // Rust build artifacts
   /\/target\//, // Nested target directories
@@ -81,8 +89,12 @@ export interface FilesSlice {
   // Actions
   setRepoPath: (path: string | null) => void;
   setComparison: (comparison: Comparison) => void;
+  /** Atomically set both repoPath and comparison in one update, preventing phantom review entries. */
+  switchReview: (path: string, comparison: Comparison) => void;
   setFiles: (files: FileEntry[]) => void;
   setHunks: (hunks: DiffHunk[]) => void;
+  /** Replace store hunks for a single file with fresh data from getFileContent */
+  syncFileHunks: (filePath: string, freshHunks: DiffHunk[]) => void;
 
   // Loading
   loadFiles: (isRefreshing?: boolean) => Promise<void>;
@@ -90,6 +102,51 @@ export interface FilesSlice {
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
 }
+
+/** State reset shared between comparison and repo switches. */
+const comparisonResetState = {
+  // Files
+  files: [] as FileEntry[],
+  allFiles: [] as FileEntry[],
+  allFilesLoading: false,
+  hunks: [] as DiffHunk[],
+  movePairs: [] as MovePair[],
+  flatFileList: [] as string[],
+  loadingProgress: { phase: "pending" as const, current: 0, total: 0 },
+  // Navigation
+  selectedFile: null,
+  focusedHunkIndex: 0,
+  guideContentMode: null,
+  secondaryFile: null,
+  focusedPane: "primary" as const,
+  groupingSidebarOpen: false,
+  workingTreeDiffFile: null,
+  // Review
+  reviewState: null,
+  undoStack: [] as UndoEntry[],
+  // Other slices
+  ...symbolsResetState,
+  ...groupingResetState,
+  ...classificationResetState,
+};
+
+/** Additional state reset only needed when switching repositories. */
+const repoResetState = {
+  loadedGitIgnoredDirs: new Set<string>(),
+  refreshGeneration: 0,
+  // Search
+  searchQuery: "",
+  searchResults: [] as SearchMatch[],
+  searchLoading: false,
+  searchError: null,
+  scrollToLine: null,
+  // Git
+  gitStatus: null,
+  stagedFilePaths: EMPTY_STAGED_SET,
+  // History
+  commits: [] as CommitEntry[],
+  commitsLoaded: false,
+};
 
 export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
   (client: ApiClient) => (set, get) => ({
@@ -109,6 +166,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const currentPath = get().repoPath;
       if (path === currentPath) return;
 
+      cancelPendingSaves();
       get().clearAllActivities();
 
       // Reset all per-repo state when switching repositories.
@@ -116,79 +174,69 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       // state here to prevent stale data from the previous repo.
       set({
         repoPath: path,
-        // Files
-        files: [],
-        allFiles: [],
-        hunks: [],
-        movePairs: [],
-        flatFileList: [],
-        loadingProgress: { phase: "pending", current: 0, total: 0 },
-        loadedGitIgnoredDirs: new Set<string>(),
-        refreshGeneration: 0,
-        // Navigation
-        selectedFile: null,
-        focusedHunkIndex: 0,
-        guideContentMode: null,
-        secondaryFile: null,
-        focusedPane: "primary",
-        groupingSidebarOpen: false,
-        // Search
-        searchQuery: "",
-        searchResults: [],
-        searchLoading: false,
-        searchError: null,
-        scrollToLine: null,
-        // Review
-        reviewState: null,
-        // Undo
-        undoStack: [],
-        // Git
-        gitStatus: null,
-        stagedFilePaths: EMPTY_STAGED_SET,
-        // History
-        commits: [],
-        commitsLoaded: false,
-        // Other slices -- spread their reset states
-        ...symbolsResetState,
-        ...groupingResetState,
-        ...classificationResetState,
+        ...comparisonResetState,
+        ...repoResetState,
         // Override: increment generation to cancel in-flight classifications
         classifyGeneration: get().classifyGeneration + 1,
       });
     },
 
     setComparison: (comparison) => {
+      cancelPendingSaves();
       get().clearAllActivities();
       // Clear stale data and signal that new data is loading.
       set({
         comparison,
-        // Files slice own state
-        files: [],
-        flatFileList: [],
-        hunks: [],
-        movePairs: [],
-        allFiles: [],
-        allFilesLoading: false,
-        loadingProgress: { phase: "pending", current: 0, total: 0 },
-        // Navigation
-        selectedFile: null,
-        focusedHunkIndex: 0,
-        guideContentMode: null,
-        secondaryFile: null,
-        focusedPane: "primary",
-        groupingSidebarOpen: false,
-        // Review
-        reviewState: null,
-        undoStack: [],
-        // Other slices — spread their reset states
-        ...symbolsResetState,
-        ...groupingResetState,
-        ...classificationResetState,
+        ...comparisonResetState,
+      });
+    },
+
+    switchReview: (path, comparison) => {
+      cancelPendingSaves();
+      get().clearAllActivities();
+
+      // Atomic update: sets both repoPath and comparison together with the
+      // union of resets from setRepoPath and setComparison, preventing the
+      // intermediate state that caused phantom review entries.
+      set({
+        repoPath: path,
+        comparison,
+        ...comparisonResetState,
+        ...repoResetState,
+        // Override: increment generation to cancel in-flight classifications
+        classifyGeneration: get().classifyGeneration + 1,
       });
     },
 
     setFiles: (files) => set({ files, flatFileList: flattenFiles(files) }),
     setHunks: (hunks) => set({ hunks }),
+    syncFileHunks: (filePath, freshHunks) => {
+      const { hunks } = get();
+
+      // Fast path: skip update if hunk IDs already match
+      const existingIds = hunks
+        .filter((h) => h.filePath === filePath)
+        .map((h) => h.id);
+      const freshIds = freshHunks.map((h) => h.id);
+      if (
+        existingIds.length === freshIds.length &&
+        existingIds.every((id, i) => id === freshIds[i])
+      ) {
+        return;
+      }
+
+      // Remove old hunks for this file, insert the fresh ones in their place
+      const firstIdx = hunks.findIndex((h) => h.filePath === filePath);
+      const filtered = hunks.filter((h) => h.filePath !== filePath);
+      const insertAt =
+        firstIdx >= 0 ? Math.min(firstIdx, filtered.length) : filtered.length;
+      const updated = [
+        ...filtered.slice(0, insertAt),
+        ...freshHunks,
+        ...filtered.slice(insertAt),
+      ];
+      set({ hunks: updated });
+    },
 
     loadFiles: async (isRefreshing = false) => {
       const {

@@ -2,6 +2,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useCallback,
 } from "react";
@@ -10,7 +11,6 @@ import { getApiClient } from "../../api";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk, FileContent, HunkGroup, HunkState } from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
-import { NarrativeContent } from "./NarrativeContent";
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }): ReactNode {
   return (
@@ -75,6 +75,139 @@ function getUnreviewedIds(
   return result;
 }
 
+interface FileDiffSectionProps {
+  filePath: string;
+  fileContent: FileContent | undefined;
+  isLoading: boolean;
+  fileHunks: DiffHunk[];
+  fileUnreviewed: string[];
+  fileCompleted: boolean;
+  deferDiff: boolean;
+  onApproveFile: () => void;
+  onRejectFile: () => void;
+  diffViewMode: string;
+  codeTheme: string;
+  fontSizeCSS: string;
+}
+
+function FileDiffSection({
+  filePath,
+  fileContent,
+  isLoading,
+  fileHunks,
+  fileUnreviewed,
+  fileCompleted,
+  deferDiff,
+  onApproveFile,
+  onRejectFile,
+  diffViewMode,
+  codeTheme,
+  fontSizeCSS,
+}: FileDiffSectionProps): ReactNode {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Auto-collapse when all hunks in this file become reviewed
+  const prevCompleted = useRef(false);
+  useEffect(() => {
+    if (fileCompleted && !prevCompleted.current) {
+      setIsCollapsed(true);
+    }
+    prevCompleted.current = fileCompleted;
+  }, [fileCompleted]);
+
+  const showDiff = !isCollapsed && !deferDiff;
+
+  return (
+    <div className="border-b border-stone-800/50">
+      {/* File path header */}
+      <div className="sticky top-[52px] z-[9] bg-stone-900/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-stone-800/30">
+        <button
+          type="button"
+          onClick={() => setIsCollapsed((prev) => !prev)}
+          className="shrink-0 text-stone-500 hover:text-stone-300 transition-colors"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsCollapsed((prev) => !prev)}
+          className="font-mono text-xs text-stone-400 flex-1 truncate text-left hover:text-stone-300 transition-colors"
+        >
+          {filePath}
+        </button>
+        {fileCompleted ? (
+          <span className="text-emerald-400 shrink-0">
+            <CheckIcon />
+          </span>
+        ) : (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={onApproveFile}
+              className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
+                               bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+            >
+              Approve{" "}
+              {fileUnreviewed.length > 1 ? `all ${fileUnreviewed.length}` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={onRejectFile}
+              className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
+                               text-stone-500 hover:text-rose-400 hover:bg-rose-500/10"
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Diff content */}
+      {!isCollapsed && (
+        <>
+          {isLoading && !fileContent && (
+            <div className="flex items-center gap-2 px-4 py-6 text-stone-500">
+              <Spinner className="h-4 w-4" />
+              <span className="text-xs">Loading diff...</span>
+            </div>
+          )}
+          {fileContent && showDiff ? (
+            <DiffErrorBoundary
+              fallback={
+                <div className="p-4">
+                  <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-3">
+                    <p className="text-xs text-rose-400">
+                      Failed to render diff for {filePath}
+                    </p>
+                  </div>
+                </div>
+              }
+            >
+              <DiffView
+                diffPatch={fileContent.diffPatch}
+                viewMode={diffViewMode === "split" ? "split" : "unified"}
+                hunks={fileHunks}
+                theme={codeTheme}
+                fontSizeCSS={fontSizeCSS}
+                fileName={filePath}
+                oldContent={fileContent.oldContent}
+                newContent={fileContent.content}
+                expandUnchanged={false}
+              />
+            </DiffErrorBoundary>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 interface GroupDiffViewerProps {
   group: HunkGroup;
   groupIndex: number;
@@ -89,7 +222,7 @@ export function GroupDiffViewer({
   const comparison = useReviewStore((s) => s.reviewState?.comparison);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
-  const identicalHunkIds = useReviewStore((s) => s.identicalHunkIds);
+
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
   const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
@@ -207,30 +340,22 @@ export function GroupDiffViewer({
     ],
   );
 
-  // Identical hunk count
-  const identicalCount = useMemo(() => {
-    if (group.hunkIds.length === 0) return 0;
-    const repId = group.hunkIds[0];
-    const siblings = identicalHunkIds.get(repId) ?? [];
-    return getUnreviewedIds(
-      siblings,
-      hunkById,
-      hunkStates,
-      trustList,
-      autoApproveStaged,
-      stagedFilePaths,
-    ).length;
-  }, [
-    group.hunkIds,
-    identicalHunkIds,
-    hunkById,
-    hunkStates,
-    trustList,
-    autoApproveStaged,
-    stagedFilePaths,
-  ]);
-
   const isCompleted = unreviewedIds.length === 0;
+
+  // Progressive rendering: mount first 2 files immediately, then 1 more per frame
+  const [mountedCount, setMountedCount] = useState(
+    Math.min(2, filePaths.length),
+  );
+  useEffect(() => {
+    setMountedCount(Math.min(2, filePaths.length));
+  }, [filePaths.length]);
+  useEffect(() => {
+    if (mountedCount >= filePaths.length) return;
+    const id = setTimeout(() => {
+      setMountedCount((prev) => prev + 1);
+    }, 0);
+    return () => clearTimeout(id);
+  }, [mountedCount, filePaths.length]);
 
   const lineHeight = Math.round(codeFontSize * 1.5);
   const fontSizeCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; }`;
@@ -246,30 +371,6 @@ export function GroupDiffViewer({
   const handleUnapproveAll = useCallback(() => {
     unapproveHunkIds(group.hunkIds);
   }, [group.hunkIds, unapproveHunkIds]);
-
-  const handleApproveIdentical = useCallback(() => {
-    if (group.hunkIds.length === 0) return;
-    const repId = group.hunkIds[0];
-    const siblings = identicalHunkIds.get(repId) ?? [];
-    const ids = getUnreviewedIds(
-      [repId, ...siblings],
-      hunkById,
-      hunkStates,
-      trustList,
-      autoApproveStaged,
-      stagedFilePaths,
-    );
-    if (ids.length > 0) approveHunkIds(ids);
-  }, [
-    group.hunkIds,
-    identicalHunkIds,
-    hunkById,
-    hunkStates,
-    trustList,
-    autoApproveStaged,
-    stagedFilePaths,
-    approveHunkIds,
-  ]);
 
   const handleApproveFileHunks = useCallback(
     (filePath: string) => {
@@ -320,7 +421,7 @@ export function GroupDiffViewer({
   );
 
   return (
-    <div className="space-y-0">
+    <div>
       {/* Group header */}
       <div className="sticky top-0 z-10 bg-stone-900/95 backdrop-blur-sm border-b border-stone-800/50 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -331,30 +432,52 @@ export function GroupDiffViewer({
             {group.title}
           </h2>
           {isCompleted ? (
-            <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-medium">
-              <CheckIcon />
-              Done
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-medium">
+                <CheckIcon />
+                Done
+              </span>
+              <button
+                type="button"
+                onClick={handleUnapproveAll}
+                className="px-2 py-1 text-xs font-medium rounded-md transition-colors
+                           text-stone-500 hover:text-amber-400 hover:bg-amber-500/10"
+              >
+                Reset
+              </button>
+            </div>
           ) : (
-            <span className="text-xs text-amber-400 tabular-nums font-medium">
-              {unreviewedIds.length} remaining
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xxs text-stone-500 tabular-nums">
+                {group.hunkIds.length} hunks · {filePaths.length}{" "}
+                {filePaths.length === 1 ? "file" : "files"}
+              </span>
+              <button
+                type="button"
+                onClick={handleApproveAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-md transition-colors
+                           bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+              >
+                Approve all {unreviewedIds.length}
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-md transition-colors
+                           text-stone-500 hover:text-rose-400 hover:bg-rose-500/10"
+              >
+                Reject all
+              </button>
+            </div>
           )}
         </div>
-        {group.description && (
-          <NarrativeContent
-            content={group.description}
-            className="text-xs text-stone-500 leading-relaxed mt-1.5 ml-9"
-          />
-        )}
       </div>
 
       {/* File sections */}
-      {filePaths.map((filePath) => {
+      {filePaths.map((filePath, fileIndex) => {
         const fc = fileContents.get(filePath);
         const fileHunks = hunksPerFile.get(filePath) ?? [];
         const isLoading = loadingFiles.has(filePath);
-
         const fileUnreviewed = getUnreviewedIds(
           fileHunks.map((h) => h.id),
           hunkById,
@@ -363,136 +486,25 @@ export function GroupDiffViewer({
           autoApproveStaged,
           stagedFilePaths,
         );
-        const fileCompleted = fileUnreviewed.length === 0;
 
         return (
-          <div key={filePath} className="border-b border-stone-800/50">
-            {/* File path header */}
-            <div className="sticky top-[52px] z-[9] bg-stone-900/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-stone-800/30">
-              <span className="font-mono text-xs text-stone-400 flex-1 truncate">
-                {filePath}
-              </span>
-              {fileCompleted ? (
-                <span className="text-emerald-400 shrink-0">
-                  <CheckIcon />
-                </span>
-              ) : (
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleApproveFileHunks(filePath)}
-                    className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
-                               bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                  >
-                    Approve{" "}
-                    {fileUnreviewed.length > 1
-                      ? `all ${fileUnreviewed.length}`
-                      : ""}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRejectFileHunks(filePath)}
-                    className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
-                               text-stone-500 hover:text-rose-400 hover:bg-rose-500/10"
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Diff content */}
-            {isLoading && !fc && (
-              <div className="flex items-center gap-2 px-4 py-6 text-stone-500">
-                <Spinner className="h-4 w-4" />
-                <span className="text-xs">Loading diff...</span>
-              </div>
-            )}
-            {fc && (
-              <DiffErrorBoundary
-                fallback={
-                  <div className="p-4">
-                    <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-3">
-                      <p className="text-xs text-rose-400">
-                        Failed to render diff for {filePath}
-                      </p>
-                    </div>
-                  </div>
-                }
-              >
-                <DiffView
-                  diffPatch={fc.diffPatch}
-                  viewMode={diffViewMode === "split" ? "split" : "unified"}
-                  hunks={fileHunks}
-                  theme={codeTheme}
-                  fontSizeCSS={fontSizeCSS}
-                  fileName={filePath}
-                  oldContent={fc.oldContent}
-                  newContent={fc.content}
-                  expandUnchanged={false}
-                />
-              </DiffErrorBoundary>
-            )}
-          </div>
+          <FileDiffSection
+            key={filePath}
+            filePath={filePath}
+            fileContent={fc}
+            isLoading={isLoading}
+            fileHunks={fileHunks}
+            fileUnreviewed={fileUnreviewed}
+            fileCompleted={fileUnreviewed.length === 0}
+            deferDiff={fileIndex >= mountedCount}
+            onApproveFile={() => handleApproveFileHunks(filePath)}
+            onRejectFile={() => handleRejectFileHunks(filePath)}
+            diffViewMode={diffViewMode}
+            codeTheme={codeTheme}
+            fontSizeCSS={fontSizeCSS}
+          />
         );
       })}
-
-      {/* Group action bar */}
-      <div className="px-4 py-3 flex items-center gap-2 border-b border-stone-800/50">
-        {isCompleted ? (
-          <button
-            type="button"
-            onClick={handleUnapproveAll}
-            className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors
-                       text-stone-400 hover:text-amber-400 hover:bg-amber-500/10"
-          >
-            Unapprove all {group.hunkIds.length}
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleApproveAll}
-              className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors
-                         bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
-            >
-              Approve all {unreviewedIds.length}
-            </button>
-            <button
-              type="button"
-              onClick={handleRejectAll}
-              className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors
-                         text-stone-500 hover:text-rose-400 hover:bg-rose-500/10"
-            >
-              Reject all
-            </button>
-          </>
-        )}
-        {!isCompleted && identicalCount > 0 && (
-          <button
-            type="button"
-            onClick={handleApproveIdentical}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors
-                       border border-dashed border-stone-700 text-stone-400
-                       hover:border-cyan-500/40 hover:bg-cyan-500/5"
-          >
-            <svg
-              className="w-3.5 h-3.5 text-cyan-400 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-            Approve {identicalCount} identical
-          </button>
-        )}
-      </div>
     </div>
   );
 }

@@ -1,9 +1,13 @@
 import type { ApiClient } from "../../api";
 import { isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
+import { createDebouncedFn } from "../types";
 
 /** Singleton empty set -- preserves reference equality to avoid spurious re-renders. */
 export const EMPTY_CLASSIFYING_SET = new Set<string>();
+
+/** Debounced save for incremental classification results (exported so cancelPendingSaves can cancel it). */
+export const debouncedClassifySave = createDebouncedFn(1000);
 
 export interface ClassificationSlice {
   // Classification state
@@ -32,6 +36,16 @@ export const classificationResetState = {
   classifiedHunkIds: null,
 } satisfies Partial<ClassificationSlice>;
 
+/** Filter hunks to a subset if hunkIds are provided, otherwise return all. */
+function filterHunks<T extends { id: string }>(
+  hunks: T[],
+  hunkIds?: string[],
+): T[] {
+  if (!hunkIds) return hunks;
+  const idSet = new Set(hunkIds);
+  return hunks.filter((h) => idSet.has(h.id));
+}
+
 export const createClassificationSlice: SliceCreatorWithClient<
   ClassificationSlice
 > = (client: ApiClient) => (set, get) => ({
@@ -54,13 +68,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
       get();
     if (!reviewState) return;
 
-    // Find unlabeled hunks
-    const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
-    const candidateHunks = hunkIdSet
-      ? hunks.filter((h) => hunkIdSet.has(h.id))
-      : hunks;
-
-    const hunksToClassify = candidateHunks.filter((hunk) =>
+    const hunksToClassify = filterHunks(hunks, hunkIds).filter((hunk) =>
       isHunkUnclassified(reviewState.hunks[hunk.id]),
     );
 
@@ -130,13 +138,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     const { classifyingHunkIds } = get();
 
-    // Find hunks to classify - filter to specified ids if provided, then filter out already-labeled
-    const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
-    const candidateHunks = hunkIdSet
-      ? hunks.filter((h) => hunkIdSet.has(h.id))
-      : hunks;
-
-    // Filter out hunks that have already been classified (have labels or were processed)
+    // Filter to specified ids if provided, then filter out already-labeled
+    const candidateHunks = filterHunks(hunks, hunkIds);
     let hunksToClassify = candidateHunks.filter((hunk) =>
       isHunkUnclassified(reviewState.hunks[hunk.id]),
     );
@@ -255,20 +258,52 @@ export const createClassificationSlice: SliceCreatorWithClient<
     updateActivity("classify-ai", { current: 0, total: aiTotal });
 
     // Set up listener for batch completion events
-    const unlisten = client.onClassifyProgress((completedIds) => {
-      console.log(
-        `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks`,
-      );
-      aiCompleted += completedIds.length;
-      updateActivity("classify-ai", { current: aiCompleted, total: aiTotal });
-      set((state) => {
-        const newSet = new Set(state.classifyingHunkIds);
-        for (const id of completedIds) {
-          newSet.delete(id);
+    const unlisten = client.onClassifyProgress(
+      ({ completedIds, classifications }) => {
+        // Check if this classification was cancelled
+        if (currentGeneration !== get().classifyGeneration) return;
+
+        console.log(
+          `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks, ${Object.keys(classifications).length} classifications`,
+        );
+        aiCompleted += completedIds.length;
+        updateActivity("classify-ai", {
+          current: aiCompleted,
+          total: aiTotal,
+        });
+
+        // Apply batch results incrementally to reviewState
+        const currentState = get().reviewState;
+        if (currentState && Object.keys(classifications).length > 0) {
+          const updatedHunks = { ...currentState.hunks };
+          for (const id of completedIds) {
+            const classification = classifications[id];
+            const existing = updatedHunks[id];
+            updatedHunks[id] = {
+              ...existing,
+              label: classification?.label ?? existing?.label ?? [],
+              reasoning: classification?.reasoning,
+              classifiedVia: "ai",
+            };
+          }
+          const updatedState = {
+            ...currentState,
+            hunks: updatedHunks,
+            updatedAt: new Date().toISOString(),
+          };
+          set({ reviewState: updatedState });
+          debouncedClassifySave(get().saveReviewState);
         }
-        return { classifyingHunkIds: newSet };
-      });
-    });
+
+        set((state) => {
+          const newSet = new Set(state.classifyingHunkIds);
+          for (const id of completedIds) {
+            newSet.delete(id);
+          }
+          return { classifyingHunkIds: newSet };
+        });
+      },
+    );
 
     try {
       const hunkInputs = hunksToClassify.map((hunk) => ({
@@ -291,20 +326,23 @@ export const createClassificationSlice: SliceCreatorWithClient<
         `[classifyUnlabeledHunks] Got ${Object.keys(response.classifications).length} classifications`,
       );
 
-      // Check if this classification was cancelled
-      if (currentGeneration !== get().classifyGeneration) {
-        console.log("[classifyUnlabeledHunks] Cancelled - stale generation");
-        // Remove only our hunks from the tracking set
+      /** Remove our hunk IDs from the tracking set and merge extra state. */
+      const removeTracking = (extra?: Record<string, unknown>) => {
         set((state) => {
           const remaining = new Set(state.classifyingHunkIds);
-          for (const id of newClassifyingIds) {
-            remaining.delete(id);
-          }
+          for (const id of newClassifyingIds) remaining.delete(id);
           return {
             classifying: remaining.size > 0,
             classifyingHunkIds: remaining,
+            ...extra,
           };
         });
+      };
+
+      // Check if this classification was cancelled
+      if (currentGeneration !== get().classifyGeneration) {
+        console.log("[classifyUnlabeledHunks] Cancelled - stale generation");
+        removeTracking();
         return;
       }
 
@@ -312,10 +350,11 @@ export const createClassificationSlice: SliceCreatorWithClient<
       const freshState = get().reviewState;
       if (!freshState) return;
 
-      // Apply classifications — mark ALL hunks that were sent to AI,
-      // not just those with results, so they won't be retried.
+      // Apply classifications -- skip hunks already saved by per-batch
+      // incremental updates so we don't overwrite them.
       const newHunks = { ...freshState.hunks };
       for (const id of newClassifyingIds) {
+        if (newHunks[id]?.classifiedVia === "ai") continue;
         const classification = response.classifications[id];
         const existing = newHunks[id];
         newHunks[id] = {
@@ -326,25 +365,15 @@ export const createClassificationSlice: SliceCreatorWithClient<
         };
       }
 
-      const newState = {
-        ...freshState,
-        hunks: newHunks,
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Remove only our hunks from the tracking set
-      set((state) => {
-        const remaining = new Set(state.classifyingHunkIds);
-        for (const id of newClassifyingIds) {
-          remaining.delete(id);
-        }
-        return {
-          reviewState: newState,
-          classifying: remaining.size > 0,
-          classifyingHunkIds: remaining,
-        };
+      removeTracking({
+        reviewState: {
+          ...freshState,
+          hunks: newHunks,
+          updatedAt: new Date().toISOString(),
+        },
       });
 
+      // Final non-debounced save to flush any pending writes
       await saveReviewState();
       set({
         classifiedHunkIds: get()
@@ -353,14 +382,12 @@ export const createClassificationSlice: SliceCreatorWithClient<
       });
       console.log("[classifyUnlabeledHunks] Review state saved");
     } catch (err) {
-      // Remove only our hunks from the tracking set
+      const isCancelled = currentGeneration !== get().classifyGeneration;
       set((state) => {
         const remaining = new Set(state.classifyingHunkIds);
-        for (const id of newClassifyingIds) {
-          remaining.delete(id);
-        }
+        for (const id of newClassifyingIds) remaining.delete(id);
 
-        if (currentGeneration !== get().classifyGeneration) {
+        if (isCancelled) {
           return {
             classifying: remaining.size > 0,
             classifyingHunkIds: remaining,
@@ -384,11 +411,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
     const { repoPath, hunks, reviewState, saveReviewState } = get();
     if (!repoPath || !reviewState) return;
 
-    // Determine which hunks to reclassify
-    const hunkIdSet = hunkIds ? new Set(hunkIds) : null;
-    const targetHunks = hunkIdSet
-      ? hunks.filter((h) => hunkIdSet.has(h.id))
-      : hunks;
+    const targetHunks = filterHunks(hunks, hunkIds);
 
     if (targetHunks.length === 0) return;
 

@@ -14,6 +14,10 @@ export interface GitSlice {
   // Actions
   loadGitStatus: () => Promise<void>;
   loadRemoteInfo: () => Promise<void>;
+  stageFile: (path: string) => Promise<void>;
+  unstageFile: (path: string) => Promise<void>;
+  stageAll: () => Promise<void>;
+  unstageAll: () => Promise<void>;
 }
 
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
@@ -46,5 +50,33 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       } catch {
         set({ remoteInfo: null });
       }
+    },
+
+    stageFile: async (path: string) => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      await client.stageFile(repoPath, path);
+      await get().loadGitStatus();
+    },
+
+    unstageFile: async (path: string) => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      await client.unstageFile(repoPath, path);
+      await get().loadGitStatus();
+    },
+
+    stageAll: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      await client.stageAll(repoPath);
+      await get().loadGitStatus();
+    },
+
+    unstageAll: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      await client.unstageAll(repoPath);
+      await get().loadGitStatus();
     },
   });

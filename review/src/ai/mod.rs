@@ -168,6 +168,7 @@ pub(crate) fn run_claude_with_model(
     cwd: &Path,
     model: &str,
     custom_command: Option<&str>,
+    allowed_tools: &[&str],
 ) -> Result<String, ClaudeError> {
     // Build the Command differently depending on custom vs default CLI,
     // but share all the spawn/stdin/wait logic below.
@@ -193,6 +194,9 @@ pub(crate) fn run_claude_with_model(
             "--disable-slash-commands",
             "--strict-mcp-config",
         ]);
+        for tool in allowed_tools {
+            c.args(["--allowedTools", tool]);
+        }
         c
     };
 
@@ -218,8 +222,23 @@ pub(crate) fn run_claude_with_model(
         .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ClaudeError::CommandFailed(stderr.to_string()));
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let code = output
+            .status
+            .code()
+            .map(|c| format!("exit code {c}"))
+            .unwrap_or_else(|| "killed by signal".to_string());
+
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            code
+        };
+
+        return Err(ClaudeError::CommandFailed(detail));
     }
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);

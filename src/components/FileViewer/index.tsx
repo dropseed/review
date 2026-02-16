@@ -3,7 +3,7 @@ import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { FileContent } from "../../types";
-import { isHunkReviewed } from "../../types";
+import { isHunkReviewed, makeComparison } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
 import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
 import { useScrollHunkTracking, useSymbolNavigation } from "../../hooks";
@@ -22,9 +22,10 @@ const CMD_HOVER_CSS = `code span { cursor: pointer; } code span:hover { text-dec
 
 interface FileViewerProps {
   filePath: string;
+  isFocusedPane?: boolean;
 }
 
-export function FileViewer({ filePath }: FileViewerProps) {
+export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
   const {
     comparison,
     repoPath,
@@ -41,7 +42,13 @@ export function FileViewer({ filePath }: FileViewerProps) {
     deleteAnnotation,
     viewMode,
     classifyingHunkIds,
+    workingTreeDiffFile,
+    gitStatus,
   } = useFileViewerState();
+
+  const isWorkingTreeMode = workingTreeDiffFile === filePath;
+  const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
+  const splitOrientation = useReviewStore((s) => s.splitOrientation);
 
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
 
@@ -173,6 +180,26 @@ export function FileViewer({ filePath }: FileViewerProps) {
     setHighlightLine(null);
   }, []);
 
+  // Stable callbacks for split/close actions
+  const handleSplitOrRotate = useCallback(() => {
+    const state = useReviewStore.getState();
+    if (state.secondaryFile !== null) {
+      state.setSplitOrientation(
+        state.splitOrientation === "horizontal" ? "vertical" : "horizontal",
+      );
+    } else {
+      state.openEmptySplit();
+    }
+  }, []);
+
+  const handleClose = useCallback(() => {
+    useReviewStore.getState().setSelectedFile(null);
+  }, []);
+
+  const handleExitWorkingTreeMode = useCallback(() => {
+    useReviewStore.setState({ workingTreeDiffFile: null });
+  }, []);
+
   // File-level annotations (lineNumber === 0, side === "file")
   const fileAnnotations = useMemo(() => {
     return (
@@ -216,15 +243,16 @@ export function FileViewer({ filePath }: FileViewerProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [fileContent]);
 
-  // Calculate review progress for this file's hunks
-  // Must be before early returns to comply with React hooks rules
+  // Calculate review progress for this file's hunks using the store's hunks
+  // (same source as the sidebar) so counts stay consistent.
+  // Must be before early returns to comply with React hooks rules.
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
   const reviewProgress = useMemo(() => {
-    if (!fileContent) return { reviewed: 0, total: 0 };
-    const total = fileContent.hunks.length;
+    const fileHunks = allHunks.filter((h) => h.filePath === filePath);
+    const total = fileHunks.length;
     if (total === 0) return { reviewed: 0, total: 0 };
     const trustList = reviewState?.trustList ?? [];
-    const reviewed = fileContent.hunks.filter((hunk) =>
+    const reviewed = fileHunks.filter((hunk) =>
       isHunkReviewed(reviewState?.hunks[hunk.id], trustList, {
         autoApproveStaged: reviewState?.autoApproveStaged,
         stagedFilePaths,
@@ -232,7 +260,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
       }),
     ).length;
     return { reviewed, total };
-  }, [fileContent, reviewState, stagedFilePaths, filePath]);
+  }, [allHunks, filePath, reviewState, stagedFilePaths]);
 
   // Reset language override when switching files
   useEffect(() => {
@@ -290,13 +318,30 @@ export function FileViewer({ filePath }: FileViewerProps) {
     }
     setError(null);
 
+    // When viewing a Git panel file, use HEAD vs working tree comparison
+    const effectiveComparison =
+      isWorkingTreeMode && gitStatus
+        ? makeComparison("HEAD", gitStatus.currentBranch)
+        : comparison;
+
     getApiClient()
-      .getFileContent(repoPath, filePath, comparison, reviewState?.githubPr)
+      .getFileContent(
+        repoPath,
+        filePath,
+        effectiveComparison,
+        isWorkingTreeMode ? undefined : reviewState?.githubPr,
+      )
       .then((result) => {
         if (!cancelled) {
           setFileContent(result);
           setFileContentPath(filePath);
           setLoading(false);
+          // Sync store hunks with fresh per-file data so the sidebar
+          // stays consistent with what the diff view actually renders.
+          // Skip sync for working tree diffs — these aren't review hunks.
+          if (!isWorkingTreeMode) {
+            useReviewStore.getState().syncFileHunks(filePath, result.hunks);
+          }
         }
       })
       .catch((err) => {
@@ -309,7 +354,15 @@ export function FileViewer({ filePath }: FileViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [repoPath, filePath, comparison, fileHunkKey, refreshGeneration]);
+  }, [
+    repoPath,
+    filePath,
+    comparison,
+    fileHunkKey,
+    refreshGeneration,
+    isWorkingTreeMode,
+    gitStatus,
+  ]);
 
   // Minimap hooks — must be before early returns
   const fileHunkIndices = useMemo(
@@ -435,7 +488,7 @@ export function FileViewer({ filePath }: FileViewerProps) {
         filePath={filePath}
         contentMode={contentMode}
         hasChanges={hasChanges}
-        reviewProgress={reviewProgress}
+        reviewProgress={isWorkingTreeMode ? undefined : reviewProgress}
         effectiveLanguage={effectiveLanguage}
         detectedLanguage={detectedLanguage}
         isLanguageOverridden={languageOverride !== undefined}
@@ -446,6 +499,15 @@ export function FileViewer({ filePath }: FileViewerProps) {
         onSvgViewModeChange={setSvgViewMode}
         onClearHighlight={handleClearHighlight}
         onAddFileComment={handleAddFileComment}
+        onSplitOrRotate={handleSplitOrRotate}
+        isSplitActive={isSplitActive}
+        splitOrientation={splitOrientation}
+        onClose={handleClose}
+        isFocusedPane={isFocusedPane}
+        isWorkingTreeMode={isWorkingTreeMode}
+        onExitWorkingTreeMode={
+          isWorkingTreeMode ? handleExitWorkingTreeMode : undefined
+        }
       />
 
       {/* File-level annotations */}
@@ -502,7 +564,11 @@ export function FileViewer({ filePath }: FileViewerProps) {
         )}
         <div
           ref={setScrollNode}
-          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-900 ${contentMode.type === "diff" || contentMode.type === "untracked" ? "scrollbar-none" : "scrollbar-thin"}`}
+          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-900 ${
+            contentMode.type === "diff" || contentMode.type === "untracked"
+              ? "scrollbar-none"
+              : "scrollbar-thin"
+          }`}
         >
           <FileContentRenderer
             filePath={filePath}

@@ -48,6 +48,7 @@ function AppShell() {
     handleCloseRepo,
     handleSelectRepo,
     handleActivateReview,
+    handleNewReview,
   } = useRepositoryInit();
 
   // Stable ref so the effect doesn't re-register on every render
@@ -94,8 +95,11 @@ function AppShell() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen">
-        <TabRail onActivateReview={handleActivateReview} />
-        <div className="flex flex-1 flex-col overflow-hidden bg-stone-900">
+        <TabRail
+          onActivateReview={handleActivateReview}
+          onNewReview={handleNewReview}
+        />
+        <div className="flex flex-1 flex-col overflow-hidden bg-stone-950">
           <Outlet
             context={{
               repoStatus,

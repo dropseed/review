@@ -1,7 +1,6 @@
 import { useState, useCallback, lazy, Suspense } from "react";
 import { useReviewStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
-import { PrimaryPaneHeader, SecondaryPaneHeader } from "./PaneHeader";
 import { ResizeHandle } from "./ResizeHandle";
 
 const OverviewContent = lazy(() =>
@@ -41,9 +40,6 @@ export function ContentArea() {
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const setFocusedPane = useReviewStore((s) => s.setFocusedPane);
-  const closeSplit = useReviewStore((s) => s.closeSplit);
-  const swapPanes = useReviewStore((s) => s.swapPanes);
-  const setSplitOrientation = useReviewStore((s) => s.setSplitOrientation);
   // Split size as a fraction (0.5 = 50/50 split)
   const [splitFraction, setSplitFraction] = useState(0.5);
 
@@ -87,11 +83,12 @@ export function ContentArea() {
 
   // Single pane mode
   if (!isSplitActive) {
-    return selectedFile ? (
+    if (!selectedFile) return null;
+    return (
       <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
         <FileViewer filePath={selectedFile} />
       </div>
-    ) : null;
+    );
   }
 
   // Split mode
@@ -104,32 +101,20 @@ export function ContentArea() {
     >
       {/* Primary Pane */}
       <div
-        className={`flex min-h-0 flex-col overflow-hidden ${
-          focusedPane === "primary"
-            ? "inset-ring-1 inset-ring-amber-500/30"
-            : ""
-        }`}
+        className="flex min-h-0 flex-col overflow-hidden"
         style={isHorizontal ? { width: primarySize } : { height: primarySize }}
         onClick={handlePrimaryClick}
       >
-        <PrimaryPaneHeader
-          label="Primary"
-          isFocused={focusedPane === "primary"}
-          orientation={splitOrientation}
-          onToggleOrientation={() =>
-            setSplitOrientation(isHorizontal ? "vertical" : "horizontal")
-          }
-          onSwap={swapPanes}
-        />
-        <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
-          {selectedFile ? (
-            <FileViewer filePath={selectedFile} />
-          ) : (
-            <div className="flex h-full items-center justify-center text-stone-500 text-sm">
-              No file selected
-            </div>
-          )}
-        </div>
+        {selectedFile ? (
+          <FileViewer
+            filePath={selectedFile}
+            isFocusedPane={focusedPane === "primary"}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-stone-500 text-sm">
+            No file selected
+          </div>
+        )}
       </div>
 
       {/* Resize Handle */}
@@ -140,25 +125,22 @@ export function ContentArea() {
 
       {/* Secondary Pane */}
       <div
-        className={`flex min-h-0 flex-col overflow-hidden ${
-          focusedPane === "secondary"
-            ? "inset-ring-1 inset-ring-amber-500/30"
-            : ""
-        }`}
+        className="flex min-h-0 flex-col overflow-hidden"
         style={
           isHorizontal ? { width: secondarySize } : { height: secondarySize }
         }
         onClick={handleSecondaryClick}
       >
-        <SecondaryPaneHeader
-          label="Secondary"
-          isFocused={focusedPane === "secondary"}
-          onSwap={swapPanes}
-          onClose={closeSplit}
-        />
-        <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
-          <FileViewer filePath={secondaryFile} />
-        </div>
+        {secondaryFile ? (
+          <FileViewer
+            filePath={secondaryFile}
+            isFocusedPane={focusedPane === "secondary"}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-stone-500 text-sm">
+            Select a file to view
+          </div>
+        )}
       </div>
     </div>
   );

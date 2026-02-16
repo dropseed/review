@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { makeComparison, type Comparison } from "../types";
+import { makeComparison, type Comparison, type GitHubPrRef } from "../types";
 import type { GlobalReviewSummary } from "../types";
 import { initLogPath, clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
@@ -101,20 +101,28 @@ interface UseRepositoryInitReturn {
   handleCloseRepo: () => void;
   handleSelectRepo: (path: string) => void;
   handleActivateReview: (review: GlobalReviewSummary) => void;
+  handleNewReview: (
+    path: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
 }
 
 /**
  * Handles repository initialization, URL parsing, and comparison setup.
  * Always loads a comparison on startup (from URL, last active, or default).
  *
- * On mount, reads ?repo= from URL (Tauri bootstrap), stores the local path
- * in sessionStorage, resolves owner/repo, then navigates to the clean route.
+ * Every code path determines the comparison BEFORE touching store state,
+ * then uses switchReview() to atomically set both repoPath and comparison
+ * in a single store update. This prevents phantom review entries caused by
+ * the intermediate state where repoPath is set but comparison still points
+ * to the old repo.
  */
 export function useRepositoryInit(): UseRepositoryInitReturn {
   const navigate = useNavigate();
-  const repoPath = useReviewStore((s) => s.repoPath);
   const setRepoPath = useReviewStore((s) => s.setRepoPath);
   const setComparison = useReviewStore((s) => s.setComparison);
+  const switchReview = useReviewStore((s) => s.switchReview);
   const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
@@ -135,70 +143,83 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   // Guard to ensure init only runs once
   const hasInitializedRef = useRef(false);
 
-  // When a review is activated explicitly (sidebar click), skip the automatic
-  // comparison auto-detection that fires on repoPath changes.
-  const skipNextAutoDetectRef = useRef(false);
-
-  // Initialize repo path from URL or API, then navigate to clean route
+  // Initialize repo path from URL or API, then navigate to clean route.
+  // Each branch determines the comparison FIRST, then calls switchReview().
   useEffect(() => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
 
-    const init = async () => {
-      const nav = navigateRef.current;
+    /** Shared activation: switch to a repo+comparison, navigate, and mark ready. */
+    async function initRepo(
+      path: string,
+      comparison: Comparison,
+      options?: { clearLogFile?: boolean; storeInSession?: boolean },
+    ): Promise<void> {
+      switchReview(path, comparison);
+      initLogPath(path);
+      if (options?.clearLogFile) clearLog();
+      setRepoStatus("found");
+      addRecentRepository(path);
+      if (options?.storeInSession) storeRepoPath(path);
 
+      setActiveReviewKey({ repoPath: path, comparisonKey: comparison.key });
+      await ensureReviewExists(path, comparison);
+
+      const { routePrefix } = await resolveRepoIdentity(path);
+      navigateRef.current(`/${routePrefix}/review/${comparison.key}`, {
+        replace: true,
+      });
+
+      setComparisonReady(true);
+      setInitialLoading(true);
+      loadGlobalReviews();
+    }
+
+    /** Resolve a comparison from an optional key string, falling back to the default. */
+    async function resolveComparison(
+      repoPath: string,
+      comparisonKey: string | null,
+    ): Promise<Comparison> {
+      if (comparisonKey) {
+        const parsed = parseComparisonKey(comparisonKey);
+        if (parsed) return parsed;
+      }
+      const result = await getDefaultComparison(repoPath);
+      return result.comparison;
+    }
+
+    const init = async () => {
       // Check URL for repo path first (Tauri bootstrap)
       const { repoPath: urlRepoPath, comparisonKey: urlComparisonKey } =
         getUrlParams();
       if (urlRepoPath) {
-        setRepoPath(urlRepoPath);
-        initLogPath(urlRepoPath);
-        clearLog();
-        setRepoStatus("found");
-        addRecentRepository(urlRepoPath);
-        storeRepoPath(urlRepoPath);
-
-        // Resolve owner/repo and navigate to review route
-        const { routePrefix } = await resolveRepoIdentity(urlRepoPath);
-        if (urlComparisonKey) {
-          const comparison = parseComparisonKey(urlComparisonKey);
-          if (comparison) {
-            setActiveReviewKey({
-              repoPath: urlRepoPath,
-              comparisonKey: urlComparisonKey,
-            });
-            await ensureReviewExists(urlRepoPath, comparison);
-          }
-          nav(`/${routePrefix}/review/${urlComparisonKey}`, { replace: true });
-        } else {
-          // Default to working tree comparison
-          const { key, comparison } = await getDefaultComparison(urlRepoPath);
-          setActiveReviewKey({
-            repoPath: urlRepoPath,
-            comparisonKey: key,
-          });
-          await ensureReviewExists(urlRepoPath, comparison);
-          nav(`/${routePrefix}/review/${key}`, { replace: true });
-        }
-        loadGlobalReviews();
+        const comparison = await resolveComparison(
+          urlRepoPath,
+          urlComparisonKey,
+        );
+        await initRepo(urlRepoPath, comparison, {
+          clearLogFile: true,
+          storeInSession: true,
+        });
         return;
       }
 
       // Check sessionStorage (page refresh case)
-      // null = key absent (first launch) → fall through to cwd detection
-      // "" = empty sentinel (user closed repo) → stay on welcome
-      // path string = page refresh mid-session → restore the repo
+      // null = key absent (first launch) -> fall through to cwd detection
+      // "" = empty sentinel (user closed repo) -> stay on welcome
+      // path string = page refresh mid-session -> restore the repo
       const storedPath = getStoredRepoPath();
       if (storedPath !== null) {
         if (storedPath === "") {
-          // User previously closed the repo — stay on welcome
           setRepoStatus("welcome");
           return;
         }
-        setRepoPath(storedPath);
-        initLogPath(storedPath);
-        setRepoStatus("found");
-        addRecentRepository(storedPath);
+
+        // Try to recover comparison from the current URL path
+        const pathMatch = window.location.pathname.match(/\/review\/([^/]+)$/);
+        const urlKey = pathMatch?.[1] ?? null;
+        const comparison = await resolveComparison(storedPath, urlKey);
+        await initRepo(storedPath, comparison);
         return;
       }
 
@@ -206,23 +227,11 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const apiClient = getApiClient();
       try {
         const path = await apiClient.getCurrentRepo();
-        setRepoPath(path);
-        initLogPath(path);
-        clearLog();
-        setRepoStatus("found");
-        addRecentRepository(path);
-        storeRepoPath(path);
-
-        // Resolve and navigate to review route
-        const { routePrefix } = await resolveRepoIdentity(path);
-        const { key, comparison } = await getDefaultComparison(path);
-        setActiveReviewKey({
-          repoPath: path,
-          comparisonKey: key,
+        const comparison = await resolveComparison(path, null);
+        await initRepo(path, comparison, {
+          clearLogFile: true,
+          storeInSession: true,
         });
-        await ensureReviewExists(path, comparison);
-        nav(`/${routePrefix}/review/${key}`, { replace: true });
-        loadGlobalReviews();
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (
@@ -241,68 +250,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
     init();
   }, [
-    setRepoPath,
+    switchReview,
     addRecentRepository,
     setActiveReviewKey,
     ensureReviewExists,
     loadGlobalReviews,
   ]);
-
-  // When repo path changes, derive the comparison from the URL or auto-detect
-  useEffect(() => {
-    if (!repoPath) return;
-
-    // If comparison was explicitly set (e.g. sidebar click), skip auto-detection
-    if (skipNextAutoDetectRef.current) {
-      skipNextAutoDetectRef.current = false;
-      return;
-    }
-
-    setComparisonReady(false);
-
-    // Helper: apply the resolved comparison and mark loading ready
-    const applyComparison = (comparison: Comparison) => {
-      setComparison(comparison);
-      setComparisonReady(true);
-      setInitialLoading(true);
-    };
-
-    // Check URL query param for comparison (multi-window bootstrap)
-    const { comparisonKey: urlComparisonKey } = getUrlParams();
-    if (urlComparisonKey) {
-      const parsed = parseComparisonKey(urlComparisonKey);
-      if (parsed) {
-        applyComparison(parsed);
-        return;
-      }
-    }
-
-    // Try to extract comparison from the current route path
-    // e.g. /owner/repo/review/main..feature -> "main..feature"
-    const pathMatch = window.location.pathname.match(/\/review\/([^/]+)$/);
-    if (pathMatch) {
-      const parsed = parseComparisonKey(pathMatch[1]);
-      if (parsed) {
-        applyComparison(parsed);
-        return;
-      }
-    }
-
-    // No comparison in URL -- auto-detect default_branch..current_branch
-    getDefaultComparison(repoPath)
-      .then(async ({ key, comparison }) => {
-        applyComparison(comparison);
-
-        // Navigate to the review route so the URL reflects the comparison
-        const { routePrefix } = await resolveRepoIdentity(repoPath);
-        navigateRef.current(`/${routePrefix}/review/${key}`, { replace: true });
-      })
-      .catch((err) => {
-        console.error("Failed to auto-detect comparison:", err);
-        setComparisonReady(true);
-        setInitialLoading(true);
-      });
-  }, [repoPath, setComparison]);
 
   // Listen for cli:switch-comparison events from Rust (when CLI reuses an existing window)
   useEffect(() => {
@@ -319,7 +272,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         const currentRepoPath = useReviewStore.getState().repoPath;
         if (!currentRepoPath) return;
 
-        skipNextAutoDetectRef.current = true;
+        // Same-repo switch — setComparison is sufficient
         setActiveReviewKey({ repoPath: currentRepoPath, comparisonKey: key });
         setComparison(comparison);
         setComparisonReady(true);
@@ -345,12 +298,24 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     navigateRef.current("/");
   }, [setRepoPath]);
 
-  // Shared logic: validate, activate, and navigate to a repo's working tree
+  // Shared logic: validate, activate, and navigate to a repo's working tree.
+  // Determines comparison BEFORE touching state, then uses switchReview().
   const activateRepo = useCallback(
     async (path: string) => {
       if (!(await validateGitRepo(path))) return;
 
-      setRepoPath(path);
+      // Determine comparison BEFORE touching state
+      const { routePrefix } = await resolveRepoIdentity(path);
+      const { key, comparison } = await getDefaultComparison(path);
+
+      setActiveReviewKey({
+        repoPath: path,
+        comparisonKey: key,
+      });
+      await ensureReviewExists(path, comparison);
+
+      // Atomic switch — no intermediate state
+      switchReview(path, comparison);
       initLogPath(path);
       clearLog();
       setRepoStatus("found");
@@ -358,18 +323,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       addRecentRepository(path);
       storeRepoPath(path);
 
-      const { routePrefix } = await resolveRepoIdentity(path);
-      const { key, comparison } = await getDefaultComparison(path);
-      setActiveReviewKey({
-        repoPath: path,
-        comparisonKey: key,
-      });
-      await ensureReviewExists(path, comparison);
+      setComparisonReady(true);
+      setInitialLoading(true);
       navigateRef.current(`/${routePrefix}/review/${key}`);
       loadGlobalReviews();
     },
     [
-      setRepoPath,
+      switchReview,
       addRecentRepository,
       setActiveReviewKey,
       ensureReviewExists,
@@ -408,7 +368,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     }
   }, []);
 
-  // Activate a specific review from the sidebar — sets repo + comparison directly.
+  // Activate a specific review from the sidebar — uses switchReview for
+  // cross-repo switches, setComparison for same-repo switches.
   const handleActivateReview = useCallback(
     (review: GlobalReviewSummary) => {
       const nav = navigateRef.current;
@@ -421,14 +382,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         comparisonKey: review.comparison.key,
       });
 
-      // If repo is changing, skip the automatic comparison auto-detection
       if (review.repoPath !== state.repoPath) {
-        skipNextAutoDetectRef.current = true;
-        setRepoPath(review.repoPath);
+        // Different repo — atomic switch prevents phantom entries
+        switchReview(review.repoPath, review.comparison);
+      } else {
+        // Same repo — just switch comparison
+        setComparison(review.comparison);
       }
-
-      // Always set comparison (clears stale data, loads review state)
-      setComparison(review.comparison);
 
       // Mark ready so useComparisonLoader fires
       setComparisonReady(true);
@@ -436,7 +396,50 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
       nav(`/${routePrefix}/review/${review.comparison.key}`);
     },
-    [setActiveReviewKey, setRepoPath, setComparison],
+    [setActiveReviewKey, switchReview, setComparison],
+  );
+
+  // Handle new review from ComparisonPickerModal — validates, switches, and navigates.
+  const handleNewReview = useCallback(
+    async (path: string, comparison: Comparison, githubPr?: GitHubPrRef) => {
+      if (!(await validateGitRepo(path))) return;
+
+      const state = useReviewStore.getState();
+      const { routePrefix } = await resolveRepoIdentity(path);
+
+      setActiveReviewKey({
+        repoPath: path,
+        comparisonKey: comparison.key,
+      });
+      await ensureReviewExists(path, comparison, githubPr);
+
+      if (path !== state.repoPath) {
+        // Different repo — atomic switch prevents phantom entries
+        switchReview(path, comparison);
+        initLogPath(path);
+        clearLog();
+        setRepoStatus("found");
+        setRepoError(null);
+        addRecentRepository(path);
+        storeRepoPath(path);
+      } else {
+        // Same repo — just switch comparison
+        setComparison(comparison);
+      }
+
+      setComparisonReady(true);
+      setInitialLoading(true);
+      navigateRef.current(`/${routePrefix}/review/${comparison.key}`);
+      loadGlobalReviews();
+    },
+    [
+      switchReview,
+      setComparison,
+      setActiveReviewKey,
+      ensureReviewExists,
+      addRecentRepository,
+      loadGlobalReviews,
+    ],
   );
 
   return {
@@ -451,5 +454,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     handleCloseRepo,
     handleSelectRepo,
     handleActivateReview,
+    handleNewReview,
   };
 }

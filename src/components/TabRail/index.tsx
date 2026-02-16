@@ -15,7 +15,12 @@ import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
-import type { GlobalReviewSummary, DiffShortStat } from "../../types";
+import type {
+  GlobalReviewSummary,
+  DiffShortStat,
+  Comparison,
+  GitHubPrRef,
+} from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { SidebarPanelIcon } from "../ui/icons";
 
@@ -449,10 +454,16 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
 
 interface TabRailProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
+  onNewReview: (
+    path: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
 }
 
 export const TabRail = memo(function TabRail({
   onActivateReview,
+  onNewReview,
 }: TabRailProps) {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
@@ -644,6 +655,7 @@ export const TabRail = memo(function TabRail({
           <ComparisonPickerModal
             isOpen={comparisonPickerOpen}
             onClose={handleCloseModal}
+            onNewReview={onNewReview}
             prefilledRepoPath={comparisonPickerRepoPath}
           />
         </Suspense>

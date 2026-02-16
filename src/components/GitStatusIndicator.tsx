@@ -1,8 +1,5 @@
-import { useState } from "react";
 import { useReviewStore } from "../stores";
-import { GitStatusCounts } from "./GitStatusCounts";
 import { SimpleTooltip } from "./ui/tooltip";
-import { GitStatusModal } from "./modals/GitStatusModal";
 
 function BranchIcon({ className }: { className?: string }) {
   return (
@@ -24,8 +21,7 @@ function BranchIcon({ className }: { className?: string }) {
 }
 
 export function GitStatusIndicator() {
-  const { gitStatus } = useReviewStore();
-  const [showModal, setShowModal] = useState(false);
+  const gitStatus = useReviewStore((s) => s.gitStatus);
 
   if (!gitStatus) {
     return null;
@@ -36,35 +32,32 @@ export function GitStatusIndicator() {
   const untrackedCount = gitStatus.untracked.length;
   const hasChanges = stagedCount > 0 || unstagedCount > 0 || untrackedCount > 0;
 
+  const handleClick = () => {
+    useReviewStore.setState({
+      filesPanelCollapsed: false,
+      requestedFilesPanelTab: "git",
+    });
+  };
+
   return (
-    <>
-      <SimpleTooltip
-        content={`Branch: ${gitStatus.currentBranch}${hasChanges ? " (has changes)" : ""}`}
+    <SimpleTooltip
+      content={`Branch: ${gitStatus.currentBranch}${hasChanges ? " (has changes)" : ""}`}
+    >
+      <button
+        onClick={handleClick}
+        className="flex items-center gap-1 rounded px-1.5 py-0.5
+                   text-stone-400 hover:bg-stone-800 hover:text-stone-200
+                   transition-colors"
       >
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5
-                     text-stone-400 hover:bg-stone-800 hover:text-stone-200
-                     transition-colors"
-        >
-          <BranchIcon className="h-3 w-3 text-stone-500" />
-          <span className="font-medium text-stone-300 max-w-[7rem] truncate">
-            {gitStatus.currentBranch}
-          </span>
+        <BranchIcon className="h-3 w-3 text-stone-500" />
+        <span className="font-medium text-stone-300 max-w-[7rem] truncate">
+          {gitStatus.currentBranch}
+        </span>
 
-          {hasChanges && (
-            <span className="ml-0.5 flex items-center gap-0.5">
-              <GitStatusCounts
-                staged={stagedCount}
-                unstaged={unstagedCount}
-                untracked={untrackedCount}
-              />
-            </span>
-          )}
-        </button>
-      </SimpleTooltip>
-
-      <GitStatusModal isOpen={showModal} onClose={() => setShowModal(false)} />
-    </>
+        {hasChanges && (
+          <span className="text-xxs text-stone-500">+ working tree</span>
+        )}
+      </button>
+    </SimpleTooltip>
   );
 }

@@ -75,7 +75,7 @@ interface FileViewerToolbarProps {
   filePath: string;
   contentMode: ContentMode;
   hasChanges: boolean;
-  reviewProgress: { reviewed: number; total: number };
+  reviewProgress?: { reviewed: number; total: number };
   effectiveLanguage: SupportedLanguages | undefined;
   detectedLanguage: SupportedLanguages | undefined;
   isLanguageOverridden: boolean;
@@ -86,6 +86,13 @@ interface FileViewerToolbarProps {
   onSvgViewModeChange: (mode: "rendered" | "code") => void;
   onClearHighlight: () => void;
   onAddFileComment?: () => void;
+  onSplitOrRotate?: () => void;
+  isSplitActive?: boolean;
+  splitOrientation?: "horizontal" | "vertical";
+  onClose?: () => void;
+  isFocusedPane?: boolean;
+  isWorkingTreeMode?: boolean;
+  onExitWorkingTreeMode?: () => void;
 }
 
 export const FileViewerToolbar = memo(function FileViewerToolbar({
@@ -103,6 +110,13 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   onSvgViewModeChange,
   onClearHighlight,
   onAddFileComment,
+  onSplitOrRotate,
+  isSplitActive,
+  splitOrientation,
+  onClose,
+  isFocusedPane,
+  isWorkingTreeMode,
+  onExitWorkingTreeMode,
 }: FileViewerToolbarProps) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
@@ -142,12 +156,8 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   };
 
   const handleOpenInEditor = async () => {
-    try {
-      const platform = getPlatformServices();
-      await platform.opener.openPath(fullPath);
-    } catch (err) {
-      console.error("Failed to open file:", err);
-    }
+    const platform = getPlatformServices();
+    await platform.opener.openPath(fullPath);
   };
 
   const handleDiffViewModeChange = (mode: DiffViewMode) => {
@@ -177,7 +187,37 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
       );
     }
 
-    if (!hasChanges) {
+    if (isWorkingTreeMode) {
+      return (
+        <span className="flex items-center gap-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-xxs font-medium text-sky-300">
+          Working tree
+          {onExitWorkingTreeMode && (
+            <button
+              type="button"
+              onClick={onExitWorkingTreeMode}
+              className="ml-0.5 rounded hover:bg-sky-500/20 transition-colors"
+              aria-label="Exit working tree view"
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          )}
+        </span>
+      );
+    }
+
+    if (!hasChanges || !reviewProgress) {
       return null;
     }
 
@@ -235,7 +275,13 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const showDiffControls = contentMode.type === "diff";
 
   return (
-    <div className="@container flex items-center justify-between border-b border-stone-800/50 bg-stone-900 px-3 py-1.5">
+    <div
+      className={`@container flex items-center justify-between border-b px-3 py-1.5 ${
+        isFocusedPane
+          ? "border-amber-500/30 bg-amber-500/5"
+          : "border-stone-800/50 bg-stone-900"
+      }`}
+    >
       <div className="flex min-w-0 items-center gap-2">
         <Breadcrumbs
           filePath={filePath}
@@ -389,6 +435,49 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
             />
             <DiffOptionsPopover />
           </>
+        )}
+        {onSplitOrRotate && (
+          <SimpleTooltip
+            content={isSplitActive ? "Rotate split" : "Split view"}
+          >
+            <button
+              onClick={onSplitOrRotate}
+              className="flex items-center justify-center w-6 h-6 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors"
+            >
+              <svg
+                className={`w-3.5 h-3.5 transition-transform ${splitOrientation === "vertical" ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M12 3v18" />
+              </svg>
+            </button>
+          </SimpleTooltip>
+        )}
+        {onClose && (
+          <SimpleTooltip content="Close file">
+            <button
+              onClick={onClose}
+              className="flex items-center justify-center w-6 h-6 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </SimpleTooltip>
         )}
       </div>
     </div>

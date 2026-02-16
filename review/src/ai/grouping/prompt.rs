@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -58,9 +59,15 @@ fn format_symbol_def(def: &HunkSymbolDef) -> String {
 }
 
 /// Build the prompt sent to Claude for hunk grouping.
+///
+/// Hunk diff content is NOT inlined to keep the prompt within token limits.
+/// Instead, each hunk's content is written to a temp file and Claude is given
+/// the `Read` tool to inspect hunks as needed. `hunk_file_paths` maps each
+/// hunk ID to its temp file path.
 pub fn build_grouping_prompt(
     hunks: &[GroupingInput],
     modified_symbols: &[ModifiedSymbolEntry],
+    hunk_file_paths: &HashMap<String, PathBuf>,
 ) -> String {
     let mut prompt = String::new();
 
@@ -91,7 +98,10 @@ pub fn build_grouping_prompt(
            Use names that fit the actual changes — not every phase will apply.\n\
          - Order groups within each phase by dependency (if B uses something A introduces, A comes first).\n\
          - Output JSON only — an array of objects with keys: title, description, hunkIds, phase.\n\
-         - Do NOT wrap the JSON in markdown code fences or any other text.\n\n"
+         - Do NOT wrap the JSON in markdown code fences or any other text.\n\
+         - Each hunk's diff content is in a file listed below. Use the Read tool to \
+           inspect hunks when the metadata (labels, symbols, file path) is not enough \
+           to decide how to group them. You do NOT need to read every hunk.\n\n"
     );
 
     let file_count = hunks
@@ -130,24 +140,18 @@ pub fn build_grouping_prompt(
     for hunk in hunks {
         let _ = writeln!(prompt, "### Hunk `{}` in `{}`", hunk.id, hunk.file_path);
 
-        if let Some(labels) = hunk.label.as_deref() {
-            if !labels.is_empty() {
-                let _ = writeln!(prompt, "Labels: {}", labels.join(", "));
-            }
+        if let Some(labels) = hunk.label.as_deref().filter(|l| !l.is_empty()) {
+            let _ = writeln!(prompt, "Labels: {}", labels.join(", "));
         }
 
-        if let Some(defs) = hunk.symbols.as_deref() {
-            if !defs.is_empty() {
-                let formatted: Vec<String> = defs.iter().map(format_symbol_def).collect();
-                let _ = writeln!(prompt, "Defines: {}", formatted.join("; "));
-            }
+        if let Some(defs) = hunk.symbols.as_deref().filter(|d| !d.is_empty()) {
+            let formatted: Vec<String> = defs.iter().map(format_symbol_def).collect();
+            let _ = writeln!(prompt, "Defines: {}", formatted.join("; "));
         }
 
-        if let Some(refs) = hunk.references.as_deref() {
-            if !refs.is_empty() {
-                let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
-                let _ = writeln!(prompt, "References: {}", names.join(", "));
-            }
+        if let Some(refs) = hunk.references.as_deref().filter(|r| !r.is_empty()) {
+            let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+            let _ = writeln!(prompt, "References: {}", names.join(", "));
         }
 
         if hunk.has_grammar == Some(false) {
@@ -159,7 +163,10 @@ pub fn build_grouping_prompt(
             prompt.push_str(hint);
         }
 
-        let _ = writeln!(prompt, "\n```\n{}\n```\n", hunk.content);
+        if let Some(path) = hunk_file_paths.get(&hunk.id) {
+            let _ = writeln!(prompt, "Diff content: `{}`", path.display());
+        }
+        prompt.push('\n');
     }
 
     prompt

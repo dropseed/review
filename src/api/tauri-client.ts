@@ -77,6 +77,22 @@ export class TauriClient implements ApiClient {
     return invoke<string>("get_git_status_raw", { repoPath });
   }
 
+  async stageFile(repoPath: string, path: string): Promise<void> {
+    await invoke("stage_file", { repoPath, path });
+  }
+
+  async unstageFile(repoPath: string, path: string): Promise<void> {
+    await invoke("unstage_file", { repoPath, path });
+  }
+
+  async stageAll(repoPath: string): Promise<void> {
+    await invoke("stage_all", { repoPath });
+  }
+
+  async unstageAll(repoPath: string): Promise<void> {
+    await invoke("unstage_all", { repoPath });
+  }
+
   async getDiffShortStat(
     repoPath: string,
     comparison: Comparison,
@@ -423,7 +439,12 @@ export class TauriClient implements ApiClient {
     };
   }
 
-  onClassifyProgress(callback: (completedIds: string[]) => void): () => void {
+  onClassifyProgress(
+    callback: (payload: {
+      completedIds: string[];
+      classifications: Record<string, { label: string[]; reasoning: string }>;
+    }) => void,
+  ): () => void {
     return this.listenForEvent("classify:batch-complete", callback);
   }
 

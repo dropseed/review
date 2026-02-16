@@ -1,22 +1,6 @@
 import { isHunkReviewed } from "../../types";
 import type { ReviewStore, SliceCreator } from "../types";
 
-// ========================================================================
-// Navigation Slice
-// ========================================================================
-//
-// This slice manages navigation state (selected file, focused hunk, etc.)
-// and intentionally accesses data from other slices via get():
-//
-// - `hunks` from FilesSlice: to find hunk indices when navigating
-// - `flatFileList` from FilesSlice: to navigate between files
-//
-// This cross-slice access is the standard Zustand pattern for combined
-// stores. All slices are merged into a single store, so get() returns
-// the complete state including all slices.
-//
-// ========================================================================
-
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
 export type GuideContentMode = "overview" | "group" | null;
@@ -56,6 +40,7 @@ export interface NavigationSlice {
   setFocusedPane: (pane: FocusedPane) => void;
   setSplitOrientation: (orientation: SplitOrientation) => void;
   openInSplit: (path: string) => void;
+  openEmptySplit: () => void;
   closeSplit: () => void;
   swapPanes: () => void;
 
@@ -87,9 +72,37 @@ export interface NavigationSlice {
   comparisonPickerRepoPath: string | null;
   setComparisonPickerRepoPath: (path: string | null) => void;
 
+  // Working tree diff (Git panel file selection)
+  workingTreeDiffFile: string | null;
+  selectWorkingTreeFile: (path: string) => void;
+
   // Active group index in focused review section
   activeGroupIndex: number;
   setActiveGroupIndex: (index: number) => void;
+
+  // Request a files panel tab switch from outside the panel
+  requestedFilesPanelTab: string | null;
+  clearRequestedFilesPanelTab: () => void;
+}
+
+/** Check whether a hunk in the given file is unreviewed, using the current review context. */
+function isFileHunkUnreviewed(
+  filePath: string,
+  state: ReviewStore,
+): (h: { id: string; filePath: string }) => boolean {
+  const { reviewState, stagedFilePaths } = state;
+  const trustList = reviewState?.trustList ?? [];
+  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
+
+  return (h) => {
+    if (h.filePath !== filePath) return false;
+    const hunkState = reviewState?.hunks[h.id];
+    return !isHunkReviewed(hunkState, trustList, {
+      autoApproveStaged,
+      stagedFilePaths,
+      filePath: h.filePath,
+    });
+  };
 }
 
 /**
@@ -101,43 +114,18 @@ function findFirstUnreviewedHunkIndex(
   filePath: string,
   state: ReviewStore,
 ): number {
-  const { hunks, reviewState, stagedFilePaths } = state;
-  const trustList = reviewState?.trustList ?? [];
-  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
-
-  const unreviewedIndex = hunks.findIndex((h) => {
-    if (h.filePath !== filePath) return false;
-    const hunkState = reviewState?.hunks[h.id];
-    return !isHunkReviewed(hunkState, trustList, {
-      autoApproveStaged,
-      stagedFilePaths,
-      filePath: h.filePath,
-    });
-  });
-
+  const unreviewedIndex = state.hunks.findIndex(
+    isFileHunkUnreviewed(filePath, state),
+  );
   if (unreviewedIndex >= 0) return unreviewedIndex;
 
   // Fall back to first hunk in the file
-  return hunks.findIndex((h) => h.filePath === filePath);
+  return state.hunks.findIndex((h) => h.filePath === filePath);
 }
 
-/**
- * Check whether a file has any unreviewed hunks.
- */
+/** Check whether a file has any unreviewed hunks. */
 function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
-  const { hunks, reviewState, stagedFilePaths } = state;
-  const trustList = reviewState?.trustList ?? [];
-  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
-
-  return hunks.some((h) => {
-    if (h.filePath !== filePath) return false;
-    const hunkState = reviewState?.hunks[h.id];
-    return !isHunkReviewed(hunkState, trustList, {
-      autoApproveStaged,
-      stagedFilePaths,
-      filePath: h.filePath,
-    });
-  });
+  return state.hunks.some(isFileHunkUnreviewed(filePath, state));
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -171,17 +159,41 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
     // If split is active and secondary pane is focused, update secondary instead
     if (secondaryFile !== null && focusedPane === "secondary") {
-      set({
-        secondaryFile: path,
-        focusedHunkIndex: newFocusedHunkIndex,
-        guideContentMode: null,
-      });
+      // Closing the secondary file closes the split
+      if (path === null) {
+        set({
+          secondaryFile: null,
+          focusedPane: "primary",
+          guideContentMode: null,
+          workingTreeDiffFile: null,
+        });
+      } else {
+        set({
+          secondaryFile: path,
+          focusedHunkIndex: newFocusedHunkIndex,
+          guideContentMode: null,
+          workingTreeDiffFile: null,
+        });
+      }
     } else {
-      set({
-        selectedFile: path,
-        focusedHunkIndex: newFocusedHunkIndex,
-        guideContentMode: null,
-      });
+      // Closing the primary file while split is active closes the split
+      if (path === null && secondaryFile !== null) {
+        set({
+          selectedFile: secondaryFile,
+          secondaryFile: null,
+          focusedPane: "primary",
+          focusedHunkIndex: newFocusedHunkIndex,
+          guideContentMode: null,
+          workingTreeDiffFile: null,
+        });
+      } else {
+        set({
+          selectedFile: path,
+          focusedHunkIndex: newFocusedHunkIndex,
+          guideContentMode: null,
+          workingTreeDiffFile: null,
+        });
+      }
     }
   },
 
@@ -284,8 +296,20 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
         secondaryFile: path,
         focusedPane: "secondary",
         focusedHunkIndex: 0,
+        diffViewMode: "unified",
       });
     }
+  },
+
+  openEmptySplit: () => {
+    const { secondaryFile } = get();
+    // Already in split mode — don't reset
+    if (secondaryFile !== null) return;
+    set({
+      secondaryFile: "",
+      focusedPane: "secondary",
+      diffViewMode: "unified",
+    });
   },
 
   closeSplit: () => set({ secondaryFile: null, focusedPane: "primary" }),
@@ -350,6 +374,23 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   setComparisonPickerRepoPath: (path) =>
     set({ comparisonPickerRepoPath: path }),
 
+  // Working tree diff (Git panel file selection)
+  workingTreeDiffFile: null,
+  selectWorkingTreeFile: (path) => {
+    const state = get();
+    let targetHunkIndex = -1;
+    if (path) {
+      targetHunkIndex = findFirstUnreviewedHunkIndex(path, state);
+    }
+    const newFocusedHunkIndex = targetHunkIndex >= 0 ? targetHunkIndex : 0;
+    set({
+      selectedFile: path,
+      workingTreeDiffFile: path,
+      focusedHunkIndex: newFocusedHunkIndex,
+      guideContentMode: null,
+    });
+  },
+
   swapPanes: () => {
     const { selectedFile, secondaryFile } = get();
     set({
@@ -362,4 +403,8 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Active group index
   activeGroupIndex: 0,
   setActiveGroupIndex: (index) => set({ activeGroupIndex: index }),
+
+  // Requested files panel tab
+  requestedFilesPanelTab: null,
+  clearRequestedFilesPanelTab: () => set({ requestedFilesPanelTab: null }),
 });

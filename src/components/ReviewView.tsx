@@ -163,10 +163,10 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     "repo";
 
   return (
-    <div className="flex h-full flex-row bg-stone-900">
+    <div className="flex h-full flex-row bg-stone-950">
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="@container relative bg-stone-900 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] py-2.5">
+        <header className="@container relative bg-stone-950 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] py-2.5">
           {/* Top row: breadcrumb + activity + progress */}
           <div className="flex items-center justify-between pr-4">
             {/* Left: repo / comparison ref */}
@@ -270,7 +270,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
         </header>
 
         {/* Main content */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-900">
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
           <ContentArea />
           <FeedbackPanel />
         </main>
@@ -283,7 +283,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
       >
         {/* Sidebar content - slides via transform (no layout reflow) */}
         <div
-          className="flex flex-col flex-1 overflow-hidden bg-stone-900 shadow-[-1px_0_0_0_rgba(255,255,255,0.04)] transition-transform duration-200"
+          className="flex flex-col flex-1 overflow-hidden bg-stone-950 border-l border-white/[0.06] transition-transform duration-200"
           style={{
             width: `${sidebarWidth}rem`,
             transform: filesPanelCollapsed

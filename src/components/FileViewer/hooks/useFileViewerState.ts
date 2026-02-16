@@ -1,6 +1,6 @@
 import { useReviewStore } from "../../../stores";
 
-/** Bundles the 16 individual store selectors used by FileViewer into grouped objects. */
+/** Bundles the store selectors used by FileViewer into a single hook. */
 export function useFileViewerState() {
   // Git / comparison context
   const comparison = useReviewStore((s) => s.comparison);
@@ -21,6 +21,10 @@ export function useFileViewerState() {
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
   const scrollToLine = useReviewStore((s) => s.scrollToLine);
   const clearScrollToLine = useReviewStore((s) => s.clearScrollToLine);
+
+  // Working tree diff (Git panel)
+  const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
+  const gitStatus = useReviewStore((s) => s.gitStatus);
 
   // Annotations
   const addAnnotation = useReviewStore((s) => s.addAnnotation);
@@ -43,5 +47,7 @@ export function useFileViewerState() {
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,
+    workingTreeDiffFile,
+    gitStatus,
   };
 }

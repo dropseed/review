@@ -197,6 +197,22 @@ export class HttpClient implements ApiClient {
     }
   }
 
+  async stageFile(_repoPath: string, _path: string): Promise<void> {
+    console.warn("[HttpClient] stageFile not implemented");
+  }
+
+  async unstageFile(_repoPath: string, _path: string): Promise<void> {
+    console.warn("[HttpClient] unstageFile not implemented");
+  }
+
+  async stageAll(_repoPath: string): Promise<void> {
+    console.warn("[HttpClient] stageAll not implemented");
+  }
+
+  async unstageAll(_repoPath: string): Promise<void> {
+    console.warn("[HttpClient] unstageAll not implemented");
+  }
+
   async getDiffShortStat(
     repoPath: string,
     comparison: Comparison,
@@ -590,7 +606,12 @@ export class HttpClient implements ApiClient {
 
   // ----- Events -----
 
-  onClassifyProgress(_callback: (completedIds: string[]) => void): () => void {
+  onClassifyProgress(
+    _callback: (payload: {
+      completedIds: string[];
+      classifications: Record<string, { label: string[]; reasoning: string }>;
+    }) => void,
+  ): () => void {
     // Events not available in HTTP mode yet (would need WebSocket)
     return () => {};
   }

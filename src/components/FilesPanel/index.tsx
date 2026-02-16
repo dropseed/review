@@ -8,14 +8,8 @@ import {
 } from "./hooks";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
-import { GitStatusCounts } from "../../components/GitStatusCounts";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "../../components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -23,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../../components/ui/dropdown-menu";
+import { CollapsibleSection } from "../../components/ui/collapsible-section";
 import {
   isHunkTrusted,
   isHunkReviewed,
@@ -39,6 +34,13 @@ import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection } from "./FileListSection";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
+
+function groupItemStyle(isActive: boolean, isCompleted: boolean): string {
+  if (isActive) return "bg-amber-500/10 text-amber-300";
+  if (isCompleted)
+    return "text-stone-600 hover:text-stone-400 hover:bg-stone-800/30";
+  return "text-stone-400 hover:text-stone-200 hover:bg-stone-800/30";
+}
 
 interface QuickActionItem {
   label: string;
@@ -104,173 +106,234 @@ function SectionHeader({
     onApproveAll ||
     onUnapproveAll;
 
-  return (
-    <Collapsible open={isOpen} onOpenChange={() => onToggle()}>
-      <div
-        className={`border-b border-stone-800/50 ${showTopBorder ? "border-t border-t-stone-800/50" : ""}`}
-      >
-        <div className="flex items-center">
-          <CollapsibleTrigger asChild>
-            <button className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50">
+  const menuContent = hasMenuItems ? (
+    <>
+      {/* Display mode */}
+      {displayMode && onSetDisplayMode && (
+        <>
+          <DropdownMenuItem onClick={() => onSetDisplayMode("tree")}>
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 16 16"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
+            </svg>
+            Tree view
+            {displayMode === "tree" && checkIcon}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onSetDisplayMode("flat")}>
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 16 16"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
+            </svg>
+            Flat view
+            {displayMode === "flat" && checkIcon}
+          </DropdownMenuItem>
+        </>
+      )}
+
+      {/* Expand/collapse (tree mode only) */}
+      {displayMode === "tree" && onExpandAll && onCollapseAll && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onExpandAll}>
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 16 16"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <rect x="2" y="2" width="12" height="12" rx="1" />
+              <path d="M8 5v6M5 8h6" />
+            </svg>
+            Expand all
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onCollapseAll}>
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 16 16"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <rect x="2" y="2" width="12" height="12" rx="1" />
+              <path d="M5 8h6" />
+            </svg>
+            Collapse all
+          </DropdownMenuItem>
+        </>
+      )}
+
+      {/* Bulk approve/unapprove */}
+      {(onApproveAll || onUnapproveAll) && (
+        <>
+          <DropdownMenuSeparator />
+          {onApproveAll && (
+            <DropdownMenuItem onClick={onApproveAll}>
               <svg
-                className={`h-3 w-3 text-stone-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                className="h-3.5 w-3.5"
+                fill="none"
                 viewBox="0 0 24 24"
-                fill="currentColor"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <path d="M9 6l6 6-6 6" />
+                <path d="M5 13l4 4L19 7" />
               </svg>
-              {icon}
-              <span className="flex-1">{title}</span>
-              {badge !== undefined && badge !== 0 && (
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeColors[badgeColor]}`}
-                >
-                  {badge}
-                </span>
-              )}
-            </button>
-          </CollapsibleTrigger>
-          {hasMenuItems && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center justify-center w-6 h-6 mr-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <circle cx="12" cy="5" r="1.5" />
-                    <circle cx="12" cy="12" r="1.5" />
-                    <circle cx="12" cy="19" r="1.5" />
-                  </svg>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {/* Display mode */}
-                {displayMode && onSetDisplayMode && (
-                  <>
-                    <DropdownMenuItem onClick={() => onSetDisplayMode("tree")}>
-                      <svg
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        viewBox="0 0 16 16"
-                        stroke="currentColor"
-                        strokeWidth={1.5}
-                      >
-                        <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
-                      </svg>
-                      Tree view
-                      {displayMode === "tree" && checkIcon}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onSetDisplayMode("flat")}>
-                      <svg
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        viewBox="0 0 16 16"
-                        stroke="currentColor"
-                        strokeWidth={1.5}
-                      >
-                        <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
-                      </svg>
-                      Flat view
-                      {displayMode === "flat" && checkIcon}
-                    </DropdownMenuItem>
-                  </>
-                )}
-
-                {/* Expand/collapse (tree mode only) */}
-                {displayMode === "tree" && onExpandAll && onCollapseAll && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onExpandAll}>
-                      <svg
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        viewBox="0 0 16 16"
-                        stroke="currentColor"
-                        strokeWidth={1.5}
-                      >
-                        <rect x="2" y="2" width="12" height="12" rx="1" />
-                        <path d="M8 5v6M5 8h6" />
-                      </svg>
-                      Expand all
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={onCollapseAll}>
-                      <svg
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        viewBox="0 0 16 16"
-                        stroke="currentColor"
-                        strokeWidth={1.5}
-                      >
-                        <rect x="2" y="2" width="12" height="12" rx="1" />
-                        <path d="M5 8h6" />
-                      </svg>
-                      Collapse all
-                    </DropdownMenuItem>
-                  </>
-                )}
-
-                {/* Bulk approve/unapprove */}
-                {(onApproveAll || onUnapproveAll) && (
-                  <>
-                    <DropdownMenuSeparator />
-                    {onApproveAll && (
-                      <DropdownMenuItem onClick={onApproveAll}>
-                        <svg
-                          className="h-3.5 w-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M5 13l4 4L19 7" />
-                        </svg>
-                        Approve all
-                      </DropdownMenuItem>
-                    )}
-                    {onUnapproveAll && (
-                      <DropdownMenuItem onClick={onUnapproveAll}>
-                        <svg
-                          className="h-3.5 w-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-                        </svg>
-                        Unapprove all
-                      </DropdownMenuItem>
-                    )}
-                  </>
-                )}
-
-                {/* Quick actions */}
-                {quickActions && quickActions.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    {quickActions.map((qa) => (
-                      <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
-                        <span className="flex-1">{qa.label}</span>
-                        <span className="ml-2 text-xxs tabular-nums text-stone-500">
-                          {qa.count}
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              Approve all
+            </DropdownMenuItem>
           )}
-        </div>
-        <CollapsibleContent>{children}</CollapsibleContent>
-      </div>
-    </Collapsible>
+          {onUnapproveAll && (
+            <DropdownMenuItem onClick={onUnapproveAll}>
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+              </svg>
+              Unapprove all
+            </DropdownMenuItem>
+          )}
+        </>
+      )}
+
+      {/* Quick actions */}
+      {quickActions && quickActions.length > 0 && (
+        <>
+          <DropdownMenuSeparator />
+          {quickActions.map((qa) => (
+            <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
+              <span className="flex-1">{qa.label}</span>
+              <span className="ml-2 text-xxs tabular-nums text-stone-500">
+                {qa.count}
+              </span>
+            </DropdownMenuItem>
+          ))}
+        </>
+      )}
+    </>
+  ) : undefined;
+
+  return (
+    <CollapsibleSection
+      title={title}
+      icon={icon}
+      badge={badge}
+      badgeColor={badgeColors[badgeColor]}
+      isOpen={isOpen}
+      onToggle={onToggle}
+      showTopBorder={showTopBorder}
+      menuContent={menuContent}
+    >
+      {children}
+    </CollapsibleSection>
+  );
+}
+
+function GroupItemOverflowMenu({
+  unreviewedIds,
+  reviewedIds,
+  onApprove,
+  onReject,
+  onReset,
+}: {
+  unreviewedIds: string[];
+  reviewedIds: string[];
+  onApprove: () => void;
+  onReject: () => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasUnreviewed = unreviewedIds.length > 0;
+  const hasReviewed = reviewedIds.length > 0;
+
+  if (!hasUnreviewed && !hasReviewed) return null;
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          onClick={(e) => e.stopPropagation()}
+          className={`mr-1 flex items-center justify-center w-5 h-5 rounded shrink-0
+                     text-stone-500 hover:text-stone-300 hover:bg-stone-700/50
+                     transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+        >
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="12" cy="19" r="1.5" />
+          </svg>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {hasUnreviewed && (
+          <>
+            <DropdownMenuItem onClick={onApprove}>
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              Approve all hunks
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onReject}>
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+              Reject all hunks
+            </DropdownMenuItem>
+          </>
+        )}
+        {hasReviewed && (
+          <DropdownMenuItem onClick={onReset}>
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+              />
+            </svg>
+            Reset review
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -694,6 +757,43 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     stagedFilePaths,
   ]);
 
+  const groupActionData = useMemo(() => {
+    const data = new Map<
+      string,
+      { unreviewedIds: string[]; reviewedIds: string[] }
+    >();
+    for (const group of reviewGroups) {
+      const unreviewedIds: string[] = [];
+      const reviewedIds: string[] = [];
+      for (const id of group.hunkIds) {
+        const hunk = hunks.find((h) => h.id === id);
+        if (!hunk) continue;
+        const state = hunkStates?.[id];
+        if (state?.status === "approved" || state?.status === "rejected") {
+          reviewedIds.push(id);
+        }
+        if (
+          !isHunkReviewed(state, trustList, {
+            autoApproveStaged,
+            stagedFilePaths,
+            filePath: hunk.filePath,
+          })
+        ) {
+          unreviewedIds.push(id);
+        }
+      }
+      data.set(group.title, { unreviewedIds, reviewedIds });
+    }
+    return data;
+  }, [
+    reviewGroups,
+    hunks,
+    hunkStates,
+    trustList,
+    autoApproveStaged,
+    stagedFilePaths,
+  ]);
+
   const totalGroupUnreviewed = useMemo(() => {
     let count = 0;
     for (const c of groupUnreviewedCounts.values()) count += c;
@@ -735,23 +835,20 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const comparison = useReviewStore((s) => s.comparison);
   const showGitTab =
     gitStatus !== null && comparison.head === gitStatus.currentBranch;
-  const gitTabCount =
-    (gitStatus?.staged.length ?? 0) +
-    (gitStatus?.unstaged.length ?? 0) +
-    (gitStatus?.untracked.length ?? 0);
 
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
+  const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
   const [revealLabel, setRevealLabel] = useState("Reveal in Finder");
   useEffect(() => {
     const platformName = getPlatformServices().window.getPlatformName();
-    setRevealLabel(
-      platformName === "macos"
-        ? "Reveal in Finder"
-        : platformName === "windows"
-          ? "Reveal in Explorer"
-          : "Reveal in Files",
-    );
+    if (platformName === "macos") {
+      setRevealLabel("Reveal in Finder");
+    } else if (platformName === "windows") {
+      setRevealLabel("Reveal in Explorer");
+    } else {
+      setRevealLabel("Reveal in Files");
+    }
   }, []);
 
   // Context value for FlatFileNode tree (avoids prop drilling hunkStates/trustList)
@@ -846,20 +943,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             >
               <TabsList aria-label="File view mode">
                 {showGitTab && gitStatus && (
-                  <TabsTrigger value="git" className="flex items-center gap-1">
-                    Git
-                    {gitTabCount > 0 && (
-                      <span className="ml-0.5 flex items-center gap-0.5">
-                        <GitStatusCounts
-                          staged={gitStatus.staged.length}
-                          unstaged={gitStatus.unstaged.length}
-                          untracked={gitStatus.untracked.length}
-                        />
-                      </span>
-                    )}
-                  </TabsTrigger>
+                  <TabsTrigger value="git">Git</TabsTrigger>
                 )}
-                <TabsTrigger value="changes">Changes</TabsTrigger>
+                <TabsTrigger value="changes">Review</TabsTrigger>
                 <TabsTrigger value="browse">Browse</TabsTrigger>
                 <TabsTrigger value="commits">Commits</TabsTrigger>
                 {searchActive && (
@@ -895,7 +981,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           {viewMode === "search" ? (
             <SearchResultsPanel />
           ) : viewMode === "git" ? (
-            <GitStatusPanel onSelectFile={handleSelectFile} />
+            <GitStatusPanel
+              onSelectFile={handleSelectFile}
+              onSelectWorkingTreeFile={selectWorkingTreeFile}
+            />
           ) : viewMode === "commits" ? (
             <CommitsPanel
               onSelectCommit={handleCommitSelect}
@@ -1164,49 +1253,61 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               const isActive =
                                 guideContentMode === "group" &&
                                 activeGroupIndex === i;
+                              const data = groupActionData.get(group.title);
                               return (
-                                <button
+                                <div
                                   key={group.title}
-                                  type="button"
-                                  onClick={() => handleGroupClick(i)}
-                                  className={`flex items-center gap-1.5 w-full px-3 py-1.5 text-xs transition-colors ${
-                                    isActive
-                                      ? "bg-amber-500/10 text-amber-300"
-                                      : isCompleted
-                                        ? "text-stone-600 hover:text-stone-400 hover:bg-stone-800/30"
-                                        : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/30"
-                                  }`}
+                                  className="group flex items-center"
                                 >
-                                  {isCompleted ? (
-                                    <span className="text-emerald-500 shrink-0">
-                                      <svg
-                                        className="w-3 h-3"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth={3}
-                                      >
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          d="M5 13l4 4L19 7"
-                                        />
-                                      </svg>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGroupClick(i)}
+                                    className={`flex items-center gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
+                                  >
+                                    {isCompleted ? (
+                                      <span className="text-emerald-500 shrink-0">
+                                        <svg
+                                          className="w-3 h-3"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth={3}
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M5 13l4 4L19 7"
+                                          />
+                                        </svg>
+                                      </span>
+                                    ) : (
+                                      <span className="w-4 text-center text-xxs text-stone-600 shrink-0 tabular-nums">
+                                        {i + 1}
+                                      </span>
+                                    )}
+                                    <span className="truncate flex-1 text-left">
+                                      {group.title}
                                     </span>
-                                  ) : (
-                                    <span className="w-4 text-center text-xxs text-stone-600 shrink-0 tabular-nums">
-                                      {i + 1}
-                                    </span>
-                                  )}
-                                  <span className="truncate flex-1 text-left">
-                                    {group.title}
-                                  </span>
-                                  {!isCompleted && unreviewedCount > 0 && (
-                                    <span className="text-xxs text-amber-400/70 tabular-nums shrink-0">
-                                      {unreviewedCount}
-                                    </span>
-                                  )}
-                                </button>
+                                    {!isCompleted && unreviewedCount > 0 && (
+                                      <span className="text-xxs text-amber-400/70 tabular-nums shrink-0">
+                                        {unreviewedCount}
+                                      </span>
+                                    )}
+                                  </button>
+                                  <GroupItemOverflowMenu
+                                    unreviewedIds={data?.unreviewedIds ?? []}
+                                    reviewedIds={data?.reviewedIds ?? []}
+                                    onApprove={() =>
+                                      approveHunkIds(data?.unreviewedIds ?? [])
+                                    }
+                                    onReject={() =>
+                                      rejectHunkIds(data?.unreviewedIds ?? [])
+                                    }
+                                    onReset={() =>
+                                      unapproveHunkIds(data?.reviewedIds ?? [])
+                                    }
+                                  />
+                                </div>
                               );
                             })}
                           </div>

@@ -22,6 +22,7 @@ import type {
   TrustCategory,
   DiffHunk,
   DiffShortStat,
+  ClassificationResult,
   ClassifyResponse,
   HunkInput,
   ClassifyOptions,
@@ -63,6 +64,18 @@ export interface ApiClient {
 
   /** Get raw git status output */
   getGitStatusRaw(repoPath: string): Promise<string>;
+
+  /** Stage a single file */
+  stageFile(repoPath: string, path: string): Promise<void>;
+
+  /** Unstage a single file */
+  unstageFile(repoPath: string, path: string): Promise<void>;
+
+  /** Stage all changes */
+  stageAll(repoPath: string): Promise<void>;
+
+  /** Unstage all staged changes */
+  unstageAll(repoPath: string): Promise<void>;
 
   /** Get lightweight diff statistics (file count, additions, deletions) */
   getDiffShortStat(
@@ -262,7 +275,12 @@ export interface ApiClient {
   // ----- Events -----
 
   /** Subscribe to classification progress events */
-  onClassifyProgress(callback: (completedIds: string[]) => void): () => void;
+  onClassifyProgress(
+    callback: (payload: {
+      completedIds: string[];
+      classifications: Record<string, ClassificationResult>;
+    }) => void,
+  ): () => void;
 
   /** Subscribe to review state change events */
   onReviewStateChanged(callback: (repoPath: string) => void): () => void;

@@ -1,6 +1,5 @@
 import type { Comparison, GitHubPrRef } from "../types";
 import { useReviewStore } from "../stores";
-import { GitStatusCounts } from "./GitStatusCounts";
 import { SidebarPanelIcon } from "./ui/icons";
 import { SimpleTooltip } from "./ui/tooltip";
 
@@ -52,12 +51,12 @@ export function ReviewBreadcrumb({
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const isPr = !!githubPr;
 
-  const stagedCount = gitStatus?.staged.length ?? 0;
-  const unstagedCount = gitStatus?.unstaged.length ?? 0;
-  const untrackedCount = gitStatus?.untracked.length ?? 0;
+  const workingTreeChangeCount =
+    (gitStatus?.staged.length ?? 0) +
+    (gitStatus?.unstaged.length ?? 0) +
+    (gitStatus?.untracked.length ?? 0);
   const showWorkingTree =
-    gitStatus?.currentBranch === comparison.head &&
-    stagedCount + unstagedCount + untrackedCount > 0;
+    gitStatus?.currentBranch === comparison.head && workingTreeChangeCount > 0;
 
   return (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -74,16 +73,20 @@ export function ReviewBreadcrumb({
         </span>
         {showWorkingTree && (
           <SimpleTooltip content="Includes uncommitted working tree changes">
-            <span className="flex items-center gap-1 ml-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                useReviewStore.setState({
+                  filesPanelCollapsed: false,
+                  requestedFilesPanelTab: "git",
+                });
+              }}
+              className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-stone-800 transition-colors"
+            >
               <span className="text-xxs text-amber-400/70 font-medium">
-                working tree
+                + working tree
               </span>
-              <GitStatusCounts
-                staged={stagedCount}
-                unstaged={unstagedCount}
-                untracked={untrackedCount}
-              />
-            </span>
+            </button>
           </SimpleTooltip>
         )}
       </div>

@@ -60,6 +60,7 @@ const MAX_CONCURRENT: usize = 10;
 const CLASSIFY_BASE_TIMEOUT_SECS: u64 = 60;
 /// Additional timeout seconds per batch.
 const CLASSIFY_SECS_PER_BATCH: u64 = 30;
+
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -340,32 +341,13 @@ pub fn get_file_content_sync(
         file_exists
     );
 
-    if file_exists {
-        // Validate the logical path doesn't escape the repo.
-        // We check the un-canonicalized relative path for traversal rather than
-        // canonicalizing, because symlinks inside the repo may resolve to targets
-        // outside it (e.g., .claude/skills/my-skill -> /other/repo/skill).
-        // Those are safe to read as long as the relative path itself is clean.
-        if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
-            return Err("Path traversal detected: file path escapes repository".to_owned());
-        }
-    } else {
-        // For non-existent files (deleted), validate the path more strictly
-        // Check for ".." in path components to prevent traversal
-        if file_path.contains("..") {
-            return Err("Path traversal detected: file path contains '..'".to_owned());
-        }
-        // Also validate the file path doesn't try to escape via absolute paths
-        if file_path.starts_with('/') || file_path.starts_with('\\') {
-            return Err("Path traversal detected: file path is absolute".to_owned());
-        }
-        // Validate no backslash traversal attempts on Windows-style paths
-        let normalized = file_path.replace('\\', "/");
-        for component in normalized.split('/') {
-            if component == ".." {
-                return Err("Path traversal detected: file path contains '..'".to_owned());
-            }
-        }
+    // Validate the logical path doesn't escape the repo.
+    // We check the un-canonicalized relative path for traversal rather than
+    // canonicalizing, because symlinks inside the repo may resolve to targets
+    // outside it (e.g., .claude/skills/my-skill -> /other/repo/skill).
+    // Those are safe to read as long as the relative path itself is clean.
+    if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
+        return Err("Path traversal detected: file path escapes repository".to_owned());
     }
 
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
@@ -793,8 +775,7 @@ pub fn get_all_hunks_sync(
     );
 
     // Build a set of file paths that got hunks from the diff
-    let files_with_hunks: std::collections::HashSet<String> =
-        all_hunks.iter().map(|h| h.file_path.clone()).collect();
+    let files_with_hunks: HashSet<String> = all_hunks.iter().map(|h| h.file_path.clone()).collect();
 
     // For requested files that have no diff hunks, check if they're
     // untracked (new) and create untracked hunks for them
@@ -821,8 +802,7 @@ pub fn get_all_hunks_sync(
     }
 
     // Filter to only include hunks for the requested files
-    let requested: std::collections::HashSet<&str> =
-        file_paths.iter().map(|s| s.as_str()).collect();
+    let requested: HashSet<&str> = file_paths.iter().map(|s| s.as_str()).collect();
     all_hunks.retain(|h| requested.contains(h.file_path.as_str()));
 
     info!(
@@ -946,6 +926,30 @@ pub fn get_git_status(repo_path: String) -> Result<GitStatusSummary, String> {
 }
 
 #[tauri::command]
+pub fn stage_file(repo_path: String, path: String) -> Result<(), String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.stage_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn unstage_file(repo_path: String, path: String) -> Result<(), String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.unstage_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn stage_all(repo_path: String) -> Result<(), String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.stage_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn unstage_all(repo_path: String) -> Result<(), String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.unstage_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_git_status_raw(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_status_raw().map_err(|e| e.to_string())
@@ -1016,6 +1020,13 @@ pub async fn classify_hunks_with_claude(
 
     let repo_path_buf = PathBuf::from(&repo_path);
 
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BatchCompletePayload {
+        completed_ids: Vec<String>,
+        classifications: HashMap<String, review::classify::ClassificationResult>,
+    }
+
     let result = timeout(
         Duration::from_secs(timeout_secs),
         review::ai::classify::classify_hunks_batched(
@@ -1025,8 +1036,14 @@ pub async fn classify_hunks_with_claude(
             batch_size,
             max_concurrent,
             command.as_deref(),
-            move |completed_ids| {
-                let _ = app.emit("classify:batch-complete", completed_ids);
+            move |completed_ids, classifications| {
+                let _ = app.emit(
+                    "classify:batch-complete",
+                    BatchCompletePayload {
+                        completed_ids,
+                        classifications,
+                    },
+                );
             },
         ),
     )
@@ -1337,6 +1354,18 @@ pub async fn get_file_symbol_diffs(
 
         // Single git diff call for all files instead of one per file
         let full_diff = source.get_diff(&comparison, None).unwrap_or_default();
+
+        // Check the disk cache before doing expensive tree-sitter work
+        let repo_path_buf = PathBuf::from(&repo_path);
+        let diff_hash = symbols::cache::compute_hash(&full_diff);
+        if let Ok(Some(cached)) = symbols::cache::load(&repo_path_buf, &comparison, &diff_hash) {
+            info!(
+                "[get_file_symbol_diffs] CACHE HIT: {} files from cache",
+                cached.len()
+            );
+            return Ok(cached);
+        }
+
         let all_hunks = parse_multi_file_diff(&full_diff);
 
         // Pass 1: compute FileSymbolDiff per file (parallel), also return file contents for reuse
@@ -1522,6 +1551,9 @@ pub async fn get_file_symbol_diffs(
                 .collect();
             handles.into_iter().filter_map(|h| h.join().ok()).collect()
         });
+
+        // Save to disk cache for next time
+        let _ = symbols::cache::save(&repo_path_buf, &comparison, &diff_hash, &results);
 
         info!(
             "[get_file_symbol_diffs] SUCCESS: {} files processed",
@@ -2019,8 +2051,15 @@ pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryCo
     state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Timeout for single-call Claude operations (grouping, summary, diagram).
-const CLAUDE_CALL_TIMEOUT_SECS: u64 = 120;
+/// Base timeout in seconds for single-call Claude operations (grouping, summary, diagram).
+const CLAUDE_CALL_BASE_TIMEOUT_SECS: u64 = 120;
+/// Additional timeout seconds per hunk for single-call Claude operations.
+const CLAUDE_CALL_SECS_PER_HUNK: u64 = 1;
+
+/// Compute a timeout that scales with the number of hunks being processed.
+fn claude_call_timeout_secs(num_hunks: usize) -> u64 {
+    CLAUDE_CALL_BASE_TIMEOUT_SECS + num_hunks as u64 * CLAUDE_CALL_SECS_PER_HUNK
+}
 
 #[tauri::command]
 pub async fn generate_hunk_grouping(
@@ -2046,9 +2085,10 @@ pub async fn generate_hunk_grouping(
     );
 
     let repo_path_buf = PathBuf::from(&repo_path);
+    let timeout_secs = claude_call_timeout_secs(hunks.len());
 
     let result = timeout(
-        Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             review::ai::grouping::generate_grouping(
                 &hunks,
@@ -2060,9 +2100,7 @@ pub async fn generate_hunk_grouping(
         }),
     )
     .await
-    .map_err(|_| {
-        format!("Hunk grouping generation timed out after {CLAUDE_CALL_TIMEOUT_SECS} seconds")
-    })?
+    .map_err(|_| format!("Hunk grouping generation timed out after {timeout_secs} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 
@@ -2091,9 +2129,10 @@ pub async fn generate_review_summary(
     );
 
     let repo_path_buf = PathBuf::from(&repo_path);
+    let timeout_secs = claude_call_timeout_secs(hunks.len());
 
     let result = timeout(
-        Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             review::ai::summary::generate_summary(
                 &hunks,
@@ -2104,7 +2143,7 @@ pub async fn generate_review_summary(
         }),
     )
     .await
-    .map_err(|_| format!("Summary generation timed out after {CLAUDE_CALL_TIMEOUT_SECS} seconds"))?
+    .map_err(|_| format!("Summary generation timed out after {timeout_secs} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 
@@ -2137,9 +2176,10 @@ pub async fn generate_review_diagram(
     );
 
     let repo_path_buf = PathBuf::from(&repo_path);
+    let timeout_secs = claude_call_timeout_secs(hunks.len());
 
     let result = timeout(
-        Duration::from_secs(CLAUDE_CALL_TIMEOUT_SECS),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             review::ai::summary::generate_diagram(
                 &hunks,
@@ -2150,7 +2190,7 @@ pub async fn generate_review_diagram(
         }),
     )
     .await
-    .map_err(|_| format!("Diagram generation timed out after {CLAUDE_CALL_TIMEOUT_SECS} seconds"))?
+    .map_err(|_| format!("Diagram generation timed out after {timeout_secs} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
 

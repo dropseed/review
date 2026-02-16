@@ -59,7 +59,7 @@ pub fn generate_summary(
     ensure_claude_available(custom_command)?;
 
     let prompt = build_summary_prompt(hunks);
-    let output = run_claude_with_model(&prompt, cwd, model, custom_command)?;
+    let output = run_claude_with_model(&prompt, cwd, model, custom_command, &[])?;
 
     Ok(parse_summary_output(output.trim()))
 }
@@ -113,7 +113,7 @@ pub fn generate_diagram(
 
     ensure_claude_available(custom_command)?;
 
-    let output = run_claude_with_model(&prompt, cwd, model, custom_command)?;
+    let output = run_claude_with_model(&prompt, cwd, model, custom_command, &[])?;
     let trimmed = strip_markdown_fences(output.trim());
 
     if trimmed.eq_ignore_ascii_case("NONE") {

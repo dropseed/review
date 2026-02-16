@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useReviewStore } from "../../stores";
 import type { StatusEntry } from "../../types";
+import { GitStatusModal } from "../modals/GitStatusModal";
+import {
+  CollapsibleSection,
+  CollapsibleSectionMenuItem,
+} from "../ui/collapsible-section";
 
 const STATUS_COLORS: Record<
   StatusEntry["status"],
@@ -17,81 +22,126 @@ function StatusFileRow({
   path,
   status,
   onSelect,
+  actionButton,
 }: {
   path: string;
   status?: StatusEntry["status"];
   onSelect: (path: string) => void;
+  actionButton?: React.ReactNode;
 }) {
   const config = status ? STATUS_COLORS[status] : null;
   const filename = path.split("/").pop() ?? path;
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : null;
 
   return (
+    <div className="group flex items-center w-full px-3 py-1 text-xs text-stone-300 hover:bg-stone-800/50 transition-colors">
+      <button
+        type="button"
+        onClick={() => onSelect(path)}
+        className="flex items-center gap-2 flex-1 min-w-0 text-left"
+      >
+        <span
+          className={`w-3 text-center font-mono text-xxs font-medium shrink-0 ${config?.color ?? "text-stone-500"}`}
+        >
+          {config?.letter ?? "?"}
+        </span>
+        <span className="truncate">
+          {filename}
+          {dir && <span className="text-stone-600 ml-1">{dir}</span>}
+        </span>
+      </button>
+      {actionButton && (
+        <span className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1">
+          {actionButton}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function StageActionButton({
+  label,
+  title,
+  onClick,
+}: {
+  label: string;
+  title: string;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  return (
     <button
       type="button"
-      onClick={() => onSelect(path)}
-      className="flex items-center gap-2 w-full px-3 py-1 text-left text-xs text-stone-300 hover:bg-stone-800/50 transition-colors"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(e);
+      }}
+      className="flex items-center justify-center w-5 h-5 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors text-xs font-mono leading-none"
     >
-      <span
-        className={`w-3 text-center font-mono text-xxs font-medium shrink-0 ${config?.color ?? "text-stone-500"}`}
-      >
-        {config?.letter ?? "?"}
-      </span>
-      <span className="truncate">
-        {filename}
-        {dir && <span className="text-stone-600 ml-1">{dir}</span>}
-      </span>
+      {label}
     </button>
   );
 }
 
-function CollapsibleSection({
+function GitSection({
   title,
   count,
   accentColor,
   children,
   defaultOpen = true,
+  menuItems,
 }: {
   title: string;
   count: number;
   accentColor: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  menuItems?: { label: string; onClick: () => void }[];
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="border-b border-stone-800/50">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50"
-      >
-        <svg
-          className={`h-3 w-3 text-stone-500 transition-transform ${open ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24"
-          fill="currentColor"
-        >
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-        <span className="flex-1">{title}</span>
-        <span
-          className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${accentColor}`}
-        >
-          {count}
-        </span>
-      </button>
-      {open && <div className="pb-0.5">{children}</div>}
-    </div>
+    <CollapsibleSection
+      title={title}
+      badge={count}
+      badgeColor={accentColor}
+      isOpen={open}
+      onToggle={() => setOpen(!open)}
+      showTopBorder={false}
+      menuContent={
+        menuItems?.length
+          ? menuItems.map((item) => (
+              <CollapsibleSectionMenuItem
+                key={item.label}
+                onClick={item.onClick}
+              >
+                {item.label}
+              </CollapsibleSectionMenuItem>
+            ))
+          : undefined
+      }
+    >
+      <div className="pb-0.5">{children}</div>
+    </CollapsibleSection>
   );
 }
 
 interface GitStatusPanelProps {
   onSelectFile: (path: string) => void;
+  onSelectWorkingTreeFile?: (path: string) => void;
 }
 
-export function GitStatusPanel({ onSelectFile }: GitStatusPanelProps) {
+export function GitStatusPanel({
+  onSelectFile,
+  onSelectWorkingTreeFile,
+}: GitStatusPanelProps) {
+  const handleSelect = onSelectWorkingTreeFile ?? onSelectFile;
   const gitStatus = useReviewStore((s) => s.gitStatus);
+  const stageFile = useReviewStore((s) => s.stageFile);
+  const unstageFile = useReviewStore((s) => s.unstageFile);
+  const stageAll = useReviewStore((s) => s.stageAll);
+  const unstageAll = useReviewStore((s) => s.unstageAll);
+  const [showModal, setShowModal] = useState(false);
 
   if (!gitStatus) {
     return (
@@ -128,50 +178,112 @@ export function GitStatusPanel({ onSelectFile }: GitStatusPanelProps) {
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin">
+      {/* Status summary header */}
+      <button
+        type="button"
+        onClick={() => setShowModal(true)}
+        className="flex items-center gap-2 w-full px-3 py-2 text-left border-b border-stone-800/50 hover:bg-stone-800/50 transition-colors"
+      >
+        <span className="text-xs text-stone-400 flex-1">
+          {staged.length > 0 && (
+            <span className="text-emerald-400 font-medium tabular-nums">
+              {staged.length} staged
+            </span>
+          )}
+          {staged.length > 0 && unstaged.length > 0 && (
+            <span className="text-stone-600 mx-1">·</span>
+          )}
+          {unstaged.length > 0 && (
+            <span className="text-amber-400 font-medium tabular-nums">
+              {unstaged.length} unstaged
+            </span>
+          )}
+          {(staged.length > 0 || unstaged.length > 0) &&
+            untracked.length > 0 && (
+              <span className="text-stone-600 mx-1">·</span>
+            )}
+          {untracked.length > 0 && (
+            <span className="text-stone-500 font-medium tabular-nums">
+              {untracked.length} untracked
+            </span>
+          )}
+        </span>
+        <span className="text-stone-600 text-xxs">git status</span>
+      </button>
+
+      <GitStatusModal isOpen={showModal} onClose={() => setShowModal(false)} />
+
       {staged.length > 0 && (
-        <CollapsibleSection
+        <GitSection
           title="Staged"
           count={staged.length}
           accentColor="bg-emerald-500/20 text-emerald-300"
+          menuItems={[{ label: "Unstage all", onClick: () => unstageAll() }]}
         >
           {staged.map((entry) => (
             <StatusFileRow
               key={entry.path}
               path={entry.path}
               status={entry.status}
-              onSelect={onSelectFile}
+              onSelect={handleSelect}
+              actionButton={
+                <StageActionButton
+                  label="−"
+                  title="Unstage"
+                  onClick={() => unstageFile(entry.path)}
+                />
+              }
             />
           ))}
-        </CollapsibleSection>
+        </GitSection>
       )}
 
       {unstaged.length > 0 && (
-        <CollapsibleSection
+        <GitSection
           title="Unstaged"
           count={unstaged.length}
           accentColor="bg-amber-500/20 text-amber-300"
+          menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
         >
           {unstaged.map((entry) => (
             <StatusFileRow
               key={entry.path}
               path={entry.path}
               status={entry.status}
-              onSelect={onSelectFile}
+              onSelect={handleSelect}
+              actionButton={
+                <StageActionButton
+                  label="+"
+                  title="Stage"
+                  onClick={() => stageFile(entry.path)}
+                />
+              }
             />
           ))}
-        </CollapsibleSection>
+        </GitSection>
       )}
 
       {untracked.length > 0 && (
-        <CollapsibleSection
+        <GitSection
           title="Untracked"
           count={untracked.length}
           accentColor="bg-stone-500/20 text-stone-400"
         >
           {untracked.map((path) => (
-            <StatusFileRow key={path} path={path} onSelect={onSelectFile} />
+            <StatusFileRow
+              key={path}
+              path={path}
+              onSelect={onSelectFile}
+              actionButton={
+                <StageActionButton
+                  label="+"
+                  title="Stage"
+                  onClick={() => stageFile(path)}
+                />
+              }
+            />
           ))}
-        </CollapsibleSection>
+        </GitSection>
       )}
     </div>
   );

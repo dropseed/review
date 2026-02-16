@@ -1,11 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import type { Comparison, GitHubPrRef } from "../../types";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
-import { initLogPath, clearLog } from "../../utils/logger";
-import { resolveRepoIdentity } from "../../utils/repo-identity";
 import { RepoSelect } from "../ComparisonPicker/RepoSelect";
 import { NewComparisonForm } from "../ComparisonPicker/NewComparisonForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -13,22 +10,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 interface ComparisonPickerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onNewReview: (
+    path: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
   prefilledRepoPath?: string | null;
 }
 
 export function ComparisonPickerModal({
   isOpen,
   onClose,
+  onNewReview,
   prefilledRepoPath,
 }: ComparisonPickerModalProps) {
-  const navigate = useNavigate();
   const savedReviews = useReviewStore((s) => s.savedReviews);
   const recentRepositories = useReviewStore((s) => s.recentRepositories);
-  const setRepoPath = useReviewStore((s) => s.setRepoPath);
-  const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
-  const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
-  const ensureReviewExists = useReviewStore((s) => s.ensureReviewExists);
-  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
 
   const existingComparisonKeys = savedReviews.map((r) => r.comparison.key);
 
@@ -70,33 +67,10 @@ export function ComparisonPickerModal({
     async (comparison: Comparison, githubPr?: GitHubPrRef) => {
       if (!selectedRepoPath) return;
 
-      const { routePrefix } = await resolveRepoIdentity(selectedRepoPath);
-
-      setRepoPath(selectedRepoPath);
-      initLogPath(selectedRepoPath);
-      clearLog();
-      addRecentRepository(selectedRepoPath);
-
-      setActiveReviewKey({
-        repoPath: selectedRepoPath,
-        comparisonKey: comparison.key,
-      });
-      await ensureReviewExists(selectedRepoPath, comparison, githubPr);
-
-      navigate(`/${routePrefix}/review/${comparison.key}`);
+      await onNewReview(selectedRepoPath, comparison, githubPr);
       onClose();
-      loadGlobalReviews();
     },
-    [
-      selectedRepoPath,
-      setRepoPath,
-      addRecentRepository,
-      setActiveReviewKey,
-      ensureReviewExists,
-      loadGlobalReviews,
-      navigate,
-      onClose,
-    ],
+    [selectedRepoPath, onNewReview, onClose],
   );
 
   return (

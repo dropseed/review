@@ -46,20 +46,34 @@ export type SliceCreatorWithStorage<T> = (
   storage: StorageService,
 ) => StateCreator<ReviewStore, [], [], T>;
 
-// Debounce helper
-export const createDebouncedFn = (delay: number) => {
+// Debounce helper with cancel support
+export interface DebouncedFn {
+  (fn: () => void | Promise<void>): void;
+  cancel: () => void;
+}
+
+export function createDebouncedFn(delay: number): DebouncedFn {
   let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (fn: () => void | Promise<void>) => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
+
+  function debounced(fn: () => void | Promise<void>): void {
+    if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => {
+      timeout = null;
       Promise.resolve(fn()).catch((err) =>
         console.error("Debounced function error:", err),
       );
     }, delay);
+  }
+
+  debounced.cancel = function cancel(): void {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
   };
-};
+
+  return debounced;
+}
 
 // Helper to get all files flattened from tree
 export function flattenFiles(entries: FileEntry[]): string[] {

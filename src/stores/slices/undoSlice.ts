@@ -5,7 +5,7 @@ import { createDebouncedFn } from "../types";
 
 const MAX_UNDO_STACK = 50;
 
-const debouncedSave = createDebouncedFn(500);
+export const debouncedUndoSave = createDebouncedFn(500);
 
 export interface UndoEntry {
   hunkIds: string[];
@@ -58,7 +58,7 @@ export const createUndoSlice: SliceCreator<UndoSlice> = (set, get) => ({
       selectedFile: entry.selectedFile,
     });
 
-    debouncedSave(saveReviewState);
+    debouncedUndoSave(saveReviewState);
 
     const count = entry.hunkIds.length;
     toast(`Undid ${count === 1 ? "hunk" : count + " hunks"}`, {
