@@ -21,6 +21,8 @@ use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem, Su
 #[cfg(desktop)]
 use tauri::Emitter;
 #[cfg(desktop)]
+use tauri::Manager;
+#[cfg(desktop)]
 use tauri_plugin_opener::OpenerExt;
 
 /// Managed state holding references to menu items whose enabled state
@@ -352,7 +354,6 @@ pub fn run() {
 
             app.set_menu(menu)?;
 
-            use tauri::Manager;
             app.manage(MenuItems {
                 refresh,
                 find_file,
@@ -436,6 +437,14 @@ pub fn run() {
             }
         });
 
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_window_event(|window, event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = window.hide();
+        }
+    });
+
     let app = builder
         .invoke_handler(tauri::generate_handler![
             commands::get_current_repo,
@@ -506,21 +515,34 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // When the app is reactivated (e.g. via `open -a`), check for a
-        // pending open request from the CLI. This handles the case where
-        // the app was already running and `open -a` dropped --args.
         #[cfg(desktop)]
-        if let tauri::RunEvent::Reopen { .. } = event {
-            if let Some((repo_path, comparison_key)) = read_open_request() {
-                let handle = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) =
-                        commands::open_repo_window(handle, repo_path, comparison_key).await
-                    {
-                        log::error!("Failed to open repo from CLI signal: {e}");
-                    }
-                });
+        match event {
+            tauri::RunEvent::Reopen { .. } => {
+                // Show all hidden windows and focus them
+                for (_, window) in app_handle.webview_windows() {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                // Check for a pending open request from the CLI
+                if let Some((repo_path, comparison_key)) = read_open_request() {
+                    let handle = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) =
+                            commands::open_repo_window(handle, repo_path, comparison_key).await
+                        {
+                            log::error!("Failed to open repo from CLI signal: {e}");
+                        }
+                    });
+                }
             }
+            tauri::RunEvent::Exit => {
+                if companion_server::is_running() {
+                    log::info!("Stopping companion server before exit");
+                    companion_server::stop();
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            }
+            _ => {}
         }
     });
 }
