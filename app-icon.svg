@@ -11,12 +11,28 @@
       <stop offset="0%" style="stop-color:#6EA692"/>
       <stop offset="100%" style="stop-color:#4E8370"/>
     </linearGradient>
-  </defs>
-  
-  <!-- Left panel (red/coral) - all corners r=90 -->
-  <path d="M 122,16 L 152,16 A 90,90 0 0,1 242,106 L 242,406 A 90,90 0 0,1 152,496 L 122,496 A 90,90 0 0,1 32,406 L 32,106 A 90,90 0 0,1 122,16 Z" fill="url(#redGrad)"/>
 
-  <!-- Right panel (teal/green) - all corners r=90 -->
-  <path d="M 360,16 L 390,16 A 90,90 0 0,1 480,106 L 480,406 A 90,90 0 0,1 390,496 L 360,496 A 90,90 0 0,1 270,406 L 270,106 A 90,90 0 0,1 360,16 Z" fill="url(#greenGrad)"/>
-  
+    <!-- Mask for left panel: minus cutout -->
+    <mask id="leftMask">
+      <rect width="512" height="512" fill="white"/>
+      <!-- Minus sign (centered at 137, 256) -->
+      <rect x="89" y="244" width="96" height="24" rx="12" fill="black"/>
+    </mask>
+
+    <!-- Mask for right panel: plus cutout -->
+    <mask id="rightMask">
+      <rect width="512" height="512" fill="white"/>
+      <!-- Plus horizontal (centered at 375, 256) -->
+      <rect x="327" y="244" width="96" height="24" rx="12" fill="black"/>
+      <!-- Plus vertical (centered at 375, 256) -->
+      <rect x="363" y="208" width="24" height="96" rx="12" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- Left panel (red/coral) with minus cutout -->
+  <path d="M 122,16 L 152,16 A 90,90 0 0,1 242,106 L 242,406 A 90,90 0 0,1 152,496 L 122,496 A 90,90 0 0,1 32,406 L 32,106 A 90,90 0 0,1 122,16 Z" fill="url(#redGrad)" mask="url(#leftMask)"/>
+
+  <!-- Right panel (teal/green) with plus cutout -->
+  <path d="M 360,16 L 390,16 A 90,90 0 0,1 480,106 L 480,406 A 90,90 0 0,1 390,496 L 360,496 A 90,90 0 0,1 270,406 L 270,106 A 90,90 0 0,1 360,16 Z" fill="url(#greenGrad)" mask="url(#rightMask)"/>
+
 </svg>

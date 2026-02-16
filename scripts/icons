@@ -2,7 +2,42 @@
 set -e
 cd "$(dirname "$0")/.."
 
-npx @tauri-apps/cli icon app-icon.svg -o src-tauri/icons
+# Create a dark-background variant for app icons
+# (app-icon.svg stays transparent for tray icons etc.)
+node -e "
+const fs = require('fs');
+const svg = fs.readFileSync('app-icon.svg', 'utf8');
+
+// Dark background variant for app icons (with padding so pills are inset)
+const pad = 115;
+const size = 512 + pad * 2;
+const dark = svg
+  .replace('viewBox=\"0 0 512 512\"', 'viewBox=\"' + -pad + ' ' + -pad + ' ' + size + ' ' + size + '\"')
+  .replace(
+    '</defs>',
+    '</defs>\n\n  <!-- Dark background -->\n  <rect x=\"' + -pad + '\" y=\"' + -pad + '\" width=\"' + size + '\" height=\"' + size + '\" fill=\"#1C1C1E\"/>'
+  );
+fs.writeFileSync('.app-icon-dark.svg', dark);
+
+// Black-on-transparent variant for tray template icon
+const tray = svg
+  .replace(/fill=\"url\(#redGrad\)\"/g, 'fill=\"black\"')
+  .replace(/fill=\"url\(#greenGrad\)\"/g, 'fill=\"black\"');
+fs.writeFileSync('.app-icon-tray.svg', tray);
+"
+
+# Desktop icons (Mac .icns, Windows .ico, PNGs) — dark background
+npx @tauri-apps/cli icon .app-icon-dark.svg -o src-tauri/icons
+rm -rf src-tauri/icons/android src-tauri/icons/ios
+
+# iOS app icon (1024x1024) — dark background
+sips -s format png -z 1024 1024 .app-icon-dark.svg --out ios/Review/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+
+# Tray icons (template: black on transparent, macOS handles light/dark)
+sips -s format png -z 22 22 .app-icon-tray.svg --out src-tauri/icons/tray-icon.png
+sips -s format png -z 44 44 .app-icon-tray.svg --out src-tauri/icons/tray-icon@2x.png
+
+rm .app-icon-dark.svg .app-icon-tray.svg
 
 echo ""
-echo "Icons generated in src-tauri/icons/"
+echo "Icons generated in src-tauri/icons/ and ios/"
