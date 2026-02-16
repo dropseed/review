@@ -389,7 +389,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     rejectHunk: (hunkId) => {
       pushHunkUndo(get, hunkId);
       updateHunkStatuses(get, set, [hunkId], "rejected");
-      get().advanceToNextUnreviewedFile();
+      // Don't advance — stay on the file so the comment box opens
     },
 
     unrejectHunk: (hunkId) => {
@@ -412,7 +412,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     rejectAllFileHunks: (filePath) => {
       const ids = getFileHunkIds(get().hunks, filePath);
       updateHunkStatuses(get, set, ids, "rejected");
-      get().advanceToNextUnreviewedFile();
+      // Don't advance — stay on the file so the comment box opens
     },
 
     approveHunkIds: (hunkIds) => {
