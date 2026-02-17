@@ -29,6 +29,28 @@ function parseHexColor(
   };
 }
 
+/** Set the native window background to match a theme's surface color. */
+function applyWindowBackgroundColor(surfaceHex: string): void {
+  const rgb = parseHexColor(surfaceHex);
+  if (rgb) {
+    invoke("set_window_background_color", rgb).catch(() => {});
+  }
+}
+
+/**
+ * Detect the active VS Code theme via the Rust backend and resolve it
+ * to a UiTheme. Returns null if detection fails or VS Code is not active.
+ */
+async function detectVscodeTheme(): Promise<UiTheme | null> {
+  try {
+    const detection: VscodeThemeDetection = await invoke("detect_vscode_theme");
+    return matchBundledTheme(detection.name) ?? resolveVscodeTheme(detection);
+  } catch (e) {
+    console.warn("[preferences] Failed to detect VS Code theme:", e);
+    return null;
+  }
+}
+
 export const CODE_FONT_SIZE_DEFAULT = 11;
 export const CODE_FONT_SIZE_MIN = 8;
 export const CODE_FONT_SIZE_MAX = 32;
@@ -285,32 +307,29 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       loaded.diffViewMode = "new";
     }
 
+    // Load custom themes from settings before any theme resolution
+    if (settings && Array.isArray(settings["customThemes"])) {
+      setCustomThemes(
+        settings["customThemes"] as Array<{
+          name: string;
+          type: string;
+          colors: Record<string, string>;
+          tokenColors: unknown[];
+        }>,
+      );
+    }
+
+    // Resolve VS Code theme before setting state so we don't flash
+    // the fallback theme (the persisted codeTheme may reference a custom
+    // Shiki theme that hasn't been re-registered yet — REVIEW-9).
+    const resolvedVscode = loaded.matchVscodeTheme
+      ? await detectVscodeTheme()
+      : null;
+
     set({
-      codeFontSize: loaded.codeFontSize,
-      codeTheme: loaded.codeTheme,
-      uiTheme: loaded.uiTheme,
-      matchVscodeTheme: loaded.matchVscodeTheme,
-      diffLineDiffType: loaded.diffLineDiffType,
-      diffIndicators: loaded.diffIndicators,
-      needsReviewDisplayMode: loaded.needsReviewDisplayMode,
-      reviewedDisplayMode: loaded.reviewedDisplayMode,
-      diffViewMode: loaded.diffViewMode,
-      classifyCommand: loaded.classifyCommand,
-      classifyBatchSize: loaded.classifyBatchSize,
-      classifyMaxConcurrent: loaded.classifyMaxConcurrent,
-      recentRepositories: loaded.recentRepositories,
-      sentryEnabled: loaded.sentryEnabled,
-      soundEffectsEnabled: loaded.soundEffectsEnabled,
-      tabRailCollapsed: loaded.tabRailCollapsed,
-      filesPanelCollapsed: loaded.filesPanelCollapsed,
-      reviewSortOrder: loaded.reviewSortOrder,
-      inactiveReviewSortOrder: loaded.inactiveReviewSortOrder,
-      companionServerEnabled: loaded.companionServerEnabled,
-      companionServerToken: loaded.companionServerToken,
-      companionServerPort: loaded.companionServerPort,
-      companionServerFingerprint: loaded.companionServerFingerprint,
-      guideSideNavCollapsed: loaded.guideSideNavCollapsed,
-      guideSideNavWidth: loaded.guideSideNavWidth,
+      ...loaded,
+      codeTheme: resolvedVscode?.codeTheme ?? loaded.codeTheme,
+      resolvedVscodeTheme: resolvedVscode,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
@@ -332,23 +351,16 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       String(loaded.codeFontSize / CODE_FONT_SIZE_DEFAULT),
     );
 
-    // Load custom themes from settings (already read above)
-    if (settings && Array.isArray(settings["customThemes"])) {
-      setCustomThemes(
-        settings["customThemes"] as Array<{
-          name: string;
-          type: string;
-          colors: Record<string, string>;
-          tokenColors: unknown[];
-        }>,
-      );
-    }
-
     // Apply UI theme (sets all semantic CSS variables + color-scheme)
-    applyUiTheme(getUiTheme(loaded.uiTheme));
-    if (loaded.matchVscodeTheme) {
-      // Detect VS Code theme in background (overrides bundled theme above)
-      get().detectAndApplyVscodeTheme();
+    if (resolvedVscode) {
+      applyUiTheme(resolvedVscode);
+      storage.set("codeTheme", resolvedVscode.codeTheme);
+      applyWindowBackgroundColor(resolvedVscode.tokens.surface);
+      console.log(
+        `[preferences] Applied VS Code theme "${resolvedVscode.label}" → "${resolvedVscode.id}"`,
+      );
+    } else {
+      applyUiTheme(getUiTheme(loaded.uiTheme));
     }
 
     // Start companion server if it was previously enabled
@@ -553,34 +565,19 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   detectAndApplyVscodeTheme: async () => {
-    try {
-      const detection: VscodeThemeDetection = await invoke(
-        "detect_vscode_theme",
-      );
+    const resolved = await detectVscodeTheme();
+    if (!resolved) return;
 
-      // First try to match to a bundled theme (better quality)
-      const bundled = matchBundledTheme(detection.name);
-      const resolved = bundled ?? resolveVscodeTheme(detection);
+    set({
+      resolvedVscodeTheme: resolved,
+      codeTheme: resolved.codeTheme,
+    });
+    storage.set("codeTheme", resolved.codeTheme);
+    applyUiTheme(resolved);
+    applyWindowBackgroundColor(resolved.tokens.surface);
 
-      set({
-        resolvedVscodeTheme: resolved,
-        codeTheme: resolved.codeTheme,
-      });
-      storage.set("codeTheme", resolved.codeTheme);
-      applyUiTheme(resolved);
-
-      // Update the window background color to match the theme
-      const bg = resolved.tokens.surface;
-      const rgb = parseHexColor(bg);
-      if (rgb) {
-        invoke("set_window_background_color", rgb).catch(() => {});
-      }
-
-      console.log(
-        `[preferences] Matched VS Code theme "${detection.name}" → ${bundled ? `bundled "${resolved.id}"` : `generated "${resolved.id}"`}`,
-      );
-    } catch (e) {
-      console.warn("[preferences] Failed to detect VS Code theme:", e);
-    }
+    console.log(
+      `[preferences] Applied VS Code theme "${resolved.label}" → "${resolved.id}"`,
+    );
   },
 });
