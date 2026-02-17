@@ -56,7 +56,16 @@ pub fn generate_grouping(
     let output = run_claude_with_model(&prompt, cwd, model, custom_command, &["Read"])?;
 
     let json_str = extract_json_str(&output)?;
-    let mut groups: Vec<HunkGroup> = parse_json(json_str)?;
+    // Claude sometimes returns objects without wrapping `[...]` brackets.
+    // If the extracted JSON starts with `{`, wrap it in an array.
+    let json_owned;
+    let json_to_parse = if json_str.starts_with('{') {
+        json_owned = format!("[{json_str}]");
+        &json_owned
+    } else {
+        json_str
+    };
+    let mut groups: Vec<HunkGroup> = parse_json(json_to_parse)?;
 
     // Collect all input hunk IDs
     let all_ids: HashSet<String> = hunks.iter().map(|h| h.id.clone()).collect();
