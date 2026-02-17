@@ -44,11 +44,11 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg overflow-hidden">
-        <DialogHeader className="border-t-2 border-t-sky-500/40">
+        <DialogHeader className="border-t-2 border-t-status-renamed/40">
           <div className="flex items-center gap-3">
             {/* Branch icon */}
             <svg
-              className="h-4 w-4 text-sky-400"
+              className="h-4 w-4 text-status-renamed"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -69,10 +69,10 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
             {/* Copy button */}
             <button
               onClick={handleCopy}
-              className="rounded px-2 py-1 text-xxs font-medium text-stone-400 hover:bg-stone-700 hover:text-stone-200 transition-colors"
+              className="rounded px-2 py-1 text-xxs font-medium text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors"
             >
               {copied ? (
-                <span className="flex items-center gap-1 text-emerald-400">
+                <span className="flex items-center gap-1 text-status-approved">
                   <svg
                     className="h-3 w-3"
                     viewBox="0 0 24 24"
@@ -107,7 +107,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
             {/* Close button */}
             <button
               onClick={onClose}
-              className="rounded-md p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sky-500/50"
+              className="rounded-md p-1 text-fg-muted hover:bg-surface-raised hover:text-fg-secondary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-status-renamed/50"
               aria-label="Close git status"
             >
               <svg
@@ -130,7 +130,7 @@ export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
 
         {/* Raw output */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          <pre className="p-4 font-mono text-2xs leading-relaxed text-stone-300 whitespace-pre-wrap">
+          <pre className="p-4 font-mono text-2xs leading-relaxed text-fg-secondary whitespace-pre-wrap">
             {rawStatus || "Loading…"}
           </pre>
         </div>

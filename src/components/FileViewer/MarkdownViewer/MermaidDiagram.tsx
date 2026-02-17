@@ -130,8 +130,8 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4">
-        <div className="mb-2 flex items-center gap-2 text-rose-400">
+      <div className="rounded-lg border border-status-rejected/30 bg-status-rejected/10 p-4">
+        <div className="mb-2 flex items-center gap-2 text-status-rejected">
           <svg
             className="h-4 w-4"
             fill="none"
@@ -147,8 +147,8 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
           </svg>
           <span className="text-sm font-medium">Mermaid syntax error</span>
         </div>
-        <p className="mb-3 text-xs text-rose-300/80">{error}</p>
-        <pre className="overflow-x-auto rounded bg-stone-900 p-3 text-xs text-stone-300">
+        <p className="mb-3 text-xs text-status-rejected/80">{error}</p>
+        <pre className="overflow-x-auto rounded bg-surface-panel p-3 text-xs text-fg-secondary">
           <code>{code}</code>
         </pre>
       </div>
@@ -159,12 +159,12 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
     <div className="relative my-4 group">
       {/* Zoom controls - visible on hover */}
       {!loading && (
-        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded bg-stone-800/90 p-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded bg-surface-raised/90 p-1 opacity-0 transition-opacity group-hover:opacity-100">
           <SimpleTooltip content="Zoom out">
             <button
               onClick={zoomOut}
               disabled={zoom <= MIN_ZOOM}
-              className="rounded p-1 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
+              className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
             >
               <svg
                 className="h-4 w-4"
@@ -184,7 +184,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
           <SimpleTooltip content="Reset view">
             <button
               onClick={resetView}
-              className="min-w-[3rem] rounded px-1 py-0.5 text-xs tabular-nums text-stone-400 hover:bg-stone-700 hover:text-stone-200"
+              className="min-w-[3rem] rounded px-1 py-0.5 text-xs tabular-nums text-fg-muted hover:bg-surface-hover hover:text-fg-secondary"
             >
               {Math.round(zoom * 100)}%
             </button>
@@ -193,7 +193,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
             <button
               onClick={zoomIn}
               disabled={zoom >= MAX_ZOOM}
-              className="rounded p-1 text-stone-400 hover:bg-stone-700 hover:text-stone-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
+              className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
             >
               <svg
                 className="h-4 w-4"
@@ -213,13 +213,13 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
         </div>
       )}
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-stone-900/50">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-stone-700 border-t-amber-500" />
+        <div className="absolute inset-0 flex items-center justify-center bg-surface-panel/50">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-edge-default border-t-status-modified" />
         </div>
       )}
       <div
         ref={viewportRef}
-        className={`overflow-hidden rounded-lg bg-stone-900/50 ${
+        className={`overflow-hidden rounded-lg bg-surface-panel/50 ${
           isPanning ? "cursor-grabbing" : "cursor-grab"
         }`}
         onMouseDown={handleMouseDown}

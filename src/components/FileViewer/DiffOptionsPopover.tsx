@@ -23,7 +23,7 @@ const INDICATOR_OPTIONS: [DiffIndicators, string][] = [
 function CheckIcon(): JSX.Element {
   return (
     <svg
-      className="h-3 w-3 text-amber-500"
+      className="h-3 w-3 text-status-modified"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -50,8 +50,8 @@ function OptionButton({
       onClick={onClick}
       className={`flex w-full items-center justify-between rounded px-2 py-1 text-xs transition-colors ${
         isSelected
-          ? "bg-stone-800 text-stone-200"
-          : "text-stone-400 hover:bg-stone-800/50 hover:text-stone-300"
+          ? "bg-surface-raised text-fg-secondary"
+          : "text-fg-muted hover:bg-surface-raised/50 hover:text-fg-secondary"
       }`}
     >
       <span>{label}</span>
@@ -71,9 +71,9 @@ function OptionSectionHeader({
 }: OptionSectionProps): JSX.Element {
   return (
     <div
-      className={`border-b border-stone-800 px-3 py-2 ${hasBorderTop ? "border-t" : ""}`}
+      className={`border-b border-edge px-3 py-2 ${hasBorderTop ? "border-t" : ""}`}
     >
-      <span className="text-xxs font-medium uppercase tracking-wide text-stone-500">
+      <span className="text-xxs font-medium uppercase tracking-wide text-fg-muted">
         {title}
       </span>
     </div>
@@ -90,7 +90,7 @@ export const DiffOptionsPopover = memo(function DiffOptionsPopover() {
     <Popover>
       <SimpleTooltip content="Diff display options">
         <PopoverTrigger asChild>
-          <button className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 data-[state=open]:bg-stone-800 data-[state=open]:text-stone-300">
+          <button className="rounded p-1 text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary data-[state=open]:bg-surface-raised data-[state=open]:text-fg-secondary">
             <svg
               className="h-3.5 w-3.5"
               viewBox="0 0 24 24"

@@ -117,12 +117,12 @@ export function LanguageSelector({
           <button
             className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs font-medium transition-colors ${
               isOverridden
-                ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
-                : "bg-stone-800/60 text-stone-400 hover:bg-stone-700/60"
+                ? "bg-status-modified/15 text-status-modified hover:bg-status-modified/25"
+                : "bg-surface-raised/60 text-fg-muted hover:bg-surface-hover/60"
             }`}
           >
             <svg
-              className="h-2.5 w-2.5 text-stone-500"
+              className="h-2.5 w-2.5 text-fg-muted"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -135,7 +135,7 @@ export function LanguageSelector({
             </svg>
             {isOverridden ? displayName : `Auto (${displayName})`}
             <svg
-              className={`h-2.5 w-2.5 text-stone-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+              className={`h-2.5 w-2.5 text-fg-muted transition-transform ${isOpen ? "rotate-180" : ""}`}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -158,14 +158,14 @@ export function LanguageSelector({
         }}
       >
         {/* Search input */}
-        <div className="border-b border-stone-700 p-1.5">
+        <div className="border-b border-edge-default p-1.5">
           <Input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search languages…"
-            className="rounded bg-stone-900/50 py-1 text-xs focus:ring-1 focus:ring-amber-500/50"
+            className="rounded bg-surface-panel/50 py-1 text-xs focus:ring-1 focus:ring-focus-ring/50"
           />
         </div>
 
@@ -178,8 +178,8 @@ export function LanguageSelector({
                 onClick={() => handleSelect(undefined)}
                 className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
                   !isOverridden
-                    ? "bg-amber-500/15 text-amber-400"
-                    : "text-stone-300 hover:bg-stone-700"
+                    ? "bg-status-modified/15 text-status-modified"
+                    : "text-fg-secondary hover:bg-surface-hover"
                 }`}
               >
                 <span className="flex-1 text-left">
@@ -199,7 +199,7 @@ export function LanguageSelector({
                   </svg>
                 )}
               </button>
-              <div className="my-1 border-t border-stone-700" />
+              <div className="my-1 border-t border-edge-default" />
             </>
           )}
 
@@ -211,8 +211,8 @@ export function LanguageSelector({
                 onClick={() => handleSelect(opt.key as SupportedLanguages)}
                 className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
                   isOverridden && language === opt.key
-                    ? "bg-amber-500/15 text-amber-400"
-                    : "text-stone-300 hover:bg-stone-700"
+                    ? "bg-status-modified/15 text-status-modified"
+                    : "text-fg-secondary hover:bg-surface-hover"
                 }`}
               >
                 <span className="flex-1 text-left">{opt.label}</span>
@@ -232,7 +232,7 @@ export function LanguageSelector({
               </button>
             ))
           ) : (
-            <div className="px-2 py-3 text-center text-xs text-stone-500">
+            <div className="px-2 py-3 text-center text-xs text-fg-muted">
               No languages found
             </div>
           )}

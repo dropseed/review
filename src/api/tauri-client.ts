@@ -7,39 +7,41 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
 import type { ApiClient } from "./client";
 import type {
   BranchList,
-  GitStatusSummary,
+  ClassificationResult,
+  ClassifyOptions,
+  ClassifyResponse,
   Comparison,
-  GitHubPrRef,
-  PullRequest,
-  CommitEntry,
   CommitDetail,
-  FileEntry,
+  CommitEntry,
+  DetectMovePairsResponse,
+  DiffHunk,
+  DiffShortStat,
+  ExpandedContext,
   FileContent,
+  FileEntry,
+  FileSymbol,
+  FileSymbolDiff,
+  GitHubPrRef,
+  GitStatusSummary,
+  GroupingInput,
+  HunkGroup,
+  HunkInput,
+  ModifiedSymbolEntry,
+  PullRequest,
+  RemoteInfo,
+  ReviewFreshnessInput,
+  ReviewFreshnessResult,
   ReviewState,
   ReviewSummary,
   GlobalReviewSummary,
-  TrustCategory,
-  DiffHunk,
-  DiffShortStat,
-  ClassifyResponse,
-  HunkInput,
-  ClassifyOptions,
-  DetectMovePairsResponse,
-  ExpandedContext,
   SearchMatch,
-  FileSymbol,
-  FileSymbolDiff,
-  SymbolDefinition,
-  RemoteInfo,
-  GroupingInput,
-  HunkGroup,
-  ModifiedSymbolEntry,
   SummaryInput,
-  ReviewFreshnessInput,
-  ReviewFreshnessResult,
+  SymbolDefinition,
+  TrustCategory,
 } from "../types";
 
 export class TauriClient implements ApiClient {
@@ -284,9 +286,7 @@ export class TauriClient implements ApiClient {
     return invoke<ClassifyResponse>("classify_hunks_with_claude", {
       repoPath,
       hunks,
-      command: options?.command,
-      batchSize: options?.batchSize,
-      maxConcurrent: options?.maxConcurrent,
+      ...options,
     });
   }
 
@@ -306,8 +306,7 @@ export class TauriClient implements ApiClient {
     return invoke<HunkGroup[]>("generate_hunk_grouping", {
       repoPath,
       hunks,
-      command: options?.command,
-      modifiedSymbols: options?.modifiedSymbols,
+      ...options,
     });
   }
 
@@ -323,7 +322,7 @@ export class TauriClient implements ApiClient {
       {
         repoPath,
         hunks,
-        command: options?.command,
+        ...options,
       },
     );
   }
@@ -336,7 +335,7 @@ export class TauriClient implements ApiClient {
     return invoke<string | null>("generate_review_diagram", {
       repoPath,
       hunks,
-      command: options?.command,
+      ...options,
     });
   }
 
@@ -442,7 +441,7 @@ export class TauriClient implements ApiClient {
   onClassifyProgress(
     callback: (payload: {
       completedIds: string[];
-      classifications: Record<string, { label: string[]; reasoning: string }>;
+      classifications: Record<string, ClassificationResult>;
     }) => void,
   ): () => void {
     return this.listenForEvent("classify:batch-complete", callback);
@@ -472,5 +471,24 @@ export class TauriClient implements ApiClient {
 
   async isGitRepo(path: string): Promise<boolean> {
     return invoke<boolean>("is_git_repo", { path });
+  }
+
+  // ----- VS Code theme -----
+
+  async detectVscodeTheme(): Promise<{
+    name: string;
+    themeType: string;
+    colors: Record<string, string>;
+    tokenColors: unknown[];
+  }> {
+    return invoke("detect_vscode_theme");
+  }
+
+  async setWindowBackgroundColor(
+    r: number,
+    g: number,
+    b: number,
+  ): Promise<void> {
+    await invoke("set_window_background_color", { r, g, b });
   }
 }

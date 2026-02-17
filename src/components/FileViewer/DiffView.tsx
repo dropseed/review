@@ -787,7 +787,7 @@ export function DiffView({
       return (
         <SimpleTooltip content="Add comment">
           <button
-            className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-colors hover:bg-sky-500 hover:scale-110"
+            className="flex h-5 w-5 items-center justify-center rounded bg-status-renamed/80 text-white shadow-lg transition-colors hover:bg-status-renamed hover:scale-110"
             onClick={() => {
               const hoveredLine = getHoveredLine();
               if (!hoveredLine) return;
@@ -823,19 +823,19 @@ export function DiffView({
     <div className="diff-container relative" ref={diffContainerRef}>
       {!highlightReady && (
         <div className="absolute top-0 left-0 right-0 z-10 h-0.5 overflow-hidden">
-          <div className="h-full w-1/3 animate-[shimmer_1s_ease-in-out_infinite] bg-sky-500/50 rounded-full" />
+          <div className="h-full w-1/3 animate-[shimmer_1s_ease-in-out_infinite] bg-status-renamed/50 rounded-full" />
         </div>
       )}
       <DiffErrorBoundary
         key={fileName}
         fallback={
           <div className="p-6">
-            <div className="mb-4 rounded-lg bg-rose-500/10 border border-rose-500/20 p-4">
-              <p className="text-rose-400">Failed to render diff view</p>
+            <div className="mb-4 rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-4">
+              <p className="text-status-rejected">Failed to render diff view</p>
             </div>
-            <div className="rounded-lg bg-stone-800/30 p-4">
-              <p className="mb-2 text-sm text-stone-500">Raw patch:</p>
-              <pre className="overflow-auto font-mono text-xs text-stone-300 leading-relaxed">
+            <div className="rounded-lg bg-surface-raised/30 p-4">
+              <p className="mb-2 text-sm text-fg-muted">Raw patch:</p>
+              <pre className="overflow-auto font-mono text-xs text-fg-secondary leading-relaxed">
                 {diffPatch}
               </pre>
             </div>

@@ -4,6 +4,25 @@ import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
 import { setSoundEnabled } from "../../utils/sounds";
+import { applyUiTheme, getUiTheme, type UiTheme } from "../../lib/ui-themes";
+import {
+  matchBundledTheme,
+  resolveVscodeTheme,
+  type VscodeThemeDetection,
+} from "../../lib/vscode-theme-resolver";
+
+/** Parse a hex color string (e.g., "#1e1e1e") to { r, g, b }. */
+function parseHexColor(
+  hex: string,
+): { r: number; g: number; b: number } | null {
+  const match = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+  if (!match) return null;
+  return {
+    r: parseInt(match[1], 16),
+    g: parseInt(match[2], 16),
+    b: parseInt(match[3], 16),
+  };
+}
 
 export const CODE_FONT_SIZE_DEFAULT = 11;
 export const CODE_FONT_SIZE_MIN = 8;
@@ -21,6 +40,7 @@ export type ReviewSortOrder = "updated" | "repo" | "size";
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeTheme: "github-dark",
+  uiTheme: "review-dark",
   classifyCommand: null as string | null,
   classifyBatchSize: 5,
   classifyMaxConcurrent: 2,
@@ -42,12 +62,14 @@ const defaults = {
   companionServerFingerprint: null as string | null,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
+  matchVscodeTheme: false,
 };
 
 export interface PreferencesSlice {
   // UI settings
   codeFontSize: number;
   codeTheme: string;
+  uiTheme: string;
   fileToReveal: string | null;
   directoryToReveal: string | null;
 
@@ -96,9 +118,15 @@ export interface PreferencesSlice {
   guideSideNavCollapsed: boolean;
   guideSideNavWidth: number;
 
+  // VS Code theme matching
+  matchVscodeTheme: boolean;
+  /** The currently resolved VS Code theme (null when not using VS Code match) */
+  resolvedVscodeTheme: UiTheme | null;
+
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
+  setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
   setDiffIndicators: (indicators: DiffIndicators) => void;
   setNeedsReviewDisplayMode: (mode: ChangesDisplayMode) => void;
@@ -148,36 +176,19 @@ export interface PreferencesSlice {
   setGuideSideNavCollapsed: (collapsed: boolean) => void;
   toggleGuideSideNav: () => void;
   setGuideSideNavWidth: (width: number) => void;
+
+  // VS Code theme matching actions
+  setMatchVscodeTheme: (enabled: boolean) => Promise<void>;
+  detectAndApplyVscodeTheme: () => Promise<void>;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
   PreferencesSlice
 > = (storage: StorageService) => (set, get) => ({
-  codeFontSize: defaults.codeFontSize,
-  codeTheme: defaults.codeTheme,
+  ...defaults,
   fileToReveal: null,
   directoryToReveal: null,
-  diffLineDiffType: defaults.diffLineDiffType,
-  diffIndicators: defaults.diffIndicators,
-  needsReviewDisplayMode: defaults.needsReviewDisplayMode,
-  reviewedDisplayMode: defaults.reviewedDisplayMode,
-  diffViewMode: defaults.diffViewMode,
-  classifyCommand: defaults.classifyCommand,
-  classifyBatchSize: defaults.classifyBatchSize,
-  classifyMaxConcurrent: defaults.classifyMaxConcurrent,
-  recentRepositories: defaults.recentRepositories,
-  sentryEnabled: defaults.sentryEnabled,
-  soundEffectsEnabled: defaults.soundEffectsEnabled,
-  tabRailCollapsed: defaults.tabRailCollapsed,
-  filesPanelCollapsed: defaults.filesPanelCollapsed,
-  reviewSortOrder: defaults.reviewSortOrder,
-  inactiveReviewSortOrder: defaults.inactiveReviewSortOrder,
-  companionServerEnabled: defaults.companionServerEnabled,
-  companionServerToken: defaults.companionServerToken,
-  companionServerPort: defaults.companionServerPort,
-  companionServerFingerprint: defaults.companionServerFingerprint,
-  guideSideNavCollapsed: defaults.guideSideNavCollapsed,
-  guideSideNavWidth: defaults.guideSideNavWidth,
+  resolvedVscodeTheme: null,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
@@ -193,6 +204,20 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   setCodeTheme: (theme) => {
     set({ codeTheme: theme });
     storage.set("codeTheme", theme);
+  },
+
+  setUiTheme: (themeId) => {
+    const theme = getUiTheme(themeId);
+    set({
+      uiTheme: themeId,
+      codeTheme: theme.codeTheme,
+      matchVscodeTheme: false,
+      resolvedVscodeTheme: null,
+    });
+    storage.set("uiTheme", themeId);
+    storage.set("codeTheme", theme.codeTheme);
+    storage.set("matchVscodeTheme", false);
+    applyUiTheme(theme);
   },
 
   setDiffLineDiffType: (type) => {
@@ -221,146 +246,88 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   loadPreferences: async () => {
-    const [
-      rawFontSize,
-      rawTheme,
-      rawClassifyCmd,
-      rawBatchSize,
-      rawMaxConcurrent,
-      rawRecentRepos,
-      rawSentryEnabled,
-      rawSoundEffectsEnabled,
-      rawTabRailCollapsed,
-      rawFilesPanelCollapsed,
-      rawReviewSortOrder,
-      rawInactiveReviewSortOrder,
-      rawCompanionServerEnabled,
-      rawCompanionServerToken,
-      rawCompanionServerPort,
-      rawCompanionServerFingerprint,
-      rawDiffLineDiffType,
-      rawDiffIndicators,
-      rawNeedsReviewDisplayMode,
-      rawReviewedDisplayMode,
-      rawChangesDisplayMode,
-      rawDiffViewMode,
-      rawGuideSideNavCollapsed,
-      rawGuideSideNavWidth,
-    ] = await Promise.all([
-      storage.get<number>("codeFontSize"),
-      storage.get<string>("codeTheme"),
-      storage.get<string | null>("classifyCommand"),
-      storage.get<number>("classifyBatchSize"),
-      storage.get<number>("classifyMaxConcurrent"),
-      storage.get<RecentRepo[]>("recentRepositories"),
-      storage.get<boolean>("sentryEnabled"),
-      storage.get<boolean>("soundEffectsEnabled"),
-      storage.get<boolean>("tabRailCollapsed"),
-      storage.get<boolean>("filesPanelCollapsed"),
-      storage.get<ReviewSortOrder>("reviewSortOrder"),
-      storage.get<ReviewSortOrder>("inactiveReviewSortOrder"),
-      storage.get<boolean>("companionServerEnabled"),
-      storage.get<string | null>("companionServerToken"),
-      storage.get<number>("companionServerPort"),
-      storage.get<string | null>("companionServerFingerprint"),
-      storage.get<DiffLineDiffType>("diffLineDiffType"),
-      storage.get<DiffIndicators>("diffIndicators"),
-      storage.get<ChangesDisplayMode>("needsReviewDisplayMode"),
-      storage.get<ChangesDisplayMode>("reviewedDisplayMode"),
-      storage.get<ChangesDisplayMode>("changesDisplayMode"),
-      storage.get<string>("diffViewMode"),
-      storage.get<boolean>("guideSideNavCollapsed"),
-      storage.get<number>("guideSideNavWidth"),
-    ]);
+    // Load all standard keys in parallel, falling back to defaults
+    const keys = Object.keys(defaults) as (keyof typeof defaults)[];
+    const values = await Promise.all(keys.map((key) => storage.get(key)));
+    const loaded = Object.fromEntries(
+      keys.map((key, i) => [key, values[i] ?? defaults[key]]),
+    ) as typeof defaults;
 
-    const fontSize = rawFontSize ?? defaults.codeFontSize;
-    const theme = rawTheme ?? defaults.codeTheme;
-    const classifyCmd = rawClassifyCmd ?? defaults.classifyCommand;
-    const batchSize = rawBatchSize ?? defaults.classifyBatchSize;
-    const maxConcurrent = rawMaxConcurrent ?? defaults.classifyMaxConcurrent;
-    const recentRepos = rawRecentRepos ?? defaults.recentRepositories;
-    const sentryEnabled = rawSentryEnabled ?? defaults.sentryEnabled;
-    const soundEffectsEnabled =
-      rawSoundEffectsEnabled ?? defaults.soundEffectsEnabled;
-    const tabRailCollapsed = rawTabRailCollapsed ?? defaults.tabRailCollapsed;
-    const filesPanelCollapsed =
-      rawFilesPanelCollapsed ?? defaults.filesPanelCollapsed;
-    const reviewSortOrder = rawReviewSortOrder ?? defaults.reviewSortOrder;
-    const inactiveReviewSortOrder =
-      rawInactiveReviewSortOrder ?? defaults.inactiveReviewSortOrder;
-    const companionServerEnabled =
-      rawCompanionServerEnabled ?? defaults.companionServerEnabled;
-    const companionServerToken =
-      rawCompanionServerToken ?? defaults.companionServerToken;
-    const companionServerPort =
-      rawCompanionServerPort ?? defaults.companionServerPort;
-    const companionServerFingerprint =
-      rawCompanionServerFingerprint ?? defaults.companionServerFingerprint;
-    const diffLineDiffType = rawDiffLineDiffType ?? defaults.diffLineDiffType;
-    const diffIndicators = rawDiffIndicators ?? defaults.diffIndicators;
-    // Migrate from the old single "changesDisplayMode" key
-    const needsReviewDisplayMode =
-      rawNeedsReviewDisplayMode ??
-      rawChangesDisplayMode ??
-      defaults.needsReviewDisplayMode;
-    const reviewedDisplayMode =
-      rawReviewedDisplayMode ??
-      rawChangesDisplayMode ??
-      defaults.reviewedDisplayMode;
-    let diffViewMode: DiffViewMode =
-      (rawDiffViewMode as DiffViewMode) ?? defaults.diffViewMode;
-    // Migrate legacy "file" mode to "new"
-    if ((diffViewMode as string) === "file") diffViewMode = "new";
-    const guideSideNavCollapsed =
-      rawGuideSideNavCollapsed ?? defaults.guideSideNavCollapsed;
-    const guideSideNavWidth =
-      rawGuideSideNavWidth ?? defaults.guideSideNavWidth;
+    // Also load the legacy key for migration
+    const rawChangesDisplayMode =
+      await storage.get<ChangesDisplayMode>("changesDisplayMode");
+
+    // Migrate from old single "changesDisplayMode" key
+    if (rawChangesDisplayMode) {
+      if (!values[keys.indexOf("needsReviewDisplayMode")]) {
+        loaded.needsReviewDisplayMode = rawChangesDisplayMode;
+      }
+      if (!values[keys.indexOf("reviewedDisplayMode")]) {
+        loaded.reviewedDisplayMode = rawChangesDisplayMode;
+      }
+    }
+
+    // Migrate legacy "file" diff view mode to "new"
+    if ((loaded.diffViewMode as string) === "file") {
+      loaded.diffViewMode = "new";
+    }
 
     set({
-      codeFontSize: fontSize,
-      codeTheme: theme,
-      diffLineDiffType,
-      diffIndicators,
-      needsReviewDisplayMode,
-      reviewedDisplayMode,
-      diffViewMode,
-      classifyCommand: classifyCmd,
-      classifyBatchSize: batchSize,
-      classifyMaxConcurrent: maxConcurrent,
-      recentRepositories: recentRepos,
-      sentryEnabled,
-      soundEffectsEnabled,
-      tabRailCollapsed,
-      filesPanelCollapsed,
-      reviewSortOrder,
-      inactiveReviewSortOrder,
-      companionServerEnabled,
-      companionServerToken,
-      companionServerPort,
-      companionServerFingerprint,
-      guideSideNavCollapsed,
-      guideSideNavWidth,
+      codeFontSize: loaded.codeFontSize,
+      codeTheme: loaded.codeTheme,
+      uiTheme: loaded.uiTheme,
+      matchVscodeTheme: loaded.matchVscodeTheme,
+      diffLineDiffType: loaded.diffLineDiffType,
+      diffIndicators: loaded.diffIndicators,
+      needsReviewDisplayMode: loaded.needsReviewDisplayMode,
+      reviewedDisplayMode: loaded.reviewedDisplayMode,
+      diffViewMode: loaded.diffViewMode,
+      classifyCommand: loaded.classifyCommand,
+      classifyBatchSize: loaded.classifyBatchSize,
+      classifyMaxConcurrent: loaded.classifyMaxConcurrent,
+      recentRepositories: loaded.recentRepositories,
+      sentryEnabled: loaded.sentryEnabled,
+      soundEffectsEnabled: loaded.soundEffectsEnabled,
+      tabRailCollapsed: loaded.tabRailCollapsed,
+      filesPanelCollapsed: loaded.filesPanelCollapsed,
+      reviewSortOrder: loaded.reviewSortOrder,
+      inactiveReviewSortOrder: loaded.inactiveReviewSortOrder,
+      companionServerEnabled: loaded.companionServerEnabled,
+      companionServerToken: loaded.companionServerToken,
+      companionServerPort: loaded.companionServerPort,
+      companionServerFingerprint: loaded.companionServerFingerprint,
+      guideSideNavCollapsed: loaded.guideSideNavCollapsed,
+      guideSideNavWidth: loaded.guideSideNavWidth,
     });
 
     // Propagate Sentry consent to both JS and Rust SDKs
-    setSentryConsent(sentryEnabled);
-    invoke("set_sentry_consent", { enabled: sentryEnabled }).catch(() => {});
+    setSentryConsent(loaded.sentryEnabled);
+    invoke("set_sentry_consent", { enabled: loaded.sentryEnabled }).catch(
+      () => {},
+    );
 
     // Propagate sound setting
-    setSoundEnabled(soundEffectsEnabled);
+    setSoundEnabled(loaded.soundEffectsEnabled);
 
     // Apply font size CSS variables
     document.documentElement.style.setProperty(
       "--code-font-size",
-      `${fontSize}px`,
+      `${loaded.codeFontSize}px`,
     );
     document.documentElement.style.setProperty(
       "--ui-scale",
-      String(fontSize / CODE_FONT_SIZE_DEFAULT),
+      String(loaded.codeFontSize / CODE_FONT_SIZE_DEFAULT),
     );
 
+    // Apply UI theme (sets all semantic CSS variables + color-scheme)
+    applyUiTheme(getUiTheme(loaded.uiTheme));
+    if (loaded.matchVscodeTheme) {
+      // Detect VS Code theme in background (overrides bundled theme above)
+      get().detectAndApplyVscodeTheme();
+    }
+
     // Start companion server if it was previously enabled
-    if (companionServerEnabled) {
+    if (loaded.companionServerEnabled) {
       invoke("start_companion_server").catch((e) => {
         console.error("Failed to start companion server on load:", e);
       });
@@ -368,6 +335,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   revealFileInTree: (path) => {
+    // Sets selectedFile from NavigationSlice via type assertion (cross-slice update)
     set({
       fileToReveal: path,
       selectedFile: path,
@@ -444,9 +412,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   toggleTabRail: () => {
-    const collapsed = !get().tabRailCollapsed;
-    set({ tabRailCollapsed: collapsed });
-    storage.set("tabRailCollapsed", collapsed);
+    get().setTabRailCollapsed(!get().tabRailCollapsed);
   },
 
   setFilesPanelCollapsed: (collapsed) => {
@@ -455,9 +421,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   toggleFilesPanel: () => {
-    const collapsed = !get().filesPanelCollapsed;
-    set({ filesPanelCollapsed: collapsed });
-    storage.set("filesPanelCollapsed", collapsed);
+    get().setFilesPanelCollapsed(!get().filesPanelCollapsed);
   },
 
   setReviewSortOrder: (order) => {
@@ -541,13 +505,57 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   toggleGuideSideNav: () => {
-    const collapsed = !get().guideSideNavCollapsed;
-    set({ guideSideNavCollapsed: collapsed });
-    storage.set("guideSideNavCollapsed", collapsed);
+    get().setGuideSideNavCollapsed(!get().guideSideNavCollapsed);
   },
 
   setGuideSideNavWidth: (width) => {
     set({ guideSideNavWidth: width });
     storage.set("guideSideNavWidth", width);
+  },
+
+  setMatchVscodeTheme: async (enabled) => {
+    set({ matchVscodeTheme: enabled });
+    storage.set("matchVscodeTheme", enabled);
+    if (enabled) {
+      await get().detectAndApplyVscodeTheme();
+    } else {
+      // Revert to the selected bundled theme
+      const theme = getUiTheme(get().uiTheme);
+      set({ resolvedVscodeTheme: null, codeTheme: theme.codeTheme });
+      storage.set("codeTheme", theme.codeTheme);
+      applyUiTheme(theme);
+    }
+  },
+
+  detectAndApplyVscodeTheme: async () => {
+    try {
+      const detection: VscodeThemeDetection = await invoke(
+        "detect_vscode_theme",
+      );
+
+      // First try to match to a bundled theme (better quality)
+      const bundled = matchBundledTheme(detection.name);
+      const resolved = bundled ?? resolveVscodeTheme(detection);
+
+      set({
+        resolvedVscodeTheme: resolved,
+        codeTheme: resolved.codeTheme,
+      });
+      storage.set("codeTheme", resolved.codeTheme);
+      applyUiTheme(resolved);
+
+      // Update the window background color to match the theme
+      const bg = resolved.tokens.surface;
+      const rgb = parseHexColor(bg);
+      if (rgb) {
+        invoke("set_window_background_color", rgb).catch(() => {});
+      }
+
+      console.log(
+        `[preferences] Matched VS Code theme "${detection.name}" → ${bundled ? `bundled "${resolved.id}"` : `generated "${resolved.id}"`}`,
+      );
+    } catch (e) {
+      console.warn("[preferences] Failed to detect VS Code theme:", e);
+    }
   },
 });

@@ -47,7 +47,7 @@ function DialogContent({
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            "overscroll-contain border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+            "overscroll-contain border border-edge-default/80 bg-surface-panel shadow-2xl shadow-black/50 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             className,
           )}
           {...props}
@@ -65,7 +65,7 @@ const DialogHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex items-center justify-between border-b border-stone-800 px-4 py-3",
+      "flex items-center justify-between border-b border-edge px-4 py-3",
       className,
     )}
     {...props}
@@ -82,7 +82,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       ref={ref}
-      className={cn("text-sm font-semibold text-stone-100", className)}
+      className={cn("text-sm font-semibold text-fg", className)}
       {...props}
     />
   );
@@ -98,7 +98,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       ref={ref}
-      className={cn("text-xs text-stone-500", className)}
+      className={cn("text-xs text-fg-muted", className)}
       {...props}
     />
   );

@@ -27,7 +27,7 @@ export function CollapsibleSection({
   title,
   icon,
   badge,
-  badgeColor = "bg-amber-500/20 text-amber-300",
+  badgeColor = "bg-status-modified/20 text-status-modified",
   isOpen,
   onToggle,
   showTopBorder = true,
@@ -39,11 +39,11 @@ export function CollapsibleSection({
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle}>
       <div
-        className={`border-b border-stone-800/50 ${showTopBorder ? "border-t border-t-stone-800/50" : ""}`}
+        className={`border-b border-edge ${showTopBorder ? "border-t border-t-edge" : ""}`}
       >
         <div className="relative group/section">
           <CollapsibleTrigger asChild>
-            <button className="flex w-full items-center gap-2 pl-3 pr-8 py-2 text-left text-xs font-medium text-stone-300 hover:bg-stone-800/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50">
+            <button className="flex w-full items-center gap-2 pl-3 pr-8 py-2 text-left text-xs font-medium text-fg-secondary hover:bg-surface-raised/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-focus-ring/50">
               {icon}
               <span className="flex-1">{title}</span>
               {badge !== undefined && badge !== 0 && (
@@ -60,7 +60,7 @@ export function CollapsibleSection({
               <DropdownMenuTrigger asChild>
                 <button
                   onClick={(e) => e.stopPropagation()}
-                  className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-all ${menuOpen ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"}`}
+                  className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-all ${menuOpen ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"}`}
                 >
                   <svg
                     className="h-3.5 w-3.5"

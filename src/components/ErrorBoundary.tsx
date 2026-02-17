@@ -42,13 +42,13 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-stone-950 p-8">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-surface p-8">
           <div className="max-w-lg text-center">
             <div className="mb-4 text-4xl">⚠️</div>
-            <h1 className="mb-2 text-xl font-semibold text-stone-200">
+            <h1 className="mb-2 text-xl font-semibold text-fg-secondary">
               Something went wrong
             </h1>
-            <p className="mb-6 text-stone-400">
+            <p className="mb-6 text-fg-muted">
               An unexpected error occurred. You can try reloading the
               application.
             </p>
@@ -56,13 +56,13 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={this.handleDismiss}
-                className="rounded-md bg-stone-700 px-4 py-2 text-sm font-medium text-stone-200 hover:bg-stone-600 transition-colors"
+                className="rounded-md bg-surface-hover px-4 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-active transition-colors"
               >
                 Dismiss
               </button>
               <button
                 onClick={this.handleReload}
-                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 transition-colors"
+                className="rounded-md bg-status-modified px-4 py-2 text-sm font-medium text-white hover:bg-status-modified transition-colors"
               >
                 Reload Application
               </button>
@@ -70,10 +70,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {this.state.error && (
               <details className="mt-6 text-left">
-                <summary className="cursor-pointer text-sm text-stone-500 hover:text-stone-400">
+                <summary className="cursor-pointer text-sm text-fg0 hover:text-fg-muted">
                   Error details
                 </summary>
-                <pre className="mt-2 overflow-auto rounded bg-stone-900 p-3 text-xs text-red-400">
+                <pre className="mt-2 overflow-auto rounded bg-surface-panel p-3 text-xs text-status-rejected">
                   {this.state.error.toString()}
                   {this.state.errorInfo?.componentStack && (
                     <>

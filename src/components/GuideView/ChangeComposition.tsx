@@ -5,13 +5,13 @@ import {
 } from "../../hooks/useChangeComposition";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  imports: "bg-cyan-500",
-  formatting: "bg-stone-500",
-  comments: "bg-amber-500",
-  types: "bg-violet-500",
+  imports: "bg-status-trusted",
+  formatting: "bg-surface-active",
+  comments: "bg-status-modified",
+  types: "bg-status-classifying",
   file: "bg-pink-500",
   hunk: "bg-orange-500",
-  generated: "bg-emerald-500",
+  generated: "bg-status-approved",
   rename: "bg-blue-500",
 };
 
@@ -31,7 +31,7 @@ function BarSegment({
   onLeave: () => void;
 }): ReactNode {
   if (segment.count === 0) return null;
-  const colorClass = CATEGORY_COLORS[segment.categoryId] || "bg-stone-600";
+  const colorClass = CATEGORY_COLORS[segment.categoryId] || "bg-surface-active";
   return (
     <div
       className={`${colorClass} transition-opacity duration-150 ${isDimmed ? "opacity-25" : isHovered ? "opacity-100" : "opacity-80"}`}
@@ -55,7 +55,7 @@ function LegendItem({
   onHover: () => void;
   onLeave: () => void;
 }): ReactNode {
-  const dotColor = CATEGORY_COLORS[segment.categoryId] || "bg-stone-600";
+  const dotColor = CATEGORY_COLORS[segment.categoryId] || "bg-surface-active";
   return (
     <span
       className={`flex items-center gap-1.5 transition-opacity duration-150 cursor-default ${isDimmed ? "opacity-30" : isHovered ? "opacity-100" : ""}`}
@@ -63,8 +63,8 @@ function LegendItem({
       onMouseLeave={onLeave}
     >
       <span className={`inline-block h-2 w-2 rounded-full ${dotColor}`} />
-      <span className="text-stone-400">{segment.categoryName}</span>
-      <span className="text-stone-500 tabular-nums">{segment.count}</span>
+      <span className="text-fg-muted">{segment.categoryName}</span>
+      <span className="text-fg0 tabular-nums">{segment.count}</span>
     </span>
   );
 }
@@ -76,12 +76,12 @@ export function ChangeComposition(): ReactNode {
   if (composition.totalClassified === 0) return null;
 
   return (
-    <div className="rounded-lg border border-stone-800 p-4">
+    <div className="rounded-lg border border-edge p-4">
       <div className="flex items-center justify-between mb-2.5">
-        <span className="text-xs font-medium text-stone-400">
+        <span className="text-xs font-medium text-fg-muted">
           Change Composition
         </span>
-        <span className="text-xxs tabular-nums text-stone-500">
+        <span className="text-xxs tabular-nums text-fg0">
           {composition.totalClassified} classified
           {composition.totalUnclassified > 0 && (
             <> &middot; {composition.totalUnclassified} pending</>
@@ -89,7 +89,7 @@ export function ChangeComposition(): ReactNode {
         </span>
       </div>
 
-      <div className="h-2.5 rounded-full bg-stone-800 overflow-hidden flex">
+      <div className="h-2.5 rounded-full bg-surface-raised overflow-hidden flex">
         {composition.segments.map((segment) => (
           <BarSegment
             key={segment.categoryId}

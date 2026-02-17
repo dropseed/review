@@ -67,9 +67,9 @@ export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
       onMouseDown={handleMouseDown}
       className={`group flex-shrink-0 ${
         isHorizontal
-          ? "w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
-          : "h-1 cursor-row-resize hover:bg-amber-500/50 active:bg-amber-500"
-      } bg-stone-800 transition-colors`}
+          ? "w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"
+          : "h-1 cursor-row-resize hover:bg-status-modified/50 active:bg-status-modified"
+      } bg-surface-raised transition-colors`}
     />
   );
 }

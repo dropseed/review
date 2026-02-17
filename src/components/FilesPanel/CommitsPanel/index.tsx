@@ -78,8 +78,8 @@ export function CommitsPanel({
     return (
       <div className="flex h-40 items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-5 w-5 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <span className="text-xs text-stone-500">Loading commits...</span>
+          <div className="h-5 w-5 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <span className="text-xs text-fg-muted">Loading commits...</span>
         </div>
       </div>
     );
@@ -89,7 +89,7 @@ export function CommitsPanel({
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4">
         <svg
-          className="h-8 w-8 text-stone-700 mb-2"
+          className="h-8 w-8 text-surface-hover mb-2"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -101,12 +101,12 @@ export function CommitsPanel({
             d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
           />
         </svg>
-        <p className="text-xs text-stone-500">No commits found</p>
+        <p className="text-xs text-fg-muted">No commits found</p>
       </div>
     );
   }
 
-  const compareRefColor = "text-stone-300";
+  const compareRefColor = "text-fg-secondary";
 
   return (
     <div
@@ -116,15 +116,15 @@ export function CommitsPanel({
       onKeyDown={handleKeyDown}
     >
       {/* Comparison range header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-800 bg-stone-900 px-3 py-1.5">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-edge bg-surface-panel px-3 py-1.5">
         <div className="flex items-center gap-1 text-xs min-w-0">
-          <span className="text-stone-400 truncate">{comparison.base}</span>
-          <span className="text-stone-600 flex-shrink-0">..</span>
+          <span className="text-fg-muted truncate">{comparison.base}</span>
+          <span className="text-fg-faint flex-shrink-0">..</span>
           <span className={`${compareRefColor} truncate`}>
             {comparison.head}
           </span>
         </div>
-        <span className="text-xxs text-stone-600 tabular-nums flex-shrink-0 ml-2">
+        <span className="text-xxs text-fg-faint tabular-nums flex-shrink-0 ml-2">
           {commits.length} commit{commits.length !== 1 ? "s" : ""}
         </span>
       </div>
@@ -137,35 +137,35 @@ export function CommitsPanel({
             key={commit.hash}
             ref={isSelected ? selectedRef : undefined}
             onClick={() => onSelectCommit(commit.hash)}
-            className={`w-full text-left px-3 py-2 border-b border-stone-800/40
+            className={`w-full text-left px-3 py-2 border-b border-edge/40
                        transition-colors duration-75
                        ${
                          isSelected
-                           ? "bg-amber-500/10 border-l-2 border-l-amber-500"
-                           : "hover:bg-stone-800/40 border-l-2 border-l-transparent"
+                           ? "bg-status-modified/10 border-l-2 border-l-status-modified"
+                           : "hover:bg-surface-raised/40 border-l-2 border-l-transparent"
                        }`}
           >
             <div className="flex items-baseline gap-2 min-w-0">
               <span
                 className={`font-mono text-xxs shrink-0 ${
-                  isSelected ? "text-amber-400" : "text-stone-500"
+                  isSelected ? "text-status-modified" : "text-fg-muted"
                 }`}
               >
                 {commit.shortHash}
               </span>
               <span
                 className={`text-xs truncate ${
-                  isSelected ? "text-stone-200" : "text-stone-300"
+                  isSelected ? "text-fg-secondary" : "text-fg-secondary"
                 }`}
               >
                 {commit.message}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xxs text-stone-600 truncate">
+              <span className="text-xxs text-fg-faint truncate">
                 {commit.author}
               </span>
-              <span className="text-xxs text-stone-600">
+              <span className="text-xxs text-fg-faint">
                 {formatRelativeTime(commit.date)}
               </span>
             </div>

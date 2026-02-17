@@ -118,13 +118,13 @@ function FileDiffSection({
   const showDiff = !isCollapsed && !deferDiff;
 
   return (
-    <div className="border-b border-stone-800/50">
+    <div className="border-b border-edge/50">
       {/* File path header */}
-      <div className="sticky top-[52px] z-[9] bg-stone-900/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-stone-800/30">
+      <div className="sticky top-[52px] z-[9] bg-surface-panel/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-edge/30">
         <button
           type="button"
           onClick={() => setIsCollapsed((prev) => !prev)}
-          className="shrink-0 text-stone-500 hover:text-stone-300 transition-colors"
+          className="shrink-0 text-fg-muted hover:text-fg-secondary transition-colors"
         >
           <svg
             className={`w-3 h-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
@@ -137,12 +137,12 @@ function FileDiffSection({
         <button
           type="button"
           onClick={() => setIsCollapsed((prev) => !prev)}
-          className="font-mono text-xs text-stone-400 flex-1 truncate text-left hover:text-stone-300 transition-colors"
+          className="font-mono text-xs text-fg-muted flex-1 truncate text-left hover:text-fg-secondary transition-colors"
         >
           {filePath}
         </button>
         {fileCompleted ? (
-          <span className="text-emerald-400 shrink-0">
+          <span className="text-status-approved shrink-0">
             <CheckIcon />
           </span>
         ) : (
@@ -151,7 +151,7 @@ function FileDiffSection({
               type="button"
               onClick={onApproveFile}
               className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
-                               bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                               bg-status-approved/10 text-status-approved hover:bg-status-approved/20"
             >
               Approve{" "}
               {fileUnreviewed.length > 1 ? `all ${fileUnreviewed.length}` : ""}
@@ -160,7 +160,7 @@ function FileDiffSection({
               type="button"
               onClick={onRejectFile}
               className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
-                               text-stone-500 hover:text-rose-400 hover:bg-rose-500/10"
+                               text-fg-muted hover:text-status-rejected hover:bg-status-rejected/10"
             >
               Reject
             </button>
@@ -172,7 +172,7 @@ function FileDiffSection({
       {!isCollapsed && (
         <>
           {isLoading && !fileContent && (
-            <div className="flex items-center gap-2 px-4 py-6 text-stone-500">
+            <div className="flex items-center gap-2 px-4 py-6 text-fg-muted">
               <Spinner className="h-4 w-4" />
               <span className="text-xs">Loading diff...</span>
             </div>
@@ -181,8 +181,8 @@ function FileDiffSection({
             <DiffErrorBoundary
               fallback={
                 <div className="p-4">
-                  <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-3">
-                    <p className="text-xs text-rose-400">
+                  <div className="rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-3">
+                    <p className="text-xs text-status-rejected">
                       Failed to render diff for {filePath}
                     </p>
                   </div>
@@ -423,17 +423,17 @@ export function GroupDiffViewer({
   return (
     <div>
       {/* Group header */}
-      <div className="sticky top-0 z-10 bg-stone-900/95 backdrop-blur-sm border-b border-stone-800/50 px-4 py-3">
+      <div className="sticky top-0 z-10 bg-surface-panel/95 backdrop-blur-sm border-b border-edge/50 px-4 py-3">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-stone-500 bg-stone-800 px-2 py-0.5 rounded-full tabular-nums">
+          <span className="text-xs font-medium text-fg-muted bg-surface-raised px-2 py-0.5 rounded-full tabular-nums">
             {groupIndex + 1}
           </span>
-          <h2 className="text-sm font-medium text-stone-200 flex-1 min-w-0 truncate">
+          <h2 className="text-sm font-medium text-fg-secondary flex-1 min-w-0 truncate">
             {group.title}
           </h2>
           {isCompleted ? (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-medium">
+              <span className="flex items-center gap-1.5 text-status-approved text-xs font-medium">
                 <CheckIcon />
                 Done
               </span>
@@ -441,14 +441,14 @@ export function GroupDiffViewer({
                 type="button"
                 onClick={handleUnapproveAll}
                 className="px-2 py-1 text-xs font-medium rounded-md transition-colors
-                           text-stone-500 hover:text-amber-400 hover:bg-amber-500/10"
+                           text-fg-muted hover:text-status-modified hover:bg-status-modified/10"
               >
                 Reset
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xxs text-stone-500 tabular-nums">
+              <span className="text-xxs text-fg-muted tabular-nums">
                 {group.hunkIds.length} hunks · {filePaths.length}{" "}
                 {filePaths.length === 1 ? "file" : "files"}
               </span>
@@ -456,7 +456,7 @@ export function GroupDiffViewer({
                 type="button"
                 onClick={handleApproveAll}
                 className="px-2.5 py-1 text-xs font-medium rounded-md transition-colors
-                           bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                           bg-status-approved/15 text-status-approved hover:bg-status-approved/25"
               >
                 Approve all {unreviewedIds.length}
               </button>
@@ -464,7 +464,7 @@ export function GroupDiffViewer({
                 type="button"
                 onClick={handleRejectAll}
                 className="px-2.5 py-1 text-xs font-medium rounded-md transition-colors
-                           text-stone-500 hover:text-rose-400 hover:bg-rose-500/10"
+                           text-fg-muted hover:text-status-rejected hover:bg-status-rejected/10"
               >
                 Reject all
               </button>

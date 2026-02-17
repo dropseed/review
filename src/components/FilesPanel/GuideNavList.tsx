@@ -78,24 +78,24 @@ function GroupNavItem({
       onClick={onClick}
       className={`flex items-center gap-1.5 w-full px-3 py-1.5 text-xs transition-colors ${
         isActive
-          ? "bg-amber-500/10 text-amber-300"
+          ? "bg-status-modified/10 text-status-modified"
           : isCompleted
-            ? "text-stone-600 hover:text-stone-400 hover:bg-stone-800/30"
-            : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/30"
+            ? "text-fg-faint hover:text-fg-muted hover:bg-surface-raised/30"
+            : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30"
       }`}
     >
       {isCompleted ? (
-        <span className="text-emerald-500 shrink-0">
+        <span className="text-status-approved shrink-0">
           <CheckIcon />
         </span>
       ) : (
-        <span className="w-4 text-center text-xxs text-stone-600 shrink-0 tabular-nums">
+        <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums">
           {index + 1}
         </span>
       )}
       <span className="truncate flex-1 text-left">{group.title}</span>
       {!isCompleted && unreviewedCount > 0 && (
-        <span className="text-xxs text-amber-400/70 tabular-nums shrink-0">
+        <span className="text-xxs text-status-modified/70 tabular-nums shrink-0">
           {unreviewedCount}
         </span>
       )}
@@ -222,14 +222,14 @@ export function GuideNavList(): ReactNode {
             onClick={() => setGuideContentMode("overview")}
             className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium transition-colors ${
               guideContentMode === "overview"
-                ? "bg-amber-500/10 text-amber-400"
-                : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/50"
+                ? "bg-status-modified/10 text-status-modified"
+                : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/50"
             }`}
           >
             {summaryStatus === "loading" && <Spinner />}
             <span className="truncate">Overview</span>
             {summaryStatus !== "loading" && guideSummary && !hasPrBody && (
-              <span className="text-purple-400 ml-auto shrink-0">
+              <span className="text-status-classifying ml-auto shrink-0">
                 <SparkleIcon />
               </span>
             )}
@@ -237,15 +237,15 @@ export function GuideNavList(): ReactNode {
 
           {/* Groups header */}
           {(hasGroups || groupingLoading || groupingError) && (
-            <div className="flex items-center gap-2 px-3 py-2 mt-1 border-t border-stone-800/50">
-              <span className="text-xxs font-medium text-stone-500 uppercase tracking-wider flex-1">
+            <div className="flex items-center gap-2 px-3 py-2 mt-1 border-t border-edge/50">
+              <span className="text-xxs font-medium text-fg-muted uppercase tracking-wider flex-1">
                 Groups
               </span>
               {groupingStatus === "loading" && <Spinner />}
               {stale && !groupingLoading && (
                 <button
                   onClick={() => generateGrouping()}
-                  className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                  className="flex items-center gap-1 rounded-full bg-status-modified/15 px-1.5 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
                 >
                   Stale
                 </button>
@@ -256,14 +256,14 @@ export function GuideNavList(): ReactNode {
           {/* Error */}
           {groupingError && (
             <div className="px-3 py-1.5">
-              <div className="rounded bg-rose-500/10 px-2 py-1.5 inset-ring-1 inset-ring-rose-500/20">
-                <p className="text-xxs text-rose-400 mb-1">
+              <div className="rounded bg-status-rejected/10 px-2 py-1.5 inset-ring-1 inset-ring-status-rejected/20">
+                <p className="text-xxs text-status-rejected mb-1">
                   Failed: {groupingError}
                 </p>
                 <button
                   type="button"
                   onClick={() => generateGrouping()}
-                  className="text-xxs text-stone-400 hover:text-stone-300 transition-colors"
+                  className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
                 >
                   Retry
                 </button>
@@ -274,7 +274,7 @@ export function GuideNavList(): ReactNode {
           {/* Loading state */}
           {groupingLoading && !hasGroups && (
             <div className="px-3 py-4 text-center">
-              <div className="flex items-center justify-center gap-2 text-stone-500">
+              <div className="flex items-center justify-center gap-2 text-fg-muted">
                 <Spinner />
                 <span className="text-xs">Generating groups…</span>
               </div>
@@ -295,8 +295,8 @@ export function GuideNavList(): ReactNode {
 
           {/* All done */}
           {hasGroups && totalGroupUnreviewed === 0 && (
-            <div className="px-3 py-2 border-t border-stone-800/50">
-              <span className="text-xxs text-emerald-400 font-medium">
+            <div className="px-3 py-2 border-t border-edge/50">
+              <span className="text-xxs text-status-approved font-medium">
                 All groups reviewed
               </span>
             </div>
@@ -305,14 +305,14 @@ export function GuideNavList(): ReactNode {
           {/* Start guide CTA */}
           {showStartButton && (
             <div className="px-3 py-4">
-              <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
-                <div className="flex items-center w-full gap-3 px-3 py-2.5 bg-stone-800/40">
+              <div className="rounded-lg border border-edge-default/60 overflow-hidden bg-surface-panel">
+                <div className="flex items-center w-full gap-3 px-3 py-2.5 bg-surface-raised/40">
                   <SparkleIcon />
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-medium text-stone-300">
+                    <span className="text-xs font-medium text-fg-secondary">
                       Start Guided Review
                     </span>
-                    <p className="text-xxs text-stone-500 mt-0.5">
+                    <p className="text-xxs text-fg-muted mt-0.5">
                       AI organizes changes into review groups
                     </p>
                   </div>
@@ -321,7 +321,7 @@ export function GuideNavList(): ReactNode {
                   <button
                     onClick={startGuide}
                     disabled={guideLoading || hunks.length === 0}
-                    className="flex-1 rounded-md bg-violet-500/15 px-2.5 py-1.5 text-xs font-medium text-violet-300 border border-violet-500/20 hover:bg-violet-500/25 transition-colors disabled:opacity-50"
+                    className="flex-1 rounded-md bg-status-classifying/15 px-2.5 py-1.5 text-xs font-medium text-status-classifying border border-status-classifying/20 hover:bg-status-classifying/25 transition-colors disabled:opacity-50"
                   >
                     {guideLoading ? "Starting…" : "Start"}
                   </button>

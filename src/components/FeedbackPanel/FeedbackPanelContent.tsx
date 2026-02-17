@@ -13,15 +13,15 @@ function AnnotationItem({
   onDelete: () => void;
 }) {
   return (
-    <div className="group relative rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-stone-700/80 hover:bg-stone-800/40 transition-colors duration-150">
+    <div className="group relative rounded-md bg-surface-panel/60 border border-edge/60 hover:border-edge-default/80 hover:bg-surface-raised/40 transition-colors duration-150">
       <SimpleTooltip content="Go to this line">
         <button
           onClick={onGoTo}
-          className="w-full text-left p-2.5 pr-8 min-w-0 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50 rounded-md"
+          className="w-full text-left p-2.5 pr-8 min-w-0 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-focus-ring/50 rounded-md"
         >
           <div className="flex items-center gap-1.5 mb-1">
             <svg
-              className="h-3 w-3 text-amber-500/70 flex-shrink-0"
+              className="h-3 w-3 text-status-modified/70 flex-shrink-0"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -33,12 +33,12 @@ function AnnotationItem({
                 d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
               />
             </svg>
-            <span className="text-xxs font-mono text-amber-400/90 truncate tabular-nums">
+            <span className="text-xxs font-mono text-status-modified/90 truncate tabular-nums">
               {annotation.filePath}:{annotation.lineNumber}
               {annotation.endLineNumber ? `-${annotation.endLineNumber}` : ""}
             </span>
           </div>
-          <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
+          <p className="text-xs text-fg-secondary line-clamp-2 leading-relaxed">
             {annotation.content}
           </p>
         </button>
@@ -46,7 +46,7 @@ function AnnotationItem({
       <SimpleTooltip content="Delete comment">
         <button
           onClick={onDelete}
-          className="absolute top-2 right-2 p-1 text-stone-600 hover:text-rose-400 hover:bg-rose-500/15 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-500/50"
+          className="absolute top-2 right-2 p-1 text-fg-faint hover:text-status-rejected hover:bg-status-rejected/15 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-status-rejected/50"
           aria-label="Delete comment"
         >
           <svg
@@ -100,7 +100,7 @@ export function FeedbackPanelContent({
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <svg
-            className="h-3.5 w-3.5 text-stone-500"
+            className="h-3.5 w-3.5 text-fg-muted"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -114,7 +114,7 @@ export function FeedbackPanelContent({
           </svg>
           <label
             htmlFor="review-notes"
-            className="text-xxs font-medium text-stone-400 uppercase tracking-wide"
+            className="text-xxs font-medium text-fg-muted uppercase tracking-wide"
           >
             Notes
           </label>
@@ -123,12 +123,12 @@ export function FeedbackPanelContent({
           <Textarea
             id="review-notes"
             placeholder="Overall observations, summary, questions…"
-            className="h-20 text-xs leading-relaxed resize-none bg-stone-900/80 border-stone-800/80 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 focus:bg-stone-900"
+            className="h-20 text-xs leading-relaxed resize-none bg-surface-panel/80 border-edge/80 focus:border-focus-ring/50 focus:ring-2 focus:ring-focus-ring/10 focus:bg-surface-panel"
             value={notes}
             onChange={(e) => onNotesChange(e.target.value)}
           />
           {notes.length > 0 && (
-            <div className="absolute bottom-2 right-2 text-xxs text-stone-600 tabular-nums pointer-events-none">
+            <div className="absolute bottom-2 right-2 text-xxs text-fg-faint tabular-nums pointer-events-none">
               {notes.length}
             </div>
           )}
@@ -140,7 +140,7 @@ export function FeedbackPanelContent({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <svg
-              className="h-3.5 w-3.5 text-rose-500/70"
+              className="h-3.5 w-3.5 text-status-rejected/70"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -152,10 +152,10 @@ export function FeedbackPanelContent({
                 d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
               />
             </svg>
-            <label className="text-xxs font-medium text-stone-400 uppercase tracking-wide">
+            <label className="text-xxs font-medium text-fg-muted uppercase tracking-wide">
               Changes Requested
             </label>
-            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-rose-500/15 text-rose-300">
+            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-status-rejected/15 text-status-rejected">
               {rejectedHunks.length}
             </span>
           </div>
@@ -164,11 +164,11 @@ export function FeedbackPanelContent({
               <SimpleTooltip key={item.hunkId} content="Go to this change">
                 <button
                   onClick={() => onGoToRejectedHunk(item.filePath)}
-                  className="w-full text-left p-2.5 min-w-0 rounded-md bg-stone-900/60 border border-stone-800/60 hover:border-rose-500/30 hover:bg-stone-800/40 transition-colors duration-150 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-rose-500/50"
+                  className="w-full text-left p-2.5 min-w-0 rounded-md bg-surface-panel/60 border border-edge/60 hover:border-status-rejected/30 hover:bg-surface-raised/40 transition-colors duration-150 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-status-rejected/50"
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500/70 flex-shrink-0" />
-                    <span className="text-xxs font-mono text-rose-400/90 truncate tabular-nums">
+                    <span className="h-1.5 w-1.5 rounded-full bg-status-rejected/70 flex-shrink-0" />
+                    <span className="text-xxs font-mono text-status-rejected/90 truncate tabular-nums">
                       {item.filePath}:{item.lineRange}
                     </span>
                   </div>
@@ -184,7 +184,7 @@ export function FeedbackPanelContent({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <svg
-              className="h-3.5 w-3.5 text-stone-500"
+              className="h-3.5 w-3.5 text-fg-muted"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -196,10 +196,10 @@ export function FeedbackPanelContent({
                 d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
               />
             </svg>
-            <label className="text-xxs font-medium text-stone-400 uppercase tracking-wide">
+            <label className="text-xxs font-medium text-fg-muted uppercase tracking-wide">
               Line Comments
             </label>
-            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-amber-500/15 text-amber-300">
+            <span className="ml-auto px-1.5 py-0.5 text-xxs font-medium tabular-nums rounded bg-status-modified/15 text-status-modified">
               {annotations.length}
             </span>
           </div>
@@ -219,7 +219,7 @@ export function FeedbackPanelContent({
       {/* Empty state when no feedback */}
       {!notes && rejectedHunks.length === 0 && annotations.length === 0 && (
         <div className="py-2 text-center">
-          <p className="text-xxs text-stone-600 italic">
+          <p className="text-xxs text-fg-faint italic">
             Add notes or click lines in the diff to comment
           </p>
         </div>

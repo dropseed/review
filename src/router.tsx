@@ -99,7 +99,7 @@ function AppShell() {
           onActivateReview={handleActivateReview}
           onNewReview={handleNewReview}
         />
-        <div className="flex flex-1 flex-col overflow-hidden bg-stone-950">
+        <div className="flex flex-1 flex-col overflow-hidden bg-surface">
           <Outlet
             context={{
               repoStatus,
@@ -146,9 +146,9 @@ function EmptyTabState() {
         data-tauri-drag-region
       >
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
-          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-status-rejected/10 flex items-center justify-center">
             <svg
-              className="w-6 h-6 text-red-400"
+              className="w-6 h-6 text-status-rejected"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -161,13 +161,13 @@ function EmptyTabState() {
               />
             </svg>
           </div>
-          <h1 className="text-lg font-medium text-stone-200">
+          <h1 className="text-lg font-medium text-fg-secondary">
             Failed to load repository
           </h1>
-          <p className="text-sm text-stone-400">{repoError}</p>
+          <p className="text-sm text-fg-muted">{repoError}</p>
           <button
             onClick={handleOpenRepo}
-            className="mt-4 px-4 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm font-medium hover:bg-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 transition-colors duration-150"
+            className="mt-4 px-4 py-2 rounded-lg bg-surface-raised text-fg-secondary text-sm font-medium hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring/50 transition-colors duration-150"
           >
             Open a Repository
           </button>
@@ -186,19 +186,19 @@ function EmptyTabState() {
           type="button"
           onClick={toggleTabRail}
           className="absolute top-2.5 left-2 flex items-center justify-center w-7 h-7 rounded-md
-                     hover:bg-stone-800/60 transition-colors duration-100
-                     text-stone-500 hover:text-stone-300"
+                     hover:bg-surface-hover/60 transition-colors duration-100
+                     text-fg-muted hover:text-fg-secondary"
           aria-label="Show sidebar"
         >
           <SidebarPanelIcon />
         </button>
       )}
       <div className="flex flex-col items-center gap-3 text-center px-6">
-        <p className="text-sm text-stone-500">
+        <p className="text-sm text-fg-muted">
           Open a repository to start reviewing
         </p>
-        <p className="text-2xs text-stone-600">
-          <kbd className="rounded bg-stone-800 px-1.5 py-0.5 text-xxs text-stone-500 font-mono">
+        <p className="text-2xs text-fg-faint">
+          <kbd className="rounded bg-surface-raised px-1.5 py-0.5 text-xxs text-fg-muted font-mono">
             {"\u2318"}O
           </kbd>
           <span className="ml-1.5">to open a folder</span>

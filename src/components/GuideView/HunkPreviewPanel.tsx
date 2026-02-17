@@ -43,12 +43,12 @@ export function HunkPreviewModal({
             <button
               key={hunk.id}
               onClick={() => onSelectHunk(hunk.filePath, hunk.id)}
-              className="group w-full text-left px-4 py-2.5 border-b border-stone-800/30 last:border-b-0 hover:bg-stone-800/40 transition-colors"
+              className="group w-full text-left px-4 py-2.5 border-b border-edge/30 last:border-b-0 hover:bg-surface-raised/40 transition-colors"
             >
-              <div className="text-xs font-medium text-stone-400 truncate group-hover:text-stone-200">
+              <div className="text-xs font-medium text-fg-muted truncate group-hover:text-fg-secondary">
                 {hunk.filePath}
               </div>
-              <div className="mt-1 font-mono text-xxs text-stone-600 truncate group-hover:text-stone-500">
+              <div className="mt-1 font-mono text-xxs text-fg-faint truncate group-hover:text-fg0">
                 {hunk.content.split("\n").slice(0, 2).join(" ").slice(0, 120)}
                 {hunk.content.length > 120 && "…"}
               </div>
@@ -74,17 +74,17 @@ export function InlineHunkPreviewList({
   const shown = hunks.slice(0, 3);
 
   return (
-    <div className="rounded-md border border-stone-700/50 bg-stone-800/30 overflow-hidden">
+    <div className="rounded-md border border-edge-default/50 bg-surface-raised/30 overflow-hidden">
       {shown.map((hunk) => (
         <button
           key={hunk.id}
           onClick={() => onSelectHunk(hunk.filePath, hunk.id)}
-          className="group w-full text-left px-3 py-2 border-b border-stone-800/30 last:border-b-0 hover:bg-stone-800/50 transition-colors"
+          className="group w-full text-left px-3 py-2 border-b border-edge/30 last:border-b-0 hover:bg-surface-raised/50 transition-colors"
         >
-          <div className="text-xxs font-medium text-stone-400 truncate group-hover:text-stone-200">
+          <div className="text-xxs font-medium text-fg-muted truncate group-hover:text-fg-secondary">
             {hunk.filePath}
           </div>
-          <div className="mt-0.5 font-mono text-xxs text-stone-600 truncate group-hover:text-stone-500">
+          <div className="mt-0.5 font-mono text-xxs text-fg-faint truncate group-hover:text-fg0">
             {hunk.content.split("\n").slice(0, 2).join(" ").slice(0, 100)}
             {hunk.content.length > 100 && "…"}
           </div>
@@ -94,7 +94,7 @@ export function InlineHunkPreviewList({
         <button
           type="button"
           onClick={onShowAll}
-          className="w-full px-3 py-1.5 text-xxs text-stone-500 hover:text-stone-300 hover:bg-stone-800/50 transition-colors text-center"
+          className="w-full px-3 py-1.5 text-xxs text-fg0 hover:text-fg-secondary hover:bg-surface-raised/50 transition-colors text-center"
         >
           Show all {hunks.length} hunks
         </button>

@@ -37,7 +37,7 @@ const BranchIcon = memo(function BranchIcon({
     case "stash":
       return (
         <svg
-          className={`${baseClass} text-violet-400`}
+          className={`${baseClass} text-status-classifying`}
           viewBox="0 0 20 20"
           fill="currentColor"
           aria-hidden="true"
@@ -53,7 +53,7 @@ const BranchIcon = memo(function BranchIcon({
     case "remote":
       return (
         <svg
-          className={`${baseClass} text-sky-400`}
+          className={`${baseClass} text-status-renamed`}
           viewBox="0 0 20 20"
           fill="currentColor"
           aria-hidden="true"
@@ -82,7 +82,7 @@ const BranchIcon = memo(function BranchIcon({
       // Git branch icon (GitHub Octicons style)
       return (
         <svg
-          className={`${baseClass} text-stone-400`}
+          className={`${baseClass} text-fg-muted`}
           viewBox="0 0 16 16"
           fill="currentColor"
           aria-hidden="true"
@@ -337,12 +337,12 @@ export const BranchSelect = memo(function BranchSelect({
           id={buttonId}
           disabled={disabled}
           className={`
-            relative w-full max-w-[200px] min-w-0 appearance-none rounded-lg border bg-stone-800/50
+            relative w-full max-w-[200px] min-w-0 appearance-none rounded-lg border bg-surface-raised/50
             pl-3 pr-8 py-2 text-sm font-mono
             text-left
             transition-colors duration-150
             ${variantClasses}
-            ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-stone-800/70"}
+            ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface-raised/70"}
             focus:outline-hidden focus:ring-2
           `}
           aria-haspopup="listbox"
@@ -350,13 +350,13 @@ export const BranchSelect = memo(function BranchSelect({
           aria-label={label}
         >
           <span
-            className={`block truncate ${showPlaceholder ? "text-stone-500" : ""}`}
+            className={`block truncate ${showPlaceholder ? "text-fg0" : ""}`}
           >
             {displayText || placeholder || "Select…"}
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
             <svg
-              className={`h-4 w-4 text-stone-500 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-fg0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
               viewBox="0 0 20 20"
               fill="currentColor"
               aria-hidden="true"
@@ -379,7 +379,7 @@ export const BranchSelect = memo(function BranchSelect({
         }}
       >
         {/* Search input */}
-        <div className="p-2 border-b border-stone-800/50">
+        <div className="p-2 border-b border-edge/50">
           <Input
             ref={searchRef}
             type="text"
@@ -404,14 +404,12 @@ export const BranchSelect = memo(function BranchSelect({
           className="max-h-60 overflow-auto py-1 scrollbar-thin"
         >
           {Object.entries(groupedOptions).length === 0 ? (
-            <li className="px-3 py-2 text-sm text-stone-500">
-              No branches found
-            </li>
+            <li className="px-3 py-2 text-sm text-fg0">No branches found</li>
           ) : (
             Object.entries(groupedOptions).map(([group, groupOpts]) => (
               <li key={group}>
                 {/* Group header */}
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg0">
                   {group}
                 </div>
                 {/* Group options */}
@@ -435,9 +433,9 @@ export const BranchSelect = memo(function BranchSelect({
                           ${
                             isHighlighted
                               ? variant === "base"
-                                ? "bg-terracotta-500/10 text-stone-100"
-                                : "bg-sage-500/10 text-stone-100"
-                              : "text-stone-300 hover:bg-stone-800/50"
+                                ? "bg-terracotta-500/10 text-fg"
+                                : "bg-sage-500/10 text-fg"
+                              : "text-fg-secondary hover:bg-surface-raised/50"
                           }
                           ${isSelected ? "font-medium" : ""}
                         `}
@@ -445,7 +443,7 @@ export const BranchSelect = memo(function BranchSelect({
                         <BranchIcon type={opt.icon} />
                         <span className="truncate font-mono">{opt.label}</span>
                         {opt.secondaryLabel && (
-                          <span className="ml-auto text-xs text-stone-500 shrink-0">
+                          <span className="ml-auto text-xs text-fg0 shrink-0">
                             {opt.secondaryLabel}
                           </span>
                         )}

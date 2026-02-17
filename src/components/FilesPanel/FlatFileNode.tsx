@@ -19,10 +19,10 @@ function flatFileNameColor(
   isComplete: boolean,
   hasRejections: boolean,
 ): string {
-  if (isSelected) return "text-stone-100";
-  if (isComplete && hasRejections) return "text-rose-400";
-  if (isComplete) return "text-emerald-400";
-  return "text-stone-300";
+  if (isSelected) return "text-fg";
+  if (isComplete && hasRejections) return "text-status-rejected";
+  if (isComplete) return "text-status-approved";
+  return "text-fg-secondary";
 }
 
 // --- Props ---
@@ -112,14 +112,14 @@ export const FlatFileNode = memo(function FlatFileNode({
       <div
         className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 pl-2 transition-colors ${
           isSelected
-            ? "bg-amber-500/15 border-l-2 border-l-amber-400"
-            : "border-l-2 border-l-transparent hover:bg-stone-800/40"
+            ? "bg-status-modified/15 border-l-2 border-l-status-modified"
+            : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
         }`}
       >
         {/* Chevron for expand/collapse */}
         <button className="flex-shrink-0" onClick={handleToggle}>
           <svg
-            className={`h-3 w-3 text-stone-600 transition-transform ${expanded ? "rotate-90" : ""}`}
+            className={`h-3 w-3 text-fg-faint transition-transform ${expanded ? "rotate-90" : ""}`}
             viewBox="0 0 24 24"
             fill="currentColor"
           >
@@ -138,11 +138,11 @@ export const FlatFileNode = memo(function FlatFileNode({
           <span
             className={`min-w-0 truncate text-xs ${flatFileNameColor(isSelected, isComplete, hunkStatus.rejected > 0)}`}
           >
-            {dirPath && <span className="text-stone-500">{dirPath}</span>}
+            {dirPath && <span className="text-fg-muted">{dirPath}</span>}
             {fileName}
           </span>
           {movedFilePaths?.has(filePath) && (
-            <span className="flex-shrink-0 rounded bg-sky-500/15 px-1 py-0.5 text-xxs font-medium text-sky-400">
+            <span className="flex-shrink-0 rounded bg-status-renamed/15 px-1 py-0.5 text-xxs font-medium text-status-renamed">
               Moved
             </span>
           )}
@@ -193,7 +193,7 @@ export const FlatFileNode = memo(function FlatFileNode({
               {/* Top-level changes outside symbols */}
               {topLevelStatus && topLevelStatus.total > 0 && (
                 <div
-                  className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
+                  className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
                   style={{ paddingLeft: "2.1rem" }}
                   onClick={() => {
                     if (symbolDiff && symbolDiff.topLevelHunkIds.length > 0) {
@@ -203,7 +203,7 @@ export const FlatFileNode = memo(function FlatFileNode({
                 >
                   <span className="w-3 flex-shrink-0" />
                   <ChangeIndicator changeType="modified" />
-                  <span className="min-w-0 flex-1 truncate text-left text-xs italic text-stone-400">
+                  <span className="min-w-0 flex-1 truncate text-left text-xs italic text-fg-muted">
                     top-level changes
                   </span>
                   <ReviewStatusDot status={topLevelStatus} />
@@ -213,7 +213,7 @@ export const FlatFileNode = memo(function FlatFileNode({
           ) : (
             /* No grammar or no symbols — show summary */
             <div
-              className="flex items-center gap-1.5 py-1 pl-8 pr-2 text-xs text-stone-400 italic cursor-pointer hover:bg-stone-800/40 transition-colors"
+              className="flex items-center gap-1.5 py-1 pl-8 pr-2 text-xs text-fg-muted italic cursor-pointer hover:bg-surface-raised/40 transition-colors"
               onClick={() => {
                 if (allFileHunkIds.length > 0) {
                   onNavigateToHunk(filePath, allFileHunkIds[0]);
@@ -235,7 +235,7 @@ export const FlatFileNode = memo(function FlatFileNode({
                 />
               )}
               {symbolDiff && !symbolDiff.hasGrammar && (
-                <span className="text-xxs text-stone-600 italic ml-1">
+                <span className="text-xxs text-fg-faint italic ml-1">
                   no grammar
                 </span>
               )}

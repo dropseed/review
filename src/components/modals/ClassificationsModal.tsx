@@ -91,11 +91,11 @@ function DiffPreview({ hunk }: { hunk: DiffHunk }) {
   const hasMore = hunk.lines.length > 6;
 
   return (
-    <pre className="overflow-x-auto rounded bg-stone-950 px-3 py-2 text-xxs leading-relaxed">
+    <pre className="overflow-x-auto rounded bg-surface px-3 py-2 text-xxs leading-relaxed">
       {lines.map((line, i) => {
-        let colorClass = "text-stone-500";
-        if (line.type === "added") colorClass = "text-emerald-400/80";
-        if (line.type === "removed") colorClass = "text-rose-400/80";
+        let colorClass = "text-fg0";
+        if (line.type === "added") colorClass = "text-status-approved/80";
+        if (line.type === "removed") colorClass = "text-status-rejected/80";
         const prefix =
           line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
         return (
@@ -105,7 +105,7 @@ function DiffPreview({ hunk }: { hunk: DiffHunk }) {
         );
       })}
       {hasMore && (
-        <div className="text-stone-600 mt-0.5">
+        <div className="text-fg-faint mt-0.5">
           ... {hunk.lines.length - 6} more lines
         </div>
       )}
@@ -126,22 +126,22 @@ function HunkCard({
   onSelectHunk: (filePath: string, hunkId: string) => void;
 }) {
   return (
-    <div className="rounded-lg border border-stone-800 bg-stone-900/50">
+    <div className="rounded-lg border border-edge bg-surface-panel/50">
       {/* Header: file path + view in file */}
-      <div className="flex items-center justify-between border-b border-stone-800/50 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-edge/50 px-3 py-2">
         <button
           onClick={() => onSelectHunk(hunk.filePath, hunk.id)}
-          className="truncate font-mono text-xs text-stone-300 hover:text-sky-400 transition-colors text-left"
+          className="truncate font-mono text-xs text-fg-secondary hover:text-status-renamed transition-colors text-left"
           title={hunk.id}
         >
           {hunk.filePath}
-          <span className="text-stone-600">
+          <span className="text-fg-faint">
             :{hunk.id.split(":").pop()?.substring(0, 7)}
           </span>
         </button>
         <button
           onClick={() => onSelectHunk(hunk.filePath, hunk.id)}
-          className="ml-3 flex-shrink-0 rounded px-2 py-0.5 text-xxs text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors"
+          className="ml-3 flex-shrink-0 rounded px-2 py-0.5 text-xxs text-fg0 hover:bg-surface-raised hover:text-fg-secondary transition-colors"
         >
           View in file
         </button>
@@ -159,8 +159,8 @@ function HunkCard({
                   key={i}
                   className={`rounded px-1.5 py-0.5 text-xxs font-medium ${
                     isTrusted
-                      ? "bg-sky-500/15 text-sky-400"
-                      : "bg-stone-700/50 text-stone-400"
+                      ? "bg-status-renamed/15 text-status-renamed"
+                      : "bg-surface-hover/50 text-fg-muted"
                   }`}
                 >
                   {lbl}
@@ -168,12 +168,12 @@ function HunkCard({
               );
             })}
             {hunkState.classifiedVia === "static" && (
-              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-stone-800 text-stone-500">
+              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-surface-raised text-fg0">
                 Static
               </span>
             )}
             {hunkState.classifiedVia === "ai" && (
-              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-violet-500/15 text-violet-400">
+              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-status-classifying/15 text-status-classifying">
                 AI
               </span>
             )}
@@ -182,7 +182,7 @@ function HunkCard({
 
         {/* Reasoning */}
         {hunkState?.reasoning && (
-          <p className="text-xs italic text-stone-400">{hunkState.reasoning}</p>
+          <p className="text-xs italic text-fg-muted">{hunkState.reasoning}</p>
         )}
 
         {/* Diff preview */}
@@ -250,7 +250,7 @@ export function ClassificationsModal({
           </div>
           <button
             onClick={onClose}
-            className="rounded p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-100"
+            className="rounded p-1 text-fg-muted hover:bg-surface-raised hover:text-fg"
           >
             <svg
               className="h-5 w-5"
@@ -271,18 +271,18 @@ export function ClassificationsModal({
         {/* Main content: sidebar + hunk list */}
         <div className="flex flex-1 overflow-hidden">
           {/* Left sidebar: label groups */}
-          <nav className="w-56 flex-shrink-0 overflow-y-auto border-r border-stone-800 p-2">
+          <nav className="w-56 flex-shrink-0 overflow-y-auto border-r border-edge p-2">
             {/* All filter */}
             <button
               onClick={() => setSelectedFilter(null)}
               className={`mb-1 w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
                 selectedFilter === null
-                  ? "bg-stone-800 text-stone-200"
-                  : "text-stone-400 hover:bg-stone-800/50 hover:text-stone-300"
+                  ? "bg-surface-raised text-fg-secondary"
+                  : "text-fg-muted hover:bg-surface-raised/50 hover:text-fg-secondary"
               }`}
             >
               All
-              <span className="ml-1 text-stone-500">({hunks.length})</span>
+              <span className="ml-1 text-fg0">({hunks.length})</span>
             </button>
 
             {/* Category groups */}
@@ -292,7 +292,7 @@ export function ClassificationsModal({
                 <div key={group.category} className="mb-0.5">
                   <button
                     onClick={() => toggleCategory(group.category)}
-                    className="flex w-full items-center gap-1 rounded px-2 py-1 text-xs font-medium text-stone-400 hover:bg-stone-800/50 hover:text-stone-300 transition-colors"
+                    className="flex w-full items-center gap-1 rounded px-2 py-1 text-xs font-medium text-fg-muted hover:bg-surface-raised/50 hover:text-fg-secondary transition-colors"
                   >
                     <svg
                       className={`h-3 w-3 flex-shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
@@ -302,7 +302,7 @@ export function ClassificationsModal({
                       <path d="M9 6l6 6-6 6z" />
                     </svg>
                     <span>{group.category}</span>
-                    <span className="ml-auto text-stone-600">
+                    <span className="ml-auto text-fg-faint">
                       ({group.totalCount})
                     </span>
                   </button>
@@ -315,12 +315,12 @@ export function ClassificationsModal({
                           onClick={() => setSelectedFilter(label)}
                           className={`w-full rounded px-2 py-1 text-left text-xs transition-colors ${
                             selectedFilter === label
-                              ? "bg-stone-800 text-stone-200"
-                              : "text-stone-500 hover:bg-stone-800/50 hover:text-stone-300"
+                              ? "bg-surface-raised text-fg-secondary"
+                              : "text-fg0 hover:bg-surface-raised/50 hover:text-fg-secondary"
                           }`}
                         >
                           :{label.split(":").pop()}
-                          <span className="ml-1 text-stone-600">({count})</span>
+                          <span className="ml-1 text-fg-faint">({count})</span>
                         </button>
                       ))}
                     </div>
@@ -335,12 +335,12 @@ export function ClassificationsModal({
                 onClick={() => setSelectedFilter("__unclassified__")}
                 className={`mt-1 w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
                   selectedFilter === "__unclassified__"
-                    ? "bg-stone-800 text-stone-200"
-                    : "text-stone-500 hover:bg-stone-800/50 hover:text-stone-300"
+                    ? "bg-surface-raised text-fg-secondary"
+                    : "text-fg0 hover:bg-surface-raised/50 hover:text-fg-secondary"
                 }`}
               >
                 Unclassified
-                <span className="ml-1 text-stone-600">
+                <span className="ml-1 text-fg-faint">
                   ({unclassifiedCount})
                 </span>
               </button>
@@ -351,7 +351,7 @@ export function ClassificationsModal({
           <div className="flex-1 overflow-y-auto p-4">
             {filteredHunks.length === 0 ? (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-stone-500">
+                <p className="text-sm text-fg0">
                   {hunks.length === 0
                     ? "No hunks to display"
                     : "No hunks match this filter"}
@@ -374,10 +374,10 @@ export function ClassificationsModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end border-t border-stone-700 px-4 py-3">
+        <div className="flex justify-end border-t border-edge-default px-4 py-3">
           <button
             onClick={onClose}
-            className="rounded bg-stone-700 px-3 py-1.5 text-xs font-medium text-stone-100 hover:bg-stone-600"
+            className="rounded bg-surface-hover px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-active"
           >
             Close
           </button>

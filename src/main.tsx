@@ -90,13 +90,13 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
         <WorkerPoolThemeSync />
         <AppRouter />
         <Toaster
-          theme="dark"
+          theme="system"
           position="bottom-left"
           toastOptions={{
             style: {
-              background: "#292524",
-              color: "#e7e5e4",
-              border: "1px solid rgba(168, 162, 158, 0.15)",
+              background: "var(--color-surface-overlay)",
+              color: "var(--color-fg-secondary)",
+              border: "1px solid var(--color-edge)",
             },
           }}
         />

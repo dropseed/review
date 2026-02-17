@@ -163,10 +163,10 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     "repo";
 
   return (
-    <div className="flex h-full flex-row bg-stone-950">
+    <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="@container relative bg-stone-950 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] py-2.5">
+        <header className="@container relative bg-surface shadow-[0_1px_0_0_rgba(255,255,255,0.04)] py-2.5">
           {/* Top row: breadcrumb + activity + progress */}
           <div className="flex items-center justify-between pr-4">
             {/* Left: repo / comparison ref */}
@@ -190,32 +190,32 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
                              hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
                 >
                   {state === "approved" && (
-                    <span className="hidden @md:inline text-xs font-medium text-emerald-400">
+                    <span className="hidden @md:inline text-xs font-medium text-status-approved">
                       Approved
                     </span>
                   )}
                   {state === "changes_requested" && (
-                    <span className="hidden @md:inline text-xs font-medium text-rose-400">
+                    <span className="hidden @md:inline text-xs font-medium text-status-rejected">
                       Changes Requested
                     </span>
                   )}
-                  <span className="font-mono text-xs tabular-nums text-stone-400">
+                  <span className="font-mono text-xs tabular-nums text-fg-muted">
                     {reviewedHunks}/{totalHunks}
                   </span>
                   <SimpleTooltip
                     content={
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                          <span className="w-2 h-2 rounded-full bg-status-trusted" />
                           <span>Trusted: {trustedHunks}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span className="w-2 h-2 rounded-full bg-status-approved" />
                           <span>Approved: {approvedHunks}</span>
                         </div>
                         {rejectedHunks > 0 && (
                           <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-rose-500" />
+                            <span className="w-2 h-2 rounded-full bg-status-rejected" />
                             <span>Rejected: {rejectedHunks}</span>
                           </div>
                         )}
@@ -240,9 +240,9 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
                   type="button"
                   onClick={toggleFilesPanel}
                   className="flex items-center justify-center w-7 h-7 rounded-md
-                             hover:bg-stone-800/60 transition-colors duration-100
-                             focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
-                             text-stone-500 hover:text-stone-300"
+                             hover:bg-surface-raised/60 transition-colors duration-100
+                             focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
+                             text-fg0 hover:text-fg-secondary"
                   aria-label={
                     filesPanelCollapsed
                       ? "Show files panel"
@@ -270,7 +270,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
         </header>
 
         {/* Main content */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-stone-950">
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">
           <ContentArea />
           <FeedbackPanel />
         </main>
@@ -283,7 +283,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
       >
         {/* Sidebar content - slides via transform (no layout reflow) */}
         <div
-          className="flex flex-col flex-1 overflow-hidden bg-stone-950 border-l border-white/[0.06] transition-transform duration-200"
+          className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-white/[0.06] transition-transform duration-200"
           style={{
             width: `${sidebarWidth}rem`,
             transform: filesPanelCollapsed
@@ -304,7 +304,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
               aria-orientation="vertical"
               aria-label="Resize sidebar"
               onMouseDown={handleResizeStart}
-              className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500"
+              className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"
             />
           )}
         </div>

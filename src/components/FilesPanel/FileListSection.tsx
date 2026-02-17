@@ -17,7 +17,7 @@ interface FileListSectionProps {
 
 const CHECK_ICON = (
   <svg
-    className="mx-auto mb-2 h-6 w-6 text-emerald-500"
+    className="mx-auto mb-2 h-6 w-6 text-status-approved"
     fill="none"
     viewBox="0 0 24 24"
     stroke="currentColor"
@@ -80,7 +80,7 @@ export function FileListSection({
         ) : (
           <div className="py-4 text-center">
             {emptyIcon}
-            <p className="text-xs text-stone-500">{emptyMessage}</p>
+            <p className="text-xs text-fg-muted">{emptyMessage}</p>
           </div>
         )
       ) : flatFilePaths.length > 0 ? (
@@ -103,7 +103,7 @@ export function FileListSection({
       ) : (
         <div className="py-4 text-center">
           {emptyIcon}
-          <p className="text-xs text-stone-500">{emptyMessage}</p>
+          <p className="text-xs text-fg-muted">{emptyMessage}</p>
         </div>
       )}
     </div>

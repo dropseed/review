@@ -127,7 +127,7 @@ export function FilenameModal({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogClose className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors">
+          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -145,7 +145,7 @@ export function FilenameModal({
         </DialogHeader>
 
         {/* Search input */}
-        <div className="border-b border-stone-800 px-4 py-2">
+        <div className="border-b border-edge px-4 py-2">
           <input
             type="text"
             value={query}
@@ -154,7 +154,7 @@ export function FilenameModal({
               setSelectedBasename(null);
             }}
             placeholder="Search filenames…"
-            className="w-full rounded-md border border-stone-700 bg-stone-800/50 px-3 py-1.5 text-sm text-stone-200 placeholder:text-stone-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+            className="w-full rounded-md border border-edge-default bg-surface-raised/50 px-3 py-1.5 text-sm text-fg-secondary placeholder:text-fg-muted focus:border-focus-ring/50 focus:outline-none focus:ring-1 focus:ring-focus-ring/50"
             autoFocus
           />
         </div>
@@ -165,7 +165,7 @@ export function FilenameModal({
             /* Basename list */
             <div className="p-4 space-y-1">
               {filteredBasenames.length === 0 ? (
-                <p className="text-center text-xs text-stone-500 py-4">
+                <p className="text-center text-xs text-fg-muted py-4">
                   {query
                     ? "No matching filenames found"
                     : "No filenames appear in multiple files"}
@@ -175,10 +175,10 @@ export function FilenameModal({
                   <button
                     key={b.name}
                     onClick={() => setSelectedBasename(b.name)}
-                    className="flex w-full items-center gap-2 rounded-md border border-stone-700/50 bg-stone-800/30 px-3 py-2 text-left hover:border-stone-600 hover:bg-stone-800/50 transition-colors"
+                    className="flex w-full items-center gap-2 rounded-md border border-edge-default/50 bg-surface-raised/30 px-3 py-2 text-left hover:border-edge-strong hover:bg-surface-raised/50 transition-colors"
                   >
                     <svg
-                      className="h-3.5 w-3.5 shrink-0 text-stone-500"
+                      className="h-3.5 w-3.5 shrink-0 text-fg-muted"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -190,10 +190,10 @@ export function FilenameModal({
                         d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
                       />
                     </svg>
-                    <span className="flex-1 text-xs text-stone-300">
+                    <span className="flex-1 text-xs text-fg-secondary">
                       {b.name}
                     </span>
-                    <span className="rounded-full bg-stone-700/50 px-1.5 py-0.5 text-xxs text-stone-400 tabular-nums">
+                    <span className="rounded-full bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted tabular-nums">
                       {b.fileCount} files
                     </span>
                   </button>
@@ -206,7 +206,7 @@ export function FilenameModal({
               {/* Back button */}
               <button
                 onClick={() => setSelectedBasename(null)}
-                className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors mb-2"
+                className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary transition-colors mb-2"
               >
                 <svg
                   className="h-3 w-3"
@@ -263,7 +263,7 @@ export function FilenameModal({
                   />
                   {onNavigateToFile && (
                     <button
-                      className="absolute top-2 right-2 rounded bg-stone-700/80 px-2 py-1 text-xxs text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-stone-600"
+                      className="absolute top-2 right-2 rounded bg-surface-hover/80 px-2 py-1 text-xxs text-fg-secondary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-active"
                       onClick={(e) => {
                         e.stopPropagation();
                         onNavigateToFile(filePath);
@@ -281,8 +281,8 @@ export function FilenameModal({
 
         {/* Action footer - only shown when a basename is selected */}
         {selectedBasename && allHunkIds.length > 0 && (
-          <div className="flex items-center justify-between border-t border-stone-800 px-4 py-3 bg-stone-900/50">
-            <div className="text-xs text-stone-500">
+          <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
+            <div className="text-xs text-fg-muted">
               Applies to all {allHunkIds.length} hunks across {filePaths.length}{" "}
               files
             </div>
@@ -291,7 +291,7 @@ export function FilenameModal({
                 <>
                   <button
                     onClick={() => handleBatchAction(onRejectAll)}
-                    className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
+                    className="flex items-center gap-1.5 rounded-md bg-status-rejected/15 px-3 py-1.5 text-sm font-medium text-status-rejected transition-colors hover:bg-status-rejected/25 active:scale-[0.98]"
                   >
                     <svg
                       className="h-4 w-4"
@@ -310,7 +310,7 @@ export function FilenameModal({
                   </button>
                   <button
                     onClick={() => handleBatchAction(onApproveAll)}
-                    className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
+                    className="flex items-center gap-1.5 rounded-md bg-status-approved/20 px-3 py-1.5 text-sm font-medium text-status-approved transition-colors hover:bg-status-approved/30 active:scale-[0.98]"
                   >
                     <svg
                       className="h-4 w-4"
@@ -331,7 +331,7 @@ export function FilenameModal({
               ) : (
                 <button
                   onClick={() => handleBatchAction(onUnapproveAll)}
-                  className="flex items-center gap-1.5 rounded-md bg-stone-700 px-3 py-1.5 text-sm font-medium text-stone-300 transition-colors hover:bg-stone-600 active:scale-[0.98]"
+                  className="flex items-center gap-1.5 rounded-md bg-surface-hover px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-surface-active active:scale-[0.98]"
                 >
                   <svg
                     className="h-4 w-4"

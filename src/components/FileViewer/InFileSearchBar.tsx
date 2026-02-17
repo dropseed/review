@@ -99,7 +99,7 @@ export function InFileSearchBar({
   const noResults = hasQuery && matchingLines.length === 0;
 
   return (
-    <div className="flex items-center gap-1.5 rounded-lg bg-stone-800 border border-stone-700/80 px-2 py-1.5 shadow-xl shadow-black/30">
+    <div className="flex items-center gap-1.5 rounded-lg bg-surface-raised border border-edge-default/80 px-2 py-1.5 shadow-xl shadow-black/30">
       {/* Search input */}
       <div className="relative">
         <input
@@ -109,10 +109,10 @@ export function InFileSearchBar({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Find in file…"
-          className={`w-44 rounded bg-stone-900/80 border px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-hidden transition-colors focus:border-amber-500/50 ${
+          className={`w-44 rounded bg-surface-panel/80 border px-2 py-1 text-xs text-fg-secondary placeholder-fg-muted outline-hidden transition-colors focus:border-focus-ring/50 ${
             noResults
-              ? "border-rose-500/50 bg-rose-500/5"
-              : "border-stone-700/50"
+              ? "border-status-rejected/50 bg-status-rejected/5"
+              : "border-edge-default/50"
           }`}
           spellCheck={false}
           autoComplete="off"
@@ -127,8 +127,8 @@ export function InFileSearchBar({
           onClick={() => setCaseSensitive(!caseSensitive)}
           className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold transition-colors ${
             caseSensitive
-              ? "bg-amber-500/20 text-amber-400"
-              : "text-stone-500 hover:text-stone-300 hover:bg-stone-700/50"
+              ? "bg-status-modified/20 text-status-modified"
+              : "text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50"
           }`}
           aria-label="Toggle case sensitivity"
         >
@@ -139,7 +139,7 @@ export function InFileSearchBar({
       {/* Match count */}
       <span
         className={`min-w-[3.5rem] text-center text-xxs tabular-nums ${
-          noResults ? "text-rose-400" : "text-stone-500"
+          noResults ? "text-status-rejected" : "text-fg-muted"
         }`}
       >
         {hasQuery
@@ -154,7 +154,7 @@ export function InFileSearchBar({
         <button
           onClick={goToPrev}
           disabled={matchingLines.length === 0}
-          className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200 disabled:opacity-30 disabled:pointer-events-none"
+          className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-hover/50 hover:text-fg-secondary disabled:opacity-30 disabled:pointer-events-none"
           aria-label="Previous match"
         >
           <svg
@@ -178,7 +178,7 @@ export function InFileSearchBar({
         <button
           onClick={goToNext}
           disabled={matchingLines.length === 0}
-          className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200 disabled:opacity-30 disabled:pointer-events-none"
+          className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-hover/50 hover:text-fg-secondary disabled:opacity-30 disabled:pointer-events-none"
           aria-label="Next match"
         >
           <svg
@@ -201,7 +201,7 @@ export function InFileSearchBar({
       <SimpleTooltip content="Close (Escape)">
         <button
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-700/50 hover:text-stone-200"
+          className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-hover/50 hover:text-fg-secondary"
           aria-label="Close search"
         >
           <svg

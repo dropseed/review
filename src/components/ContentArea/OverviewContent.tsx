@@ -58,7 +58,7 @@ function ExternalLink({
         e.preventDefault();
         if (href) getPlatformServices().opener.openUrl(href);
       }}
-      className="text-cyan-400 hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/50 rounded underline underline-offset-2 cursor-pointer"
+      className="text-link hover:text-link/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-link/50 rounded underline underline-offset-2 cursor-pointer"
       rel="noopener noreferrer"
     >
       {children}
@@ -80,12 +80,12 @@ function ErrorPanel({
   onRetry: () => void;
 }): ReactNode {
   return (
-    <div className="rounded-lg border border-rose-800/50 bg-rose-950/20 p-4">
-      <p className="text-xs text-rose-400">{message}</p>
+    <div className="rounded-lg border border-status-rejected/50 bg-status-rejected/10 p-4">
+      <p className="text-xs text-status-rejected">{message}</p>
       <div className="mt-2 flex items-center gap-3">
         <button
           onClick={onRetry}
-          className="text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+          className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
         >
           Retry
         </button>
@@ -115,8 +115,8 @@ function SummarySection(): ReactNode {
   return (
     <div className="space-y-4">
       {summaryStatus === "loading" && !displaySummary && !guideSummaryError && (
-        <div className="rounded-lg border border-stone-800 p-4">
-          <div className="flex items-center gap-2 text-stone-500">
+        <div className="rounded-lg border border-edge p-4">
+          <div className="flex items-center gap-2 text-fg-muted">
             <Spinner />
             <span className="text-xs">Generating summary…</span>
           </div>
@@ -129,20 +129,20 @@ function SummarySection(): ReactNode {
         />
       )}
       {showCta && (
-        <div className="rounded-lg border border-stone-700/60 overflow-hidden bg-stone-900">
-          <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-stone-800/40">
-            <SparkleIcon className="h-4 w-4 text-purple-400" />
+        <div className="rounded-lg border border-edge-default/60 overflow-hidden bg-surface-panel">
+          <div className="flex items-center w-full gap-3 px-3.5 py-3 bg-surface-raised/40">
+            <SparkleIcon className="h-4 w-4 text-status-classifying" />
             <div className="flex-1 min-w-0">
-              <span className="text-sm font-medium text-stone-300">
+              <span className="text-sm font-medium text-fg-secondary">
                 AI Summary
               </span>
-              <p className="text-xs text-stone-500 mt-0.5">
+              <p className="text-xs text-fg-muted mt-0.5">
                 Generate a summary of the changes in this review
               </p>
             </div>
             <button
               onClick={() => generateSummary()}
-              className="flex-shrink-0 rounded-md bg-stone-800/80 px-2.5 py-1 text-2xs text-stone-400 inset-ring-1 inset-ring-stone-700/50 hover:bg-stone-700/80 hover:text-stone-300 transition-colors"
+              className="flex-shrink-0 rounded-md bg-surface-raised/80 px-2.5 py-1 text-2xs text-fg-muted inset-ring-1 inset-ring-edge-default/50 hover:bg-surface-hover/80 hover:text-fg-secondary transition-colors"
             >
               Generate
             </button>
@@ -150,8 +150,8 @@ function SummarySection(): ReactNode {
         </div>
       )}
       {displaySummary && (
-        <div className="rounded-lg border border-stone-800 p-4">
-          <div className="guide-prose text-sm text-stone-300 leading-relaxed">
+        <div className="rounded-lg border border-edge p-4">
+          <div className="guide-prose text-sm text-fg-secondary leading-relaxed">
             <Markdown
               remarkPlugins={[remarkGfm]}
               urlTransform={urlTransform}
@@ -164,7 +164,7 @@ function SummarySection(): ReactNode {
             <div className="flex items-center justify-end mt-2">
               <button
                 onClick={() => generateSummary()}
-                className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                className="flex items-center gap-1 rounded-full bg-status-modified/15 px-2 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
               >
                 Regenerate
               </button>
@@ -195,16 +195,16 @@ function DiagramSection(): ReactNode {
   return (
     <div className="space-y-4">
       {diagramStatus === "loading" && !guideDiagram && !guideDiagramError && (
-        <div className="rounded-lg border border-stone-800 p-4">
-          <div className="flex items-center gap-2 text-stone-500">
+        <div className="rounded-lg border border-edge p-4">
+          <div className="flex items-center gap-2 text-fg-muted">
             <Spinner />
             <span className="text-xs">Generating diagram…</span>
           </div>
         </div>
       )}
       {skipped && (
-        <div className="rounded-lg border border-stone-800/50 p-3">
-          <p className="text-xxs text-stone-600">
+        <div className="rounded-lg border border-edge/50 p-3">
+          <p className="text-xxs text-fg-faint">
             Diagram was skipped for this review.
           </p>
         </div>
@@ -216,18 +216,18 @@ function DiagramSection(): ReactNode {
         />
       )}
       {guideDiagram && !isValidJson && (
-        <div className="rounded-lg border border-stone-800 p-4">
-          <p className="text-xs text-stone-400">Diagram format has changed.</p>
+        <div className="rounded-lg border border-edge p-4">
+          <p className="text-xs text-fg-muted">Diagram format has changed.</p>
           <button
             onClick={() => generateDiagram()}
-            className="mt-2 text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+            className="mt-2 text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
           >
             Regenerate
           </button>
         </div>
       )}
       {guideDiagram && isValidJson && (
-        <div className="rounded-lg border border-stone-800 overflow-hidden">
+        <div className="rounded-lg border border-edge overflow-hidden">
           <StructuredDiagram
             sceneJson={guideDiagram}
             onRetry={() => generateDiagram()}
@@ -236,7 +236,7 @@ function DiagramSection(): ReactNode {
             <div className="flex items-center justify-end px-4 pb-3">
               <button
                 onClick={() => generateDiagram()}
-                className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                className="flex items-center gap-1 rounded-full bg-status-modified/15 px-2 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
               >
                 Regenerate
               </button>

@@ -12,7 +12,7 @@ import { calculateFileHunkStatus } from "../FilesPanel/FileTree.utils";
  */
 export function NarrativeContent({
   content,
-  className = "guide-prose text-xs text-stone-300",
+  className = "guide-prose text-xs text-fg-secondary",
   onBeforeNavigate,
 }: {
   content: string;
@@ -95,7 +95,7 @@ export function NarrativeContent({
             const allDone = reviewed === fileStatus.total;
             indicator = (
               <span
-                className={`inline-flex items-center ml-1 text-2xs tabular-nums ${allDone ? "text-emerald-400/70" : "text-stone-500"}`}
+                className={`inline-flex items-center ml-1 text-2xs tabular-nums ${allDone ? "text-status-approved/70" : "text-fg0"}`}
               >
                 {allDone ? (
                   <svg

@@ -111,7 +111,7 @@ function SortMenu({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="p-0.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.08]
+        className="p-0.5 rounded text-fg-faint hover:text-fg-muted hover:bg-white/[0.08]
                    transition-colors duration-100"
         aria-label="Sort reviews"
         aria-expanded={open}
@@ -146,7 +146,7 @@ function SortMenu({
             aria-label="Close menu"
           />
           <div
-            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-stone-900 border border-white/[0.08] py-1 shadow-xl"
+            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-surface-panel border border-white/[0.08] py-1 shadow-xl"
             role="menu"
           >
             {SORT_OPTIONS.map(([value, label]) => (
@@ -161,8 +161,8 @@ function SortMenu({
                 className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
                   ${
                     sortOrder === value
-                      ? "text-stone-200 bg-white/[0.06]"
-                      : "text-stone-400 hover:text-stone-200 hover:bg-white/[0.04]"
+                      ? "text-fg-secondary bg-white/[0.06]"
+                      : "text-fg-muted hover:text-fg-secondary hover:bg-white/[0.04]"
                   }`}
               >
                 {label}
@@ -197,16 +197,16 @@ function FooterVersionInfo({
         type="button"
         onClick={installUpdate}
         disabled={installing}
-        className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-400 hover:text-emerald-300 transition-colors duration-100 disabled:opacity-50"
+        className="flex items-center gap-1.5 text-[10px] font-medium text-status-approved hover:text-status-approved transition-colors duration-100 disabled:opacity-50"
       >
         {installing ? (
           <>
-            <span className="inline-block h-2.5 w-2.5 rounded-full border-[1.5px] border-stone-600 border-t-emerald-400 animate-spin" />
+            <span className="inline-block h-2.5 w-2.5 rounded-full border-[1.5px] border-edge-strong border-t-status-approved animate-spin" />
             Installing…
           </>
         ) : (
           <>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <span className="h-1.5 w-1.5 rounded-full bg-status-approved" />
             Update to v{updateAvailable.version}
           </>
         )}
@@ -219,7 +219,7 @@ function FooterVersionInfo({
       <button
         type="button"
         onClick={onOpenRelease}
-        className="text-[10px] tabular-nums text-stone-600 hover:text-stone-400 transition-colors duration-100"
+        className="text-[10px] tabular-nums text-fg-faint hover:text-fg-muted transition-colors duration-100"
       >
         v{appVersion}
       </button>
@@ -357,7 +357,7 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
       {!globalReviewsLoading && globalReviews.length === 0 && (
         <div className="px-2 py-8 text-center">
           <svg
-            className="h-6 w-6 mx-auto mb-2 text-stone-600"
+            className="h-6 w-6 mx-auto mb-2 text-fg-faint"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -369,8 +369,8 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
-          <p className="text-2xs text-stone-500">No reviews yet</p>
-          <p className="text-xxs text-stone-600 mt-1">
+          <p className="text-2xs text-fg0">No reviews yet</p>
+          <p className="text-xxs text-fg-faint mt-1">
             Click &ldquo;New review&rdquo; to start
           </p>
         </div>
@@ -380,7 +380,7 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
       {sortedActive.length > 0 && (
         <>
           <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
-            <span className="text-[9px] uppercase tracking-wider text-stone-600">
+            <span className="text-[9px] uppercase tracking-wider text-fg-faint">
               Active
             </span>
             <SortMenu
@@ -408,7 +408,7 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
             <button
               type="button"
               onClick={() => setInactiveCollapsed((prev) => !prev)}
-              className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-stone-600 hover:text-stone-400 transition-colors duration-100"
+              className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-fg-faint hover:text-fg-muted transition-colors duration-100"
             >
               <svg
                 className={`h-2.5 w-2.5 transition-transform duration-150 ${inactiveCollapsed ? "-rotate-90" : ""}`}
@@ -423,7 +423,7 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
                 <polyline points="6 9 12 15 18 9" />
               </svg>
               Inactive
-              <span className="ml-0.5 text-[9px] tabular-nums text-stone-700">
+              <span className="ml-0.5 text-[9px] tabular-nums text-fg-faint">
                 {sortedInactive.length}
               </span>
             </button>
@@ -529,7 +529,7 @@ export const TabRail = memo(function TabRail({
     <div className="relative flex shrink-0" data-tauri-drag-region>
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
-                   bg-stone-950 border-r border-white/[0.06] overflow-hidden
+                   bg-surface border-r border-white/[0.06] overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{
           width: collapsed ? 0 : `${sidebarWidth}rem`,
@@ -548,9 +548,9 @@ export const TabRail = memo(function TabRail({
               type="button"
               onClick={handleAddReview}
               className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5
-                         text-[11px] font-medium text-stone-400 hover:text-stone-200
+                         text-[11px] font-medium text-fg-muted hover:text-fg-secondary
                          hover:bg-white/[0.08] transition-colors duration-100
-                         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/50"
+                         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring/50"
             >
               <svg
                 className="h-3 w-3"
@@ -572,7 +572,7 @@ export const TabRail = memo(function TabRail({
               onClick={toggleTabRail}
               className="flex items-center justify-center w-7 h-7 shrink-0 rounded-md
                          hover:bg-white/[0.08] transition-colors duration-100
-                         text-stone-500 hover:text-stone-300"
+                         text-fg0 hover:text-fg-secondary"
               aria-label="Hide sidebar"
             >
               <SidebarPanelIcon className="w-3.5 h-3.5" />
@@ -588,7 +588,7 @@ export const TabRail = memo(function TabRail({
                 <button
                   type="button"
                   onClick={() => setShowSettings(true)}
-                  className="p-1.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.06]
+                  className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-white/[0.06]
                              transition-colors duration-100"
                   aria-label="Settings"
                 >
@@ -609,7 +609,7 @@ export const TabRail = memo(function TabRail({
                 <button
                   type="button"
                   onClick={handleOpenFeedback}
-                  className="p-1.5 rounded text-stone-600 hover:text-stone-400 hover:bg-white/[0.06]
+                  className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-white/[0.06]
                              transition-colors duration-100"
                   aria-label="Send feedback"
                 >
@@ -645,7 +645,7 @@ export const TabRail = memo(function TabRail({
             aria-label="Resize sidebar"
             onMouseDown={handleResizeStart}
             className="absolute top-0 right-0 h-full w-1 cursor-col-resize
-                       hover:bg-amber-500/50 active:bg-amber-500"
+                       hover:bg-status-modified/50 active:bg-status-modified"
           />
         )}
       </nav>

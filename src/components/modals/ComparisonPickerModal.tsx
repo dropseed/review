@@ -82,7 +82,7 @@ export function ComparisonPickerModal({
 
         <div className="px-5 py-5 space-y-5">
           <div>
-            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg0">
               Repository
             </label>
             <RepoSelect
@@ -93,10 +93,10 @@ export function ComparisonPickerModal({
             />
           </div>
 
-          <div className="border-t border-stone-800/60" />
+          <div className="border-t border-edge/60" />
 
           <div>
-            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg0">
               Comparison
             </label>
             {selectedRepoPath ? (
@@ -106,8 +106,8 @@ export function ComparisonPickerModal({
                 existingComparisonKeys={existingComparisonKeys}
               />
             ) : (
-              <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-stone-800/60 bg-gradient-to-br from-stone-900/60 to-stone-950/80 px-5 py-4 shadow-inner shadow-black/20 min-h-[58px]">
-                <span className="text-sm text-stone-600">
+              <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-edge/60 bg-gradient-to-br from-surface-panel/60 to-surface/80 px-5 py-4 shadow-inner shadow-black/20 min-h-[58px]">
+                <span className="text-sm text-fg-faint">
                   Select a repository to choose branches
                 </span>
               </div>

@@ -12,7 +12,7 @@ import {
 function ChatBubbleIcon() {
   return (
     <svg
-      className="h-4 w-4 text-stone-400"
+      className="h-4 w-4 text-fg-muted"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -66,7 +66,7 @@ function WarningIcon() {
 function FeedbackCountBadge({ count }: { count: number }) {
   if (count === 0) return null;
   return (
-    <span className="flex items-center justify-center min-w-[1.25rem] h-5 rounded-full bg-amber-500/20 px-1.5 text-xxs font-medium tabular-nums text-amber-300">
+    <span className="flex items-center justify-center min-w-[1.25rem] h-5 rounded-full bg-status-modified/20 px-1.5 text-xxs font-medium tabular-nums text-status-modified">
       {count}
     </span>
   );
@@ -125,7 +125,7 @@ export function FeedbackPanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="absolute bottom-4 right-4 z-[30] flex items-center gap-2 rounded-full bg-stone-900/95 backdrop-blur-xl border border-stone-700/50 shadow-xl px-3.5 py-2 text-stone-300 hover:bg-stone-800/95 hover:border-stone-600/50 transition-colors duration-150"
+        className="absolute bottom-4 right-4 z-[30] flex items-center gap-2 rounded-full bg-surface-panel/95 backdrop-blur-xl border border-edge-default/50 shadow-xl px-3.5 py-2 text-fg-secondary hover:bg-surface-raised/95 hover:border-edge-strong/50 transition-colors duration-150"
       >
         <ChatBubbleIcon />
         <span className="text-xs font-medium">Review Notes</span>
@@ -135,15 +135,15 @@ export function FeedbackPanel() {
   }
 
   const copyButtonClass = copied
-    ? "btn w-full text-xs transition-colors bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
-    : "btn w-full text-xs transition-colors bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20";
+    ? "btn w-full text-xs transition-colors bg-status-approved/15 text-status-approved border border-status-approved/25"
+    : "btn w-full text-xs transition-colors bg-status-modified/10 text-status-modified hover:bg-status-modified/20 border border-status-modified/20";
 
   return (
-    <div className="absolute bottom-4 right-4 z-[30] w-80 max-h-[28rem] flex flex-col rounded-xl bg-stone-900/95 backdrop-blur-xl border border-stone-700/50 shadow-xl overflow-hidden">
+    <div className="absolute bottom-4 right-4 z-[30] w-80 max-h-[28rem] flex flex-col rounded-xl bg-surface-panel/95 backdrop-blur-xl border border-edge-default/50 shadow-xl overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-stone-800/80">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-edge/80">
         <ChatBubbleIcon />
-        <span className="text-xs font-medium text-stone-300 flex-1">
+        <span className="text-xs font-medium text-fg-secondary flex-1">
           Review Notes
         </span>
         <FeedbackCountBadge count={feedbackCount} />
@@ -153,7 +153,7 @@ export function FeedbackPanel() {
           }}
         >
           <DropdownMenuTrigger asChild>
-            <button className="p-1 text-stone-500 hover:text-stone-300 hover:bg-stone-800 rounded transition-colors">
+            <button className="p-1 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised rounded transition-colors">
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="12" cy="5" r="1.5" />
                 <circle cx="12" cy="12" r="1.5" />
@@ -168,7 +168,7 @@ export function FeedbackPanel() {
                   await resetReview();
                   setConfirmingReset(false);
                 }}
-                className="text-red-400 focus:text-red-400"
+                className="text-status-rejected focus:text-status-rejected"
               >
                 <WarningIcon />
                 Confirm reset
@@ -177,7 +177,7 @@ export function FeedbackPanel() {
               <DropdownMenuItem
                 onSelect={(e) => e.preventDefault()}
                 onClick={() => setConfirmingReset(true)}
-                className="text-red-400 focus:text-red-400"
+                className="text-status-rejected focus:text-status-rejected"
               >
                 <ResetIcon />
                 Reset review
@@ -187,7 +187,7 @@ export function FeedbackPanel() {
         </DropdownMenu>
         <button
           onClick={() => setIsExpanded(false)}
-          className="p-1 text-stone-500 hover:text-stone-300 hover:bg-stone-800 rounded transition-colors"
+          className="p-1 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised rounded transition-colors"
           aria-label="Collapse review notes panel"
         >
           <svg
@@ -221,7 +221,7 @@ export function FeedbackPanel() {
 
       {/* Copy Feedback + Clear button */}
       {hasFeedbackToExport && (
-        <div className="border-t border-stone-800/80 p-3 flex gap-2">
+        <div className="border-t border-edge/80 p-3 flex gap-2">
           <button
             onClick={copyFeedbackToClipboard}
             className={copyButtonClass + " flex-1"}
@@ -268,8 +268,8 @@ export function FeedbackPanel() {
             onBlur={handleClearBlur}
             className={
               confirmingClear
-                ? "btn text-xs px-2.5 transition-colors bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25"
-                : "btn text-xs px-2.5 transition-colors bg-stone-800 text-stone-400 border border-stone-700/50 hover:text-stone-300 hover:bg-stone-700/50"
+                ? "btn text-xs px-2.5 transition-colors bg-status-rejected/15 text-status-rejected border border-status-rejected/30 hover:bg-status-rejected/25"
+                : "btn text-xs px-2.5 transition-colors bg-surface-raised text-fg-muted border border-edge-default/50 hover:text-fg-secondary hover:bg-surface-hover/50"
             }
             title={
               confirmingClear

@@ -80,7 +80,7 @@ function HighlightedText({
     <>
       {chars.map((char, i) =>
         indicesSet.has(i) ? (
-          <span key={i} className="text-amber-400 font-medium">
+          <span key={i} className="text-status-modified font-medium">
             {char}
           </span>
         ) : (
@@ -419,12 +419,12 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
             <VisuallyHidden.Root>
               <DialogPrimitive.Title>Go to Symbol</DialogPrimitive.Title>
             </VisuallyHidden.Root>
-            <div className="rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+            <div className="rounded-xl border border-edge-default/80 bg-surface-panel shadow-2xl shadow-black/50 overflow-hidden">
               {/* Search input */}
-              <div className="border-b border-stone-800 p-3">
+              <div className="border-b border-edge p-3">
                 <div className="flex items-center gap-3 px-2">
                   <svg
-                    className="h-4 w-4 text-stone-500 flex-shrink-0"
+                    className="h-4 w-4 text-fg-muted flex-shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -443,12 +443,12 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                     onKeyDown={handleKeyDown}
                     placeholder="Search symbols…"
                     aria-label="Search symbols"
-                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden"
+                    className="flex-1 bg-transparent text-sm text-fg placeholder-fg-muted focus:outline-hidden"
                   />
                   {query && (
                     <button
                       onClick={() => setQuery("")}
-                      className="text-stone-500 hover:text-stone-300 transition-colors"
+                      className="text-fg-muted hover:text-fg-secondary transition-colors"
                       aria-label="Clear search"
                     >
                       <svg
@@ -477,7 +477,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                 aria-label="Symbol search results"
               >
                 {results.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-stone-500">
+                  <div className="px-4 py-8 text-center text-sm text-fg-muted">
                     {emptyMessage}
                   </div>
                 ) : (
@@ -490,8 +490,8 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                       onClick={() => handleSelect(result.symbol)}
                       className={`w-full flex items-center gap-2 px-4 py-2 text-left transition-colors ${
                         index === selectedIndex
-                          ? "bg-stone-800"
-                          : "hover:bg-stone-800/50"
+                          ? "bg-surface-raised"
+                          : "hover:bg-surface-raised/50"
                       }`}
                     >
                       {result.symbol.changeType ? (
@@ -505,8 +505,8 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                       <span
                         className={`min-w-0 flex-1 truncate font-mono text-sm ${
                           result.symbol.changeType
-                            ? "text-stone-300"
-                            : "text-stone-500"
+                            ? "text-fg-secondary"
+                            : "text-fg-muted"
                         }`}
                       >
                         {result.matchIndices.length > 0 ? (
@@ -519,7 +519,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
                         )}
                       </span>
                       {result.symbol.parentName && (
-                        <span className="flex-shrink-0 text-xs text-stone-600">
+                        <span className="flex-shrink-0 text-xs text-fg-faint">
                           in {result.symbol.parentName}
                         </span>
                       )}
@@ -529,25 +529,25 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
               </div>
 
               {/* Footer with keyboard hints */}
-              <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
+              <div className="border-t border-edge px-4 py-2 flex items-center justify-between text-xxs text-fg-faint">
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       ↑
                     </kbd>
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       ↓
                     </kbd>
                     <span className="ml-0.5">navigate</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       Enter
                     </kbd>
                     <span className="ml-0.5">select</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       Esc
                     </kbd>
                     <span className="ml-0.5">close</span>

@@ -17,8 +17,8 @@ interface HunkPreviewProps {
 
 /** Returns the border class for a hunk based on its status */
 function getStatusBorderClass(status: string | undefined): string {
-  if (status === "approved") return "border-l-2 border-l-emerald-500/70";
-  if (status === "rejected") return "border-l-2 border-l-rose-500/70";
+  if (status === "approved") return "border-l-2 border-l-status-approved/70";
+  if (status === "rejected") return "border-l-2 border-l-status-rejected/70";
   return "";
 }
 
@@ -27,7 +27,7 @@ function StatusBadge({ status }: { status: "approved" | "rejected" }) {
   const isApproved = status === "approved";
   return (
     <span
-      className={`flex items-center gap-1 text-xxs ${isApproved ? "text-emerald-400" : "text-rose-400"}`}
+      className={`flex items-center gap-1 text-xxs ${isApproved ? "text-status-approved" : "text-status-rejected"}`}
     >
       <svg
         className="h-3 w-3"
@@ -118,19 +118,19 @@ export function HunkPreview({
     <div
       className={`rounded-md border transition-colors ${
         highlighted
-          ? "border-amber-500/50 bg-amber-500/5"
-          : "border-stone-700/50 bg-stone-800/30"
+          ? "border-status-modified/50 bg-status-modified/5"
+          : "border-edge-default/50 bg-surface-raised/30"
       } ${getStatusBorderClass(status)}`}
     >
       {/* File path header */}
-      <div className="flex items-center gap-2 border-b border-stone-700/30 px-3 py-1.5">
-        <span className="text-xs font-medium text-stone-400 truncate flex-1">
+      <div className="flex items-center gap-2 border-b border-edge-default/30 px-3 py-1.5">
+        <span className="text-xs font-medium text-fg-muted truncate flex-1">
           {hunk.filePath}
         </span>
         {status === "approved" && <StatusBadge status="approved" />}
         {status === "rejected" && <StatusBadge status="rejected" />}
         {hunkState?.label && hunkState.label.length > 0 && (
-          <span className="rounded bg-stone-700/50 px-1.5 py-0.5 text-xxs text-stone-400">
+          <span className="rounded bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted">
             {hunkState.label[0]}
           </span>
         )}
@@ -144,12 +144,16 @@ export function HunkPreview({
             <div
               key={i}
               className={`flex items-start px-3 py-0.5 ${
-                line.type === "added" ? "bg-emerald-500/10" : "bg-rose-500/10"
+                line.type === "added"
+                  ? "bg-status-approved/10"
+                  : "bg-status-rejected/10"
               }`}
             >
               <span
                 className={`w-4 flex-shrink-0 select-none opacity-50 ${
-                  line.type === "added" ? "text-emerald-300" : "text-rose-300"
+                  line.type === "added"
+                    ? "text-status-approved"
+                    : "text-status-rejected"
                 }`}
               >
                 {line.type === "added" ? "+" : "-"}
@@ -159,7 +163,9 @@ export function HunkPreview({
               ) : (
                 <span
                   className={`whitespace-pre ${
-                    line.type === "added" ? "text-emerald-300" : "text-rose-300"
+                    line.type === "added"
+                      ? "text-status-approved"
+                      : "text-status-rejected"
                   }`}
                 >
                   {line.content}

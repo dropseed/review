@@ -35,15 +35,15 @@ function getReviewStatus(
 function getHunkBackgroundClass(status: ReviewStatus): string {
   switch (status) {
     case "rejected":
-      return "bg-rose-500/10";
+      return "bg-status-rejected/10";
     case "approved":
-      return "bg-emerald-500/8";
+      return "bg-status-approved/8";
     case "saved_for_later":
-      return "bg-amber-500/10";
+      return "bg-status-modified/10";
     case "trusted":
-      return "bg-sky-500/8";
+      return "bg-status-renamed/8";
     case "pending":
-      return "bg-stone-800/90";
+      return "bg-surface-raised/90";
   }
 }
 
@@ -126,8 +126,8 @@ export function HunkAnnotationPanel({
   const isFocused = hunk.id === focusedHunkId;
 
   const borderClass = isFocused
-    ? "border border-stone-600/60 ring-1 ring-white/25"
-    : "border border-stone-700/40";
+    ? "border border-edge-strong/60 ring-1 ring-white/25"
+    : "border border-edge-default/40";
 
   return (
     <div
@@ -153,7 +153,7 @@ export function HunkAnnotationPanel({
         <SimpleTooltip content="Click to unapprove">
           <button
             onClick={() => onUnapprove(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 inset-ring-1 inset-ring-emerald-500/30 animate-in fade-in zoom-in-95 duration-200"
+            className="group flex items-center gap-1.5 rounded-md bg-status-approved/20 px-2.5 py-1 text-xs font-medium text-status-approved transition-colors hover:bg-status-approved/30 inset-ring-1 inset-ring-status-approved/30 animate-in fade-in zoom-in-95 duration-200"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -175,7 +175,7 @@ export function HunkAnnotationPanel({
         <SimpleTooltip content="Click to clear rejection">
           <button
             onClick={() => onUnreject(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/30 inset-ring-1 inset-ring-rose-500/30 animate-in fade-in zoom-in-95 duration-200"
+            className="group flex items-center gap-1.5 rounded-md bg-status-rejected/20 px-2.5 py-1 text-xs font-medium text-status-rejected transition-colors hover:bg-status-rejected/30 inset-ring-1 inset-ring-status-rejected/30 animate-in fade-in zoom-in-95 duration-200"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -197,7 +197,7 @@ export function HunkAnnotationPanel({
         <SimpleTooltip content="Click to clear saved for later">
           <button
             onClick={() => onUnsaveForLater(hunk.id)}
-            className="group flex items-center gap-1.5 rounded-md bg-amber-500/20 px-2.5 py-1 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/30 inset-ring-1 inset-ring-amber-500/30 animate-in fade-in zoom-in-95 duration-200"
+            className="group flex items-center gap-1.5 rounded-md bg-status-modified/20 px-2.5 py-1 text-xs font-medium text-status-modified transition-colors hover:bg-status-modified/30 inset-ring-1 inset-ring-status-modified/30 animate-in fade-in zoom-in-95 duration-200"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -224,8 +224,8 @@ export function HunkAnnotationPanel({
               onClick={() => onApprove(hunk.id)}
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors active:scale-95 ${
                 isTrusted
-                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-emerald-500/20 hover:text-emerald-400"
-                  : "text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-300"
+                  ? "text-fg-muted/50 bg-surface-hover/20 hover:bg-status-approved/20 hover:text-status-approved"
+                  : "text-status-approved bg-status-approved/10 hover:bg-status-approved/20 hover:text-status-approved"
               }`}
               aria-label="Approve change"
             >
@@ -257,8 +257,8 @@ export function HunkAnnotationPanel({
               onClick={() => onReject(hunk.id)}
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors active:scale-95 ${
                 isTrusted
-                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-rose-500/20 hover:text-rose-400"
-                  : "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300"
+                  ? "text-fg-muted/50 bg-surface-hover/20 hover:bg-status-rejected/20 hover:text-status-rejected"
+                  : "text-status-rejected bg-status-rejected/10 hover:bg-status-rejected/20 hover:text-status-rejected"
               }`}
               aria-label="Reject change"
             >
@@ -288,8 +288,8 @@ export function HunkAnnotationPanel({
               onClick={() => onSaveForLater(hunk.id)}
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors active:scale-95 ${
                 isTrusted
-                  ? "text-stone-500/50 bg-stone-700/20 hover:bg-amber-500/20 hover:text-amber-400"
-                  : "text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 hover:text-amber-300"
+                  ? "text-fg-muted/50 bg-surface-hover/20 hover:bg-status-modified/20 hover:text-status-modified"
+                  : "text-status-modified bg-status-modified/10 hover:bg-status-modified/20 hover:text-status-modified"
               }`}
               aria-label="Save for later"
             >
@@ -341,9 +341,9 @@ export function HunkAnnotationPanel({
         {/* Classifying indicator - fixed width container to prevent layout shift */}
         <div className="w-[5.5rem] flex justify-end">
           {classifyingHunkIds.has(hunk.id) && (
-            <div className="flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5">
+            <div className="flex items-center gap-1 rounded-full bg-status-classifying/15 px-2 py-0.5">
               <svg
-                className="h-3 w-3 animate-spin text-violet-400"
+                className="h-3 w-3 animate-spin text-status-classifying"
                 viewBox="0 0 24 24"
                 fill="none"
                 aria-hidden="true"
@@ -362,7 +362,9 @@ export function HunkAnnotationPanel({
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-              <span className="text-xxs text-violet-400">Classifying…</span>
+              <span className="text-xxs text-status-classifying">
+                Classifying…
+              </span>
             </div>
           )}
         </div>
@@ -382,7 +384,7 @@ export function HunkAnnotationPanel({
               <span className="flex items-center">
                 {hunkState.classifiedVia === "ai" ? (
                   <svg
-                    className="h-3 w-3 text-violet-400/70"
+                    className="h-3 w-3 text-status-classifying/70"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -395,7 +397,7 @@ export function HunkAnnotationPanel({
                   </svg>
                 ) : (
                   <svg
-                    className="h-3 w-3 text-stone-500"
+                    className="h-3 w-3 text-fg-muted"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -426,8 +428,8 @@ export function HunkAnnotationPanel({
                     }}
                     className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-colors hover:ring-1 ${
                       isTrustedLabel
-                        ? "bg-sky-500/15 text-sky-400 hover:ring-sky-400/50"
-                        : "bg-stone-700/50 text-stone-400 hover:ring-stone-400/50"
+                        ? "bg-status-renamed/15 text-status-renamed hover:ring-status-renamed/50"
+                        : "bg-surface-hover/50 text-fg-muted hover:ring-fg-muted/50"
                     }`}
                   >
                     {lbl}
@@ -441,7 +443,7 @@ export function HunkAnnotationPanel({
         {/* Reasoning indicator - shows when reasoning exists */}
         {hunkState?.reasoning && (
           <SimpleTooltip content={hunkState.reasoning}>
-            <span className="text-stone-600 hover:text-stone-400 cursor-help transition-colors">
+            <span className="text-fg-faint hover:text-fg-muted cursor-help transition-colors">
               <svg
                 className="h-3 w-3"
                 fill="none"
@@ -465,7 +467,7 @@ export function HunkAnnotationPanel({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50"
+                className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
                 aria-label="More options"
               >
                 <svg
@@ -551,12 +553,12 @@ export function HunkAnnotationPanel({
         {hunkPosition !== undefined &&
           totalHunksInFile !== undefined &&
           totalHunksInFile > 1 && (
-            <div className="flex items-center gap-1 text-stone-600 select-none">
-              {isFocused && <kbd className="text-stone-600">k</kbd>}
+            <div className="flex items-center gap-1 text-fg-faint select-none">
+              {isFocused && <kbd className="text-fg-faint">k</kbd>}
               <span className="text-xxs tabular-nums">
                 {hunkPosition}/{totalHunksInFile}
               </span>
-              {isFocused && <kbd className="text-stone-600">j</kbd>}
+              {isFocused && <kbd className="text-fg-faint">j</kbd>}
             </div>
           )}
       </div>

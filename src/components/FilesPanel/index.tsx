@@ -36,10 +36,10 @@ import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
 
 function groupItemStyle(isActive: boolean, isCompleted: boolean): string {
-  if (isActive) return "bg-amber-500/10 text-amber-300";
+  if (isActive) return "bg-status-modified/10 text-status-modified";
   if (isCompleted)
-    return "text-stone-600 hover:text-stone-400 hover:bg-stone-800/30";
-  return "text-stone-400 hover:text-stone-200 hover:bg-stone-800/30";
+    return "text-fg-faint hover:text-fg-muted hover:bg-surface-raised/30";
+  return "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30";
 }
 
 interface QuickActionItem {
@@ -53,7 +53,7 @@ function SectionHeader({
   title,
   icon,
   badge,
-  badgeColor = "amber",
+  badgeColor = "status-modified",
   isOpen,
   onToggle,
   onExpandAll,
@@ -69,7 +69,11 @@ function SectionHeader({
   title: string;
   icon?: React.ReactNode;
   badge?: number | string;
-  badgeColor?: "amber" | "emerald" | "cyan";
+  badgeColor?:
+    | "status-modified"
+    | "status-approved"
+    | "status-trusted"
+    | "status-pending";
   isOpen: boolean;
   onToggle: () => void;
   onExpandAll?: () => void;
@@ -83,14 +87,15 @@ function SectionHeader({
   children: React.ReactNode;
 }) {
   const badgeColors = {
-    amber: "bg-amber-500/20 text-amber-300",
-    emerald: "bg-emerald-500/20 text-emerald-300",
-    cyan: "bg-cyan-500/20 text-cyan-300",
+    "status-modified": "bg-status-modified/20 text-status-modified",
+    "status-approved": "bg-status-approved/20 text-status-approved",
+    "status-trusted": "bg-status-trusted/20 text-status-trusted",
+    "status-pending": "bg-status-pending/20 text-status-pending",
   };
 
   const checkIcon = (
     <svg
-      className="ml-auto h-3.5 w-3.5 text-stone-400"
+      className="ml-auto h-3.5 w-3.5 text-fg-muted"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -219,7 +224,7 @@ function SectionHeader({
           {quickActions.map((qa) => (
             <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
               <span className="flex-1">{qa.label}</span>
-              <span className="ml-2 text-xxs tabular-nums text-stone-500">
+              <span className="ml-2 text-xxs tabular-nums text-fg-muted">
                 {qa.count}
               </span>
             </DropdownMenuItem>
@@ -270,7 +275,7 @@ function GroupItemOverflowMenu({
         <button
           onClick={(e) => e.stopPropagation()}
           className={`mr-1 flex items-center justify-center w-5 h-5 rounded shrink-0
-                     text-stone-500 hover:text-stone-300 hover:bg-stone-700/50
+                     text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50
                      transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
         >
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
@@ -924,8 +929,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return (
       <div className="flex h-40 items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-6 w-6 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <span className="text-sm text-stone-500">Loading files...</span>
+          <div className="h-6 w-6 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <span className="text-sm text-fg-muted">Loading files...</span>
         </div>
       </div>
     );
@@ -936,7 +941,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       <FilesPanelProvider value={filesPanelContextValue}>
         <div className="flex h-full flex-col">
           {/* View mode toggle - always show all three tabs */}
-          <div className="border-b border-stone-800/50 px-3 py-2">
+          <div className="border-b border-edge/50 px-3 py-2">
             <Tabs
               value={viewMode}
               onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
@@ -967,7 +972,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       <path d="m21 21-4.3-4.3" />
                     </svg>
                     {searchResultCount > 0 && (
-                      <span className="ml-1 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-amber-300">
+                      <span className="ml-1 rounded-full bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-status-modified">
                         {searchResultCount >= 100 ? "100+" : searchResultCount}
                       </span>
                     )}
@@ -1000,18 +1005,18 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     <div className="flex flex-col items-center justify-center h-full px-6 py-12">
                       <div className="relative mb-6">
                         <div className="flex gap-1.5">
-                          <div className="w-10 h-14 rounded bg-stone-800/80 border border-stone-700/50" />
-                          <div className="w-10 h-14 rounded bg-stone-800/80 border border-stone-700/50" />
+                          <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
+                          <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
                         </div>
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-                          <div className="w-1.5 h-0.5 bg-stone-600 rounded-full" />
-                          <div className="w-1.5 h-0.5 bg-stone-600 rounded-full" />
+                          <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
+                          <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
                         </div>
                       </div>
-                      <p className="text-sm font-medium text-stone-400 mb-1">
+                      <p className="text-sm font-medium text-fg-muted mb-1">
                         No changes
                       </p>
-                      <p className="text-xs text-stone-500 text-center max-w-[200px]">
+                      <p className="text-xs text-fg-muted text-center max-w-[200px]">
                         The base and compare refs are identical
                       </p>
                     </div>
@@ -1019,12 +1024,12 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     <>
                       {/* Start Guided Review CTA (when no groups yet) */}
                       {!hasGroups && !groupingLoading && hunks.length > 0 && (
-                        <div className="border-b border-stone-800/50 px-3 py-2">
+                        <div className="border-b border-edge/50 px-3 py-2">
                           <button
                             type="button"
                             onClick={startGuide}
                             disabled={guideLoading}
-                            className="flex items-center gap-1.5 w-full rounded-md bg-violet-500/15 px-2.5 py-1.5 text-xs font-medium text-violet-300 border border-violet-500/20 hover:bg-violet-500/25 transition-colors disabled:opacity-50"
+                            className="flex items-center gap-1.5 w-full rounded-md bg-status-classifying/15 px-2.5 py-1.5 text-xs font-medium text-status-classifying border border-status-classifying/20 hover:bg-status-classifying/25 transition-colors disabled:opacity-50"
                           >
                             {guideLoading ? (
                               <svg
@@ -1065,10 +1070,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         <button
                           type="button"
                           onClick={() => setGuideContentMode("overview")}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium transition-colors border-b border-stone-800/50 ${
+                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium transition-colors border-b border-edge/50 ${
                             guideContentMode === "overview"
-                              ? "bg-amber-500/10 text-amber-400"
-                              : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/50"
+                              ? "bg-status-modified/10 text-status-modified"
+                              : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/50"
                           }`}
                         >
                           {summaryStatus === "loading" && (
@@ -1096,7 +1101,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           {summaryStatus !== "loading" &&
                             guideSummary &&
                             !hasPrBody && (
-                              <span className="text-purple-400 ml-auto shrink-0">
+                              <span className="text-status-classifying ml-auto shrink-0">
                                 <svg
                                   className="h-3 w-3"
                                   viewBox="0 0 24 24"
@@ -1116,7 +1121,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           icon={
                             classifying ? (
                               <svg
-                                className="h-3.5 w-3.5 text-cyan-500 animate-spin"
+                                className="h-3.5 w-3.5 text-status-trusted animate-spin"
                                 viewBox="0 0 24 24"
                                 fill="none"
                               >
@@ -1136,7 +1141,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               </svg>
                             ) : (
                               <svg
-                                className="h-3.5 w-3.5 text-cyan-500"
+                                className="h-3.5 w-3.5 text-status-trusted"
                                 viewBox="0 0 24 24"
                                 fill="none"
                                 stroke="currentColor"
@@ -1149,7 +1154,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                             )
                           }
                           badge={`${trustedHunkCount}/${trustableHunkCount}`}
-                          badgeColor="cyan"
+                          badgeColor="status-trusted"
                           isOpen={trustOpen}
                           onToggle={() => setTrustOpen(!trustOpen)}
                           showTopBorder={false}
@@ -1166,7 +1171,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           icon={
                             groupingLoading ? (
                               <svg
-                                className="h-3.5 w-3.5 text-violet-400 animate-spin"
+                                className="h-3.5 w-3.5 text-status-classifying animate-spin"
                                 viewBox="0 0 24 24"
                                 fill="none"
                               >
@@ -1186,7 +1191,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               </svg>
                             ) : (
                               <svg
-                                className="h-3.5 w-3.5 text-violet-400"
+                                className="h-3.5 w-3.5 text-status-classifying"
                                 viewBox="0 0 24 24"
                                 fill="currentColor"
                               >
@@ -1199,7 +1204,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                               ? totalGroupUnreviewed
                               : undefined
                           }
-                          badgeColor="amber"
+                          badgeColor="status-modified"
                           isOpen={groupsOpen}
                           onToggle={() => setGroupsOpen(!groupsOpen)}
                           showTopBorder={false}
@@ -1208,14 +1213,14 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           {/* Group error */}
                           {groupingError && (
                             <div className="px-3 py-1.5">
-                              <div className="rounded bg-rose-500/10 px-2 py-1.5 inset-ring-1 inset-ring-rose-500/20">
-                                <p className="text-xxs text-rose-400 mb-1">
+                              <div className="rounded bg-status-rejected/10 px-2 py-1.5 inset-ring-1 inset-ring-status-rejected/20">
+                                <p className="text-xxs text-status-rejected mb-1">
                                   Failed: {groupingError}
                                 </p>
                                 <button
                                   type="button"
                                   onClick={() => generateGrouping()}
-                                  className="text-xxs text-stone-400 hover:text-stone-300 transition-colors"
+                                  className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
                                 >
                                   Retry
                                 </button>
@@ -1226,7 +1231,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           {/* Loading state */}
                           {groupingLoading && !hasGroups && (
                             <div className="px-3 py-3 text-center">
-                              <span className="text-xxs text-stone-500">
+                              <span className="text-xxs text-fg-muted">
                                 Generating groups…
                               </span>
                             </div>
@@ -1237,7 +1242,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                             <div className="px-3 py-1">
                               <button
                                 onClick={() => generateGrouping()}
-                                className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xxs font-medium text-amber-400 hover:bg-amber-500/25 transition-colors"
+                                className="flex items-center gap-1 rounded-full bg-status-modified/15 px-1.5 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
                               >
                                 Stale — regenerate
                               </button>
@@ -1265,7 +1270,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                     className={`flex items-center gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
                                   >
                                     {isCompleted ? (
-                                      <span className="text-emerald-500 shrink-0">
+                                      <span className="text-status-approved shrink-0">
                                         <svg
                                           className="w-3 h-3"
                                           viewBox="0 0 24 24"
@@ -1281,7 +1286,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                         </svg>
                                       </span>
                                     ) : (
-                                      <span className="w-4 text-center text-xxs text-stone-600 shrink-0 tabular-nums">
+                                      <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums">
                                         {i + 1}
                                       </span>
                                     )}
@@ -1289,7 +1294,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                                       {group.title}
                                     </span>
                                     {!isCompleted && unreviewedCount > 0 && (
-                                      <span className="text-xxs text-amber-400/70 tabular-nums shrink-0">
+                                      <span className="text-xxs text-status-modified/70 tabular-nums shrink-0">
                                         {unreviewedCount}
                                       </span>
                                     )}
@@ -1315,7 +1320,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           {/* All groups done */}
                           {hasGroups && totalGroupUnreviewed === 0 && (
                             <div className="px-3 py-1.5">
-                              <span className="text-xxs text-emerald-400 font-medium">
+                              <span className="text-xxs text-status-approved font-medium">
                                 All groups reviewed
                               </span>
                             </div>
@@ -1328,7 +1333,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         title="Needs Review"
                         icon={
                           <svg
-                            className="h-3.5 w-3.5 text-stone-500"
+                            className="h-3.5 w-3.5 text-fg-muted"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -1341,7 +1346,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           </svg>
                         }
                         badge={stats.pending}
-                        badgeColor="amber"
+                        badgeColor="status-pending"
                         isOpen={needsReviewOpen}
                         onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
                         onExpandAll={() => expandAll(allDirPaths)}
@@ -1373,7 +1378,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           title="Saved for Later"
                           icon={
                             <svg
-                              className="h-3.5 w-3.5 text-amber-400"
+                              className="h-3.5 w-3.5 text-status-modified"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -1385,7 +1390,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                             </svg>
                           }
                           badge={stats.savedForLater}
-                          badgeColor="amber"
+                          badgeColor="status-modified"
                           isOpen={savedForLaterOpen}
                           onToggle={() =>
                             setSavedForLaterOpen(!savedForLaterOpen)
@@ -1410,7 +1415,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         title="Reviewed"
                         icon={
                           <svg
-                            className="h-3.5 w-3.5 text-stone-500"
+                            className="h-3.5 w-3.5 text-fg-muted"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -1423,7 +1428,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           </svg>
                         }
                         badge={stats.reviewed}
-                        badgeColor="emerald"
+                        badgeColor="status-approved"
                         isOpen={reviewedOpen}
                         onToggle={() => setReviewedOpen(!reviewedOpen)}
                         onExpandAll={() => expandAll(allDirPaths)}
@@ -1450,8 +1455,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 ) : (
                   <>
                     {/* All Files header with expand/collapse */}
-                    <div className="flex items-center border-b border-stone-800/50">
-                      <div className="flex-1 px-3 py-2 text-xs font-medium text-stone-300">
+                    <div className="flex items-center border-b border-edge/50">
+                      <div className="flex-1 px-3 py-2 text-xs font-medium text-fg-secondary">
                         {repoPath?.split("/").pop() || "All Files"}
                       </div>
                       {allDirPaths.size > 0 && (
@@ -1459,7 +1464,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           <SimpleTooltip content="Expand all">
                             <button
                               onClick={() => expandAll(allDirPaths)}
-                              className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
+                              className="text-fg-muted hover:text-fg-secondary hover:bg-surface-raised focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded p-1"
                             >
                               <svg
                                 className="h-3 w-3"
@@ -1482,7 +1487,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           <SimpleTooltip content="Collapse all">
                             <button
                               onClick={collapseAll}
-                              className="text-stone-500 hover:text-stone-300 hover:bg-stone-800 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded p-1"
+                              className="text-fg-muted hover:text-fg-secondary hover:bg-surface-raised focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded p-1"
                             >
                               <svg
                                 className="h-3 w-3"
@@ -1528,7 +1533,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         ))
                       ) : (
                         <div className="py-4 text-center">
-                          <p className="text-xs text-stone-500">No files</p>
+                          <p className="text-xs text-fg-muted">No files</p>
                         </div>
                       )}
                     </div>

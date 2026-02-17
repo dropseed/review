@@ -11,11 +11,11 @@ const STATUS_COLORS: Record<
   StatusEntry["status"],
   { letter: string; color: string }
 > = {
-  added: { letter: "A", color: "text-emerald-400" },
-  modified: { letter: "M", color: "text-amber-400" },
-  deleted: { letter: "D", color: "text-rose-400" },
-  renamed: { letter: "R", color: "text-sky-400" },
-  copied: { letter: "C", color: "text-sky-400" },
+  added: { letter: "A", color: "text-status-approved" },
+  modified: { letter: "M", color: "text-status-modified" },
+  deleted: { letter: "D", color: "text-status-rejected" },
+  renamed: { letter: "R", color: "text-status-renamed" },
+  copied: { letter: "C", color: "text-status-renamed" },
 };
 
 function StatusFileRow({
@@ -34,20 +34,20 @@ function StatusFileRow({
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : null;
 
   return (
-    <div className="group flex items-center w-full px-3 py-1 text-xs text-stone-300 hover:bg-stone-800/50 transition-colors">
+    <div className="group flex items-center w-full px-3 py-1 text-xs text-fg-secondary hover:bg-surface-raised/50 transition-colors">
       <button
         type="button"
         onClick={() => onSelect(path)}
         className="flex items-center gap-2 flex-1 min-w-0 text-left"
       >
         <span
-          className={`w-3 text-center font-mono text-xxs font-medium shrink-0 ${config?.color ?? "text-stone-500"}`}
+          className={`w-3 text-center font-mono text-xxs font-medium shrink-0 ${config?.color ?? "text-fg-muted"}`}
         >
           {config?.letter ?? "?"}
         </span>
         <span className="truncate">
           {filename}
-          {dir && <span className="text-stone-600 ml-1">{dir}</span>}
+          {dir && <span className="text-fg-faint ml-1">{dir}</span>}
         </span>
       </button>
       {actionButton && (
@@ -76,7 +76,7 @@ function StageActionButton({
         e.stopPropagation();
         onClick(e);
       }}
-      className="flex items-center justify-center w-5 h-5 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors text-xs font-mono leading-none"
+      className="flex items-center justify-center w-5 h-5 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-hover transition-colors text-xs font-mono leading-none"
     >
       {label}
     </button>
@@ -146,7 +146,7 @@ export function GitStatusPanel({
   if (!gitStatus) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4">
-        <p className="text-xs text-stone-500">No git status available</p>
+        <p className="text-xs text-fg-muted">No git status available</p>
       </div>
     );
   }
@@ -159,7 +159,7 @@ export function GitStatusPanel({
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4">
         <svg
-          className="h-8 w-8 text-stone-700 mb-2"
+          className="h-8 w-8 text-surface-hover mb-2"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -171,7 +171,7 @@ export function GitStatusPanel({
             d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
           />
         </svg>
-        <p className="text-xs text-stone-500">No working tree changes</p>
+        <p className="text-xs text-fg-muted">No working tree changes</p>
       </div>
     );
   }
@@ -182,33 +182,33 @@ export function GitStatusPanel({
       <button
         type="button"
         onClick={() => setShowModal(true)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-left border-b border-stone-800/50 hover:bg-stone-800/50 transition-colors"
+        className="flex items-center gap-2 w-full px-3 py-2 text-left border-b border-edge/50 hover:bg-surface-raised/50 transition-colors"
       >
-        <span className="text-xs text-stone-400 flex-1">
+        <span className="text-xs text-fg-muted flex-1">
           {staged.length > 0 && (
-            <span className="text-emerald-400 font-medium tabular-nums">
+            <span className="text-status-approved font-medium tabular-nums">
               {staged.length} staged
             </span>
           )}
           {staged.length > 0 && unstaged.length > 0 && (
-            <span className="text-stone-600 mx-1">·</span>
+            <span className="text-fg-faint mx-1">·</span>
           )}
           {unstaged.length > 0 && (
-            <span className="text-amber-400 font-medium tabular-nums">
+            <span className="text-status-modified font-medium tabular-nums">
               {unstaged.length} unstaged
             </span>
           )}
           {(staged.length > 0 || unstaged.length > 0) &&
             untracked.length > 0 && (
-              <span className="text-stone-600 mx-1">·</span>
+              <span className="text-fg-faint mx-1">·</span>
             )}
           {untracked.length > 0 && (
-            <span className="text-stone-500 font-medium tabular-nums">
+            <span className="text-fg-muted font-medium tabular-nums">
               {untracked.length} untracked
             </span>
           )}
         </span>
-        <span className="text-stone-600 text-xxs">git status</span>
+        <span className="text-fg-faint text-xxs">git status</span>
       </button>
 
       <GitStatusModal isOpen={showModal} onClose={() => setShowModal(false)} />
@@ -217,7 +217,7 @@ export function GitStatusPanel({
         <GitSection
           title="Staged"
           count={staged.length}
-          accentColor="bg-emerald-500/20 text-emerald-300"
+          accentColor="bg-status-approved/20 text-status-approved"
           menuItems={[{ label: "Unstage all", onClick: () => unstageAll() }]}
         >
           {staged.map((entry) => (
@@ -242,7 +242,7 @@ export function GitStatusPanel({
         <GitSection
           title="Unstaged"
           count={unstaged.length}
-          accentColor="bg-amber-500/20 text-amber-300"
+          accentColor="bg-status-modified/20 text-status-modified"
           menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
         >
           {unstaged.map((entry) => (
@@ -267,7 +267,7 @@ export function GitStatusPanel({
         <GitSection
           title="Untracked"
           count={untracked.length}
-          accentColor="bg-stone-500/20 text-stone-400"
+          accentColor="bg-fg-muted/20 text-fg-muted"
         >
           {untracked.map((path) => (
             <StatusFileRow

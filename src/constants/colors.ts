@@ -1,23 +1,26 @@
 /**
  * Semantic color system for the Review app.
  *
- * Color assignments:
- * - Trust (auto-approve patterns): cyan
- * - Approve (manual): lime
- * - Reject: rose
- * - Classifying (AI): violet
- * - Focus/UI accent: amber
+ * All colors reference the semantic design tokens defined in index.css.
+ * These tokens are runtime-overridable for VS Code theme integration.
+ *
+ * Status token mapping:
+ * - Trust (auto-approve patterns): status-trusted
+ * - Approve (manual): status-approved
+ * - Reject: status-rejected
+ * - Classifying (AI): status-classifying
+ * - Focus/UI accent: focus-ring
  *
  * Git file status:
- * - Added: lime, Modified: amber, Deleted: rose, Renamed: sky
+ * - Added: status-added, Modified: status-modified, Deleted: status-deleted, Renamed: status-renamed
  */
 
 export const SEMANTIC_COLORS = {
-  trust: "cyan",
-  approve: "lime",
-  reject: "rose",
-  classifying: "violet",
-  focus: "amber",
+  trust: "status-trusted",
+  approve: "status-approved",
+  reject: "status-rejected",
+  classifying: "status-classifying",
+  focus: "focus-ring",
 } as const;
 
 export type SemanticColor =
@@ -25,16 +28,16 @@ export type SemanticColor =
 
 // Tailwind class helpers for consistent color usage
 export const TRUST_CLASSES = {
-  text: "text-cyan-400",
-  textMuted: "text-cyan-300",
-  textSubtle: "text-cyan-400/70",
-  bg: "bg-cyan-500",
-  bgSubtle: "bg-cyan-500/10",
-  bgHover: "hover:bg-cyan-500/20",
-  border: "border-cyan-500",
-  borderSubtle: "border-cyan-500/20",
-  borderHover: "hover:border-cyan-500/50",
-  ring: "ring-cyan-500/30",
+  text: "text-status-trusted",
+  textMuted: "text-status-trusted/80",
+  textSubtle: "text-status-trusted/70",
+  bg: "bg-status-trusted",
+  bgSubtle: "bg-status-trusted/10",
+  bgHover: "hover:bg-status-trusted/20",
+  border: "border-status-trusted",
+  borderSubtle: "border-status-trusted/20",
+  borderHover: "hover:border-status-trusted/50",
+  ring: "ring-status-trusted/30",
   shadow: "shadow-[0_0_8px_rgba(6,182,212,0.3)]",
 } as const;
 

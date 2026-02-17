@@ -157,7 +157,7 @@ export function SymbolLinkedHunksModal({
       >
         <button
           onClick={() => onNavigateToHunk(defHunk.id)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-sky-500/80 transition-colors hover:bg-stone-700/50 hover:text-sky-400"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-status-renamed/80 transition-colors hover:bg-surface-hover/50 hover:text-status-renamed"
         >
           <svg
             className="h-3 w-3"
@@ -174,7 +174,7 @@ export function SymbolLinkedHunksModal({
           </svg>
           <code className="font-mono">{primary.symbolName}</code>
           {additionalCount > 0 && (
-            <span className="text-stone-600">+{additionalCount}</span>
+            <span className="text-fg-faint">+{additionalCount}</span>
           )}
         </button>
       </SimpleTooltip>
@@ -226,12 +226,12 @@ export function SymbolLinkedHunksModal({
       >
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-amber-500/80 transition-colors hover:bg-stone-700/50 hover:text-amber-400"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-status-modified/80 transition-colors hover:bg-surface-hover/50 hover:text-status-modified"
         >
           <code className="font-mono">{primary.symbolName}</code>
-          <span className="text-stone-600">({totalRefs})</span>
+          <span className="text-fg-faint">({totalRefs})</span>
           {additionalCount > 0 && (
-            <span className="text-stone-600">+{additionalCount}</span>
+            <span className="text-fg-faint">+{additionalCount}</span>
           )}
         </button>
       </SimpleTooltip>
@@ -243,11 +243,11 @@ export function SymbolLinkedHunksModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <span>Symbol Connections</span>
-            <span className="rounded-full bg-stone-700/50 px-2 py-0.5 text-xs font-normal text-stone-400 tabular-nums">
+            <span className="rounded-full bg-surface-hover/50 px-2 py-0.5 text-xs font-normal text-fg-muted tabular-nums">
               {groups.length} symbol{groups.length === 1 ? "" : "s"}
             </span>
           </DialogTitle>
-          <DialogClose className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors">
+          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -273,42 +273,40 @@ export function SymbolLinkedHunksModal({
                 <span
                   className={`rounded px-1.5 py-0.5 text-xxs font-medium ${
                     group.thisHunkRole === "modifies"
-                      ? "bg-amber-500/15 text-amber-400"
-                      : "bg-sky-500/15 text-sky-400"
+                      ? "bg-status-modified/15 text-status-modified"
+                      : "bg-status-renamed/15 text-status-renamed"
                   }`}
                 >
                   {group.thisHunkRole === "modifies"
                     ? "This hunk modifies"
                     : "This hunk uses"}
                 </span>
-                <code className="text-xs font-mono text-stone-200">
+                <code className="text-xs font-mono text-fg-secondary">
                   {group.symbolName}
                 </code>
-                <span className="text-xxs text-stone-600">
+                <span className="text-xxs text-fg-faint">
                   {group.linkedHunks.length} connected hunk
                   {group.linkedHunks.length === 1 ? "" : "s"}
                 </span>
               </div>
 
               {/* Linked hunks for this symbol */}
-              <div className="space-y-2 pl-2 border-l border-stone-800">
+              <div className="space-y-2 pl-2 border-l border-edge">
                 {group.linkedHunks.map(({ entry, hunk }) => {
                   const isPure = pureRefHunkIds.has(hunk.id);
                   const status = hunkStates[hunk.id]?.status;
                   return (
                     <div key={hunk.id} className="group relative">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xxs text-stone-500">
+                        <span className="text-xxs text-fg-muted">
                           {entry.relationship === "defines"
                             ? "Defines"
                             : "References"}{" "}
                           in{" "}
-                          <span className="text-stone-400">
-                            {hunk.filePath}
-                          </span>
+                          <span className="text-fg-muted">{hunk.filePath}</span>
                         </span>
                         {isPure && (
-                          <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-xxs text-emerald-500/80">
+                          <span className="rounded bg-status-approved/10 px-1 py-0.5 text-xxs text-status-approved/80">
                             pure ref
                           </span>
                         )}
@@ -316,8 +314,8 @@ export function SymbolLinkedHunksModal({
                           <span
                             className={`rounded px-1 py-0.5 text-xxs ${
                               status === "approved"
-                                ? "bg-emerald-500/10 text-emerald-400"
-                                : "bg-rose-500/10 text-rose-400"
+                                ? "bg-status-approved/10 text-status-approved"
+                                : "bg-status-rejected/10 text-status-rejected"
                             }`}
                           >
                             {status}
@@ -335,7 +333,7 @@ export function SymbolLinkedHunksModal({
                       </div>
                       {onNavigateToHunk && (
                         <button
-                          className="absolute top-2 right-2 rounded bg-stone-700/80 px-2 py-1 text-xxs text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-stone-600"
+                          className="absolute top-2 right-2 rounded bg-surface-hover/80 px-2 py-1 text-xxs text-fg-secondary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-active"
                           onClick={(e) => {
                             e.stopPropagation();
                             onNavigateToHunk(hunk.id);
@@ -355,15 +353,15 @@ export function SymbolLinkedHunksModal({
 
         {/* Action footer — only shown when there are pure-reference hunks */}
         {hasPureRefs && (
-          <div className="flex items-center justify-between border-t border-stone-800 px-4 py-3 bg-stone-900/50">
-            <div className="text-xs text-stone-500">
+          <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
+            <div className="text-xs text-fg-muted">
               {pureRefHunkIds.size} pure reference hunk
               {pureRefHunkIds.size === 1 ? "" : "s"} + this definition
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleRejectAll}
-                className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
+                className="flex items-center gap-1.5 rounded-md bg-status-rejected/15 px-3 py-1.5 text-sm font-medium text-status-rejected transition-colors hover:bg-status-rejected/25 active:scale-[0.98]"
               >
                 <svg
                   className="h-4 w-4"
@@ -382,7 +380,7 @@ export function SymbolLinkedHunksModal({
               </button>
               <button
                 onClick={handleApproveAll}
-                className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
+                className="flex items-center gap-1.5 rounded-md bg-status-approved/20 px-3 py-1.5 text-sm font-medium text-status-approved transition-colors hover:bg-status-approved/30 active:scale-[0.98]"
               >
                 <svg
                   className="h-4 w-4"

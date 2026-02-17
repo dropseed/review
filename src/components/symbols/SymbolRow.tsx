@@ -41,8 +41,8 @@ export function StatusToggle({
         }}
         className={`flex-shrink-0 text-xxs w-4 h-4 flex items-center justify-center rounded transition-colors ${
           isComplete
-            ? "text-emerald-500 hover:text-stone-500"
-            : "text-stone-600 hover:text-emerald-500"
+            ? "text-status-approved hover:text-fg0"
+            : "text-fg-faint hover:text-status-approved"
         }`}
       >
         {isComplete ? "\u2713" : "\u25CB"}
@@ -116,7 +116,7 @@ export const SymbolRow = memo(function SymbolRow({
   return (
     <div className="select-none">
       <div
-        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
+        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
         style={{ paddingLeft }}
         onClick={hasChildren ? () => setExpanded(!expanded) : handleClick}
       >
@@ -129,7 +129,7 @@ export const SymbolRow = memo(function SymbolRow({
             }}
           >
             <svg
-              className={`h-3 w-3 flex-shrink-0 text-stone-600 transition-transform ${expanded ? "rotate-90" : ""}`}
+              className={`h-3 w-3 flex-shrink-0 text-fg-faint transition-transform ${expanded ? "rotate-90" : ""}`}
               viewBox="0 0 24 24"
               fill="currentColor"
             >
@@ -142,7 +142,7 @@ export const SymbolRow = memo(function SymbolRow({
         <ChangeIndicator changeType={symbol.changeType} />
         <SymbolKindBadge kind={symbol.kind} />
         <button
-          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbol.changeType === "removed" ? "line-through text-rose-400/70" : symbol.changeType === "added" ? "text-emerald-300" : "text-stone-300"}`}
+          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbol.changeType === "removed" ? "line-through text-status-rejected/70" : symbol.changeType === "added" ? "text-status-approved" : "text-fg-secondary"}`}
           onClick={(e) => {
             e.stopPropagation();
             handleClick();

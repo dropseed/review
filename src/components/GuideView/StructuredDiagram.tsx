@@ -64,11 +64,11 @@ function RoleNodeComponent({ data }: NodeProps<RoleNode>): ReactNode {
       }}
     >
       <Handle type="target" position={Position.Left} className="!opacity-0" />
-      <div className="text-sm font-semibold text-stone-50">{data.label}</div>
+      <div className="text-sm font-semibold text-fg">{data.label}</div>
       {data.files.length > 0 && (
         <div className="mt-1 space-y-0.5">
           {data.files.map((file) => (
-            <div key={file} className="text-[11px] text-stone-400 leading-snug">
+            <div key={file} className="text-[11px] text-fg-muted leading-snug">
               {file}
             </div>
           ))}
@@ -179,8 +179,8 @@ export function StructuredDiagram({
 
   if (parsed.error) {
     return (
-      <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4">
-        <div className="mb-2 flex items-center gap-2 text-rose-400">
+      <div className="rounded-lg border border-status-rejected/30 bg-status-rejected/10 p-4">
+        <div className="mb-2 flex items-center gap-2 text-status-rejected">
           <svg
             className="h-4 w-4"
             fill="none"
@@ -196,12 +196,12 @@ export function StructuredDiagram({
           </svg>
           <span className="text-sm font-medium">Diagram render error</span>
         </div>
-        <p className="text-xs text-rose-300/80">{parsed.error}</p>
+        <p className="text-xs text-status-rejected/80">{parsed.error}</p>
         <div className="mt-2 flex items-center gap-3">
           {onRetry && (
             <button
               onClick={onRetry}
-              className="text-xxs text-stone-400 hover:text-stone-200 transition-colors"
+              className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
             >
               Regenerate
             </button>
@@ -213,7 +213,7 @@ export function StructuredDiagram({
   }
 
   return (
-    <div className="my-4 h-[300px] rounded-lg bg-stone-900/50">
+    <div className="my-4 h-[300px] rounded-lg bg-surface-panel/50">
       <ReactFlow
         nodes={parsed.nodes}
         edges={parsed.edges}

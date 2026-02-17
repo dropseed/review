@@ -46,16 +46,16 @@ export function GitStatusIndicator() {
       <button
         onClick={handleClick}
         className="flex items-center gap-1 rounded px-1.5 py-0.5
-                   text-stone-400 hover:bg-stone-800 hover:text-stone-200
+                   text-fg-muted hover:bg-surface-raised hover:text-fg-secondary
                    transition-colors"
       >
-        <BranchIcon className="h-3 w-3 text-stone-500" />
-        <span className="font-medium text-stone-300 max-w-[7rem] truncate">
+        <BranchIcon className="h-3 w-3 text-fg0" />
+        <span className="font-medium text-fg-secondary max-w-[7rem] truncate">
           {gitStatus.currentBranch}
         </span>
 
         {hasChanges && (
-          <span className="text-xxs text-stone-500">+ working tree</span>
+          <span className="text-xxs text-fg0">+ working tree</span>
         )}
       </button>
     </SimpleTooltip>

@@ -15,6 +15,7 @@ import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
 import { Slider } from "../ui/slider";
+import { UI_THEMES } from "../../lib/ui-themes";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -30,7 +31,7 @@ function SectionHeader({ icon, label }: SectionHeaderProps): ReactNode {
   return (
     <div className="mb-3 flex items-center gap-2">
       <svg
-        className="h-4 w-4 text-stone-500"
+        className="h-4 w-4 text-fg0"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -40,7 +41,7 @@ function SectionHeader({ icon, label }: SectionHeaderProps): ReactNode {
       >
         {icon}
       </svg>
-      <span className="text-xs font-medium text-stone-300">{label}</span>
+      <span className="text-xs font-medium text-fg-secondary">{label}</span>
     </div>
   );
 }
@@ -57,8 +58,8 @@ function ToggleRow({
   onCheckedChange,
 }: ToggleRowProps): ReactNode {
   return (
-    <label className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5 cursor-pointer hover:bg-stone-800/50 transition-colors">
-      <span className="text-xs text-stone-300">{label}</span>
+    <label className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5 cursor-pointer hover:bg-surface-raised/50 transition-colors">
+      <span className="text-xs text-fg-secondary">{label}</span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </label>
   );
@@ -82,18 +83,18 @@ function CopyableField({
   truncate,
 }: CopyableFieldProps): ReactNode {
   return (
-    <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
+    <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-xxs text-stone-500 mb-0.5">{label}</div>
+        <div className="text-xxs text-fg0 mb-0.5">{label}</div>
         <code
-          className={`text-xs text-stone-400${truncate ? " block truncate" : ""}`}
+          className={`text-xs text-fg-muted${truncate ? " block truncate" : ""}`}
         >
           {value}
         </code>
       </div>
       <button
         onClick={() => onCopy(value, copyId)}
-        className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-stone-500 transition-colors hover:bg-stone-700 hover:text-stone-300"
+        className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-fg0 transition-colors hover:bg-surface-hover hover:text-fg-secondary"
       >
         {copiedLabel === copyId ? "Copied" : "Copy"}
       </button>
@@ -101,50 +102,14 @@ function CopyableField({
   );
 }
 
-const THEMES: { value: string; label: string; colors: string[] }[] = [
-  {
-    value: "github-dark",
-    label: "GitHub Dark",
-    colors: ["#0d1117", "#c9d1d9", "#7ee787"],
-  },
-  {
-    value: "monokai",
-    label: "Monokai",
-    colors: ["#272822", "#f8f8f2", "#a6e22e"],
-  },
-  {
-    value: "dracula",
-    label: "Dracula",
-    colors: ["#282a36", "#f8f8f2", "#bd93f9"],
-  },
-  {
-    value: "one-dark-pro",
-    label: "One Dark Pro",
-    colors: ["#282c34", "#abb2bf", "#98c379"],
-  },
-  {
-    value: "tokyo-night",
-    label: "Tokyo Night",
-    colors: ["#1a1b26", "#c0caf5", "#9ece6a"],
-  },
-  { value: "nord", label: "Nord", colors: ["#2e3440", "#eceff4", "#a3be8c"] },
-  {
-    value: "solarized-dark",
-    label: "Solarized",
-    colors: ["#002b36", "#839496", "#859900"],
-  },
-  {
-    value: "vitesse-dark",
-    label: "Vitesse",
-    colors: ["#121212", "#dbd7ca", "#4d9375"],
-  },
-];
-
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
-  const codeTheme = useReviewStore((s) => s.codeTheme);
-  const setCodeTheme = useReviewStore((s) => s.setCodeTheme);
+  const uiTheme = useReviewStore((s) => s.uiTheme);
+  const setUiTheme = useReviewStore((s) => s.setUiTheme);
+  const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
+  const setMatchVscodeTheme = useReviewStore((s) => s.setMatchVscodeTheme);
+  const resolvedVscodeTheme = useReviewStore((s) => s.resolvedVscodeTheme);
   const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const classifyCommand = useReviewStore((s) => s.classifyCommand);
   const setClassifyCommand = useReviewStore((s) => s.setClassifyCommand);
@@ -317,11 +282,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex w-full max-w-md max-h-[85vh] flex-col rounded-xl overflow-hidden">
         <DialogHeader className="relative px-5 py-4">
-          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-teal-500/5" />
+          <div className="absolute inset-0 bg-gradient-to-r from-status-modified/5 via-transparent to-status-trusted/5" />
           <div className="relative flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-800 ring-1 ring-stone-700">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-raised ring-1 ring-edge-default">
               <svg
-                className="h-4 w-4 text-stone-400"
+                className="h-4 w-4 text-fg-muted"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -337,7 +302,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="relative rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300"
+            className="relative rounded-md p-1.5 text-fg0 transition-colors hover:bg-surface-raised hover:text-fg-secondary"
           >
             <svg
               className="h-5 w-5"
@@ -370,7 +335,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           <div className="overflow-y-auto flex-1 min-h-0">
             <TabsContent value="appearance">
-              <div className="divide-y divide-stone-800/60">
+              <div className="divide-y divide-edge/60">
                 <div className="px-5 py-4">
                   <SectionHeader
                     label="Code Font Size"
@@ -382,13 +347,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       </>
                     }
                   />
-                  <div className="flex items-center justify-between rounded-lg bg-stone-800/50 px-3 py-2">
+                  <div className="flex items-center justify-between rounded-lg bg-surface-raised/50 px-3 py-2">
                     <div className="flex items-center gap-2">
                       <SimpleTooltip content="Decrease font size (Cmd+-)">
                         <button
                           onClick={decreaseFontSize}
                           disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
-                          className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <svg
                             className="h-4 w-4"
@@ -407,7 +372,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       </SimpleTooltip>
 
                       <div className="flex min-w-[5.5rem] flex-col items-center px-3">
-                        <span className="font-mono text-lg font-semibold text-stone-100 tabular-nums">
+                        <span className="font-mono text-lg font-semibold text-fg tabular-nums">
                           {codeFontSize}px
                         </span>
                       </div>
@@ -416,7 +381,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <button
                           onClick={increaseFontSize}
                           disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
-                          className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-700/50 text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <svg
                             className="h-4 w-4"
@@ -439,26 +404,35 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       <SimpleTooltip content="Reset to default (Cmd+0)">
                         <button
                           onClick={resetFontSize}
-                          className="text-xxs text-stone-500 hover:text-stone-300 transition-colors"
+                          className="text-xxs text-fg0 hover:text-fg-secondary transition-colors"
                         >
                           Reset
                         </button>
                       </SimpleTooltip>
                     )}
                   </div>
-                  <p className="mt-2 text-xxs text-stone-600">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5">Cmd</kbd>{" "}
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5">+</kbd> /{" "}
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5">-</kbd> to
-                    adjust,{" "}
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5">0</kbd> to
-                    reset
+                  <p className="mt-2 text-xxs text-fg-faint">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
+                      Cmd
+                    </kbd>{" "}
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
+                      +
+                    </kbd>{" "}
+                    /{" "}
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
+                      -
+                    </kbd>{" "}
+                    to adjust,{" "}
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
+                      0
+                    </kbd>{" "}
+                    to reset
                   </p>
                 </div>
 
                 <div className="px-5 py-4">
                   <SectionHeader
-                    label="Syntax Theme"
+                    label="Theme"
                     icon={
                       <>
                         <circle
@@ -485,18 +459,18 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     }
                   />
                   <div className="grid grid-cols-2 gap-2">
-                    {THEMES.map((theme) => (
+                    {UI_THEMES.map((theme) => (
                       <button
-                        key={theme.value}
-                        onClick={() => setCodeTheme(theme.value)}
+                        key={theme.id}
+                        onClick={() => setUiTheme(theme.id)}
                         className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${
-                          codeTheme === theme.value
-                            ? "bg-stone-800 ring-1 ring-amber-500/50"
-                            : "bg-stone-800/30 hover:bg-stone-800/60"
+                          uiTheme === theme.id
+                            ? "bg-surface-raised ring-1 ring-focus-ring/50"
+                            : "bg-surface-raised/30 hover:bg-surface-raised/60"
                         }`}
                       >
                         <div className="flex gap-0.5">
-                          {theme.colors.map((color, i) => (
+                          {theme.preview.map((color, i) => (
                             <div
                               key={i}
                               className="h-4 w-2 first:rounded-l last:rounded-r"
@@ -506,16 +480,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         </div>
                         <span
                           className={`text-xs font-medium transition-colors ${
-                            codeTheme === theme.value
-                              ? "text-stone-100"
-                              : "text-stone-400 group-hover:text-stone-300"
+                            uiTheme === theme.id
+                              ? "text-fg"
+                              : "text-fg-muted group-hover:text-fg-secondary"
                           }`}
                         >
                           {theme.label}
                         </span>
-                        {codeTheme === theme.value && (
+                        {uiTheme === theme.id && (
                           <svg
-                            className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-500"
+                            className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-focus-ring"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -529,13 +503,68 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       </button>
                     ))}
                   </div>
+                  <p className="mt-2 text-xxs text-fg-faint">
+                    Controls the entire UI — backgrounds, text, borders, and
+                    syntax highlighting.
+                  </p>
+                </div>
+
+                <div className="px-5 py-4">
+                  <SectionHeader
+                    label="VS Code"
+                    icon={
+                      <>
+                        <path d="M9.4 1.4a1.5 1.5 0 0 1 2.13 0l8.48 8.49a1.5 1.5 0 0 1 0 2.12l-8.48 8.49a1.5 1.5 0 0 1-2.13 0L1.4 12.01a1.5 1.5 0 0 1 0-2.12Z" />
+                        <path d="m9.18 14.97-4.44-3.53a.85.85 0 0 1 0-1.33l4.44-3.53" />
+                        <path d="m14.82 14.97 4.44-3.53a.85.85 0 0 0 0-1.33l-4.44-3.53" />
+                      </>
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Match VS Code theme"
+                    checked={matchVscodeTheme}
+                    onCheckedChange={setMatchVscodeTheme}
+                  />
+
+                  {matchVscodeTheme && resolvedVscodeTheme && (
+                    <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-raised/30 px-3 py-2">
+                      <div className="flex gap-0.5">
+                        {resolvedVscodeTheme.preview.map((color, i) => (
+                          <div
+                            key={i}
+                            className="h-3 w-1.5 first:rounded-l last:rounded-r"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-xs text-fg-secondary">
+                        {resolvedVscodeTheme.label}
+                      </span>
+                      <span className="text-xxs text-fg-faint">
+                        ({resolvedVscodeTheme.colorScheme})
+                      </span>
+                    </div>
+                  )}
+
+                  {matchVscodeTheme && !resolvedVscodeTheme && (
+                    <p className="mt-2 text-xxs text-status-warning">
+                      Could not detect VS Code theme. Make sure VS Code is
+                      installed.
+                    </p>
+                  )}
+
+                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
+                    Automatically reads your active VS Code theme and applies
+                    matching colors. Overrides the theme selection above.
+                  </p>
                 </div>
               </div>
             </TabsContent>
 
             {claudeAvailable && (
               <TabsContent value="classification">
-                <div className="divide-y divide-stone-800/60">
+                <div className="divide-y divide-edge/60">
                   <div className="px-5 py-4">
                     <SectionHeader
                       label="Classification"
@@ -545,7 +574,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     />
 
                     <div className="mt-3 space-y-1.5">
-                      <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                      <label className="text-xxs text-fg0 uppercase tracking-wide">
                         Custom Command
                       </label>
                       <Input
@@ -557,17 +586,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         placeholder="claude --print --model haiku"
                         className="text-xs"
                       />
-                      <p className="text-xxs text-stone-600 leading-relaxed">
+                      <p className="text-xxs text-fg-faint leading-relaxed">
                         Leave blank for default. The prompt is sent via stdin.
                       </p>
                     </div>
 
                     <div className="mt-4 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                        <label className="text-xxs text-fg0 uppercase tracking-wide">
                           Batch Size
                         </label>
-                        <span className="text-xs font-mono text-stone-300">
+                        <span className="text-xs font-mono text-fg-secondary">
                           {classifyBatchSize}
                         </span>
                       </div>
@@ -578,7 +607,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         value={[classifyBatchSize]}
                         onValueChange={([val]) => setClassifyBatchSize(val)}
                       />
-                      <p className="text-xxs text-stone-600 leading-relaxed">
+                      <p className="text-xxs text-fg-faint leading-relaxed">
                         Hunks per Claude call. Higher values use fewer API calls
                         but may reduce accuracy.
                       </p>
@@ -586,10 +615,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     <div className="mt-4 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xxs text-stone-500 uppercase tracking-wide">
+                        <label className="text-xxs text-fg0 uppercase tracking-wide">
                           Max Concurrent
                         </label>
-                        <span className="text-xs font-mono text-stone-300">
+                        <span className="text-xs font-mono text-fg-secondary">
                           {classifyMaxConcurrent}
                         </span>
                       </div>
@@ -600,7 +629,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         value={[classifyMaxConcurrent]}
                         onValueChange={([val]) => setClassifyMaxConcurrent(val)}
                       />
-                      <p className="text-xxs text-stone-600 leading-relaxed">
+                      <p className="text-xxs text-fg-faint leading-relaxed">
                         Maximum parallel Claude processes. Lower values reduce
                         system load.
                       </p>
@@ -611,7 +640,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             )}
 
             <TabsContent value="ios">
-              <div className="divide-y divide-stone-800/60">
+              <div className="divide-y divide-edge/60">
                 <div className="px-5 py-4">
                   <SectionHeader
                     label="Companion Server"
@@ -644,8 +673,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                           </div>
                         </div>
                       )}
-                      <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2">
-                        <label className="text-xxs text-stone-500">Port</label>
+                      <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
+                        <label className="text-xxs text-fg0">Port</label>
                         <Input
                           type="number"
                           min={1024}
@@ -698,14 +727,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       )}
                       <button
                         onClick={() => regenerateCompanionCertificate()}
-                        className="mt-1 w-full rounded-lg bg-stone-800/30 px-3 py-2 text-xs text-stone-500 transition-colors hover:bg-stone-800/50 hover:text-stone-300"
+                        className="mt-1 w-full rounded-lg bg-surface-raised/30 px-3 py-2 text-xs text-fg0 transition-colors hover:bg-surface-raised/50 hover:text-fg-secondary"
                       >
                         Regenerate Certificate
                       </button>
                     </div>
                   )}
 
-                  <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
                     Allows the Review mobile app to connect over your local
                     network.
                   </p>
@@ -714,7 +743,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </TabsContent>
 
             <TabsContent value="general">
-              <div className="divide-y divide-stone-800/60">
+              <div className="divide-y divide-edge/60">
                 <div className="px-5 py-4">
                   <SectionHeader
                     label="Sound Effects"
@@ -732,7 +761,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     checked={soundEffectsEnabled}
                     onCheckedChange={setSoundEffectsEnabled}
                   />
-                  <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
                     Play sounds when approving, rejecting, and completing
                     reviews.
                   </p>
@@ -752,19 +781,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     {cliInstalled ? (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
+                        <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              <span className="text-xs text-stone-300">
+                              <div className="h-1.5 w-1.5 rounded-full bg-status-approved" />
+                              <span className="text-xs text-fg-secondary">
                                 Installed at{" "}
-                                <code className="text-xxs text-stone-500">
+                                <code className="text-xxs text-fg0">
                                   /usr/local/bin/review
                                 </code>
                               </span>
                             </div>
                             {cliSymlinkTarget && (
-                              <p className="mt-1 truncate pl-3.5 text-xxs text-stone-600">
+                              <p className="mt-1 truncate pl-3.5 text-xxs text-fg-faint">
                                 {cliSymlinkTarget}
                               </p>
                             )}
@@ -772,7 +801,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                           <button
                             onClick={() => handleCliAction("uninstall_cli")}
                             disabled={cliLoading}
-                            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300 disabled:opacity-50"
+                            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg0 transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
                           >
                             Uninstall
                           </button>
@@ -780,34 +809,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between rounded-lg bg-stone-800/30 px-3 py-2.5">
-                          <span className="text-xs text-stone-400">
+                        <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+                          <span className="text-xs text-fg-muted">
                             <code className="text-xxs">review</code> command not
                             installed
                           </span>
                           <button
                             onClick={() => handleCliAction("install_cli")}
                             disabled={cliLoading}
-                            className="ml-3 shrink-0 rounded-md bg-stone-700/50 px-2.5 py-1.5 text-xxs text-stone-300 transition-colors hover:bg-stone-700 disabled:opacity-50"
+                            className="ml-3 shrink-0 rounded-md bg-surface-hover/50 px-2.5 py-1.5 text-xxs text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
                           >
                             {cliLoading ? "Installing…" : "Install"}
                           </button>
                         </div>
-                        <p className="text-xxs text-stone-600 leading-relaxed">
+                        <p className="text-xxs text-fg-faint leading-relaxed">
                           Creates a symlink at{" "}
-                          <code className="text-stone-500">
+                          <code className="text-fg0">
                             /usr/local/bin/review
                           </code>{" "}
                           so you can run{" "}
-                          <code className="text-stone-500">review</code> from
-                          any terminal.
+                          <code className="text-fg0">review</code> from any
+                          terminal.
                         </p>
                       </div>
                     )}
 
                     {cliError && (
-                      <div className="mt-2 rounded-lg bg-red-950/30 px-3 py-2 ring-1 ring-red-900/30">
-                        <p className="whitespace-pre-wrap text-xxs text-red-400/90">
+                      <div className="mt-2 rounded-lg bg-status-rejected/5 px-3 py-2 ring-1 ring-status-rejected/30">
+                        <p className="whitespace-pre-wrap text-xxs text-status-rejected/90">
                           {cliError}
                         </p>
                       </div>
@@ -832,7 +861,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     checked={sentryEnabled}
                     onCheckedChange={setSentryEnabled}
                   />
-                  <p className="mt-2 text-xxs text-stone-600 leading-relaxed">
+                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
                     When enabled, anonymous crash reports are sent to help
                     improve Review. Only app errors, version, and OS info are
                     included. No repository data or file contents are ever sent.
@@ -843,8 +872,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
         </Tabs>
 
-        <div className="border-t border-stone-800 bg-stone-900/50 px-5 py-3">
-          <p className="text-center text-xxs text-stone-600">
+        <div className="border-t border-edge bg-surface-panel/50 px-5 py-3">
+          <p className="text-center text-xxs text-fg-faint">
             Settings are saved automatically
           </p>
         </div>

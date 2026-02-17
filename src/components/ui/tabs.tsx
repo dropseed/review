@@ -15,7 +15,7 @@ function TabsList({
   return (
     <TabsPrimitive.List
       ref={ref}
-      className={cn("flex rounded-md bg-stone-800 p-0.5", className)}
+      className={cn("flex rounded-md bg-surface-raised p-0.5", className)}
       {...props}
     />
   );
@@ -32,7 +32,7 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 data-[state=active]:bg-stone-700 data-[state=active]:text-stone-100 data-[state=inactive]:text-stone-500 data-[state=inactive]:hover:text-stone-300",
+        "flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 data-[state=active]:bg-surface-hover data-[state=active]:text-fg data-[state=inactive]:text-fg-muted data-[state=inactive]:hover:text-fg-secondary",
         className,
       )}
       {...props}

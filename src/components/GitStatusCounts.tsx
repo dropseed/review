@@ -12,17 +12,17 @@ export function GitStatusCounts({
   return (
     <>
       {staged > 0 && (
-        <span className="font-mono text-xxs font-medium tabular-nums text-emerald-400">
+        <span className="font-mono text-xxs font-medium tabular-nums text-status-approved">
           +{staged}
         </span>
       )}
       {unstaged > 0 && (
-        <span className="font-mono text-xxs font-medium tabular-nums text-amber-400">
+        <span className="font-mono text-xxs font-medium tabular-nums text-status-modified">
           ~{unstaged}
         </span>
       )}
       {untracked > 0 && (
-        <span className="font-mono text-xxs font-medium tabular-nums text-stone-500">
+        <span className="font-mono text-xxs font-medium tabular-nums text-fg0">
           ?{untracked}
         </span>
       )}

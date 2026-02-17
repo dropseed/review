@@ -40,31 +40,31 @@ export function AnnotationEditor({
   };
 
   return (
-    <div className="border-l-2 border-amber-500/50 bg-stone-900/95 p-3">
+    <div className="border-l-2 border-status-modified/50 bg-surface-panel/95 p-3">
       <textarea
         ref={textareaRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Add a comment…"
-        className="w-full h-16 bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-xs text-stone-200 placeholder-stone-500 resize-none focus:outline-hidden focus:border-amber-500/50"
+        className="w-full h-16 bg-surface-raised border border-edge-default rounded px-2 py-1.5 text-xs text-fg-secondary placeholder-fg-muted resize-none focus:outline-hidden focus:border-focus-ring/50"
       />
       <div className="flex items-center justify-between mt-2">
-        <span className="text-xxs text-stone-600">
+        <span className="text-xxs text-fg-faint">
           {navigator.platform.includes("Mac") ? "Cmd" : "Ctrl"}+Enter to save
         </span>
         <div className="flex gap-1">
           {onDelete && (
             <button
               onClick={onDelete}
-              className="px-2 py-1 text-xs text-rose-400 hover:bg-rose-500/20 rounded transition-colors"
+              className="px-2 py-1 text-xs text-status-rejected hover:bg-status-rejected/20 rounded transition-colors"
             >
               Delete
             </button>
           )}
           <button
             onClick={onCancel}
-            className="px-2 py-1 text-xs text-stone-400 hover:bg-stone-700 rounded transition-colors"
+            className="px-2 py-1 text-xs text-fg-muted hover:bg-surface-hover rounded transition-colors"
           >
             Cancel
           </button>
@@ -73,7 +73,7 @@ export function AnnotationEditor({
               if (value.trim()) onSave(value.trim());
             }}
             disabled={!value.trim()}
-            className="px-2 py-1 text-xs font-medium text-stone-100 bg-amber-600 hover:bg-amber-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 py-1 text-xs font-medium text-fg bg-status-modified hover:bg-status-modified rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save
           </button>
@@ -96,23 +96,23 @@ export function AnnotationDisplay({
   onDelete,
 }: AnnotationDisplayProps) {
   return (
-    <div className="border-l-2 border-amber-500/50 bg-amber-500/5 px-3 py-2 group">
+    <div className="border-l-2 border-status-modified/50 bg-status-modified/5 px-3 py-2 group">
       <div className="flex items-start gap-2">
         <svg
-          className="h-3.5 w-3.5 text-amber-400 mt-0.5 flex-shrink-0"
+          className="h-3.5 w-3.5 text-status-modified mt-0.5 flex-shrink-0"
           fill="currentColor"
           viewBox="0 0 24 24"
         >
           <path d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
         </svg>
-        <p className="flex-1 text-xs text-stone-300 whitespace-pre-wrap text-pretty">
+        <p className="flex-1 text-xs text-fg-secondary whitespace-pre-wrap text-pretty">
           {annotation.content}
         </p>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <SimpleTooltip content="Edit">
             <button
               onClick={onEdit}
-              className="p-1 text-stone-500 hover:text-stone-300 hover:bg-stone-700 rounded transition-colors"
+              className="p-1 text-fg-muted hover:text-fg-secondary hover:bg-surface-hover rounded transition-colors"
               aria-label="Edit annotation"
             >
               <svg
@@ -133,7 +133,7 @@ export function AnnotationDisplay({
           <SimpleTooltip content="Delete">
             <button
               onClick={onDelete}
-              className="p-1 text-stone-500 hover:text-rose-400 hover:bg-rose-500/20 rounded transition-colors"
+              className="p-1 text-fg-muted hover:text-status-rejected hover:bg-status-rejected/20 rounded transition-colors"
               aria-label="Delete annotation"
             >
               <svg

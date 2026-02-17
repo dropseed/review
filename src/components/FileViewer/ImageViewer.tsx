@@ -140,17 +140,17 @@ export function ImageViewer({
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-stone-800/50 bg-stone-900/50 px-3 py-1.5">
+      <div className="flex items-center justify-between border-b border-edge/50 bg-surface-panel/50 px-3 py-1.5">
         <div className="flex items-center gap-2">
           {/* Diff mode toggle */}
           {canShowDiff && (
-            <div className="flex items-center rounded bg-stone-800/30 p-0.5">
+            <div className="flex items-center rounded bg-surface-raised/30 p-0.5">
               <button
                 onClick={() => setDiffMode("side-by-side")}
                 className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                   diffMode === "side-by-side"
-                    ? "bg-stone-700/50 text-stone-200"
-                    : "text-stone-500 hover:text-stone-300"
+                    ? "bg-surface-hover/50 text-fg-secondary"
+                    : "text-fg-muted hover:text-fg-secondary"
                 }`}
               >
                 Side by Side
@@ -159,8 +159,8 @@ export function ImageViewer({
                 onClick={() => setDiffMode("overlay")}
                 className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                   diffMode === "overlay"
-                    ? "bg-stone-700/50 text-stone-200"
-                    : "text-stone-500 hover:text-stone-300"
+                    ? "bg-surface-hover/50 text-fg-secondary"
+                    : "text-fg-muted hover:text-fg-secondary"
                 }`}
               >
                 Overlay
@@ -169,8 +169,8 @@ export function ImageViewer({
                 onClick={() => setDiffMode("single")}
                 className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                   diffMode === "single"
-                    ? "bg-stone-700/50 text-stone-200"
-                    : "text-stone-500 hover:text-stone-300"
+                    ? "bg-surface-hover/50 text-fg-secondary"
+                    : "text-fg-muted hover:text-fg-secondary"
                 }`}
               >
                 New Only
@@ -182,12 +182,12 @@ export function ImageViewer({
         <div className="flex items-center gap-3">
           {/* Image metadata */}
           {newMetadata && (
-            <div className="flex items-center gap-2 text-xxs text-stone-500">
+            <div className="flex items-center gap-2 text-xxs text-fg-muted">
               <span>
                 {newMetadata.width} x {newMetadata.height}
               </span>
               {dimensionsChanged && oldMetadata && (
-                <span className="text-amber-500">
+                <span className="text-status-modified">
                   (was {oldMetadata.width} x {oldMetadata.height})
                 </span>
               )}
@@ -195,13 +195,13 @@ export function ImageViewer({
           )}
 
           {/* Zoom controls */}
-          <div className="flex items-center rounded bg-stone-800/30 p-0.5">
+          <div className="flex items-center rounded bg-surface-raised/30 p-0.5">
             <button
               onClick={() => setZoom("fit")}
               className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "fit"
-                  ? "bg-stone-700/50 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
+                  ? "bg-surface-hover/50 text-fg-secondary"
+                  : "text-fg-muted hover:text-fg-secondary"
               }`}
             >
               Fit
@@ -210,8 +210,8 @@ export function ImageViewer({
               onClick={() => setZoom("50")}
               className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "50"
-                  ? "bg-stone-700/50 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
+                  ? "bg-surface-hover/50 text-fg-secondary"
+                  : "text-fg-muted hover:text-fg-secondary"
               }`}
             >
               50%
@@ -220,8 +220,8 @@ export function ImageViewer({
               onClick={() => setZoom("100")}
               className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "100"
-                  ? "bg-stone-700/50 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
+                  ? "bg-surface-hover/50 text-fg-secondary"
+                  : "text-fg-muted hover:text-fg-secondary"
               }`}
             >
               100%
@@ -230,8 +230,8 @@ export function ImageViewer({
               onClick={() => setZoom("200")}
               className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
                 zoom === "200"
-                  ? "bg-stone-700/50 text-stone-200"
-                  : "text-stone-500 hover:text-stone-300"
+                  ? "bg-surface-hover/50 text-fg-secondary"
+                  : "text-fg-muted hover:text-fg-secondary"
               }`}
             >
               200%
@@ -256,8 +256,8 @@ export function ImageViewer({
         {diffMode === "side-by-side" && oldImageDataUrl && (
           <div className="flex h-full">
             {/* Old image */}
-            <div className="image-viewer-checkerboard flex flex-1 flex-col border-r border-stone-800">
-              <div className="bg-stone-900/80 px-3 py-1 text-xxs font-medium text-rose-400">
+            <div className="image-viewer-checkerboard flex flex-1 flex-col border-r border-edge">
+              <div className="bg-surface-panel/80 px-3 py-1 text-xxs font-medium text-status-rejected">
                 Before
               </div>
               <div className="flex flex-1 items-center justify-center overflow-auto p-4">
@@ -271,7 +271,7 @@ export function ImageViewer({
             </div>
             {/* New image */}
             <div className="image-viewer-checkerboard flex flex-1 flex-col">
-              <div className="bg-stone-900/80 px-3 py-1 text-xxs font-medium text-emerald-400">
+              <div className="bg-surface-panel/80 px-3 py-1 text-xxs font-medium text-status-approved">
                 After
               </div>
               <div className="flex flex-1 items-center justify-center overflow-auto p-4">
@@ -334,10 +334,10 @@ export function ImageViewer({
               </div>
             </div>
             {/* Labels */}
-            <div className="absolute bottom-4 left-4 rounded bg-rose-500/80 px-2 py-0.5 text-xxs font-medium text-white">
+            <div className="absolute bottom-4 left-4 rounded bg-status-rejected/80 px-2 py-0.5 text-xxs font-medium text-white">
               Before
             </div>
-            <div className="absolute bottom-4 right-4 rounded bg-emerald-500/80 px-2 py-0.5 text-xxs font-medium text-white">
+            <div className="absolute bottom-4 right-4 rounded bg-status-approved/80 px-2 py-0.5 text-xxs font-medium text-white">
               After
             </div>
           </div>

@@ -179,17 +179,17 @@ export function NewComparisonForm({
   return (
     <div onKeyDown={handleFormKeyDown}>
       {isInitialLoad ? (
-        <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-stone-800/60 bg-gradient-to-br from-stone-900/60 to-stone-950/80 px-5 py-4 shadow-inner shadow-black/20">
-          <div className="h-9 w-[180px] bg-stone-800 rounded-lg animate-pulse" />
-          <span className="text-stone-700 text-lg font-light select-none tracking-widest shrink-0">
+        <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-edge/60 bg-gradient-to-br from-surface-panel/60 to-surface/80 px-5 py-4 shadow-inner shadow-black/20">
+          <div className="h-9 w-[180px] bg-surface-raised rounded-lg animate-pulse" />
+          <span className="text-fg-faint text-lg font-light select-none tracking-widest shrink-0">
             ..
           </span>
-          <div className="h-9 w-[180px] bg-stone-800 rounded-lg animate-pulse" />
+          <div className="h-9 w-[180px] bg-surface-raised rounded-lg animate-pulse" />
           <div className="flex-1" />
-          <div className="h-9 w-20 bg-stone-800 rounded-lg animate-pulse" />
+          <div className="h-9 w-20 bg-surface-raised rounded-lg animate-pulse" />
         </div>
       ) : (
-        <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-stone-800/60 bg-gradient-to-br from-stone-900/60 to-stone-950/80 px-5 py-4 shadow-inner shadow-black/20">
+        <div className="flex flex-nowrap items-center gap-3 rounded-xl border border-edge/60 bg-gradient-to-br from-surface-panel/60 to-surface/80 px-5 py-4 shadow-inner shadow-black/20">
           <BranchSelect
             value={baseRef}
             onChange={(newBase) => {
@@ -214,7 +214,7 @@ export function NewComparisonForm({
           />
 
           <span
-            className="text-stone-600 text-lg font-light select-none tracking-widest shrink-0"
+            className="text-fg-faint text-lg font-light select-none tracking-widest shrink-0"
             aria-hidden="true"
           >
             ..
@@ -239,10 +239,10 @@ export function NewComparisonForm({
             onClick={handleStartReview}
             disabled={!baseRef || !compareRef || branchesLoading}
             className="group/btn btn-interactive relative shrink-0 rounded-lg bg-gradient-to-r from-sage-500 to-sage-400 px-5 py-2
-                     text-sm font-semibold text-stone-950
+                     text-sm font-semibold text-surface
                      transition-colors duration-200
                      hover:from-sage-400 hover:to-sage-400 hover:shadow-lg hover:shadow-sage-500/30 hover:-translate-y-0.5
-                     focus:outline-hidden focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-stone-900
+                     focus:outline-hidden focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-surface-panel
                      disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none disabled:from-sage-600 disabled:to-sage-600
                      active:translate-y-0 active:shadow-none"
           >

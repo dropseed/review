@@ -131,13 +131,13 @@ export function ContentSearch({
             <VisuallyHidden.Root>
               <DialogPrimitive.Title>Search in Files</DialogPrimitive.Title>
             </VisuallyHidden.Root>
-            <div className="rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+            <div className="rounded-xl border border-edge-default/80 bg-surface-panel shadow-2xl shadow-black/50 overflow-hidden">
               {/* Search input */}
-              <div className="border-b border-stone-800 p-3">
+              <div className="border-b border-edge p-3">
                 <div className="flex items-center gap-3 px-2">
                   <svg
                     aria-hidden="true"
-                    className="h-4 w-4 text-stone-500 flex-shrink-0"
+                    className="h-4 w-4 text-fg-muted flex-shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -163,10 +163,10 @@ export function ContentSearch({
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded px-1 py-1"
+                    className="flex-1 bg-transparent text-sm text-fg placeholder-fg-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 rounded px-1 py-1"
                   />
                   {searchLoading && (
-                    <div className="h-4 w-4 rounded-full border-2 border-stone-600 border-t-stone-300 animate-spin" />
+                    <div className="h-4 w-4 rounded-full border-2 border-edge-strong border-t-fg-secondary animate-spin" />
                   )}
                   {query && !searchLoading && (
                     <button
@@ -175,7 +175,7 @@ export function ContentSearch({
                         useReviewStore.getState().setSearchQuery("");
                         clearSearchResults();
                       }}
-                      className="text-stone-500 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded"
+                      className="text-fg-muted hover:text-fg-secondary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 rounded"
                       aria-label="Clear search"
                     >
                       <svg
@@ -204,21 +204,21 @@ export function ContentSearch({
                 aria-label="Search results"
               >
                 {searchError ? (
-                  <div className="px-4 py-8 text-center text-sm text-red-400">
+                  <div className="px-4 py-8 text-center text-sm text-status-rejected">
                     {searchError}
                   </div>
                 ) : searchResults.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-stone-500">
+                  <div className="px-4 py-8 text-center text-sm text-fg-muted">
                     {getEmptyStateMessage(query, searchLoading)}
                   </div>
                 ) : (
                   groupedResults.map((group) => (
                     <div key={group.filePath}>
                       {/* File header */}
-                      <div className="sticky top-0 bg-stone-900 border-b border-stone-800 px-4 py-1.5 flex items-center gap-2">
+                      <div className="sticky top-0 bg-surface-panel border-b border-edge px-4 py-1.5 flex items-center gap-2">
                         <svg
                           aria-hidden="true"
-                          className="h-3.5 w-3.5 text-stone-500 flex-shrink-0"
+                          className="h-3.5 w-3.5 text-fg-muted flex-shrink-0"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -229,10 +229,10 @@ export function ContentSearch({
                           <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                           <polyline points="14 2 14 8 20 8" />
                         </svg>
-                        <span className="text-xs font-mono text-stone-400 truncate">
+                        <span className="text-xs font-mono text-fg-muted truncate">
                           {group.filePath}
                         </span>
-                        <span className="text-xxs text-stone-600 ml-auto">
+                        <span className="text-xxs text-fg-faint ml-auto">
                           {group.matches.length} match
                           {group.matches.length !== 1 ? "es" : ""}
                         </span>
@@ -247,18 +247,18 @@ export function ContentSearch({
                             role="option"
                             aria-selected={currentIndex === selectedIndex}
                             onClick={() => handleSelect(currentIndex)}
-                            className={`w-full flex items-start gap-3 px-4 py-1.5 text-left transition-colors focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-amber-500/50 ${
+                            className={`w-full flex items-start gap-3 px-4 py-1.5 text-left transition-colors focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-focus-ring/50 ${
                               currentIndex === selectedIndex
-                                ? "bg-stone-800"
-                                : "hover:bg-stone-800/50"
+                                ? "bg-surface-raised"
+                                : "hover:bg-surface-raised/50"
                             }`}
                           >
                             {/* Line number */}
-                            <span className="text-xxs font-mono text-stone-600 w-10 text-right flex-shrink-0 pt-0.5 tabular-nums">
+                            <span className="text-xxs font-mono text-fg-faint w-10 text-right flex-shrink-0 pt-0.5 tabular-nums">
                               {result.lineNumber}
                             </span>
                             {/* Line content */}
-                            <span className="text-xs font-mono text-stone-300 truncate flex-1 min-w-0">
+                            <span className="text-xs font-mono text-fg-secondary truncate flex-1 min-w-0">
                               <HighlightedLine
                                 content={result.lineContent}
                                 query={query}
@@ -274,25 +274,25 @@ export function ContentSearch({
               </div>
 
               {/* Footer with keyboard hints */}
-              <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
+              <div className="border-t border-edge px-4 py-2 flex items-center justify-between text-xxs text-fg-faint">
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       ↑
                     </kbd>
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       ↓
                     </kbd>
                     <span className="ml-0.5">navigate</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       Enter
                     </kbd>
                     <span className="ml-0.5">go to line</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       Esc
                     </kbd>
                     <span className="ml-0.5">close</span>

@@ -68,9 +68,9 @@ function StatusIndicator({
   if (count === 0) return null;
 
   const colors = {
-    pending: { dot: "bg-stone-500", text: "text-stone-400" },
-    approved: { dot: "bg-emerald-500", text: "text-emerald-400" },
-    rejected: { dot: "bg-rose-500", text: "text-rose-400" },
+    pending: { dot: "bg-surface-active", text: "text-fg-muted" },
+    approved: { dot: "bg-status-approved", text: "text-status-approved" },
+    rejected: { dot: "bg-status-rejected", text: "text-status-rejected" },
   };
 
   const { dot, text } = colors[variant];
@@ -124,13 +124,13 @@ function IdenticalGroupModal({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full text-left border-b border-stone-800/50 last:border-b-0 px-3 py-2 hover:bg-stone-800/30 transition-colors"
+        className="w-full text-left border-b border-edge/50 last:border-b-0 px-3 py-2 hover:bg-surface-raised/30 transition-colors"
       >
         <div className="flex items-center gap-2 mb-1.5">
-          <code className="text-xs font-mono text-stone-300 truncate max-w-md">
+          <code className="text-xs font-mono text-fg-secondary truncate max-w-md">
             {getChangePreview(group.representative)}
           </code>
-          <span className="flex-shrink-0 rounded-full bg-stone-700/50 px-1.5 py-0.5 text-xxs text-stone-400 tabular-nums">
+          <span className="flex-shrink-0 rounded-full bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted tabular-nums">
             {group.hunks.length}x across {group.files.length} file
             {group.files.length === 1 ? "" : "s"}
           </span>
@@ -141,7 +141,7 @@ function IdenticalGroupModal({
               key={`${h.id}-${i}`}
               className="flex items-center gap-1.5 px-1.5 py-0.5"
             >
-              <span className="truncate text-xs text-stone-400">
+              <span className="truncate text-xs text-fg-muted">
                 {h.filePath}
               </span>
             </div>
@@ -156,11 +156,11 @@ function IdenticalGroupModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <span>Identical Changes</span>
-            <span className="rounded-full bg-stone-700/50 px-2 py-0.5 text-xs font-normal text-stone-400 tabular-nums">
+            <span className="rounded-full bg-surface-hover/50 px-2 py-0.5 text-xs font-normal text-fg-muted tabular-nums">
               {totalCount} hunks
             </span>
           </DialogTitle>
-          <DialogClose className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors">
+          <DialogClose className="rounded p-1 text-fg0 hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -178,7 +178,7 @@ function IdenticalGroupModal({
         </DialogHeader>
 
         {/* Status summary */}
-        <div className="flex items-center gap-4 border-b border-stone-800 px-4 py-2 text-xs">
+        <div className="flex items-center gap-4 border-b border-edge px-4 py-2 text-xs">
           <StatusIndicator
             count={pendingCount}
             label="pending"
@@ -201,7 +201,7 @@ function IdenticalGroupModal({
           {/* Show one representative diff preview */}
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="rounded bg-stone-700/60 px-1.5 py-0.5 text-xxs font-medium text-stone-400">
+              <span className="rounded bg-surface-hover/60 px-1.5 py-0.5 text-xxs font-medium text-fg-muted">
                 Shared diff
               </span>
             </div>
@@ -214,11 +214,11 @@ function IdenticalGroupModal({
 
           {/* Divider */}
           <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 border-t border-stone-700/50" />
-            <span className="text-xxs text-stone-600">
+            <div className="flex-1 border-t border-edge-default/50" />
+            <span className="text-xxs text-fg-faint">
               {totalCount} occurrence{totalCount === 1 ? "" : "s"}
             </span>
-            <div className="flex-1 border-t border-stone-700/50" />
+            <div className="flex-1 border-t border-edge-default/50" />
           </div>
 
           {/* List of all hunks with file paths */}
@@ -230,7 +230,7 @@ function IdenticalGroupModal({
                 compact
               />
               <button
-                className="absolute top-2 right-2 rounded bg-stone-700/80 px-2 py-1 text-xxs text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-stone-600"
+                className="absolute top-2 right-2 rounded bg-surface-hover/80 px-2 py-1 text-xxs text-fg-secondary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-active"
                 onClick={() => {
                   onNavigate(hunk.filePath, hunk.id);
                   setOpen(false);
@@ -243,14 +243,14 @@ function IdenticalGroupModal({
         </div>
 
         {/* Action footer */}
-        <div className="flex items-center justify-between border-t border-stone-800 px-4 py-3 bg-stone-900/50">
-          <div className="text-xs text-stone-500">
+        <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
+          <div className="text-xs text-fg0">
             Batch action applies to all {totalCount} hunks
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleRejectAll}
-              className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-status-rejected/15 px-3 py-1.5 text-sm font-medium text-status-rejected transition-colors hover:bg-status-rejected/25 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"
@@ -269,7 +269,7 @@ function IdenticalGroupModal({
             </button>
             <button
               onClick={handleApproveAll}
-              className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-status-approved/20 px-3 py-1.5 text-sm font-medium text-status-approved transition-colors hover:bg-status-approved/30 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"
@@ -323,16 +323,16 @@ export function IdenticalChangesSection() {
   return (
     <div className="px-4 mb-6">
       <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-xs font-medium text-stone-400 uppercase tracking-wide">
+        <h3 className="text-xs font-medium text-fg-muted uppercase tracking-wide">
           Identical Changes
         </h3>
-        <span className="rounded-full bg-stone-700/50 px-1.5 py-0.5 text-xxs text-stone-400 tabular-nums">
+        <span className="rounded-full bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted tabular-nums">
           {groups.length} group{groups.length === 1 ? "" : "s"} &middot;{" "}
           {totalDuplicates} hunks
         </span>
       </div>
 
-      <div className="rounded-lg border border-stone-800 overflow-hidden">
+      <div className="rounded-lg border border-edge overflow-hidden">
         {groups.map((group, i) => (
           <IdenticalGroupModal
             key={i}

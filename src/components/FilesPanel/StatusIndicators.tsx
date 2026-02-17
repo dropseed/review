@@ -3,18 +3,18 @@ import type { FileHunkStatus } from "./types";
 
 // Git status configuration
 const STATUS_CONFIG: Record<string, { letter: string; color: string }> = {
-  added: { letter: "A", color: "text-emerald-400" },
-  modified: { letter: "M", color: "text-amber-400" },
-  deleted: { letter: "D", color: "text-rose-400" },
-  renamed: { letter: "R", color: "text-sky-400" },
-  untracked: { letter: "U", color: "text-emerald-400" },
+  added: { letter: "A", color: "text-status-approved" },
+  modified: { letter: "M", color: "text-status-modified" },
+  deleted: { letter: "D", color: "text-status-rejected" },
+  renamed: { letter: "R", color: "text-status-renamed" },
+  untracked: { letter: "U", color: "text-status-approved" },
 };
 
 // Symlink indicator with arrow icon and tooltip
 export function SymlinkIndicator({ target }: { target?: string }) {
   return (
     <SimpleTooltip content={target ? `Symlink \u2192 ${target}` : "Symlink"}>
-      <span className="flex-shrink-0 text-stone-500">
+      <span className="flex-shrink-0 text-fg-muted">
         <svg
           className="w-3 h-3"
           viewBox="0 0 24 24"
@@ -51,7 +51,7 @@ export function HunkCount({
   if (context === "needs-review") {
     // Show pending count
     return (
-      <span className="font-mono text-xxs tabular-nums text-stone-500">
+      <span className="font-mono text-xxs tabular-nums text-fg-muted">
         {status.pending}
       </span>
     );
@@ -62,7 +62,7 @@ export function HunkCount({
     const hasRejections = status.rejected > 0;
     return (
       <span
-        className={`font-mono text-xxs tabular-nums ${hasRejections ? "text-rose-400" : "text-emerald-500"}`}
+        className={`font-mono text-xxs tabular-nums ${hasRejections ? "text-status-rejected" : "text-status-approved"}`}
       >
         {reviewed}
       </span>
@@ -73,7 +73,7 @@ export function HunkCount({
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-emerald-500" : "text-stone-500"}`}
+      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-status-approved" : "text-fg-muted"}`}
     >
       {reviewed}/{status.total}
     </span>
@@ -87,7 +87,7 @@ export function StatusLetter({ status }: { status?: string }) {
   if (!config) {
     // Unchanged file - show dim dot
     return (
-      <span className="w-3 text-center font-mono text-xxs text-stone-500">
+      <span className="w-3 text-center font-mono text-xxs text-fg-muted">
         ·
       </span>
     );

@@ -29,22 +29,22 @@ const KIND_LABELS: Record<SymbolKind, string> = {
 };
 
 const KIND_COLORS: Record<SymbolKind, string> = {
-  function: "bg-sky-500/20 text-sky-400",
-  class: "bg-amber-500/20 text-amber-400",
-  struct: "bg-emerald-500/20 text-emerald-400",
-  trait: "bg-violet-500/20 text-violet-400",
-  impl: "bg-stone-500/20 text-stone-400",
-  method: "bg-sky-500/20 text-sky-300",
+  function: "bg-status-renamed/20 text-status-renamed",
+  class: "bg-status-modified/20 text-status-modified",
+  struct: "bg-status-approved/20 text-status-approved",
+  trait: "bg-status-classifying/20 text-status-classifying",
+  impl: "bg-fg-muted/20 text-fg-muted",
+  method: "bg-status-renamed/20 text-status-renamed",
   enum: "bg-orange-500/20 text-orange-400",
-  interface: "bg-violet-500/20 text-violet-300",
-  module: "bg-stone-500/20 text-stone-300",
-  type: "bg-teal-500/20 text-teal-400",
+  interface: "bg-status-classifying/20 text-status-classifying",
+  module: "bg-fg-muted/20 text-fg-secondary",
+  type: "bg-status-trusted/20 text-status-trusted",
 };
 
 function SymbolKindBadge({ kind }: { kind: SymbolKind }) {
   return (
     <span
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${KIND_COLORS[kind] ?? "bg-stone-500/20 text-stone-400"}`}
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${KIND_COLORS[kind] ?? "bg-fg-muted/20 text-fg-muted"}`}
     >
       {KIND_LABELS[kind] ?? kind}
     </span>
@@ -150,26 +150,28 @@ export function SymbolPopover({
     <div
       ref={contentRef}
       style={{ position: "fixed", left, top, zIndex: 50 }}
-      className="w-80 max-h-80 overflow-auto rounded-lg border border-stone-700/50 bg-stone-900/95 backdrop-blur-xl shadow-xl shadow-black/40 outline-hidden animate-in fade-in-0 zoom-in-95"
+      className="w-80 max-h-80 overflow-auto rounded-lg border border-edge-default/50 bg-surface-panel/95 backdrop-blur-xl shadow-xl shadow-black/40 outline-hidden animate-in fade-in-0 zoom-in-95"
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-stone-800/50 px-3 py-2">
-        <code className="text-sm font-medium text-stone-200">{symbolName}</code>
+      <div className="flex items-center gap-2 border-b border-edge/50 px-3 py-2">
+        <code className="text-sm font-medium text-fg-secondary">
+          {symbolName}
+        </code>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-6">
-          <div className="h-5 w-5 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
+          <div className="h-5 w-5 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
         </div>
       ) : (
         <>
           {/* Definitions section */}
           <div className="px-3 pt-2 pb-1">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-stone-500 mb-1">
+            <div className="text-[10px] font-medium uppercase tracking-wider text-fg-muted mb-1">
               Definition
             </div>
             {definitions.length === 0 ? (
-              <div className="text-xs text-stone-600 py-1">
+              <div className="text-xs text-fg-faint py-1">
                 No definition found
               </div>
             ) : (
@@ -177,14 +179,14 @@ export function SymbolPopover({
                 <button
                   key={`def-${i}`}
                   ref={collectRef(i)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-stone-800/60 focus:bg-stone-800/60 focus:outline-none transition-colors"
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-raised/60 focus:bg-surface-raised/60 focus:outline-none transition-colors"
                   onClick={() => onNavigateToDefinition(def)}
                 >
                   <SymbolKindBadge kind={def.kind} />
-                  <span className="truncate text-stone-300 font-mono">
+                  <span className="truncate text-fg-secondary font-mono">
                     {truncatePath(def.filePath)}
                   </span>
-                  <span className="ml-auto shrink-0 text-stone-500">
+                  <span className="ml-auto shrink-0 text-fg-muted">
                     :{def.startLine}
                   </span>
                 </button>
@@ -193,12 +195,12 @@ export function SymbolPopover({
           </div>
 
           {/* References section */}
-          <div className="border-t border-stone-800/50 px-3 pt-2 pb-2">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-stone-500 mb-1">
+          <div className="border-t border-edge/50 px-3 pt-2 pb-2">
+            <div className="text-[10px] font-medium uppercase tracking-wider text-fg-muted mb-1">
               References in diff
             </div>
             {references.length === 0 ? (
-              <div className="text-xs text-stone-600 py-1">
+              <div className="text-xs text-fg-faint py-1">
                 No references in diff
               </div>
             ) : (
@@ -206,14 +208,14 @@ export function SymbolPopover({
                 <button
                   key={`ref-${i}`}
                   ref={collectRef(refIndexOffset + i)}
-                  className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-stone-800/60 focus:bg-stone-800/60 focus:outline-none transition-colors"
+                  className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-raised/60 focus:bg-surface-raised/60 focus:outline-none transition-colors"
                   onClick={() => onNavigateToReference(ref)}
                 >
-                  <span className="truncate text-stone-400 font-mono shrink-0">
+                  <span className="truncate text-fg-muted font-mono shrink-0">
                     {truncatePath(ref.filePath)}
-                    <span className="text-stone-500">:{ref.lineNumber}</span>
+                    <span className="text-fg-muted">:{ref.lineNumber}</span>
                   </span>
-                  <span className="truncate text-stone-600 font-mono">
+                  <span className="truncate text-fg-faint font-mono">
                     {ref.lineContent.trim()}
                   </span>
                 </button>

@@ -59,65 +59,47 @@ export class HttpClient implements ApiClient {
     return {};
   }
 
-  // ----- Helper methods -----
-
-  private async fetchJson<T>(path: string): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    console.log(`[HttpClient] GET ${url}`);
+    console.log(`[HttpClient] ${method} ${url}`);
 
-    const response = await fetch(url, { headers: this.authHeaders() });
+    const headers: Record<string, string> = { ...this.authHeaders() };
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
     if (!response.ok) {
       const error = await response.text();
       throw new Error(`HTTP ${response.status}: ${error}`);
     }
+
     return response.json();
+  }
+
+  private async fetchJson<T>(path: string): Promise<T> {
+    return this.request<T>("GET", path);
   }
 
   private async postJson<T>(path: string, body: unknown): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    console.log(`[HttpClient] POST ${url}`);
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...this.authHeaders() },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`HTTP ${response.status}: ${error}`);
-    }
-    return response.json();
+    return this.request<T>("POST", path, body);
   }
 
   private async putJson<T>(path: string, body: unknown): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    console.log(`[HttpClient] PUT ${url}`);
-
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...this.authHeaders() },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`HTTP ${response.status}: ${error}`);
-    }
-    return response.json();
+    return this.request<T>("PUT", path, body);
   }
 
-  private async deleteRequest<T>(path: string): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    console.log(`[HttpClient] DELETE ${url}`);
-
-    const response = await fetch(url, {
-      method: "DELETE",
-      headers: this.authHeaders(),
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`HTTP ${response.status}: ${error}`);
-    }
-    return response.json();
+  private async deleteJson<T>(path: string): Promise<T> {
+    return this.request<T>("DELETE", path);
   }
 
   private buildRepoQuery(repoPath: string): string {
@@ -408,7 +390,7 @@ export class HttpClient implements ApiClient {
     // Try to delete from server
     try {
       const compPath = this.buildComparisonPath(comparison);
-      await this.deleteRequest(
+      await this.deleteJson(
         `/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`,
       );
     } catch (err) {
@@ -422,9 +404,10 @@ export class HttpClient implements ApiClient {
   ): Promise<boolean> {
     try {
       const compPath = this.buildComparisonPath(comparison);
-      const url = `${this.baseUrl}/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`;
-      const response = await fetch(url, { headers: this.authHeaders() });
-      return response.ok;
+      await this.fetchJson(
+        `/comparisons/${compPath}/review?${this.buildRepoQuery(repoPath)}`,
+      );
+      return true;
     } catch {
       return false;
     }
@@ -650,5 +633,24 @@ export class HttpClient implements ApiClient {
     // In browser mode, assume it's a git repo (server validates)
     console.warn("[HttpClient] isGitRepo not available in browser");
     return true;
+  }
+
+  // ----- VS Code theme -----
+
+  async detectVscodeTheme(): Promise<{
+    name: string;
+    themeType: string;
+    colors: Record<string, string>;
+    tokenColors: unknown[];
+  }> {
+    throw new Error("VS Code theme detection not available in browser");
+  }
+
+  async setWindowBackgroundColor(
+    _r: number,
+    _g: number,
+    _b: number,
+  ): Promise<void> {
+    // No-op in browser
   }
 }

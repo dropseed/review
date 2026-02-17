@@ -2372,3 +2372,257 @@ pub fn get_tailscale_ip() -> Option<String> {
         }
     })
 }
+
+// --- VS Code theme detection ---
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VscodeThemeDetection {
+    pub name: String,
+    pub theme_type: String,
+    pub colors: HashMap<String, String>,
+    /// Raw tokenColors array from the VS Code theme JSON (for Shiki)
+    pub token_colors: Vec<serde_json::Value>,
+}
+
+/// Detect the active VS Code theme by reading VS Code settings and extension files.
+#[tauri::command]
+pub fn detect_vscode_theme() -> Result<VscodeThemeDetection, String> {
+    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+
+    // Try VS Code, then VS Code Insiders
+    let settings_path = [
+        home.join("Library/Application Support/Code/User/settings.json"),
+        home.join("Library/Application Support/Code - Insiders/User/settings.json"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())
+    .ok_or("VS Code settings.json not found")?;
+
+    let settings_str = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read settings: {e}"))?;
+
+    let stripped = strip_jsonc_comments(&settings_str);
+
+    let settings: serde_json::Value =
+        serde_json::from_str(&stripped).map_err(|e| format!("Failed to parse settings: {e}"))?;
+
+    let theme_name = settings
+        .get("workbench.colorTheme")
+        .and_then(|v| v.as_str())
+        .ok_or("workbench.colorTheme not set in VS Code settings")?
+        .to_owned();
+
+    debug!("[detect_vscode_theme] Active theme: {theme_name}");
+
+    // Search user-installed extensions first, then built-in themes in the app bundle
+    let search_dirs = [
+        home.join(".vscode/extensions"),
+        home.join(".vscode-insiders/extensions"),
+        PathBuf::from("/Applications/Visual Studio Code.app/Contents/Resources/app/extensions"),
+        PathBuf::from(
+            "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/extensions",
+        ),
+    ];
+
+    for dir in &search_dirs {
+        if let Some(detection) = search_extensions_for_theme(dir, &theme_name) {
+            return Ok(detection);
+        }
+    }
+
+    Err(format!(
+        "Theme '{theme_name}' not found in VS Code extensions"
+    ))
+}
+
+/// Search an extensions directory for a theme matching `theme_name`.
+fn search_extensions_for_theme(
+    ext_dir: &std::path::Path,
+    theme_name: &str,
+) -> Option<VscodeThemeDetection> {
+    let entries = std::fs::read_dir(ext_dir).ok()?;
+
+    for entry in entries.flatten() {
+        let ext_path = entry.path();
+        let pkg_path = ext_path.join("package.json");
+        let Ok(pkg_str) = std::fs::read_to_string(&pkg_path) else {
+            continue;
+        };
+        let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_str) else {
+            continue;
+        };
+
+        let Some(themes) = pkg
+            .get("contributes")
+            .and_then(|c| c.get("themes"))
+            .and_then(|t| t.as_array())
+        else {
+            continue;
+        };
+
+        for theme in themes {
+            let label = theme.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            let id = theme.get("id").and_then(|v| v.as_str()).unwrap_or("");
+
+            let matched = label == theme_name
+                || id == theme_name
+                || (label.starts_with('%') && matches_localized_theme(&ext_path, id, theme_name));
+
+            if !matched {
+                continue;
+            }
+
+            let Some(rel_path) = theme.get("path").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let theme_path = ext_path.join(rel_path);
+            let Ok(theme_str) = std::fs::read_to_string(&theme_path) else {
+                continue;
+            };
+
+            let theme_stripped = strip_jsonc_comments(&theme_str);
+            let Ok(theme_json) = serde_json::from_str::<serde_json::Value>(&theme_stripped) else {
+                continue;
+            };
+
+            let theme_type = resolve_theme_type(theme, &theme_json);
+
+            let colors: HashMap<String, String> = theme_json
+                .get("colors")
+                .and_then(|c| c.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_owned())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let token_colors = theme_json
+                .get("tokenColors")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            info!(
+                "[detect_vscode_theme] Found theme '{}' ({}) with {} colors, {} tokenColors",
+                theme_name,
+                theme_type,
+                colors.len(),
+                token_colors.len()
+            );
+
+            return Some(VscodeThemeDetection {
+                name: theme_name.to_owned(),
+                theme_type,
+                colors,
+                token_colors,
+            });
+        }
+    }
+
+    None
+}
+
+/// Resolve the theme type (light/dark/hc) from the package.json `uiTheme` field,
+/// falling back to the theme JSON's `type` field, defaulting to "dark".
+fn resolve_theme_type(package_theme: &serde_json::Value, theme_json: &serde_json::Value) -> String {
+    package_theme
+        .get("uiTheme")
+        .and_then(|v| v.as_str())
+        .map(|ui| match ui {
+            "vs" => "light",
+            "hc-black" | "hc-light" => "hc",
+            _ => "dark",
+        })
+        .or_else(|| theme_json.get("type").and_then(|v| v.as_str()))
+        .unwrap_or("dark")
+        .to_owned()
+}
+
+/// For built-in themes with localized labels (e.g., "%colorTheme.label%"),
+/// match by theme id (case-insensitive) or extension directory name.
+fn matches_localized_theme(ext_path: &std::path::Path, id: &str, theme_name: &str) -> bool {
+    if id.eq_ignore_ascii_case(theme_name) {
+        return true;
+    }
+
+    // Fall back to matching the extension directory name (e.g., "theme-solarized-dark")
+    let Some(ext_name) = ext_path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let normalized = theme_name.to_lowercase().replace(' ', "-");
+    ext_name.to_lowercase().contains(&normalized)
+}
+
+/// Strip single-line `//` and block `/* */` comments from JSONC text.
+fn strip_jsonc_comments(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escape_next = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if escape_next {
+            result.push(c);
+            escape_next = false;
+            continue;
+        }
+
+        if c == '\\' && in_string {
+            result.push(c);
+            escape_next = true;
+            continue;
+        }
+
+        if c == '"' {
+            in_string = !in_string;
+            result.push(c);
+            continue;
+        }
+
+        if !in_string && c == '/' {
+            if chars.peek() == Some(&'/') {
+                // Line comment — skip to end of line
+                for ch in chars.by_ref() {
+                    if ch == '\n' {
+                        result.push('\n');
+                        break;
+                    }
+                }
+                continue;
+            }
+            if chars.peek() == Some(&'*') {
+                // Block comment — skip to */
+                chars.next(); // consume *
+                let mut prev = ' ';
+                for ch in chars.by_ref() {
+                    if prev == '*' && ch == '/' {
+                        break;
+                    }
+                    prev = ch;
+                }
+                continue;
+            }
+        }
+
+        result.push(c);
+    }
+
+    result
+}
+
+// --- Window background color ---
+
+/// Set the background color of a window (affects title bar on macOS).
+#[tauri::command]
+pub fn set_window_background_color(
+    window: tauri::WebviewWindow,
+    r: u8,
+    g: u8,
+    b: u8,
+) -> Result<(), String> {
+    window
+        .set_background_color(Some(tauri::window::Color(r, g, b, 255)))
+        .map_err(|e| e.to_string())
+}

@@ -89,16 +89,16 @@ function PatternRow({
         type="button"
         onClick={() => onToggle(pattern.id, !pattern.trusted)}
         className={`group flex items-center gap-2 w-full px-2 py-1 rounded text-left transition-colors ${
-          muted ? "opacity-50 hover:opacity-70" : "hover:bg-stone-800/50"
+          muted ? "opacity-50 hover:opacity-70" : "hover:bg-surface-raised/50"
         }`}
       >
         <Checkbox
-          className="h-3 w-3 shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-stone-500"
+          className="h-3 w-3 shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-edge-default"
           checked={pattern.trusted}
           tabIndex={-1}
         />
         <span
-          className={`flex-1 min-w-0 truncate text-xs ${pattern.trusted ? "text-cyan-300" : "text-stone-300"}`}
+          className={`flex-1 min-w-0 truncate text-xs ${pattern.trusted ? "text-status-trusted" : "text-fg-secondary"}`}
           title={pattern.description}
         >
           {pattern.name}
@@ -111,16 +111,16 @@ function PatternRow({
             }}
             className={`font-mono text-xxs tabular-nums shrink-0 rounded px-1 py-px transition-colors ${
               isExpanded
-                ? "bg-stone-600 text-stone-200"
+                ? "bg-surface-active text-fg-secondary"
                 : pattern.trusted
-                  ? "text-cyan-400/70 hover:bg-cyan-500/15 hover:text-cyan-300"
-                  : "text-stone-600 hover:bg-stone-700 hover:text-stone-400"
+                  ? "text-status-trusted/70 hover:bg-status-trusted/15 hover:text-status-trusted"
+                  : "text-fg-faint hover:bg-surface-hover hover:text-fg-muted"
             }`}
           >
             {pattern.count}
           </span>
         ) : (
-          <span className="font-mono text-xxs tabular-nums shrink-0 text-stone-700 px-1">
+          <span className="font-mono text-xxs tabular-nums shrink-0 text-fg-faint px-1">
             0
           </span>
         )}
@@ -275,7 +275,7 @@ export function TrustSection(): ReactNode {
         elements.push(
           <div
             key={`cat-${pattern.categoryId}`}
-            className="px-2 pt-2 pb-0.5 text-xxs font-medium uppercase tracking-wider text-stone-600"
+            className="px-2 pt-2 pb-0.5 text-xxs font-medium uppercase tracking-wider text-fg-faint"
           >
             {pattern.categoryName}
           </div>,
@@ -304,7 +304,7 @@ export function TrustSection(): ReactNode {
     <div>
       {/* Error banner */}
       {classificationError && (
-        <div className="rounded bg-rose-500/10 px-2 py-1 mb-1 text-xxs text-rose-400 inset-ring-1 inset-ring-rose-500/20">
+        <div className="rounded bg-status-rejected/10 px-2 py-1 mb-1 text-xxs text-status-rejected inset-ring-1 inset-ring-status-rejected/20">
           {classificationError}
         </div>
       )}
@@ -319,7 +319,7 @@ export function TrustSection(): ReactNode {
               <button
                 type="button"
                 onClick={() => setShowZeroMatch(!showZeroMatch)}
-                className="w-full px-2 py-1.5 text-xxs text-stone-600 hover:text-stone-400 transition-colors text-left"
+                className="w-full px-2 py-1.5 text-xxs text-fg-faint hover:text-fg-muted transition-colors text-left"
               >
                 {showZeroMatch
                   ? "Hide no-match patterns"
@@ -333,7 +333,7 @@ export function TrustSection(): ReactNode {
 
       {/* Empty state */}
       {trustCategories.length === 0 && visiblePatterns.length === 0 && (
-        <p className="px-2 py-2 text-xxs text-stone-600">
+        <p className="px-2 py-2 text-xxs text-fg-faint">
           No patterns classified yet.
         </p>
       )}

@@ -190,7 +190,7 @@ export function PlainCodeView({
     return (
       <SimpleTooltip content="Add comment">
         <button
-          className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/80 text-white shadow-lg transition-colors hover:bg-sky-500 hover:scale-110"
+          className="flex h-5 w-5 items-center justify-center rounded bg-status-renamed/80 text-white shadow-lg transition-colors hover:bg-status-renamed hover:scale-110"
           onClick={() => {
             const hoveredLine = getHoveredLine();
             if (!hoveredLine) return;

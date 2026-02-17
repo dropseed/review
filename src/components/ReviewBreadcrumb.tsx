@@ -24,9 +24,9 @@ function SidebarToggle() {
         type="button"
         onClick={toggleTabRail}
         className="flex items-center justify-center w-7 h-7 rounded-md
-                   hover:bg-stone-800/60 transition-colors duration-100
-                   focus:outline-hidden focus:ring-2 focus:ring-stone-500/50
-                   text-stone-500 hover:text-stone-300"
+                   hover:bg-surface-raised/60 transition-colors duration-100
+                   focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
+                   text-fg0 hover:text-fg-secondary"
         aria-label="Show sidebar"
       >
         <SidebarPanelIcon />
@@ -62,12 +62,12 @@ export function ReviewBreadcrumb({
     <div className="flex min-w-0 items-center gap-2.5">
       <SidebarToggle />
       <div className="flex items-center gap-1.5">
-        <span className="shrink-0 text-xs font-medium text-stone-300">
+        <span className="shrink-0 text-xs font-medium text-fg-secondary">
           {repoName}
         </span>
-        <span className="shrink-0 text-stone-600 text-xs">/</span>
+        <span className="shrink-0 text-fg-faint text-xs">/</span>
         <span
-          className={`shrink-0 text-xs text-stone-400 ${isPr ? "font-medium" : "font-mono"}`}
+          className={`shrink-0 text-xs text-fg-muted ${isPr ? "font-medium" : "font-mono"}`}
         >
           {getOverviewLabel(comparison, githubPr)}
         </span>
@@ -81,9 +81,9 @@ export function ReviewBreadcrumb({
                   requestedFilesPanelTab: "git",
                 });
               }}
-              className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-stone-800 transition-colors"
+              className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-surface-raised transition-colors"
             >
-              <span className="text-xxs text-amber-400/70 font-medium">
+              <span className="text-xxs text-status-modified/70 font-medium">
                 + working tree
               </span>
             </button>
@@ -100,7 +100,7 @@ export function ReviewTitle({ title }: ReviewTitleProps) {
   if (!displayTitle) return null;
 
   return (
-    <div className="truncate text-sm font-medium text-stone-200 leading-tight px-4 mt-1">
+    <div className="truncate text-sm font-medium text-fg-secondary leading-tight px-4 mt-1">
       {displayTitle}
     </div>
   );

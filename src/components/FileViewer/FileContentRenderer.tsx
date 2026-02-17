@@ -117,8 +117,8 @@ export function FileContentRenderer({
           return (
             <div className="flex flex-1 items-center justify-center p-8">
               <div className="text-center">
-                <p className="text-stone-500">{message.title}</p>
-                <p className="mt-1 text-sm text-stone-600">{message.detail}</p>
+                <p className="text-fg-muted">{message.title}</p>
+                <p className="mt-1 text-sm text-fg-faint">{message.detail}</p>
               </div>
             </div>
           );
@@ -205,9 +205,9 @@ export function FileContentRenderer({
 function RenderErrorFallback({ filePath }: { filePath: string }) {
   return (
     <div className="p-6">
-      <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-4">
-        <p className="text-rose-400">Failed to render file view</p>
-        <p className="mt-1 text-sm text-stone-500">{filePath}</p>
+      <div className="rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-4">
+        <p className="text-status-rejected">Failed to render file view</p>
+        <p className="mt-1 text-sm text-fg-muted">{filePath}</p>
       </div>
     </div>
   );

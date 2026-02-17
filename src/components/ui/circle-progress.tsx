@@ -51,7 +51,9 @@ export function CircleProgress({
           r={radius}
           fill="none"
           stroke={
-            isComplete ? "var(--color-amber-500)" : "var(--color-sage-400)"
+            isComplete
+              ? "var(--color-status-modified)"
+              : "var(--color-sage-400)"
           }
           strokeWidth={strokeWidth}
           strokeLinecap="round"

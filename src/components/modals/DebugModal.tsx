@@ -7,15 +7,21 @@ function highlightJson(json: string): React.ReactNode[] {
   return lines.map((line, i) => {
     const highlighted = line
       // Keys (before colon)
-      .replace(/"([^"]+)":/g, '<span class="text-sky-400">"$1"</span>:')
+      .replace(/"([^"]+)":/g, '<span class="text-status-renamed">"$1"</span>:')
       // String values
-      .replace(/: "([^"]*)"/g, ': <span class="text-amber-300">"$1"</span>')
+      .replace(
+        /: "([^"]*)"/g,
+        ': <span class="text-status-modified">"$1"</span>',
+      )
       // Numbers
-      .replace(/: (-?\d+\.?\d*)/g, ': <span class="text-violet-400">$1</span>')
+      .replace(
+        /: (-?\d+\.?\d*)/g,
+        ': <span class="text-status-classifying">$1</span>',
+      )
       // Booleans and null
       .replace(
         /: (true|false|null)/g,
-        ': <span class="text-rose-400">$1</span>',
+        ': <span class="text-status-rejected">$1</span>',
       );
     return <div key={i} dangerouslySetInnerHTML={{ __html: highlighted }} />;
   });
@@ -105,7 +111,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
           <DialogTitle className="text-sm font-medium">Debug Data</DialogTitle>
           <button
             onClick={onClose}
-            className="rounded p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-100"
+            className="rounded p-1 text-fg-muted hover:bg-surface-raised hover:text-fg"
           >
             <svg
               className="h-5 w-5"
@@ -124,13 +130,13 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
         </DialogHeader>
 
         {/* Tabs */}
-        <div className="flex border-b border-stone-700">
+        <div className="flex border-b border-edge-default">
           <button
             onClick={() => setActiveTab("persisted")}
             className={`px-4 py-2 text-xs font-medium ${
               activeTab === "persisted"
-                ? "border-b-2 border-sky-500 text-sky-400"
-                : "text-stone-400 hover:text-stone-200"
+                ? "border-b-2 border-status-renamed text-status-renamed"
+                : "text-fg-muted hover:text-fg-secondary"
             }`}
           >
             Persisted State
@@ -139,8 +145,8 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
             onClick={() => setActiveTab("in-memory")}
             className={`px-4 py-2 text-xs font-medium ${
               activeTab === "in-memory"
-                ? "border-b-2 border-sky-500 text-sky-400"
-                : "text-stone-400 hover:text-stone-200"
+                ? "border-b-2 border-status-renamed text-status-renamed"
+                : "text-fg-muted hover:text-fg-secondary"
             }`}
           >
             In-Memory State
@@ -152,26 +158,26 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
           {activeTab === "persisted" && (
             <div>
               {reviewStatePath && (
-                <div className="mb-3 rounded bg-stone-800 px-3 py-2">
-                  <span className="text-xs text-stone-500">Saved to: </span>
-                  <span className="font-mono text-xs text-stone-300">
+                <div className="mb-3 rounded bg-surface-raised px-3 py-2">
+                  <span className="text-xs text-fg0">Saved to: </span>
+                  <span className="font-mono text-xs text-fg-secondary">
                     {reviewStatePath}
                   </span>
                 </div>
               )}
-              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-stone-300">
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg-secondary">
                 {highlightedPersistedJson}
               </pre>
             </div>
           )}
           {activeTab === "in-memory" && (
             <div>
-              <div className="mb-3 rounded bg-stone-800 px-3 py-2">
-                <span className="text-xs text-stone-500">
+              <div className="mb-3 rounded bg-surface-raised px-3 py-2">
+                <span className="text-xs text-fg0">
                   Computed from git, not persisted to disk
                 </span>
               </div>
-              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-stone-300">
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg-secondary">
                 {highlightedInMemoryJson}
               </pre>
             </div>
@@ -179,10 +185,10 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end border-t border-stone-700 px-4 py-3">
+        <div className="flex justify-end border-t border-edge-default px-4 py-3">
           <button
             onClick={handleCopy}
-            className="rounded bg-stone-700 px-3 py-1.5 text-xs font-medium text-stone-100 hover:bg-stone-600"
+            className="rounded bg-surface-hover px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-active"
           >
             Copy to Clipboard
           </button>

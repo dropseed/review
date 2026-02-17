@@ -52,10 +52,10 @@ export function SearchResultsPanel(): ReactNode {
     <div className="flex h-full flex-col">
       {/* Search input */}
       <div className="px-3 py-2">
-        <div className="flex items-center gap-2 rounded-md bg-stone-800/50 px-2 py-1">
+        <div className="flex items-center gap-2 rounded-md bg-surface-raised/50 px-2 py-1">
           <svg
             aria-hidden="true"
-            className="h-3.5 w-3.5 text-stone-500 flex-shrink-0"
+            className="h-3.5 w-3.5 text-fg-muted flex-shrink-0"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -79,15 +79,15 @@ export function SearchResultsPanel(): ReactNode {
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
-            className="flex-1 bg-transparent text-xs text-stone-100 placeholder-stone-500 focus:outline-hidden min-w-0"
+            className="flex-1 bg-transparent text-xs text-fg placeholder-fg-muted focus:outline-hidden min-w-0"
           />
           {searchLoading && (
-            <div className="h-3.5 w-3.5 rounded-full border-2 border-stone-600 border-t-stone-300 animate-spin flex-shrink-0" />
+            <div className="h-3.5 w-3.5 rounded-full border-2 border-surface-active border-t-fg-secondary animate-spin flex-shrink-0" />
           )}
           {query && !searchLoading && (
             <button
               onClick={clearSearch}
-              className="text-stone-500 hover:text-stone-300 transition-colors flex-shrink-0"
+              className="text-fg-muted hover:text-fg-secondary transition-colors flex-shrink-0"
               aria-label="Clear search"
             >
               <svg
@@ -111,21 +111,21 @@ export function SearchResultsPanel(): ReactNode {
       {/* Results */}
       <div className="flex-1 overflow-y-auto scrollbar-thin pb-8">
         {searchError ? (
-          <div className="px-4 py-8 text-center text-xs text-red-400">
+          <div className="px-4 py-8 text-center text-xs text-status-rejected">
             {searchError}
           </div>
         ) : searchResults.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-stone-500">
+          <div className="px-4 py-8 text-center text-xs text-fg-muted">
             {getEmptyStateMessage(query, searchLoading)}
           </div>
         ) : (
           groupedResults.map((group) => (
             <div key={group.filePath}>
               {/* File header */}
-              <div className="sticky top-0 z-10 bg-stone-900 border-b border-stone-800/50 px-3 py-1.5 flex items-center gap-2">
+              <div className="sticky top-0 z-10 bg-surface-panel border-b border-edge/50 px-3 py-1.5 flex items-center gap-2">
                 <svg
                   aria-hidden="true"
-                  className="h-3 w-3 text-stone-500 flex-shrink-0"
+                  className="h-3 w-3 text-fg-muted flex-shrink-0"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -136,10 +136,10 @@ export function SearchResultsPanel(): ReactNode {
                   <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
-                <span className="text-xxs font-mono text-stone-400 truncate flex-1 min-w-0">
+                <span className="text-xxs font-mono text-fg-muted truncate flex-1 min-w-0">
                   {group.filePath}
                 </span>
-                <span className="text-xxs text-stone-600 flex-shrink-0">
+                <span className="text-xxs text-fg-faint flex-shrink-0">
                   {group.matches.length}
                 </span>
               </div>
@@ -150,12 +150,12 @@ export function SearchResultsPanel(): ReactNode {
                   <button
                     key={`${result.filePath}:${result.lineNumber}:${result.column}`}
                     onClick={() => navigateToSearchResult(currentIndex)}
-                    className="w-full flex items-start gap-2 px-3 py-1 text-left hover:bg-stone-800/50 transition-colors"
+                    className="w-full flex items-start gap-2 px-3 py-1 text-left hover:bg-surface-raised/50 transition-colors"
                   >
-                    <span className="text-xxs font-mono text-stone-600 w-8 text-right flex-shrink-0 pt-px tabular-nums">
+                    <span className="text-xxs font-mono text-fg-faint w-8 text-right flex-shrink-0 pt-px tabular-nums">
                       {result.lineNumber}
                     </span>
-                    <span className="text-xxs font-mono text-stone-300 truncate flex-1 min-w-0">
+                    <span className="text-xxs font-mono text-fg-secondary truncate flex-1 min-w-0">
                       <HighlightedLine
                         content={result.lineContent}
                         query={query}
@@ -173,7 +173,7 @@ export function SearchResultsPanel(): ReactNode {
       {/* Footer */}
       {searchResults.length > 0 && (
         <div
-          className="border-t border-stone-800/50 px-3 py-1.5 text-xxs text-stone-500"
+          className="border-t border-edge/50 px-3 py-1.5 text-xxs text-fg-muted"
           aria-live="polite"
         >
           {searchResults.length >= 100 ? "100+" : searchResults.length} result

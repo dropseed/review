@@ -426,8 +426,8 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="flex flex-col items-center gap-3 animate-fade-in">
-          <div className="h-8 w-8 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-          <span className="text-stone-500">Loading file…</span>
+          <div className="h-8 w-8 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <span className="text-fg-muted">Loading file…</span>
         </div>
       </div>
     );
@@ -436,10 +436,10 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
   if (error) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
-        <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 p-6 max-w-md text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20 mx-auto">
+        <div className="rounded-xl bg-status-rejected/10 border border-status-rejected/20 p-6 max-w-md text-center">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-status-rejected/20 mx-auto">
             <svg
-              className="h-6 w-6 text-rose-400"
+              className="h-6 w-6 text-status-rejected"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -452,7 +452,7 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
               />
             </svg>
           </div>
-          <p className="text-rose-400 text-pretty">{error}</p>
+          <p className="text-status-rejected text-pretty">{error}</p>
         </div>
       </div>
     );
@@ -512,7 +512,7 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
 
       {/* File-level annotations */}
       {(fileAnnotations.length > 0 || fileCommentEditorOpen) && (
-        <div className="border-b border-stone-800/50">
+        <div className="border-b border-edge/50">
           {fileAnnotations.map((annotation) => {
             const isEditing = editingFileCommentId === annotation.id;
             if (isEditing) {
@@ -564,7 +564,7 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
         )}
         <div
           ref={setScrollNode}
-          className={`min-w-0 flex-1 h-full overflow-auto bg-stone-900 ${
+          className={`min-w-0 flex-1 h-full overflow-auto bg-surface-panel ${
             contentMode.type === "diff" || contentMode.type === "untracked"
               ? "scrollbar-none"
               : "scrollbar-thin"

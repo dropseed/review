@@ -217,7 +217,7 @@ function HighlightedText({
     <>
       {chars.map((char, i) =>
         indicesSet.has(i) ? (
-          <span key={i} className="text-amber-400 font-medium">
+          <span key={i} className="text-status-modified font-medium">
             {char}
           </span>
         ) : (
@@ -402,12 +402,12 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
             <VisuallyHidden.Root>
               <DialogPrimitive.Title>Find File</DialogPrimitive.Title>
             </VisuallyHidden.Root>
-            <div className="rounded-xl border border-stone-700/80 bg-stone-900 shadow-2xl shadow-black/50 overflow-hidden">
+            <div className="rounded-xl border border-edge-default/80 bg-surface-panel shadow-2xl shadow-black/50 overflow-hidden">
               {/* Search input */}
-              <div className="border-b border-stone-800 p-3">
+              <div className="border-b border-edge p-3">
                 <div className="flex items-center gap-3 px-2">
                   <svg
-                    className="h-4 w-4 text-stone-500 flex-shrink-0"
+                    className="h-4 w-4 text-fg-muted flex-shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -430,12 +430,12 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
                     autoCorrect="off"
                     autoCapitalize="off"
                     autoComplete="off"
-                    className="flex-1 bg-transparent text-sm text-stone-100 placeholder-stone-500 focus:outline-hidden"
+                    className="flex-1 bg-transparent text-sm text-fg placeholder-fg-muted focus:outline-hidden"
                   />
                   {query && (
                     <button
                       onClick={() => setQuery("")}
-                      className="text-stone-500 hover:text-stone-300 transition-colors"
+                      className="text-fg-muted hover:text-fg-secondary transition-colors"
                       aria-label="Clear search"
                     >
                       <svg
@@ -464,7 +464,7 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
                 aria-label="File search results"
               >
                 {results.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-stone-500">
+                  <div className="px-4 py-8 text-center text-sm text-fg-muted">
                     {query ? "No matching files" : "No files available"}
                   </div>
                 ) : (
@@ -477,14 +477,16 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
                       onClick={() => handleSelect(result.path)}
                       className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${
                         index === selectedIndex
-                          ? "bg-stone-800"
-                          : "hover:bg-stone-800/50"
+                          ? "bg-surface-raised"
+                          : "hover:bg-surface-raised/50"
                       }`}
                     >
                       {/* File icon */}
                       <svg
                         className={`h-4 w-4 flex-shrink-0 ${
-                          result.isChanged ? "text-amber-500" : "text-stone-500"
+                          result.isChanged
+                            ? "text-status-modified"
+                            : "text-fg-muted"
                         }`}
                         viewBox="0 0 24 24"
                         fill="none"
@@ -499,7 +501,7 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
 
                       {/* File path with highlighted matches */}
                       <div className="flex-1 min-w-0 font-mono text-sm">
-                        <span className="text-stone-300 truncate block">
+                        <span className="text-fg-secondary truncate block">
                           <HighlightedText
                             text={result.path}
                             indices={result.matchIndices}
@@ -509,7 +511,7 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
 
                       {/* Changed indicator */}
                       {result.isChanged && (
-                        <span className="text-xxs text-amber-500/80 flex-shrink-0">
+                        <span className="text-xxs text-status-modified/80 flex-shrink-0">
                           changed
                         </span>
                       )}
@@ -519,25 +521,25 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
               </div>
 
               {/* Footer with keyboard hints */}
-              <div className="border-t border-stone-800 px-4 py-2 flex items-center justify-between text-xxs text-stone-600">
+              <div className="border-t border-edge px-4 py-2 flex items-center justify-between text-xxs text-fg-faint">
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       ↑
                     </kbd>
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       ↓
                     </kbd>
                     <span className="ml-0.5">navigate</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       Enter
                     </kbd>
                     <span className="ml-0.5">select</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-stone-800 px-1 py-0.5 text-stone-500">
+                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
                       Esc
                     </kbd>
                     <span className="ml-0.5">close</span>

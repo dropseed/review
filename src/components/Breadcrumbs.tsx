@@ -20,13 +20,13 @@ export function Breadcrumbs({
 
         return (
           <span key={path} className="flex items-center">
-            {index > 0 && <span className="mx-1 text-stone-600">/</span>}
+            {index > 0 && <span className="mx-1 text-fg-faint">/</span>}
             {isLast ? (
-              <span className="font-mono text-stone-200">{part}</span>
+              <span className="font-mono text-fg-secondary">{part}</span>
             ) : (
               <button
                 onClick={() => onNavigateToDirectory?.(path)}
-                className="font-mono text-stone-500 hover:text-stone-300 hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500/50 rounded"
+                className="font-mono text-fg0 hover:text-fg-secondary hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded"
               >
                 {part}
               </button>

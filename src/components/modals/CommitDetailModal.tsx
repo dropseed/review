@@ -53,15 +53,15 @@ function splitPatch(patch: string): string[] {
 function statusIcon(status: string) {
   switch (status) {
     case "added":
-      return <span className="text-emerald-400">A</span>;
+      return <span className="text-status-approved">A</span>;
     case "deleted":
-      return <span className="text-rose-400">D</span>;
+      return <span className="text-status-rejected">D</span>;
     case "renamed":
-      return <span className="text-sky-400">R</span>;
+      return <span className="text-status-renamed">R</span>;
     case "copied":
-      return <span className="text-sky-400">C</span>;
+      return <span className="text-status-renamed">C</span>;
     default:
-      return <span className="text-amber-400">M</span>;
+      return <span className="text-status-modified">M</span>;
   }
 }
 
@@ -111,9 +111,9 @@ export function CommitDetailModal({
         {/* Header */}
         <DialogHeader className="relative px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-800 ring-1 ring-stone-700">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-raised ring-1 ring-edge-default">
               <svg
-                className="h-4 w-4 text-stone-400"
+                className="h-4 w-4 text-fg-muted"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -129,11 +129,11 @@ export function CommitDetailModal({
             <DialogTitle>
               Commit{" "}
               {detail ? (
-                <span className="font-mono text-amber-400">
+                <span className="font-mono text-status-modified">
                   {detail.shortHash}
                 </span>
               ) : commitHash ? (
-                <span className="font-mono text-amber-400">
+                <span className="font-mono text-status-modified">
                   {commitHash.slice(0, 7)}
                 </span>
               ) : null}
@@ -141,7 +141,7 @@ export function CommitDetailModal({
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300"
+            className="rounded-md p-1.5 text-fg0 transition-colors hover:bg-surface-raised hover:text-fg-secondary"
           >
             <svg
               className="h-5 w-5"
@@ -164,18 +164,16 @@ export function CommitDetailModal({
           {loading && (
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
-                <div className="h-6 w-6 rounded-full border-2 border-stone-700 border-t-amber-500 animate-spin" />
-                <span className="text-xs text-stone-500">
-                  Loading commit...
-                </span>
+                <div className="h-6 w-6 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+                <span className="text-xs text-fg0">Loading commit...</span>
               </div>
             </div>
           )}
 
           {error && (
             <div className="p-5">
-              <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-4">
-                <p className="text-sm text-rose-400">{error}</p>
+              <div className="rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-4">
+                <p className="text-sm text-status-rejected">{error}</p>
               </div>
             </div>
           )}
@@ -183,17 +181,17 @@ export function CommitDetailModal({
           {detail && (
             <>
               {/* Commit message */}
-              <div className="px-5 py-4 border-b border-stone-800/60">
-                <pre className="whitespace-pre-wrap font-mono text-sm text-stone-200 leading-relaxed">
+              <div className="px-5 py-4 border-b border-edge/60">
+                <pre className="whitespace-pre-wrap font-mono text-sm text-fg-secondary leading-relaxed">
                   {detail.message}
                 </pre>
               </div>
 
               {/* Author and date */}
-              <div className="px-5 py-3 border-b border-stone-800/60 flex items-center gap-4 text-xs text-stone-400">
+              <div className="px-5 py-3 border-b border-edge/60 flex items-center gap-4 text-xs text-fg-muted">
                 <div className="flex items-center gap-1.5">
                   <svg
-                    className="h-3.5 w-3.5 text-stone-500"
+                    className="h-3.5 w-3.5 text-fg0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -204,14 +202,14 @@ export function CommitDetailModal({
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
                   </svg>
-                  <span className="text-stone-300">{detail.author}</span>
-                  <span className="text-stone-600">
+                  <span className="text-fg-secondary">{detail.author}</span>
+                  <span className="text-fg-faint">
                     &lt;{detail.authorEmail}&gt;
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <svg
-                    className="h-3.5 w-3.5 text-stone-500"
+                    className="h-3.5 w-3.5 text-fg0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -229,12 +227,12 @@ export function CommitDetailModal({
               </div>
 
               {/* Changed files */}
-              <div className="px-5 py-3 border-b border-stone-800/60">
+              <div className="px-5 py-3 border-b border-edge/60">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="text-xxs font-medium text-stone-500 uppercase tracking-wide">
+                  <span className="text-xxs font-medium text-fg0 uppercase tracking-wide">
                     Changed files
                   </span>
-                  <span className="rounded-full bg-stone-800 px-1.5 py-0.5 text-xxs font-medium text-stone-400 tabular-nums">
+                  <span className="rounded-full bg-surface-raised px-1.5 py-0.5 text-xxs font-medium text-fg-muted tabular-nums">
                     {detail.files.length}
                   </span>
                 </div>
@@ -242,22 +240,22 @@ export function CommitDetailModal({
                   {detail.files.map((file) => (
                     <div
                       key={file.path}
-                      className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-stone-800/50"
+                      className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-surface-raised/50"
                     >
                       <span className="w-4 text-center font-mono text-xxs font-bold">
                         {statusIcon(file.status)}
                       </span>
-                      <span className="flex-1 truncate font-mono text-stone-300">
+                      <span className="flex-1 truncate font-mono text-fg-secondary">
                         {file.path}
                       </span>
                       <span className="flex items-center gap-1.5 tabular-nums text-xxs">
                         {file.additions > 0 && (
-                          <span className="text-emerald-400">
+                          <span className="text-status-approved">
                             +{file.additions}
                           </span>
                         )}
                         {file.deletions > 0 && (
-                          <span className="text-rose-400">
+                          <span className="text-status-rejected">
                             -{file.deletions}
                           </span>
                         )}
@@ -271,7 +269,7 @@ export function CommitDetailModal({
               {filePatches.map((patch, i) => (
                 <div
                   key={i}
-                  className="border-b border-stone-800/60 last:border-b-0"
+                  className="border-b border-edge/60 last:border-b-0"
                 >
                   <PatchDiff
                     patch={patch}

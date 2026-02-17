@@ -21,13 +21,13 @@ function directoryNameColor(
   hasPending: boolean,
   hasRejections?: boolean,
 ): string {
-  if (isGitignored) return "text-stone-500";
-  if (hunkContext !== "all") return "text-stone-200";
+  if (isGitignored) return "text-fg-muted";
+  if (hunkContext !== "all") return "text-fg-secondary";
   if (hasReviewableContent && !hasPending && hasRejections)
-    return "text-rose-400";
-  if (hasReviewableContent && !hasPending) return "text-emerald-400";
-  if (hasPending) return "text-amber-200";
-  return "text-stone-300";
+    return "text-status-rejected";
+  if (hasReviewableContent && !hasPending) return "text-status-approved";
+  if (hasPending) return "text-status-modified";
+  return "text-fg-secondary";
 }
 
 function fileNameColor(
@@ -38,12 +38,13 @@ function fileNameColor(
   hasReviewableContent: boolean,
   hasRejections: boolean,
 ): string {
-  if (isSelected) return "text-stone-100";
-  if (isComplete && hasRejections) return "text-rose-400";
-  if (isComplete) return "text-emerald-400";
-  if (isGitignored) return "text-stone-500";
-  if (hunkContext === "all" && hasReviewableContent) return "text-amber-400";
-  return "text-stone-300";
+  if (isSelected) return "text-fg";
+  if (isComplete && hasRejections) return "text-status-rejected";
+  if (isComplete) return "text-status-approved";
+  if (isGitignored) return "text-fg-muted";
+  if (hunkContext === "all" && hasReviewableContent)
+    return "text-status-modified";
+  return "text-fg-secondary";
 }
 
 interface FileNodeProps {
@@ -90,7 +91,7 @@ export function ApprovalButtons({
               onApprove();
             }}
             className="flex items-center justify-center w-5 h-5 rounded
-                       text-stone-500 hover:text-emerald-400 hover:bg-emerald-500/20
+                       text-fg-muted hover:text-status-approved hover:bg-status-approved/20
                        transition-colors"
           >
             <svg
@@ -119,7 +120,7 @@ export function ApprovalButtons({
               onUnapprove();
             }}
             className="flex items-center justify-center w-5 h-5 rounded
-                       text-emerald-400 hover:text-stone-400 hover:bg-stone-700/50
+                       text-status-approved hover:text-fg-muted hover:bg-surface-hover/50
                        transition-colors"
           >
             <svg
@@ -195,7 +196,7 @@ export const FileNode = memo(
             className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
               isGitignored
                 ? "opacity-50 hover:opacity-70"
-                : "hover:bg-stone-800/40"
+                : "hover:bg-surface-raised/40"
             }`}
             style={{ paddingLeft }}
           >
@@ -206,7 +207,7 @@ export const FileNode = memo(
             >
               {/* Chevron */}
               <svg
-                className={`h-3 w-3 flex-shrink-0 text-stone-600 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                className={`h-3 w-3 flex-shrink-0 text-fg-faint transition-transform ${isExpanded ? "rotate-90" : ""}`}
                 viewBox="0 0 24 24"
                 fill="currentColor"
               >
@@ -234,12 +235,12 @@ export const FileNode = memo(
             {/* Relative size bar + file count on hover (Browse only) */}
             {barPct > 0 && (
               <div className="flex items-center gap-1 flex-shrink-0">
-                <span className="font-mono text-xxs tabular-nums text-stone-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="font-mono text-xxs tabular-nums text-fg-faint opacity-0 group-hover:opacity-100 transition-opacity">
                   {entry.fileCount}
                 </span>
                 <div className="w-12 flex justify-end">
                   <div
-                    className="h-1 rounded-full bg-stone-600"
+                    className="h-1 rounded-full bg-surface-active"
                     style={{ width: `${Math.max(barPct, 10)}%` }}
                   />
                 </div>
@@ -323,10 +324,10 @@ export const FileNode = memo(
             }
             className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
               isSelected
-                ? "bg-amber-500/15 border-l-2 border-l-amber-400"
+                ? "bg-status-modified/15 border-l-2 border-l-status-modified"
                 : isGitignored
                   ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
-                  : "border-l-2 border-l-transparent hover:bg-stone-800/40"
+                  : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
             }`}
             style={{ paddingLeft: `${depth * 0.8 + 0.5}rem` }}
           >
@@ -347,7 +348,7 @@ export const FileNode = memo(
 
               {/* Move indicator */}
               {movedFilePaths?.has(entry.path) && (
-                <span className="flex-shrink-0 rounded bg-sky-500/15 px-1 py-0.5 text-xxs font-medium text-sky-400">
+                <span className="flex-shrink-0 rounded bg-status-renamed/15 px-1 py-0.5 text-xxs font-medium text-status-renamed">
                   Moved
                 </span>
               )}

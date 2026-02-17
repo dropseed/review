@@ -54,14 +54,14 @@ export function MovePairModal({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {/* Trigger: pill with clickable file name for navigation + expand button for modal */}
-      <div className="flex items-center gap-0 rounded-full bg-sky-500/15 text-xs font-medium text-sky-400">
+      <div className="flex items-center gap-0 rounded-full bg-status-renamed/15 text-xs font-medium text-status-renamed">
         {/* Navigate to paired hunk */}
         <SimpleTooltip
           content={`Jump to ${isSource ? "destination" : "source"} in ${pairedHunk.filePath}`}
         >
           <button
             onClick={() => onNavigateToHunk?.(pairedHunk.id)}
-            className="flex items-center gap-1.5 rounded-l-full py-0.5 pl-2 pr-1.5 transition-colors hover:bg-sky-500/25"
+            className="flex items-center gap-1.5 rounded-l-full py-0.5 pl-2 pr-1.5 transition-colors hover:bg-status-renamed/25"
           >
             <svg
               className="h-3 w-3"
@@ -94,7 +94,7 @@ export function MovePairModal({
         <SimpleTooltip content="View move pair details">
           <button
             onClick={() => setOpen(true)}
-            className="flex items-center rounded-r-full py-0.5 pr-2 pl-1 transition-colors hover:bg-sky-500/25"
+            className="flex items-center rounded-r-full py-0.5 pr-2 pl-1 transition-colors hover:bg-status-renamed/25"
           >
             <svg
               className="h-3 w-3"
@@ -121,7 +121,7 @@ export function MovePairModal({
           <DialogTitle className="flex items-center gap-3">
             <span>Move Pair</span>
           </DialogTitle>
-          <DialogClose className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors">
+          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -143,10 +143,10 @@ export function MovePairModal({
           {/* Source (removed) side */}
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-xxs font-medium text-rose-400">
+              <span className="rounded bg-status-rejected/20 px-1.5 py-0.5 text-xxs font-medium text-status-rejected">
                 Removed from
               </span>
-              <span className="text-xs text-stone-400 truncate">
+              <span className="text-xs text-fg-muted truncate">
                 {sourceHunk.filePath}
               </span>
             </div>
@@ -159,9 +159,9 @@ export function MovePairModal({
 
           {/* Arrow divider */}
           <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 border-t border-stone-700/50" />
+            <div className="flex-1 border-t border-edge-default/50" />
             <svg
-              className="h-4 w-4 text-sky-400"
+              className="h-4 w-4 text-status-renamed"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -173,16 +173,16 @@ export function MovePairModal({
                 d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"
               />
             </svg>
-            <div className="flex-1 border-t border-stone-700/50" />
+            <div className="flex-1 border-t border-edge-default/50" />
           </div>
 
           {/* Destination (added) side */}
           <div className="group relative">
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
+              <span className="rounded bg-status-approved/20 px-1.5 py-0.5 text-xxs font-medium text-status-approved">
                 Added to
               </span>
-              <span className="text-xs text-stone-400 truncate">
+              <span className="text-xs text-fg-muted truncate">
                 {destHunk.filePath}
               </span>
             </div>
@@ -193,7 +193,7 @@ export function MovePairModal({
             />
             {onNavigateToHunk && pairedHunk.id === destHunk.id && (
               <button
-                className="absolute top-8 right-2 rounded bg-stone-700/80 px-2 py-1 text-xxs text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-stone-600"
+                className="absolute top-8 right-2 rounded bg-surface-hover/80 px-2 py-1 text-xxs text-fg-secondary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-active"
                 onClick={() => {
                   onNavigateToHunk(pairedHunk.id);
                   setOpen(false);
@@ -206,7 +206,7 @@ export function MovePairModal({
         </div>
 
         {/* Action footer */}
-        <div className="flex items-center justify-between border-t border-stone-800 px-4 py-3 bg-stone-900/50">
+        <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
           <div className="flex items-center gap-2">
             {onNavigateToHunk && (
               <button
@@ -214,7 +214,7 @@ export function MovePairModal({
                   onNavigateToHunk(pairedHunk.id);
                   setOpen(false);
                 }}
-                className="flex items-center gap-1.5 rounded-md bg-stone-700/50 px-3 py-1.5 text-sm text-stone-300 transition-colors hover:bg-stone-700 active:scale-[0.98]"
+                className="flex items-center gap-1.5 rounded-md bg-surface-hover/50 px-3 py-1.5 text-sm text-fg-secondary transition-colors hover:bg-surface-hover active:scale-[0.98]"
               >
                 <svg
                   className="h-4 w-4"
@@ -236,7 +236,7 @@ export function MovePairModal({
           <div className="flex items-center gap-2">
             <button
               onClick={handleRejectPair}
-              className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-status-rejected/15 px-3 py-1.5 text-sm font-medium text-status-rejected transition-colors hover:bg-status-rejected/25 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"
@@ -255,7 +255,7 @@ export function MovePairModal({
             </button>
             <button
               onClick={handleApprovePair}
-              className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-status-approved/20 px-3 py-1.5 text-sm font-medium text-status-approved transition-colors hover:bg-status-approved/30 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"

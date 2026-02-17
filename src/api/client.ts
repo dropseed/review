@@ -300,6 +300,19 @@ export interface ApiClient {
 
   /** Check if a path is a git repository */
   isGitRepo(path: string): Promise<boolean>;
+
+  // ----- VS Code theme -----
+
+  /** Detect the active VS Code theme (reads settings + extension theme files) */
+  detectVscodeTheme(): Promise<{
+    name: string;
+    themeType: string;
+    colors: Record<string, string>;
+    tokenColors: unknown[];
+  }>;
+
+  /** Set the window background color (affects title bar on macOS) */
+  setWindowBackgroundColor(r: number, g: number, b: number): Promise<void>;
 }
 
 /**
@@ -309,9 +322,9 @@ export interface ApiClient {
 export function isTauriEnvironment(): boolean {
   if (typeof window === "undefined") return false;
   if (!("__TAURI_INTERNALS__" in window)) return false;
-  // Check if it's the mock (browser mode)
-  const internals = (window as Record<string, unknown>).__TAURI_INTERNALS__ as
-    | Record<string, unknown>
-    | undefined;
+
+  const internals = (
+    window as unknown as { __TAURI_INTERNALS__?: { __isMock?: boolean } }
+  ).__TAURI_INTERNALS__;
   return internals?.__isMock !== true;
 }

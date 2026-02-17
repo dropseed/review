@@ -514,6 +514,8 @@ pub fn run() {
             commands::regenerate_companion_certificate,
             commands::generate_companion_qr,
             commands::get_tailscale_ip,
+            commands::detect_vscode_theme,
+            commands::set_window_background_color,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

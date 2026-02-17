@@ -126,11 +126,11 @@ export const RepoSelect = memo(function RepoSelect({
           type="button"
           disabled={disabled}
           className={`
-            w-full appearance-none rounded-lg border border-stone-700/50 bg-stone-800/50
+            w-full appearance-none rounded-lg border border-edge-default/50 bg-surface-raised/50
             px-3 py-2.5 text-sm text-left
             transition-colors duration-150
-            focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50
-            hover:border-stone-600/60 hover:bg-stone-800/70
+            focus:outline-hidden focus:ring-2 focus:ring-focus-ring/30 focus:border-focus-ring/50
+            hover:border-edge-strong/60 hover:bg-surface-raised/70
             ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
           `}
           aria-haspopup="listbox"
@@ -139,7 +139,7 @@ export const RepoSelect = memo(function RepoSelect({
         >
           <span className="flex items-center gap-2.5">
             <svg
-              className="h-4 w-4 text-stone-500 shrink-0"
+              className="h-4 w-4 text-fg0 shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -153,12 +153,12 @@ export const RepoSelect = memo(function RepoSelect({
               />
             </svg>
             <span
-              className={`block truncate font-mono ${displayName ? "text-stone-200" : "text-stone-500"}`}
+              className={`block truncate font-mono ${displayName ? "text-fg-secondary" : "text-fg0"}`}
             >
               {displayName || "Select a repository…"}
             </span>
             <svg
-              className={`ml-auto h-4 w-4 text-stone-500 shrink-0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+              className={`ml-auto h-4 w-4 text-fg0 shrink-0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
               viewBox="0 0 20 20"
               fill="currentColor"
               aria-hidden="true"
@@ -183,7 +183,7 @@ export const RepoSelect = memo(function RepoSelect({
         }}
       >
         {showSearch && (
-          <div className="p-2 border-b border-stone-800/50">
+          <div className="p-2 border-b border-edge/50">
             <Input
               ref={searchRef}
               type="text"
@@ -223,14 +223,14 @@ export const RepoSelect = memo(function RepoSelect({
                   text-sm transition-colors duration-75
                   ${
                     isHighlighted
-                      ? "bg-amber-500/10 text-stone-100"
-                      : "text-stone-300 hover:bg-stone-800/50"
+                      ? "bg-status-modified/10 text-fg"
+                      : "text-fg-secondary hover:bg-surface-raised/50"
                   }
                   ${isSelected ? "font-medium" : ""}
                 `}
               >
                 <svg
-                  className="h-3.5 w-3.5 text-stone-600 shrink-0"
+                  className="h-3.5 w-3.5 text-fg-faint shrink-0"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -246,7 +246,7 @@ export const RepoSelect = memo(function RepoSelect({
                 <span className="truncate font-mono">{repo.name}</span>
                 {isSelected && (
                   <svg
-                    className="ml-auto h-4 w-4 shrink-0 text-amber-400"
+                    className="ml-auto h-4 w-4 shrink-0 text-status-modified"
                     viewBox="0 0 20 20"
                     fill="currentColor"
                     aria-hidden="true"
@@ -263,10 +263,7 @@ export const RepoSelect = memo(function RepoSelect({
           })}
 
           {filteredRepos.length > 0 && (
-            <li
-              className="my-1 border-t border-stone-800/50"
-              aria-hidden="true"
-            />
+            <li className="my-1 border-t border-edge/50" aria-hidden="true" />
           )}
 
           <li
@@ -282,13 +279,13 @@ export const RepoSelect = memo(function RepoSelect({
               border border-dashed
               ${
                 highlightedIndex === openRepoIndex
-                  ? "border-stone-600 bg-stone-800/50 text-stone-200"
-                  : "border-stone-800/60 text-stone-400 hover:bg-stone-800/30"
+                  ? "border-edge-strong bg-surface-raised/50 text-fg-secondary"
+                  : "border-edge/60 text-fg-muted hover:bg-surface-raised/30"
               }
             `}
           >
             <svg
-              className="h-3.5 w-3.5 text-stone-500 shrink-0"
+              className="h-3.5 w-3.5 text-fg0 shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -302,7 +299,7 @@ export const RepoSelect = memo(function RepoSelect({
               />
             </svg>
             <span>Open Repository…</span>
-            <kbd className="ml-auto text-2xs text-stone-600 font-mono">
+            <kbd className="ml-auto text-2xs text-fg-faint font-mono">
               {"\u2318"}O
             </kbd>
           </li>

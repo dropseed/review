@@ -38,9 +38,9 @@ function StatusIndicator({
   if (count === 0) return null;
 
   const colors = {
-    pending: { dot: "bg-stone-500", text: "text-stone-400" },
-    approved: { dot: "bg-emerald-500", text: "text-emerald-400" },
-    rejected: { dot: "bg-rose-500", text: "text-rose-400" },
+    pending: { dot: "bg-fg-muted", text: "text-fg-muted" },
+    approved: { dot: "bg-status-approved", text: "text-status-approved" },
+    rejected: { dot: "bg-status-rejected", text: "text-status-rejected" },
   };
 
   const { dot, text } = colors[variant];
@@ -101,7 +101,7 @@ export function SimilarHunksModal({
       <SimpleTooltip content={`${totalCount} identical changes across files`}>
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-stone-500 transition-colors hover:bg-stone-700/50 hover:text-stone-300"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs text-fg-muted transition-colors hover:bg-surface-hover/50 hover:text-fg-secondary"
         >
           <span className="tabular-nums">{totalCount} identical</span>
         </button>
@@ -114,11 +114,11 @@ export function SimilarHunksModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <span>Identical Changes</span>
-            <span className="rounded-full bg-stone-700/50 px-2 py-0.5 text-xs font-normal text-stone-400 tabular-nums">
+            <span className="rounded-full bg-surface-hover/50 px-2 py-0.5 text-xs font-normal text-fg-muted tabular-nums">
               {totalCount} hunks
             </span>
           </DialogTitle>
-          <DialogClose className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors">
+          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -136,7 +136,7 @@ export function SimilarHunksModal({
         </DialogHeader>
 
         {/* Status summary */}
-        <div className="flex items-center gap-4 border-b border-stone-800 px-4 py-2 text-xs">
+        <div className="flex items-center gap-4 border-b border-edge px-4 py-2 text-xs">
           <StatusIndicator
             count={pendingCount}
             label="pending"
@@ -159,7 +159,7 @@ export function SimilarHunksModal({
           {/* Current hunk first, highlighted */}
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xxs font-medium text-amber-400">
+              <span className="rounded bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium text-status-modified">
                 Current
               </span>
             </div>
@@ -172,11 +172,11 @@ export function SimilarHunksModal({
 
           {/* Divider */}
           <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 border-t border-stone-700/50" />
-            <span className="text-xxs text-stone-600">
+            <div className="flex-1 border-t border-edge-default/50" />
+            <span className="text-xxs text-fg-faint">
               {otherHunks.length} other{otherHunks.length === 1 ? "" : "s"}
             </span>
-            <div className="flex-1 border-t border-stone-700/50" />
+            <div className="flex-1 border-t border-edge-default/50" />
           </div>
 
           {/* Other hunks */}
@@ -189,7 +189,7 @@ export function SimilarHunksModal({
               <HunkPreview hunk={hunk} hunkState={hunkStates[hunk.id]} />
               {onNavigateToHunk && (
                 <button
-                  className="absolute top-2 right-2 rounded bg-stone-700/80 px-2 py-1 text-xxs text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-stone-600"
+                  className="absolute top-2 right-2 rounded bg-surface-hover/80 px-2 py-1 text-xxs text-fg-secondary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-active"
                   onClick={(e) => {
                     e.stopPropagation();
                     onNavigateToHunk(hunk.id);
@@ -204,14 +204,14 @@ export function SimilarHunksModal({
         </div>
 
         {/* Action footer */}
-        <div className="flex items-center justify-between border-t border-stone-800 px-4 py-3 bg-stone-900/50">
-          <div className="text-xs text-stone-500">
+        <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
+          <div className="text-xs text-fg-muted">
             Batch action applies to all {totalCount} hunks
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleRejectAll}
-              className="flex items-center gap-1.5 rounded-md bg-rose-500/15 px-3 py-1.5 text-sm font-medium text-rose-400 transition-colors hover:bg-rose-500/25 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-status-rejected/15 px-3 py-1.5 text-sm font-medium text-status-rejected transition-colors hover:bg-status-rejected/25 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"
@@ -230,7 +230,7 @@ export function SimilarHunksModal({
             </button>
             <button
               onClick={handleApproveAll}
-              className="flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/30 active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-md bg-status-approved/20 px-3 py-1.5 text-sm font-medium text-status-approved transition-colors hover:bg-status-approved/30 active:scale-[0.98]"
             >
               <svg
                 className="h-4 w-4"

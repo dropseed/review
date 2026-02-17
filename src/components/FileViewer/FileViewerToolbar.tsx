@@ -29,15 +29,15 @@ function ToggleButtonGroup<T extends string>({
   onChange,
 }: ToggleButtonGroupProps<T>): JSX.Element {
   return (
-    <div className="flex items-center rounded bg-stone-800/30 p-0.5">
+    <div className="flex items-center rounded bg-surface-raised/30 p-0.5">
       {options.map(([optionValue, label, shortLabel]) => (
         <button
           key={optionValue}
           onClick={() => onChange(optionValue)}
-          className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+          className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 ${
             value === optionValue
-              ? "bg-stone-700/50 text-stone-200"
-              : "text-stone-500 hover:text-stone-300"
+              ? "bg-surface-hover/50 text-fg-secondary"
+              : "text-fg-muted hover:text-fg-secondary"
           }`}
         >
           {shortLabel ? (
@@ -169,7 +169,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
     if (contentMode.type === "untracked") {
       return (
         <>
-          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xxs font-medium text-emerald-400">
+          <span className="rounded bg-status-approved/15 px-1.5 py-0.5 text-xxs font-medium text-status-approved">
             New
           </span>
           {matchingFileCount > 0 && (
@@ -189,13 +189,13 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
 
     if (isWorkingTreeMode) {
       return (
-        <span className="flex items-center gap-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-xxs font-medium text-sky-300">
+        <span className="flex items-center gap-1 rounded bg-status-renamed/15 px-1.5 py-0.5 text-xxs font-medium text-status-renamed">
           Working tree
           {onExitWorkingTreeMode && (
             <button
               type="button"
               onClick={onExitWorkingTreeMode}
-              className="ml-0.5 rounded hover:bg-sky-500/20 transition-colors"
+              className="ml-0.5 rounded hover:bg-status-renamed/20 transition-colors"
               aria-label="Exit working tree view"
             >
               <svg
@@ -223,8 +223,8 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
 
     const isComplete = reviewProgress.reviewed === reviewProgress.total;
     const badgeClass = isComplete
-      ? "bg-emerald-500/15 text-emerald-300"
-      : "bg-amber-500/15 text-amber-300";
+      ? "bg-status-approved/15 text-status-approved"
+      : "bg-status-modified/15 text-status-modified";
 
     return (
       <>
@@ -238,7 +238,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           <SimpleTooltip content="Approve all hunks in this file">
             <button
               onClick={() => approveAllFileHunks(filePath)}
-              className="flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xxs font-medium text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+              className="flex items-center gap-1 rounded bg-status-approved/10 px-1.5 py-0.5 text-xxs font-medium text-status-approved hover:bg-status-approved/20 transition-colors"
             >
               <svg
                 className="h-3 w-3 shrink-0"
@@ -278,8 +278,8 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
     <div
       className={`@container flex items-center justify-between border-b px-3 py-1.5 ${
         isFocusedPane
-          ? "border-amber-500/30 bg-amber-500/5"
-          : "border-stone-800/50 bg-stone-900"
+          ? "border-status-modified/30 bg-status-modified/5"
+          : "border-edge/50 bg-surface-panel"
       }`}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -301,7 +301,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="rounded p-1 text-stone-500 hover:bg-stone-700 hover:text-stone-300 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500/50"
+                className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
                 aria-label="More options"
               >
                 <svg
@@ -442,7 +442,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           >
             <button
               onClick={onSplitOrRotate}
-              className="flex items-center justify-center w-6 h-6 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors"
+              className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
             >
               <svg
                 className={`w-3.5 h-3.5 transition-transform ${splitOrientation === "vertical" ? "rotate-90" : ""}`}
@@ -463,7 +463,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           <SimpleTooltip content="Close file">
             <button
               onClick={onClose}
-              className="flex items-center justify-center w-6 h-6 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors"
+              className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
             >
               <svg
                 className="w-3.5 h-3.5"

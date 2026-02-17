@@ -15,19 +15,19 @@ function ActivityRow({ activity }: ActivityRowProps) {
       <div className="h-1 w-8 shrink-0 rounded-full bg-white/[0.08] overflow-hidden">
         {hasProgress ? (
           <div
-            className="h-full bg-amber-400/80 rounded-full transition-[width] duration-300 ease-out"
+            className="h-full bg-status-modified/80 rounded-full transition-[width] duration-300 ease-out"
             style={{
               width: `${Math.round((activity.current! / activity.total!) * 100)}%`,
             }}
           />
         ) : (
-          <div className="h-full w-1/3 bg-amber-400/60 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]" />
+          <div className="h-full w-1/3 bg-status-modified/60 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]" />
         )}
       </div>
-      <span className="text-[11px] text-stone-400 truncate whitespace-nowrap">
+      <span className="text-[11px] text-fg-muted truncate whitespace-nowrap">
         {activity.label}
         {hasProgress && (
-          <span className="ml-1 tabular-nums text-stone-500">
+          <span className="ml-1 tabular-nums text-fg0">
             {activity.current}/{activity.total}
           </span>
         )}
@@ -85,7 +85,7 @@ export function ActivityBar() {
       ref={ref}
       className={`absolute left-1/2 top-1.5 -translate-x-1/2 z-10 transition-opacity duration-500 ${primaryActivity ? "opacity-100" : "opacity-0"}`}
     >
-      <div className="rounded-2xl border border-white/[0.08] bg-stone-950 shadow-lg">
+      <div className="rounded-2xl border border-white/[0.08] bg-surface shadow-lg">
         {/* Primary row */}
         <div
           className="flex items-center gap-2 px-3 py-1 cursor-default"
@@ -95,7 +95,7 @@ export function ActivityBar() {
         >
           {primaryActivity && <ActivityRow activity={primaryActivity} />}
           {remainingCount > 0 && (
-            <span className="shrink-0 text-[10px] tabular-nums text-stone-600">
+            <span className="shrink-0 text-[10px] tabular-nums text-fg-faint">
               +{remainingCount}
             </span>
           )}

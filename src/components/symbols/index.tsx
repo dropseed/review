@@ -14,16 +14,16 @@ export { SymbolRow, StatusToggle } from "./SymbolRow";
 // --- Symbol kind icons ---
 
 const SYMBOL_ICONS: Record<SymbolKind, { label: string; color: string }> = {
-  function: { label: "fn", color: "text-amber-400" },
-  method: { label: "fn", color: "text-amber-400" },
-  class: { label: "C", color: "text-sky-400" },
-  struct: { label: "S", color: "text-sky-400" },
-  trait: { label: "T", color: "text-violet-400" },
-  impl: { label: "I", color: "text-violet-400" },
-  enum: { label: "E", color: "text-emerald-400" },
-  interface: { label: "I", color: "text-cyan-400" },
-  module: { label: "M", color: "text-stone-400" },
-  type: { label: "T", color: "text-teal-400" },
+  function: { label: "fn", color: "text-status-modified" },
+  method: { label: "fn", color: "text-status-modified" },
+  class: { label: "C", color: "text-status-renamed" },
+  struct: { label: "S", color: "text-status-renamed" },
+  trait: { label: "T", color: "text-status-classifying" },
+  impl: { label: "I", color: "text-status-classifying" },
+  enum: { label: "E", color: "text-status-approved" },
+  interface: { label: "I", color: "text-status-trusted" },
+  module: { label: "M", color: "text-fg-muted" },
+  type: { label: "T", color: "text-status-trusted" },
 };
 
 export function SymbolKindBadge({ kind }: { kind: SymbolKind | null }) {
@@ -46,9 +46,9 @@ const CHANGE_INDICATORS: Record<
   SymbolChangeType,
   { prefix: string; color: string }
 > = {
-  added: { prefix: "+", color: "text-emerald-400" },
-  removed: { prefix: "-", color: "text-red-400" },
-  modified: { prefix: "~", color: "text-amber-400" },
+  added: { prefix: "+", color: "text-status-approved" },
+  removed: { prefix: "-", color: "text-status-rejected" },
+  modified: { prefix: "~", color: "text-status-modified" },
 };
 
 export function ChangeIndicator({
@@ -110,7 +110,7 @@ export function StatusBadge({ status }: { status: SymbolHunkStatus }) {
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-emerald-500" : "text-stone-500"}`}
+      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-status-approved" : "text-fg0"}`}
     >
       {status.total === 1 ? `${status.total} hunk` : `${status.total} hunks`}
     </span>
@@ -123,7 +123,7 @@ export function ReviewStatusDot({ status }: { status: SymbolHunkStatus }) {
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`text-xxs ${isComplete ? "text-emerald-500" : "text-stone-600"}`}
+      className={`text-xxs ${isComplete ? "text-status-approved" : "text-fg-faint"}`}
     >
       {isComplete ? "\u2713" : "\u25CB"}
     </span>
@@ -200,7 +200,7 @@ export const SymbolNode = memo(function SymbolNode({
   return (
     <div className="select-none">
       <div
-        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
+        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
         style={{ paddingLeft }}
         onClick={hasChildren ? () => setExpanded(!expanded) : handleClick}
       >
@@ -214,7 +214,7 @@ export const SymbolNode = memo(function SymbolNode({
             }}
           >
             <svg
-              className={`h-3 w-3 text-stone-600 transition-transform ${expanded ? "rotate-90" : ""}`}
+              className={`h-3 w-3 text-fg-faint transition-transform ${expanded ? "rotate-90" : ""}`}
               viewBox="0 0 24 24"
               fill="currentColor"
             >
@@ -234,7 +234,7 @@ export const SymbolNode = memo(function SymbolNode({
         {/* Symbol name */}
         <SimpleTooltip content={symbol.name}>
           <button
-            className="min-w-0 flex-1 truncate text-left text-xs text-stone-300"
+            className="min-w-0 flex-1 truncate text-left text-xs text-fg-secondary"
             onClick={(e) => {
               e.stopPropagation();
               handleClick();
@@ -318,14 +318,14 @@ export const FileSection = memo(function FileSection({
   if (totalHunks === 0 && fileDiff.symbols.length === 0) return null;
 
   return (
-    <div className="border-b border-stone-800/50">
+    <div className="border-b border-edge/50">
       {/* File header */}
       <button
-        className="group flex w-full items-center gap-1.5 px-3 py-1.5 text-left hover:bg-stone-800/40 transition-colors"
+        className="group flex w-full items-center gap-1.5 px-3 py-1.5 text-left hover:bg-surface-raised/40 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <svg
-          className={`h-3 w-3 flex-shrink-0 text-stone-600 transition-transform ${expanded ? "rotate-90" : ""}`}
+          className={`h-3 w-3 flex-shrink-0 text-fg-faint transition-transform ${expanded ? "rotate-90" : ""}`}
           viewBox="0 0 24 24"
           fill="currentColor"
         >
@@ -333,17 +333,17 @@ export const FileSection = memo(function FileSection({
         </svg>
 
         <span className="min-w-0 flex-1 truncate text-xs">
-          {dirPath && <span className="text-stone-500">{dirPath}/</span>}
-          <span className="text-stone-200 font-medium">{fileName}</span>
+          {dirPath && <span className="text-fg0">{dirPath}/</span>}
+          <span className="text-fg-secondary font-medium">{fileName}</span>
         </span>
 
         {!fileDiff.hasGrammar && (
-          <span className="text-xxs text-stone-600 italic flex-shrink-0">
+          <span className="text-xxs text-fg-faint italic flex-shrink-0">
             no grammar
           </span>
         )}
 
-        <span className="font-mono text-xxs tabular-nums text-stone-500 flex-shrink-0">
+        <span className="font-mono text-xxs tabular-nums text-fg0 flex-shrink-0">
           {totalHunks}
         </span>
       </button>
@@ -368,14 +368,14 @@ export const FileSection = memo(function FileSection({
               {/* Top-level changes (outside any symbol) */}
               {topLevelStatus.total > 0 && (
                 <div
-                  className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
+                  className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
                   style={{ paddingLeft: "1.3rem" }}
                   onClick={handleTopLevelClick}
                 >
                   <span className="w-3 flex-shrink-0" />
                   <ChangeIndicator changeType="modified" />
                   <button
-                    className="min-w-0 flex-1 truncate text-left text-xs italic text-stone-400"
+                    className="min-w-0 flex-1 truncate text-left text-xs italic text-fg-muted"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleTopLevelClick();
@@ -391,14 +391,14 @@ export const FileSection = memo(function FileSection({
           ) : (
             /* No grammar - show all changes as one group */
             <div
-              className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-stone-800/40 transition-colors cursor-pointer"
+              className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
               style={{ paddingLeft: "1.3rem" }}
               onClick={handleTopLevelClick}
             >
               <span className="w-3 flex-shrink-0" />
               <ChangeIndicator changeType="modified" />
               <button
-                className="min-w-0 flex-1 truncate text-left text-xs italic text-stone-400"
+                className="min-w-0 flex-1 truncate text-left text-xs italic text-fg-muted"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleTopLevelClick();

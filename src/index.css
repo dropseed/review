@@ -92,39 +92,6 @@
   --color-sage-500: #5a8f6d;
   --color-sage-600: #4a7459;
 
-  /* Semantic status colors - review states */
-  --color-status-approved: oklch(0.765 0.177 162.73);  /* emerald-500 */
-  --color-status-trusted: oklch(0.704 0.14 182.503);   /* teal-500 */
-  --color-status-rejected: oklch(0.712 0.194 13.428);  /* rose-500 */
-  --color-status-pending: oklch(0.553 0.013 58.071);   /* stone-500 */
-  --color-status-saved: oklch(0.769 0.189 70.08);      /* amber-500 - saved for later */
-  --color-status-classifying: oklch(0.702 0.183 293.541); /* violet-400 */
-  --color-status-ai: oklch(0.702 0.183 293.541);       /* violet-400 - AI-driven behaviors */
-
-  /* Semantic status colors - file/change states */
-  --color-status-added: oklch(0.765 0.177 162.73);     /* emerald-500 (same as approved) */
-  --color-status-modified: oklch(0.769 0.189 70.08);   /* amber-500 */
-  --color-status-deleted: oklch(0.712 0.194 13.428);   /* rose-500 (same as rejected) */
-  --color-status-renamed: oklch(0.685 0.169 237.323);  /* sky-500 */
-  --color-status-untracked: oklch(0.765 0.177 162.73); /* emerald-500 */
-  --color-status-moved: oklch(0.685 0.169 237.323);    /* sky-500 */
-
-  /* Semantic UI states */
-  --color-status-focus: oklch(0.769 0.189 70.08);      /* amber-500 - focus rings, selection */
-  --color-status-accent: oklch(0.769 0.189 70.08);     /* amber-500 - brand accent */
-  --color-status-warning: oklch(0.769 0.189 70.08);    /* amber-500 - caution states */
-  --color-status-info: oklch(0.685 0.169 237.323);     /* sky-500 - informational */
-
-  /* Diff highlighting */
-  --color-diff-added: var(--color-sage-400);
-  --color-diff-removed: var(--color-terracotta-400);
-
-  /* Extended backgrounds */
-  --color-bg-primary: #0c0a09;
-  --color-bg-secondary: #1c1917;
-  --color-bg-tertiary: #292524;
-  --color-bg-elevated: #44403c;
-
   /* shadcn/ui semantic colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -152,20 +119,61 @@
   --radius-sm: calc(var(--radius) - 4px);
 }
 
-:root {
-  /* Tailwind Stone palette */
-  --stone-50: #fafaf9;
-  --stone-100: #f5f5f4;
-  --stone-200: #e7e5e4;
-  --stone-300: #d6d3d1;
-  --stone-400: #a8a29e;
-  --stone-500: #78716c;
-  --stone-600: #57534e;
-  --stone-700: #44403c;
-  --stone-800: #292524;
-  --stone-900: #1c1917;
-  --stone-950: #0c0a09;
+/* Semantic design tokens — runtime-overridable for VS Code theme integration.
+   These are NOT inline so they generate CSS variables that can be swapped at runtime.
+   Dark defaults match the current stone palette exactly (zero visual change). */
+@theme extend {
+  /* Surfaces (backgrounds) */
+  --color-surface: #0c0a09;            /* App shell, deepest background */
+  --color-surface-inset: #1c1917;      /* Recessed areas (input fields, code blocks) */
+  --color-surface-panel: #1c1917;      /* Panels, sidebars, modal backgrounds */
+  --color-surface-raised: #292524;     /* Cards, sections, buttons (idle) */
+  --color-surface-overlay: #292524;    /* Modals, dropdowns, popovers */
+  --color-surface-hover: #44403c;      /* Hover state on interactive elements */
+  --color-surface-active: #57534e;     /* Pressed/selected state */
 
+  /* Text (foreground) */
+  --color-fg: #fafaf9;                 /* Primary text — headings, emphasis */
+  --color-fg-secondary: #d6d3d1;       /* Body text, labels */
+  --color-fg-muted: #a19d99;           /* Metadata, hints, low-emphasis */
+  --color-fg-faint: #918d89;           /* Disabled, placeholders */
+
+  /* Borders */
+  --color-edge: rgba(168, 162, 158, 0.15);    /* Subtle dividers */
+  --color-edge-default: rgba(168, 162, 158, 0.25); /* Standard borders */
+  --color-edge-strong: rgba(168, 162, 158, 0.4);   /* Emphasis borders */
+
+  /* Interactive */
+  --color-focus-ring: #d9923a;         /* Focus indicators (amber) */
+  --color-selection: rgba(59, 130, 246, 0.3); /* Text selection background */
+  --color-link: #22d3ee;               /* Hyperlink color (cyan-400) */
+
+  /* Semantic status colors — review states (dark: 400 shade, light: 600 shade) */
+  --color-status-approved: #34d399;    /* emerald-400 */
+  --color-status-trusted: #2dd4bf;     /* teal-400 */
+  --color-status-rejected: #fb7185;    /* rose-400 */
+  --color-status-pending: #a8a29e;     /* stone-400 */
+  --color-status-saved: #fbbf24;       /* amber-400 */
+  --color-status-classifying: #a78bfa; /* violet-400 */
+
+  /* Semantic status colors — file/change states */
+  --color-status-added: #34d399;       /* emerald-400 (same as approved) */
+  --color-status-modified: #fbbf24;    /* amber-400 */
+  --color-status-deleted: #fb7185;     /* rose-400 (same as rejected) */
+  --color-status-renamed: #38bdf8;     /* sky-400 */
+  --color-status-untracked: #34d399;   /* emerald-400 */
+  --color-status-moved: #38bdf8;       /* sky-400 */
+
+  /* Semantic UI states */
+  --color-status-warning: #fbbf24;     /* amber-400 */
+  --color-status-info: #38bdf8;        /* sky-400 */
+
+  /* Diff highlighting — theme-overridable */
+  --color-diff-added: #7aad8a;         /* sage-400 */
+  --color-diff-removed: #e0776b;       /* terracotta-400 */
+}
+
+:root {
   /* Accent colors - organic palette */
   --accent-amber: #d9923a;
   --accent-lime: #9cb43a;
@@ -175,41 +183,26 @@
   --accent-emerald: #4a9b70;
   --accent-violet: #9272c4;
 
-  /* Base theme */
-  --bg-primary: #0c0a09;
-  --bg-secondary: #1c1917;
-  --bg-tertiary: #292524;
-  --bg-elevated: #44403c;
-
-  --text-primary: #fafaf9;
-  --text-secondary: #c7c4c0;  /* Was #a8a29e, now ~5.5:1 contrast */
-  --text-muted: #a19d99;      /* Was #78716c, now ~4.0:1 contrast */
-  --text-faint: #918d89;      /* Was #6b6560, now ~3.5:1 contrast */
-
-  --border-subtle: rgba(168, 162, 158, 0.1);
-  --border-default: rgba(168, 162, 158, 0.2);
-  --border-strong: rgba(168, 162, 158, 0.3);
-
-  /* shadcn/ui compatible tokens (dark only) */
-  --background: hsl(20 6% 4%);
-  --foreground: hsl(40 6% 97%);
-  --card: hsl(24 6% 10%);
-  --card-foreground: hsl(40 6% 97%);
-  --popover: hsl(24 6% 10%);
-  --popover-foreground: hsl(40 6% 97%);
-  --primary: hsl(84 81% 44%);
-  --primary-foreground: hsl(20 6% 4%);
-  --secondary: hsl(25 6% 25%);
-  --secondary-foreground: hsl(40 6% 96%);
-  --muted: hsl(20 6% 15%);
-  --muted-foreground: hsl(30 3% 60%);
-  --accent: hsl(20 6% 15%);
-  --accent-foreground: hsl(40 6% 97%);
-  --destructive: hsl(347 77% 60%);
-  --destructive-foreground: hsl(40 6% 97%);
-  --border: hsl(25 6% 25%);
-  --input: hsl(25 6% 25%);
-  --ring: hsl(43 96% 56%);
+  /* shadcn/ui tokens — derived from semantic tokens */
+  --background: var(--color-surface);
+  --foreground: var(--color-fg);
+  --card: var(--color-surface-panel);
+  --card-foreground: var(--color-fg);
+  --popover: var(--color-surface-overlay);
+  --popover-foreground: var(--color-fg);
+  --primary: var(--accent-lime);
+  --primary-foreground: var(--color-surface);
+  --secondary: var(--color-surface-raised);
+  --secondary-foreground: var(--color-fg-secondary);
+  --muted: var(--color-surface-inset);
+  --muted-foreground: var(--color-fg-muted);
+  --accent: var(--color-surface-inset);
+  --accent-foreground: var(--color-fg);
+  --destructive: var(--accent-rose);
+  --destructive-foreground: var(--color-fg);
+  --border: var(--color-edge-default);
+  --input: var(--color-edge-default);
+  --ring: var(--color-focus-ring);
   --radius: 0.5rem;
 
   /* Typography - Inter with system fallback */
@@ -228,8 +221,8 @@ html {
 }
 
 body {
-  background: #0c0a09;
-  color: var(--text-primary);
+  background: var(--color-surface);
+  color: var(--color-fg);
 }
 
 /* Code font size - set dynamically via JS */
@@ -255,7 +248,7 @@ html {
 /* Firefox */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--stone-700) transparent;
+  scrollbar-color: var(--color-surface-hover) transparent;
 }
 
 /* Chrome/Safari/Edge */
@@ -269,12 +262,12 @@ html {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--stone-700);
+  background: var(--color-surface-hover);
   border-radius: 0.2rem;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: var(--stone-600);
+  background: var(--color-surface-active);
 }
 
 /* Hide scrollbar while still allowing scroll */
@@ -307,7 +300,7 @@ html {
 
 .btn-primary {
   background: var(--accent-lime);
-  color: var(--stone-950);
+  color: var(--color-surface);
 }
 
 .btn-primary:hover {
@@ -315,12 +308,12 @@ html {
 }
 
 .btn-secondary {
-  background: var(--stone-700);
-  color: var(--stone-100);
+  background: var(--color-surface-hover);
+  color: var(--color-fg-secondary);
 }
 
 .btn-secondary:hover {
-  background: var(--stone-600);
+  background: var(--color-surface-active);
 }
 
 /* Animations */
@@ -383,22 +376,22 @@ html {
 
 /* Input styling */
 .input {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-default);
+  background: var(--color-surface);
+  border: 1px solid var(--color-edge-default);
   border-radius: 0.375rem;
   padding: 0.5rem 0.75rem;
-  color: var(--text-primary);
+  color: var(--color-fg);
   font-size: 0.875rem;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .input::placeholder {
-  color: var(--text-faint);
+  color: var(--color-fg-faint);
 }
 
 .input:focus {
   outline: none;
-  border-color: var(--accent-amber);
+  border-color: var(--color-focus-ring);
   box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.1);
 }
 
@@ -406,7 +399,7 @@ html {
 .progress-bar {
   position: relative;
   height: 0.25rem;
-  background: var(--stone-800);
+  background: var(--color-surface-raised);
   border-radius: 0.125rem;
   overflow: hidden;
 }
@@ -453,9 +446,9 @@ kbd {
   font-family: ui-monospace, monospace;
   font-size: 0.6875rem;
   font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
+  color: var(--color-fg-secondary);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-edge-default);
   border-radius: 0.25rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
@@ -469,17 +462,17 @@ kbd {
 
   /* Windows dark mode: ensure native form elements have proper colors */
   select, option, optgroup {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
+    background-color: var(--color-surface-raised);
+    color: var(--color-fg);
   }
 
   option:checked {
-    background-color: var(--stone-600);
+    background-color: var(--color-surface-active);
   }
 
   optgroup {
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--color-fg-secondary);
   }
 
   /* Accessibility: prevent double-tap zoom delay on interactive elements */
@@ -490,7 +483,7 @@ kbd {
 
   /* Ensure focus states are visible */
   :focus-visible {
-    outline: 2px solid var(--accent-amber);
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
   }
 
@@ -522,12 +515,12 @@ kbd {
 
 /* Image viewer styles */
 .image-viewer-checkerboard {
-  background-color: #1c1917;
+  background-color: var(--color-surface-inset);
   background-image:
-    linear-gradient(45deg, #292524 25%, transparent 25%),
-    linear-gradient(-45deg, #292524 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #292524 75%),
-    linear-gradient(-45deg, transparent 75%, #292524 75%);
+    linear-gradient(45deg, var(--color-surface-raised) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-surface-raised) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-surface-raised) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-surface-raised) 75%);
   background-size: 1rem 1rem;
   background-position: 0 0, 0 0.5rem, 0.5rem -0.5rem, -0.5rem 0;
 }
@@ -651,7 +644,7 @@ kbd {
   font-family: 'Georgia', 'Times New Roman', 'Iowan Old Style', 'Palatino Linotype', serif;
   font-size: 1.0625rem;
   line-height: 1.9;
-  color: var(--stone-300);
+  color: var(--color-fg-secondary);
   letter-spacing: 0.01em;
 }
 
@@ -664,7 +657,7 @@ kbd {
 .markdown-prose h6 {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
   letter-spacing: -0.02em;
-  color: var(--text-primary);
+  color: var(--color-fg);
   text-wrap: pretty;
 }
 
@@ -716,7 +709,7 @@ kbd {
 
 .markdown-prose strong {
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--color-fg);
 }
 
 .markdown-prose em {
@@ -751,9 +744,9 @@ kbd {
 .markdown-prose blockquote {
   margin: 1rem 0;
   padding: 0.25rem 1.25rem;
-  border-left: 2px solid var(--stone-600);
+  border-left: 2px solid var(--color-surface-active);
   font-style: italic;
-  color: var(--text-muted);
+  color: var(--color-fg-muted);
 }
 
 .markdown-prose blockquote p:last-child {
@@ -765,7 +758,7 @@ kbd {
   border: none;
   width: 4rem;
   height: 1px;
-  background: var(--stone-600);
+  background: var(--color-surface-active);
 }
 
 .markdown-prose table {
@@ -778,7 +771,7 @@ kbd {
 .markdown-prose th,
 .markdown-prose td {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--color-edge);
   text-align: left;
 }
 
@@ -789,7 +782,7 @@ kbd {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted);
+  color: var(--color-fg-muted);
 }
 
 .markdown-prose img {
@@ -822,13 +815,13 @@ kbd {
 
 .markdown-prose dd {
   margin-left: 1.75rem;
-  color: var(--text-secondary);
+  color: var(--color-fg-secondary);
 }
 
 /* Strikethrough */
 .markdown-prose del {
   text-decoration: line-through;
-  color: var(--text-muted);
+  color: var(--color-fg-muted);
 }
 
 /* Inline code */
@@ -836,14 +829,14 @@ kbd {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
   font-size: 0.875em;
   background: rgba(255, 255, 255, 0.06);
-  color: var(--stone-200);
+  color: var(--color-fg-secondary);
 }
 
 /* Code blocks */
 .markdown-prose .markdown-block-code {
   font-size: 0.8125rem;
   background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--color-edge);
   border-radius: 0.25rem;
 }
 
@@ -858,7 +851,7 @@ kbd {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   font-size: 0.75rem;
   line-height: 1.5;
-  color: var(--stone-300);
+  color: var(--color-fg-secondary);
 }
 
 .guide-prose h1,
@@ -868,7 +861,7 @@ kbd {
 .guide-prose h5,
 .guide-prose h6 {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--color-fg);
   margin-top: 0.75rem;
   margin-bottom: 0.25rem;
   text-wrap: pretty;
@@ -892,7 +885,7 @@ kbd {
 
 .guide-prose strong {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--color-fg);
 }
 
 .guide-prose ul,
@@ -912,8 +905,8 @@ kbd {
 .guide-prose blockquote {
   margin: 0.5rem 0;
   padding: 0.125rem 0.75rem;
-  border-left: 2px solid var(--stone-600);
-  color: var(--text-muted);
+  border-left: 2px solid var(--color-surface-active);
+  color: var(--color-fg-muted);
 }
 
 .guide-prose blockquote p:last-child {
@@ -924,14 +917,14 @@ kbd {
   margin: 0.75rem 0;
   border: none;
   height: 1px;
-  background: var(--stone-700);
+  background: var(--color-surface-hover);
 }
 
 .guide-prose code {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
   font-size: 0.6875rem;
   background: rgba(255, 255, 255, 0.06);
-  color: var(--stone-200);
+  color: var(--color-fg-secondary);
   padding: 0.1rem 0.3rem;
   border-radius: 0.2rem;
 }
@@ -940,7 +933,7 @@ kbd {
   margin: 0.5rem 0;
   padding: 0.5rem;
   background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--color-edge);
   border-radius: 0.25rem;
   overflow-x: auto;
 }
@@ -960,13 +953,13 @@ kbd {
 .guide-prose th,
 .guide-prose td {
   padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--color-edge);
   text-align: left;
 }
 
 .guide-prose th {
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--color-fg-muted);
 }
 
 .guide-prose input[type="checkbox"] {

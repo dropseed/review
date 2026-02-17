@@ -54,6 +54,7 @@ sha2 = "0.10"
 getrandom = "0.2"
 sentry = "0.35"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+dirs = "6"
 
 [features]
 default = []

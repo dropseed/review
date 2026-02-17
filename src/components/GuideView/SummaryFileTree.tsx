@@ -10,7 +10,7 @@ import type { ProcessedFileEntry } from "../FilesPanel/types";
 function ChevronIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg
-      className={`w-3 h-3 text-stone-500 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+      className={`w-3 h-3 text-fg0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -62,7 +62,7 @@ function indentStyle(depth: number): { paddingLeft: string } {
 }
 
 const ROW_CLASS =
-  "flex items-center gap-1 w-full text-left hover:bg-stone-800/50 rounded px-1.5 py-0.5";
+  "flex items-center gap-1 w-full text-left hover:bg-surface-raised/50 rounded px-1.5 py-0.5";
 
 interface CompactNodeProps {
   entry: ProcessedFileEntry;
@@ -91,7 +91,7 @@ function CompactNode({
           style={indentStyle(depth)}
         >
           <ChevronIcon collapsed={isCollapsed} />
-          <span className="text-xs text-stone-400 truncate">
+          <span className="text-xs text-fg-muted truncate">
             {entry.displayName}
           </span>
           <span className="ml-auto shrink-0">
@@ -121,7 +121,7 @@ function CompactNode({
       style={indentStyle(depth)}
     >
       <StatusLetter status={entry.status} />
-      <span className="text-xs text-stone-300 truncate">
+      <span className="text-xs text-fg-secondary truncate">
         {entry.displayName}
       </span>
       <span className="ml-auto shrink-0">
@@ -175,16 +175,16 @@ export function SummaryFileTree() {
   if (tree.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-stone-800 p-3">
-      <h3 className="text-xs font-medium text-stone-500 uppercase tracking-wide pb-2 mb-1">
+    <div className="rounded-lg border border-edge p-3">
+      <h3 className="text-xs font-medium text-fg0 uppercase tracking-wide pb-2 mb-1">
         Changed Files
       </h3>
       <div className="flex items-center gap-2 text-xs tabular-nums mb-2">
-        <span className="text-stone-400">
+        <span className="text-fg-muted">
           {diffStats.fileCount} {diffStats.fileCount === 1 ? "file" : "files"}
         </span>
-        <span className="text-emerald-400/70">+{diffStats.additions}</span>
-        <span className="text-rose-400/70">-{diffStats.deletions}</span>
+        <span className="text-status-approved/70">+{diffStats.additions}</span>
+        <span className="text-status-rejected/70">-{diffStats.deletions}</span>
       </div>
       <div className="space-y-px">
         {tree.map((entry) => (

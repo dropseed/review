@@ -30,7 +30,7 @@ export function HighlightedLine({
   return (
     <>
       <span>{before}</span>
-      <span className="bg-amber-500/30 text-amber-200 font-medium">
+      <span className="bg-status-modified/30 text-status-modified font-medium">
         {match}
       </span>
       <span>{after}</span>

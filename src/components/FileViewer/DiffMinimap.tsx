@@ -127,17 +127,17 @@ export function DiffMinimap({
 
   return (
     <div
-      className="relative w-3 shrink-0 cursor-pointer group border-l border-stone-800/50"
+      className="relative w-3 shrink-0 cursor-pointer group border-l border-edge/50"
       onClick={handleTrackClick}
       aria-hidden="true"
     >
       {/* Track background - subtle on hover */}
-      <div className="absolute inset-0 bg-gradient-to-b from-stone-900/0 via-stone-800/20 to-stone-900/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute inset-0 bg-gradient-to-b from-surface-panel/0 via-surface-raised/20 to-surface-panel/0 opacity-0 group-hover:opacity-100 transition-opacity" />
 
       {/* Viewport indicator */}
       <div
         ref={viewportRef}
-        className="absolute left-0 right-0 bg-stone-500/15 border-y border-stone-500/25 pointer-events-none transition-colors group-hover:bg-stone-500/25 group-hover:border-stone-500/40"
+        className="absolute left-0 right-0 bg-fg-muted/15 border-y border-fg-muted/25 pointer-events-none transition-colors group-hover:bg-fg-muted/25 group-hover:border-fg-muted/40"
         style={{ top: "0%", height: "100%" }}
       />
 
@@ -149,7 +149,7 @@ export function DiffMinimap({
             ? " animate-pulse"
             : "";
         const focusRing = marker.isFocused
-          ? " ring-1 ring-amber-400/80 ring-offset-1 ring-offset-stone-900"
+          ? " ring-1 ring-status-modified/80 ring-offset-1 ring-offset-surface-panel"
           : "";
 
         return (
