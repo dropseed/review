@@ -148,7 +148,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -167,14 +166,9 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
-            // Restore Sentry consent from persisted preferences
-            {
-                use tauri_plugin_store::StoreExt;
-                if let Ok(store) = app.handle().store("preferences.json") {
-                    if let Some(serde_json::Value::Bool(true)) = store.get("sentryEnabled") {
-                        consent.store(true, Ordering::Relaxed);
-                    }
-                }
+            // Restore Sentry consent from persisted settings
+            if let Some(serde_json::Value::Bool(true)) = commands::read_setting("sentryEnabled") {
+                consent.store(true, Ordering::Relaxed);
             }
 
             let close = MenuItemBuilder::new("Close")
@@ -516,6 +510,9 @@ pub fn run() {
             commands::get_tailscale_ip,
             commands::detect_vscode_theme,
             commands::set_window_background_color,
+            commands::read_settings,
+            commands::write_settings,
+            commands::open_settings_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

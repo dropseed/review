@@ -491,4 +491,8 @@ export class TauriClient implements ApiClient {
   ): Promise<void> {
     await invoke("set_window_background_color", { r, g, b });
   }
+
+  async openSettingsFile(): Promise<void> {
+    await invoke("open_settings_file");
+  }
 }

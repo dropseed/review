@@ -15,7 +15,8 @@ import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
 import { Slider } from "../ui/slider";
-import { UI_THEMES } from "../../lib/ui-themes";
+import { getAllUiThemes } from "../../lib/ui-themes";
+import { getApiClient } from "../../api";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -459,7 +460,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     }
                   />
                   <div className="grid grid-cols-2 gap-2">
-                    {UI_THEMES.map((theme) => (
+                    {getAllUiThemes().map((theme) => (
                       <button
                         key={theme.id}
                         onClick={() => setUiTheme(theme.id)}
@@ -872,8 +873,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
         </Tabs>
 
-        <div className="border-t border-edge bg-surface-panel/50 px-5 py-3">
-          <p className="text-center text-xxs text-fg-faint">
+        <div className="border-t border-edge bg-surface-panel/50 px-5 py-3 flex items-center justify-between">
+          <button
+            onClick={() => getApiClient().openSettingsFile()}
+            className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
+          >
+            Open settings file
+          </button>
+          <p className="text-xxs text-fg-faint">
             Settings are saved automatically
           </p>
         </div>

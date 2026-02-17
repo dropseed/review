@@ -357,6 +357,48 @@ export const UI_THEMES: UiTheme[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Custom themes
+// ---------------------------------------------------------------------------
+
+let customThemes: UiTheme[] = [];
+
+/**
+ * Register custom themes (loaded from settings.json).
+ * Each definition is a VS Code-style theme JSON object with name, type, colors, tokenColors.
+ */
+export function setCustomThemes(
+  defs: Array<{
+    name: string;
+    type: string;
+    colors: Record<string, string>;
+    tokenColors: unknown[];
+  }>,
+): void {
+  // Lazy-import to avoid circular dependency (resolveVscodeTheme imports from ui-themes)
+  import("./vscode-theme-resolver")
+    .then(({ resolveVscodeTheme }) => {
+      customThemes = defs.map((def) =>
+        resolveVscodeTheme({
+          name: def.name,
+          themeType: def.type,
+          colors: def.colors,
+          tokenColors: def.tokenColors,
+        }),
+      );
+    })
+    .catch((err) => {
+      console.warn("[ui-themes] Failed to load custom themes:", err);
+    });
+}
+
+/**
+ * Return all themes: bundled + custom.
+ */
+export function getAllUiThemes(): UiTheme[] {
+  return [...UI_THEMES, ...customThemes];
+}
+
+// ---------------------------------------------------------------------------
 // Theme application
 // ---------------------------------------------------------------------------
 
@@ -425,8 +467,8 @@ export function clearUiTheme(): void {
 }
 
 /**
- * Find a theme by ID. Returns the default dark theme if not found.
+ * Find a theme by ID (searches bundled and custom). Returns the default dark theme if not found.
  */
 export function getUiTheme(id: string): UiTheme {
-  return UI_THEMES.find((t) => t.id === id) ?? UI_THEMES[0];
+  return getAllUiThemes().find((t) => t.id === id) ?? UI_THEMES[0];
 }

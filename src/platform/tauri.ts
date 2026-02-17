@@ -18,7 +18,7 @@ import {
   register as registerShortcut,
   unregister as unregisterShortcut,
 } from "@tauri-apps/plugin-global-shortcut";
-import { load, type Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
   openUrl as openerOpenUrl,
@@ -129,44 +129,66 @@ class TauriShortcutService implements ShortcutService {
 
 // ----- Storage -----
 
-class TauriStorageService implements StorageService {
-  private store: Store | null = null;
+/**
+ * Stores preferences in `~/.review/settings.json` via Rust commands.
+ * Keeps an in-memory cache for fast reads and debounces writes.
+ */
+class JsonFileStorageService implements StorageService {
+  private cache: Record<string, unknown> = {};
+  private loaded = false;
+  private writeTimer: ReturnType<typeof setTimeout> | null = null;
+  private static DEBOUNCE_MS = 500;
 
-  private async getStore(): Promise<Store> {
-    if (!this.store) {
-      this.store = await load("preferences.json", {
-        autoSave: true,
-        defaults: {},
-      });
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) return;
+    try {
+      const data = await invoke<Record<string, unknown> | null>(
+        "read_settings",
+      );
+      if (data) {
+        this.cache = data;
+      }
+    } catch (err) {
+      console.error("Failed to load settings:", err);
     }
-    return this.store;
+    this.loaded = true;
   }
 
   async get<T>(key: string): Promise<T | null> {
-    try {
-      const store = await this.getStore();
-      const value = await store.get<T>(key);
-      return value ?? null;
-    } catch {
-      return null;
-    }
+    await this.ensureLoaded();
+    const value = this.cache[key];
+    return (value as T) ?? null;
   }
 
   async set<T>(key: string, value: T): Promise<void> {
-    try {
-      const store = await this.getStore();
-      await store.set(key, value);
-    } catch (err) {
-      console.error("Failed to save preference:", err);
-    }
+    await this.ensureLoaded();
+    this.cache[key] = value;
+    this.scheduleWrite();
   }
 
   async delete(key: string): Promise<void> {
+    await this.ensureLoaded();
+    delete this.cache[key];
+    this.scheduleWrite();
+  }
+
+  private scheduleWrite(): void {
+    if (this.writeTimer) clearTimeout(this.writeTimer);
+    this.writeTimer = setTimeout(() => {
+      this.flush();
+    }, JsonFileStorageService.DEBOUNCE_MS);
+  }
+
+  /** Immediately persist the cache to disk. */
+  async flush(): Promise<void> {
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+      this.writeTimer = null;
+    }
     try {
-      const store = await this.getStore();
-      await store.delete(key);
-    } catch {
-      // Ignore errors
+      await invoke("write_settings", { settings: this.cache });
+    } catch (err) {
+      console.error("Failed to write settings:", err);
     }
   }
 }
@@ -308,7 +330,7 @@ export function getTauriServices(): PlatformServices {
       notifications: new TauriNotificationService(),
       dialogs: new TauriDialogService(),
       shortcuts: new TauriShortcutService(),
-      storage: new TauriStorageService(),
+      storage: new JsonFileStorageService(),
       opener: new TauriOpenerService(),
       window: new TauriWindowService(),
       menuEvents: new TauriMenuEventService(),

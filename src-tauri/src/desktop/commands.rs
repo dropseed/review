@@ -2203,6 +2203,85 @@ pub async fn generate_review_diagram(
     Ok(result)
 }
 
+// --- Settings file I/O ---
+
+/// Return the path to `~/.review/settings.json` (respects `$REVIEW_HOME`).
+fn settings_path() -> Result<PathBuf, String> {
+    let root = review::review::central::get_central_root().map_err(|e| e.to_string())?;
+    Ok(root.join("settings.json"))
+}
+
+/// Read a single key from `settings.json`. Returns `None` if the file or key is missing.
+pub fn read_setting(key: &str) -> Option<serde_json::Value> {
+    let path = settings_path().ok()?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let obj: serde_json::Value = serde_json::from_str(&content).ok()?;
+    obj.get(key).cloned()
+}
+
+/// Read a string setting from `settings.json`. Returns `None` if the key is missing or not a string.
+fn read_setting_string(key: &str) -> Option<String> {
+    read_setting(key).and_then(|v| v.as_str().map(str::to_owned))
+}
+
+/// Write a single key to `settings.json`, preserving other keys.
+fn write_setting(key: &str, value: serde_json::Value) -> Result<(), String> {
+    let path = settings_path()?;
+    let mut obj: serde_json::Map<String, serde_json::Value> = if path.exists() {
+        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+    obj.insert(key.to_owned(), value);
+    atomic_write_json(&path, &serde_json::Value::Object(obj))
+}
+
+/// Atomically write JSON to a file (write tmp + rename).
+fn atomic_write_json(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let json = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, json.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Read the entire `settings.json` file. Returns `null` if the file doesn't exist.
+#[tauri::command]
+pub fn read_settings() -> Result<Option<serde_json::Value>, String> {
+    let path = settings_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    Ok(Some(value))
+}
+
+/// Atomically write the full settings JSON to `settings.json`.
+#[tauri::command]
+pub fn write_settings(settings: serde_json::Value) -> Result<(), String> {
+    let path = settings_path()?;
+    atomic_write_json(&path, &settings)
+}
+
+/// Create the settings file if it doesn't exist, then open it with the system editor.
+#[tauri::command]
+pub fn open_settings_file(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = settings_path()?;
+    if !path.exists() {
+        // Create with empty object so the user has a valid JSON file to edit
+        atomic_write_json(&path, &serde_json::json!({}))?;
+    }
+    app.opener()
+        .open_path(path.to_string_lossy().as_ref(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 // --- Companion server commands ---
 
 #[tauri::command]
@@ -2216,23 +2295,14 @@ pub fn generate_companion_token() -> String {
 pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     use super::{companion_server, tray};
     use tauri::Manager;
-    use tauri_plugin_store::StoreExt;
 
-    let store = app_handle
-        .store("preferences.json")
-        .map_err(|e| e.to_string())?;
-    let token = store
-        .get("companionServerToken")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| {
-            // Generate and persist a token if none exists
-            let t = generate_companion_token();
-            store.set("companionServerToken", serde_json::json!(t));
-            let _ = store.save();
-            t
-        });
-    let port = store
-        .get("companionServerPort")
+    let token = read_setting_string("companionServerToken").unwrap_or_else(|| {
+        // Generate and persist a token if none exists
+        let t = generate_companion_token();
+        let _ = write_setting("companionServerToken", serde_json::json!(t));
+        t
+    });
+    let port = read_setting("companionServerPort")
         .and_then(|v| v.as_u64())
         .map(|v| v as u16)
         .unwrap_or(3333);
@@ -2245,11 +2315,10 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
     let cert = companion_server::tls::ensure_certificate(&app_data_dir)?;
 
     // Store fingerprint so frontend can display it
-    store.set(
+    let _ = write_setting(
         "companionServerFingerprint",
         serde_json::json!(cert.fingerprint),
     );
-    let _ = store.save();
 
     companion_server::set_auth_token(Some(token));
     companion_server::start(port, cert.cert_path, cert.key_path);
@@ -2272,22 +2341,14 @@ pub fn get_companion_server_status() -> bool {
 }
 
 #[tauri::command]
-pub fn get_companion_fingerprint(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
-    use tauri_plugin_store::StoreExt;
-
-    let store = app_handle
-        .store("preferences.json")
-        .map_err(|e| e.to_string())?;
-    Ok(store
-        .get("companionServerFingerprint")
-        .and_then(|v| v.as_str().map(|s| s.to_string())))
+pub fn get_companion_fingerprint() -> Option<String> {
+    read_setting_string("companionServerFingerprint")
 }
 
 #[tauri::command]
 pub fn regenerate_companion_certificate(app_handle: tauri::AppHandle) -> Result<String, String> {
     use super::companion_server;
     use tauri::Manager;
-    use tauri_plugin_store::StoreExt;
 
     let app_data_dir = app_handle
         .path()
@@ -2301,36 +2362,23 @@ pub fn regenerate_companion_certificate(app_handle: tauri::AppHandle) -> Result<
     let cert = companion_server::tls::ensure_certificate(&app_data_dir)?;
 
     // Update stored fingerprint
-    let store = app_handle
-        .store("preferences.json")
-        .map_err(|e| e.to_string())?;
-    store.set(
+    write_setting(
         "companionServerFingerprint",
         serde_json::json!(cert.fingerprint),
-    );
-    let _ = store.save();
+    )?;
 
     Ok(cert.fingerprint)
 }
 
 #[tauri::command]
-pub fn generate_companion_qr(app_handle: tauri::AppHandle, url: String) -> Result<String, String> {
+pub fn generate_companion_qr(url: String) -> Result<String, String> {
     use qrcode::render::svg;
     use qrcode::QrCode;
-    use tauri_plugin_store::StoreExt;
 
-    let store = app_handle
-        .store("preferences.json")
-        .map_err(|e| e.to_string())?;
-
-    let token = store
-        .get("companionServerToken")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
+    let token = read_setting_string("companionServerToken")
         .ok_or_else(|| "No companion server token configured".to_owned())?;
 
-    let fingerprint = store
-        .get("companionServerFingerprint")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
+    let fingerprint = read_setting_string("companionServerFingerprint")
         .ok_or_else(|| "No companion server fingerprint available".to_owned())?;
 
     let payload = serde_json::json!({

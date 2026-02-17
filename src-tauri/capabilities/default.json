@@ -17,7 +17,6 @@
     "opener:default",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
-    "store:default",
     "notification:default",
     "os:default",
     "global-shortcut:default",

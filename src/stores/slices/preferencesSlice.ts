@@ -4,7 +4,12 @@ import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
 import { setSoundEnabled } from "../../utils/sounds";
-import { applyUiTheme, getUiTheme, type UiTheme } from "../../lib/ui-themes";
+import {
+  applyUiTheme,
+  getUiTheme,
+  setCustomThemes,
+  type UiTheme,
+} from "../../lib/ui-themes";
 import {
   matchBundledTheme,
   resolveVscodeTheme,
@@ -246,6 +251,14 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   loadPreferences: async () => {
+    // Read settings file for custom themes
+    let settings: Record<string, unknown> | null = null;
+    try {
+      settings = await invoke<Record<string, unknown> | null>("read_settings");
+    } catch {
+      // read_settings failed — continue with defaults
+    }
+
     // Load all standard keys in parallel, falling back to defaults
     const keys = Object.keys(defaults) as (keyof typeof defaults)[];
     const values = await Promise.all(keys.map((key) => storage.get(key)));
@@ -318,6 +331,18 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       "--ui-scale",
       String(loaded.codeFontSize / CODE_FONT_SIZE_DEFAULT),
     );
+
+    // Load custom themes from settings (already read above)
+    if (settings && Array.isArray(settings["customThemes"])) {
+      setCustomThemes(
+        settings["customThemes"] as Array<{
+          name: string;
+          type: string;
+          colors: Record<string, string>;
+          tokenColors: unknown[];
+        }>,
+      );
+    }
 
     // Apply UI theme (sets all semantic CSS variables + color-scheme)
     applyUiTheme(getUiTheme(loaded.uiTheme));

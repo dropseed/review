@@ -313,6 +313,9 @@ export interface ApiClient {
 
   /** Set the window background color (affects title bar on macOS) */
   setWindowBackgroundColor(r: number, g: number, b: number): Promise<void>;
+
+  /** Open the settings.json file in the system editor */
+  openSettingsFile(): Promise<void>;
 }
 
 /**

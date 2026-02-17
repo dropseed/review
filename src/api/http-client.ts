@@ -653,4 +653,8 @@ export class HttpClient implements ApiClient {
   ): Promise<void> {
     // No-op in browser
   }
+
+  async openSettingsFile(): Promise<void> {
+    console.warn("[HttpClient] openSettingsFile not available in browser");
+  }
 }
