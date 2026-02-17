@@ -35,15 +35,38 @@ interface DiagramData {
   edges: DiagramEdge[];
 }
 
-const ROLE_STYLES: Record<
+/** Read a CSS custom property from :root. */
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
+
+function getRoleStyles(): Record<
   DiagramNode["role"],
   { background: string; border: string }
-> = {
-  new: { background: "#064e3b", border: "#10b981" },
-  modified: { background: "#451a03", border: "#f59e0b" },
-  deleted: { background: "#4c0519", border: "#f43f5e" },
-  unchanged: { background: "#1c1917", border: "#78716c" },
-};
+> {
+  const approved = cssVar("--color-status-approved");
+  const modified = cssVar("--color-status-modified");
+  const deleted = cssVar("--color-status-rejected");
+  const muted = cssVar("--color-fg-faint");
+  const inset = cssVar("--color-surface-inset");
+  return {
+    new: {
+      background: `color-mix(in srgb, ${approved} 15%, ${inset})`,
+      border: approved,
+    },
+    modified: {
+      background: `color-mix(in srgb, ${modified} 15%, ${inset})`,
+      border: modified,
+    },
+    deleted: {
+      background: `color-mix(in srgb, ${deleted} 15%, ${inset})`,
+      border: deleted,
+    },
+    unchanged: { background: inset, border: muted },
+  };
+}
 
 type RoleNodeData = {
   label: string;
@@ -54,7 +77,8 @@ type RoleNodeData = {
 type RoleNode = Node<RoleNodeData, "role">;
 
 function RoleNodeComponent({ data }: NodeProps<RoleNode>): ReactNode {
-  const style = ROLE_STYLES[data.role] ?? ROLE_STYLES.unchanged;
+  const styles = getRoleStyles();
+  const style = styles[data.role] ?? styles.unchanged;
   return (
     <div
       className="rounded-md px-3 py-2"
@@ -139,9 +163,9 @@ function buildFlowGraph(data: DiagramData): { nodes: Node[]; edges: Edge[] } {
     target: edge.to,
     label: edge.label,
     animated: false,
-    style: { stroke: "#78716c", strokeWidth: 1.5 },
-    labelStyle: { fill: "#a8a29e", fontSize: 10 },
-    labelBgStyle: { fill: "#1c1917", opacity: 0.8 },
+    style: { stroke: cssVar("--color-fg-faint"), strokeWidth: 1.5 },
+    labelStyle: { fill: cssVar("--color-fg-muted"), fontSize: 10 },
+    labelBgStyle: { fill: cssVar("--color-surface-inset"), opacity: 0.8 },
     labelBgPadding: [4, 2] as [number, number],
     labelBgBorderRadius: 3,
   }));

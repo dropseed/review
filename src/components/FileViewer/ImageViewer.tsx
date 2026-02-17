@@ -318,7 +318,7 @@ export function ImageViewer({
               >
                 <div className="image-diff-slider-handle">
                   <svg
-                    className="h-4 w-4 text-white"
+                    className="h-4 w-4 text-fg"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"

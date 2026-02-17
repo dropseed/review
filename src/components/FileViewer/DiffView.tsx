@@ -668,10 +668,10 @@ export function DiffView({
     const selector = [...new Set(lineSelectors)].join(", ");
     return `
       :is(${selector}) > [data-column-content] {
-        background-image: linear-gradient(to right, rgba(245, 158, 11, 0.07), rgba(245, 158, 11, 0.03)) !important;
+        background-image: linear-gradient(to right, color-mix(in srgb, var(--color-focus-ring) 7%, transparent), color-mix(in srgb, var(--color-focus-ring) 3%, transparent)) !important;
       }
       :is(${selector}) > [data-column-number]:last-of-type {
-        box-shadow: inset -2px 0 0 rgba(245, 158, 11, 0.35);
+        box-shadow: inset -2px 0 0 color-mix(in srgb, var(--color-focus-ring) 35%, transparent);
       }
     `;
   }, [fileAnnotations]);
@@ -787,7 +787,7 @@ export function DiffView({
       return (
         <SimpleTooltip content="Add comment">
           <button
-            className="flex h-5 w-5 items-center justify-center rounded bg-status-renamed/80 text-white shadow-lg transition-colors hover:bg-status-renamed hover:scale-110"
+            className="flex h-5 w-5 items-center justify-center rounded bg-status-renamed/80 text-surface shadow-lg transition-colors hover:bg-status-renamed hover:scale-110"
             onClick={() => {
               const hoveredLine = getHoveredLine();
               if (!hoveredLine) return;

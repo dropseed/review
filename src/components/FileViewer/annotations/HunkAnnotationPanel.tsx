@@ -126,7 +126,7 @@ export function HunkAnnotationPanel({
   const isFocused = hunk.id === focusedHunkId;
 
   const borderClass = isFocused
-    ? "border border-edge-strong/60 ring-1 ring-white/25"
+    ? "border border-edge-strong/60 ring-1 ring-fg/25"
     : "border border-edge-default/40";
 
   return (

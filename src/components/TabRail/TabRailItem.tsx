@@ -188,7 +188,7 @@ export const TabRailItem = memo(function TabRailItem({
         onContextMenu={handleContextMenu}
         className={`group relative w-full text-left px-2 py-1.5 rounded-md mb-px cursor-default
                     transition-colors duration-100
-                    ${isActive ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"}
+                    ${isActive ? "bg-fg/[0.08]" : "hover:bg-fg/[0.05]"}
                     ${isInactive ? "opacity-60" : ""}`}
         aria-current={isActive ? "true" : undefined}
         title={titleText}
@@ -215,7 +215,7 @@ export const TabRailItem = memo(function TabRailItem({
           </span>
           <span className="text-xs text-fg-faint shrink-0 -mx-0.5">/</span>
           {isPr && (
-            <PullRequestIcon className="h-3 w-3 shrink-0 text-[#3fb950]" />
+            <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
           )}
           <span
             className={`text-xs truncate flex-1 min-w-0 ${
@@ -253,7 +253,7 @@ export const TabRailItem = memo(function TabRailItem({
               onClick={handleOverflowClick}
               className="col-start-1 row-start-1 flex items-center justify-center
                          h-5 w-5 rounded text-fg0 hover:text-fg-secondary
-                         hover:bg-white/[0.08] opacity-0 pointer-events-none
+                         hover:bg-fg/[0.08] opacity-0 pointer-events-none
                          group-hover:opacity-100 group-hover:pointer-events-auto
                          transition-opacity duration-100"
               aria-label="Review options"
@@ -278,7 +278,7 @@ export const TabRailItem = memo(function TabRailItem({
         createPortal(
           <div
             ref={contextMenuRef}
-            className="fixed z-50 min-w-[160px] rounded-lg border border-white/[0.08] bg-surface-raised/90 backdrop-blur-xl py-1 shadow-xl"
+            className="fixed z-50 min-w-[160px] rounded-lg border border-edge-default bg-surface-raised/90 backdrop-blur-xl py-1 shadow-xl"
             style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
             <button
@@ -287,7 +287,7 @@ export const TabRailItem = memo(function TabRailItem({
                 setShowContextMenu(false);
                 onDelete(review);
               }}
-              className="w-full px-3 py-1.5 text-left text-xs text-status-rejected hover:bg-white/[0.08] transition-colors"
+              className="w-full px-3 py-1.5 text-left text-xs text-status-rejected hover:bg-fg/[0.08] transition-colors"
             >
               Delete Review
             </button>

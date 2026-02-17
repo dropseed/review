@@ -80,23 +80,27 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
         const mermaid = (await import("mermaid")).default;
 
         // Initialize with dark theme
+        // Read theme tokens from CSS custom properties at render time
+        const cs = getComputedStyle(document.documentElement);
+        const v = (name: string) => cs.getPropertyValue(name).trim();
+
         mermaid.initialize({
           startOnLoad: false,
           theme: "dark",
           themeVariables: {
-            primaryColor: "#44403c",
-            primaryTextColor: "#fafaf9",
-            primaryBorderColor: "#57534e",
-            lineColor: "#78716c",
-            secondaryColor: "#292524",
-            tertiaryColor: "#1c1917",
-            background: "#0c0a09",
-            mainBkg: "#292524",
-            nodeBorder: "#57534e",
-            clusterBkg: "#1c1917",
-            clusterBorder: "#44403c",
-            titleColor: "#fafaf9",
-            edgeLabelBackground: "#292524",
+            primaryColor: v("--color-surface-hover"),
+            primaryTextColor: v("--color-fg"),
+            primaryBorderColor: v("--color-surface-active"),
+            lineColor: v("--color-fg-faint"),
+            secondaryColor: v("--color-surface-raised"),
+            tertiaryColor: v("--color-surface-inset"),
+            background: v("--color-surface"),
+            mainBkg: v("--color-surface-raised"),
+            nodeBorder: v("--color-surface-active"),
+            clusterBkg: v("--color-surface-inset"),
+            clusterBorder: v("--color-surface-hover"),
+            titleColor: v("--color-fg"),
+            edgeLabelBackground: v("--color-surface-raised"),
           },
           securityLevel: "strict",
           fontFamily:

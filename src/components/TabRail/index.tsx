@@ -111,7 +111,7 @@ function SortMenu({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="p-0.5 rounded text-fg-faint hover:text-fg-muted hover:bg-white/[0.08]
+        className="p-0.5 rounded text-fg-faint hover:text-fg-muted hover:bg-fg/[0.08]
                    transition-colors duration-100"
         aria-label="Sort reviews"
         aria-expanded={open}
@@ -146,7 +146,7 @@ function SortMenu({
             aria-label="Close menu"
           />
           <div
-            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-surface-panel border border-white/[0.08] py-1 shadow-xl"
+            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-surface-panel border border-edge-default py-1 shadow-xl"
             role="menu"
           >
             {SORT_OPTIONS.map(([value, label]) => (
@@ -161,8 +161,8 @@ function SortMenu({
                 className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
                   ${
                     sortOrder === value
-                      ? "text-fg-secondary bg-white/[0.06]"
-                      : "text-fg-muted hover:text-fg-secondary hover:bg-white/[0.04]"
+                      ? "text-fg-secondary bg-fg/[0.06]"
+                      : "text-fg-muted hover:text-fg-secondary hover:bg-fg/[0.04]"
                   }`}
               >
                 {label}
@@ -347,8 +347,8 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
         <div className="space-y-2 px-2 py-2">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse space-y-1">
-              <div className="h-2.5 w-16 rounded bg-white/[0.06]" />
-              <div className="h-8 rounded bg-white/[0.04]" />
+              <div className="h-2.5 w-16 rounded bg-fg/[0.06]" />
+              <div className="h-8 rounded bg-fg/[0.04]" />
             </div>
           ))}
         </div>
@@ -529,7 +529,7 @@ export const TabRail = memo(function TabRail({
     <div className="relative flex shrink-0" data-tauri-drag-region>
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
-                   bg-surface border-r border-white/[0.06] overflow-hidden
+                   bg-surface border-r border-edge overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{
           width: collapsed ? 0 : `${sidebarWidth}rem`,
@@ -543,13 +543,13 @@ export const TabRail = memo(function TabRail({
           style={{ width: `${sidebarWidth}rem` }}
         >
           {/* Top bar: new review + collapse */}
-          <div className="shrink-0 px-1.5 py-2.5 flex items-center gap-1 shadow-[0_1px_0_0_rgba(255,255,255,0.04)]">
+          <div className="shrink-0 px-1.5 py-2.5 flex items-center gap-1 shadow-[0_1px_0_0_var(--color-edge)]">
             <button
               type="button"
               onClick={handleAddReview}
               className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5
                          text-[11px] font-medium text-fg-muted hover:text-fg-secondary
-                         hover:bg-white/[0.08] transition-colors duration-100
+                         hover:bg-fg/[0.08] transition-colors duration-100
                          focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring/50"
             >
               <svg
@@ -571,7 +571,7 @@ export const TabRail = memo(function TabRail({
               type="button"
               onClick={toggleTabRail}
               className="flex items-center justify-center w-7 h-7 shrink-0 rounded-md
-                         hover:bg-white/[0.08] transition-colors duration-100
+                         hover:bg-fg/[0.08] transition-colors duration-100
                          text-fg0 hover:text-fg-secondary"
               aria-label="Hide sidebar"
             >
@@ -582,13 +582,13 @@ export const TabRail = memo(function TabRail({
           <TabRailList onActivateReview={onActivateReview} />
 
           {/* Footer */}
-          <div className="shrink-0 border-t border-white/[0.06] px-3 py-2">
+          <div className="shrink-0 border-t border-edge px-3 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setShowSettings(true)}
-                  className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-white/[0.06]
+                  className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-fg/[0.06]
                              transition-colors duration-100"
                   aria-label="Settings"
                 >
@@ -609,7 +609,7 @@ export const TabRail = memo(function TabRail({
                 <button
                   type="button"
                   onClick={handleOpenFeedback}
-                  className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-white/[0.06]
+                  className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-fg/[0.06]
                              transition-colors duration-100"
                   aria-label="Send feedback"
                 >

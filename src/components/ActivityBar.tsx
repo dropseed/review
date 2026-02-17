@@ -12,7 +12,7 @@ function ActivityRow({ activity }: ActivityRowProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1 w-8 shrink-0 rounded-full bg-white/[0.08] overflow-hidden">
+      <div className="h-1 w-8 shrink-0 rounded-full bg-fg/[0.08] overflow-hidden">
         {hasProgress ? (
           <div
             className="h-full bg-status-modified/80 rounded-full transition-[width] duration-300 ease-out"
@@ -85,7 +85,7 @@ export function ActivityBar() {
       ref={ref}
       className={`absolute left-1/2 top-1.5 -translate-x-1/2 z-10 transition-opacity duration-500 ${primaryActivity ? "opacity-100" : "opacity-0"}`}
     >
-      <div className="rounded-2xl border border-white/[0.08] bg-surface shadow-lg">
+      <div className="rounded-2xl border border-edge-default bg-surface shadow-lg">
         {/* Primary row */}
         <div
           className="flex items-center gap-2 px-3 py-1 cursor-default"
@@ -103,7 +103,7 @@ export function ActivityBar() {
 
         {/* Expanded list */}
         {expanded && (
-          <div className="border-t border-white/[0.06] px-3 py-1.5 flex flex-col gap-1">
+          <div className="border-t border-edge px-3 py-1.5 flex flex-col gap-1">
             {sorted.slice(1).map((activity) => (
               <ActivityRow key={activity.id} activity={activity} />
             ))}

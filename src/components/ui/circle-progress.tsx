@@ -40,7 +40,7 @@ export function CircleProgress({
         cy={center}
         r={radius}
         fill="none"
-        stroke="rgba(255,255,255,0.08)"
+        stroke="color-mix(in srgb, var(--color-fg) 8%, transparent)"
         strokeWidth={strokeWidth}
       />
       {/* Filled arc -- sage green in progress, amber when complete */}
@@ -53,7 +53,7 @@ export function CircleProgress({
           stroke={
             isComplete
               ? "var(--color-status-modified)"
-              : "var(--color-sage-400)"
+              : "var(--color-status-approved)"
           }
           strokeWidth={strokeWidth}
           strokeLinecap="round"

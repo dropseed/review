@@ -166,7 +166,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="@container relative bg-surface shadow-[0_1px_0_0_rgba(255,255,255,0.04)] py-2.5">
+        <header className="@container relative bg-surface shadow-[0_1px_0_0_var(--color-edge)] py-2.5">
           {/* Top row: breadcrumb + activity + progress */}
           <div className="flex items-center justify-between pr-4">
             {/* Left: repo / comparison ref */}
@@ -187,7 +187,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
                     useReviewStore.setState({ filesPanelCollapsed: false });
                   }}
                   className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
-                             hover:bg-white/[0.06] transition-colors duration-100 cursor-default"
+                             hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
                 >
                   {state === "approved" && (
                     <span className="hidden @md:inline text-xs font-medium text-status-approved">
@@ -283,7 +283,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
       >
         {/* Sidebar content - slides via transform (no layout reflow) */}
         <div
-          className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-white/[0.06] transition-transform duration-200"
+          className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-edge transition-transform duration-200"
           style={{
             width: `${sidebarWidth}rem`,
             transform: filesPanelCollapsed
