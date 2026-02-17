@@ -51,14 +51,26 @@ function WorkerPoolThemeSync(): null {
   return null;
 }
 
+/** Load preferences and gate app content to avoid a theme flash. */
+function PreferencesGate({ children }: { children: React.ReactNode }) {
+  const loadPreferences = useReviewStore((s) => s.loadPreferences);
+  const loaded = useReviewStore((s) => s.preferencesLoaded);
+
+  useEffect(() => {
+    loadPreferences().then(() => {
+      document.getElementById("initial-loader")?.remove();
+    });
+  }, [loadPreferences]);
+
+  if (!loaded) return null;
+  return <>{children}</>;
+}
+
 // Initialize Sentry early (events are dropped until user opts in)
 initSentry();
 
 // Initialize file logging (patches console.*)
 initializeLogger();
-
-// Read the initial theme so workers start with the right one
-const initialTheme = useReviewStore.getState().codeTheme;
 
 // Pre-resolve common languages in background to warm the cache.
 // WorkerPoolContextProvider calls resolveLanguages() itself during init,
@@ -67,43 +79,53 @@ resolveLanguages([...commonLanguages]).catch((err) => {
   console.warn("[main] Failed to preload syntax highlighting languages:", err);
 });
 
-// Render immediately — don't block on language resolution
+/** Renders the worker pool + app after preferences are loaded,
+ *  so the initial theme is always correct (no flash). */
+function App() {
+  // Safe to read synchronously here — PreferencesGate guarantees
+  // loadPreferences() has completed before this component mounts.
+  const codeTheme = useReviewStore((s) => s.codeTheme);
+
+  return (
+    <WorkerPoolContextProvider
+      poolOptions={{
+        workerFactory: () =>
+          new Worker(
+            new URL("@pierre/diffs/worker/worker.js", import.meta.url),
+            { type: "module" },
+          ),
+        poolSize: Math.min(navigator.hardwareConcurrency || 4, 8),
+      }}
+      highlighterOptions={{
+        langs: [...commonLanguages],
+        theme: { dark: codeTheme, light: codeTheme },
+        lineDiffType: "word-alt",
+        tokenizeMaxLineLength: 1000,
+      }}
+    >
+      <WorkerPoolThemeSync />
+      <AppRouter />
+      <Toaster
+        theme="system"
+        position="bottom-left"
+        toastOptions={{
+          style: {
+            background: "var(--color-surface-overlay)",
+            color: "var(--color-fg-secondary)",
+            border: "1px solid var(--color-edge)",
+          },
+        }}
+      />
+    </WorkerPoolContextProvider>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <WorkerPoolContextProvider
-        poolOptions={{
-          workerFactory: () =>
-            new Worker(
-              new URL("@pierre/diffs/worker/worker.js", import.meta.url),
-              { type: "module" },
-            ),
-          poolSize: Math.min(navigator.hardwareConcurrency || 4, 8),
-        }}
-        highlighterOptions={{
-          langs: [...commonLanguages],
-          theme: { dark: initialTheme, light: initialTheme },
-          lineDiffType: "word-alt",
-          tokenizeMaxLineLength: 1000,
-        }}
-      >
-        <WorkerPoolThemeSync />
-        <AppRouter />
-        <Toaster
-          theme="system"
-          position="bottom-left"
-          toastOptions={{
-            style: {
-              background: "var(--color-surface-overlay)",
-              color: "var(--color-fg-secondary)",
-              border: "1px solid var(--color-edge)",
-            },
-          }}
-        />
-      </WorkerPoolContextProvider>
+      <PreferencesGate>
+        <App />
+      </PreferencesGate>
     </ErrorBoundary>
   </React.StrictMode>,
 );
-
-// Remove initial loading indicator
-document.getElementById("initial-loader")?.remove();

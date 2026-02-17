@@ -37,6 +37,28 @@ function applyWindowBackgroundColor(surfaceHex: string): void {
   }
 }
 
+/** Apply a resolved VS Code theme: set CSS variables, window background, and persist code theme. */
+function applyResolvedVscodeTheme(
+  theme: UiTheme,
+  storage: StorageService,
+): void {
+  applyUiTheme(theme);
+  applyWindowBackgroundColor(theme.tokens.surface);
+  storage.set("codeTheme", theme.codeTheme);
+  console.log(
+    `[preferences] Applied VS Code theme "${theme.label}" → "${theme.id}"`,
+  );
+}
+
+/** Apply code font size CSS variables (--code-font-size and --ui-scale). */
+function applyFontSizeCssVariables(size: number): void {
+  document.documentElement.style.setProperty("--code-font-size", `${size}px`);
+  document.documentElement.style.setProperty(
+    "--ui-scale",
+    String(size / CODE_FONT_SIZE_DEFAULT),
+  );
+}
+
 /**
  * Detect the active VS Code theme via the Rust backend and resolve it
  * to a UiTheme. Returns null if detection fails or VS Code is not active.
@@ -150,6 +172,9 @@ export interface PreferencesSlice {
   /** The currently resolved VS Code theme (null when not using VS Code match) */
   resolvedVscodeTheme: UiTheme | null;
 
+  /** True once loadPreferences() has completed (theme, fonts, etc. are ready) */
+  preferencesLoaded: boolean;
+
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeTheme: (theme: string) => void;
@@ -216,16 +241,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   fileToReveal: null,
   directoryToReveal: null,
   resolvedVscodeTheme: null,
+  preferencesLoaded: false,
 
   setCodeFontSize: (size) => {
     set({ codeFontSize: size });
     storage.set("codeFontSize", size);
-    // Update CSS variables for global font size and UI scale
-    document.documentElement.style.setProperty("--code-font-size", `${size}px`);
-    document.documentElement.style.setProperty(
-      "--ui-scale",
-      String(size / CODE_FONT_SIZE_DEFAULT),
-    );
+    applyFontSizeCssVariables(size);
   },
 
   setCodeTheme: (theme) => {
@@ -341,24 +362,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     // Propagate sound setting
     setSoundEnabled(loaded.soundEffectsEnabled);
 
-    // Apply font size CSS variables
-    document.documentElement.style.setProperty(
-      "--code-font-size",
-      `${loaded.codeFontSize}px`,
-    );
-    document.documentElement.style.setProperty(
-      "--ui-scale",
-      String(loaded.codeFontSize / CODE_FONT_SIZE_DEFAULT),
-    );
+    applyFontSizeCssVariables(loaded.codeFontSize);
 
     // Apply UI theme (sets all semantic CSS variables + color-scheme)
     if (resolvedVscode) {
-      applyUiTheme(resolvedVscode);
-      storage.set("codeTheme", resolvedVscode.codeTheme);
-      applyWindowBackgroundColor(resolvedVscode.tokens.surface);
-      console.log(
-        `[preferences] Applied VS Code theme "${resolvedVscode.label}" → "${resolvedVscode.id}"`,
-      );
+      applyResolvedVscodeTheme(resolvedVscode, storage);
     } else {
       applyUiTheme(getUiTheme(loaded.uiTheme));
     }
@@ -369,6 +377,8 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         console.error("Failed to start companion server on load:", e);
       });
     }
+
+    set({ preferencesLoaded: true });
   },
 
   revealFileInTree: (path) => {
@@ -572,12 +582,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       resolvedVscodeTheme: resolved,
       codeTheme: resolved.codeTheme,
     });
-    storage.set("codeTheme", resolved.codeTheme);
-    applyUiTheme(resolved);
-    applyWindowBackgroundColor(resolved.tokens.surface);
-
-    console.log(
-      `[preferences] Applied VS Code theme "${resolved.label}" → "${resolved.id}"`,
-    );
+    applyResolvedVscodeTheme(resolved, storage);
   },
 });

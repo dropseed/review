@@ -28,15 +28,13 @@ import { useReviewFreshness } from "./hooks/useReviewFreshness";
  * Renders <Outlet /> for child routes.
  */
 function AppShell() {
-  const loadPreferences = useReviewStore((s) => s.loadPreferences);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
 
   useEffect(() => {
-    loadPreferences();
     loadGlobalReviews();
     checkClaudeAvailable();
-  }, [loadPreferences, loadGlobalReviews, checkClaudeAvailable]);
+  }, [loadGlobalReviews, checkClaudeAvailable]);
 
   const {
     repoStatus,
