@@ -344,6 +344,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const {
     selectedFile,
     viewMode,
+    showGitTab,
     setFilesPanelTab,
     expandedPaths,
     togglePath,
@@ -842,12 +843,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const searchActive = useReviewStore((s) => s.searchActive);
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
 
-  // Git status tab
-  const gitStatus = useReviewStore((s) => s.gitStatus);
-  const comparison = useReviewStore((s) => s.comparison);
-  const showGitTab =
-    gitStatus !== null && comparison.head === gitStatus.currentBranch;
-
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
   const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
@@ -965,16 +960,14 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     <ReviewDataProvider value={reviewDataContextValue}>
       <FilesPanelProvider value={filesPanelContextValue}>
         <div className="flex h-full flex-col">
-          {/* View mode toggle - always show all three tabs */}
+          {/* View mode toggle */}
           <div className="px-3 py-2">
             <Tabs
               value={viewMode}
               onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
             >
               <TabsList aria-label="File view mode">
-                {showGitTab && gitStatus && (
-                  <TabsTrigger value="git">Git</TabsTrigger>
-                )}
+                {showGitTab && <TabsTrigger value="git">Git</TabsTrigger>}
                 <TabsTrigger value="changes">Review</TabsTrigger>
                 <TabsTrigger value="browse">Browse</TabsTrigger>
                 <TabsTrigger value="commits">Commits</TabsTrigger>

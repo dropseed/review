@@ -55,17 +55,24 @@ export function useFilePanelNavigation({
   // When hunks are cleared (e.g. new comparison), allow auto-switching again
   // and default to Browse. When hunks arrive and user hasn't explicitly chosen
   // a tab, switch to "changes".
+  const prevHunksLength = useRef(hunks.length);
   useEffect(() => {
-    if (hunks.length === 0) {
+    const wasEmpty = prevHunksLength.current === 0;
+    const isEmpty = hunks.length === 0;
+    prevHunksLength.current = hunks.length;
+
+    if (isEmpty && !wasEmpty) {
+      // Hunks just became empty — reset to browse
       userHasChosenFilesPanelTab.current = false;
       setFilesPanelTab("browse");
       return;
     }
 
-    if (viewMode === "browse" && !userHasChosenFilesPanelTab.current) {
+    if (!isEmpty && wasEmpty && !userHasChosenFilesPanelTab.current) {
+      // Hunks just arrived — auto-switch to changes
       setFilesPanelTab("changes");
     }
-  }, [hunks.length, viewMode]);
+  }, [hunks.length]);
 
   // Auto-switch to Changes tab when guide mode is activated
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
@@ -95,18 +102,23 @@ export function useFilePanelNavigation({
     }
   }, [requestedFilesPanelTab, clearRequestedFilesPanelTab]);
 
-  // Auto-switch away from git tab when working tree is no longer included
+  // Derive whether the Git tab should be visible: the comparison head must
+  // match the current branch, and there must be actual working tree changes.
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const comparison = useReviewStore((s) => s.comparison);
+  const showGitTab =
+    gitStatus !== null &&
+    comparison.head === gitStatus.currentBranch &&
+    (gitStatus.staged.length > 0 ||
+      gitStatus.unstaged.length > 0 ||
+      gitStatus.untracked.length > 0);
 
+  // Auto-switch away from git tab when it is no longer applicable
   useEffect(() => {
-    if (viewMode !== "git") return;
-    const showGitTab =
-      gitStatus !== null && comparison.head === gitStatus.currentBranch;
-    if (!showGitTab) {
+    if (viewMode === "git" && !showGitTab) {
       setFilesPanelTab("changes");
     }
-  }, [viewMode, gitStatus, comparison.head]);
+  }, [viewMode, showGitTab]);
 
   // Auto-switch to/from search tab only on searchActive transitions
   const searchActive = useReviewStore((s) => s.searchActive);
@@ -240,6 +252,7 @@ export function useFilePanelNavigation({
   return {
     selectedFile,
     viewMode,
+    showGitTab,
     setFilesPanelTab: handleSetFilesPanelTab,
     expandedPaths,
     togglePath,
