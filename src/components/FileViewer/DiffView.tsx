@@ -177,7 +177,6 @@ export function DiffView({
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
-  const symbolLinkedHunks = useReviewStore((s) => s.symbolLinkedHunks);
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
 
@@ -418,7 +417,6 @@ export function DiffView({
     onViewInFile: typeof onViewInFile;
     hunkById: typeof hunkById;
     newAnnotationLine: typeof newAnnotationLine;
-    symbolLinkedHunks: typeof symbolLinkedHunks;
     workingTreeDiffMode: typeof workingTreeDiffMode;
     isWorkingTreeFile: boolean;
   }>(null!);
@@ -439,7 +437,6 @@ export function DiffView({
     onViewInFile,
     hunkById,
     newAnnotationLine,
-    symbolLinkedHunks,
     workingTreeDiffMode,
     isWorkingTreeFile: workingTreeDiffFile === fileName,
   };
@@ -512,7 +509,6 @@ export function DiffView({
 
           // Review mode: full annotation panel
           const similarHunks = deps.getSimilarHunks(hunk);
-          const symbolLinks = deps.symbolLinkedHunks.get(hunk.id) ?? [];
           return (
             <HunkAnnotationPanel
               hunk={hunk}
@@ -527,8 +523,6 @@ export function DiffView({
               hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
               totalHunksInFile={deps.hunks.length}
               similarHunks={similarHunks}
-              symbolLinks={symbolLinks}
-              hunkById={deps.hunkById}
               allHunkStates={deps.hunkStates ?? {}}
               onApprove={(hunkId) => {
                 const s = useReviewStore.getState();
@@ -566,9 +560,6 @@ export function DiffView({
                 s.rejectHunkIds(hunkIds);
                 s.nextHunkInFile();
               }}
-              onComment={(lineNumber, side, hunkId) =>
-                deps.setNewAnnotationLine({ lineNumber, side, hunkId })
-              }
               onAddTrustPattern={(pattern) =>
                 useReviewStore.getState().addTrustPattern(pattern)
               }

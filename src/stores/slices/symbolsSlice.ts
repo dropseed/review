@@ -2,13 +2,6 @@ import type { ApiClient } from "../../api";
 import type { FileSymbolDiff } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFilesWithStatus } from "../types";
-import {
-  computeSymbolLinkedHunks,
-  type SymbolLinkedHunk,
-} from "../../utils/symbolLinkedHunks";
-
-/** Singleton empty map -- preserves reference equality to avoid spurious re-renders. */
-const EMPTY_SYMBOL_MAP = new Map<string, SymbolLinkedHunk[]>();
 
 export interface SymbolsSlice {
   symbolDiffs: FileSymbolDiff[];
@@ -16,9 +9,6 @@ export interface SymbolsSlice {
   symbolsLoaded: boolean;
   loadSymbols: () => Promise<void>;
   clearSymbols: () => void;
-
-  /** Map from hunk ID → symbol-linked hunks (definition ↔ reference connections) */
-  symbolLinkedHunks: Map<string, SymbolLinkedHunk[]>;
 }
 
 /** State that must be cleared when switching comparisons. */
@@ -26,7 +16,6 @@ export const symbolsResetState = {
   symbolDiffs: [],
   symbolsLoading: false,
   symbolsLoaded: false,
-  symbolLinkedHunks: EMPTY_SYMBOL_MAP,
 } satisfies Partial<SymbolsSlice>;
 
 export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
@@ -56,7 +45,6 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         if (changedPaths.length === 0) {
           set({
             symbolDiffs: [],
-            symbolLinkedHunks: EMPTY_SYMBOL_MAP,
             symbolsLoading: false,
             symbolsLoaded: true,
           });
@@ -77,7 +65,6 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
 
         set({
           symbolDiffs: results,
-          symbolLinkedHunks: computeSymbolLinkedHunks(results),
           symbolsLoading: false,
           symbolsLoaded: true,
         });
@@ -85,7 +72,6 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         console.error("Failed to load symbols:", err);
         set({
           symbolDiffs: [],
-          symbolLinkedHunks: EMPTY_SYMBOL_MAP,
           symbolsLoading: false,
           symbolsLoaded: true,
         });
@@ -97,7 +83,6 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
     clearSymbols: () => {
       set({
         symbolDiffs: [],
-        symbolLinkedHunks: EMPTY_SYMBOL_MAP,
         symbolsLoaded: false,
       });
     },

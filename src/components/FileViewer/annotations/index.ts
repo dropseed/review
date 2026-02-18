@@ -5,4 +5,3 @@ export { HunkAnnotationPanel } from "./HunkAnnotationPanel";
 export { WorkingTreeHunkPanel } from "./WorkingTreeHunkPanel";
 export { HunkPreview } from "./HunkPreview";
 export { SimilarHunksModal } from "./SimilarHunksModal";
-export { SymbolLinkedHunksModal } from "./SymbolLinkedHunksModal";
