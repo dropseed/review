@@ -1,4 +1,4 @@
-import { isHunkReviewed } from "../../types";
+import { isHunkReviewed, isHunkTrusted } from "../../types";
 import type { ReviewStore, SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
@@ -133,6 +133,16 @@ function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
   return state.hunks.some(isFileHunkUnreviewed(filePath, state));
 }
 
+/** Check if a hunk is trusted and has no explicit user action (skip in navigation). */
+function isHunkTrustedInState(hunkId: string, state: ReviewStore): boolean {
+  const reviewState = state.reviewState;
+  if (!reviewState) return false;
+  const hunkState = reviewState.hunks[hunkId];
+  // Only skip if trusted AND not explicitly actioned (approved/rejected/saved)
+  if (hunkState?.status) return false;
+  return isHunkTrusted(hunkState, reviewState.trustList);
+}
+
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   set,
   get,
@@ -237,23 +247,31 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   },
 
   nextHunk: () => {
-    const { hunks, focusedHunkIndex } = get();
+    const state = get();
+    const { hunks, focusedHunkIndex } = state;
     if (hunks.length === 0) return;
-    const nextIndex = Math.min(focusedHunkIndex + 1, hunks.length - 1);
-    set({
-      focusedHunkIndex: nextIndex,
-      selectedFile: hunks[nextIndex].filePath,
-    });
+    // Scan forward to find the next non-trusted hunk
+    for (let i = focusedHunkIndex + 1; i < hunks.length; i++) {
+      if (!isHunkTrustedInState(hunks[i].id, state)) {
+        set({ focusedHunkIndex: i, selectedFile: hunks[i].filePath });
+        return;
+      }
+    }
+    // All remaining hunks are trusted — stay at current position
   },
 
   prevHunk: () => {
-    const { hunks, focusedHunkIndex } = get();
+    const state = get();
+    const { hunks, focusedHunkIndex } = state;
     if (hunks.length === 0) return;
-    const prevIndex = Math.max(focusedHunkIndex - 1, 0);
-    set({
-      focusedHunkIndex: prevIndex,
-      selectedFile: hunks[prevIndex].filePath,
-    });
+    // Scan backward to find the previous non-trusted hunk
+    for (let i = focusedHunkIndex - 1; i >= 0; i--) {
+      if (!isHunkTrustedInState(hunks[i].id, state)) {
+        set({ focusedHunkIndex: i, selectedFile: hunks[i].filePath });
+        return;
+      }
+    }
+    // All preceding hunks are trusted — stay at current position
   },
 
   // Guide content mode
@@ -319,16 +337,20 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   pendingCommentHunkId: null,
   setPendingCommentHunkId: (hunkId) => set({ pendingCommentHunkId: hunkId }),
 
-  // Advance to next hunk within the same file
+  // Advance to next hunk within the same file, skipping trusted hunks
   nextHunkInFile: () => {
-    const { hunks, focusedHunkIndex } = get();
+    const state = get();
+    const { hunks, focusedHunkIndex } = state;
     if (hunks.length === 0) return;
     const currentHunk = hunks[focusedHunkIndex];
     if (!currentHunk) return;
-    const nextIndex = focusedHunkIndex + 1;
-    const nextHunk = hunks[nextIndex];
-    if (nextHunk && nextHunk.filePath === currentHunk.filePath) {
-      set({ focusedHunkIndex: nextIndex });
+    // Scan forward within the same file, skipping trusted hunks
+    for (let i = focusedHunkIndex + 1; i < hunks.length; i++) {
+      if (hunks[i].filePath !== currentHunk.filePath) break;
+      if (!isHunkTrustedInState(hunks[i].id, state)) {
+        set({ focusedHunkIndex: i });
+        return;
+      }
     }
   },
 

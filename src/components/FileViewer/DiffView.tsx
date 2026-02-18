@@ -18,12 +18,14 @@ import {
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
+import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
 import { SimpleTooltip } from "../../components/ui/tooltip";
 import {
   NewAnnotationEditor,
   UserAnnotationDisplay,
   HunkAnnotationPanel,
+  TrustedHunkBadge,
   WorkingTreeHunkPanel,
 } from "./annotations";
 import { getFirstChangedLine } from "./hunkUtils";
@@ -497,6 +499,39 @@ export function DiffView({
                 }}
                 onCopyHunk={deps.handleCopyHunk}
                 onViewInFile={deps.onViewInFile}
+              />
+            );
+          }
+
+          // Trusted hunk: compact badge instead of full panel
+          const trustList = deps.reviewState?.trustList ?? [];
+          if (!hunkState?.status && isHunkTrusted(hunkState, trustList)) {
+            return (
+              <TrustedHunkBadge
+                hunk={hunk}
+                hunkState={hunkState}
+                focusedHunkId={deps.focusedHunkId}
+                focusedHunkRef={deps.focusedHunkRef}
+                trustList={trustList}
+                onApprove={(hunkId) => {
+                  const s = useReviewStore.getState();
+                  s.approveHunk(hunkId);
+                  s.nextHunkInFile();
+                }}
+                onReject={(hunkId) => {
+                  const s = useReviewStore.getState();
+                  s.rejectHunk(hunkId);
+                  const targetHunk = deps.hunks.find((h) => h.id === hunkId);
+                  if (targetHunk && !deps.newAnnotationLine) {
+                    const { lineNumber, side } =
+                      getFirstChangedLine(targetHunk);
+                    deps.setNewAnnotationLine({ lineNumber, side, hunkId });
+                  }
+                }}
+                onRemoveTrustPattern={(pattern) =>
+                  useReviewStore.getState().removeTrustPattern(pattern)
+                }
+                onCopyHunk={deps.handleCopyHunk}
               />
             );
           }
