@@ -8,7 +8,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   imports: "bg-status-trusted",
   formatting: "bg-surface-active",
   comments: "bg-status-modified",
-  "type-annotations": "bg-status-classifying",
+  "type-annotations": "bg-guide",
   file: "bg-pink-500",
   move: "bg-orange-500",
   generated: "bg-status-approved",

@@ -37,7 +37,7 @@ const BranchIcon = memo(function BranchIcon({
     case "stash":
       return (
         <svg
-          className={`${baseClass} text-status-classifying`}
+          className={`${baseClass} text-guide`}
           viewBox="0 0 20 20"
           fill="currentColor"
           aria-hidden="true"

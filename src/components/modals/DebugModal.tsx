@@ -14,10 +14,7 @@ function highlightJson(json: string): React.ReactNode[] {
         ': <span class="text-status-modified">"$1"</span>',
       )
       // Numbers
-      .replace(
-        /: (-?\d+\.?\d*)/g,
-        ': <span class="text-status-classifying">$1</span>',
-      )
+      .replace(/: (-?\d+\.?\d*)/g, ': <span class="text-guide">$1</span>')
       // Booleans and null
       .replace(
         /: (true|false|null)/g,

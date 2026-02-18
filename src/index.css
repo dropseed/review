@@ -154,7 +154,9 @@
   --color-status-rejected: #fb7185;    /* rose-400 */
   --color-status-pending: #a8a29e;     /* stone-400 */
   --color-status-saved: #fbbf24;       /* amber-400 */
-  --color-status-classifying: #a78bfa; /* violet-400 */
+
+  /* Guide accent */
+  --color-guide: #a78bfa;              /* violet-400 */
 
   /* Semantic status colors — file/change states */
   --color-status-added: #34d399;       /* emerald-400 (same as approved) */
@@ -321,8 +323,8 @@ html {
   position: relative;
   overflow: hidden;
   box-shadow:
-    0 0 8px color-mix(in srgb, var(--color-status-classifying) 20%, transparent),
-    0 0 20px color-mix(in srgb, var(--color-status-classifying) 8%, transparent);
+    0 0 8px color-mix(in srgb, var(--color-guide) 20%, transparent),
+    0 0 20px color-mix(in srgb, var(--color-guide) 8%, transparent);
 }
 
 .guide-start-button::before {
@@ -332,9 +334,9 @@ html {
   background: linear-gradient(
     105deg,
     transparent 30%,
-    color-mix(in srgb, var(--color-status-classifying) 18%, transparent) 45%,
-    color-mix(in srgb, var(--color-status-classifying) 30%, transparent) 50%,
-    color-mix(in srgb, var(--color-status-classifying) 18%, transparent) 55%,
+    color-mix(in srgb, var(--color-guide) 18%, transparent) 45%,
+    color-mix(in srgb, var(--color-guide) 30%, transparent) 50%,
+    color-mix(in srgb, var(--color-guide) 18%, transparent) 55%,
     transparent 70%
   );
   animation: guide-shimmer 3s ease-in-out infinite;
@@ -343,8 +345,8 @@ html {
 
 .guide-start-button:hover {
   box-shadow:
-    0 0 12px color-mix(in srgb, var(--color-status-classifying) 30%, transparent),
-    0 0 28px color-mix(in srgb, var(--color-status-classifying) 12%, transparent);
+    0 0 12px color-mix(in srgb, var(--color-guide) 30%, transparent),
+    0 0 28px color-mix(in srgb, var(--color-guide) 12%, transparent);
 }
 
 .guide-start-button:hover::before {

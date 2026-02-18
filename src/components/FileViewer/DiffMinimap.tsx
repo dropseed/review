@@ -54,7 +54,7 @@ const STATUS_COLORS: Record<HunkStatus, string> = {
   approved: "bg-status-approved",
   rejected: "bg-status-rejected",
   saved_for_later: "bg-status-saved",
-  classifying: "bg-status-classifying",
+  classifying: "bg-guide",
 };
 
 // --- Component ---

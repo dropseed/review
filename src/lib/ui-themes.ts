@@ -52,7 +52,7 @@ export interface UiThemeTokens {
   "status-rejected": string;
   "status-pending": string;
   "status-saved": string;
-  "status-classifying": string;
+  guide: string;
 
   // Status — file
   "status-added": string;
@@ -98,7 +98,7 @@ const DARK_DEFAULT_TOKENS: UiThemeTokens = {
   "status-rejected": "#fb7185",
   "status-pending": "#a8a29e",
   "status-saved": "#fbbf24",
-  "status-classifying": "#a78bfa",
+  guide: "#a78bfa",
   "status-added": "#34d399",
   "status-modified": "#fbbf24",
   "status-deleted": "#fb7185",
@@ -149,7 +149,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-rejected": "#e11d48",
       "status-pending": "#78716c",
       "status-saved": "#d97706",
-      "status-classifying": "#7c3aed",
+      guide: "#7c3aed",
       "status-added": "#059669",
       "status-modified": "#d97706",
       "status-deleted": "#e11d48",
@@ -214,7 +214,7 @@ export const UI_THEMES: UiTheme[] = [
       link: "#8be9fd",
       "status-approved": "#50fa7b",
       "status-rejected": "#ff5555",
-      "status-classifying": "#bd93f9",
+      guide: "#bd93f9",
       "status-modified": "#ffb86c",
       "status-renamed": "#8be9fd",
     },
@@ -245,7 +245,7 @@ export const UI_THEMES: UiTheme[] = [
       link: "#7dcfff",
       "status-approved": "#9ece6a",
       "status-rejected": "#f7768e",
-      "status-classifying": "#bb9af7",
+      guide: "#bb9af7",
       "status-modified": "#e0af68",
       "status-renamed": "#7dcfff",
     },
@@ -276,7 +276,7 @@ export const UI_THEMES: UiTheme[] = [
       link: "#88c0d0",
       "status-approved": "#a3be8c",
       "status-rejected": "#bf616a",
-      "status-classifying": "#b48ead",
+      guide: "#b48ead",
       "status-modified": "#ebcb8b",
       "status-renamed": "#88c0d0",
     },
@@ -307,7 +307,7 @@ export const UI_THEMES: UiTheme[] = [
       link: "#268bd2",
       "status-approved": "#859900",
       "status-rejected": "#dc322f",
-      "status-classifying": "#6c71c4",
+      guide: "#6c71c4",
       "status-modified": "#b58900",
       "status-renamed": "#268bd2",
     },
@@ -341,7 +341,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-rejected": "#dc322f",
       "status-pending": "#93a1a1",
       "status-saved": "#b58900",
-      "status-classifying": "#6c71c4",
+      guide: "#6c71c4",
       "status-added": "#859900",
       "status-modified": "#b58900",
       "status-deleted": "#dc322f",
@@ -425,7 +425,7 @@ const TOKEN_TO_CSS_VAR: Record<keyof UiThemeTokens, string> = {
   "status-rejected": "--color-status-rejected",
   "status-pending": "--color-status-pending",
   "status-saved": "--color-status-saved",
-  "status-classifying": "--color-status-classifying",
+  guide: "--color-guide",
   "status-added": "--color-status-added",
   "status-modified": "--color-status-modified",
   "status-deleted": "--color-status-deleted",

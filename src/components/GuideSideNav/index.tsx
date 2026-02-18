@@ -7,6 +7,7 @@ import {
 } from "react";
 import { useReviewStore } from "../../stores";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
+import { useSidebarResize } from "../../hooks";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk } from "../../types";
 import { SummaryStats } from "../GuideView/SummaryStats";
@@ -48,7 +49,7 @@ function buildHunkMap(hunks: DiffHunk[]): Map<string, DiffHunk> {
 }
 
 function groupItemStyle(isActive: boolean, isCompleted: boolean): string {
-  if (isActive) return "bg-status-modified/10 text-status-modified";
+  if (isActive) return "bg-guide/10 text-guide";
   if (isCompleted)
     return "text-fg-faint hover:text-fg-muted hover:bg-surface-raised/30";
   return "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30";
@@ -146,10 +147,14 @@ function GroupItemOverflowMenu({
   );
 }
 
-const SIDEBAR_WIDTH_REM = 15;
-
 export function GuideSideNav(): ReactNode {
   const progress = useReviewProgress();
+  const { sidebarWidth, handleResizeStart } = useSidebarResize({
+    sidebarPosition: "left",
+    initialWidth: 15,
+    minWidth: 12,
+    maxWidth: 30,
+  });
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
@@ -285,14 +290,14 @@ export function GuideSideNav(): ReactNode {
 
   return (
     <nav
-      className="flex h-full shrink-0 flex-col bg-surface border-r border-edge overflow-hidden"
-      style={{ width: `${SIDEBAR_WIDTH_REM}rem` }}
+      className="relative flex h-full shrink-0 flex-col bg-surface border-r border-edge overflow-hidden"
+      style={{ width: `${sidebarWidth}rem` }}
       aria-label="Guided Review"
     >
       {/* Header */}
       <div className="shrink-0 px-3 py-2.5 flex items-center gap-2">
         <svg
-          className="h-3.5 w-3.5 text-status-classifying shrink-0"
+          className="h-3.5 w-3.5 text-guide shrink-0"
           viewBox="0 0 24 24"
           fill="currentColor"
         >
@@ -388,10 +393,10 @@ export function GuideSideNav(): ReactNode {
               <button
                 type="button"
                 onClick={() => handleGroupClick(i)}
-                className={`flex items-center gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
+                className={`flex items-start gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
               >
                 {isCompleted ? (
-                  <span className="text-status-approved shrink-0">
+                  <span className="text-status-approved shrink-0 mt-px">
                     <svg
                       className="w-3 h-3"
                       viewBox="0 0 24 24"
@@ -407,13 +412,13 @@ export function GuideSideNav(): ReactNode {
                     </svg>
                   </span>
                 ) : (
-                  <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums">
+                  <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums mt-px">
                     {i + 1}
                   </span>
                 )}
-                <span className="truncate flex-1 text-left">{group.title}</span>
+                <span className="flex-1 text-left">{group.title}</span>
                 {!isCompleted && unreviewedCount > 0 && (
-                  <span className="text-xxs text-status-modified/70 tabular-nums shrink-0">
+                  <span className="text-xxs text-guide/70 tabular-nums shrink-0">
                     {unreviewedCount}
                   </span>
                 )}
@@ -438,6 +443,15 @@ export function GuideSideNav(): ReactNode {
           </div>
         )}
       </div>
+
+      {/* Resize handle (right edge) */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onMouseDown={handleResizeStart}
+        className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-guide/50 active:bg-guide"
+      />
     </nav>
   );
 }

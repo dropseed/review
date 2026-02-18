@@ -8,7 +8,7 @@
  * - Trust (auto-approve patterns): status-trusted
  * - Approve (manual): status-approved
  * - Reject: status-rejected
- * - Classifying: status-classifying
+ * - Guide: guide
  * - Focus/UI accent: focus-ring
  *
  * Git file status:
@@ -19,7 +19,7 @@ export const SEMANTIC_COLORS = {
   trust: "status-trusted",
   approve: "status-approved",
   reject: "status-rejected",
-  classifying: "status-classifying",
+  guide: "guide",
   focus: "focus-ring",
 } as const;
 

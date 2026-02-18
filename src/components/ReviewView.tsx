@@ -211,9 +211,9 @@ export function ReviewView({
                   onClick={handleStartGuide}
                   disabled={guideLoading}
                   className="guide-start-button flex items-center gap-1.5 rounded-lg px-3 py-1.5
-                             text-xs font-semibold text-status-classifying
-                             bg-status-classifying/[0.08] border border-status-classifying/25
-                             hover:bg-status-classifying/15 hover:border-status-classifying/35
+                             text-xs font-semibold text-guide
+                             bg-guide/[0.08] border border-guide/25
+                             hover:bg-guide/15 hover:border-guide/35
                              transition-all duration-200
                              disabled:opacity-50"
                 >

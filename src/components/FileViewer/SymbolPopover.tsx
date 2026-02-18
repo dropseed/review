@@ -32,11 +32,11 @@ const KIND_COLORS: Record<SymbolKind, string> = {
   function: "bg-status-renamed/20 text-status-renamed",
   class: "bg-status-modified/20 text-status-modified",
   struct: "bg-status-approved/20 text-status-approved",
-  trait: "bg-status-classifying/20 text-status-classifying",
+  trait: "bg-guide/20 text-guide",
   impl: "bg-fg-muted/20 text-fg-muted",
   method: "bg-status-renamed/20 text-status-renamed",
   enum: "bg-orange-500/20 text-orange-400",
-  interface: "bg-status-classifying/20 text-status-classifying",
+  interface: "bg-guide/20 text-guide",
   module: "bg-fg-muted/20 text-fg-secondary",
   type: "bg-status-trusted/20 text-status-trusted",
 };
