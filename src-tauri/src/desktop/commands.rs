@@ -2097,7 +2097,7 @@ pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryCo
     state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Base timeout in seconds for single-call Claude operations (grouping, summary, diagram).
+/// Base timeout in seconds for single-call Claude operations (grouping, summary).
 const CLAUDE_CALL_BASE_TIMEOUT_SECS: u64 = 120;
 /// Additional timeout seconds per hunk for single-call Claude operations.
 const CLAUDE_CALL_SECS_PER_HUNK: u64 = 1;
@@ -2198,54 +2198,6 @@ pub async fn generate_review_summary(
         result.title.len(),
         result.summary.len()
     );
-    Ok(result)
-}
-
-#[tauri::command]
-pub async fn generate_review_diagram(
-    repo_path: String,
-    hunks: Vec<review::ai::summary::SummaryInput>,
-    model: Option<String>,
-    command: Option<String>,
-) -> Result<Option<String>, String> {
-    use std::time::Duration;
-    use tokio::time::timeout;
-
-    let model = model.unwrap_or_else(|| "sonnet".to_owned());
-
-    debug!(
-        "[generate_review_diagram] repo_path={}, hunks={}, model={}, command={:?}",
-        repo_path,
-        hunks.len(),
-        model,
-        command,
-    );
-
-    let repo_path_buf = PathBuf::from(&repo_path);
-    let timeout_secs = claude_call_timeout_secs(hunks.len());
-
-    let result = timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::task::spawn_blocking(move || {
-            review::ai::summary::generate_diagram(
-                &hunks,
-                &repo_path_buf,
-                &model,
-                command.as_deref(),
-            )
-        }),
-    )
-    .await
-    .map_err(|_| format!("Diagram generation timed out after {timeout_secs} seconds"))?
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
-
-    let status = match &result {
-        None => "skipped",
-        Some(s) if s.is_empty() => "empty",
-        Some(_) => "generated",
-    };
-    info!("[generate_review_diagram] SUCCESS: {status}");
     Ok(result)
 }
 

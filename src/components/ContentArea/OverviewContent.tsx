@@ -4,9 +4,7 @@ import remarkGfm from "remark-gfm";
 import { useReviewStore } from "../../stores";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { getPlatformServices } from "../../platform";
-import { StructuredDiagram } from "../GuideView/StructuredDiagram";
 import { SummaryStats } from "../GuideView/SummaryStats";
-import { CopyErrorButton } from "../GuideView/CopyErrorButton";
 import { SummaryFileTree } from "../GuideView/SummaryFileTree";
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }): ReactNode {
@@ -83,14 +81,13 @@ function ErrorPanel({
   return (
     <div className="rounded-lg border border-status-rejected/50 bg-status-rejected/10 p-4">
       <p className="text-xs text-status-rejected">{message}</p>
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2">
         <button
           onClick={onRetry}
           className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
         >
           Retry
         </button>
-        <CopyErrorButton error={message} />
       </div>
     </div>
   );
@@ -161,78 +158,6 @@ function SummarySection(): ReactNode {
             <div className="flex items-center justify-end mt-2">
               <button
                 onClick={() => generateSummary()}
-                className="flex items-center gap-1 rounded-full bg-status-modified/15 px-2 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
-              >
-                Regenerate
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-      <DiagramSection />
-    </div>
-  );
-}
-
-function DiagramSection(): ReactNode {
-  const guideDiagram = useReviewStore((s) => s.guideDiagram);
-  const guideDiagramError = useReviewStore((s) => s.guideDiagramError);
-  const diagramStatus = useReviewStore((s) => s.diagramStatus);
-  const isSummaryStale = useReviewStore((s) => s.isSummaryStale);
-  const generateDiagram = useReviewStore((s) => s.generateDiagram);
-
-  const stale = guideDiagram ? isSummaryStale() : false;
-  const isValidJson = guideDiagram?.trimStart().startsWith("{") ?? false;
-  const skipped =
-    !guideDiagram && !guideDiagramError && diagramStatus === "done";
-
-  if (!guideDiagram && !guideDiagramError && diagramStatus === "idle")
-    return null;
-
-  return (
-    <div className="space-y-4">
-      {diagramStatus === "loading" && !guideDiagram && !guideDiagramError && (
-        <div className="rounded-lg border border-edge p-4">
-          <div className="flex items-center gap-2 text-fg-muted">
-            <Spinner />
-            <span className="text-xs">Generating diagram…</span>
-          </div>
-        </div>
-      )}
-      {skipped && (
-        <div className="rounded-lg border border-edge/50 p-3">
-          <p className="text-xxs text-fg-faint">
-            Diagram was skipped for this review.
-          </p>
-        </div>
-      )}
-      {guideDiagramError && (
-        <ErrorPanel
-          message={`Failed to generate diagram: ${guideDiagramError}`}
-          onRetry={() => generateDiagram()}
-        />
-      )}
-      {guideDiagram && !isValidJson && (
-        <div className="rounded-lg border border-edge p-4">
-          <p className="text-xs text-fg-muted">Diagram format has changed.</p>
-          <button
-            onClick={() => generateDiagram()}
-            className="mt-2 text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
-          >
-            Regenerate
-          </button>
-        </div>
-      )}
-      {guideDiagram && isValidJson && (
-        <div className="rounded-lg overflow-hidden">
-          <StructuredDiagram
-            sceneJson={guideDiagram}
-            onRetry={() => generateDiagram()}
-          />
-          {stale && (
-            <div className="flex items-center justify-end px-4 pb-3">
-              <button
-                onClick={() => generateDiagram()}
                 className="flex items-center gap-1 rounded-full bg-status-modified/15 px-2 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
               >
                 Regenerate

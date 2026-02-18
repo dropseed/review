@@ -230,13 +230,6 @@ export interface ApiClient {
     options?: { command?: string },
   ): Promise<{ title: string; summary: string }>;
 
-  /** Generate an Excalidraw diagram of the diff using Claude */
-  generateDiagram(
-    repoPath: string,
-    hunks: SummaryInput[],
-    options?: { command?: string },
-  ): Promise<string | null>;
-
   // ----- Trust patterns -----
 
   /** Get the built-in trust taxonomy */

@@ -370,7 +370,6 @@ export interface GuideState {
   generatedAt: string;
   title?: string;
   summary?: string;
-  diagram?: string;
 }
 
 export interface ReviewState {

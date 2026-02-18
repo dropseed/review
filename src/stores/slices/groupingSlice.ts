@@ -34,18 +34,13 @@ export interface GroupingSlice {
   guideTitle: string | null;
   guideSummary: string | null;
   guideSummaryError: string | null;
-  guideDiagram: string | null;
-  guideDiagramError: string | null;
   classificationStatus: GuideTaskStatus;
   groupingStatus: GuideTaskStatus;
   summaryStatus: GuideTaskStatus;
-  diagramStatus: GuideTaskStatus;
   startGuide: () => Promise<void>;
   exitGuide: () => void;
   generateSummary: () => Promise<void>;
-  generateDiagram: () => Promise<void>;
   clearGuideSummary: () => void;
-  clearGuideDiagram: () => void;
   isSummaryStale: () => boolean;
   isGuideStale: () => boolean;
   restoreGuideFromState: () => void;
@@ -149,7 +144,6 @@ function buildGuideUpdate(
     generatedAt: existing?.generatedAt ?? new Date().toISOString(),
     title: existing?.title,
     summary: existing?.summary,
-    diagram: existing?.diagram,
     ...overrides,
   };
 }
@@ -210,12 +204,9 @@ export const groupingResetState = {
   guideTitle: null,
   guideSummary: null,
   guideSummaryError: null,
-  guideDiagram: null,
-  guideDiagramError: null,
   classificationStatus: "idle",
   groupingStatus: "idle",
   summaryStatus: "idle",
-  diagramStatus: "idle",
 } satisfies Partial<GroupingSlice>;
 
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
@@ -247,7 +238,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         isSummaryStale,
         reviewGroups,
         guideSummary,
-        guideDiagram,
       } = get();
       if (hunks.length === 0) return;
 
@@ -256,7 +246,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       // Skip steps that already have fresh data
       const needsGrouping = reviewGroups.length === 0 || isGroupingStale();
       const needsSummary = guideSummary == null || isSummaryStale();
-      const needsDiagram = guideDiagram == null || isSummaryStale();
 
       // Switch to guide mode
       set({
@@ -267,16 +256,11 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         classificationStatus: "loading",
         groupingStatus: needsGrouping ? "loading" : "done",
         summaryStatus: needsSummary ? "loading" : "done",
-        diagramStatus: needsDiagram ? "loading" : "done",
       });
 
       const wrap = (
         promise: Promise<void>,
-        field:
-          | "classificationStatus"
-          | "groupingStatus"
-          | "summaryStatus"
-          | "diagramStatus",
+        field: "classificationStatus" | "groupingStatus" | "summaryStatus",
       ) =>
         promise
           .then(() => set({ [field]: "done" as GuideTaskStatus }))
@@ -289,10 +273,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         tasks.push(wrap(generateGrouping(), "groupingStatus"));
       }
       if (needsSummary) {
-        // generateSummary fires diagram generation in parallel internally
         tasks.push(wrap(get().generateSummary(), "summaryStatus"));
-      } else if (needsDiagram) {
-        tasks.push(wrap(get().generateDiagram(), "diagramStatus"));
       }
 
       await Promise.allSettled(tasks);
@@ -317,16 +298,12 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         saveReviewState,
         startActivity,
         endActivity,
-        generateDiagram,
-        guideDiagram,
-        isSummaryStale: isSummaryStaleCheck,
       } = get();
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
 
       const comparisonKey = comparison.key;
 
-      const needsDiagram = guideDiagram == null || isSummaryStaleCheck();
       const pr = reviewState.githubPr;
       const prTitle = pr?.title || null;
       const prBody = pr?.body || null;
@@ -343,90 +320,24 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           summaryStatus: "done",
         });
         await saveReviewState();
-
-        if (needsDiagram) {
-          set({ guideDiagramError: null, diagramStatus: "loading" });
-          await generateDiagram();
-        }
         return;
       }
 
       set({
         guideSummaryError: null,
         summaryStatus: "loading",
-        ...(needsDiagram
-          ? { guideDiagramError: null, diagramStatus: "loading" }
-          : {}),
       });
       startActivity("generate-summary", "Generating summary", 55);
 
-      const summaryInputs = buildSummaryInputs(hunks, reviewState.hunks);
-
-      const summaryPromise = (async () => {
-        try {
-          const { title, summary } = await client.generateSummary(
-            repoPath,
-            summaryInputs,
-          );
-
-          const finalTitle = prTitle || title;
-          const finalSummary = prBody || summary;
-
-          if (get().comparison.key !== comparisonKey) return;
-          const currentState = get().reviewState;
-          if (!currentState) return;
-
-          set({
-            reviewState: updateReviewGuide(currentState, hunks, {
-              title: finalTitle || undefined,
-              summary: finalSummary,
-            }),
-            guideTitle: finalTitle || null,
-            guideSummary: finalSummary,
-            summaryStatus: "done",
-          });
-          await saveReviewState();
-        } catch (err) {
-          console.error("[generateSummary] Failed:", err);
-          set({
-            guideSummaryError: err instanceof Error ? err.message : String(err),
-            summaryStatus: "error",
-          });
-        }
-      })();
-
-      // Fire diagram generation in parallel when needed
-      const diagramPromise = needsDiagram ? generateDiagram() : undefined;
-
-      await Promise.allSettled(
-        [summaryPromise, diagramPromise].filter(Boolean),
-      );
-      endActivity("generate-summary");
-    },
-
-    generateDiagram: async () => {
-      const {
-        repoPath,
-        hunks,
-        comparison,
-        reviewState,
-        saveReviewState,
-        startActivity,
-        endActivity,
-      } = get();
-      if (!repoPath || !reviewState) return;
-      if (hunks.length === 0) return;
-
-      const comparisonKey = comparison.key;
-
-      set({ guideDiagramError: null, diagramStatus: "loading" });
-      startActivity("generate-diagram", "Generating diagram", 55);
-
       try {
-        const diagram = await client.generateDiagram(
+        const summaryInputs = buildSummaryInputs(hunks, reviewState.hunks);
+        const { title, summary } = await client.generateSummary(
           repoPath,
-          buildSummaryInputs(hunks, reviewState.hunks),
+          summaryInputs,
         );
+
+        const finalTitle = prTitle || title;
+        const finalSummary = prBody || summary;
 
         if (get().comparison.key !== comparisonKey) return;
         const currentState = get().reviewState;
@@ -434,34 +345,33 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
         set({
           reviewState: updateReviewGuide(currentState, hunks, {
-            diagram: diagram ?? undefined,
+            title: finalTitle || undefined,
+            summary: finalSummary,
           }),
-          guideDiagram: diagram,
-          diagramStatus: "done",
+          guideTitle: finalTitle || null,
+          guideSummary: finalSummary,
+          summaryStatus: "done",
         });
         await saveReviewState();
       } catch (err) {
-        console.error("[generateDiagram] Failed:", err);
+        console.error("[generateSummary] Failed:", err);
         set({
-          guideDiagramError: err instanceof Error ? err.message : String(err),
-          diagramStatus: "error",
+          guideSummaryError: err instanceof Error ? err.message : String(err),
+          summaryStatus: "error",
         });
       } finally {
-        endActivity("generate-diagram");
+        endActivity("generate-summary");
       }
     },
 
     clearGuideSummary: () => {
       const { reviewState, saveReviewState } = get();
-      const hadPersistedData =
-        reviewState?.guide?.summary || reviewState?.guide?.diagram;
+      const hadPersistedData = reviewState?.guide?.summary;
 
       set({
         guideTitle: null,
         guideSummary: null,
         guideSummaryError: null,
-        guideDiagram: null,
-        guideDiagramError: null,
         ...(hadPersistedData && {
           reviewState: {
             ...reviewState,
@@ -469,7 +379,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
               ...reviewState!.guide!,
               title: undefined,
               summary: undefined,
-              diagram: undefined,
             },
             updatedAt: new Date().toISOString(),
           },
@@ -478,24 +387,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       if (hadPersistedData) {
         saveReviewState();
-      }
-    },
-
-    clearGuideDiagram: () => {
-      const { reviewState, saveReviewState } = get();
-      if (reviewState?.guide?.diagram) {
-        set({
-          guideDiagram: null,
-          guideDiagramError: null,
-          reviewState: {
-            ...reviewState,
-            guide: { ...reviewState.guide, diagram: undefined },
-            updatedAt: new Date().toISOString(),
-          },
-        });
-        saveReviewState();
-      } else {
-        set({ guideDiagram: null, guideDiagramError: null });
       }
     },
 
@@ -610,8 +501,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         guideTitle: null,
         guideSummary: null,
         guideSummaryError: null,
-        guideDiagram: null,
-        guideDiagramError: null,
       });
       saveReviewState();
     },
@@ -629,7 +518,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         reviewGroups: guide.groups,
         guideTitle: guide.title ?? null,
         guideSummary: guide.summary ?? null,
-        guideDiagram: guide.diagram ?? null,
         identicalHunkIds,
       });
     },

@@ -9,7 +9,6 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const components: Components = {
-    // Handle code blocks - detect mermaid language
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || "");
       const language = match?.[1];
