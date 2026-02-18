@@ -139,7 +139,7 @@ export const RepoSelect = memo(function RepoSelect({
         >
           <span className="flex items-center gap-2.5">
             <svg
-              className="h-4 w-4 text-fg0 shrink-0"
+              className="h-4 w-4 text-fg-muted shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -153,12 +153,12 @@ export const RepoSelect = memo(function RepoSelect({
               />
             </svg>
             <span
-              className={`block truncate font-mono ${displayName ? "text-fg-secondary" : "text-fg0"}`}
+              className={`block truncate font-mono ${displayName ? "text-fg-secondary" : "text-fg-muted"}`}
             >
               {displayName || "Select a repository…"}
             </span>
             <svg
-              className={`ml-auto h-4 w-4 text-fg0 shrink-0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+              className={`ml-auto h-4 w-4 text-fg-muted shrink-0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
               viewBox="0 0 20 20"
               fill="currentColor"
               aria-hidden="true"
@@ -285,7 +285,7 @@ export const RepoSelect = memo(function RepoSelect({
             `}
           >
             <svg
-              className="h-3.5 w-3.5 text-fg0 shrink-0"
+              className="h-3.5 w-3.5 text-fg-muted shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"

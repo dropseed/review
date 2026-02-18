@@ -1,5 +1,5 @@
 import { PatchDiff } from "@pierre/diffs/react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import type { CommitDetail } from "../../types";
@@ -50,12 +50,12 @@ function splitPatch(patch: string): string[] {
   return parts;
 }
 
-function statusIcon(status: string) {
+function statusIcon(status: string): ReactNode {
   switch (status) {
     case "added":
-      return <span className="text-status-approved">A</span>;
+      return <span className="text-status-added">A</span>;
     case "deleted":
-      return <span className="text-status-rejected">D</span>;
+      return <span className="text-status-deleted">D</span>;
     case "renamed":
       return <span className="text-status-renamed">R</span>;
     case "copied":
@@ -69,14 +69,13 @@ export function CommitDetailModal({
   isOpen,
   onClose,
   commitHash,
-}: CommitDetailModalProps) {
+}: CommitDetailModalProps): ReactNode {
   const { repoPath } = useReviewStore();
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   // Commit diffs always use unified or split (old/new modes don't apply)
-  const effectiveDiffStyle =
-    diffViewMode === "old" || diffViewMode === "new" ? "split" : diffViewMode;
+  const effectiveDiffStyle = diffViewMode === "unified" ? "unified" : "split";
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +140,7 @@ export function CommitDetailModal({
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-fg0 transition-colors hover:bg-surface-raised hover:text-fg-secondary"
+            className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary"
           >
             <svg
               className="h-5 w-5"
@@ -165,7 +164,7 @@ export function CommitDetailModal({
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
                 <div className="h-6 w-6 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
-                <span className="text-xs text-fg0">Loading commit...</span>
+                <span className="text-xs text-fg-muted">Loading commit...</span>
               </div>
             </div>
           )}
@@ -191,7 +190,7 @@ export function CommitDetailModal({
               <div className="px-5 py-3 border-b border-edge/60 flex items-center gap-4 text-xs text-fg-muted">
                 <div className="flex items-center gap-1.5">
                   <svg
-                    className="h-3.5 w-3.5 text-fg0"
+                    className="h-3.5 w-3.5 text-fg-muted"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -209,7 +208,7 @@ export function CommitDetailModal({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <svg
-                    className="h-3.5 w-3.5 text-fg0"
+                    className="h-3.5 w-3.5 text-fg-muted"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -229,7 +228,7 @@ export function CommitDetailModal({
               {/* Changed files */}
               <div className="px-5 py-3 border-b border-edge/60">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="text-xxs font-medium text-fg0 uppercase tracking-wide">
+                  <span className="text-xxs font-medium text-fg-muted uppercase tracking-wide">
                     Changed files
                   </span>
                   <span className="rounded-full bg-surface-raised px-1.5 py-0.5 text-xxs font-medium text-fg-muted tabular-nums">
@@ -250,12 +249,12 @@ export function CommitDetailModal({
                       </span>
                       <span className="flex items-center gap-1.5 tabular-nums text-xxs">
                         {file.additions > 0 && (
-                          <span className="text-status-approved">
+                          <span className="text-diff-added">
                             +{file.additions}
                           </span>
                         )}
                         {file.deletions > 0 && (
-                          <span className="text-status-rejected">
+                          <span className="text-diff-removed">
                             -{file.deletions}
                           </span>
                         )}

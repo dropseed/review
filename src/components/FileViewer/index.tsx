@@ -1,4 +1,11 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
@@ -25,7 +32,10 @@ interface FileViewerProps {
   isFocusedPane?: boolean;
 }
 
-export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
+export function FileViewer({
+  filePath,
+  isFocusedPane,
+}: FileViewerProps): ReactNode {
   const {
     comparison,
     repoPath,
@@ -47,6 +57,7 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
   } = useFileViewerState();
 
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
+  const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
 
@@ -197,7 +208,10 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
   }, []);
 
   const handleExitWorkingTreeMode = useCallback(() => {
-    useReviewStore.setState({ workingTreeDiffFile: null });
+    useReviewStore.setState({
+      workingTreeDiffFile: null,
+      workingTreeDiffMode: null,
+    });
   }, []);
 
   // File-level annotations (lineNumber === 0, side === "file")
@@ -318,19 +332,30 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
     }
     setError(null);
 
-    // When viewing a Git panel file, use HEAD vs working tree comparison
-    const effectiveComparison =
-      isWorkingTreeMode && gitStatus
-        ? makeComparison("HEAD", gitStatus.currentBranch)
-        : comparison;
+    // When viewing a Git panel file with a specific mode, use the dedicated API
+    const contentPromise =
+      isWorkingTreeMode && workingTreeDiffMode
+        ? getApiClient().getWorkingTreeFileContent(
+            repoPath,
+            filePath,
+            workingTreeDiffMode === "staged",
+          )
+        : (() => {
+            // Fallback: combined diff from HEAD vs working tree
+            const effectiveComparison =
+              isWorkingTreeMode && gitStatus
+                ? makeComparison("HEAD", gitStatus.currentBranch)
+                : comparison;
 
-    getApiClient()
-      .getFileContent(
-        repoPath,
-        filePath,
-        effectiveComparison,
-        isWorkingTreeMode ? undefined : reviewState?.githubPr,
-      )
+            return getApiClient().getFileContent(
+              repoPath,
+              filePath,
+              effectiveComparison,
+              isWorkingTreeMode ? undefined : reviewState?.githubPr,
+            );
+          })();
+
+    contentPromise
       .then((result) => {
         if (!cancelled) {
           setFileContent(result);
@@ -361,6 +386,7 @@ export function FileViewer({ filePath, isFocusedPane }: FileViewerProps) {
     fileHunkKey,
     refreshGeneration,
     isWorkingTreeMode,
+    workingTreeDiffMode,
     gitStatus,
   ]);
 

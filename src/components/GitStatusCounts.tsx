@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 interface GitStatusCountsProps {
   staged: number;
   unstaged: number;
@@ -8,11 +10,11 @@ export function GitStatusCounts({
   staged,
   unstaged,
   untracked,
-}: GitStatusCountsProps) {
+}: GitStatusCountsProps): ReactNode {
   return (
     <>
       {staged > 0 && (
-        <span className="font-mono text-xxs font-medium tabular-nums text-status-approved">
+        <span className="font-mono text-xxs font-medium tabular-nums text-status-added">
           +{staged}
         </span>
       )}
@@ -22,7 +24,7 @@ export function GitStatusCounts({
         </span>
       )}
       {untracked > 0 && (
-        <span className="font-mono text-xxs font-medium tabular-nums text-fg0">
+        <span className="font-mono text-xxs font-medium tabular-nums text-fg-muted">
           ?{untracked}
         </span>
       )}

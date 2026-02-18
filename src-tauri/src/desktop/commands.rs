@@ -950,6 +950,93 @@ pub fn unstage_all(repo_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn stage_hunks(
+    repo_path: String,
+    file_path: String,
+    content_hashes: Vec<String>,
+) -> Result<(), String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source
+        .stage_hunks(&file_path, &content_hashes)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn unstage_hunks(
+    repo_path: String,
+    file_path: String,
+    content_hashes: Vec<String>,
+) -> Result<(), String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source
+        .unstage_hunks(&file_path, &content_hashes)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_working_tree_file_content(
+    repo_path: String,
+    file_path: String,
+    cached: bool,
+) -> Result<FileContent, String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    let raw_diff = source
+        .get_raw_file_diff(&file_path, cached)
+        .map_err(|e| e.to_string())?;
+
+    let hunks = if raw_diff.is_empty() {
+        vec![]
+    } else {
+        parse_diff(&raw_diff, &file_path)
+    };
+
+    let old_content = if cached {
+        // Staged diff: old side is HEAD
+        source
+            .get_file_bytes(&file_path, "HEAD")
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+    } else {
+        // Unstaged diff: old side is the index, falling back to HEAD
+        source
+            .get_file_bytes(&file_path, ":0")
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+            .or_else(|| {
+                source
+                    .get_file_bytes(&file_path, "HEAD")
+                    .ok()
+                    .and_then(|b| String::from_utf8(b).ok())
+            })
+    };
+
+    let content = if cached {
+        // Staged diff: new side is the index
+        source
+            .get_file_bytes(&file_path, ":0")
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+            .unwrap_or_default()
+    } else {
+        // Unstaged diff: new side is the working tree
+        let full_path = PathBuf::from(&repo_path).join(&file_path);
+        std::fs::read_to_string(&full_path).unwrap_or_default()
+    };
+
+    let content_type = get_content_type(&file_path);
+
+    Ok(FileContent {
+        content,
+        old_content,
+        diff_patch: raw_diff,
+        hunks,
+        content_type,
+        image_data_url: None,
+        old_image_data_url: None,
+    })
+}
+
+#[tauri::command]
 pub fn get_git_status_raw(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_status_raw().map_err(|e| e.to_string())
@@ -1558,6 +1645,64 @@ pub async fn get_file_symbol_diffs(
         info!(
             "[get_file_symbol_diffs] SUCCESS: {} files processed",
             results.len()
+        );
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_dependency_graph(
+    repo_path: String,
+    file_paths: Vec<String>,
+    comparison: Comparison,
+) -> Result<symbols::graph::DependencyGraph, String> {
+    let symbol_diffs = get_file_symbol_diffs(repo_path, file_paths, comparison).await?;
+    Ok(symbols::graph::build_dependency_graph(&symbol_diffs))
+}
+
+#[derive(Serialize)]
+pub struct RepoFileSymbols {
+    #[serde(rename = "filePath")]
+    pub file_path: String,
+    pub symbols: Vec<Symbol>,
+}
+
+#[tauri::command]
+pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>, String> {
+    debug!("[get_repo_symbols] repo_path={}", repo_path);
+
+    tokio::task::spawn_blocking(move || {
+        let t0 = Instant::now();
+        let repo_path_buf = PathBuf::from(&repo_path);
+        let source = LocalGitSource::new(repo_path_buf.clone()).map_err(|e| e.to_string())?;
+        let tracked_files = source.get_tracked_files().map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        for file_path in &tracked_files {
+            let syms = if symbols::extractor::get_language_for_file(file_path).is_some() {
+                let full_path = repo_path_buf.join(file_path);
+                std::fs::read_to_string(&full_path)
+                    .ok()
+                    .and_then(|content| symbols::extractor::extract_symbols(&content, file_path))
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            results.push(RepoFileSymbols {
+                file_path: file_path.clone(),
+                symbols: syms,
+            });
+        }
+
+        results.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+        info!(
+            "[get_repo_symbols] SUCCESS: {} files ({} with symbols) in {:?}",
+            results.len(),
+            results.iter().filter(|r| !r.symbols.is_empty()).count(),
+            t0.elapsed()
         );
         Ok(results)
     })

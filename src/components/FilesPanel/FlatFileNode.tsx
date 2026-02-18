@@ -1,37 +1,23 @@
-import { useState, useMemo, useCallback, memo } from "react";
-import { StatusLetter, HunkCount } from "./StatusIndicators";
-import type { FileHunkStatus } from "./types";
-import { ApprovalButtons, type HunkContext } from "./FileNode";
-import { NodeOverflowMenu } from "./NodeOverflowMenu";
-import type { FileSymbolDiff } from "../../types";
+import { memo } from "react";
 import {
-  ChangeIndicator,
-  ReviewStatusDot,
-  sortSymbols,
-  collectAllHunkIds,
-  getHunkIdsStatus,
-  SymbolRow,
-} from "../symbols";
-import { useReviewData } from "../ReviewDataContext";
+  TreeNodeItem,
+  TreeRow,
+  StatusLetter,
+  TreeFileIcon,
+  WorkingTreeDot,
+} from "../tree";
+import type { FileHunkStatus } from "./types";
+import { ApprovalButtons, StageButtons, type HunkContext } from "./FileNode";
+import { NodeOverflowMenu } from "./NodeOverflowMenu";
 
-function flatFileNameColor(
-  isSelected: boolean,
-  isComplete: boolean,
-  hasRejections: boolean,
-): string {
-  if (isSelected) return "text-fg";
-  if (isComplete && hasRejections) return "text-status-rejected";
-  if (isComplete) return "text-status-approved";
-  return "text-fg-secondary";
+function flatFileNameColor(isSelected: boolean): string {
+  return isSelected ? "text-fg" : "text-fg-secondary";
 }
-
-// --- Props ---
 
 interface FlatFileNodeProps {
   filePath: string;
   fileStatus: string | undefined;
   hunkStatus: FileHunkStatus;
-  symbolDiff: FileSymbolDiff | null;
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
   hunkContext: HunkContext;
@@ -39,104 +25,54 @@ interface FlatFileNodeProps {
   onUnapproveAll?: (path: string, isDir: boolean) => void;
   onRejectAll?: (path: string, isDir: boolean) => void;
   movedFilePaths?: Set<string>;
+  onStage?: (path: string, isDir: boolean) => void;
+  onUnstage?: (path: string, isDir: boolean) => void;
+  workingTreeStatusMap?: Map<string, string>;
 }
-
-// --- Flat file node ---
 
 export const FlatFileNode = memo(function FlatFileNode({
   filePath,
   fileStatus,
   hunkStatus,
-  symbolDiff,
   selectedFile,
   onSelectFile,
-  hunkContext,
   onApproveAll,
   onUnapproveAll,
   onRejectAll,
   movedFilePaths,
+  onStage,
+  onUnstage,
+  workingTreeStatusMap,
 }: FlatFileNodeProps) {
-  const {
-    hunkStates,
-    trustList,
-    onNavigate: onNavigateToHunk,
-  } = useReviewData();
-  const [expanded, setExpanded] = useState(false);
-
   const isSelected = selectedFile === filePath;
   const hasReviewableContent = hunkStatus.total > 0;
   const hasPending = hunkStatus.pending > 0;
   const hasApproved = hunkStatus.approved > 0;
-  const isComplete = hasReviewableContent && hunkStatus.pending === 0;
   const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
 
-  // Split path into dir + filename
   const lastSlash = filePath.lastIndexOf("/");
   const dirPath = lastSlash >= 0 ? filePath.substring(0, lastSlash + 1) : "";
   const fileName =
     lastSlash >= 0 ? filePath.substring(lastSlash + 1) : filePath;
 
-  // Symbol data
-  const hasGrammar = symbolDiff?.hasGrammar ?? false;
-  const sortedSymbols = useMemo(
-    () => (hasGrammar && symbolDiff ? sortSymbols(symbolDiff.symbols) : []),
-    [hasGrammar, symbolDiff],
-  );
-
-  // All file hunk IDs for no-grammar fallback
-  const allFileHunkIds = useMemo(() => {
-    if (!symbolDiff) return [];
-    const ids = [...symbolDiff.topLevelHunkIds];
-    for (const sym of symbolDiff.symbols) {
-      ids.push(...collectAllHunkIds(sym));
-    }
-    return ids;
-  }, [symbolDiff]);
-
-  const topLevelStatus = useMemo(
-    () =>
-      symbolDiff
-        ? getHunkIdsStatus(symbolDiff.topLevelHunkIds, hunkStates, trustList)
-        : null,
-    [symbolDiff, hunkStates, trustList],
-  );
-
-  const handleToggle = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpanded((v) => !v);
-  }, []);
-
   return (
-    <div className="file-node-item select-none">
-      {/* File row */}
-      <div
-        className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 pl-2 transition-colors ${
+    <TreeNodeItem>
+      <TreeRow
+        depth={0}
+        className={
           isSelected
             ? "bg-status-modified/15 border-l-2 border-l-status-modified"
             : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
-        }`}
+        }
       >
-        {/* Chevron for expand/collapse */}
-        <button className="flex-shrink-0" onClick={handleToggle}>
-          <svg
-            className={`h-3 w-3 text-fg-faint transition-transform ${expanded ? "rotate-90" : ""}`}
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M10 6l6 6-6 6" />
-          </svg>
-        </button>
+        <TreeFileIcon name={fileName} isDirectory={false} />
 
-        {/* Git status letter */}
-        <StatusLetter status={fileStatus} />
-
-        {/* File path: dir (dim) + name (bright) */}
         <button
           className="flex flex-1 items-center text-left min-w-0"
           onClick={() => onSelectFile(filePath)}
         >
           <span
-            className={`min-w-0 truncate text-xs ${flatFileNameColor(isSelected, isComplete, hunkStatus.rejected > 0)}`}
+            className={`min-w-0 truncate text-xs ${flatFileNameColor(isSelected)}`}
           >
             {dirPath && <span className="text-fg-muted">{dirPath}</span>}
             {fileName}
@@ -148,7 +84,6 @@ export const FlatFileNode = memo(function FlatFileNode({
           )}
         </button>
 
-        {/* Approval buttons on hover */}
         {hasReviewActions && hasReviewableContent && (
           <ApprovalButtons
             hasPending={hasPending}
@@ -158,7 +93,6 @@ export const FlatFileNode = memo(function FlatFileNode({
           />
         )}
 
-        {/* Overflow menu */}
         {hasReviewActions && (
           <NodeOverflowMenu
             path={filePath}
@@ -172,77 +106,33 @@ export const FlatFileNode = memo(function FlatFileNode({
           />
         )}
 
-        {/* Hunk count */}
-        <HunkCount status={hunkStatus} context={hunkContext} />
-      </div>
+        {(onStage || onUnstage) && (
+          <StageButtons
+            onStage={onStage ? () => onStage(filePath, false) : undefined}
+            onUnstage={onUnstage ? () => onUnstage(filePath, false) : undefined}
+          />
+        )}
 
-      {/* Symbol subtree (when expanded) */}
-      {expanded && (
-        <div className="pb-0.5">
-          {hasGrammar && sortedSymbols.length > 0 ? (
-            <>
-              {sortedSymbols.map((symbol) => (
-                <SymbolRow
-                  key={`${symbol.changeType}-${symbol.name}-${symbol.newRange?.startLine ?? symbol.oldRange?.startLine ?? 0}`}
-                  symbol={symbol}
-                  depth={2}
-                  filePath={filePath}
-                />
-              ))}
+        {workingTreeStatusMap?.has(filePath) && (
+          <WorkingTreeDot
+            status={workingTreeStatusMap.get(filePath)!}
+            hideOnHover={
+              (hasReviewActions && hasReviewableContent) ||
+              !!onStage ||
+              !!onUnstage
+            }
+          />
+        )}
 
-              {/* Top-level changes outside symbols */}
-              {topLevelStatus && topLevelStatus.total > 0 && (
-                <div
-                  className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
-                  style={{ paddingLeft: "2.1rem" }}
-                  onClick={() => {
-                    if (symbolDiff && symbolDiff.topLevelHunkIds.length > 0) {
-                      onNavigateToHunk(filePath, symbolDiff.topLevelHunkIds[0]);
-                    }
-                  }}
-                >
-                  <span className="w-3 flex-shrink-0" />
-                  <ChangeIndicator changeType="modified" />
-                  <span className="min-w-0 flex-1 truncate text-left text-xs italic text-fg-muted">
-                    top-level changes
-                  </span>
-                  <ReviewStatusDot status={topLevelStatus} />
-                </div>
-              )}
-            </>
-          ) : (
-            /* No grammar or no symbols — show summary */
-            <div
-              className="flex items-center gap-1.5 py-1 pl-8 pr-2 text-xs text-fg-muted italic cursor-pointer hover:bg-surface-raised/40 transition-colors"
-              onClick={() => {
-                if (allFileHunkIds.length > 0) {
-                  onNavigateToHunk(filePath, allFileHunkIds[0]);
-                }
-              }}
-            >
-              <ChangeIndicator changeType="modified" />
-              <span>
-                {allFileHunkIds.length}{" "}
-                {allFileHunkIds.length === 1 ? "hunk" : "hunks"}
-              </span>
-              {allFileHunkIds.length > 0 && (
-                <ReviewStatusDot
-                  status={getHunkIdsStatus(
-                    allFileHunkIds,
-                    hunkStates,
-                    trustList,
-                  )}
-                />
-              )}
-              {symbolDiff && !symbolDiff.hasGrammar && (
-                <span className="text-xxs text-fg-faint italic ml-1">
-                  no grammar
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        <StatusLetter
+          status={fileStatus}
+          hideOnHover={
+            (hasReviewActions && hasReviewableContent) ||
+            !!onStage ||
+            !!onUnstage
+          }
+        />
+      </TreeRow>
+    </TreeNodeItem>
   );
 });

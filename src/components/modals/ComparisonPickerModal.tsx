@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { type ReactNode, useState, useCallback, useEffect } from "react";
 import type { Comparison, GitHubPrRef } from "../../types";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
@@ -23,7 +23,7 @@ export function ComparisonPickerModal({
   onClose,
   onNewReview,
   prefilledRepoPath,
-}: ComparisonPickerModalProps) {
+}: ComparisonPickerModalProps): ReactNode {
   const savedReviews = useReviewStore((s) => s.savedReviews);
   const recentRepositories = useReviewStore((s) => s.recentRepositories);
 
@@ -82,7 +82,7 @@ export function ComparisonPickerModal({
 
         <div className="px-5 py-5 space-y-5">
           <div>
-            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg0">
+            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
               Repository
             </label>
             <RepoSelect
@@ -96,7 +96,7 @@ export function ComparisonPickerModal({
           <div className="border-t border-edge/60" />
 
           <div>
-            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg0">
+            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
               Comparison
             </label>
             {selectedRepoPath ? (

@@ -257,7 +257,7 @@ export function ImageViewer({
           <div className="flex h-full">
             {/* Old image */}
             <div className="image-viewer-checkerboard flex flex-1 flex-col border-r border-edge">
-              <div className="bg-surface-panel/80 px-3 py-1 text-xxs font-medium text-status-rejected">
+              <div className="bg-surface-panel/80 px-3 py-1 text-xxs font-medium text-diff-removed">
                 Before
               </div>
               <div className="flex flex-1 items-center justify-center overflow-auto p-4">
@@ -271,7 +271,7 @@ export function ImageViewer({
             </div>
             {/* New image */}
             <div className="image-viewer-checkerboard flex flex-1 flex-col">
-              <div className="bg-surface-panel/80 px-3 py-1 text-xxs font-medium text-status-approved">
+              <div className="bg-surface-panel/80 px-3 py-1 text-xxs font-medium text-diff-added">
                 After
               </div>
               <div className="flex flex-1 items-center justify-center overflow-auto p-4">
@@ -334,10 +334,10 @@ export function ImageViewer({
               </div>
             </div>
             {/* Labels */}
-            <div className="absolute bottom-4 left-4 rounded bg-status-rejected/80 px-2 py-0.5 text-xxs font-medium text-white">
+            <div className="absolute bottom-4 left-4 rounded bg-diff-removed/80 px-2 py-0.5 text-xxs font-medium text-white">
               Before
             </div>
-            <div className="absolute bottom-4 right-4 rounded bg-status-approved/80 px-2 py-0.5 text-xxs font-medium text-white">
+            <div className="absolute bottom-4 right-4 rounded bg-diff-added/80 px-2 py-0.5 text-xxs font-medium text-white">
               After
             </div>
           </div>

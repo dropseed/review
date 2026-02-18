@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReviewStore } from "../../stores";
@@ -18,7 +18,7 @@ export function NarrativeContent({
   content: string;
   className?: string;
   onBeforeNavigate?: () => void;
-}) {
+}): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
@@ -95,7 +95,7 @@ export function NarrativeContent({
             const allDone = reviewed === fileStatus.total;
             indicator = (
               <span
-                className={`inline-flex items-center ml-1 text-2xs tabular-nums ${allDone ? "text-status-approved/70" : "text-fg0"}`}
+                className={`inline-flex items-center ml-1 text-2xs tabular-nums ${allDone ? "text-status-approved/70" : "text-fg-muted"}`}
               >
                 {allDone ? (
                   <svg

@@ -1,29 +1,93 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
 import {
   processTree,
   calculateFileHunkStatus,
 } from "../FilesPanel/FileTree.utils";
-import { StatusLetter, HunkCount } from "../FilesPanel/StatusIndicators";
+import {
+  TreeNodeItem,
+  TreeRow,
+  TreeRowButton,
+  TreeChevron,
+  TreeNodeName,
+  StatusLetter,
+  TreeFileIcon,
+} from "../tree";
+import type { FileHunkStatus } from "../tree";
 import type { ProcessedFileEntry } from "../FilesPanel/types";
+import type { DiffHunk, HunkState } from "../../types";
+import { isHunkTrusted } from "../../types";
 
-function ChevronIcon({ collapsed }: { collapsed: boolean }) {
-  return (
-    <svg
-      className={`w-3 h-3 text-fg0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-    </svg>
-  );
+/** Per-file diff + review stats, precomputed once */
+interface FileDiffStats {
+  additions: number;
+  deletions: number;
+  /** Unique trust labels across all trusted hunks in this file */
+  trustLabels: string[];
 }
 
-// Compact single-visible-child directory chains after filtering by matchesFilter.
-// processTree's compactTree only compacts based on the full tree structure,
-// but in "changes" mode many directories have only one *visible* child.
+/** Per-directory aggregated diff stats */
+interface DirDiffStats {
+  additions: number;
+  deletions: number;
+}
+
+function computeFileDiffStats(
+  hunks: DiffHunk[],
+  reviewState: { hunks: Record<string, HunkState>; trustList: string[] } | null,
+): Map<string, FileDiffStats> {
+  const map = new Map<string, FileDiffStats>();
+
+  for (const hunk of hunks) {
+    let stats = map.get(hunk.filePath);
+    if (!stats) {
+      stats = { additions: 0, deletions: 0, trustLabels: [] };
+      map.set(hunk.filePath, stats);
+    }
+
+    for (const line of hunk.lines) {
+      if (line.type === "added") stats.additions++;
+      else if (line.type === "removed") stats.deletions++;
+    }
+
+    // Collect trust labels for trusted hunks
+    if (reviewState) {
+      const hunkState = reviewState.hunks[hunk.id];
+      if (isHunkTrusted(hunkState, reviewState.trustList) && hunkState?.label) {
+        for (const label of hunkState.label) {
+          if (!stats.trustLabels.includes(label)) {
+            stats.trustLabels.push(label);
+          }
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+/** Aggregate +/− across all files in a subtree */
+function aggregateDirStats(
+  entry: ProcessedFileEntry,
+  fileStats: Map<string, FileDiffStats>,
+): DirDiffStats {
+  if (!entry.isDirectory || !entry.children) {
+    const s = fileStats.get(entry.path);
+    return { additions: s?.additions ?? 0, deletions: s?.deletions ?? 0 };
+  }
+  let additions = 0;
+  let deletions = 0;
+  for (const child of entry.children) {
+    const childStats = aggregateDirStats(child, fileStats);
+    additions += childStats.additions;
+    deletions += childStats.deletions;
+  }
+  return { additions, deletions };
+}
+
+/**
+ * Compact single-visible-child directory chains after filtering by matchesFilter.
+ */
 function compactFiltered(entries: ProcessedFileEntry[]): ProcessedFileEntry[] {
   return entries.map((entry) => {
     if (!entry.isDirectory || !entry.children) return entry;
@@ -57,12 +121,92 @@ function compactFiltered(entries: ProcessedFileEntry[]): ProcessedFileEntry[] {
   });
 }
 
-function indentStyle(depth: number): { paddingLeft: string } {
-  return { paddingLeft: `${depth * 0.75 + 0.375}rem` };
+// --- Inline sub-components ---
+
+function DiffLineStats({
+  additions,
+  deletions,
+}: {
+  additions: number;
+  deletions: number;
+}): ReactNode {
+  if (additions === 0 && deletions === 0) return null;
+  return (
+    <span className="flex-shrink-0 font-mono text-xxs tabular-nums flex items-center gap-1">
+      {additions > 0 && (
+        <span className="text-diff-added/70">+{additions}</span>
+      )}
+      {deletions > 0 && (
+        <span className="text-diff-removed/70">&minus;{deletions}</span>
+      )}
+    </span>
+  );
 }
 
-const ROW_CLASS =
-  "flex items-center gap-1 w-full text-left hover:bg-surface-raised/50 rounded px-1.5 py-0.5";
+function ReviewProgressBar({ status }: { status: FileHunkStatus }): ReactNode {
+  if (status.total === 0) return null;
+
+  const reviewed = status.approved + status.trusted;
+  const rejected = status.rejected;
+  const total = status.total;
+  const reviewedPct = (reviewed / total) * 100;
+  const rejectedPct = (rejected / total) * 100;
+
+  return (
+    <div className="flex-shrink-0 flex items-center gap-1.5">
+      <div className="w-12 h-1 rounded-full bg-surface-raised overflow-hidden flex">
+        {reviewedPct > 0 && (
+          <div
+            className="h-full bg-status-approved"
+            style={{ width: `${reviewedPct}%` }}
+          />
+        )}
+        {rejectedPct > 0 && (
+          <div
+            className="h-full bg-status-rejected"
+            style={{ width: `${rejectedPct}%` }}
+          />
+        )}
+      </div>
+      <span className="font-mono text-xxs tabular-nums text-fg-muted">
+        {reviewed + rejected}/{total}
+      </span>
+    </div>
+  );
+}
+
+/** Extract the category from a label like "imports:added" → "imports" */
+function labelCategory(label: string): string {
+  const i = label.indexOf(":");
+  return i >= 0 ? label.substring(0, i) : label;
+}
+
+function TrustChips({ labels }: { labels: string[] }): ReactNode {
+  if (labels.length === 0) return null;
+
+  // Dedupe by category, show at most 3
+  const categories = [...new Set(labels.map(labelCategory))];
+  const shown = categories.slice(0, 3);
+  const overflow = categories.length - shown.length;
+
+  return (
+    <span className="flex-shrink-0 flex items-center gap-0.5">
+      {shown.map((cat) => (
+        <span
+          key={cat}
+          className="rounded bg-status-approved/10 px-1 py-px text-xxs text-status-approved"
+        >
+          {cat}
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span className="text-xxs text-fg-muted">+{overflow}</span>
+      )}
+    </span>
+  );
+}
+
+// --- Tree node ---
 
 interface CompactNodeProps {
   entry: ProcessedFileEntry;
@@ -70,6 +214,7 @@ interface CompactNodeProps {
   collapsed: Set<string>;
   onToggle: (path: string) => void;
   onNavigate: (filePath: string) => void;
+  fileStats: Map<string, FileDiffStats>;
 }
 
 function CompactNode({
@@ -78,26 +223,31 @@ function CompactNode({
   collapsed,
   onToggle,
   onNavigate,
-}: CompactNodeProps) {
+  fileStats,
+}: CompactNodeProps): ReactNode {
   if (entry.isDirectory && entry.children) {
     const isCollapsed = collapsed.has(entry.path);
+    const dirStats = aggregateDirStats(entry, fileStats);
 
     return (
-      <div>
-        <button
-          type="button"
-          onClick={() => onToggle(entry.path)}
-          className={ROW_CLASS}
-          style={indentStyle(depth)}
+      <TreeNodeItem>
+        <TreeRow
+          depth={depth}
+          className="hover:bg-surface-raised/40 cursor-pointer"
         >
-          <ChevronIcon collapsed={isCollapsed} />
-          <span className="text-xs text-fg-muted truncate">
-            {entry.displayName}
-          </span>
-          <span className="ml-auto shrink-0">
-            <HunkCount status={entry.hunkStatus} context="all" />
-          </span>
-        </button>
+          <TreeRowButton onClick={() => onToggle(entry.path)}>
+            <TreeChevron expanded={!isCollapsed} />
+            <TreeFileIcon name={entry.displayName} isDirectory />
+            <TreeNodeName className="text-fg-muted">
+              {entry.displayName}
+            </TreeNodeName>
+          </TreeRowButton>
+          <DiffLineStats
+            additions={dirStats.additions}
+            deletions={dirStats.deletions}
+          />
+          <ReviewProgressBar status={entry.hunkStatus} />
+        </TreeRow>
         {!isCollapsed &&
           entry.children.map((child) => (
             <CompactNode
@@ -107,31 +257,46 @@ function CompactNode({
               collapsed={collapsed}
               onToggle={onToggle}
               onNavigate={onNavigate}
+              fileStats={fileStats}
             />
           ))}
-      </div>
+      </TreeNodeItem>
     );
   }
 
+  const stats = fileStats.get(entry.path);
+  const isFullyTrusted =
+    entry.hunkStatus.total > 0 &&
+    entry.hunkStatus.trusted === entry.hunkStatus.total;
+
   return (
-    <button
-      type="button"
-      onClick={() => onNavigate(entry.path)}
-      className={`${ROW_CLASS} cursor-pointer`}
-      style={indentStyle(depth)}
-    >
-      <StatusLetter status={entry.status} />
-      <span className="text-xs text-fg-secondary truncate">
-        {entry.displayName}
-      </span>
-      <span className="ml-auto shrink-0">
-        <HunkCount status={entry.hunkStatus} context="all" />
-      </span>
-    </button>
+    <TreeNodeItem>
+      <TreeRow
+        depth={depth}
+        className="hover:bg-surface-raised/40 cursor-pointer"
+      >
+        <TreeRowButton onClick={() => onNavigate(entry.path)}>
+          <TreeChevron expanded={false} visible={false} />
+          <TreeFileIcon name={entry.displayName} isDirectory={false} />
+          <TreeNodeName className="text-fg-secondary">
+            {entry.displayName}
+          </TreeNodeName>
+        </TreeRowButton>
+        {isFullyTrusted && <TrustChips labels={stats?.trustLabels ?? []} />}
+        <DiffLineStats
+          additions={stats?.additions ?? 0}
+          deletions={stats?.deletions ?? 0}
+        />
+        <ReviewProgressBar status={entry.hunkStatus} />
+        <StatusLetter status={entry.status} />
+      </TreeRow>
+    </TreeNodeItem>
   );
 }
 
-export function SummaryFileTree() {
+// --- Main component ---
+
+export function SummaryFileTree(): ReactNode {
   const files = useReviewStore((s) => s.files);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -146,7 +311,12 @@ export function SummaryFileTree() {
     return compactFiltered(visible);
   }, [files, hunks, reviewState]);
 
-  const handleToggle = (path: string) => {
+  const fileStats = useMemo(
+    () => computeFileDiffStats(hunks, reviewState),
+    [hunks, reviewState],
+  );
+
+  function handleToggle(path: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(path)) {
@@ -156,35 +326,33 @@ export function SummaryFileTree() {
       }
       return next;
     });
-  };
+  }
 
   const diffStats = useMemo(() => {
     let additions = 0;
     let deletions = 0;
-    const filePaths = new Set<string>();
-    for (const hunk of hunks) {
-      filePaths.add(hunk.filePath);
-      for (const line of hunk.lines) {
-        if (line.type === "added") additions++;
-        else if (line.type === "removed") deletions++;
-      }
+    for (const stats of fileStats.values()) {
+      additions += stats.additions;
+      deletions += stats.deletions;
     }
-    return { fileCount: filePaths.size, additions, deletions };
-  }, [hunks]);
+    return { fileCount: fileStats.size, additions, deletions };
+  }, [fileStats]);
 
   if (tree.length === 0) return null;
 
   return (
     <div className="rounded-lg border border-edge p-3">
-      <h3 className="text-xs font-medium text-fg0 uppercase tracking-wide pb-2 mb-1">
+      <h3 className="text-xs font-medium text-fg-muted uppercase tracking-wide pb-2 mb-1">
         Changed Files
       </h3>
       <div className="flex items-center gap-2 text-xs tabular-nums mb-2">
         <span className="text-fg-muted">
           {diffStats.fileCount} {diffStats.fileCount === 1 ? "file" : "files"}
         </span>
-        <span className="text-status-approved/70">+{diffStats.additions}</span>
-        <span className="text-status-rejected/70">-{diffStats.deletions}</span>
+        <span className="text-diff-added/70">+{diffStats.additions}</span>
+        <span className="text-diff-removed/70">
+          &minus;{diffStats.deletions}
+        </span>
       </div>
       <div className="space-y-px">
         {tree.map((entry) => (
@@ -195,6 +363,7 @@ export function SummaryFileTree() {
             collapsed={collapsed}
             onToggle={handleToggle}
             onNavigate={navigateToBrowse}
+            fileStats={fileStats}
           />
         ))}
       </div>

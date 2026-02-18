@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
 import { isHunkUnclassified, type DiffHunk, type HunkState } from "../../types";
 import {
@@ -85,25 +85,29 @@ function getFilteredHunks(
   });
 }
 
-/** Render diff lines with +/- coloring */
-function DiffPreview({ hunk }: { hunk: DiffHunk }) {
+function getDiffLinePrefix(type: string): string {
+  if (type === "added") return "+";
+  if (type === "removed") return "-";
+  return " ";
+}
+
+function getDiffLineColor(type: string): string {
+  if (type === "added") return "text-diff-added/80";
+  if (type === "removed") return "text-diff-removed/80";
+  return "text-fg-muted";
+}
+
+function DiffPreview({ hunk }: { hunk: DiffHunk }): ReactNode {
   const lines = hunk.lines.slice(0, 6);
   const hasMore = hunk.lines.length > 6;
 
   return (
     <pre className="overflow-x-auto rounded bg-surface px-3 py-2 text-xxs leading-relaxed">
-      {lines.map((line, i) => {
-        let colorClass = "text-fg0";
-        if (line.type === "added") colorClass = "text-status-approved/80";
-        if (line.type === "removed") colorClass = "text-status-rejected/80";
-        const prefix =
-          line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
-        return (
-          <div key={i} className={colorClass}>
-            {prefix} {line.content}
-          </div>
-        );
-      })}
+      {lines.map((line, i) => (
+        <div key={i} className={getDiffLineColor(line.type)}>
+          {getDiffLinePrefix(line.type)} {line.content}
+        </div>
+      ))}
       {hasMore && (
         <div className="text-fg-faint mt-0.5">
           ... {hunk.lines.length - 6} more lines
@@ -113,7 +117,6 @@ function DiffPreview({ hunk }: { hunk: DiffHunk }) {
   );
 }
 
-/** A single hunk card in the right content area */
 function HunkCard({
   hunk,
   hunkState,
@@ -124,7 +127,7 @@ function HunkCard({
   hunkState: HunkState | undefined;
   trustList: string[];
   onSelectHunk: (filePath: string, hunkId: string) => void;
-}) {
+}): ReactNode {
   return (
     <div className="rounded-lg border border-edge bg-surface-panel/50">
       {/* Header: file path + view in file */}
@@ -141,7 +144,7 @@ function HunkCard({
         </button>
         <button
           onClick={() => onSelectHunk(hunk.filePath, hunk.id)}
-          className="ml-3 flex-shrink-0 rounded px-2 py-0.5 text-xxs text-fg0 hover:bg-surface-raised hover:text-fg-secondary transition-colors"
+          className="ml-3 flex-shrink-0 rounded px-2 py-0.5 text-xxs text-fg-muted hover:bg-surface-raised hover:text-fg-secondary transition-colors"
         >
           View in file
         </button>
@@ -168,7 +171,7 @@ function HunkCard({
               );
             })}
             {hunkState.classifiedVia === "static" && (
-              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-surface-raised text-fg0">
+              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-surface-raised text-fg-muted">
                 Static
               </span>
             )}
@@ -196,7 +199,7 @@ export function ClassificationsModal({
   isOpen,
   onClose,
   onSelectHunk,
-}: ClassificationsModalProps) {
+}: ClassificationsModalProps): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const trustList = reviewState?.trustList ?? [];
@@ -223,7 +226,7 @@ export function ClassificationsModal({
     [hunks, reviewState, selectedFilter],
   );
 
-  const toggleCategory = (category: string) => {
+  function toggleCategory(category: string) {
     setCollapsedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(category)) {
@@ -233,7 +236,7 @@ export function ClassificationsModal({
       }
       return next;
     });
-  };
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -282,7 +285,7 @@ export function ClassificationsModal({
               }`}
             >
               All
-              <span className="ml-1 text-fg0">({hunks.length})</span>
+              <span className="ml-1 text-fg-muted">({hunks.length})</span>
             </button>
 
             {/* Category groups */}
@@ -316,7 +319,7 @@ export function ClassificationsModal({
                           className={`w-full rounded px-2 py-1 text-left text-xs transition-colors ${
                             selectedFilter === label
                               ? "bg-surface-raised text-fg-secondary"
-                              : "text-fg0 hover:bg-surface-raised/50 hover:text-fg-secondary"
+                              : "text-fg-muted hover:bg-surface-raised/50 hover:text-fg-secondary"
                           }`}
                         >
                           :{label.split(":").pop()}
@@ -336,7 +339,7 @@ export function ClassificationsModal({
                 className={`mt-1 w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
                   selectedFilter === "__unclassified__"
                     ? "bg-surface-raised text-fg-secondary"
-                    : "text-fg0 hover:bg-surface-raised/50 hover:text-fg-secondary"
+                    : "text-fg-muted hover:bg-surface-raised/50 hover:text-fg-secondary"
                 }`}
               >
                 Unclassified
@@ -351,7 +354,7 @@ export function ClassificationsModal({
           <div className="flex-1 overflow-y-auto p-4">
             {filteredHunks.length === 0 ? (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-fg0">
+                <p className="text-sm text-fg-muted">
                   {hunks.length === 0
                     ? "No hunks to display"
                     : "No hunks match this filter"}

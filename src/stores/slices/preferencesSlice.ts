@@ -63,7 +63,7 @@ function applyFontSizeCssVariables(size: number): void {
  * Detect the active VS Code theme via the Rust backend and resolve it
  * to a UiTheme. Returns null if detection fails or VS Code is not active.
  */
-async function detectVscodeTheme(): Promise<UiTheme | null> {
+async function fetchAndResolveVscodeTheme(): Promise<UiTheme | null> {
   try {
     const detection: VscodeThemeDetection = await invoke("detect_vscode_theme");
     return matchBundledTheme(detection.name) ?? resolveVscodeTheme(detection);
@@ -96,8 +96,8 @@ const defaults = {
   recentRepositories: [] as RecentRepo[],
   diffLineDiffType: "word" as DiffLineDiffType,
   diffIndicators: "bars" as DiffIndicators,
-  needsReviewDisplayMode: "tree" as ChangesDisplayMode,
-  reviewedDisplayMode: "tree" as ChangesDisplayMode,
+  changesDisplayMode: "tree" as ChangesDisplayMode,
+  gitDisplayMode: "tree" as ChangesDisplayMode,
   diffViewMode: "split" as DiffViewMode,
   sentryEnabled: false,
   soundEffectsEnabled: true,
@@ -126,9 +126,9 @@ export interface PreferencesSlice {
   diffLineDiffType: DiffLineDiffType;
   diffIndicators: DiffIndicators;
 
-  // Changes panel display mode (per section)
-  needsReviewDisplayMode: ChangesDisplayMode;
-  reviewedDisplayMode: ChangesDisplayMode;
+  // Changes panel display mode (per panel)
+  changesDisplayMode: ChangesDisplayMode;
+  gitDisplayMode: ChangesDisplayMode;
 
   // Diff view mode
   diffViewMode: DiffViewMode;
@@ -181,8 +181,8 @@ export interface PreferencesSlice {
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
   setDiffIndicators: (indicators: DiffIndicators) => void;
-  setNeedsReviewDisplayMode: (mode: ChangesDisplayMode) => void;
-  setReviewedDisplayMode: (mode: ChangesDisplayMode) => void;
+  setChangesDisplayMode: (mode: ChangesDisplayMode) => void;
+  setGitDisplayMode: (mode: ChangesDisplayMode) => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
@@ -278,14 +278,14 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     storage.set("diffIndicators", indicators);
   },
 
-  setNeedsReviewDisplayMode: (mode) => {
-    set({ needsReviewDisplayMode: mode });
-    storage.set("needsReviewDisplayMode", mode);
+  setChangesDisplayMode: (mode) => {
+    set({ changesDisplayMode: mode });
+    storage.set("changesDisplayMode", mode);
   },
 
-  setReviewedDisplayMode: (mode) => {
-    set({ reviewedDisplayMode: mode });
-    storage.set("reviewedDisplayMode", mode);
+  setGitDisplayMode: (mode) => {
+    set({ gitDisplayMode: mode });
+    storage.set("gitDisplayMode", mode);
   },
 
   setDiffViewMode: (mode) => {
@@ -309,20 +309,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       keys.map((key, i) => [key, values[i] ?? defaults[key]]),
     ) as typeof defaults;
 
-    // Also load the legacy key for migration
-    const rawChangesDisplayMode =
-      await storage.get<ChangesDisplayMode>("changesDisplayMode");
-
-    // Migrate from old single "changesDisplayMode" key
-    if (rawChangesDisplayMode) {
-      if (!values[keys.indexOf("needsReviewDisplayMode")]) {
-        loaded.needsReviewDisplayMode = rawChangesDisplayMode;
-      }
-      if (!values[keys.indexOf("reviewedDisplayMode")]) {
-        loaded.reviewedDisplayMode = rawChangesDisplayMode;
-      }
-    }
-
     // Migrate legacy "file" diff view mode to "new"
     if ((loaded.diffViewMode as string) === "file") {
       loaded.diffViewMode = "new";
@@ -344,7 +330,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     // the fallback theme (the persisted codeTheme may reference a custom
     // Shiki theme that hasn't been re-registered yet — REVIEW-9).
     const resolvedVscode = loaded.matchVscodeTheme
-      ? await detectVscodeTheme()
+      ? await fetchAndResolveVscodeTheme()
       : null;
 
     set({
@@ -575,7 +561,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
   },
 
   detectAndApplyVscodeTheme: async () => {
-    const resolved = await detectVscodeTheme();
+    const resolved = await fetchAndResolveVscodeTheme();
     if (!resolved) return;
 
     set({

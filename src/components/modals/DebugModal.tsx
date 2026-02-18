@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
@@ -32,7 +32,7 @@ interface DebugModalProps {
   onClose: () => void;
 }
 
-export function DebugModal({ isOpen, onClose }: DebugModalProps) {
+export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
   const [activeTab, setActiveTab] = useState<"persisted" | "in-memory">(
     "persisted",
   );
@@ -159,7 +159,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
             <div>
               {reviewStatePath && (
                 <div className="mb-3 rounded bg-surface-raised px-3 py-2">
-                  <span className="text-xs text-fg0">Saved to: </span>
+                  <span className="text-xs text-fg-muted">Saved to: </span>
                   <span className="font-mono text-xs text-fg-secondary">
                     {reviewStatePath}
                   </span>
@@ -173,7 +173,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps) {
           {activeTab === "in-memory" && (
             <div>
               <div className="mb-3 rounded bg-surface-raised px-3 py-2">
-                <span className="text-xs text-fg0">
+                <span className="text-xs text-fg-muted">
                   Computed from git, not persisted to disk
                 </span>
               </div>

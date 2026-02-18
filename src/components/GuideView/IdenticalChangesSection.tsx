@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { type ReactNode, useMemo, useCallback, useState } from "react";
 import { useReviewStore } from "../../stores";
 import type { DiffHunk, HunkState } from "../../types";
 import { getChangedLinesKey } from "../../utils/changed-lines-key";
@@ -11,16 +11,13 @@ import {
   DialogClose,
 } from "../ui/dialog";
 
-interface IdenticalGroup {
-  /** A representative hunk from the group */
+export interface IdenticalGroup {
   representative: DiffHunk;
-  /** All hunks in this group */
   hunks: DiffHunk[];
-  /** Unique file paths */
   files: string[];
 }
 
-function computeIdenticalGroups(allHunks: DiffHunk[]): IdenticalGroup[] {
+export function computeIdenticalGroups(allHunks: DiffHunk[]): IdenticalGroup[] {
   const keyToHunks = new Map<string, DiffHunk[]>();
   for (const h of allHunks) {
     const key = getChangedLinesKey(h);
@@ -42,8 +39,7 @@ function computeIdenticalGroups(allHunks: DiffHunk[]): IdenticalGroup[] {
   return groups;
 }
 
-/** First few changed lines for a short preview label */
-function getChangePreview(hunk: DiffHunk): string {
+export function getChangePreview(hunk: DiffHunk): string {
   const changed = hunk.lines.filter(
     (l) => l.type === "added" || l.type === "removed",
   );
@@ -56,7 +52,7 @@ function getChangePreview(hunk: DiffHunk): string {
   return `${label}  (${changed.length} lines)`;
 }
 
-function StatusIndicator({
+export function StatusIndicator({
   count,
   label,
   variant,
@@ -64,7 +60,7 @@ function StatusIndicator({
   count: number;
   label: string;
   variant: "pending" | "approved" | "rejected";
-}) {
+}): ReactNode {
   if (count === 0) return null;
 
   const colors = {
@@ -95,7 +91,7 @@ function IdenticalGroupModal({
   onApproveAll: (hunkIds: string[]) => void;
   onRejectAll: (hunkIds: string[]) => void;
   onNavigate: (filePath: string, hunkId: string) => void;
-}) {
+}): ReactNode {
   const [open, setOpen] = useState(false);
   const totalCount = group.hunks.length;
 
@@ -108,15 +104,15 @@ function IdenticalGroupModal({
   }
   const pendingCount = totalCount - approvedCount - rejectedCount;
 
-  const handleApproveAll = () => {
+  function handleApproveAll() {
     onApproveAll(group.hunks.map((h) => h.id));
     setOpen(false);
-  };
+  }
 
-  const handleRejectAll = () => {
+  function handleRejectAll() {
     onRejectAll(group.hunks.map((h) => h.id));
     setOpen(false);
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -160,7 +156,7 @@ function IdenticalGroupModal({
               {totalCount} hunks
             </span>
           </DialogTitle>
-          <DialogClose className="rounded p-1 text-fg0 hover:bg-surface-hover hover:text-fg-secondary transition-colors">
+          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -244,7 +240,7 @@ function IdenticalGroupModal({
 
         {/* Action footer */}
         <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
-          <div className="text-xs text-fg0">
+          <div className="text-xs text-fg-muted">
             Batch action applies to all {totalCount} hunks
           </div>
           <div className="flex items-center gap-2">
@@ -293,7 +289,7 @@ function IdenticalGroupModal({
   );
 }
 
-export function IdenticalChangesSection() {
+export function IdenticalChangesSection(): ReactNode {
   const allHunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);

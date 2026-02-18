@@ -1,11 +1,11 @@
 import {
+  type ReactNode,
   useState,
   useMemo,
   useEffect,
   useCallback,
   useRef,
   Component,
-  ReactNode,
 } from "react";
 import { MultiFileDiff, FileDiff } from "@pierre/diffs/react";
 import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
@@ -24,6 +24,7 @@ import {
   NewAnnotationEditor,
   UserAnnotationDisplay,
   HunkAnnotationPanel,
+  WorkingTreeHunkPanel,
 } from "./annotations";
 import { getFirstChangedLine } from "./hunkUtils";
 import type { SupportedLanguages } from "./languageMap";
@@ -167,7 +168,7 @@ export function DiffView({
   focusedHunkId,
   language,
   expandUnchanged: expandUnchangedProp = true,
-}: DiffViewProps) {
+}: DiffViewProps): ReactNode {
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
   const allHunks = useReviewStore((s) => s.hunks);
@@ -177,6 +178,8 @@ export function DiffView({
   const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
   const symbolLinkedHunks = useReviewStore((s) => s.symbolLinkedHunks);
+  const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
+  const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
 
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
@@ -366,13 +369,12 @@ export function DiffView({
     return [...hunkAnnotations, ...userAnnotations, newAnnotation];
   }, [hunkAnnotations, userAnnotations, newAnnotationLine]);
 
-  const handleCopyHunk = async (hunk: DiffHunk) => {
+  async function handleCopyHunk(hunk: DiffHunk) {
     const platform = getPlatformServices();
     await platform.clipboard.writeText(hunk.content);
-  };
+  }
 
-  // Handle saving a new annotation
-  const handleSaveNewAnnotation = (content: string) => {
+  function handleSaveNewAnnotation(content: string) {
     if (!newAnnotationLine) return;
     const { addAnnotation, nextHunkInFile } = useReviewStore.getState();
     addAnnotation(
@@ -394,7 +396,7 @@ export function DiffView({
     ) {
       nextHunkInFile();
     }
-  };
+  }
 
   // Render annotation for each type - use ref pattern for stable function reference
   // Store non-store dependencies in a ref so the callback can access latest values
@@ -417,6 +419,8 @@ export function DiffView({
     hunkById: typeof hunkById;
     newAnnotationLine: typeof newAnnotationLine;
     symbolLinkedHunks: typeof symbolLinkedHunks;
+    workingTreeDiffMode: typeof workingTreeDiffMode;
+    isWorkingTreeFile: boolean;
   }>(null!);
   renderAnnotationDepsRef.current = {
     handleSaveNewAnnotation,
@@ -436,6 +440,8 @@ export function DiffView({
     hunkById,
     newAnnotationLine,
     symbolLinkedHunks,
+    workingTreeDiffMode,
+    isWorkingTreeFile: workingTreeDiffFile === fileName,
   };
 
   const renderAnnotation = useCallback(
@@ -477,6 +483,34 @@ export function DiffView({
         case "hunk": {
           const { hunk, hunkState, pairedHunk, isSource } = meta.data;
           const hunkIndex = deps.hunks.findIndex((h) => h.id === hunk.id);
+
+          // Working tree mode: render lightweight stage/unstage panel
+          if (deps.isWorkingTreeFile && deps.workingTreeDiffMode) {
+            return (
+              <WorkingTreeHunkPanel
+                hunk={hunk}
+                focusedHunkId={deps.focusedHunkId}
+                focusedHunkRef={deps.focusedHunkRef}
+                hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
+                totalHunksInFile={deps.hunks.length}
+                mode={deps.workingTreeDiffMode}
+                onStage={(contentHash) => {
+                  useReviewStore
+                    .getState()
+                    .stageHunks(hunk.filePath, [contentHash]);
+                }}
+                onUnstage={(contentHash) => {
+                  useReviewStore
+                    .getState()
+                    .unstageHunks(hunk.filePath, [contentHash]);
+                }}
+                onCopyHunk={deps.handleCopyHunk}
+                onViewInFile={deps.onViewInFile}
+              />
+            );
+          }
+
+          // Review mode: full annotation panel
           const similarHunks = deps.getSimilarHunks(hunk);
           const symbolLinks = deps.symbolLinkedHunks.get(hunk.id) ?? [];
           return (

@@ -2,10 +2,12 @@ use super::traits::{
     ChangeStatus, CommitEntry, Comparison, DiffSource, FileEntry, FileStatus, GitStatusSummary,
     StatusEntry,
 };
+use crate::diff::parser::parse_diff;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 /// Information about the git remote (org/repo and browse URL)
@@ -496,7 +498,7 @@ impl LocalGitSource {
     }
 
     /// Get all tracked files from git (fast, uses index)
-    fn get_tracked_files(&self) -> Result<Vec<String>, LocalGitError> {
+    pub fn get_tracked_files(&self) -> Result<Vec<String>, LocalGitError> {
         let output = self.run_git(&["ls-files"])?;
         Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
     }
@@ -743,6 +745,100 @@ impl LocalGitSource {
     /// Unstage all staged changes (git restore --staged .)
     pub fn unstage_all(&self) -> Result<(), LocalGitError> {
         self.run_git(&["restore", "--staged", "."])?;
+        Ok(())
+    }
+
+    /// Run a git command with data piped to stdin.
+    fn run_git_with_stdin(&self, args: &[&str], input: &[u8]) -> Result<String, LocalGitError> {
+        let mut child = Command::new("git")
+            .args(args)
+            .current_dir(&self.repo_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input)?;
+        }
+
+        let output = child.wait_with_output()?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            Err(LocalGitError::Git(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ))
+        }
+    }
+
+    /// Get the raw diff for a single file.
+    ///
+    /// When `cached` is true, returns the staged diff (`git diff --cached`).
+    /// When false, returns the unstaged diff (`git diff`).
+    pub fn get_raw_file_diff(
+        &self,
+        file_path: &str,
+        cached: bool,
+    ) -> Result<String, LocalGitError> {
+        let mut args = vec![
+            "diff",
+            "--histogram",
+            "--no-renames",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+        ];
+        if cached {
+            args.push("--cached");
+        }
+        args.push("--");
+        args.push(file_path);
+        self.run_git(&args)
+    }
+
+    /// Stage specific hunks in a file by their content hashes.
+    ///
+    /// Gets the unstaged diff, builds a selective patch containing only
+    /// the specified hunks, then applies it to the index via `git apply --cached`.
+    pub fn stage_hunks(
+        &self,
+        file_path: &str,
+        content_hashes: &[String],
+    ) -> Result<(), LocalGitError> {
+        let raw_diff = self.get_raw_file_diff(file_path, false)?;
+        if raw_diff.is_empty() {
+            return Err(LocalGitError::Git(
+                "No unstaged changes for this file".to_owned(),
+            ));
+        }
+
+        let patch = build_selective_patch(&raw_diff, file_path, content_hashes)?;
+        self.run_git_with_stdin(&["apply", "--cached", "--allow-empty"], patch.as_bytes())?;
+        Ok(())
+    }
+
+    /// Unstage specific hunks in a file by their content hashes.
+    ///
+    /// Gets the staged diff, builds a selective patch containing only
+    /// the specified hunks, then reverse-applies it from the index.
+    pub fn unstage_hunks(
+        &self,
+        file_path: &str,
+        content_hashes: &[String],
+    ) -> Result<(), LocalGitError> {
+        let raw_diff = self.get_raw_file_diff(file_path, true)?;
+        if raw_diff.is_empty() {
+            return Err(LocalGitError::Git(
+                "No staged changes for this file".to_owned(),
+            ));
+        }
+
+        let patch = build_selective_patch(&raw_diff, file_path, content_hashes)?;
+        self.run_git_with_stdin(
+            &["apply", "--cached", "--reverse", "--allow-empty"],
+            patch.as_bytes(),
+        )?;
         Ok(())
     }
 
@@ -1283,4 +1379,86 @@ fn parse_shortstat(output: &str) -> (u32, u32, u32) {
     }
 
     (files, insertions, deletions)
+}
+
+/// Split a single-file diff into a header and individual hunk sections.
+///
+/// Each hunk section starts with the `@@` line and includes all lines up to
+/// (but not including) the next `@@` line or the end of the diff.
+fn split_diff_into_sections(raw_diff: &str) -> (String, Vec<String>) {
+    let mut header = String::new();
+    let mut sections: Vec<String> = Vec::new();
+    let mut current_section = String::new();
+    let mut in_header = true;
+
+    for line in raw_diff.lines() {
+        if line.starts_with("@@") {
+            if in_header {
+                in_header = false;
+            } else {
+                // Push previous section
+                sections.push(current_section);
+                current_section = String::new();
+            }
+            current_section.push_str(line);
+            current_section.push('\n');
+        } else if in_header {
+            header.push_str(line);
+            header.push('\n');
+        } else {
+            current_section.push_str(line);
+            current_section.push('\n');
+        }
+    }
+
+    // Push last section if any
+    if !current_section.is_empty() {
+        sections.push(current_section);
+    }
+
+    (header, sections)
+}
+
+/// Build a selective patch containing only hunks that match the given content hashes.
+///
+/// Uses the existing `parse_diff()` parser to compute content hashes for each
+/// hunk, then pairs them by order with the raw diff sections.
+fn build_selective_patch(
+    raw_diff: &str,
+    file_path: &str,
+    content_hashes: &[String],
+) -> Result<String, LocalGitError> {
+    let hash_set: HashSet<&str> = content_hashes.iter().map(|s| s.as_str()).collect();
+
+    // Parse the diff to get content hashes per hunk
+    let parsed_hunks = parse_diff(raw_diff, file_path);
+
+    // Split the raw diff into header + raw sections
+    let (header, raw_sections) = split_diff_into_sections(raw_diff);
+
+    if parsed_hunks.len() != raw_sections.len() {
+        return Err(LocalGitError::Git(format!(
+            "Hunk count mismatch: parser found {} hunks but raw diff has {} sections",
+            parsed_hunks.len(),
+            raw_sections.len()
+        )));
+    }
+
+    // Reassemble: header + sections whose content_hash matches
+    let mut patch = header;
+    let initial_len = patch.len();
+
+    for (parsed, raw_section) in parsed_hunks.iter().zip(&raw_sections) {
+        if hash_set.contains(parsed.content_hash.as_str()) {
+            patch.push_str(raw_section);
+        }
+    }
+
+    if patch.len() == initial_len {
+        return Err(LocalGitError::Git(
+            "No hunks matched the provided content hashes".to_owned(),
+        ));
+    }
+
+    Ok(patch)
 }

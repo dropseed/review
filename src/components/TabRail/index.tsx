@@ -1,4 +1,5 @@
 import {
+  type ReactNode,
   lazy,
   Suspense,
   memo,
@@ -91,10 +92,9 @@ function SortMenu({
 }: {
   sortOrder: ReviewSortOrder;
   onSetSortOrder: (order: ReviewSortOrder) => void;
-}) {
+}): ReactNode {
   const [open, setOpen] = useState(false);
 
-  // Close on Escape key
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -190,7 +190,7 @@ function FooterVersionInfo({
   installUpdate,
   appVersion,
   onOpenRelease,
-}: FooterVersionInfoProps) {
+}: FooterVersionInfoProps): ReactNode {
   if (updateAvailable) {
     return (
       <button
@@ -229,13 +229,11 @@ function FooterVersionInfo({
   return null;
 }
 
-// --- Review list (owns the data-heavy store subscriptions) ---
-
 interface TabRailListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
 }
 
-function TabRailList({ onActivateReview }: TabRailListProps) {
+function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -255,7 +253,6 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const reviewActiveState = useReviewStore((s) => s.reviewActiveState);
 
-  // Live progress for the current review — derived directly from store state
   const reviewState = useReviewStore((s) => s.reviewState);
   const hunks = useReviewStore((s) => s.hunks);
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
@@ -267,7 +264,6 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
 
   const [inactiveCollapsed, setInactiveCollapsed] = useState(true);
 
-  // Split into active / inactive
   const { activeReviews, inactiveReviews } = useMemo(() => {
     const active: GlobalReviewSummary[] = [];
     const inactive: GlobalReviewSummary[] = [];
@@ -369,14 +365,13 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
-          <p className="text-2xs text-fg0">No reviews yet</p>
+          <p className="text-2xs text-fg-muted">No reviews yet</p>
           <p className="text-xxs text-fg-faint mt-1">
             Click &ldquo;New review&rdquo; to start
           </p>
         </div>
       )}
 
-      {/* Active section */}
       {sortedActive.length > 0 && (
         <>
           <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
@@ -400,7 +395,6 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
         </>
       )}
 
-      {/* Inactive section */}
       {sortedInactive.length > 0 && (
         <>
           {sortedActive.length > 0 && <div className="h-2" />}
@@ -449,8 +443,6 @@ function TabRailList({ onActivateReview }: TabRailListProps) {
     </div>
   );
 }
-
-// --- Shell (header, footer, resize — no data subscriptions) ---
 
 interface TabRailProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -542,8 +534,7 @@ export const TabRail = memo(function TabRail({
           className="flex flex-col h-full min-w-0"
           style={{ width: `${sidebarWidth}rem` }}
         >
-          {/* Top bar: new review + collapse */}
-          <div className="shrink-0 px-1.5 py-2.5 flex items-center gap-1 shadow-[0_1px_0_0_var(--color-edge)]">
+          <div className="shrink-0 px-1.5 py-2.5 flex items-center gap-1">
             <button
               type="button"
               onClick={handleAddReview}
@@ -572,7 +563,7 @@ export const TabRail = memo(function TabRail({
               onClick={toggleTabRail}
               className="flex items-center justify-center w-7 h-7 shrink-0 rounded-md
                          hover:bg-fg/[0.08] transition-colors duration-100
-                         text-fg0 hover:text-fg-secondary"
+                         text-fg-muted hover:text-fg-secondary"
               aria-label="Hide sidebar"
             >
               <SidebarPanelIcon className="w-3.5 h-3.5" />
@@ -581,8 +572,7 @@ export const TabRail = memo(function TabRail({
 
           <TabRailList onActivateReview={onActivateReview} />
 
-          {/* Footer */}
-          <div className="shrink-0 border-t border-edge px-3 py-2">
+          <div className="shrink-0 px-3 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <button

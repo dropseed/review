@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -9,18 +9,19 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "./dropdown-menu";
 
 interface CollapsibleSectionProps {
   title: string;
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   badge?: number | string;
   badgeColor?: string;
   isOpen: boolean;
   onToggle: () => void;
-  showTopBorder?: boolean;
-  menuContent?: React.ReactNode;
-  children: React.ReactNode;
+  actionContent?: ReactNode;
+  menuContent?: ReactNode;
+  children: ReactNode;
 }
 
 export function CollapsibleSection({
@@ -30,20 +31,18 @@ export function CollapsibleSection({
   badgeColor = "bg-status-modified/20 text-status-modified",
   isOpen,
   onToggle,
-  showTopBorder = true,
+  actionContent,
   menuContent,
   children,
-}: CollapsibleSectionProps) {
+}: CollapsibleSectionProps): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle}>
-      <div
-        className={`border-b border-edge ${showTopBorder ? "border-t border-t-edge" : ""}`}
-      >
-        <div className="relative group/section">
+      <div className="border-t border-t-edge/40">
+        <div className="relative group/section flex items-center">
           <CollapsibleTrigger asChild>
-            <button className="flex w-full items-center gap-2 pl-3 pr-8 py-2 text-left text-xs font-medium text-fg-secondary hover:bg-surface-raised/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-focus-ring/50">
+            <button className="flex flex-1 items-center gap-2 pl-3 pr-2 py-2 text-left text-xs font-medium text-fg-secondary hover:bg-surface-raised/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-focus-ring/50">
               {icon}
               <span className="flex-1">{title}</span>
               {badge !== undefined && badge !== 0 && (
@@ -55,35 +54,83 @@ export function CollapsibleSection({
               )}
             </button>
           </CollapsibleTrigger>
-          {menuContent && (
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-all ${menuOpen ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"}`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
+          <div className="flex items-center gap-0.5 pr-1">
+            {actionContent}
+            {menuContent && (
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
                   >
-                    <circle cx="12" cy="5" r="1.5" />
-                    <circle cx="12" cy="12" r="1.5" />
-                    <circle cx="12" cy="19" r="1.5" />
-                  </svg>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {menuContent}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                    <svg
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <circle cx="12" cy="5" r="1.5" />
+                      <circle cx="12" cy="12" r="1.5" />
+                      <circle cx="12" cy="19" r="1.5" />
+                    </svg>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {menuContent}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
-        <CollapsibleContent>{children}</CollapsibleContent>
+        <CollapsibleContent>
+          <div className="pl-1">{children}</div>
+        </CollapsibleContent>
       </div>
     </Collapsible>
   );
 }
 
+export function DisplayModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: "tree" | "flat";
+  onChange: (mode: "tree" | "flat") => void;
+}): ReactNode {
+  const nextMode = mode === "tree" ? "flat" : "tree";
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(nextMode);
+      }}
+      className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+      title={`Switch to ${nextMode} view`}
+    >
+      {mode === "tree" ? (
+        <svg
+          className="h-3 w-3"
+          fill="none"
+          viewBox="0 0 16 16"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
+          <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
+        </svg>
+      ) : (
+        <svg
+          className="h-3 w-3"
+          fill="none"
+          viewBox="0 0 16 16"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
+          <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 /** Simple menu item helper for CollapsibleSection menuContent */
 export { DropdownMenuItem as CollapsibleSectionMenuItem };
+export { DropdownMenuSeparator as CollapsibleSectionMenuSeparator };

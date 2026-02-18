@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useReviewStore } from "../stores";
 import type { Activity } from "../stores/slices/activitySlice";
 
@@ -6,7 +6,7 @@ interface ActivityRowProps {
   activity: Activity;
 }
 
-function ActivityRow({ activity }: ActivityRowProps) {
+function ActivityRow({ activity }: ActivityRowProps): ReactNode {
   const hasProgress =
     activity.current != null && activity.total != null && activity.total > 0;
 
@@ -27,7 +27,7 @@ function ActivityRow({ activity }: ActivityRowProps) {
       <span className="text-[11px] text-fg-muted truncate whitespace-nowrap">
         {activity.label}
         {hasProgress && (
-          <span className="ml-1 tabular-nums text-fg0">
+          <span className="ml-1 tabular-nums text-fg-muted">
             {activity.current}/{activity.total}
           </span>
         )}
@@ -36,7 +36,7 @@ function ActivityRow({ activity }: ActivityRowProps) {
   );
 }
 
-export function ActivityBar() {
+export function ActivityBar(): ReactNode {
   const activities = useReviewStore((s) => s.activities);
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

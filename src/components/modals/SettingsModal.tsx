@@ -32,7 +32,7 @@ function SectionHeader({ icon, label }: SectionHeaderProps): ReactNode {
   return (
     <div className="mb-3 flex items-center gap-2">
       <svg
-        className="h-4 w-4 text-fg0"
+        className="h-4 w-4 text-fg-muted"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -86,7 +86,7 @@ function CopyableField({
   return (
     <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-xxs text-fg0 mb-0.5">{label}</div>
+        <div className="text-xxs text-fg-muted mb-0.5">{label}</div>
         <code
           className={`text-xs text-fg-muted${truncate ? " block truncate" : ""}`}
         >
@@ -95,7 +95,7 @@ function CopyableField({
       </div>
       <button
         onClick={() => onCopy(value, copyId)}
-        className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-fg0 transition-colors hover:bg-surface-hover hover:text-fg-secondary"
+        className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary"
       >
         {copiedLabel === copyId ? "Copied" : "Copy"}
       </button>
@@ -103,7 +103,10 @@ function CopyableField({
   );
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({
+  isOpen,
+  onClose,
+}: SettingsModalProps): ReactNode {
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
   const uiTheme = useReviewStore((s) => s.uiTheme);
@@ -250,7 +253,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   }, [isOpen, refreshCliStatus]);
 
-  const handleCliAction = async (command: "install_cli" | "uninstall_cli") => {
+  async function handleCliAction(command: "install_cli" | "uninstall_cli") {
     setCliLoading(true);
     setCliError(null);
     try {
@@ -261,23 +264,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     } finally {
       setCliLoading(false);
     }
-  };
+  }
 
-  const decreaseFontSize = () => {
+  function decreaseFontSize() {
     setCodeFontSize(
       Math.max(codeFontSize - CODE_FONT_SIZE_STEP, CODE_FONT_SIZE_MIN),
     );
-  };
+  }
 
-  const increaseFontSize = () => {
+  function increaseFontSize() {
     setCodeFontSize(
       Math.min(codeFontSize + CODE_FONT_SIZE_STEP, CODE_FONT_SIZE_MAX),
     );
-  };
+  }
 
-  const resetFontSize = () => {
+  function resetFontSize() {
     setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
-  };
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -303,7 +306,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="relative rounded-md p-1.5 text-fg0 transition-colors hover:bg-surface-raised hover:text-fg-secondary"
+            className="relative rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary"
           >
             <svg
               className="h-5 w-5"
@@ -405,7 +408,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       <SimpleTooltip content="Reset to default (Cmd+0)">
                         <button
                           onClick={resetFontSize}
-                          className="text-xxs text-fg0 hover:text-fg-secondary transition-colors"
+                          className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
                         >
                           Reset
                         </button>
@@ -575,7 +578,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     />
 
                     <div className="mt-3 space-y-1.5">
-                      <label className="text-xxs text-fg0 uppercase tracking-wide">
+                      <label className="text-xxs text-fg-muted uppercase tracking-wide">
                         Custom Command
                       </label>
                       <Input
@@ -594,7 +597,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     <div className="mt-4 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xxs text-fg0 uppercase tracking-wide">
+                        <label className="text-xxs text-fg-muted uppercase tracking-wide">
                           Batch Size
                         </label>
                         <span className="text-xs font-mono text-fg-secondary">
@@ -616,7 +619,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     <div className="mt-4 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xxs text-fg0 uppercase tracking-wide">
+                        <label className="text-xxs text-fg-muted uppercase tracking-wide">
                           Max Concurrent
                         </label>
                         <span className="text-xs font-mono text-fg-secondary">
@@ -675,7 +678,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         </div>
                       )}
                       <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
-                        <label className="text-xxs text-fg0">Port</label>
+                        <label className="text-xxs text-fg-muted">Port</label>
                         <Input
                           type="number"
                           min={1024}
@@ -728,7 +731,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       )}
                       <button
                         onClick={() => regenerateCompanionCertificate()}
-                        className="mt-1 w-full rounded-lg bg-surface-raised/30 px-3 py-2 text-xs text-fg0 transition-colors hover:bg-surface-raised/50 hover:text-fg-secondary"
+                        className="mt-1 w-full rounded-lg bg-surface-raised/30 px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface-raised/50 hover:text-fg-secondary"
                       >
                         Regenerate Certificate
                       </button>
@@ -788,7 +791,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                               <div className="h-1.5 w-1.5 rounded-full bg-status-approved" />
                               <span className="text-xs text-fg-secondary">
                                 Installed at{" "}
-                                <code className="text-xxs text-fg0">
+                                <code className="text-xxs text-fg-muted">
                                   /usr/local/bin/review
                                 </code>
                               </span>
@@ -802,7 +805,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                           <button
                             onClick={() => handleCliAction("uninstall_cli")}
                             disabled={cliLoading}
-                            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg0 transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
+                            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
                           >
                             Uninstall
                           </button>
@@ -825,11 +828,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         </div>
                         <p className="text-xxs text-fg-faint leading-relaxed">
                           Creates a symlink at{" "}
-                          <code className="text-fg0">
+                          <code className="text-fg-muted">
                             /usr/local/bin/review
                           </code>{" "}
                           so you can run{" "}
-                          <code className="text-fg0">review</code> from any
+                          <code className="text-fg-muted">review</code> from any
                           terminal.
                         </p>
                       </div>

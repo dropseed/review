@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Comparison, GitHubPrRef } from "../types";
 import { useReviewStore } from "../stores";
 import { SidebarPanelIcon } from "./ui/icons";
@@ -12,7 +13,7 @@ interface ReviewTitleProps {
   title?: string | null;
 }
 
-function SidebarToggle() {
+function SidebarToggle(): ReactNode {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
@@ -26,7 +27,7 @@ function SidebarToggle() {
         className="flex items-center justify-center w-7 h-7 rounded-md
                    hover:bg-surface-raised/60 transition-colors duration-100
                    focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
-                   text-fg0 hover:text-fg-secondary"
+                   text-fg-muted hover:text-fg-secondary"
         aria-label="Show sidebar"
       >
         <SidebarPanelIcon />
@@ -46,7 +47,7 @@ function getOverviewLabel(
 export function ReviewBreadcrumb({
   repoName,
   comparison,
-}: ReviewBreadcrumbProps) {
+}: ReviewBreadcrumbProps): ReactNode {
   const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const isPr = !!githubPr;
@@ -94,7 +95,7 @@ export function ReviewBreadcrumb({
   );
 }
 
-export function ReviewTitle({ title }: ReviewTitleProps) {
+export function ReviewTitle({ title }: ReviewTitleProps): ReactNode {
   const githubPrTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
   const displayTitle = githubPrTitle || title;
   if (!displayTitle) return null;

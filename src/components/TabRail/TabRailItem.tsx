@@ -210,10 +210,10 @@ export const TabRailItem = memo(function TabRailItem({
               />
             )
           )}
-          <span className="text-xs text-fg0 truncate min-w-0">
+          <span className="text-xs text-fg-muted truncate min-w-0">
             {review.repoName}
           </span>
-          <span className="text-xs text-fg-faint shrink-0 -mx-0.5">/</span>
+          <span className="text-xs text-fg-muted shrink-0 -mx-0.5">/</span>
           {isPr && (
             <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
           )}
@@ -252,7 +252,7 @@ export const TabRailItem = memo(function TabRailItem({
               type="button"
               onClick={handleOverflowClick}
               className="col-start-1 row-start-1 flex items-center justify-center
-                         h-5 w-5 rounded text-fg0 hover:text-fg-secondary
+                         h-5 w-5 rounded text-fg-muted hover:text-fg-secondary
                          hover:bg-fg/[0.08] opacity-0 pointer-events-none
                          group-hover:opacity-100 group-hover:pointer-events-auto
                          transition-opacity duration-100"

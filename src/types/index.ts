@@ -196,6 +196,7 @@ export interface FileEntry {
     | "modified"
     | "deleted"
     | "renamed"
+    | "copied"
     | "untracked"
     | "gitignored";
   // Symlink info
@@ -452,6 +453,11 @@ export interface FileSymbol {
   children: FileSymbol[];
 }
 
+export interface RepoFileSymbols {
+  filePath: string;
+  symbols: FileSymbol[];
+}
+
 export interface SymbolDiff {
   name: string;
   kind: SymbolKind | null;
@@ -483,6 +489,24 @@ export interface FileSymbolDiff {
   topLevelHunkIds: string[];
   hasGrammar: boolean;
   symbolReferences: SymbolReference[];
+}
+
+// Dependency graph types
+
+export interface SymbolEdge {
+  definesFile: string;
+  referencesFile: string;
+  symbols: string[];
+}
+
+export interface FileCluster {
+  files: string[];
+  edges: SymbolEdge[];
+}
+
+export interface DependencyGraph {
+  edges: SymbolEdge[];
+  clusters: FileCluster[];
 }
 
 // API operation types

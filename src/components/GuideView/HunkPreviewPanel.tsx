@@ -48,7 +48,7 @@ export function HunkPreviewModal({
               <div className="text-xs font-medium text-fg-muted truncate group-hover:text-fg-secondary">
                 {hunk.filePath}
               </div>
-              <div className="mt-1 font-mono text-xxs text-fg-faint truncate group-hover:text-fg0">
+              <div className="mt-1 font-mono text-xxs text-fg-faint truncate group-hover:text-fg-muted">
                 {hunk.content.split("\n").slice(0, 2).join(" ").slice(0, 120)}
                 {hunk.content.length > 120 && "…"}
               </div>
@@ -84,7 +84,7 @@ export function InlineHunkPreviewList({
           <div className="text-xxs font-medium text-fg-muted truncate group-hover:text-fg-secondary">
             {hunk.filePath}
           </div>
-          <div className="mt-0.5 font-mono text-xxs text-fg-faint truncate group-hover:text-fg0">
+          <div className="mt-0.5 font-mono text-xxs text-fg-faint truncate group-hover:text-fg-muted">
             {hunk.content.split("\n").slice(0, 2).join(" ").slice(0, 100)}
             {hunk.content.length > 100 && "…"}
           </div>
@@ -94,7 +94,7 @@ export function InlineHunkPreviewList({
         <button
           type="button"
           onClick={onShowAll}
-          className="w-full px-3 py-1.5 text-xxs text-fg0 hover:text-fg-secondary hover:bg-surface-raised/50 transition-colors text-center"
+          className="w-full px-3 py-1.5 text-xxs text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/50 transition-colors text-center"
         >
           Show all {hunks.length} hunks
         </button>

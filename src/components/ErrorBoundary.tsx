@@ -1,4 +1,4 @@
-import { Component, type ReactNode, type ErrorInfo } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
@@ -70,7 +70,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {this.state.error && (
               <details className="mt-6 text-left">
-                <summary className="cursor-pointer text-sm text-fg0 hover:text-fg-muted">
+                <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg-muted">
                   Error details
                 </summary>
                 <pre className="mt-2 overflow-auto rounded bg-surface-panel p-3 text-xs text-status-rejected">

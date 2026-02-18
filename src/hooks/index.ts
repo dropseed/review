@@ -28,3 +28,4 @@ export { useAnimatedCount } from "./useAnimatedCount";
 export { useDebounce } from "./useDebounce";
 export { useTrustCounts } from "./useTrustCounts";
 export { useReviewFreshness } from "./useReviewFreshness";
+export { useFileHunkStatusMap } from "./useFileHunkStatusMap";

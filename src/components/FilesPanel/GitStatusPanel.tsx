@@ -1,87 +1,21 @@
-import { useState } from "react";
+import { type ReactNode, useState, useMemo, useCallback } from "react";
 import { useReviewStore } from "../../stores";
 import type { StatusEntry } from "../../types";
-import { GitStatusModal } from "../modals/GitStatusModal";
 import {
   CollapsibleSection,
   CollapsibleSectionMenuItem,
+  CollapsibleSectionMenuSeparator,
+  DisplayModeToggle,
 } from "../ui/collapsible-section";
-
-const STATUS_COLORS: Record<
-  StatusEntry["status"],
-  { letter: string; color: string }
-> = {
-  added: { letter: "A", color: "text-status-approved" },
-  modified: { letter: "M", color: "text-status-modified" },
-  deleted: { letter: "D", color: "text-status-rejected" },
-  renamed: { letter: "R", color: "text-status-renamed" },
-  copied: { letter: "C", color: "text-status-renamed" },
-};
-
-function StatusFileRow({
-  path,
-  status,
-  onSelect,
-  actionButton,
-}: {
-  path: string;
-  status?: StatusEntry["status"];
-  onSelect: (path: string) => void;
-  actionButton?: React.ReactNode;
-}) {
-  const config = status ? STATUS_COLORS[status] : null;
-  const filename = path.split("/").pop() ?? path;
-  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : null;
-
-  return (
-    <div className="group flex items-center w-full px-3 py-1 text-xs text-fg-secondary hover:bg-surface-raised/50 transition-colors">
-      <button
-        type="button"
-        onClick={() => onSelect(path)}
-        className="flex items-center gap-2 flex-1 min-w-0 text-left"
-      >
-        <span
-          className={`w-3 text-center font-mono text-xxs font-medium shrink-0 ${config?.color ?? "text-fg-muted"}`}
-        >
-          {config?.letter ?? "?"}
-        </span>
-        <span className="truncate">
-          {filename}
-          {dir && <span className="text-fg-faint ml-1">{dir}</span>}
-        </span>
-      </button>
-      {actionButton && (
-        <span className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1">
-          {actionButton}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function StageActionButton({
-  label,
-  title,
-  onClick,
-}: {
-  label: string;
-  title: string;
-  onClick: (e: React.MouseEvent) => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick(e);
-      }}
-      className="flex items-center justify-center w-5 h-5 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-hover transition-colors text-xs font-mono leading-none"
-    >
-      {label}
-    </button>
-  );
-}
+import { FileNode } from "./FileNode";
+import { FlatFileNode } from "./FlatFileNode";
+import {
+  buildFileTreeFromPaths,
+  processTree,
+  EMPTY_HUNK_STATUS,
+} from "./FileTree.utils";
+import { useFilesPanelContext } from "./FilesPanelContext";
+import { PanelToolbar, ProgressBar } from "./PanelToolbar";
 
 function GitSection({
   title,
@@ -90,15 +24,20 @@ function GitSection({
   children,
   defaultOpen = true,
   menuItems,
+  onExpandAll,
+  onCollapseAll,
 }: {
   title: string;
   count: number;
   accentColor: string;
-  children: React.ReactNode;
+  children: ReactNode;
   defaultOpen?: boolean;
   menuItems?: { label: string; onClick: () => void }[];
-}) {
+  onExpandAll?: () => void;
+  onCollapseAll?: () => void;
+}): ReactNode {
   const [open, setOpen] = useState(defaultOpen);
+  const hasExpandCollapse = onExpandAll || onCollapseAll;
 
   return (
     <CollapsibleSection
@@ -107,18 +46,32 @@ function GitSection({
       badgeColor={accentColor}
       isOpen={open}
       onToggle={() => setOpen(!open)}
-      showTopBorder={false}
       menuContent={
-        menuItems?.length
-          ? menuItems.map((item) => (
+        (menuItems && menuItems.length > 0) || hasExpandCollapse ? (
+          <>
+            {menuItems?.map((item) => (
               <CollapsibleSectionMenuItem
                 key={item.label}
                 onClick={item.onClick}
               >
                 {item.label}
               </CollapsibleSectionMenuItem>
-            ))
-          : undefined
+            ))}
+            {menuItems && menuItems.length > 0 && hasExpandCollapse && (
+              <CollapsibleSectionMenuSeparator />
+            )}
+            {onExpandAll && (
+              <CollapsibleSectionMenuItem onClick={onExpandAll}>
+                Expand all
+              </CollapsibleSectionMenuItem>
+            )}
+            {onCollapseAll && (
+              <CollapsibleSectionMenuItem onClick={onCollapseAll}>
+                Collapse all
+              </CollapsibleSectionMenuItem>
+            )}
+          </>
+        ) : undefined
       }
     >
       <div className="pb-0.5">{children}</div>
@@ -128,20 +81,137 @@ function GitSection({
 
 interface GitStatusPanelProps {
   onSelectFile: (path: string) => void;
-  onSelectWorkingTreeFile?: (path: string) => void;
+  onSelectWorkingTreeFile?: (
+    path: string,
+    mode?: "staged" | "unstaged",
+  ) => void;
 }
 
 export function GitStatusPanel({
   onSelectFile,
   onSelectWorkingTreeFile,
-}: GitStatusPanelProps) {
-  const handleSelect = onSelectWorkingTreeFile ?? onSelectFile;
+}: GitStatusPanelProps): ReactNode {
+  const handleSelectStaged = useCallback(
+    (path: string) => {
+      if (onSelectWorkingTreeFile) {
+        onSelectWorkingTreeFile(path, "staged");
+      } else {
+        onSelectFile(path);
+      }
+    },
+    [onSelectFile, onSelectWorkingTreeFile],
+  );
+  const handleSelectUnstaged = useCallback(
+    (path: string) => {
+      if (onSelectWorkingTreeFile) {
+        onSelectWorkingTreeFile(path, "unstaged");
+      } else {
+        onSelectFile(path);
+      }
+    },
+    [onSelectFile, onSelectWorkingTreeFile],
+  );
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const stageFile = useReviewStore((s) => s.stageFile);
   const unstageFile = useReviewStore((s) => s.unstageFile);
   const stageAll = useReviewStore((s) => s.stageAll);
   const unstageAll = useReviewStore((s) => s.unstageAll);
-  const [showModal, setShowModal] = useState(false);
+  const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
+  const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
+
+  const {
+    expandedPaths,
+    togglePath,
+    selectedFile,
+    repoPath,
+    revealLabel,
+    registerRef,
+    expandAll,
+    collapseAll,
+  } = useFilesPanelContext();
+
+  const emptyHunkStatusMap = useMemo(() => new Map(), []);
+
+  const stagedTree = useMemo(() => {
+    if (!gitStatus || gitStatus.staged.length === 0) return [];
+    const fileEntries = buildFileTreeFromPaths(
+      gitStatus.staged.map((e) => ({ path: e.path, status: e.status })),
+    );
+    return processTree(fileEntries, emptyHunkStatusMap, "changes");
+  }, [gitStatus, emptyHunkStatusMap]);
+
+  const unstagedTree = useMemo(() => {
+    if (!gitStatus || gitStatus.unstaged.length === 0) return [];
+    const fileEntries = buildFileTreeFromPaths(
+      gitStatus.unstaged.map((e) => ({ path: e.path, status: e.status })),
+    );
+    return processTree(fileEntries, emptyHunkStatusMap, "changes");
+  }, [gitStatus, emptyHunkStatusMap]);
+
+  const untrackedTree = useMemo(() => {
+    if (!gitStatus || gitStatus.untracked.length === 0) return [];
+    const fileEntries = buildFileTreeFromPaths(
+      gitStatus.untracked.map((p) => ({ path: p })),
+    );
+    return processTree(fileEntries, emptyHunkStatusMap, "changes");
+  }, [gitStatus, emptyHunkStatusMap]);
+
+  const handleStageFile = useCallback(
+    (path: string) => stageFile(path),
+    [stageFile],
+  );
+
+  const handleUnstageFile = useCallback(
+    (path: string) => unstageFile(path),
+    [unstageFile],
+  );
+
+  const stagedFlat = useMemo(
+    () => gitStatus?.staged ?? [],
+    [gitStatus?.staged],
+  );
+  const unstagedFlat = useMemo(
+    () => gitStatus?.unstaged ?? [],
+    [gitStatus?.unstaged],
+  );
+  const untrackedFlat = useMemo(
+    () =>
+      gitStatus?.untracked.map((p) => ({
+        path: p,
+        status: undefined as StatusEntry["status"] | undefined,
+      })) ?? [],
+    [gitStatus?.untracked],
+  );
+
+  // Per-section dir paths for expand/collapse
+  const collectDirPaths = useCallback(
+    (entries: ReturnType<typeof processTree>) => {
+      const paths = new Set<string>();
+      function walk(items: typeof entries) {
+        for (const entry of items) {
+          if (entry.isDirectory) {
+            for (const p of entry.compactedPaths) paths.add(p);
+            if (entry.children) walk(entry.children);
+          }
+        }
+      }
+      walk(entries);
+      return paths;
+    },
+    [],
+  );
+  const stagedDirPaths = useMemo(
+    () => collectDirPaths(stagedTree),
+    [collectDirPaths, stagedTree],
+  );
+  const unstagedDirPaths = useMemo(
+    () => collectDirPaths(unstagedTree),
+    [collectDirPaths, unstagedTree],
+  );
+  const untrackedDirPaths = useMemo(
+    () => collectDirPaths(untrackedTree),
+    [collectDirPaths, untrackedTree],
+  );
 
   if (!gitStatus) {
     return (
@@ -176,65 +246,70 @@ export function GitStatusPanel({
     );
   }
 
+  const totalFiles = staged.length + unstaged.length + untracked.length;
+
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin">
-      {/* Status summary header */}
-      <button
-        type="button"
-        onClick={() => setShowModal(true)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-left border-b border-edge/50 hover:bg-surface-raised/50 transition-colors"
-      >
-        <span className="text-xs text-fg-muted flex-1">
-          {staged.length > 0 && (
-            <span className="text-status-approved font-medium tabular-nums">
-              {staged.length} staged
-            </span>
-          )}
-          {staged.length > 0 && unstaged.length > 0 && (
-            <span className="text-fg-faint mx-1">·</span>
-          )}
-          {unstaged.length > 0 && (
-            <span className="text-status-modified font-medium tabular-nums">
-              {unstaged.length} unstaged
-            </span>
-          )}
-          {(staged.length > 0 || unstaged.length > 0) &&
-            untracked.length > 0 && (
-              <span className="text-fg-faint mx-1">·</span>
-            )}
-          {untracked.length > 0 && (
-            <span className="text-fg-muted font-medium tabular-nums">
-              {untracked.length} untracked
-            </span>
-          )}
-        </span>
-        <span className="text-fg-faint text-xxs">git status</span>
-      </button>
-
-      <GitStatusModal isOpen={showModal} onClose={() => setShowModal(false)} />
+      <PanelToolbar>
+        <ProgressBar
+          value={totalFiles > 0 ? staged.length / totalFiles : 0}
+          color="bg-status-added"
+        />
+        <DisplayModeToggle mode={gitDisplayMode} onChange={setGitDisplayMode} />
+      </PanelToolbar>
 
       {staged.length > 0 && (
         <GitSection
           title="Staged"
           count={staged.length}
-          accentColor="bg-status-approved/20 text-status-approved"
-          menuItems={[{ label: "Unstage all", onClick: () => unstageAll() }]}
+          accentColor="bg-status-added/20 text-status-added"
+          menuItems={[
+            {
+              label: "Approve all staged",
+              onClick: () => alert("Approve all staged — coming soon"),
+            },
+            { label: "Unstage all", onClick: () => unstageAll() },
+            {
+              label: "Unstage rejected",
+              onClick: () => alert("Unstage rejected — coming soon"),
+            },
+          ]}
+          onExpandAll={
+            gitDisplayMode === "tree"
+              ? () => expandAll(stagedDirPaths)
+              : undefined
+          }
+          onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
         >
-          {staged.map((entry) => (
-            <StatusFileRow
-              key={entry.path}
-              path={entry.path}
-              status={entry.status}
-              onSelect={handleSelect}
-              actionButton={
-                <StageActionButton
-                  label="−"
-                  title="Unstage"
-                  onClick={() => unstageFile(entry.path)}
+          {gitDisplayMode === "tree"
+            ? stagedTree.map((entry) => (
+                <FileNode
+                  key={entry.path}
+                  entry={entry}
+                  depth={0}
+                  expandedPaths={expandedPaths}
+                  onToggle={togglePath}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectStaged}
+                  repoPath={repoPath}
+                  revealLabel={revealLabel}
+                  registerRef={registerRef}
+                  hunkContext="all"
+                  onUnstage={handleUnstageFile}
                 />
-              }
-            />
-          ))}
+              ))
+            : stagedFlat.map((entry) => (
+                <FlatFileNode
+                  key={entry.path}
+                  filePath={entry.path}
+                  fileStatus={entry.status}
+                  hunkStatus={EMPTY_HUNK_STATUS}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectStaged}
+                  hunkContext="all"
+                  onUnstage={handleUnstageFile}
+                />
+              ))}
         </GitSection>
       )}
 
@@ -243,23 +318,49 @@ export function GitStatusPanel({
           title="Unstaged"
           count={unstaged.length}
           accentColor="bg-status-modified/20 text-status-modified"
-          menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
+          menuItems={[
+            {
+              label: "Stage reviewed",
+              onClick: () => alert("Stage reviewed — coming soon"),
+            },
+            { label: "Stage all", onClick: () => stageAll() },
+          ]}
+          onExpandAll={
+            gitDisplayMode === "tree"
+              ? () => expandAll(unstagedDirPaths)
+              : undefined
+          }
+          onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
         >
-          {unstaged.map((entry) => (
-            <StatusFileRow
-              key={entry.path}
-              path={entry.path}
-              status={entry.status}
-              onSelect={handleSelect}
-              actionButton={
-                <StageActionButton
-                  label="+"
-                  title="Stage"
-                  onClick={() => stageFile(entry.path)}
+          {gitDisplayMode === "tree"
+            ? unstagedTree.map((entry) => (
+                <FileNode
+                  key={entry.path}
+                  entry={entry}
+                  depth={0}
+                  expandedPaths={expandedPaths}
+                  onToggle={togglePath}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectUnstaged}
+                  repoPath={repoPath}
+                  revealLabel={revealLabel}
+                  registerRef={registerRef}
+                  hunkContext="all"
+                  onStage={handleStageFile}
                 />
-              }
-            />
-          ))}
+              ))
+            : unstagedFlat.map((entry) => (
+                <FlatFileNode
+                  key={entry.path}
+                  filePath={entry.path}
+                  fileStatus={entry.status}
+                  hunkStatus={EMPTY_HUNK_STATUS}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectUnstaged}
+                  hunkContext="all"
+                  onStage={handleStageFile}
+                />
+              ))}
         </GitSection>
       )}
 
@@ -268,21 +369,43 @@ export function GitStatusPanel({
           title="Untracked"
           count={untracked.length}
           accentColor="bg-fg-muted/20 text-fg-muted"
+          menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
+          onExpandAll={
+            gitDisplayMode === "tree"
+              ? () => expandAll(untrackedDirPaths)
+              : undefined
+          }
+          onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
         >
-          {untracked.map((path) => (
-            <StatusFileRow
-              key={path}
-              path={path}
-              onSelect={onSelectFile}
-              actionButton={
-                <StageActionButton
-                  label="+"
-                  title="Stage"
-                  onClick={() => stageFile(path)}
+          {gitDisplayMode === "tree"
+            ? untrackedTree.map((entry) => (
+                <FileNode
+                  key={entry.path}
+                  entry={entry}
+                  depth={0}
+                  expandedPaths={expandedPaths}
+                  onToggle={togglePath}
+                  selectedFile={selectedFile}
+                  onSelectFile={onSelectFile}
+                  repoPath={repoPath}
+                  revealLabel={revealLabel}
+                  registerRef={registerRef}
+                  hunkContext="all"
+                  onStage={handleStageFile}
                 />
-              }
-            />
-          ))}
+              ))
+            : untrackedFlat.map((entry) => (
+                <FlatFileNode
+                  key={entry.path}
+                  filePath={entry.path}
+                  fileStatus={entry.status}
+                  hunkStatus={EMPTY_HUNK_STATUS}
+                  selectedFile={selectedFile}
+                  onSelectFile={onSelectFile}
+                  hunkContext="all"
+                  onStage={handleStageFile}
+                />
+              ))}
         </GitSection>
       )}
     </div>

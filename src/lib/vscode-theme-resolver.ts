@@ -126,37 +126,81 @@ const COLOR_MAP: [keyof UiThemeTokens, string[]][] = [
   ["surface-hover", ["list.hoverBackground", "toolbar.hoverBackground"]],
   ["surface-active", ["list.activeSelectionBackground"]],
 
-  // Foreground
+  // Foreground — 4-level hierarchy: fg > fg-secondary > fg-muted > fg-faint.
+  // Keys are ordered so we hit the best semantic match first.
+  // When a theme uses the same color for many keys (common), we
+  // synthesize intermediate values in postProcessTokens below.
   ["fg", ["editor.foreground", "foreground"]],
-  ["fg-secondary", ["sideBar.foreground", "descriptionForeground"]],
-  ["fg-muted", ["tab.inactiveForeground", "editorLineNumber.foreground"]],
-  ["fg-faint", ["editorLineNumber.foreground", "editorWhitespace.foreground"]],
+  [
+    "fg-secondary",
+    [
+      "sideBar.foreground", // Sidebar text — closest to our file tree usage
+      "tab.inactiveForeground", // Inactive tab text (slightly muted)
+    ],
+  ],
+  [
+    "fg-muted",
+    [
+      "descriptionForeground", // VS Code "additional info" text — explicitly lower emphasis
+      "breadcrumb.foreground", // Breadcrumbs — reliably muted
+      "input.placeholderForeground", // Placeholder text
+      "editorLineNumber.foreground", // Line numbers
+    ],
+  ],
+  [
+    "fg-faint",
+    [
+      "editorLineNumber.foreground", // Line numbers — often dim
+      "titleBar.inactiveForeground", // Inactive window title
+      "editorWhitespace.foreground", // Whitespace markers
+    ],
+  ],
 
   // Borders
   ["edge", ["panel.border", "editorGroup.border"]],
   ["edge-default", ["sideBar.border", "tab.border"]],
-  ["edge-strong", ["contrastBorder", "contrastActiveBorder"]],
+  [
+    "edge-strong",
+    [
+      "input.border", // Input borders are usually visible
+      "editorWidget.border", // Widget borders
+      "contrastBorder", // Only set in HC themes
+    ],
+  ],
 
   // Interactive
   ["focus-ring", ["focusBorder", "button.background"]],
   ["selection", ["editor.selectionBackground"]],
   ["link", ["textLink.foreground", "editorLink.activeForeground"]],
 
-  // Diff
+  // Diff — use foreground colors first (solid, suitable for text);
+  // diffEditor.*Background colors have alpha and are meant for line backgrounds.
   [
     "diff-added",
-    [
-      "diffEditor.insertedTextBackground",
-      "gitDecoration.addedResourceForeground",
-    ],
+    ["gitDecoration.addedResourceForeground", "editorGutter.addedBackground"],
   ],
   [
     "diff-removed",
     [
-      "diffEditor.removedTextBackground",
       "gitDecoration.deletedResourceForeground",
+      "editorGutter.deletedBackground",
     ],
   ],
+
+  // Git status — map directly from VS Code's git decoration colors
+  ["status-added", ["gitDecoration.addedResourceForeground"]],
+  ["status-modified", ["gitDecoration.modifiedResourceForeground"]],
+  ["status-deleted", ["gitDecoration.deletedResourceForeground"]],
+  ["status-untracked", ["gitDecoration.untrackedResourceForeground"]],
+  ["status-renamed", ["gitDecoration.renamedResourceForeground"]],
+
+  // Review status — reuse git decoration semantics (green=positive, red=negative)
+  ["status-approved", ["gitDecoration.addedResourceForeground"]],
+  ["status-rejected", ["gitDecoration.deletedResourceForeground"]],
+
+  // Diagnostic status
+  ["status-warning", ["editorWarning.foreground", "list.warningForeground"]],
+  ["status-info", ["editorInfo.foreground"]],
 ];
 
 // ---------------------------------------------------------------------------
@@ -315,6 +359,65 @@ const LIGHT_FALLBACK_TOKENS: UiThemeTokens = {
 };
 
 // ---------------------------------------------------------------------------
+// Color mixing helpers
+// ---------------------------------------------------------------------------
+
+/** Parse a hex color (#RGB, #RRGGBB, or #RRGGBBAA) into [r, g, b]. */
+function parseHex(hex: string): [number, number, number] | null {
+  const h = hex.replace("#", "");
+  if (h.length === 3) {
+    return [
+      parseInt(h[0] + h[0], 16),
+      parseInt(h[1] + h[1], 16),
+      parseInt(h[2] + h[2], 16),
+    ];
+  }
+  if (h.length >= 6) {
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+    ];
+  }
+  return null;
+}
+
+/** Mix two hex colors by a ratio (0 = a, 1 = b). Returns #RRGGBB. */
+function mixColors(a: string, b: string, ratio: number): string {
+  const ca = parseHex(a);
+  const cb = parseHex(b);
+  if (!ca || !cb) return a;
+  const r = Math.round(ca[0] + (cb[0] - ca[0]) * ratio);
+  const g = Math.round(ca[1] + (cb[1] - ca[1]) * ratio);
+  const bl = Math.round(ca[2] + (cb[2] - ca[2]) * ratio);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * Ensure the 4 fg levels (fg > fg-secondary > fg-muted > fg-faint) are distinct.
+ * When adjacent levels resolve to the same color, synthesize an intermediate
+ * value by mixing toward the background color.
+ */
+function ensureFgHierarchy(tokens: UiThemeTokens): void {
+  const bg = tokens.surface;
+  const levels: (keyof UiThemeTokens)[] = [
+    "fg",
+    "fg-secondary",
+    "fg-muted",
+    "fg-faint",
+  ];
+  // Target mix ratios toward bg for each level (how far from fg toward bg)
+  // fg=0%, secondary=20%, muted=45%, faint=65%
+  const mixRatios = [0, 0.2, 0.45, 0.65];
+
+  for (let i = 1; i < levels.length; i++) {
+    if (tokens[levels[i]] === tokens[levels[i - 1]]) {
+      tokens[levels[i]] = mixColors(tokens.fg, bg, mixRatios[i]);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Theme generation
 // ---------------------------------------------------------------------------
 
@@ -339,6 +442,12 @@ export function resolveVscodeTheme(detection: VscodeThemeDetection): UiTheme {
       }
     }
   }
+
+  // Ensure the fg hierarchy has 4 distinct levels.
+  // Many themes reuse the same color for multiple roles, causing our
+  // fg > fg-secondary > fg-muted > fg-faint levels to collapse.
+  // Fix by synthesizing intermediate values via mixing with the background.
+  ensureFgHierarchy(tokens);
 
   const themeId = `vscode-${detection.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 

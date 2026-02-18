@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ProcessedFileEntry } from "./types";
 import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import type { HunkContext } from "./FileNode";
@@ -11,11 +12,11 @@ interface FileListSectionProps {
   flatFilePaths: string[];
   displayMode: ChangesDisplayMode;
   hunkContext: HunkContext;
-  emptyIcon?: React.ReactNode;
+  emptyIcon?: ReactNode;
   emptyMessage: string;
 }
 
-const CHECK_ICON = (
+export const CHECK_ICON = (
   <svg
     className="mx-auto mb-2 h-6 w-6 text-status-approved"
     fill="none"
@@ -27,6 +28,21 @@ const CHECK_ICON = (
   </svg>
 );
 
+function EmptyState({
+  icon,
+  message,
+}: {
+  icon?: ReactNode;
+  message: string;
+}): ReactNode {
+  return (
+    <div className="py-4 text-center">
+      {icon}
+      <p className="text-xs text-fg-muted">{message}</p>
+    </div>
+  );
+}
+
 export function FileListSection({
   treeEntries,
   flatFilePaths,
@@ -34,7 +50,7 @@ export function FileListSection({
   hunkContext,
   emptyIcon,
   emptyMessage,
-}: FileListSectionProps) {
+}: FileListSectionProps): ReactNode {
   const {
     expandedPaths,
     togglePath,
@@ -50,64 +66,61 @@ export function FileListSection({
     movedFilePaths,
     hunkStatusMap,
     fileStatusMap,
-    symbolDiffMap,
   } = useFilesPanelContext();
 
-  return (
-    <div className="py-1">
-      {displayMode === "tree" ? (
-        treeEntries.length > 0 ? (
-          treeEntries.map((entry) => (
-            <FileNode
-              key={entry.path}
-              entry={entry}
-              depth={0}
-              expandedPaths={expandedPaths}
-              onToggle={togglePath}
-              selectedFile={selectedFile}
-              onSelectFile={handleSelectFile}
-              repoPath={repoPath}
-              revealLabel={revealLabel}
-              onOpenInSplit={openInSplit}
-              registerRef={registerRef}
-              hunkContext={hunkContext}
-              onApproveAll={handleApproveAll}
-              onUnapproveAll={handleUnapproveAll}
-              onRejectAll={handleRejectAll}
-              movedFilePaths={movedFilePaths}
-            />
-          ))
-        ) : (
-          <div className="py-4 text-center">
-            {emptyIcon}
-            <p className="text-xs text-fg-muted">{emptyMessage}</p>
-          </div>
-        )
-      ) : flatFilePaths.length > 0 ? (
-        flatFilePaths.map((filePath) => (
-          <FlatFileNode
-            key={filePath}
-            filePath={filePath}
-            fileStatus={fileStatusMap.get(filePath)}
-            hunkStatus={hunkStatusMap.get(filePath) ?? EMPTY_HUNK_STATUS}
-            symbolDiff={symbolDiffMap.get(filePath) ?? null}
+  if (displayMode === "tree") {
+    if (treeEntries.length === 0) {
+      return <EmptyState icon={emptyIcon} message={emptyMessage} />;
+    }
+
+    return (
+      <div className="py-1">
+        {treeEntries.map((entry) => (
+          <FileNode
+            key={entry.path}
+            entry={entry}
+            depth={0}
+            expandedPaths={expandedPaths}
+            onToggle={togglePath}
             selectedFile={selectedFile}
             onSelectFile={handleSelectFile}
+            repoPath={repoPath}
+            revealLabel={revealLabel}
+            onOpenInSplit={openInSplit}
+            registerRef={registerRef}
             hunkContext={hunkContext}
             onApproveAll={handleApproveAll}
             onUnapproveAll={handleUnapproveAll}
             onRejectAll={handleRejectAll}
             movedFilePaths={movedFilePaths}
           />
-        ))
-      ) : (
-        <div className="py-4 text-center">
-          {emptyIcon}
-          <p className="text-xs text-fg-muted">{emptyMessage}</p>
-        </div>
-      )}
+        ))}
+      </div>
+    );
+  }
+
+  // Flat display mode
+  if (flatFilePaths.length === 0) {
+    return <EmptyState icon={emptyIcon} message={emptyMessage} />;
+  }
+
+  return (
+    <div className="py-1">
+      {flatFilePaths.map((filePath) => (
+        <FlatFileNode
+          key={filePath}
+          filePath={filePath}
+          fileStatus={fileStatusMap.get(filePath)}
+          hunkStatus={hunkStatusMap.get(filePath) ?? EMPTY_HUNK_STATUS}
+          selectedFile={selectedFile}
+          onSelectFile={handleSelectFile}
+          hunkContext={hunkContext}
+          onApproveAll={handleApproveAll}
+          onUnapproveAll={handleUnapproveAll}
+          onRejectAll={handleRejectAll}
+          movedFilePaths={movedFilePaths}
+        />
+      ))}
     </div>
   );
 }
-
-FileListSection.CHECK_ICON = CHECK_ICON;

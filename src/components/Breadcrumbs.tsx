@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 interface BreadcrumbsProps {
   filePath: string;
   onNavigateToDirectory?: (dirPath: string) => void;
@@ -6,7 +8,7 @@ interface BreadcrumbsProps {
 export function Breadcrumbs({
   filePath,
   onNavigateToDirectory,
-}: BreadcrumbsProps) {
+}: BreadcrumbsProps): ReactNode {
   const parts = filePath.split("/");
 
   return (
@@ -26,7 +28,7 @@ export function Breadcrumbs({
             ) : (
               <button
                 onClick={() => onNavigateToDirectory?.(path)}
-                className="font-mono text-fg0 hover:text-fg-secondary hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded"
+                className="font-mono text-fg-muted hover:text-fg-secondary hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded"
               >
                 {part}
               </button>

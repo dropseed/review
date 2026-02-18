@@ -350,13 +350,13 @@ export const BranchSelect = memo(function BranchSelect({
           aria-label={label}
         >
           <span
-            className={`block truncate ${showPlaceholder ? "text-fg0" : ""}`}
+            className={`block truncate ${showPlaceholder ? "text-fg-muted" : ""}`}
           >
             {displayText || placeholder || "Select…"}
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
             <svg
-              className={`h-4 w-4 text-fg0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-fg-muted transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
               viewBox="0 0 20 20"
               fill="currentColor"
               aria-hidden="true"
@@ -404,12 +404,14 @@ export const BranchSelect = memo(function BranchSelect({
           className="max-h-60 overflow-auto py-1 scrollbar-thin"
         >
           {Object.entries(groupedOptions).length === 0 ? (
-            <li className="px-3 py-2 text-sm text-fg0">No branches found</li>
+            <li className="px-3 py-2 text-sm text-fg-muted">
+              No branches found
+            </li>
           ) : (
             Object.entries(groupedOptions).map(([group, groupOpts]) => (
               <li key={group}>
                 {/* Group header */}
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg0">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                   {group}
                 </div>
                 {/* Group options */}
@@ -443,7 +445,7 @@ export const BranchSelect = memo(function BranchSelect({
                         <BranchIcon type={opt.icon} />
                         <span className="truncate font-mono">{opt.label}</span>
                         {opt.secondaryLabel && (
-                          <span className="ml-auto text-xs text-fg0 shrink-0">
+                          <span className="ml-auto text-xs text-fg-muted shrink-0">
                             {opt.secondaryLabel}
                           </span>
                         )}

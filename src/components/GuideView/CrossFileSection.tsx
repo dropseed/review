@@ -1,9 +1,8 @@
-import { useMemo, useCallback, useState } from "react";
+import { type ReactNode, useMemo, useCallback, useState } from "react";
 import { useReviewStore } from "../../stores";
 import type { DiffHunk, HunkState } from "../../types";
 import { isHunkReviewed } from "../../types";
 import type { SymbolLinkedHunk } from "../../utils/symbolLinkedHunks";
-import { getChangedLinesKey } from "../../utils/changed-lines-key";
 import { HunkPreview } from "../FileViewer/annotations/HunkPreview";
 import {
   Dialog,
@@ -13,6 +12,12 @@ import {
   DialogDescription,
   DialogClose,
 } from "../ui/dialog";
+import {
+  type IdenticalGroup,
+  computeIdenticalGroups,
+  getChangePreview,
+  StatusIndicator,
+} from "./IdenticalChangesSection";
 
 // ========================================================================
 // Types
@@ -31,12 +36,6 @@ interface SymbolConnection {
   definitionFile: string;
   connections: FileConnection[];
   totalUnreviewed: number;
-}
-
-interface IdenticalGroup {
-  representative: DiffHunk;
-  hunks: DiffHunk[];
-  files: string[];
 }
 
 // ========================================================================
@@ -180,40 +179,6 @@ function computeSymbolConnections(
   return connections;
 }
 
-function computeIdenticalGroups(allHunks: DiffHunk[]): IdenticalGroup[] {
-  const keyToHunks = new Map<string, DiffHunk[]>();
-  for (const h of allHunks) {
-    const key = getChangedLinesKey(h);
-    if (!key) continue;
-    const group = keyToHunks.get(key) ?? [];
-    group.push(h);
-    keyToHunks.set(key, group);
-  }
-
-  const groups: IdenticalGroup[] = [];
-  for (const hunks of keyToHunks.values()) {
-    if (hunks.length < 2) continue;
-    const files = [...new Set(hunks.map((h) => h.filePath))];
-    groups.push({ representative: hunks[0], hunks, files });
-  }
-
-  groups.sort((a, b) => b.hunks.length - a.hunks.length);
-  return groups;
-}
-
-function getChangePreview(hunk: DiffHunk): string {
-  const changed = hunk.lines.filter(
-    (l) => l.type === "added" || l.type === "removed",
-  );
-  const first = changed[0];
-  if (!first) return "(empty change)";
-  const trimmed = first.content.trim();
-  const prefix = first.type === "added" ? "+" : "-";
-  const label = `${prefix} ${trimmed}`;
-  if (changed.length === 1) return label;
-  return `${label}  (${changed.length} lines)`;
-}
-
 // ========================================================================
 // Components
 // ========================================================================
@@ -226,7 +191,7 @@ function getConnectionStatusStyle(fc: FileConnection): {
     return { className: "text-status-approved", label: "reviewed" };
   }
   if (fc.isAllImports) {
-    return { className: "text-fg0", label: "imports" };
+    return { className: "text-fg-muted", label: "imports" };
   }
   return { className: "text-status-modified", label: "needs review" };
 }
@@ -237,7 +202,7 @@ function ConnectionCluster({
 }: {
   connection: SymbolConnection;
   onPreview: (filePath: string, hunkIds: string[], symbolName?: string) => void;
-}) {
+}): ReactNode {
   const allReviewed = connection.totalUnreviewed === 0;
   const needReviewCount = connection.connections.filter(
     (c) => c.unreviewedCount > 0,
@@ -307,33 +272,6 @@ function ConnectionCluster({
   );
 }
 
-function StatusIndicator({
-  count,
-  label,
-  variant,
-}: {
-  count: number;
-  label: string;
-  variant: "pending" | "approved" | "rejected";
-}) {
-  if (count === 0) return null;
-
-  const colors = {
-    pending: { dot: "bg-surface-active", text: "text-fg-muted" },
-    approved: { dot: "bg-status-approved", text: "text-status-approved" },
-    rejected: { dot: "bg-status-rejected", text: "text-status-rejected" },
-  };
-
-  const { dot, text } = colors[variant];
-
-  return (
-    <span className={`flex items-center gap-1.5 ${text}`}>
-      <span className={`h-2 w-2 rounded-full ${dot}`} />
-      {count} {label}
-    </span>
-  );
-}
-
 function IdenticalGroupRow({
   group,
   hunkStates,
@@ -346,7 +284,7 @@ function IdenticalGroupRow({
   onApproveAll: (hunkIds: string[]) => void;
   onRejectAll: (hunkIds: string[]) => void;
   onNavigate: (filePath: string, hunkId: string) => void;
-}) {
+}): ReactNode {
   const [open, setOpen] = useState(false);
   const totalCount = group.hunks.length;
 
@@ -400,7 +338,7 @@ function IdenticalGroupRow({
               {totalCount} hunks
             </span>
           </DialogTitle>
-          <DialogClose className="rounded p-1 text-fg0 hover:bg-surface-hover hover:text-fg-secondary transition-colors">
+          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
             <svg
               className="h-4 w-4"
               fill="none"
@@ -481,7 +419,7 @@ function IdenticalGroupRow({
 
         {/* Action footer */}
         <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
-          <div className="text-xs text-fg0">
+          <div className="text-xs text-fg-muted">
             Batch action applies to all {totalCount} hunks
           </div>
           <div className="flex items-center gap-2">
@@ -617,7 +555,7 @@ function ConnectionPreviewModal({
 // Main component
 // ========================================================================
 
-export function CrossFileSection() {
+export function CrossFileSection(): ReactNode {
   const symbolLinkedHunks = useReviewStore((s) => s.symbolLinkedHunks);
   const allHunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -703,7 +641,9 @@ export function CrossFileSection() {
       {identicalGroups.length > 0 && (
         <>
           <div className="flex items-center gap-2">
-            <h4 className="text-xs font-medium text-fg0">Identical Changes</h4>
+            <h4 className="text-xs font-medium text-fg-muted">
+              Identical Changes
+            </h4>
             <span className="rounded-full bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted tabular-nums">
               {identicalGroups.length} group
               {identicalGroups.length === 1 ? "" : "s"}

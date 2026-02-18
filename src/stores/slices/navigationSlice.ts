@@ -74,11 +74,16 @@ export interface NavigationSlice {
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: string | null;
-  selectWorkingTreeFile: (path: string) => void;
+  workingTreeDiffMode: "staged" | "unstaged" | null;
+  selectWorkingTreeFile: (path: string, mode?: "staged" | "unstaged") => void;
 
   // Active group index in focused review section
   activeGroupIndex: number;
   setActiveGroupIndex: (index: number) => void;
+
+  // Content search modal
+  contentSearchOpen: boolean;
+  setContentSearchOpen: (open: boolean) => void;
 
   // Request a files panel tab switch from outside the panel
   requestedFilesPanelTab: string | null;
@@ -151,50 +156,52 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     const state = get();
     const { secondaryFile, focusedPane } = state;
 
-    let targetHunkIndex = -1;
-    if (path) {
-      targetHunkIndex = findFirstUnreviewedHunkIndex(path, state);
-    }
-    const newFocusedHunkIndex = targetHunkIndex >= 0 ? targetHunkIndex : 0;
+    const targetHunkIndex = path
+      ? findFirstUnreviewedHunkIndex(path, state)
+      : -1;
+    const newFocusedHunkIndex = Math.max(targetHunkIndex, 0);
 
-    // If split is active and secondary pane is focused, update secondary instead
-    if (secondaryFile !== null && focusedPane === "secondary") {
-      // Closing the secondary file closes the split
+    const shared = {
+      guideContentMode: null as GuideContentMode,
+      workingTreeDiffFile: null as string | null,
+      workingTreeDiffMode: null as "staged" | "unstaged" | null,
+    };
+
+    const isSplitActive = secondaryFile !== null;
+
+    // Split active with secondary pane focused: update secondary pane
+    if (isSplitActive && focusedPane === "secondary") {
       if (path === null) {
-        set({
-          secondaryFile: null,
-          focusedPane: "primary",
-          guideContentMode: null,
-          workingTreeDiffFile: null,
-        });
+        // Closing the secondary file closes the split
+        set({ ...shared, secondaryFile: null, focusedPane: "primary" });
       } else {
         set({
+          ...shared,
           secondaryFile: path,
           focusedHunkIndex: newFocusedHunkIndex,
-          guideContentMode: null,
-          workingTreeDiffFile: null,
         });
       }
-    } else {
-      // Closing the primary file while split is active closes the split
-      if (path === null && secondaryFile !== null) {
-        set({
-          selectedFile: secondaryFile,
-          secondaryFile: null,
-          focusedPane: "primary",
-          focusedHunkIndex: newFocusedHunkIndex,
-          guideContentMode: null,
-          workingTreeDiffFile: null,
-        });
-      } else {
-        set({
-          selectedFile: path,
-          focusedHunkIndex: newFocusedHunkIndex,
-          guideContentMode: null,
-          workingTreeDiffFile: null,
-        });
-      }
+      return;
     }
+
+    // Split active with primary pane focused: closing primary promotes secondary
+    if (isSplitActive && path === null) {
+      set({
+        ...shared,
+        selectedFile: secondaryFile,
+        secondaryFile: null,
+        focusedPane: "primary",
+        focusedHunkIndex: newFocusedHunkIndex,
+      });
+      return;
+    }
+
+    // Default: update primary pane
+    set({
+      ...shared,
+      selectedFile: path,
+      focusedHunkIndex: newFocusedHunkIndex,
+    });
   },
 
   nextFile: () => {
@@ -233,26 +240,20 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     const { hunks, focusedHunkIndex } = get();
     if (hunks.length === 0) return;
     const nextIndex = Math.min(focusedHunkIndex + 1, hunks.length - 1);
-    const nextHunk = hunks[nextIndex];
-
-    if (nextHunk) {
-      set({ focusedHunkIndex: nextIndex, selectedFile: nextHunk.filePath });
-    } else {
-      set({ focusedHunkIndex: nextIndex });
-    }
+    set({
+      focusedHunkIndex: nextIndex,
+      selectedFile: hunks[nextIndex].filePath,
+    });
   },
 
   prevHunk: () => {
     const { hunks, focusedHunkIndex } = get();
     if (hunks.length === 0) return;
     const prevIndex = Math.max(focusedHunkIndex - 1, 0);
-    const prevHunk = hunks[prevIndex];
-
-    if (prevHunk) {
-      set({ focusedHunkIndex: prevIndex, selectedFile: prevHunk.filePath });
-    } else {
-      set({ focusedHunkIndex: prevIndex });
-    }
+    set({
+      focusedHunkIndex: prevIndex,
+      selectedFile: hunks[prevIndex].filePath,
+    });
   },
 
   // Guide content mode
@@ -376,17 +377,14 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: null,
-  selectWorkingTreeFile: (path) => {
-    const state = get();
-    let targetHunkIndex = -1;
-    if (path) {
-      targetHunkIndex = findFirstUnreviewedHunkIndex(path, state);
-    }
-    const newFocusedHunkIndex = targetHunkIndex >= 0 ? targetHunkIndex : 0;
+  workingTreeDiffMode: null,
+  selectWorkingTreeFile: (path, mode) => {
+    const targetHunkIndex = findFirstUnreviewedHunkIndex(path, get());
     set({
       selectedFile: path,
       workingTreeDiffFile: path,
-      focusedHunkIndex: newFocusedHunkIndex,
+      workingTreeDiffMode: mode ?? "unstaged",
+      focusedHunkIndex: Math.max(targetHunkIndex, 0),
       guideContentMode: null,
     });
   },
@@ -403,6 +401,10 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Active group index
   activeGroupIndex: 0,
   setActiveGroupIndex: (index) => set({ activeGroupIndex: index }),
+
+  // Content search modal
+  contentSearchOpen: false,
+  setContentSearchOpen: (open) => set({ contentSearchOpen: open }),
 
   // Requested files panel tab
   requestedFilesPanelTab: null,

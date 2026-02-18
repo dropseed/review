@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { type ReactNode, useState, useMemo, useCallback, memo } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores";
-import type { SymbolDiff } from "../../types";
+import type { SymbolDiff, SymbolChangeType } from "../../types";
 import {
   SymbolKindBadge,
   ChangeIndicator,
@@ -11,6 +11,17 @@ import {
   type SymbolHunkStatus,
 } from "../symbols";
 import { useReviewData } from "../ReviewDataContext";
+
+function symbolNameColor(changeType: SymbolChangeType): string {
+  switch (changeType) {
+    case "removed":
+      return "line-through text-status-rejected/70";
+    case "added":
+      return "text-status-approved";
+    case "modified":
+      return "text-fg-secondary";
+  }
+}
 
 // --- Interactive status toggle ---
 
@@ -22,7 +33,7 @@ export function StatusToggle({
   status: { pending: number; total: number };
   onApprove: () => void;
   onUnapprove: () => void;
-}) {
+}): ReactNode {
   if (status.total === 0) return null;
 
   const isComplete = status.pending === 0;
@@ -41,7 +52,7 @@ export function StatusToggle({
         }}
         className={`flex-shrink-0 text-xxs w-4 h-4 flex items-center justify-center rounded transition-colors ${
           isComplete
-            ? "text-status-approved hover:text-fg0"
+            ? "text-status-approved hover:text-fg-muted"
             : "text-fg-faint hover:text-status-approved"
         }`}
       >
@@ -142,7 +153,7 @@ export const SymbolRow = memo(function SymbolRow({
         <ChangeIndicator changeType={symbol.changeType} />
         <SymbolKindBadge kind={symbol.kind} />
         <button
-          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbol.changeType === "removed" ? "line-through text-status-rejected/70" : symbol.changeType === "added" ? "text-status-approved" : "text-fg-secondary"}`}
+          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbolNameColor(symbol.changeType)}`}
           onClick={(e) => {
             e.stopPropagation();
             handleClick();

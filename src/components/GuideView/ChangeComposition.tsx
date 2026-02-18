@@ -64,7 +64,7 @@ function LegendItem({
     >
       <span className={`inline-block h-2 w-2 rounded-full ${dotColor}`} />
       <span className="text-fg-muted">{segment.categoryName}</span>
-      <span className="text-fg0 tabular-nums">{segment.count}</span>
+      <span className="text-fg-muted tabular-nums">{segment.count}</span>
     </span>
   );
 }
@@ -81,7 +81,7 @@ export function ChangeComposition(): ReactNode {
         <span className="text-xs font-medium text-fg-muted">
           Change Composition
         </span>
-        <span className="text-xxs tabular-nums text-fg0">
+        <span className="text-xxs tabular-nums text-fg-muted">
           {composition.totalClassified} classified
           {composition.totalUnclassified > 0 && (
             <> &middot; {composition.totalUnclassified} pending</>

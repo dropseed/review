@@ -18,6 +18,8 @@ interface FilesPanelContextValue {
   hunkStatusMap: Map<string, FileHunkStatus>;
   fileStatusMap: Map<string, string>;
   symbolDiffMap: Map<string, FileSymbolDiff>;
+  expandAll: (dirPaths: Set<string>) => void;
+  collapseAll: () => void;
 }
 
 const FilesPanelContext = createContext<FilesPanelContextValue | null>(null);

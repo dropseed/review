@@ -30,6 +30,7 @@ import type {
   ExpandedContext,
   SearchMatch,
   FileSymbol,
+  RepoFileSymbols,
   FileSymbolDiff,
   SymbolDefinition,
   RemoteInfo,
@@ -76,6 +77,27 @@ export interface ApiClient {
 
   /** Unstage all staged changes */
   unstageAll(repoPath: string): Promise<void>;
+
+  /** Stage specific hunks in a file by content hash */
+  stageHunks(
+    repoPath: string,
+    filePath: string,
+    contentHashes: string[],
+  ): Promise<void>;
+
+  /** Unstage specific hunks in a file by content hash */
+  unstageHunks(
+    repoPath: string,
+    filePath: string,
+    contentHashes: string[],
+  ): Promise<void>;
+
+  /** Get file content for working tree diff (staged or unstaged) */
+  getWorkingTreeFileContent(
+    repoPath: string,
+    filePath: string,
+    cached: boolean,
+  ): Promise<FileContent>;
 
   /** Get lightweight diff statistics (file count, additions, deletions) */
   getDiffShortStat(
@@ -263,6 +285,9 @@ export interface ApiClient {
     filePath: string,
     gitRef?: string,
   ): Promise<FileSymbol[] | null>;
+
+  /** Extract symbols from all tracked files in the repo */
+  getRepoSymbols(repoPath: string): Promise<RepoFileSymbols[]>;
 
   // ----- File watcher -----
 

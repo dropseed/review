@@ -16,7 +16,7 @@ export function CopyErrorButton({ error }: CopyErrorButtonProps): ReactNode {
   return (
     <button
       onClick={handleCopy}
-      className="text-xxs text-fg0 hover:text-fg-secondary transition-colors"
+      className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
     >
       {copied ? "Copied" : "Copy error"}
     </button>

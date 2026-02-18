@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, memo } from "react";
+import { type ReactNode, useState, useCallback, useMemo, memo } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
 import type {
   FileSymbolDiff,
@@ -26,7 +26,11 @@ const SYMBOL_ICONS: Record<SymbolKind, { label: string; color: string }> = {
   type: { label: "T", color: "text-status-trusted" },
 };
 
-export function SymbolKindBadge({ kind }: { kind: SymbolKind | null }) {
+export function SymbolKindBadge({
+  kind,
+}: {
+  kind: SymbolKind | null;
+}): ReactNode {
   if (!kind) return <span className="w-4 flex-shrink-0" />;
   const config = SYMBOL_ICONS[kind];
   return (
@@ -46,8 +50,8 @@ const CHANGE_INDICATORS: Record<
   SymbolChangeType,
   { prefix: string; color: string }
 > = {
-  added: { prefix: "+", color: "text-status-approved" },
-  removed: { prefix: "-", color: "text-status-rejected" },
+  added: { prefix: "+", color: "text-diff-added" },
+  removed: { prefix: "-", color: "text-diff-removed" },
   modified: { prefix: "~", color: "text-status-modified" },
 };
 
@@ -55,7 +59,7 @@ export function ChangeIndicator({
   changeType,
 }: {
   changeType: SymbolChangeType;
-}) {
+}): ReactNode {
   const config = CHANGE_INDICATORS[changeType];
   return (
     <span
@@ -104,20 +108,28 @@ export function collectAllHunkIds(symbol: SymbolDiff): string[] {
   return ids;
 }
 
-export function StatusBadge({ status }: { status: SymbolHunkStatus }) {
+export function StatusBadge({
+  status,
+}: {
+  status: SymbolHunkStatus;
+}): ReactNode {
   if (status.total === 0) return null;
 
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-status-approved" : "text-fg0"}`}
+      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-status-approved" : "text-fg-muted"}`}
     >
       {status.total === 1 ? `${status.total} hunk` : `${status.total} hunks`}
     </span>
   );
 }
 
-export function ReviewStatusDot({ status }: { status: SymbolHunkStatus }) {
+export function ReviewStatusDot({
+  status,
+}: {
+  status: SymbolHunkStatus;
+}): ReactNode {
   if (status.total === 0) return null;
 
   const isComplete = status.pending === 0;
@@ -333,7 +345,7 @@ export const FileSection = memo(function FileSection({
         </svg>
 
         <span className="min-w-0 flex-1 truncate text-xs">
-          {dirPath && <span className="text-fg0">{dirPath}/</span>}
+          {dirPath && <span className="text-fg-muted">{dirPath}/</span>}
           <span className="text-fg-secondary font-medium">{fileName}</span>
         </span>
 
@@ -343,7 +355,7 @@ export const FileSection = memo(function FileSection({
           </span>
         )}
 
-        <span className="font-mono text-xxs tabular-nums text-fg0 flex-shrink-0">
+        <span className="font-mono text-xxs tabular-nums text-fg-muted flex-shrink-0">
           {totalHunks}
         </span>
       </button>

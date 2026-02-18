@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useReviewStore } from "../../../stores";
+import { useFileHunkStatusMap } from "../../../hooks/useFileHunkStatusMap";
 import {
-  calculateFileHunkStatus,
   hasChangeStatus,
   processTree,
   processTreeWithSections,
@@ -17,19 +17,9 @@ export function useFilePanelFileSystem() {
   const allFilesLoading = useReviewStore((s) => s.allFilesLoading);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
-  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
 
-  // Calculate hunk status per file
-  const hunkStatusMap = useMemo(
-    () =>
-      calculateFileHunkStatus(hunks, reviewState, {
-        autoApproveStaged: reviewState?.autoApproveStaged,
-        stagedFilePaths,
-      }),
-    [hunks, reviewState, stagedFilePaths],
-  );
+  const hunkStatusMap = useFileHunkStatusMap();
 
-  // Files where ALL hunks are part of a move pair
   const movedFilePaths = useMemo(() => {
     const allPaths = new Set<string>();
     const hasNonMoved = new Set<string>();
@@ -43,19 +33,16 @@ export function useFilePanelFileSystem() {
     return allPaths;
   }, [hunks]);
 
-  // Process sectioned tree for Changes sections (Needs Review vs Reviewed)
   const sectionedFiles = useMemo(
     () => processTreeWithSections(allFiles, hunkStatusMap),
     [allFiles, hunkStatusMap],
   );
 
-  // Process tree for All Files section
   const allFilesTree = useMemo(
     () => processTree(allFiles, hunkStatusMap, "browse"),
     [allFiles, hunkStatusMap],
   );
 
-  // Overall stats
   const stats = useMemo(() => {
     let needsReviewFiles = 0;
     let reviewedFiles = 0;
@@ -92,8 +79,6 @@ export function useFilePanelFileSystem() {
     };
   }, [hunkStatusMap]);
 
-  // Flat file lists per section (for flat display mode)
-  // Files can appear in both sections if they have mixed hunk states
   const flatSectionedFiles = useMemo(() => {
     const needsReview: string[] = [];
     const savedForLater: string[] = [];
@@ -132,7 +117,6 @@ export function useFilePanelFileSystem() {
     return { needsReview, savedForLater, reviewed };
   }, [hunkStatusMap, allFiles]);
 
-  // Git status letter per file path (derived from allFiles tree)
   const fileStatusMap = useMemo(() => {
     const map = new Map<string, string>();
     function collect(entries: typeof allFiles) {
@@ -148,7 +132,6 @@ export function useFilePanelFileSystem() {
     return map;
   }, [allFiles]);
 
-  // Collect all directory paths for expand/collapse all
   const allDirPaths = useMemo(() => {
     const paths = new Set<string>();
     function collect(entries: typeof allFilesTree) {

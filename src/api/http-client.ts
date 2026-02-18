@@ -30,6 +30,7 @@ import type {
   SearchMatch,
   FileSymbol,
   FileSymbolDiff,
+  RepoFileSymbols,
   SymbolDefinition,
   RemoteInfo,
   GroupingInput,
@@ -193,6 +194,36 @@ export class HttpClient implements ApiClient {
 
   async unstageAll(_repoPath: string): Promise<void> {
     console.warn("[HttpClient] unstageAll not implemented");
+  }
+
+  async stageHunks(
+    _repoPath: string,
+    _filePath: string,
+    _contentHashes: string[],
+  ): Promise<void> {
+    console.warn("[HttpClient] stageHunks not implemented");
+  }
+
+  async unstageHunks(
+    _repoPath: string,
+    _filePath: string,
+    _contentHashes: string[],
+  ): Promise<void> {
+    console.warn("[HttpClient] unstageHunks not implemented");
+  }
+
+  async getWorkingTreeFileContent(
+    _repoPath: string,
+    _filePath: string,
+    _cached: boolean,
+  ): Promise<FileContent> {
+    console.warn("[HttpClient] getWorkingTreeFileContent not implemented");
+    return {
+      content: "",
+      diffPatch: "",
+      hunks: [],
+      contentType: "text",
+    };
   }
 
   async getDiffShortStat(
@@ -574,6 +605,11 @@ export class HttpClient implements ApiClient {
   ): Promise<FileSymbol[] | null> {
     console.warn("[HttpClient] getFileSymbols not implemented");
     return null;
+  }
+
+  async getRepoSymbols(_repoPath: string): Promise<RepoFileSymbols[]> {
+    console.warn("[HttpClient] getRepoSymbols not implemented");
+    return [];
   }
 
   // ----- File watcher -----

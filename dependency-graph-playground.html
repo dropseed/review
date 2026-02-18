@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dependency Graph — SymbolRow Style</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --bg-surface: #252536;
+    --bg-raised: #2a2a3d;
+    --bg-hover: #32324a;
+    --edge: #3a3a52;
+    --edge-subtle: #2e2e44;
+    --fg: #cdd6f4;
+    --fg-secondary: #bac2de;
+    --fg-muted: #7f849c;
+    --fg-faint: #585b70;
+    --fg0: #6c7086;
+    /* Match the actual app's status colors */
+    --status-approved: #a6e3a1;
+    --status-rejected: #f38ba8;
+    --status-modified: #f9e2af;
+    --status-renamed: #cba6f7;
+    --status-classifying: #f9e2af;
+    --status-trusted: #94e2d5;
+    --blue: #89b4fa;
+    --blue-dim: rgba(137,180,250,0.15);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 280px; min-width: 280px;
+    border-right: 1px solid var(--edge);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    background: var(--bg-surface);
+  }
+  .sidebar h2 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--fg-muted); padding: 16px 16px 8px;
+  }
+  .control-group { padding: 8px 16px 16px; border-bottom: 1px solid var(--edge-subtle); }
+  .presets { display: flex; flex-direction: column; gap: 4px; }
+  .preset-btn {
+    background: var(--bg-raised); border: 1px solid var(--edge); color: var(--fg-secondary);
+    padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    text-align: left; transition: all 0.15s;
+  }
+  .preset-btn:hover { background: var(--bg-hover); border-color: var(--fg-faint); }
+  .preset-btn.active { border-color: var(--blue); background: var(--blue-dim); color: var(--blue); }
+  .preset-btn .p-name { font-weight: 600; }
+  .preset-btn .p-desc { font-size: 10px; color: var(--fg-muted); margin-top: 2px; }
+  .preset-btn.active .p-desc { color: var(--blue); opacity: 0.7; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+  .toggle-row span { font-size: 12px; color: var(--fg-secondary); }
+  .toggle {
+    width: 32px; height: 18px; background: var(--fg-faint); border-radius: 9px;
+    position: relative; cursor: pointer; transition: background 0.2s;
+  }
+  .toggle.on { background: var(--blue); }
+  .toggle::after {
+    content: ''; position: absolute; width: 14px; height: 14px; background: white;
+    border-radius: 50%; top: 2px; left: 2px; transition: transform 0.2s;
+  }
+  .toggle.on::after { transform: translateX(14px); }
+  .ctrl-select {
+    width: 100%; background: var(--bg-raised); border: 1px solid var(--edge);
+    color: var(--fg-secondary); padding: 6px 8px; border-radius: 5px; font-size: 12px; cursor: pointer;
+  }
+  .ctrl-select:focus { outline: none; border-color: var(--blue); }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .preview { flex: 1; overflow: auto; padding: 32px; display: flex; align-items: flex-start; justify-content: center; }
+  .preview-container { width: 100%; max-width: 900px; }
+  .prompt-area {
+    border-top: 1px solid var(--edge); background: var(--bg-surface);
+    padding: 12px 16px; display: flex; gap: 12px; align-items: flex-start;
+  }
+  .prompt-text {
+    flex: 1; font-size: 12px; line-height: 1.5; color: var(--fg-secondary);
+    font-family: monospace; white-space: pre-wrap; max-height: 120px; overflow-y: auto;
+  }
+  .copy-btn {
+    background: var(--bg-raised); border: 1px solid var(--edge); color: var(--fg-muted);
+    padding: 6px 12px; border-radius: 5px; font-size: 11px; cursor: pointer; white-space: nowrap; transition: all 0.15s;
+  }
+  .copy-btn:hover { background: var(--bg-hover); color: var(--fg-secondary); }
+  .copy-btn.copied { background: rgba(166,227,161,0.15); color: var(--status-approved); border-color: var(--status-approved); }
+
+  /* ========== Matches the real app's component styles ========== */
+  .section-header { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); margin-bottom: 12px; }
+  .standalone-note { font-size: 11px; color: var(--fg-faint); margin-top: 8px; }
+  .mono { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+
+  /* FileSection header — matches the real component */
+  .file-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid rgba(58,58,82,0.5);
+  }
+  .file-header:hover { background: rgba(42,42,61,0.4); }
+  .file-header .chevron {
+    width: 12px; height: 12px; flex-shrink: 0; color: var(--fg-faint);
+    transition: transform 0.15s;
+  }
+  .file-header .chevron.open { transform: rotate(90deg); }
+  .file-header .path { font-size: 12px; flex: 1; min-width: 0; }
+  .file-header .path .dir { color: var(--fg0); }
+  .file-header .path .base { color: var(--fg-secondary); font-weight: 500; }
+
+  /* SymbolRow — matches the real component */
+  .sym-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 8px 2px 0;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sym-row:hover { background: rgba(42,42,61,0.4); }
+
+  /* ChangeIndicator — matches +/-/~ with colors */
+  .change-ind {
+    flex-shrink: 0; width: 12px; text-align: center;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px; font-weight: 700;
+  }
+  .change-ind.added { color: var(--status-approved); }
+  .change-ind.modified { color: var(--status-modified); }
+  .change-ind.removed { color: var(--status-rejected); }
+
+  /* SymbolKindBadge — matches the real component colors */
+  .kind-badge {
+    flex-shrink: 0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px; font-weight: 700;
+  }
+
+  /* Symbol name */
+  .sym-name {
+    font-size: 12px; color: var(--fg-secondary);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sym-name.removed { text-decoration: line-through; color: rgba(243,139,168,0.7); }
+  .sym-name.added { color: var(--status-approved); }
+
+  /* Connection arrow — the NEW part */
+  .conn-arrow { flex-shrink: 0; }
+  .conn-target {
+    font-size: 11px; color: var(--fg0);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    white-space: nowrap;
+  }
+  .conn-target .tgt-base { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>Variation</h2>
+  <div class="control-group">
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <h2>Display</h2>
+  <div class="control-group">
+    <div class="toggle-row"><span>Directory paths</span><div class="toggle on" id="t-dir" onclick="tog('showDir',this)"></div></div>
+    <div class="toggle-row"><span>Standalone count</span><div class="toggle on" id="t-sa" onclick="tog('showStandalone',this)"></div></div>
+  </div>
+
+  <h2>Data</h2>
+  <div class="control-group">
+    <select class="ctrl-select" id="dataset" onchange="S.dataset=this.value;go()">
+      <option value="mixed">Mixed changes</option>
+      <option value="simple">Simple (1 added fn)</option>
+      <option value="complex">Complex (6 files)</option>
+    </select>
+  </div>
+</div>
+
+<div class="main">
+  <div class="preview"><div class="preview-container" id="preview"></div></div>
+  <div class="prompt-area">
+    <div class="prompt-text" id="prompt"></div>
+    <button class="copy-btn" id="cbtn" onclick="copyPrompt()">Copy Prompt</button>
+  </div>
+</div>
+
+<script>
+// Match real app's SYMBOL_ICONS colors
+const KIND_STYLES = {
+  function: { label: 'fn', color: 'var(--status-modified)' },   // text-status-modified (yellow)
+  method:   { label: 'fn', color: 'var(--status-modified)' },
+  class:    { label: 'C',  color: 'var(--status-renamed)' },    // text-status-renamed (purple)
+  struct:   { label: 'S',  color: 'var(--status-renamed)' },
+  trait:    { label: 'T',  color: 'var(--status-classifying)' },
+  impl:     { label: 'I',  color: 'var(--status-classifying)' },
+  enum:     { label: 'E',  color: 'var(--status-approved)' },   // text-status-approved (green)
+  interface:{ label: 'I',  color: 'var(--status-trusted)' },
+  module:   { label: 'M',  color: 'var(--fg-muted)' },
+  type:     { label: 'T',  color: 'var(--status-trusted)' },
+};
+
+// Change type → indicator
+const CHANGE = {
+  added:    { prefix: '+', cls: 'added' },
+  modified: { prefix: '~', cls: 'modified' },
+  removed:  { prefix: '-', cls: 'removed' },
+};
+
+// Change type → arrow color for connections
+const ARROW_COLORS = {
+  added:    'var(--status-approved)',
+  modified: 'var(--status-modified)',
+  removed:  'var(--status-rejected)',
+};
+
+// ========== Data ==========
+const DS = {
+  simple: {
+    edges: [
+      { src: 'src/auth.rs', tgt: 'src/handler.rs', syms: [{ n: 'authenticate', k: 'function', ct: 'added' }] },
+    ],
+    standalone: ['src/utils.rs'],
+  },
+  mixed: {
+    edges: [
+      { src: 'src/auth.rs', tgt: 'src/handler.rs', syms: [{ n: 'authenticate', k: 'function', ct: 'added' }] },
+      { src: 'src/auth.rs', tgt: 'src/middleware.rs', syms: [{ n: 'validate', k: 'function', ct: 'modified' }] },
+      { src: 'src/models.rs', tgt: 'src/api.rs', syms: [{ n: 'User', k: 'class', ct: 'modified' }, { n: 'Session', k: 'class', ct: 'added' }] },
+    ],
+    standalone: ['src/config.rs', 'src/main.rs'],
+  },
+  complex: {
+    edges: [
+      { src: 'src/auth/mod.rs', tgt: 'src/handlers/api.rs', syms: [{ n: 'authenticate', k: 'function', ct: 'added' }] },
+      { src: 'src/auth/mod.rs', tgt: 'src/handlers/web.rs', syms: [{ n: 'authenticate', k: 'function', ct: 'added' }, { n: 'validate_token', k: 'function', ct: 'modified' }] },
+      { src: 'src/auth/mod.rs', tgt: 'src/middleware.rs', syms: [{ n: 'validate_token', k: 'function', ct: 'modified' }] },
+      { src: 'src/models/user.rs', tgt: 'src/handlers/api.rs', syms: [{ n: 'User', k: 'class', ct: 'modified' }] },
+      { src: 'src/models/user.rs', tgt: 'src/handlers/web.rs', syms: [{ n: 'User', k: 'class', ct: 'modified' }] },
+      { src: 'src/models/user.rs', tgt: 'src/middleware.rs', syms: [{ n: 'UserRole', k: 'enum', ct: 'removed' }] },
+      { src: 'src/models/session.rs', tgt: 'src/handlers/api.rs', syms: [{ n: 'Session', k: 'class', ct: 'added' }] },
+    ],
+    standalone: ['src/config.rs', 'src/main.rs', 'src/lib.rs'],
+  },
+};
+
+const S = { layout: 'A', showDir: true, showStandalone: true, dataset: 'mixed' };
+
+const VARIANTS = [
+  { id: 'A', name: 'SymbolRow + Targets',      desc: 'Matches existing FileSection/SymbolRow look. Each symbol row gets → target appended.' },
+  { id: 'B', name: 'Symbol Tree + Nested Refs', desc: 'Like SymbolRow but targets nested underneath each symbol with indented arrow rows.' },
+  { id: 'C', name: 'Deduped Symbol + Targets',  desc: 'Groups same symbol across edges. Shows symbol once, then all target files inline.' },
+];
+
+// ========== Helpers ==========
+function d() { return DS[S.dataset]; }
+
+function chevron(open=true) {
+  const cls = open ? 'chevron open' : 'chevron';
+  return `<svg class="${cls}" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6l6 6-6 6"/></svg>`;
+}
+
+function fileHeader(path) {
+  const i = path.lastIndexOf('/');
+  const dir = i >= 0 ? path.slice(0, i + 1) : '';
+  const base = i >= 0 ? path.slice(i + 1) : path;
+  const dp = S.showDir && dir ? `<span class="dir">${dir}</span>` : '';
+  return `<div class="file-header">${chevron()}<span class="path mono">${dp}<span class="base">${base}</span></span></div>`;
+}
+
+function changeInd(ct) {
+  const c = CHANGE[ct] || CHANGE.modified;
+  return `<span class="change-ind ${c.cls}">${c.prefix}</span>`;
+}
+
+function kindBadge(kind) {
+  if (!kind) return '<span style="width:16px;flex-shrink:0"></span>';
+  const ks = KIND_STYLES[kind] || KIND_STYLES.function;
+  return `<span class="kind-badge" style="color:${ks.color}">${ks.label}</span>`;
+}
+
+function symName(name, ct) {
+  const cls = ct === 'removed' ? 'sym-name removed' : ct === 'added' ? 'sym-name added' : 'sym-name';
+  return `<span class="${cls}">${name}</span>`;
+}
+
+function connArrow(ct, w=24, h=10) {
+  const color = ARROW_COLORS[ct] || ARROW_COLORS.modified;
+  return `<svg class="conn-arrow" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="vertical-align:middle;flex-shrink:0"><line x1="0" y1="${h/2}" x2="${w-5}" y2="${h/2}" stroke="${color}" stroke-opacity="0.45" stroke-width="1.5"/><path d="M${w-7} ${h/2-2.5} L${w-1} ${h/2} L${w-7} ${h/2+2.5}" fill="none" stroke="${color}" stroke-opacity="0.6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function targetFile(path) {
+  const i = path.lastIndexOf('/');
+  const dir = i >= 0 ? path.slice(0, i + 1) : '';
+  const base = i >= 0 ? path.slice(i + 1) : path;
+  const dp = S.showDir && dir ? `<span>${dir}</span>` : '';
+  return `<span class="conn-target">${dp}<span class="tgt-base">${base}</span></span>`;
+}
+
+function sa() {
+  const x = d();
+  if (!S.showStandalone || !x.standalone?.length) return '';
+  return `<div class="standalone-note">+ ${x.standalone.length} standalone file${x.standalone.length===1?'':'s'}</div>`;
+}
+
+function grpBySrc() {
+  const m = new Map();
+  for (const e of d().edges) { if (!m.has(e.src)) m.set(e.src, []); m.get(e.src).push(e); }
+  return m;
+}
+
+// ========== Renderers ==========
+
+// A: SymbolRow + Targets — closest to existing UI, just appends → target to each row
+function renderA() {
+  let h = '';
+  for (const [src, edges] of grpBySrc()) {
+    h += `<div style="margin-bottom:2px">`;
+    h += fileHeader(src);
+
+    // Flatten: one row per symbol × target
+    const rows = [];
+    for (const e of edges) {
+      for (const s of e.syms) {
+        rows.push({ sym: s, tgt: e.tgt });
+      }
+    }
+
+    h += `<div style="padding-bottom:4px">`;
+    rows.forEach((r) => {
+      // Match SymbolRow padding: depth=1 → paddingLeft = 1 * 0.8 + 0.5 = 1.3rem
+      h += `<div class="sym-row" style="padding-left:1.3rem">`;
+      // Spacer where chevron would be (no children)
+      h += `<span style="width:12px;flex-shrink:0"></span>`;
+      h += changeInd(r.sym.ct);
+      h += kindBadge(r.sym.k);
+      h += symName(r.sym.n, r.sym.ct);
+      // The new part: arrow + target
+      h += `<span style="flex:1"></span>`;
+      h += connArrow(r.sym.ct);
+      h += targetFile(r.tgt);
+      h += `</div>`;
+    });
+    h += `</div></div>`;
+  }
+  return h;
+}
+
+// B: Symbol Tree + Nested Refs — symbol is the branch, targets nested underneath
+function renderB() {
+  let h = '';
+  for (const [src, edges] of grpBySrc()) {
+    h += `<div style="margin-bottom:2px">`;
+    h += fileHeader(src);
+
+    // Group: symbol → targets
+    const symMap = new Map();
+    for (const e of edges) {
+      for (const s of e.syms) {
+        if (!symMap.has(s.n)) symMap.set(s.n, { sym: s, targets: [] });
+        const entry = symMap.get(s.n);
+        if (!entry.targets.includes(e.tgt)) entry.targets.push(e.tgt);
+      }
+    }
+
+    h += `<div style="padding-bottom:4px">`;
+    for (const [, entry] of symMap) {
+      const hasMultiple = entry.targets.length > 1;
+      // Symbol row at depth 1
+      h += `<div class="sym-row" style="padding-left:1.3rem">`;
+      if (hasMultiple) {
+        h += chevron(true);
+      } else {
+        h += `<span style="width:12px;flex-shrink:0"></span>`;
+      }
+      h += changeInd(entry.sym.ct);
+      h += kindBadge(entry.sym.k);
+      h += symName(entry.sym.n, entry.sym.ct);
+      if (!hasMultiple) {
+        h += `<span style="flex:1"></span>`;
+        h += connArrow(entry.sym.ct);
+        h += targetFile(entry.targets[0]);
+      } else {
+        h += `<span style="flex:1"></span>`;
+        h += `<span style="font-size:10px;color:var(--fg-faint);font-family:monospace">${entry.targets.length} files</span>`;
+      }
+      h += `</div>`;
+
+      // Nested target rows at depth 2
+      if (hasMultiple) {
+        for (const tgt of entry.targets) {
+          h += `<div class="sym-row" style="padding-left:2.1rem">`;
+          h += `<span style="width:12px;flex-shrink:0"></span>`;
+          // No change indicator for target rows — just arrow + file
+          h += `<span style="width:12px;flex-shrink:0"></span>`; // spacer for change ind
+          h += `<span style="width:16px;flex-shrink:0"></span>`; // spacer for kind badge
+          h += connArrow(entry.sym.ct);
+          h += targetFile(tgt);
+          h += `</div>`;
+        }
+      }
+    }
+    h += `</div></div>`;
+  }
+  return h;
+}
+
+// C: Deduped Symbol + Targets — symbol once, all targets inline
+function renderC() {
+  let h = '';
+  for (const [src, edges] of grpBySrc()) {
+    h += `<div style="margin-bottom:2px">`;
+    h += fileHeader(src);
+
+    // Group: symbol → targets
+    const symMap = new Map();
+    for (const e of edges) {
+      for (const s of e.syms) {
+        if (!symMap.has(s.n)) symMap.set(s.n, { sym: s, targets: [] });
+        const entry = symMap.get(s.n);
+        if (!entry.targets.includes(e.tgt)) entry.targets.push(e.tgt);
+      }
+    }
+
+    h += `<div style="padding-bottom:4px">`;
+    for (const [, entry] of symMap) {
+      h += `<div class="sym-row" style="padding-left:1.3rem">`;
+      h += `<span style="width:12px;flex-shrink:0"></span>`;
+      h += changeInd(entry.sym.ct);
+      h += kindBadge(entry.sym.k);
+      h += symName(entry.sym.n, entry.sym.ct);
+      h += `<span style="flex:1"></span>`;
+      h += connArrow(entry.sym.ct);
+      // All targets inline
+      h += `<span style="display:inline-flex;align-items:center;gap:4px">`;
+      entry.targets.forEach((tgt, i) => {
+        if (i > 0) h += `<span style="color:var(--fg-faint);font-size:10px">,</span>`;
+        h += targetFile(tgt);
+      });
+      h += `</span>`;
+      h += `</div>`;
+    }
+    h += `</div></div>`;
+  }
+  return h;
+}
+
+// ========== Main ==========
+const R = { A: renderA, B: renderB, C: renderC };
+
+function go() {
+  const el = document.getElementById('preview');
+  el.innerHTML = `<div class="preview-container"><div class="section-header">Connected Changes</div>${R[S.layout]()}${sa()}</div>`;
+
+  const v = VARIANTS.find(v => v.id === S.layout);
+  const parts = [];
+  parts.push(`Implement the dependency graph as "${v.name}" on the overview page, reusing the existing SymbolRow/FileSection visual language from src/components/symbols/.`);
+  parts.push(v.desc);
+  parts.push(`Use the existing ChangeIndicator (+/-/~), SymbolKindBadge (fn/C/S/T/E/I/M), and FileSection header components. The change type coloring (green=added, yellow=modified, red=removed with line-through) matches what's already in the app.`);
+  parts.push(`The NEW element is a small colored arrow (colored by change type) and target file path appended to each symbol row, showing where the symbol is referenced in other files.`);
+
+  if (S.layout === 'A') parts.push(`Each symbol×target pair gets its own row. Arrow and target are right-aligned. Most straightforward — one row = one connection.`);
+  if (S.layout === 'B') parts.push(`Symbols with multiple targets show as expandable nodes (with chevron). Single-target symbols show inline. Multi-target symbols show "N files" count and nest target rows underneath at deeper indent.`);
+  if (S.layout === 'C') parts.push(`Same symbol is shown once even if referenced by multiple files. All target files listed inline after the arrow, comma-separated. Most compact.`);
+
+  if (!S.showDir) parts.push(`Hide directory paths on target files, show only basenames.`);
+
+  document.getElementById('prompt').textContent = parts.join('\n\n');
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', b.dataset.id === S.layout));
+}
+
+function tog(k, el) { S[k] = !S[k]; el.classList.toggle('on', S[k]); go(); }
+
+function copyPrompt() {
+  navigator.clipboard.writeText(document.getElementById('prompt').textContent).then(() => {
+    const b = document.getElementById('cbtn'); b.classList.add('copied'); b.textContent = 'Copied!';
+    setTimeout(() => { b.classList.remove('copied'); b.textContent = 'Copy Prompt'; }, 1500);
+  });
+}
+
+// Init
+const pel = document.getElementById('presets');
+VARIANTS.forEach(v => {
+  const b = document.createElement('button');
+  b.className = 'preset-btn'; b.dataset.id = v.id;
+  b.innerHTML = `<div><div class="p-name">${v.id}. ${v.name}</div><div class="p-desc">${v.desc}</div></div>`;
+  b.onclick = () => { S.layout = v.id; go(); };
+  pel.appendChild(b);
+});
+go();
+</script>
+</body>
+</html>

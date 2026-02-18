@@ -25,6 +25,7 @@ import type {
   FileEntry,
   FileSymbol,
   FileSymbolDiff,
+  RepoFileSymbols,
   GitHubPrRef,
   GitStatusSummary,
   GroupingInput,
@@ -93,6 +94,34 @@ export class TauriClient implements ApiClient {
 
   async unstageAll(repoPath: string): Promise<void> {
     await invoke("unstage_all", { repoPath });
+  }
+
+  async stageHunks(
+    repoPath: string,
+    filePath: string,
+    contentHashes: string[],
+  ): Promise<void> {
+    await invoke("stage_hunks", { repoPath, filePath, contentHashes });
+  }
+
+  async unstageHunks(
+    repoPath: string,
+    filePath: string,
+    contentHashes: string[],
+  ): Promise<void> {
+    await invoke("unstage_hunks", { repoPath, filePath, contentHashes });
+  }
+
+  async getWorkingTreeFileContent(
+    repoPath: string,
+    filePath: string,
+    cached: boolean,
+  ): Promise<FileContent> {
+    return invoke<FileContent>("get_working_tree_file_content", {
+      repoPath,
+      filePath,
+      cached,
+    });
   }
 
   async getDiffShortStat(
@@ -393,6 +422,10 @@ export class TauriClient implements ApiClient {
       filePath,
       gitRef: gitRef ?? null,
     });
+  }
+
+  async getRepoSymbols(repoPath: string): Promise<RepoFileSymbols[]> {
+    return invoke<RepoFileSymbols[]>("get_repo_symbols", { repoPath });
   }
 
   // ----- File watcher -----

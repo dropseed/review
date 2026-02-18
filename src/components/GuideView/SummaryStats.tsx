@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ReviewProgress } from "../../hooks/useReviewProgress";
 
 function ProgressSegment({
@@ -8,7 +9,7 @@ function ProgressSegment({
   count: number;
   total: number;
   className: string;
-}) {
+}): ReactNode {
   if (count === 0) return null;
   return (
     <div
@@ -16,6 +17,24 @@ function ProgressSegment({
       style={{ width: `${(count / total) * 100}%` }}
     />
   );
+}
+
+function StateBadge({ state }: { state: ReviewProgress["state"] }): ReactNode {
+  if (state === "approved") {
+    return (
+      <span className="text-xxs font-medium px-2 py-0.5 rounded-full bg-status-approved/10 text-status-approved shrink-0">
+        Approved
+      </span>
+    );
+  }
+  if (state === "changes_requested") {
+    return (
+      <span className="text-xxs font-medium px-2 py-0.5 rounded-full bg-status-rejected/10 text-status-rejected shrink-0">
+        Changes Requested
+      </span>
+    );
+  }
+  return null;
 }
 
 export function SummaryStats({
@@ -27,13 +46,13 @@ export function SummaryStats({
   pendingHunks,
   reviewedPercent,
   state,
-}: ReviewProgress) {
+}: ReviewProgress): ReactNode {
   return (
     <div className="px-4 pt-3 pb-1.5">
       <div className="flex items-center gap-3">
         <span className="text-lg font-bold tabular-nums tracking-tight text-fg shrink-0">
           {reviewedPercent}
-          <span className="text-xs font-medium text-fg0 ml-px">%</span>
+          <span className="text-xs font-medium text-fg-muted ml-px">%</span>
         </span>
 
         <div className="h-2 flex-1 rounded-full bg-surface-raised overflow-hidden flex">
@@ -54,16 +73,7 @@ export function SummaryStats({
           />
         </div>
 
-        {state === "approved" && (
-          <span className="text-xxs font-medium px-2 py-0.5 rounded-full bg-status-approved/10 text-status-approved shrink-0">
-            Approved
-          </span>
-        )}
-        {state === "changes_requested" && (
-          <span className="text-xxs font-medium px-2 py-0.5 rounded-full bg-status-rejected/10 text-status-rejected shrink-0">
-            Changes Requested
-          </span>
-        )}
+        <StateBadge state={state} />
       </div>
 
       <div className="flex items-center gap-3 mt-1.5 text-xxs tabular-nums">
@@ -81,7 +91,7 @@ export function SummaryStats({
           </>
         )}
         <span className="text-fg-faint">&middot;</span>
-        <span className="text-fg0">{pendingHunks} pending</span>
+        <span className="text-fg-muted">{pendingHunks} pending</span>
         <span className="text-fg-faint ml-auto">
           {reviewedHunks}/{totalHunks} hunks
         </span>

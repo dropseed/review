@@ -1,3 +1,4 @@
+import { type ReactNode, useCallback } from "react";
 import { useReviewStore } from "../stores";
 import { SimpleTooltip } from "./ui/tooltip";
 
@@ -20,24 +21,22 @@ function BranchIcon({ className }: { className?: string }) {
   );
 }
 
-export function GitStatusIndicator() {
+export function GitStatusIndicator(): ReactNode {
   const gitStatus = useReviewStore((s) => s.gitStatus);
 
-  if (!gitStatus) {
-    return null;
-  }
-
-  const stagedCount = gitStatus.staged.length;
-  const unstagedCount = gitStatus.unstaged.length;
-  const untrackedCount = gitStatus.untracked.length;
-  const hasChanges = stagedCount > 0 || unstagedCount > 0 || untrackedCount > 0;
-
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     useReviewStore.setState({
       filesPanelCollapsed: false,
       requestedFilesPanelTab: "git",
     });
-  };
+  }, []);
+
+  if (!gitStatus) return null;
+
+  const hasChanges =
+    gitStatus.staged.length > 0 ||
+    gitStatus.unstaged.length > 0 ||
+    gitStatus.untracked.length > 0;
 
   return (
     <SimpleTooltip
@@ -49,13 +48,13 @@ export function GitStatusIndicator() {
                    text-fg-muted hover:bg-surface-raised hover:text-fg-secondary
                    transition-colors"
       >
-        <BranchIcon className="h-3 w-3 text-fg0" />
+        <BranchIcon className="h-3 w-3 text-fg-muted" />
         <span className="font-medium text-fg-secondary max-w-[7rem] truncate">
           {gitStatus.currentBranch}
         </span>
 
         {hasChanges && (
-          <span className="text-xxs text-fg0">+ working tree</span>
+          <span className="text-xxs text-fg-muted">+ working tree</span>
         )}
       </button>
     </SimpleTooltip>

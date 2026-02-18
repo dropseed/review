@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { getPlatformServices } from "../../platform";
 import {
   ContextMenu,
@@ -9,41 +9,29 @@ import {
 } from "../ui/context-menu";
 import { SimpleTooltip } from "../ui/tooltip";
 import type { ProcessedFileEntry } from "./types";
-import { HunkCount, StatusLetter, SymlinkIndicator } from "./StatusIndicators";
+import {
+  TreeNodeItem,
+  TreeRow,
+  TreeRowButton,
+  TreeChevron,
+  TreeNodeName,
+  StatusLetter,
+  SymlinkIndicator,
+  TreeFileIcon,
+  WorkingTreeDot,
+} from "../tree";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
-function directoryNameColor(
-  isGitignored: boolean,
-  hunkContext: HunkContext,
-  hasReviewableContent: boolean,
-  hasPending: boolean,
-  hasRejections?: boolean,
-): string {
+function directoryNameColor(isGitignored: boolean): string {
   if (isGitignored) return "text-fg-muted";
-  if (hunkContext !== "all") return "text-fg-secondary";
-  if (hasReviewableContent && !hasPending && hasRejections)
-    return "text-status-rejected";
-  if (hasReviewableContent && !hasPending) return "text-status-approved";
-  if (hasPending) return "text-status-modified";
   return "text-fg-secondary";
 }
 
-function fileNameColor(
-  isSelected: boolean,
-  isComplete: boolean,
-  isGitignored: boolean,
-  hunkContext: HunkContext,
-  hasReviewableContent: boolean,
-  hasRejections: boolean,
-): string {
+function fileNameColor(isSelected: boolean, isGitignored: boolean): string {
   if (isSelected) return "text-fg";
-  if (isComplete && hasRejections) return "text-status-rejected";
-  if (isComplete) return "text-status-approved";
   if (isGitignored) return "text-fg-muted";
-  if (hunkContext === "all" && hasReviewableContent)
-    return "text-status-modified";
   return "text-fg-secondary";
 }
 
@@ -63,6 +51,18 @@ interface FileNodeProps {
   onUnapproveAll?: (path: string, isDir: boolean) => void;
   onRejectAll?: (path: string, isDir: boolean) => void;
   movedFilePaths?: Set<string>;
+  onStage?: (path: string, isDir: boolean) => void;
+  onUnstage?: (path: string, isDir: boolean) => void;
+  workingTreeStatusMap?: Map<string, string>;
+  collapsible?: boolean;
+  showSizeBar?: boolean;
+}
+
+interface ApprovalButtonsProps {
+  hasPending: boolean;
+  hasApproved: boolean;
+  onApprove: () => void;
+  onUnapprove: () => void;
 }
 
 export function ApprovalButtons({
@@ -70,19 +70,13 @@ export function ApprovalButtons({
   hasApproved,
   onApprove,
   onUnapprove,
-}: {
-  hasPending: boolean;
-  hasApproved: boolean;
-  onApprove: () => void;
-  onUnapprove: () => void;
-}) {
+}: ApprovalButtonsProps): ReactNode {
   if (!hasPending && !hasApproved) {
     return null;
   }
 
   return (
     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-      {/* Approve button - show if there are pending hunks */}
       {hasPending && (
         <SimpleTooltip content="Approve all">
           <button
@@ -110,8 +104,6 @@ export function ApprovalButtons({
           </button>
         </SimpleTooltip>
       )}
-
-      {/* Unapprove button - show if there are approved hunks */}
       {hasApproved && (
         <SimpleTooltip content="Unapprove all">
           <button
@@ -143,6 +135,73 @@ export function ApprovalButtons({
   );
 }
 
+interface StageButtonsProps {
+  onStage?: () => void;
+  onUnstage?: () => void;
+}
+
+export function StageButtons({
+  onStage,
+  onUnstage,
+}: StageButtonsProps): ReactNode {
+  if (!onStage && !onUnstage) return null;
+
+  return (
+    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {onStage && (
+        <SimpleTooltip content="Stage">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStage();
+            }}
+            className="flex items-center justify-center w-5 h-5 rounded
+                       text-fg-muted hover:text-status-approved hover:bg-status-approved/20
+                       transition-colors"
+          >
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 4v16m-8-8h16"
+              />
+            </svg>
+          </button>
+        </SimpleTooltip>
+      )}
+      {onUnstage && (
+        <SimpleTooltip content="Unstage">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnstage();
+            }}
+            className="flex items-center justify-center w-5 h-5 rounded
+                       text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50
+                       transition-colors"
+          >
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16" />
+            </svg>
+          </button>
+        </SimpleTooltip>
+      )}
+    </div>
+  );
+}
+
 export const FileNode = memo(
   function FileNode({
     entry,
@@ -160,15 +219,18 @@ export const FileNode = memo(
     onUnapproveAll,
     onRejectAll,
     movedFilePaths,
+    onStage,
+    onUnstage,
+    workingTreeStatusMap,
+    collapsible = true,
+    showSizeBar = false,
   }: FileNodeProps) {
     if (!entry.matchesFilter) {
       return null;
     }
 
-    const isExpanded = expandedPaths.has(entry.path);
+    const isExpanded = !collapsible || expandedPaths.has(entry.path);
     const isSelected = selectedFile === entry.path;
-    // Use rem for scaling: base 0.5rem + 0.8rem per depth level
-    const paddingLeft = `${depth * 0.8 + 0.5}rem`;
 
     if (entry.isDirectory) {
       const visibleChildren = entry.children?.filter((c) => c.matchesFilter);
@@ -186,53 +248,39 @@ export const FileNode = memo(
       );
 
       const barPct =
-        hunkContext === "all" && entry.siblingMaxFileCount > 0
+        showSizeBar && entry.siblingMaxFileCount > 0
           ? (entry.fileCount / entry.siblingMaxFileCount) * 100
           : 0;
 
       return (
-        <div className="file-node-item select-none">
-          <div
-            className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
+        <TreeNodeItem>
+          <TreeRow
+            depth={depth}
+            className={
               isGitignored
                 ? "opacity-50 hover:opacity-70"
                 : "hover:bg-surface-raised/40"
-            }`}
-            style={{ paddingLeft }}
+            }
           >
-            <button
-              className="flex flex-1 items-center gap-1.5 text-left min-w-0"
-              onClick={() => onToggle(entry.path, needsLazyLoad)}
-              aria-expanded={isExpanded}
+            <TreeRowButton
+              onClick={
+                collapsible
+                  ? () => onToggle(entry.path, needsLazyLoad)
+                  : undefined
+              }
+              aria-expanded={collapsible ? isExpanded : undefined}
             >
-              {/* Chevron */}
-              <svg
-                className={`h-3 w-3 flex-shrink-0 text-fg-faint transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M10 6l6 6-6 6" />
-              </svg>
+              {collapsible && <TreeChevron expanded={isExpanded} />}
 
-              {/* Git status for symlink directories */}
-              {entry.isSymlink && entry.status && !isGitignored && (
-                <StatusLetter status={entry.status} />
-              )}
-
-              {/* Directory name */}
-              <span
-                className={`min-w-0 flex-1 truncate text-xs ${directoryNameColor(isGitignored, hunkContext, hasReviewableContent, hasPending, dirHasRejections)}`}
-              >
+              <TreeNodeName className={directoryNameColor(isGitignored)}>
                 {entry.displayName}
-              </span>
+              </TreeNodeName>
 
-              {/* Symlink indicator */}
               {entry.isSymlink && (
                 <SymlinkIndicator target={entry.symlinkTarget} />
               )}
-            </button>
+            </TreeRowButton>
 
-            {/* Relative size bar + file count on hover (Browse only) */}
             {barPct > 0 && (
               <div className="flex items-center gap-1 flex-shrink-0">
                 <span className="font-mono text-xxs tabular-nums text-fg-faint opacity-0 group-hover:opacity-100 transition-opacity">
@@ -247,7 +295,6 @@ export const FileNode = memo(
               </div>
             )}
 
-            {/* Approval button */}
             {hasReviewActions && hasReviewableContent && (
               <ApprovalButtons
                 hasPending={hasPending}
@@ -257,7 +304,6 @@ export const FileNode = memo(
               />
             )}
 
-            {/* Overflow menu */}
             {hasReviewActions && hasReviewableContent && (
               <NodeOverflowMenu
                 path={entry.path}
@@ -271,11 +317,26 @@ export const FileNode = memo(
               />
             )}
 
-            {/* Aggregate hunk count (hidden in Browse mode) */}
-            {hunkContext !== "all" && (
-              <HunkCount status={entry.hunkStatus} context={hunkContext} />
+            {(onStage || onUnstage) && (
+              <StageButtons
+                onStage={onStage ? () => onStage(entry.path, true) : undefined}
+                onUnstage={
+                  onUnstage ? () => onUnstage(entry.path, true) : undefined
+                }
+              />
             )}
-          </div>
+
+            {entry.isSymlink && entry.status && !isGitignored && (
+              <StatusLetter
+                status={entry.status}
+                hideOnHover={
+                  (hasReviewActions && hasReviewableContent) ||
+                  !!onStage ||
+                  !!onUnstage
+                }
+              />
+            )}
+          </TreeRow>
 
           {isExpanded && visibleChildren && visibleChildren.length > 0 && (
             <div>
@@ -297,11 +358,16 @@ export const FileNode = memo(
                   onUnapproveAll={onUnapproveAll}
                   onRejectAll={onRejectAll}
                   movedFilePaths={movedFilePaths}
+                  onStage={onStage}
+                  onUnstage={onUnstage}
+                  workingTreeStatusMap={workingTreeStatusMap}
+                  collapsible={collapsible}
+                  showSizeBar={showSizeBar}
                 />
               ))}
             </div>
           )}
-        </div>
+        </TreeNodeItem>
       );
     }
 
@@ -311,55 +377,46 @@ export const FileNode = memo(
     const hasPending = entry.hunkStatus.pending > 0;
     const hasApproved = entry.hunkStatus.approved > 0;
     const hasRejections = entry.hunkStatus.rejected > 0;
-    const isComplete = hasReviewableContent && entry.hunkStatus.pending === 0;
     const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
     const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
 
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div
+          <TreeRow
             ref={(el) =>
-              registerRef(entry.path, el as HTMLButtonElement | null)
+              registerRef(entry.path, el as unknown as HTMLButtonElement | null)
             }
-            className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${
+            depth={depth}
+            className={
               isSelected
                 ? "bg-status-modified/15 border-l-2 border-l-status-modified"
                 : isGitignored
                   ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
                   : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
-            }`}
-            style={{ paddingLeft: `${depth * 0.8 + 0.5}rem` }}
+            }
           >
-            <button
-              className="flex flex-1 items-center gap-1.5 text-left min-w-0"
+            <TreeRowButton
               onClick={() => onSelectFile(entry.path)}
               aria-selected={isSelected}
             >
-              {/* Git status */}
-              <StatusLetter status={entry.status} />
+              <TreeFileIcon name={entry.name} isDirectory={false} />
 
-              {/* File name */}
-              <span
-                className={`min-w-0 flex-1 truncate text-xs ${fileNameColor(isSelected, isComplete, isGitignored, hunkContext, hasReviewableContent, hasRejections)}`}
-              >
+              <TreeNodeName className={fileNameColor(isSelected, isGitignored)}>
                 {entry.name}
-              </span>
+              </TreeNodeName>
 
-              {/* Move indicator */}
               {movedFilePaths?.has(entry.path) && (
                 <span className="flex-shrink-0 rounded bg-status-renamed/15 px-1 py-0.5 text-xxs font-medium text-status-renamed">
                   Moved
                 </span>
               )}
 
-              {/* Symlink indicator */}
               {entry.isSymlink && (
                 <SymlinkIndicator target={entry.symlinkTarget} />
               )}
-            </button>
+            </TreeRowButton>
 
-            {/* Approval button */}
             {hasReviewActions && hasReviewableContent && (
               <ApprovalButtons
                 hasPending={hasPending}
@@ -369,7 +426,6 @@ export const FileNode = memo(
               />
             )}
 
-            {/* Overflow menu */}
             {hasReviewActions && (
               <NodeOverflowMenu
                 path={entry.path}
@@ -385,11 +441,35 @@ export const FileNode = memo(
               />
             )}
 
-            {/* Hunk count (hidden in Browse mode) */}
-            {hunkContext !== "all" && (
-              <HunkCount status={entry.hunkStatus} context={hunkContext} />
+            {(onStage || onUnstage) && (
+              <StageButtons
+                onStage={onStage ? () => onStage(entry.path, false) : undefined}
+                onUnstage={
+                  onUnstage ? () => onUnstage(entry.path, false) : undefined
+                }
+              />
             )}
-          </div>
+
+            {workingTreeStatusMap?.has(entry.path) && (
+              <WorkingTreeDot
+                status={workingTreeStatusMap.get(entry.path)!}
+                hideOnHover={
+                  (hasReviewActions && hasReviewableContent) ||
+                  !!onStage ||
+                  !!onUnstage
+                }
+              />
+            )}
+
+            <StatusLetter
+              status={entry.status}
+              hideOnHover={
+                (hasReviewActions && hasReviewableContent) ||
+                !!onStage ||
+                !!onUnstage
+              }
+            />
+          </TreeRow>
         </ContextMenuTrigger>
         <ContextMenuContent>
           {onOpenInSplit && (
@@ -490,7 +570,12 @@ export const FileNode = memo(
       prev.movedFilePaths === next.movedFilePaths &&
       prev.repoPath === next.repoPath &&
       prev.revealLabel === next.revealLabel &&
-      prev.onOpenInSplit === next.onOpenInSplit
+      prev.onOpenInSplit === next.onOpenInSplit &&
+      prev.onStage === next.onStage &&
+      prev.onUnstage === next.onUnstage &&
+      prev.workingTreeStatusMap === next.workingTreeStatusMap &&
+      prev.collapsible === next.collapsible &&
+      prev.showSizeBar === next.showSizeBar
     );
   },
 );

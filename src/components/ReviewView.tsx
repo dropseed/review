@@ -1,7 +1,29 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  lazy,
+  Suspense,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
+import { useReviewStore } from "../stores";
+import { getPlatformServices } from "../platform";
+import { getApiClient } from "../api";
+import {
+  useSidebarResize,
+  useMenuEvents,
+  useFileWatcher,
+  useKeyboardNavigation,
+  useReviewProgress,
+  useCelebration,
+} from "../hooks";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { FeedbackPanel } from "./FeedbackPanel";
+import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
+import { SimpleTooltip } from "./ui/tooltip";
+import { CircleProgress } from "./ui/circle-progress";
+import { ActivityBar } from "./ActivityBar";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -25,28 +47,16 @@ const ClassificationsModal = lazy(() =>
     default: m.ClassificationsModal,
   })),
 );
-import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
-import { SimpleTooltip } from "./ui/tooltip";
-import { useReviewStore } from "../stores";
-import { getPlatformServices } from "../platform";
-import { getApiClient } from "../api";
-import {
-  useSidebarResize,
-  useMenuEvents,
-  useFileWatcher,
-  useKeyboardNavigation,
-  useReviewProgress,
-  useCelebration,
-} from "../hooks";
-import { CircleProgress } from "./ui/circle-progress";
-import { ActivityBar } from "./ActivityBar";
 
 interface ReviewViewProps {
   onNewWindow: () => Promise<void>;
   comparisonReady: boolean;
 }
 
-export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
+export function ReviewView({
+  onNewWindow,
+  comparisonReady,
+}: ReviewViewProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
   const hunks = useReviewStore((s) => s.hunks);
@@ -64,10 +74,12 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     (s) => s.setClassificationsModalOpen,
   );
 
+  const contentSearchOpen = useReviewStore((s) => s.contentSearchOpen);
+  const setContentSearchOpen = useReviewStore((s) => s.setContentSearchOpen);
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
-  const [showContentSearch, setShowContentSearch] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
@@ -135,7 +147,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
     handleRefresh,
     setShowDebugModal,
     setShowFileFinder,
-    setShowContentSearch,
+    setShowContentSearch: setContentSearchOpen,
     setShowSymbolSearch,
   });
 
@@ -242,7 +254,7 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
                   className="flex items-center justify-center w-7 h-7 rounded-md
                              hover:bg-surface-raised/60 transition-colors duration-100
                              focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
-                             text-fg0 hover:text-fg-secondary"
+                             text-fg-muted hover:text-fg-secondary"
                   aria-label={
                     filesPanelCollapsed
                       ? "Show files panel"
@@ -342,11 +354,11 @@ export function ReviewView({ onNewWindow, comparisonReady }: ReviewViewProps) {
       )}
 
       {/* Content Search */}
-      {showContentSearch && (
+      {contentSearchOpen && (
         <Suspense fallback={null}>
           <ContentSearch
-            isOpen={showContentSearch}
-            onClose={() => setShowContentSearch(false)}
+            isOpen={contentSearchOpen}
+            onClose={() => setContentSearchOpen(false)}
           />
         </Suspense>
       )}

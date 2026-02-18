@@ -1,4 +1,4 @@
-import type { FileEntry, ReviewState } from "../../types";
+import type { FileEntry, ReviewState, StatusEntry } from "../../types";
 import { isHunkTrusted } from "../../types";
 import type {
   FileHunkStatus,
@@ -15,7 +15,6 @@ export const EMPTY_HUNK_STATUS: FileHunkStatus = {
   total: 0,
 };
 
-// Check if an entry has a meaningful change status (not just gitignored or unchanged)
 export function hasChangeStatus(
   status: FileEntry["status"] | undefined,
 ): boolean {
@@ -28,7 +27,6 @@ export function hasChangeStatus(
   );
 }
 
-// Calculate hunk status for each file
 export function calculateFileHunkStatus(
   hunks: Array<{ id: string; filePath: string }>,
   reviewState: ReviewState | null,
@@ -68,7 +66,6 @@ export function calculateFileHunkStatus(
   return statusMap;
 }
 
-// Process tree with review status
 export function processTree(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
@@ -150,23 +147,19 @@ export function processTree(
   return annotateSiblingMax(compactTree(processed));
 }
 
-// Result type for sectioned tree processing
 export interface SectionedTreeResult {
   needsReview: ProcessedFileEntry[];
   savedForLater: ProcessedFileEntry[];
   reviewed: ProcessedFileEntry[];
 }
 
-// Process tree and split into "needs review" and "reviewed" sections
-// Used for the "Changes" view mode to separate pending vs reviewed files
+/** Process tree and split into needs-review, saved-for-later, and reviewed sections. */
 export function processTreeWithSections(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
 ): SectionedTreeResult {
-  // First process the full tree for "changes" view
   const processed = processTree(entries, hunkStatusMap, "changes");
 
-  // Helper to filter tree by section
   function filterSection(
     entries: ProcessedFileEntry[],
     filterFn: (status: FileHunkStatus, entry: ProcessedFileEntry) => boolean,
@@ -195,7 +188,6 @@ export function processTreeWithSections(
       .filter((e): e is ProcessedFileEntry => e !== null);
   }
 
-  // Needs review: files with pending hunks, or status changes with no hunks (e.g., symlinks)
   const needsReview = annotateSiblingMax(
     compactTree(
       filterSection(processed, (status, entry) => {
@@ -207,12 +199,10 @@ export function processTreeWithSections(
     ),
   );
 
-  // Saved for Later: files with any saved-for-later hunks
   const savedForLater = annotateSiblingMax(
     compactTree(filterSection(processed, (status) => status.savedForLater > 0)),
   );
 
-  // Reviewed: files with any reviewed hunks (approved, trusted, or rejected)
   const reviewed = annotateSiblingMax(
     compactTree(
       filterSection(
@@ -225,7 +215,6 @@ export function processTreeWithSections(
   return { needsReview, savedForLater, reviewed };
 }
 
-// Annotate each directory entry with the max fileCount among its sibling directories
 function annotateSiblingMax(
   entries: ProcessedFileEntry[],
 ): ProcessedFileEntry[] {
@@ -249,7 +238,6 @@ function annotateSiblingMax(
   });
 }
 
-// Compact single-child directory chains
 export function compactTree(
   entries: ProcessedFileEntry[],
 ): ProcessedFileEntry[] {
@@ -287,4 +275,75 @@ export function compactTree(
 
     return compacted;
   });
+}
+
+/** Build a FileEntry[] tree from flat file paths with optional status. */
+export function buildFileTreeFromPaths(
+  files: Array<{ path: string; status?: StatusEntry["status"] }>,
+): FileEntry[] {
+  // Map: dir path → children map (name → FileEntry)
+  const dirMap = new Map<string, Map<string, FileEntry>>();
+  dirMap.set("", new Map());
+
+  for (const file of files) {
+    const segments = file.path.split("/");
+    let currentDir = "";
+
+    // Ensure all intermediate directories exist
+    for (let i = 0; i < segments.length - 1; i++) {
+      const parentDir = currentDir;
+      currentDir = currentDir ? `${currentDir}/${segments[i]}` : segments[i];
+
+      if (!dirMap.has(currentDir)) {
+        dirMap.set(currentDir, new Map());
+        const parentChildren = dirMap.get(parentDir)!;
+        if (!parentChildren.has(segments[i])) {
+          parentChildren.set(segments[i], {
+            name: segments[i],
+            path: currentDir,
+            isDirectory: true,
+            children: [],
+          });
+        }
+      }
+    }
+
+    // Add the file entry
+    const fileName = segments[segments.length - 1];
+    const parentChildren = dirMap.get(currentDir)!;
+    parentChildren.set(fileName, {
+      name: fileName,
+      path: file.path,
+      isDirectory: false,
+      status: file.status,
+    });
+  }
+
+  // Build trees from the maps
+  function buildChildren(dirPath: string): FileEntry[] {
+    const children = dirMap.get(dirPath);
+    if (!children) return [];
+
+    const result: FileEntry[] = [];
+    for (const entry of children.values()) {
+      if (entry.isDirectory) {
+        result.push({
+          ...entry,
+          children: buildChildren(entry.path),
+        });
+      } else {
+        result.push(entry);
+      }
+    }
+
+    // Sort: directories first, then alphabetical
+    result.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return result;
+  }
+
+  return buildChildren("");
 }
