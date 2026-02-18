@@ -34,7 +34,6 @@ import type {
   GroupingInput,
   HunkGroup,
   ModifiedSymbolEntry,
-  SummaryInput,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
 } from "../types";
@@ -220,15 +219,6 @@ export interface ApiClient {
     hunks: GroupingInput[],
     options?: { command?: string; modifiedSymbols?: ModifiedSymbolEntry[] },
   ): Promise<HunkGroup[]>;
-
-  // ----- Summary -----
-
-  /** Generate a concise summary of the diff using Claude */
-  generateSummary(
-    repoPath: string,
-    hunks: SummaryInput[],
-    options?: { command?: string },
-  ): Promise<{ title: string; summary: string }>;
 
   // ----- Trust patterns -----
 

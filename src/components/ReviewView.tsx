@@ -62,7 +62,6 @@ export function ReviewView({
   const comparison = useReviewStore((s) => s.comparison);
   const hunks = useReviewStore((s) => s.hunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const guideTitle = useReviewStore((s) => s.guideTitle);
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const refresh = useReviewStore((s) => s.refresh);
@@ -340,7 +339,7 @@ export function ReviewView({
               </SimpleTooltip>
             </div>
           </div>
-          {selectedFile && <ReviewTitle title={guideTitle} />}
+          {selectedFile && <ReviewTitle />}
         </header>
 
         {/* Main content */}

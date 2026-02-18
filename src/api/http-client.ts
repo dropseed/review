@@ -34,7 +34,6 @@ import type {
   GroupingInput,
   HunkGroup,
   ModifiedSymbolEntry,
-  SummaryInput,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
 } from "../types";
@@ -488,17 +487,6 @@ export class HttpClient implements ApiClient {
   ): Promise<HunkGroup[]> {
     console.warn("[HttpClient] generateGrouping not implemented");
     return [];
-  }
-
-  // ----- Summary -----
-
-  async generateSummary(
-    _repoPath: string,
-    _hunks: SummaryInput[],
-    _options?: { command?: string },
-  ): Promise<{ title: string; summary: string }> {
-    console.warn("[HttpClient] generateSummary not implemented");
-    return { title: "", summary: "" };
   }
 
   // ----- Trust patterns -----

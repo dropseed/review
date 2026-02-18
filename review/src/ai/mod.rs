@@ -1,5 +1,4 @@
 pub mod grouping;
-pub mod summary;
 
 use std::io::Write;
 use std::path::Path;

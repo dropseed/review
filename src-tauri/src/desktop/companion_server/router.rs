@@ -61,10 +61,6 @@ pub fn build_router(state: SharedState) -> Router {
             "/comparisons/{comp}/guide/groups",
             post(guide::generate_groups),
         )
-        .route(
-            "/comparisons/{comp}/guide/summary",
-            post(guide::generate_summary),
-        )
         // --- Middleware ---
         .layer(axum::middleware::from_fn(log_request))
         .layer(axum::middleware::from_fn_with_state(state.clone(), auth))

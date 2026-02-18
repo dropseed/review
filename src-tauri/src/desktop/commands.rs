@@ -2154,53 +2154,6 @@ pub async fn generate_hunk_grouping(
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn generate_review_summary(
-    repo_path: String,
-    hunks: Vec<review::ai::summary::SummaryInput>,
-    model: Option<String>,
-    command: Option<String>,
-) -> Result<review::ai::summary::SummaryResult, String> {
-    use std::time::Duration;
-    use tokio::time::timeout;
-
-    let model = model.unwrap_or_else(|| "sonnet".to_owned());
-
-    debug!(
-        "[generate_review_summary] repo_path={}, hunks={}, model={}, command={:?}",
-        repo_path,
-        hunks.len(),
-        model,
-        command,
-    );
-
-    let repo_path_buf = PathBuf::from(&repo_path);
-    let timeout_secs = claude_call_timeout_secs(hunks.len());
-
-    let result = timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::task::spawn_blocking(move || {
-            review::ai::summary::generate_summary(
-                &hunks,
-                &repo_path_buf,
-                &model,
-                command.as_deref(),
-            )
-        }),
-    )
-    .await
-    .map_err(|_| format!("Summary generation timed out after {timeout_secs} seconds"))?
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
-
-    info!(
-        "[generate_review_summary] SUCCESS: title={} chars, summary={} chars",
-        result.title.len(),
-        result.summary.len()
-    );
-    Ok(result)
-}
-
 // --- Settings file I/O ---
 
 /// Return the path to `~/.review/settings.json` (respects `$REVIEW_HOME`).

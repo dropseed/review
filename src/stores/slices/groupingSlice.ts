@@ -10,7 +10,6 @@ import type {
   HunkSymbolRef,
   ModifiedSymbolEntry,
   ReviewState,
-  SummaryInput,
   SymbolDiff,
 } from "../../types";
 import { getChangedLinesKey } from "../../utils/changed-lines-key";
@@ -31,17 +30,10 @@ export interface GroupingSlice {
 
   // Guide state
   guideLoading: boolean;
-  guideTitle: string | null;
-  guideSummary: string | null;
-  guideSummaryError: string | null;
   classificationStatus: GuideTaskStatus;
   groupingStatus: GuideTaskStatus;
-  summaryStatus: GuideTaskStatus;
   startGuide: () => Promise<void>;
   exitGuide: () => void;
-  generateSummary: () => Promise<void>;
-  clearGuideSummary: () => void;
-  isSummaryStale: () => boolean;
   isGuideStale: () => boolean;
   restoreGuideFromState: () => void;
 }
@@ -116,21 +108,6 @@ function buildSymbolData(symbolDiffs: FileSymbolDiff[]): SymbolData {
 }
 
 /**
- * Build a SummaryInput array from the current hunks and review state.
- */
-function buildSummaryInputs(
-  hunks: DiffHunk[],
-  hunkStates: Record<string, { label?: string[] }>,
-): SummaryInput[] {
-  return hunks.map((hunk) => ({
-    id: hunk.id,
-    filePath: hunk.filePath,
-    content: hunk.content,
-    label: hunkStates[hunk.id]?.label,
-  }));
-}
-
-/**
  * Build an updated GuideState, preserving existing fields and applying overrides.
  */
 function buildGuideUpdate(
@@ -142,8 +119,6 @@ function buildGuideUpdate(
     groups: existing?.groups ?? [],
     hunkIds: existing?.hunkIds ?? hunks.map((h) => h.id).sort(),
     generatedAt: existing?.generatedAt ?? new Date().toISOString(),
-    title: existing?.title,
-    summary: existing?.summary,
     ...overrides,
   };
 }
@@ -201,12 +176,8 @@ export const groupingResetState = {
   reviewGroups: [],
   identicalHunkIds: EMPTY_IDENTICAL_MAP,
   guideLoading: false,
-  guideTitle: null,
-  guideSummary: null,
-  guideSummaryError: null,
   classificationStatus: "idle",
   groupingStatus: "idle",
-  summaryStatus: "idle",
 } satisfies Partial<GroupingSlice>;
 
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
@@ -235,9 +206,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         classifyStaticHunks,
         generateGrouping,
         isGroupingStale,
-        isSummaryStale,
         reviewGroups,
-        guideSummary,
       } = get();
       if (hunks.length === 0) return;
 
@@ -245,7 +214,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       // Skip steps that already have fresh data
       const needsGrouping = reviewGroups.length === 0 || isGroupingStale();
-      const needsSummary = guideSummary == null || isSummaryStale();
 
       // Switch to guide mode
       set({
@@ -255,12 +223,11 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         guideLoading: true,
         classificationStatus: "loading",
         groupingStatus: needsGrouping ? "loading" : "done",
-        summaryStatus: needsSummary ? "loading" : "done",
       });
 
       const wrap = (
         promise: Promise<void>,
-        field: "classificationStatus" | "groupingStatus" | "summaryStatus",
+        field: "classificationStatus" | "groupingStatus",
       ) =>
         promise
           .then(() => set({ [field]: "done" as GuideTaskStatus }))
@@ -271,9 +238,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       ];
       if (needsGrouping) {
         tasks.push(wrap(generateGrouping(), "groupingStatus"));
-      }
-      if (needsSummary) {
-        tasks.push(wrap(get().generateSummary(), "summaryStatus"));
       }
 
       await Promise.allSettled(tasks);
@@ -289,124 +253,9 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       });
     },
 
-    generateSummary: async () => {
-      const {
-        repoPath,
-        hunks,
-        comparison,
-        reviewState,
-        saveReviewState,
-        startActivity,
-        endActivity,
-      } = get();
-      if (!repoPath || !reviewState) return;
-      if (hunks.length === 0) return;
-
-      const comparisonKey = comparison.key;
-
-      const pr = reviewState.githubPr;
-      const prTitle = pr?.title || null;
-      const prBody = pr?.body || null;
-
-      // If PR provides both title and body, use them directly and skip AI generation
-      if (prTitle && prBody) {
-        set({
-          reviewState: updateReviewGuide(reviewState, hunks, {
-            title: prTitle,
-            summary: prBody,
-          }),
-          guideTitle: prTitle,
-          guideSummary: prBody,
-          summaryStatus: "done",
-        });
-        await saveReviewState();
-        return;
-      }
-
-      set({
-        guideSummaryError: null,
-        summaryStatus: "loading",
-      });
-      startActivity("generate-summary", "Generating summary", 55);
-
-      try {
-        const summaryInputs = buildSummaryInputs(hunks, reviewState.hunks);
-        const { title, summary } = await client.generateSummary(
-          repoPath,
-          summaryInputs,
-        );
-
-        const finalTitle = prTitle || title;
-        const finalSummary = prBody || summary;
-
-        if (get().comparison.key !== comparisonKey) return;
-        const currentState = get().reviewState;
-        if (!currentState) return;
-
-        set({
-          reviewState: updateReviewGuide(currentState, hunks, {
-            title: finalTitle || undefined,
-            summary: finalSummary,
-          }),
-          guideTitle: finalTitle || null,
-          guideSummary: finalSummary,
-          summaryStatus: "done",
-        });
-        await saveReviewState();
-      } catch (err) {
-        console.error("[generateSummary] Failed:", err);
-        set({
-          guideSummaryError: err instanceof Error ? err.message : String(err),
-          summaryStatus: "error",
-        });
-      } finally {
-        endActivity("generate-summary");
-      }
-    },
-
-    clearGuideSummary: () => {
-      const { reviewState, saveReviewState } = get();
-      const hadPersistedData = reviewState?.guide?.summary;
-
-      set({
-        guideTitle: null,
-        guideSummary: null,
-        guideSummaryError: null,
-        ...(hadPersistedData && {
-          reviewState: {
-            ...reviewState,
-            guide: {
-              ...reviewState!.guide!,
-              title: undefined,
-              summary: undefined,
-            },
-            updatedAt: new Date().toISOString(),
-          },
-        }),
-      });
-
-      if (hadPersistedData) {
-        saveReviewState();
-      }
-    },
-
-    isSummaryStale: () => {
-      const { reviewState, hunks } = get();
-      const guide = reviewState?.guide;
-      if (!guide?.summary) return false;
-
-      const storedIds = guide.hunkIds;
-      const currentIds = hunks.map((h) => h.id).sort();
-      if (storedIds.length !== currentIds.length) return true;
-      for (let i = 0; i < storedIds.length; i++) {
-        if (storedIds[i] !== currentIds[i]) return true;
-      }
-      return false;
-    },
-
     isGuideStale: () => {
-      const { isGroupingStale, isSummaryStale, isClassificationStale } = get();
-      return isGroupingStale() || isSummaryStale() || isClassificationStale();
+      const { isGroupingStale, isClassificationStale } = get();
+      return isGroupingStale() || isClassificationStale();
     },
 
     generateGrouping: async () => {
@@ -498,9 +347,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         reviewState: updatedState,
         reviewGroups: [],
         identicalHunkIds: EMPTY_IDENTICAL_MAP,
-        guideTitle: null,
-        guideSummary: null,
-        guideSummaryError: null,
       });
       saveReviewState();
     },
@@ -516,8 +362,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const identicalHunkIds = buildIdenticalHunkIds(hunks);
       set({
         reviewGroups: guide.groups,
-        guideTitle: guide.title ?? null,
-        guideSummary: guide.summary ?? null,
         identicalHunkIds,
       });
     },

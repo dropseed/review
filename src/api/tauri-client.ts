@@ -37,7 +37,6 @@ import type {
   ReviewSummary,
   GlobalReviewSummary,
   SearchMatch,
-  SummaryInput,
   SymbolDefinition,
   TrustCategory,
 } from "../types";
@@ -318,23 +317,6 @@ export class TauriClient implements ApiClient {
       hunks,
       ...options,
     });
-  }
-
-  // ----- Summary -----
-
-  async generateSummary(
-    repoPath: string,
-    hunks: SummaryInput[],
-    options?: { command?: string },
-  ): Promise<{ title: string; summary: string }> {
-    return invoke<{ title: string; summary: string }>(
-      "generate_review_summary",
-      {
-        repoPath,
-        hunks,
-        ...options,
-      },
-    );
   }
 
   // ----- Trust patterns -----

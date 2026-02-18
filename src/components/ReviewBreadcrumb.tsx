@@ -9,10 +9,6 @@ interface ReviewBreadcrumbProps {
   comparison: Comparison;
 }
 
-interface ReviewTitleProps {
-  title?: string | null;
-}
-
 function SidebarToggle(): ReactNode {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
@@ -95,9 +91,8 @@ export function ReviewBreadcrumb({
   );
 }
 
-export function ReviewTitle({ title }: ReviewTitleProps): ReactNode {
-  const githubPrTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
-  const displayTitle = githubPrTitle || title;
+export function ReviewTitle(): ReactNode {
+  const displayTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
   if (!displayTitle) return null;
 
   return (

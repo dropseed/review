@@ -633,7 +633,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       set({
         reviewState: newState,
         reviewGroups: [],
-        guideSummary: null,
         identicalHunkIds: groupingResetState.identicalHunkIds,
       });
       await saveReviewState();
@@ -695,7 +694,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       set({
         classificationStatus: "idle",
         groupingStatus: "idle",
-        summaryStatus: "idle",
       });
     },
   });
