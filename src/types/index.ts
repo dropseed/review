@@ -241,7 +241,7 @@ export interface HunkState {
   label: string[]; // Classification labels, defaults to []
   reasoning?: string; // AI classification reasoning
   status?: "approved" | "rejected" | "saved_for_later"; // Explicit human decision (undefined = pending, trust computed from labels)
-  classifiedVia?: "static" | "ai"; // Source of classification
+  classifiedVia?: "static"; // Source of classification
 }
 
 // Helper to check if a hunk has not been processed by any classifier yet
@@ -321,8 +321,6 @@ export interface ClassificationResult {
 
 export interface ClassifyResponse {
   classifications: Record<string, ClassificationResult>;
-  /** Hunk IDs that heuristics determined should skip AI classification */
-  skippedHunkIds?: string[];
 }
 
 export interface HunkSymbolDef {
@@ -510,18 +508,6 @@ export interface DependencyGraph {
 }
 
 // API operation types
-
-export interface HunkInput {
-  id: string;
-  filePath: string;
-  content: string;
-}
-
-export interface ClassifyOptions {
-  command?: string;
-  batchSize?: number;
-  maxConcurrent?: number;
-}
 
 export interface DetectMovePairsResponse {
   pairs: MovePair[];

@@ -102,16 +102,12 @@ function SummarySection(): ReactNode {
   const summaryStatus = useReviewStore((s) => s.summaryStatus);
   const isSummaryStale = useReviewStore((s) => s.isSummaryStale);
   const generateSummary = useReviewStore((s) => s.generateSummary);
-  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const prBody = useReviewStore((s) => s.reviewState?.githubPr?.body);
 
   const displaySummary = guideSummary || prBody || null;
   const stale = guideSummary ? isSummaryStale() : false;
   const showCta =
-    !displaySummary &&
-    !guideSummaryError &&
-    summaryStatus !== "loading" &&
-    claudeAvailable !== false;
+    !displaySummary && !guideSummaryError && summaryStatus !== "loading";
 
   return (
     <div className="space-y-4">
@@ -151,7 +147,7 @@ function SummarySection(): ReactNode {
         </div>
       )}
       {displaySummary && (
-        <div className="rounded-lg border border-edge p-4">
+        <div>
           <div className="guide-prose text-sm text-fg-secondary leading-relaxed">
             <Markdown
               remarkPlugins={[remarkGfm]}
@@ -228,7 +224,7 @@ function DiagramSection(): ReactNode {
         </div>
       )}
       {guideDiagram && isValidJson && (
-        <div className="rounded-lg border border-edge overflow-hidden">
+        <div className="rounded-lg overflow-hidden">
           <StructuredDiagram
             sceneJson={guideDiagram}
             onRetry={() => generateDiagram()}
@@ -251,15 +247,23 @@ function DiagramSection(): ReactNode {
 
 export function OverviewContent(): ReactNode {
   const progress = useReviewProgress();
+  const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
+  const guideTitle = useReviewStore((s) => s.guideTitle);
+  const displayTitle = githubPr?.title || guideTitle;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="max-w-5xl w-full mx-auto px-4 py-4">
+          {displayTitle && (
+            <h1 className="text-lg font-semibold text-fg mb-2">
+              {displayTitle}
+            </h1>
+          )}
           <SummaryStats {...progress} />
-          <div className="mt-4 space-y-4">
-            <SummaryFileTree />
+          <div className="mt-5 space-y-5">
             <SummarySection />
+            <SummaryFileTree />
           </div>
         </div>
       </div>

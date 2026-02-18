@@ -22,10 +22,7 @@ import type {
   TrustCategory,
   DiffHunk,
   DiffShortStat,
-  ClassificationResult,
   ClassifyResponse,
-  HunkInput,
-  ClassifyOptions,
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
@@ -209,18 +206,8 @@ export interface ApiClient {
 
   // ----- Classification -----
 
-  /** Check if Claude CLI is available */
-  checkClaudeAvailable(): Promise<boolean>;
-
   /** Classify hunks using static pattern matching (no AI) */
   classifyHunksStatic(hunks: DiffHunk[]): Promise<ClassifyResponse>;
-
-  /** Classify hunks using Claude */
-  classifyHunks(
-    repoPath: string,
-    hunks: HunkInput[],
-    options?: ClassifyOptions,
-  ): Promise<ClassifyResponse>;
 
   /** Detect move pairs in hunks */
   detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse>;
@@ -298,14 +285,6 @@ export interface ApiClient {
   stopFileWatcher(repoPath: string): Promise<void>;
 
   // ----- Events -----
-
-  /** Subscribe to classification progress events */
-  onClassifyProgress(
-    callback: (payload: {
-      completedIds: string[];
-      classifications: Record<string, ClassificationResult>;
-    }) => void,
-  ): () => void;
 
   /** Subscribe to review state change events */
   onReviewStateChanged(callback: (repoPath: string) => void): () => void;

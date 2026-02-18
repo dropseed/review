@@ -23,8 +23,6 @@ import type {
   TrustCategory,
   DiffHunk,
   ClassifyResponse,
-  HunkInput,
-  ClassifyOptions,
   DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
@@ -463,23 +461,8 @@ export class HttpClient implements ApiClient {
 
   // ----- Classification -----
 
-  async checkClaudeAvailable(): Promise<boolean> {
-    // Claude CLI not available in browser
-    return false;
-  }
-
   async classifyHunksStatic(_hunks: DiffHunk[]): Promise<ClassifyResponse> {
     // Static classification not available in browser yet
-    return { classifications: {} };
-  }
-
-  async classifyHunks(
-    _repoPath: string,
-    _hunks: HunkInput[],
-    _options?: ClassifyOptions,
-  ): Promise<ClassifyResponse> {
-    // Classification not available in browser yet
-    console.warn("[HttpClient] classifyHunks not implemented");
     return { classifications: {} };
   }
 
@@ -624,16 +607,6 @@ export class HttpClient implements ApiClient {
   }
 
   // ----- Events -----
-
-  onClassifyProgress(
-    _callback: (payload: {
-      completedIds: string[];
-      classifications: Record<string, { label: string[]; reasoning: string }>;
-    }) => void,
-  ): () => void {
-    // Events not available in HTTP mode yet (would need WebSocket)
-    return () => {};
-  }
 
   onReviewStateChanged(_callback: (repoPath: string) => void): () => void {
     // Events not available in HTTP mode yet

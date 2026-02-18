@@ -8,11 +8,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   imports: "bg-status-trusted",
   formatting: "bg-surface-active",
   comments: "bg-status-modified",
-  types: "bg-status-classifying",
+  "type-annotations": "bg-status-classifying",
   file: "bg-pink-500",
-  hunk: "bg-orange-500",
+  move: "bg-orange-500",
   generated: "bg-status-approved",
-  rename: "bg-blue-500",
+  style: "bg-blue-500",
+  code: "bg-violet-500",
+  version: "bg-amber-500",
+  remove: "bg-status-deleted",
 };
 
 function BarSegment({

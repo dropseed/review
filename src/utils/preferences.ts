@@ -26,9 +26,6 @@ export interface Preferences {
   editorCommand: string | null;
   codeFontSize: number; // pixels
   codeTheme: string;
-  classifyCommand: string | null;
-  classifyBatchSize: number; // hunks per Claude call (1-10)
-  classifyMaxConcurrent: number; // max concurrent Claude calls (1-5)
   recentRepositories: RecentRepo[];
 }
 
@@ -37,9 +34,6 @@ const defaults: Preferences = {
   editorCommand: null,
   codeFontSize: 12, // matches CODE_FONT_SIZE_DEFAULT
   codeTheme: "github-dark",
-  classifyCommand: null,
-  classifyBatchSize: 5,
-  classifyMaxConcurrent: 2,
   recentRepositories: [],
 };
 
@@ -90,15 +84,6 @@ export async function getAllPreferences(): Promise<Preferences> {
       codeFontSize:
         (await storage.get<number>("codeFontSize")) ?? defaults.codeFontSize,
       codeTheme: (await storage.get<string>("codeTheme")) ?? defaults.codeTheme,
-      classifyCommand:
-        (await storage.get<string | null>("classifyCommand")) ??
-        defaults.classifyCommand,
-      classifyBatchSize:
-        (await storage.get<number>("classifyBatchSize")) ??
-        defaults.classifyBatchSize,
-      classifyMaxConcurrent:
-        (await storage.get<number>("classifyMaxConcurrent")) ??
-        defaults.classifyMaxConcurrent,
       recentRepositories:
         (await storage.get<RecentRepo[]>("recentRepositories")) ??
         defaults.recentRepositories,

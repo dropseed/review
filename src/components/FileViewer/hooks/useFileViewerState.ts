@@ -15,7 +15,6 @@ export function useFileViewerState() {
   // Review state
   const reviewState = useReviewStore((s) => s.reviewState);
   const allHunks = useReviewStore((s) => s.hunks);
-  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
 
   // Navigation
   const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
@@ -40,7 +39,6 @@ export function useFileViewerState() {
     viewMode,
     reviewState,
     allHunks,
-    classifyingHunkIds,
     focusedHunkIndex,
     scrollToLine,
     clearScrollToLine,

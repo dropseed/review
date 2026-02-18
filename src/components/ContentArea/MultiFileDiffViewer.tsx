@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useCallback } from "react";
 import { useReviewStore } from "../../stores";
 import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
 
@@ -6,6 +6,10 @@ export function MultiFileDiffViewer(): ReactNode {
   const reviewGroups = useReviewStore((s) => s.reviewGroups);
   const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
   const groupingLoading = useReviewStore((s) => s.groupingLoading);
+
+  const handleClose = useCallback(() => {
+    useReviewStore.setState({ guideContentMode: null, selectedFile: null });
+  }, []);
 
   if (groupingLoading) {
     return (
@@ -39,6 +43,7 @@ export function MultiFileDiffViewer(): ReactNode {
         <GroupDiffViewer
           group={reviewGroups[activeGroupIndex]}
           groupIndex={activeGroupIndex}
+          onClose={handleClose}
         />
       </div>
     </div>

@@ -11,8 +11,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ApiClient } from "./client";
 import type {
   BranchList,
-  ClassificationResult,
-  ClassifyOptions,
   ClassifyResponse,
   Comparison,
   CommitDetail,
@@ -30,7 +28,6 @@ import type {
   GitStatusSummary,
   GroupingInput,
   HunkGroup,
-  HunkInput,
   ModifiedSymbolEntry,
   PullRequest,
   RemoteInfo,
@@ -299,24 +296,8 @@ export class TauriClient implements ApiClient {
 
   // ----- Classification -----
 
-  async checkClaudeAvailable(): Promise<boolean> {
-    return invoke<boolean>("check_claude_available");
-  }
-
   async classifyHunksStatic(hunks: DiffHunk[]): Promise<ClassifyResponse> {
     return invoke<ClassifyResponse>("classify_hunks_static", { hunks });
-  }
-
-  async classifyHunks(
-    repoPath: string,
-    hunks: HunkInput[],
-    options?: ClassifyOptions,
-  ): Promise<ClassifyResponse> {
-    return invoke<ClassifyResponse>("classify_hunks_with_claude", {
-      repoPath,
-      hunks,
-      ...options,
-    });
   }
 
   async detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse> {
@@ -469,15 +450,6 @@ export class TauriClient implements ApiClient {
         unlisten = null;
       }
     };
-  }
-
-  onClassifyProgress(
-    callback: (payload: {
-      completedIds: string[];
-      classifications: Record<string, ClassificationResult>;
-    }) => void,
-  ): () => void {
-    return this.listenForEvent("classify:batch-complete", callback);
   }
 
   onReviewStateChanged(callback: (repoPath: string) => void): () => void {

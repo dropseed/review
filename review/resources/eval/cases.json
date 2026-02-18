@@ -93,10 +93,10 @@
     "file_path": "src/helpers.py",
     "content": "@@ -1,3 +1,3 @@\n-def greet(name):\n+def greet(name: str) -> str:\n     return f\"Hello, {name}\"",
     "expected": {
-      "accept": ["types:added"],
+      "accept": ["type-annotations:added"],
       "reject": []
     },
-    "tags": ["types"]
+    "tags": ["type-annotations"]
   },
   {
     "id": "types-modified-01",
@@ -104,10 +104,10 @@
     "file_path": "src/api.ts",
     "content": "@@ -5,3 +5,3 @@\n interface Config {\n-  timeout: number;\n+  timeout: number | undefined;\n   retries: number;",
     "expected": {
-      "accept": ["types:modified"],
+      "accept": ["type-annotations:modified"],
       "reject": []
     },
-    "tags": ["types"]
+    "tags": ["type-annotations"]
   },
   {
     "id": "generated-lockfile-01",
@@ -119,28 +119,6 @@
       "reject": []
     },
     "tags": ["generated"]
-  },
-  {
-    "id": "rename-variable-01",
-    "description": "Variable renamed throughout function",
-    "file_path": "src/process.py",
-    "content": "@@ -1,5 +1,5 @@\n-def process(lst):\n-    for item in lst:\n-        print(item)\n-    return len(lst)\n+def process(items):\n+    for item in items:\n+        print(item)\n+    return len(items)",
-    "expected": {
-      "accept": ["rename:variable"],
-      "reject": []
-    },
-    "tags": ["rename"]
-  },
-  {
-    "id": "rename-function-01",
-    "description": "Function renamed",
-    "file_path": "src/api.ts",
-    "content": "@@ -1,4 +1,4 @@\n-export function getData(id: string) {\n+export function fetchData(id: string) {\n   const url = `/api/items/${id}`;\n   return fetch(url).then(r => r.json());\n }",
-    "expected": {
-      "accept": ["rename:function"],
-      "reject": []
-    },
-    "tags": ["rename"]
   },
   {
     "id": "needs-review-logic-change-01",
@@ -171,7 +149,7 @@
     "content": "@@ -20,3 +20,10 @@\n export function add(a: number, b: number) {\n   return a + b;\n }\n+\n+export function multiply(a: number, b: number): number {\n+  if (a === 0 || b === 0) {\n+    return 0;\n+  }\n+  return a * b;\n+}",
     "expected": {
       "accept": [],
-      "reject": ["types:added"]
+      "reject": ["type-annotations:added"]
     },
     "tags": ["needs-review"]
   },

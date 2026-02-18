@@ -6,11 +6,14 @@ const CATEGORY_NAMES: Record<string, string> = {
   imports: "Imports",
   formatting: "Formatting",
   comments: "Comments",
-  types: "Types",
+  "type-annotations": "Type Annotations",
   file: "File",
-  hunk: "Hunk",
+  move: "Move",
   generated: "Generated",
-  rename: "Rename",
+  style: "Style",
+  code: "Code",
+  version: "Version",
+  remove: "Remove",
 };
 
 export interface CategorySegment {

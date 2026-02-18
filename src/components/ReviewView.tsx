@@ -24,6 +24,7 @@ import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
 import { ActivityBar } from "./ActivityBar";
+import { playGuideStartSound } from "../utils/sounds";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -61,8 +62,8 @@ export function ReviewView({
   const comparison = useReviewStore((s) => s.comparison);
   const hunks = useReviewStore((s) => s.hunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const setGuideContentMode = useReviewStore((s) => s.setGuideContentMode);
   const guideTitle = useReviewStore((s) => s.guideTitle);
+  const selectedFile = useReviewStore((s) => s.selectedFile);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const refresh = useReviewStore((s) => s.refresh);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
@@ -76,6 +77,20 @@ export function ReviewView({
 
   const contentSearchOpen = useReviewStore((s) => s.contentSearchOpen);
   const setContentSearchOpen = useReviewStore((s) => s.setContentSearchOpen);
+
+  // Guide button state
+  const changesViewMode = useReviewStore((s) => s.changesViewMode);
+  const reviewGroups = useReviewStore((s) => s.reviewGroups);
+  const startGuide = useReviewStore((s) => s.startGuide);
+  const guideLoading = useReviewStore((s) => s.guideLoading);
+  const guideActive = changesViewMode === "guide";
+  const showStartGuide =
+    hunks.length > 0 && !guideActive && reviewGroups.length === 0;
+
+  const handleStartGuide = useCallback(async () => {
+    playGuideStartSound();
+    await startGuide();
+  }, [startGuide]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -189,14 +204,61 @@ export function ReviewView({
             {/* Center: activity island (floating) */}
             <ActivityBar />
 
-            {/* Right: review progress */}
+            {/* Right: guide button + review progress */}
             <div className="flex shrink-0 items-center gap-3">
+              {showStartGuide && (
+                <button
+                  type="button"
+                  onClick={handleStartGuide}
+                  disabled={guideLoading}
+                  className="guide-start-button flex items-center gap-1.5 rounded-lg px-3 py-1.5
+                             text-xs font-semibold text-status-classifying
+                             bg-status-classifying/[0.08] border border-status-classifying/25
+                             hover:bg-status-classifying/15 hover:border-status-classifying/35
+                             transition-all duration-200
+                             disabled:opacity-50"
+                >
+                  {guideLoading ? (
+                    <svg
+                      className="h-3.5 w-3.5 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="guide-sparkle h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                  )}
+                  {guideLoading ? "Starting…" : "Guide"}
+                </button>
+              )}
               {totalHunks > 0 ? (
                 <button
                   type="button"
                   onClick={() => {
-                    setGuideContentMode("overview");
-                    useReviewStore.setState({ filesPanelCollapsed: false });
+                    useReviewStore.setState({
+                      selectedFile: null,
+                      guideContentMode: null,
+                      filesPanelCollapsed: false,
+                    });
                   }}
                   className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
                              hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
@@ -278,7 +340,7 @@ export function ReviewView({
               </SimpleTooltip>
             </div>
           </div>
-          <ReviewTitle title={guideTitle} />
+          {selectedFile && <ReviewTitle title={guideTitle} />}
         </header>
 
         {/* Main content */}

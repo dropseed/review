@@ -31,7 +31,7 @@ scripts/build            # Build production app (outputs to target/release/)
 The project is organized as a Cargo workspace with two crates:
 
 - **`review/`** - Core library + CLI (no Tauri dependencies)
-  - `src/classify/` - Claude-based hunk classification
+  - `src/classify/` - Static hunk classification
   - `src/diff/` - Git diff parsing and hunk extraction
   - `src/review/` - Review state management and persistence
   - `src/sources/` - Git operations abstraction
@@ -125,6 +125,6 @@ Note: `src/` is the frontend (React/TypeScript), `review/src/` is the Rust core 
 
 ## Trust Patterns Taxonomy
 
-The taxonomy is defined in `review/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `types`, `file`, `code`, `rename`, `generated`, `version`, `remove`.
+The taxonomy is defined in `review/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `type-annotations`, `file`, `move`, `generated`.
 
 Users can extend the taxonomy by creating `.git/review/custom-patterns.json` with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.

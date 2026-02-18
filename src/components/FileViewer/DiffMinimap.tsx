@@ -33,10 +33,7 @@ export function getHunkStatus(
   hunkId: string,
   reviewState: ReviewState | null,
   trustList: string[],
-  classifyingHunkIds: Set<string>,
 ): HunkStatus {
-  if (classifyingHunkIds.has(hunkId)) return "classifying";
-
   const hunkState = reviewState?.hunks[hunkId];
   if (!hunkState) return "pending";
 

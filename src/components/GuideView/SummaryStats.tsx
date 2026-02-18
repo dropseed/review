@@ -48,7 +48,7 @@ export function SummaryStats({
   state,
 }: ReviewProgress): ReactNode {
   return (
-    <div className="px-4 pt-3 pb-1.5">
+    <div>
       <div className="flex items-center gap-3">
         <span className="text-lg font-bold tabular-nums tracking-tight text-fg shrink-0">
           {reviewedPercent}

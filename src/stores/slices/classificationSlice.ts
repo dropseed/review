@@ -1,38 +1,19 @@
 import type { ApiClient } from "../../api";
 import { isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
-import { createDebouncedFn } from "../types";
-
-/** Singleton empty set -- preserves reference equality to avoid spurious re-renders. */
-export const EMPTY_CLASSIFYING_SET = new Set<string>();
-
-/** Debounced save for incremental classification results (exported so cancelPendingSaves can cancel it). */
-export const debouncedClassifySave = createDebouncedFn(1000);
 
 export interface ClassificationSlice {
   // Classification state
-  claudeAvailable: boolean | null;
-  classifying: boolean;
-  classificationError: string | null;
-  classifyingHunkIds: Set<string>;
-  // Track current classification generation for cancellation (moved into slice to avoid race conditions)
-  classifyGeneration: number;
-  // Track which hunk IDs were present when classification last ran
   classifiedHunkIds: string[] | null;
 
   // Actions
-  checkClaudeAvailable: () => Promise<void>;
   classifyStaticHunks: (hunkIds?: string[]) => Promise<void>;
-  classifyUnlabeledHunks: (hunkIds?: string[]) => Promise<void>;
   reclassifyHunks: (hunkIds?: string[]) => Promise<void>;
   isClassificationStale: () => boolean;
 }
 
-/** State that must be cleared when switching comparisons (excludes claudeAvailable which is global). */
+/** State that must be cleared when switching comparisons. */
 export const classificationResetState = {
-  classifying: false,
-  classificationError: null,
-  classifyingHunkIds: EMPTY_CLASSIFYING_SET,
   classifiedHunkIds: null,
 } satisfies Partial<ClassificationSlice>;
 
@@ -49,19 +30,7 @@ function filterHunks<T extends { id: string }>(
 export const createClassificationSlice: SliceCreatorWithClient<
   ClassificationSlice
 > = (client: ApiClient) => (set, get) => ({
-  claudeAvailable: null,
   ...classificationResetState,
-  classifyGeneration: 0,
-
-  checkClaudeAvailable: async () => {
-    try {
-      const available = await client.checkClaudeAvailable();
-      set({ claudeAvailable: available });
-    } catch (err) {
-      console.error("Failed to check Claude availability:", err);
-      set({ claudeAvailable: false });
-    }
-  },
 
   classifyStaticHunks: async (hunkIds) => {
     const { hunks, reviewState, saveReviewState, startActivity, endActivity } =
@@ -108,6 +77,12 @@ export const createClassificationSlice: SliceCreatorWithClient<
           await saveReviewState();
         }
       }
+
+      set({
+        classifiedHunkIds: get()
+          .hunks.map((h) => h.id)
+          .sort(),
+      });
     } catch (err) {
       console.warn("[classifyStaticHunks] Static classification failed:", err);
     } finally {
@@ -115,301 +90,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
     }
   },
 
-  classifyUnlabeledHunks: async (hunkIds) => {
-    const {
-      repoPath,
-      hunks,
-      reviewState,
-      classifyCommand,
-      classifyBatchSize,
-      classifyMaxConcurrent,
-      saveReviewState,
-      classifyGeneration,
-      startActivity,
-      updateActivity,
-      endActivity,
-    } = get();
-    if (!repoPath || !reviewState) return;
-
-    // Increment generation for cancellation
-    const newGeneration = classifyGeneration + 1;
-    set({ classifyGeneration: newGeneration });
-    const currentGeneration = newGeneration;
-
-    const { classifyingHunkIds } = get();
-
-    // Filter to specified ids if provided, then filter out already-labeled
-    const candidateHunks = filterHunks(hunks, hunkIds);
-    let hunksToClassify = candidateHunks.filter((hunk) =>
-      isHunkUnclassified(reviewState.hunks[hunk.id]),
-    );
-
-    const alreadyClassifiedCount =
-      candidateHunks.length - hunksToClassify.length;
-    if (alreadyClassifiedCount > 0) {
-      console.log(
-        `[classifyUnlabeledHunks] Skipping ${alreadyClassifiedCount} already-classified hunks`,
-      );
-    }
-
-    // Filter out hunks that are currently being classified
-    const inFlightCount = hunksToClassify.filter((h) =>
-      classifyingHunkIds.has(h.id),
-    ).length;
-    if (inFlightCount > 0) {
-      console.log(
-        `[classifyUnlabeledHunks] Skipping ${inFlightCount} hunks already being classified`,
-      );
-      hunksToClassify = hunksToClassify.filter(
-        (h) => !classifyingHunkIds.has(h.id),
-      );
-    }
-
-    if (hunksToClassify.length === 0) {
-      console.log("[classifyUnlabeledHunks] No unclassified hunks to classify");
-      if (!hunkIds) {
-        set({ classificationError: "All hunks already classified" });
-      }
-      return;
-    }
-
-    // --- Static classification pre-pass ---
-    startActivity("classify-static", "Classifying hunks", 50);
-    try {
-      const staticResponse = await client.classifyHunksStatic(hunksToClassify);
-      const staticIds = new Set(Object.keys(staticResponse.classifications));
-      const skippedIds = new Set(staticResponse.skippedHunkIds ?? []);
-
-      if (staticIds.size > 0) {
-        console.log(
-          `[classifyUnlabeledHunks] Static classifier matched ${staticIds.size} hunks`,
-        );
-      }
-      if (skippedIds.size > 0) {
-        console.log(
-          `[classifyUnlabeledHunks] Skipping ${skippedIds.size} hunks (unlikely to match AI labels)`,
-        );
-      }
-
-      // Apply static classifications and mark skipped hunks in review state
-      const handledIds = new Set([...staticIds, ...skippedIds]);
-      if (handledIds.size > 0) {
-        const currentState = get().reviewState;
-        if (currentState) {
-          const updatedHunks = { ...currentState.hunks };
-
-          for (const hunkId of handledIds) {
-            const classification = staticResponse.classifications[hunkId];
-            const existing = updatedHunks[hunkId];
-            updatedHunks[hunkId] = {
-              ...existing,
-              label: classification?.label ?? existing?.label ?? [],
-              reasoning: classification?.reasoning,
-              classifiedVia: "static",
-            };
-          }
-
-          set({
-            reviewState: {
-              ...currentState,
-              hunks: updatedHunks,
-              updatedAt: new Date().toISOString(),
-            },
-          });
-          await saveReviewState();
-        }
-
-        // Remove classified and skipped hunks from AI candidates
-        hunksToClassify = hunksToClassify.filter((h) => !handledIds.has(h.id));
-
-        if (hunksToClassify.length === 0) {
-          console.log(
-            "[classifyUnlabeledHunks] All hunks classified by static rules or skipped",
-          );
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn(
-        "[classifyUnlabeledHunks] Static classification failed, falling through to AI:",
-        err,
-      );
-    } finally {
-      endActivity("classify-static");
-    }
-
-    console.log(
-      `[classifyUnlabeledHunks] Classifying ${hunksToClassify.length} hunks with AI`,
-    );
-
-    const newClassifyingIds = hunksToClassify.map((h) => h.id);
-    set((state) => ({
-      classifying: true,
-      classificationError: null,
-      classifyingHunkIds: new Set([
-        ...state.classifyingHunkIds,
-        ...newClassifyingIds,
-      ]),
-    }));
-
-    const aiTotal = hunksToClassify.length;
-    let aiCompleted = 0;
-    startActivity("classify-ai", "Classifying hunks", 60);
-    updateActivity("classify-ai", { current: 0, total: aiTotal });
-
-    // Set up listener for batch completion events
-    const unlisten = client.onClassifyProgress(
-      ({ completedIds, classifications }) => {
-        // Check if this classification was cancelled
-        if (currentGeneration !== get().classifyGeneration) return;
-
-        console.log(
-          `[classifyUnlabeledHunks] Batch complete: ${completedIds.length} hunks, ${Object.keys(classifications).length} classifications`,
-        );
-        aiCompleted += completedIds.length;
-        updateActivity("classify-ai", {
-          current: aiCompleted,
-          total: aiTotal,
-        });
-
-        // Apply batch results incrementally to reviewState
-        const currentState = get().reviewState;
-        if (currentState && Object.keys(classifications).length > 0) {
-          const updatedHunks = { ...currentState.hunks };
-          for (const id of completedIds) {
-            const classification = classifications[id];
-            const existing = updatedHunks[id];
-            updatedHunks[id] = {
-              ...existing,
-              label: classification?.label ?? existing?.label ?? [],
-              reasoning: classification?.reasoning,
-              classifiedVia: "ai",
-            };
-          }
-          const updatedState = {
-            ...currentState,
-            hunks: updatedHunks,
-            updatedAt: new Date().toISOString(),
-          };
-          set({ reviewState: updatedState });
-          debouncedClassifySave(get().saveReviewState);
-        }
-
-        set((state) => {
-          const newSet = new Set(state.classifyingHunkIds);
-          for (const id of completedIds) {
-            newSet.delete(id);
-          }
-          return { classifyingHunkIds: newSet };
-        });
-      },
-    );
-
-    try {
-      const hunkInputs = hunksToClassify.map((hunk) => ({
-        id: hunk.id,
-        filePath: hunk.filePath,
-        content: hunk.content,
-      }));
-
-      console.log(
-        `[classifyUnlabeledHunks] Calling classifyHunks (gen=${currentGeneration})`,
-      );
-
-      const response = await client.classifyHunks(repoPath, hunkInputs, {
-        command: classifyCommand || undefined,
-        batchSize: classifyBatchSize,
-        maxConcurrent: classifyMaxConcurrent,
-      });
-
-      console.log(
-        `[classifyUnlabeledHunks] Got ${Object.keys(response.classifications).length} classifications`,
-      );
-
-      /** Remove our hunk IDs from the tracking set and merge extra state. */
-      const removeTracking = (extra?: Record<string, unknown>) => {
-        set((state) => {
-          const remaining = new Set(state.classifyingHunkIds);
-          for (const id of newClassifyingIds) remaining.delete(id);
-          return {
-            classifying: remaining.size > 0,
-            classifyingHunkIds: remaining,
-            ...extra,
-          };
-        });
-      };
-
-      // Check if this classification was cancelled
-      if (currentGeneration !== get().classifyGeneration) {
-        console.log("[classifyUnlabeledHunks] Cancelled - stale generation");
-        removeTracking();
-        return;
-      }
-
-      // Get fresh review state
-      const freshState = get().reviewState;
-      if (!freshState) return;
-
-      // Apply classifications -- skip hunks already saved by per-batch
-      // incremental updates so we don't overwrite them.
-      const newHunks = { ...freshState.hunks };
-      for (const id of newClassifyingIds) {
-        if (newHunks[id]?.classifiedVia === "ai") continue;
-        const classification = response.classifications[id];
-        const existing = newHunks[id];
-        newHunks[id] = {
-          ...existing,
-          label: classification?.label ?? existing?.label ?? [],
-          reasoning: classification?.reasoning,
-          classifiedVia: "ai",
-        };
-      }
-
-      removeTracking({
-        reviewState: {
-          ...freshState,
-          hunks: newHunks,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-
-      // Final non-debounced save to flush any pending writes
-      await saveReviewState();
-      set({
-        classifiedHunkIds: get()
-          .hunks.map((h) => h.id)
-          .sort(),
-      });
-      console.log("[classifyUnlabeledHunks] Review state saved");
-    } catch (err) {
-      const isCancelled = currentGeneration !== get().classifyGeneration;
-      set((state) => {
-        const remaining = new Set(state.classifyingHunkIds);
-        for (const id of newClassifyingIds) remaining.delete(id);
-
-        if (isCancelled) {
-          return {
-            classifying: remaining.size > 0,
-            classifyingHunkIds: remaining,
-          };
-        }
-
-        console.error("[classifyUnlabeledHunks] Classification failed:", err);
-        return {
-          classifying: remaining.size > 0,
-          classifyingHunkIds: remaining,
-          classificationError: err instanceof Error ? err.message : String(err),
-        };
-      });
-    } finally {
-      unlisten();
-      endActivity("classify-ai");
-    }
-  },
-
   reclassifyHunks: async (hunkIds) => {
-    const { repoPath, hunks, reviewState, saveReviewState } = get();
-    if (!repoPath || !reviewState) return;
+    const { hunks, reviewState, saveReviewState } = get();
+    if (!reviewState) return;
 
     const targetHunks = filterHunks(hunks, hunkIds);
 
@@ -442,8 +125,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
     await saveReviewState();
 
     // Now classify them (they're now "unlabeled")
-    const { classifyUnlabeledHunks } = get();
-    await classifyUnlabeledHunks(targetHunks.map((h) => h.id));
+    const { classifyStaticHunks } = get();
+    await classifyStaticHunks(targetHunks.map((h) => h.id));
   },
 
   isClassificationStale: () => {

@@ -8,44 +8,44 @@
         {
           "id": "imports:added",
           "name": "Added",
-          "description": "New import/require/use statements added. ONLY when the entire hunk is adding imports, with no other code changes."
+          "description": "All changed lines are import/require/use statements (additions only). Supports single and multi-line imports in JS/TS, Python, Go, Rust, Java, C/C++, Ruby, C#, Swift, Dart."
         },
         {
           "id": "imports:removed",
           "name": "Removed",
-          "description": "Import/require/use statements deleted. ONLY when the entire hunk is removing imports, with no other code changes."
+          "description": "All changed lines are removed import/require/use statements."
         },
         {
           "id": "imports:reordered",
           "name": "Reordered",
-          "description": "Import statements reordered or sorted. The same imports exist before and after, just in different order or grouping."
+          "description": "The same set of imports exists before and after, in a different order."
         },
         {
           "id": "imports:modified",
           "name": "Modified",
-          "description": "Existing import/require/use statements changed. ONLY when the entire hunk is editing imports, with no other code changes. Includes expanding imports (adding named exports), narrowing imports, or changing import paths."
+          "description": "All changed lines are import statements that were edited (paths changed, names added/removed)."
         }
       ]
     },
     {
       "id": "formatting",
       "name": "Formatting",
-      "description": "Whitespace and style changes with NO semantic meaning",
+      "description": "Whitespace and style changes with no semantic meaning",
       "patterns": [
         {
           "id": "formatting:whitespace",
           "name": "Whitespace",
-          "description": "Changes ONLY to whitespace: adding/removing blank lines, changing indentation, adjusting spaces or tabs. Includes hunks that only add or remove empty lines. NOT for any change to actual code characters, strings, numbers, identifiers, or template/markup tags (e.g., `{% endif %}`, `<div>`, `{{ }}`). Removing or adding template tags is a structural code change, not whitespace."
+          "description": "All changed lines are empty or whitespace-only. No code characters changed."
         },
         {
           "id": "formatting:line-length",
           "name": "Line length",
-          "description": "Code wrapped or unwrapped for line length limits. The code tokens are identical, just split across lines differently."
+          "description": "Code wrapped or unwrapped across lines. Joining and normalizing whitespace produces identical content."
         },
         {
           "id": "formatting:style",
           "name": "Style",
-          "description": "Punctuation style changes only: semicolons added/removed, single vs double quotes, trailing commas. NOT for any logic or value changes."
+          "description": "Only punctuation changed: semicolons added/removed, quote style (single ↔ double), or trailing commas."
         }
       ]
     },
@@ -57,39 +57,39 @@
         {
           "id": "comments:added",
           "name": "Added",
-          "description": "New comments added. ONLY when the entire hunk is adding comments, with no code changes."
+          "description": "All changed lines are comments. Detects line comments (// # -- ; %) and block comments (/* */ <!-- -->)."
         },
         {
           "id": "comments:removed",
           "name": "Removed",
-          "description": "Comments deleted. ONLY when the entire hunk is removing comments, with no code changes."
+          "description": "All changed lines are removed comments."
         },
         {
           "id": "comments:modified",
           "name": "Modified",
-          "description": "Existing comment text updated. ONLY when the entire hunk is editing comments, with no code changes."
+          "description": "All changed lines are comments that were edited."
         }
       ]
     },
     {
-      "id": "types",
-      "name": "Types",
+      "id": "type-annotations",
+      "name": "Type Annotations",
       "description": "Type annotation changes in typed languages",
       "patterns": [
         {
-          "id": "types:added",
+          "id": "type-annotations:added",
           "name": "Added",
-          "description": "Type annotations added to previously untyped code (e.g., adding `: string` or `-> int`). Runtime behavior unchanged."
+          "description": "Type annotations added to previously untyped code (e.g. `: int` in Python, `: string` in TypeScript). Stripping annotations leaves identical code."
         },
         {
-          "id": "types:modified",
+          "id": "type-annotations:modified",
           "name": "Modified",
-          "description": "Type annotations changed (e.g., `string` to `string | null`). NOT for changes to actual values or logic, only type declarations."
+          "description": "Type annotations changed. Stripping annotations leaves identical code."
         },
         {
-          "id": "types:removed",
+          "id": "type-annotations:removed",
           "name": "Removed",
-          "description": "Type annotations removed from code. The runtime logic remains identical."
+          "description": "Type annotations removed. Stripping annotations leaves identical code."
         }
       ]
     },
@@ -101,19 +101,19 @@
         {
           "id": "file:added-empty",
           "name": "Added empty",
-          "description": "New empty file added. Contains no code, or only whitespace/blank lines. Common for Python __init__.py, placeholder files, or directory markers."
+          "description": "New file containing no code (empty or whitespace-only)."
         }
       ]
     },
     {
-      "id": "hunk",
-      "name": "Hunk",
-      "description": "Hunk-level structural changes detected by static analysis",
+      "id": "move",
+      "name": "Move",
+      "description": "Code moved between files",
       "patterns": [
         {
-          "id": "hunk:moved",
+          "id": "move:code",
           "name": "Moved",
-          "description": "Code moved between files. Detected when identical content is removed from one file and added to another."
+          "description": "Identical content removed from one file and added to another."
         }
       ]
     },
@@ -125,29 +125,7 @@
         {
           "id": "generated:lockfile",
           "name": "Lock file",
-          "description": "Package manager lock files: package-lock.json, yarn.lock, pnpm-lock.yaml, Cargo.lock, Gemfile.lock, poetry.lock, go.sum."
-        }
-      ]
-    },
-    {
-      "id": "rename",
-      "name": "Rename",
-      "description": "Identifier renaming with no logic changes",
-      "patterns": [
-        {
-          "id": "rename:variable",
-          "name": "Variable",
-          "description": "A variable or constant renamed throughout the hunk. Logic unchanged, only the identifier name differs."
-        },
-        {
-          "id": "rename:function",
-          "name": "Function",
-          "description": "A function or method renamed. Implementation unchanged, only the function name differs."
-        },
-        {
-          "id": "rename:class",
-          "name": "Class",
-          "description": "A class, struct, interface, or type renamed. Implementation unchanged, only the type name differs."
+          "description": "Package manager lock file (package-lock.json, yarn.lock, Cargo.lock, poetry.lock, etc.)."
         }
       ]
     }

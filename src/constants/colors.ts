@@ -8,7 +8,7 @@
  * - Trust (auto-approve patterns): status-trusted
  * - Approve (manual): status-approved
  * - Reject: status-rejected
- * - Classifying (AI): status-classifying
+ * - Classifying: status-classifying
  * - Focus/UI accent: focus-ring
  *
  * Git file status:

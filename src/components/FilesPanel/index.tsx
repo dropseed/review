@@ -10,9 +10,6 @@ import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../../components/ui/dropdown-menu";
@@ -22,7 +19,6 @@ import {
 } from "../../components/ui/collapsible-section";
 import {
   isHunkTrusted,
-  isHunkReviewed,
   type CommitEntry,
   type FileSymbolDiff,
 } from "../../types";
@@ -56,13 +52,6 @@ function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
   }
   walk(entries);
   return paths;
-}
-
-function groupItemStyle(isActive: boolean, isCompleted: boolean): string {
-  if (isActive) return "bg-status-modified/10 text-status-modified";
-  if (isCompleted)
-    return "text-fg-faint hover:text-fg-muted hover:bg-surface-raised/30";
-  return "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30";
 }
 
 interface QuickActionItem {
@@ -205,98 +194,6 @@ function SectionHeader({
     >
       {children}
     </CollapsibleSection>
-  );
-}
-
-function GroupItemOverflowMenu({
-  unreviewedIds,
-  reviewedIds,
-  onApprove,
-  onReject,
-  onReset,
-}: {
-  unreviewedIds: string[];
-  reviewedIds: string[];
-  onApprove: () => void;
-  onReject: () => void;
-  onReset: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const hasUnreviewed = unreviewedIds.length > 0;
-  const hasReviewed = reviewedIds.length > 0;
-
-  if (!hasUnreviewed && !hasReviewed) return null;
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          onClick={(e) => e.stopPropagation()}
-          className={`mr-1 flex items-center justify-center w-5 h-5 rounded shrink-0
-                     text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50
-                     transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-        >
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="12" cy="5" r="1.5" />
-            <circle cx="12" cy="12" r="1.5" />
-            <circle cx="12" cy="19" r="1.5" />
-          </svg>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {hasUnreviewed && (
-          <>
-            <DropdownMenuItem onClick={onApprove}>
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              Approve all hunks
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onReject}>
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              Reject all hunks
-            </DropdownMenuItem>
-          </>
-        )}
-        {hasReviewed && (
-          <DropdownMenuItem onClick={onReset}>
-            <svg
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-              />
-            </svg>
-            Reset review
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -618,33 +515,12 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     approvedOrTrustedCount,
   ]);
 
-  // Guide state
-  const reviewGroups = useReviewStore((s) => s.reviewGroups);
-  const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
-  const setActiveGroupIndex = useReviewStore((s) => s.setActiveGroupIndex);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const setGuideContentMode = useReviewStore((s) => s.setGuideContentMode);
-  const groupingLoading = useReviewStore((s) => s.groupingLoading);
-  const groupingError = useReviewStore((s) => s.groupingError);
-  const generateGrouping = useReviewStore((s) => s.generateGrouping);
-  const isGroupingStale = useReviewStore((s) => s.isGroupingStale);
-  const startGuide = useReviewStore((s) => s.startGuide);
-  const guideLoading = useReviewStore((s) => s.guideLoading);
-  const guideSummary = useReviewStore((s) => s.guideSummary);
-  const summaryStatus = useReviewStore((s) => s.summaryStatus);
-  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
-  const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
-  const [groupsOpen, setGroupsOpen] = useState(true);
-
   // Trust section
   const knownPatternIds = useKnownPatternIds();
   const { trustedHunkCount, trustableHunkCount } =
     useTrustCounts(knownPatternIds);
   const setTrustList = useReviewStore((s) => s.setTrustList);
-  const classifying = useReviewStore((s) => s.classifying);
-  const classifyUnlabeledHunks = useReviewStore(
-    (s) => s.classifyUnlabeledHunks,
-  );
+  const classifyStaticHunks = useReviewStore((s) => s.classifyStaticHunks);
   const reclassifyHunks = useReviewStore((s) => s.reclassifyHunks);
   const isClassificationStale = useReviewStore((s) => s.isClassificationStale);
 
@@ -702,19 +578,17 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
     // Classification actions
     const stale = isClassificationStale();
-    if (classifying) {
-      // No actions while classifying
-    } else if (stale) {
+    if (stale) {
       actions.push({
         label: "Reclassify (stale)",
         count: hunks.length,
-        onAction: () => classifyUnlabeledHunks(),
+        onAction: () => classifyStaticHunks(),
       });
     } else if (unlabeledCount > 0) {
       actions.push({
         label: "Classify unclassified",
         count: unlabeledCount,
-        onAction: () => classifyUnlabeledHunks(),
+        onAction: () => classifyStaticHunks(),
       });
     } else if (hunks.length > 0) {
       actions.push({
@@ -725,119 +599,15 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     }
     return actions;
   }, [
-    classifying,
     isClassificationStale,
     unlabeledCount,
     hunks.length,
-    classifyUnlabeledHunks,
+    classifyStaticHunks,
     reclassifyHunks,
     matchedPatternIds,
     reviewState?.trustList,
     setTrustList,
   ]);
-
-  // Group unreviewed counts
-  const trustList = reviewState?.trustList ?? [];
-  const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
-  const hunkStates = reviewState?.hunks;
-
-  const groupUnreviewedCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const group of reviewGroups) {
-      let count = 0;
-      for (const id of group.hunkIds) {
-        const hunk = hunks.find((h) => h.id === id);
-        if (
-          hunk &&
-          !isHunkReviewed(hunkStates?.[id], trustList, {
-            autoApproveStaged,
-            stagedFilePaths,
-            filePath: hunk.filePath,
-          })
-        ) {
-          count++;
-        }
-      }
-      counts.set(group.title, count);
-    }
-    return counts;
-  }, [
-    reviewGroups,
-    hunks,
-    hunkStates,
-    trustList,
-    autoApproveStaged,
-    stagedFilePaths,
-  ]);
-
-  const groupActionData = useMemo(() => {
-    const data = new Map<
-      string,
-      { unreviewedIds: string[]; reviewedIds: string[] }
-    >();
-    for (const group of reviewGroups) {
-      const unreviewedIds: string[] = [];
-      const reviewedIds: string[] = [];
-      for (const id of group.hunkIds) {
-        const hunk = hunks.find((h) => h.id === id);
-        if (!hunk) continue;
-        const state = hunkStates?.[id];
-        if (state?.status === "approved" || state?.status === "rejected") {
-          reviewedIds.push(id);
-        }
-        if (
-          !isHunkReviewed(state, trustList, {
-            autoApproveStaged,
-            stagedFilePaths,
-            filePath: hunk.filePath,
-          })
-        ) {
-          unreviewedIds.push(id);
-        }
-      }
-      data.set(group.title, { unreviewedIds, reviewedIds });
-    }
-    return data;
-  }, [
-    reviewGroups,
-    hunks,
-    hunkStates,
-    trustList,
-    autoApproveStaged,
-    stagedFilePaths,
-  ]);
-
-  const totalGroupUnreviewed = useMemo(() => {
-    let count = 0;
-    for (const c of groupUnreviewedCounts.values()) count += c;
-    return count;
-  }, [groupUnreviewedCounts]);
-
-  const handleGroupClick = useCallback(
-    (index: number) => {
-      setActiveGroupIndex(index);
-      setGuideContentMode("group");
-    },
-    [setActiveGroupIndex, setGuideContentMode],
-  );
-
-  // Staleness
-  const guide = reviewState?.guide;
-  const hasGrouping = guide != null && guide.groups.length > 0;
-  const stale = hasGrouping && isGroupingStale();
-  const hasGroups = reviewGroups.length > 0;
-  const hasPrBody = !!githubPr?.body;
-
-  const groupsQuickActions = useMemo((): QuickActionItem[] => {
-    if (groupingLoading) return [];
-    return [
-      {
-        label: hasGroups ? "Regenerate groups" : "Generate groups",
-        count: hunks.length,
-        onAction: () => generateGrouping(),
-      },
-    ];
-  }, [groupingLoading, hasGroups, hunks.length, generateGrouping]);
 
   // Search state
   const searchActive = useReviewStore((s) => s.searchActive);
@@ -1070,136 +840,22 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     </div>
                   ) : (
                     <>
-                      {/* Start Guided Review CTA (when no groups yet) */}
-                      {!hasGroups && !groupingLoading && hunks.length > 0 && (
-                        <div className="px-3 py-2">
-                          <button
-                            type="button"
-                            onClick={startGuide}
-                            disabled={guideLoading}
-                            className="flex items-center gap-1.5 w-full rounded-md bg-status-classifying/15 px-2.5 py-1.5 text-xs font-medium text-status-classifying border border-status-classifying/20 hover:bg-status-classifying/25 transition-colors disabled:opacity-50"
-                          >
-                            {guideLoading ? (
-                              <svg
-                                className="h-3.5 w-3.5 animate-spin"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                              >
-                                <circle
-                                  className="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  strokeWidth="3"
-                                />
-                                <path
-                                  className="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                />
-                              </svg>
-                            ) : (
-                              <svg
-                                className="h-3.5 w-3.5"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                              >
-                                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                              </svg>
-                            )}
-                            {guideLoading ? "Starting…" : "Start Guided Review"}
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Overview nav item (when guide has content) */}
-                      {(hasGroups || guideSummary || hasPrBody) && (
-                        <button
-                          type="button"
-                          onClick={() => setGuideContentMode("overview")}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                            guideContentMode === "overview"
-                              ? "bg-status-modified/10 text-status-modified"
-                              : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/50"
-                          }`}
-                        >
-                          {summaryStatus === "loading" && (
-                            <svg
-                              className="h-3 w-3 animate-spin"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="3"
-                              />
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                              />
-                            </svg>
-                          )}
-                          <span className="truncate">Overview</span>
-                          {summaryStatus !== "loading" &&
-                            guideSummary &&
-                            !hasPrBody && (
-                              <span className="text-status-classifying ml-auto shrink-0">
-                                <svg
-                                  className="h-3 w-3"
-                                  viewBox="0 0 24 24"
-                                  fill="currentColor"
-                                >
-                                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                                </svg>
-                              </span>
-                            )}
-                        </button>
-                      )}
-
                       {/* Trust section */}
                       {trustableHunkCount > 0 && (
                         <SectionHeader
-                          title={`Trust${classifying ? "ing…" : ""}`}
+                          title="Trust"
                           icon={
-                            classifying ? (
-                              <svg
-                                className="h-3.5 w-3.5 text-status-trusted animate-spin"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                              >
-                                <circle
-                                  className="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  strokeWidth="3"
-                                />
-                                <path
-                                  className="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                />
-                              </svg>
-                            ) : (
-                              <svg
-                                className="h-3.5 w-3.5 text-status-trusted"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                              </svg>
-                            )
+                            <svg
+                              className="h-3.5 w-3.5 text-status-trusted"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                            </svg>
                           }
                           badge={`${trustedHunkCount}/${trustableHunkCount}`}
                           badgeColor="status-trusted"
@@ -1208,169 +864,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           quickActions={trustQuickActions}
                         >
                           <TrustSection />
-                        </SectionHeader>
-                      )}
-
-                      {/* Groups section */}
-                      {(hasGroups || groupingLoading || groupingError) && (
-                        <SectionHeader
-                          title="Guided Review"
-                          icon={
-                            groupingLoading ? (
-                              <svg
-                                className="h-3.5 w-3.5 text-status-classifying animate-spin"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                              >
-                                <circle
-                                  className="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  strokeWidth="3"
-                                />
-                                <path
-                                  className="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                />
-                              </svg>
-                            ) : (
-                              <svg
-                                className="h-3.5 w-3.5 text-status-classifying"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                              >
-                                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                              </svg>
-                            )
-                          }
-                          badge={
-                            hasGroups && totalGroupUnreviewed > 0
-                              ? totalGroupUnreviewed
-                              : undefined
-                          }
-                          badgeColor="status-modified"
-                          isOpen={groupsOpen}
-                          onToggle={() => setGroupsOpen(!groupsOpen)}
-                          quickActions={groupsQuickActions}
-                        >
-                          {/* Group error */}
-                          {groupingError && (
-                            <div className="px-3 py-1.5">
-                              <div className="rounded bg-status-rejected/10 px-2 py-1.5 inset-ring-1 inset-ring-status-rejected/20">
-                                <p className="text-xxs text-status-rejected mb-1">
-                                  Failed: {groupingError}
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => generateGrouping()}
-                                  className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
-                                >
-                                  Retry
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Loading state */}
-                          {groupingLoading && !hasGroups && (
-                            <div className="px-3 py-3 text-center">
-                              <span className="text-xxs text-fg-muted">
-                                Generating groups…
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Stale indicator */}
-                          {stale && !groupingLoading && (
-                            <div className="px-3 py-1">
-                              <button
-                                onClick={() => generateGrouping()}
-                                className="flex items-center gap-1 rounded-full bg-status-modified/15 px-1.5 py-0.5 text-xxs font-medium text-status-modified hover:bg-status-modified/25 transition-colors"
-                              >
-                                Stale — regenerate
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Group items */}
-                          <div className="py-0.5">
-                            {reviewGroups.map((group, i) => {
-                              const unreviewedCount =
-                                groupUnreviewedCounts.get(group.title) ?? 0;
-                              const isCompleted = unreviewedCount === 0;
-                              const isActive =
-                                guideContentMode === "group" &&
-                                activeGroupIndex === i;
-                              const data = groupActionData.get(group.title);
-                              return (
-                                <div
-                                  key={group.title}
-                                  className="group flex items-center"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => handleGroupClick(i)}
-                                    className={`flex items-center gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
-                                  >
-                                    {isCompleted ? (
-                                      <span className="text-status-approved shrink-0">
-                                        <svg
-                                          className="w-3 h-3"
-                                          viewBox="0 0 24 24"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          strokeWidth={3}
-                                        >
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M5 13l4 4L19 7"
-                                          />
-                                        </svg>
-                                      </span>
-                                    ) : (
-                                      <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums">
-                                        {i + 1}
-                                      </span>
-                                    )}
-                                    <span className="truncate flex-1 text-left">
-                                      {group.title}
-                                    </span>
-                                    {!isCompleted && unreviewedCount > 0 && (
-                                      <span className="text-xxs text-status-modified/70 tabular-nums shrink-0">
-                                        {unreviewedCount}
-                                      </span>
-                                    )}
-                                  </button>
-                                  <GroupItemOverflowMenu
-                                    unreviewedIds={data?.unreviewedIds ?? []}
-                                    reviewedIds={data?.reviewedIds ?? []}
-                                    onApprove={() =>
-                                      approveHunkIds(data?.unreviewedIds ?? [])
-                                    }
-                                    onReject={() =>
-                                      rejectHunkIds(data?.unreviewedIds ?? [])
-                                    }
-                                    onReset={() =>
-                                      unapproveHunkIds(data?.reviewedIds ?? [])
-                                    }
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* All groups done */}
-                          {hasGroups && totalGroupUnreviewed === 0 && (
-                            <div className="px-3 py-1.5">
-                              <span className="text-xxs text-status-approved font-medium">
-                                All groups reviewed
-                              </span>
-                            </div>
-                          )}
                         </SectionHeader>
                       )}
 

@@ -1,4 +1,3 @@
-pub mod classify;
 pub mod grouping;
 pub mod summary;
 

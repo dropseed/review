@@ -172,8 +172,6 @@ export function DiffView({
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
   const allHunks = useReviewStore((s) => s.hunks);
-  const classifyingHunkIds = useReviewStore((s) => s.classifyingHunkIds);
-  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
@@ -410,8 +408,6 @@ export function DiffView({
     focusedHunkId: typeof focusedHunkId;
     focusedHunkRef: typeof focusedHunkRef;
     reviewState: typeof reviewState;
-    classifyingHunkIds: typeof classifyingHunkIds;
-    claudeAvailable: typeof claudeAvailable;
     hunkStates: typeof hunkStates;
     handleCopyHunk: typeof handleCopyHunk;
     onViewInFile: typeof onViewInFile;
@@ -430,8 +426,6 @@ export function DiffView({
     focusedHunkId,
     focusedHunkRef,
     reviewState,
-    classifyingHunkIds,
-    claudeAvailable,
     hunkStates,
     handleCopyHunk,
     onViewInFile,
@@ -518,8 +512,6 @@ export function DiffView({
               focusedHunkId={deps.focusedHunkId}
               focusedHunkRef={deps.focusedHunkRef}
               trustList={deps.reviewState?.trustList ?? []}
-              classifyingHunkIds={deps.classifyingHunkIds}
-              claudeAvailable={deps.claudeAvailable}
               hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
               totalHunksInFile={deps.hunks.length}
               similarHunks={similarHunks}

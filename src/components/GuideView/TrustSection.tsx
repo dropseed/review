@@ -145,7 +145,6 @@ export function TrustSection(): ReactNode {
   const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const classificationError = useReviewStore((s) => s.classificationError);
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
   const [expandedPatternId, setExpandedPatternId] = useState<string | null>(
@@ -302,13 +301,6 @@ export function TrustSection(): ReactNode {
 
   return (
     <div>
-      {/* Error banner */}
-      {classificationError && (
-        <div className="rounded bg-status-rejected/10 px-2 py-1 mb-1 text-xxs text-status-rejected inset-ring-1 inset-ring-status-rejected/20">
-          {classificationError}
-        </div>
-      )}
-
       {/* Pattern list */}
       {trustCategories.length > 0 && (
         <div>

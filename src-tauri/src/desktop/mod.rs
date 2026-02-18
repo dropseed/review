@@ -477,7 +477,6 @@ pub fn run() {
             commands::get_review_storage_path,
             commands::open_repo_window,
             commands::check_claude_available,
-            commands::classify_hunks_with_claude,
             commands::classify_hunks_static,
             commands::detect_hunks_move_pairs,
             commands::write_text_file,

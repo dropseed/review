@@ -13,10 +13,7 @@ import { makeComparison } from "../../types";
 import type { UndoEntry } from "./undoSlice";
 import { groupingResetState } from "./groupingSlice";
 import { symbolsResetState } from "./symbolsSlice";
-import {
-  classificationResetState,
-  debouncedClassifySave,
-} from "./classificationSlice";
+import { classificationResetState } from "./classificationSlice";
 import { EMPTY_STAGED_SET } from "./gitSlice";
 import { debouncedSave } from "./reviewSlice";
 import { debouncedUndoSave } from "./undoSlice";
@@ -25,7 +22,6 @@ import { debouncedUndoSave } from "./undoSlice";
 export function cancelPendingSaves(): void {
   debouncedSave.cancel();
   debouncedUndoSave.cancel();
-  debouncedClassifySave.cancel();
 }
 
 // Default comparison: main..HEAD
@@ -176,8 +172,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         repoPath: path,
         ...comparisonResetState,
         ...repoResetState,
-        // Override: increment generation to cancel in-flight classifications
-        classifyGeneration: get().classifyGeneration + 1,
       });
     },
 
@@ -203,8 +197,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         comparison,
         ...comparisonResetState,
         ...repoResetState,
-        // Override: increment generation to cancel in-flight classifications
-        classifyGeneration: get().classifyGeneration + 1,
       });
     },
 

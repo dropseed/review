@@ -316,6 +316,60 @@ html {
   background: var(--color-surface-active);
 }
 
+/* Guide start button — traveling shimmer + ambient glow */
+.guide-start-button {
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--color-status-classifying) 20%, transparent),
+    0 0 20px color-mix(in srgb, var(--color-status-classifying) 8%, transparent);
+}
+
+.guide-start-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    color-mix(in srgb, var(--color-status-classifying) 18%, transparent) 45%,
+    color-mix(in srgb, var(--color-status-classifying) 30%, transparent) 50%,
+    color-mix(in srgb, var(--color-status-classifying) 18%, transparent) 55%,
+    transparent 70%
+  );
+  animation: guide-shimmer 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.guide-start-button:hover {
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--color-status-classifying) 30%, transparent),
+    0 0 28px color-mix(in srgb, var(--color-status-classifying) 12%, transparent);
+}
+
+.guide-start-button:hover::before {
+  animation-duration: 2s;
+}
+
+.guide-start-button:disabled::before {
+  animation: none;
+}
+
+.guide-start-button .guide-sparkle {
+  animation: guide-sparkle-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes guide-shimmer {
+  0% { transform: translateX(-120%); }
+  60% { transform: translateX(120%); }
+  100% { transform: translateX(120%); }
+}
+
+@keyframes guide-sparkle-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
 /* Animations */
 @keyframes shimmer {
   0% {

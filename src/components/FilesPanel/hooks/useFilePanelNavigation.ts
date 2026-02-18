@@ -74,19 +74,6 @@ export function useFilePanelNavigation({
     }
   }, [hunks.length]);
 
-  // Auto-switch to Changes tab when guide mode is activated
-  const changesViewMode = useReviewStore((s) => s.changesViewMode);
-  const prevChangesViewMode = useRef(changesViewMode);
-
-  useEffect(() => {
-    const wasGuide = prevChangesViewMode.current === "guide";
-    prevChangesViewMode.current = changesViewMode;
-
-    if (changesViewMode === "guide" && !wasGuide) {
-      setFilesPanelTab("changes");
-    }
-  }, [changesViewMode]);
-
   // Handle external tab switch requests (e.g., from header Git status indicator)
   const requestedFilesPanelTab = useReviewStore(
     (s) => s.requestedFilesPanelTab,

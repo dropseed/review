@@ -6,10 +6,8 @@ This crate contains all business logic with no Tauri dependencies. It can be use
 
 ```
 src/
-├── classify/       Claude-based + static hunk classification
-│   ├── claude.rs       Batched Claude API calls (via `claude` CLI)
-│   ├── prompt.rs       Prompt construction and HunkInput types
-│   └── static_classify.rs  Rule-based classification (no AI)
+├── classify/       Static hunk classification
+│   └── static_classify.rs  Rule-based classification
 ├── diff/           Git diff parsing
 │   └── parser.rs       Parses unified diff format into DiffHunk structs
 ├── review/         Review state management
@@ -34,10 +32,9 @@ src/
 ## Key Data Flow
 
 1. **Diff parsing**: `sources::local_git` runs `git diff` → `diff::parser::parse_diff()` → `Vec<DiffHunk>`
-2. **Classification**: `DiffHunk` → `classify::prompt::HunkInput` → Claude API (batched) → `ClassifyResponse`
-3. **Static classification**: `DiffHunk` → `classify::static_classify` → pattern-matched labels (no AI needed)
-4. **Trust matching**: User's trust list + `trust::patterns::matches_pattern()` → auto-approve matching hunks
-5. **Persistence**: `ReviewState` ↔ `.git/review/reviews/<comparison>.json` via `review::storage`
+2. **Classification**: `DiffHunk` → `classify::static_classify` → pattern-matched labels
+3. **Trust matching**: User's trust list + `trust::patterns::matches_pattern()` → auto-approve matching hunks
+4. **Persistence**: `ReviewState` ↔ `.git/review/reviews/<comparison>.json` via `review::storage`
 
 ## Feature Flags
 

@@ -3,7 +3,7 @@ import type { ReviewStore, SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
-export type GuideContentMode = "overview" | "group" | null;
+export type GuideContentMode = "group" | null;
 export type ChangesViewMode = "files" | "guide";
 
 export interface NavigationSlice {

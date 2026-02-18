@@ -125,6 +125,37 @@ export function playBulkSound(): void {
   }
 }
 
+/** Ascending shimmer/whoosh -- sparkle tones for entering guided review */
+export function playGuideStartSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+
+  // Quick ascending sparkle: E5 -> G#5 -> B5 -> E6
+  const sparkleNotes = [659.25, 830.61, 987.77, 1318.5];
+  for (const [i, freq] of sparkleNotes.entries()) {
+    playTone(ctx, {
+      type: "sine",
+      frequency: freq,
+      startTime: now + i * 0.06,
+      duration: 0.15,
+      volume: 0.1,
+      fadeIn: 0.02,
+    });
+  }
+
+  // Soft shimmer overtone
+  playTone(ctx, {
+    type: "sine",
+    frequency: 1975.53, // B6
+    startTime: now + 0.18,
+    duration: 0.25,
+    volume: 0.03,
+    fadeIn: 0.04,
+  });
+}
+
 /** Synthesized celebration fanfare -- ascending major chord with shimmer */
 export function playCelebrationSound(): void {
   const ctx = getAudioContext();

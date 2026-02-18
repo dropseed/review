@@ -1,35 +1,27 @@
-//! Static hunk classifier that runs before AI classification.
+//! Static hunk classifier using rule-based pattern matching.
 //!
 //! Detects easily-identifiable patterns (lockfiles, whitespace-only changes,
-//! comment additions, import additions, etc.) so those hunks skip the AI call.
-//! All rules are conservative: if uncertain, return `None` and let AI handle it.
+//! comment additions, import additions, etc.) without any external calls.
+//! All rules are conservative: if uncertain, return `None`.
 
 use crate::classify::{ClassificationResult, ClassifyResponse};
 use crate::diff::parser::{DiffHunk, DiffLine, LineType};
 use std::collections::HashMap;
 
-/// Classify hunks using static pattern matching (no I/O, no AI).
+/// Classify hunks using static pattern matching (no I/O).
 ///
 /// Returns a `ClassifyResponse` containing only the hunks that were
 /// confidently classified. Unclassified hunks are omitted.
-/// Also populates `skipped_hunk_ids` for hunks that heuristics determine
-/// are very unlikely to match any taxonomy label (saves AI tokens).
 pub fn classify_hunks_static(hunks: &[DiffHunk]) -> ClassifyResponse {
     let mut classifications = HashMap::new();
-    let mut skipped_hunk_ids = Vec::new();
 
     for hunk in hunks {
         if let Some(result) = classify_single_hunk(hunk) {
             classifications.insert(hunk.id.clone(), result);
-        } else if should_skip_ai(hunk).is_some() {
-            skipped_hunk_ids.push(hunk.id.clone());
         }
     }
 
-    ClassifyResponse {
-        classifications,
-        skipped_hunk_ids,
-    }
+    ClassifyResponse { classifications }
 }
 
 /// Attempt to classify a single hunk. Returns `None` if no rule matches.
@@ -39,7 +31,10 @@ fn classify_single_hunk(hunk: &DiffHunk) -> Option<ClassificationResult> {
         .or_else(|| classify_lockfile(hunk))
         .or_else(|| classify_empty_file(hunk))
         .or_else(|| classify_whitespace(hunk))
+        .or_else(|| classify_line_length(hunk))
+        .or_else(|| classify_style(hunk))
         .or_else(|| classify_comments(hunk))
+        .or_else(|| classify_type_annotations(hunk))
         .or_else(|| classify_imports(hunk))
 }
 
@@ -48,7 +43,7 @@ fn classify_single_hunk(hunk: &DiffHunk) -> Option<ClassificationResult> {
 fn classify_moved(hunk: &DiffHunk) -> Option<ClassificationResult> {
     if hunk.move_pair_id.is_some() {
         Some(ClassificationResult {
-            label: vec!["hunk:moved".to_owned()],
+            label: vec!["move:code".to_owned()],
             reasoning: "Hunk is part of a move pair (identical content moved between files)"
                 .to_owned(),
         })
@@ -136,14 +131,133 @@ fn classify_whitespace(hunk: &DiffHunk) -> Option<ClassificationResult> {
     }
 }
 
-// --- Rule 4: Comment-only changes ---
+// --- Rule 4: Line-length changes (line wrapping / unwrapping) ---
+
+fn classify_line_length(hunk: &DiffHunk) -> Option<ClassificationResult> {
+    let changed_lines = get_changed_lines(&hunk.lines);
+    if changed_lines.is_empty() {
+        return None;
+    }
+
+    // Must have both added and removed lines
+    let has_added = changed_lines.iter().any(|l| l.line_type == LineType::Added);
+    let has_removed = changed_lines
+        .iter()
+        .any(|l| l.line_type == LineType::Removed);
+    if !has_added || !has_removed {
+        return None;
+    }
+
+    // Join all removed lines into one string, join all added lines into one string
+    let removed_joined: String = changed_lines
+        .iter()
+        .filter(|l| l.line_type == LineType::Removed)
+        .map(|l| l.content.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let added_joined: String = changed_lines
+        .iter()
+        .filter(|l| l.line_type == LineType::Added)
+        .map(|l| l.content.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Collapse whitespace and compare
+    let removed_normalized = collapse_whitespace(&removed_joined);
+    let added_normalized = collapse_whitespace(&added_joined);
+
+    if removed_normalized == added_normalized && !removed_normalized.is_empty() {
+        Some(ClassificationResult {
+            label: vec!["formatting:line-length".to_owned()],
+            reasoning: "Code wrapped or unwrapped across lines (identical content after joining)"
+                .to_owned(),
+        })
+    } else {
+        None
+    }
+}
+
+/// Collapse all whitespace runs to a single space and trim.
+fn collapse_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// --- Rule 5: Style changes (semicolons, quotes, trailing commas) ---
+
+fn classify_style(hunk: &DiffHunk) -> Option<ClassificationResult> {
+    let changed_lines = get_changed_lines(&hunk.lines);
+    if changed_lines.is_empty() {
+        return None;
+    }
+
+    // Must have both added and removed lines
+    let has_added = changed_lines.iter().any(|l| l.line_type == LineType::Added);
+    let has_removed = changed_lines
+        .iter()
+        .any(|l| l.line_type == LineType::Removed);
+    if !has_added || !has_removed {
+        return None;
+    }
+
+    // Pair up removed and added lines in order
+    let removed_lines: Vec<&str> = changed_lines
+        .iter()
+        .filter(|l| l.line_type == LineType::Removed)
+        .map(|l| l.content.as_str())
+        .collect();
+    let added_lines: Vec<&str> = changed_lines
+        .iter()
+        .filter(|l| l.line_type == LineType::Added)
+        .map(|l| l.content.as_str())
+        .collect();
+
+    // Must have the same number of removed and added lines to pair them
+    if removed_lines.len() != added_lines.len() {
+        return None;
+    }
+
+    // Each pair must normalize to the same content
+    let all_match = removed_lines.iter().zip(added_lines.iter()).all(|(r, a)| {
+        let rn = normalize_style(r);
+        let an = normalize_style(a);
+        rn == an && !rn.is_empty()
+    });
+
+    if all_match {
+        Some(ClassificationResult {
+            label: vec!["formatting:style".to_owned()],
+            reasoning: "Only punctuation changed (semicolons, quote style, or trailing commas)"
+                .to_owned(),
+        })
+    } else {
+        None
+    }
+}
+
+/// Normalize a line for style comparison:
+/// - Strip trailing semicolons
+/// - Normalize quotes (single ↔ double)
+/// - Strip trailing commas
+fn normalize_style(line: &str) -> String {
+    let trimmed = line.trim();
+    // Strip trailing semicolons
+    let s = trimmed.trim_end_matches(';');
+    // Strip trailing commas
+    let s = s.trim_end_matches(',');
+    // Normalize quotes: replace single quotes with double quotes
+    let s = s.replace('\'', "\"");
+    // Collapse whitespace for consistency
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// --- Rule 6: Comment-only changes ---
 
 /// Maps file extension to line-comment prefixes.
 fn comment_prefixes(ext: &str) -> Option<&'static [&'static str]> {
     match ext {
         "js" | "jsx" | "ts" | "tsx" | "mjs" | "mts" | "cjs" | "cts" | "rs" | "go" | "java"
         | "kt" | "kts" | "scala" | "swift" | "c" | "cc" | "cpp" | "cxx" | "h" | "hpp" | "cs"
-        | "m" | "mm" | "zig" | "v" | "dart" | "groovy" | "gradle" => Some(&["//"]),
+        | "m" | "mm" | "zig" | "v" | "dart" | "groovy" | "gradle" | "css" => Some(&["//"]),
         "py" | "rb" | "sh" | "bash" | "zsh" | "fish" | "yml" | "yaml" | "toml" | "pl" | "pm"
         | "r" | "jl" | "ex" | "exs" | "cr" | "nim" | "coffee" | "mk" | "cmake" | "tf" | "hcl" => {
             Some(&["#"])
@@ -151,6 +265,19 @@ fn comment_prefixes(ext: &str) -> Option<&'static [&'static str]> {
         "lua" | "hs" | "sql" => Some(&["--"]),
         "lisp" | "clj" | "cljs" | "cljc" | "edn" | "scm" | "rkt" => Some(&[";"]),
         "erl" | "hrl" => Some(&["%"]),
+        _ => None,
+    }
+}
+
+/// Maps file extension to block-comment delimiters (open, close).
+fn block_comment_delimiters(ext: &str) -> Option<(&'static str, &'static str)> {
+    match ext {
+        // C-family block comments
+        "js" | "jsx" | "ts" | "tsx" | "mjs" | "mts" | "cjs" | "cts" | "rs" | "go" | "java"
+        | "kt" | "kts" | "scala" | "swift" | "c" | "cc" | "cpp" | "cxx" | "h" | "hpp" | "cs"
+        | "m" | "mm" | "zig" | "v" | "dart" | "groovy" | "gradle" | "css" => Some(("/*", "*/")),
+        // HTML/XML block comments
+        "html" | "xml" | "svg" => Some(("<!--", "-->")),
         _ => None,
     }
 }
@@ -163,18 +290,101 @@ fn is_comment_line(content: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| trimmed.starts_with(prefix))
 }
 
+/// Check if a line is part of a block comment.
+/// `in_block` indicates whether we are currently inside a block comment.
+/// Returns `(is_comment, new_in_block)`.
+fn check_block_comment_line(
+    content: &str,
+    open: &str,
+    close: &str,
+    in_block: bool,
+) -> (bool, bool) {
+    let trimmed = content.trim();
+
+    if trimmed.is_empty() {
+        return (true, in_block); // Blank lines are fine
+    }
+
+    if in_block {
+        // We're inside a block comment, check if it closes
+        if trimmed.contains(close) {
+            // Check if another block opens after the close
+            let after_close = &trimmed[trimmed.find(close).unwrap() + close.len()..];
+            let reopens = after_close.contains(open);
+            return (true, reopens);
+        }
+        (true, true)
+    } else {
+        // Not in a block comment — check if one opens
+        if trimmed.starts_with(open) || trimmed.starts_with('*') {
+            // Could be a block comment start or continuation (e.g. ` * ...`)
+            if trimmed.starts_with(open) {
+                if trimmed.contains(close) {
+                    // Single-line block comment like /* ... */
+                    let after_close = &trimmed[trimmed.find(close).unwrap() + close.len()..];
+                    let reopens = after_close.contains(open);
+                    return (true, reopens);
+                }
+                return (true, true); // Block comment opened, not closed
+            }
+            // Line starts with * — likely a doc-comment continuation
+            // Only count this if it looks like /** ... */ style
+            (false, false)
+        } else {
+            (false, false)
+        }
+    }
+}
+
 fn classify_comments(hunk: &DiffHunk) -> Option<ClassificationResult> {
     let ext = hunk.file_path.rsplit('.').next()?;
-    let prefixes = comment_prefixes(ext)?;
+    let line_prefixes = comment_prefixes(ext);
+    let block_delims = block_comment_delimiters(ext);
+
+    // Must support at least one comment style
+    if line_prefixes.is_none() && block_delims.is_none() {
+        return None;
+    }
 
     let changed_lines = get_changed_lines(&hunk.lines);
     if changed_lines.is_empty() {
         return None;
     }
 
-    let all_comments = changed_lines
-        .iter()
-        .all(|line| is_comment_line(&line.content, prefixes));
+    // Check if all changed lines are comments (line or block)
+    let mut in_block_added = false;
+    let mut in_block_removed = false;
+
+    let all_comments = changed_lines.iter().all(|line| {
+        let trimmed = line.content.trim();
+        if trimmed.is_empty() {
+            return true;
+        }
+
+        // Check line comments first
+        if let Some(prefixes) = line_prefixes {
+            if is_comment_line(&line.content, prefixes) {
+                return true;
+            }
+        }
+
+        // Check block comments
+        if let Some((open, close)) = block_delims {
+            let in_block = match line.line_type {
+                LineType::Added => &mut in_block_added,
+                LineType::Removed => &mut in_block_removed,
+                LineType::Context => return false, // context lines not checked
+            };
+            let (is_comment, new_in_block) =
+                check_block_comment_line(&line.content, open, close, *in_block);
+            *in_block = new_in_block;
+            if is_comment {
+                return true;
+            }
+        }
+
+        false
+    });
 
     if !all_comments {
         return None;
@@ -198,7 +408,293 @@ fn classify_comments(hunk: &DiffHunk) -> Option<ClassificationResult> {
     })
 }
 
-// --- Rule 5: Import-only changes ---
+// --- Rule 7: Type annotation changes ---
+
+/// Strip Python type annotations from a line.
+/// Handles `: type` after params and `-> type` return annotations.
+fn strip_python_type_annotations(line: &str) -> String {
+    let trimmed = line.trim();
+
+    // Simple approach: strip `: <type>` patterns and `-> <type>` patterns
+    // We work with the whole line and strip annotations conservatively.
+    let mut result = String::new();
+    let chars: Vec<char> = trimmed.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    let mut in_string = None; // Track string delimiters
+
+    while i < len {
+        let ch = chars[i];
+
+        // Track string state to avoid stripping inside strings
+        match in_string {
+            Some(delim) if ch == delim => {
+                // Check for escape
+                if i == 0 || chars[i - 1] != '\\' {
+                    in_string = None;
+                }
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+            Some(_) => {
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+            None if ch == '"' || ch == '\'' => {
+                in_string = Some(ch);
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+            None => {}
+        }
+
+        // Check for `->` return type annotation
+        if ch == '-' && i + 1 < len && chars[i + 1] == '>' {
+            // Trim trailing whitespace from result (the space before `->`)
+            let trimmed_result = result.trim_end().to_owned();
+            result = trimmed_result;
+            // Skip everything until `:` (the colon starting the function body)
+            // or end of line
+            let rest = &trimmed[i..];
+            if let Some(colon_pos) = rest.find(':') {
+                // Skip the annotation, keep the colon
+                i += colon_pos;
+                continue;
+            } else {
+                // No colon found, skip to end
+                break;
+            }
+        }
+
+        // Check for `: <type>` annotation after a parameter
+        if ch == ':' && i > 0 {
+            // Look ahead to see if this looks like a type annotation
+            // (not a dict literal, slice, or function body colon)
+            let before = &trimmed[..i];
+            let after_colon = &trimmed[i + 1..];
+
+            // Skip if this is the final colon of a `def ...():` line
+            let after_trimmed = after_colon.trim();
+            if after_trimmed.is_empty() || after_trimmed == "\\" || after_trimmed.starts_with('#') {
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+
+            // Check if the character before the colon suggests a parameter name
+            let prev_word_end = before.trim_end();
+            if prev_word_end.ends_with(')') || prev_word_end.ends_with(']') {
+                // After closing paren/bracket — likely dict/slice, keep it
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+
+            // This looks like a type annotation — skip until comma, closing paren, equals, or end
+            let mut j = i + 1;
+            let mut depth = 0i32;
+            while j < len {
+                let c2 = chars[j];
+                if c2 == '[' || c2 == '(' {
+                    depth += 1;
+                } else if c2 == ']' || c2 == ')' {
+                    if depth > 0 {
+                        depth -= 1;
+                    } else {
+                        break;
+                    }
+                } else if depth == 0 && (c2 == ',' || c2 == '=') {
+                    break;
+                }
+                j += 1;
+            }
+            // Insert space before `=` to maintain word boundary, but not
+            // before `)`, `,`, or end-of-line where it would be extra
+            if j < len && chars[j] == '=' {
+                result.push(' ');
+            }
+            i = j;
+            continue;
+        }
+
+        result.push(ch);
+        i += 1;
+    }
+
+    result.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Strip TypeScript type annotations from a line.
+/// Handles `: type` after variables/params.
+fn strip_ts_type_annotations(line: &str) -> String {
+    let trimmed = line.trim();
+    let mut result = String::new();
+    let chars: Vec<char> = trimmed.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    let mut in_string = None;
+
+    while i < len {
+        let ch = chars[i];
+
+        // Track string state
+        match in_string {
+            Some(delim) if ch == delim => {
+                if i == 0 || chars[i - 1] != '\\' {
+                    in_string = None;
+                }
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+            Some(_) => {
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+            None if ch == '"' || ch == '\'' || ch == '`' => {
+                in_string = Some(ch);
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+            None => {}
+        }
+
+        // Check for `: <type>` annotation
+        if ch == ':' && i > 0 {
+            let after_colon = &trimmed[i + 1..];
+            let after_trimmed = after_colon.trim_start();
+
+            // Skip if this looks like an object literal value, ternary, etc.
+            // A type annotation typically follows an identifier or closing paren
+            let before = &trimmed[..i];
+            let prev_word_end = before.trim_end();
+
+            // Skip if before is a string end, or if we're in a ternary/object
+            if prev_word_end.ends_with('}')
+                || prev_word_end.ends_with('"')
+                || prev_word_end.ends_with('\'')
+                || prev_word_end.ends_with('`')
+            {
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+
+            // Check if after looks like a type (starts with a letter, `{`, `(`, `[`, or `typeof`)
+            if after_trimmed
+                .starts_with(|c: char| c.is_alphabetic() || c == '{' || c == '(' || c == '[')
+            {
+                // Skip the type annotation until `=`, `,`, `)`, `{`, or end
+                let mut j = i + 1;
+                let mut depth = 0i32;
+                while j < len {
+                    let c2 = chars[j];
+                    if c2 == '<' || c2 == '(' || c2 == '[' || c2 == '{' {
+                        depth += 1;
+                    } else if c2 == '>' || c2 == ')' || c2 == ']' || c2 == '}' {
+                        if depth > 0 {
+                            depth -= 1;
+                        } else {
+                            break;
+                        }
+                    } else if depth == 0 && (c2 == '=' || c2 == ',') {
+                        break;
+                    }
+                    j += 1;
+                }
+                // Insert space to maintain word boundary after stripping
+                result.push(' ');
+                i = j;
+                continue;
+            }
+
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        result.push(ch);
+        i += 1;
+    }
+
+    result.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn classify_type_annotations(hunk: &DiffHunk) -> Option<ClassificationResult> {
+    let ext = hunk.file_path.rsplit('.').next()?;
+
+    let strip_fn: fn(&str) -> String = match ext {
+        "py" => strip_python_type_annotations,
+        "ts" | "tsx" => strip_ts_type_annotations,
+        _ => return None,
+    };
+
+    let changed_lines = get_changed_lines(&hunk.lines);
+    if changed_lines.is_empty() {
+        return None;
+    }
+
+    let has_added = changed_lines.iter().any(|l| l.line_type == LineType::Added);
+    let has_removed = changed_lines
+        .iter()
+        .any(|l| l.line_type == LineType::Removed);
+
+    // For added/removed only: strip annotations and check if resulting lines are empty/unchanged
+    // For modified: pair removed/added lines and compare after stripping
+    match (has_added, has_removed) {
+        (true, true) => {
+            // Both added and removed — pair them up and compare after stripping
+            let removed_lines: Vec<&str> = changed_lines
+                .iter()
+                .filter(|l| l.line_type == LineType::Removed)
+                .map(|l| l.content.as_str())
+                .collect();
+            let added_lines: Vec<&str> = changed_lines
+                .iter()
+                .filter(|l| l.line_type == LineType::Added)
+                .map(|l| l.content.as_str())
+                .collect();
+
+            if removed_lines.len() != added_lines.len() {
+                return None;
+            }
+
+            let all_match = removed_lines.iter().zip(added_lines.iter()).all(|(r, a)| {
+                let rs = strip_fn(r);
+                let as_ = strip_fn(a);
+                rs == as_ && !rs.is_empty()
+            });
+
+            if all_match {
+                Some(ClassificationResult {
+                    label: vec!["type-annotations:modified".to_owned()],
+                    reasoning: "Stripping type annotations leaves identical code".to_owned(),
+                })
+            } else {
+                None
+            }
+        }
+        (true, false) => {
+            // Only additions — check if stripping annotations from added lines
+            // would leave nothing new (i.e. only type annotations were added).
+            // This is hard to detect reliably for pure additions without context,
+            // so we're conservative and skip this case.
+            None
+        }
+        (false, true) => {
+            // Only removals — similarly conservative
+            None
+        }
+        (false, false) => None,
+    }
+}
+
+// --- Rule 8: Import-only changes ---
 
 /// Returns (prefixes, bracket_char) for import multi-line handling.
 /// bracket_char is '\0' for languages that don't support multi-line imports.
@@ -394,89 +890,6 @@ fn normalize_import(line: &str) -> String {
     line.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-// --- Rule 6: Pre-AI skip heuristics ---
-
-/// Maximum number of changed lines (added + removed) before we skip AI.
-/// Hunks larger than this are very unlikely to match a single taxonomy label
-/// since every label requires the ENTIRE hunk to be one type of trivial change.
-const MAX_CHANGED_LINES_FOR_AI: usize = 50;
-
-/// Check if a hunk should be skipped for AI classification.
-/// Returns a reason string if the hunk should be skipped, `None` otherwise.
-///
-/// These are hunks that are very unlikely to match any taxonomy label,
-/// so sending them to the AI would just waste tokens.
-pub fn should_skip_ai(hunk: &DiffHunk) -> Option<&'static str> {
-    // 1. Too many changed lines — unlikely to be entirely one trivial pattern
-    let changed_lines = get_changed_lines(&hunk.lines);
-    if changed_lines.len() > MAX_CHANGED_LINES_FOR_AI {
-        return Some("too many changed lines for single-label match");
-    }
-
-    // 2. Generated/minified files (beyond lockfiles, which are caught by classify_lockfile)
-    if is_generated_file(&hunk.file_path) {
-        return Some("generated or minified file");
-    }
-
-    // 3. Prose/documentation files — no taxonomy labels apply to markdown content
-    if is_prose_file(&hunk.file_path) {
-        return Some("prose/documentation file — no matching taxonomy labels");
-    }
-
-    // 4. Pure deletion hunks (only removed lines, no additions).
-    //    No AI-classified taxonomy label applies to pure deletions.
-    //    (imports:removed and comments:removed are already handled by the static classifier.)
-    let has_added = changed_lines.iter().any(|l| l.line_type == LineType::Added);
-    let has_removed = changed_lines
-        .iter()
-        .any(|l| l.line_type == LineType::Removed);
-    if has_removed && !has_added {
-        return Some("pure deletion — no matching AI taxonomy label");
-    }
-
-    None
-}
-
-/// Check if a file is prose/documentation where no taxonomy labels apply.
-fn is_prose_file(file_path: &str) -> bool {
-    let lower = file_path.to_lowercase();
-    lower.ends_with(".md")
-        || lower.ends_with(".mdx")
-        || lower.ends_with(".rst")
-        || lower.ends_with(".txt")
-}
-
-/// Check if a file path looks like a generated/minified file that
-/// should skip AI classification.
-fn is_generated_file(file_path: &str) -> bool {
-    let lower = file_path.to_lowercase();
-
-    // Minified bundles
-    if lower.ends_with(".min.js") || lower.ends_with(".min.css") || lower.ends_with(".min.mjs") {
-        return true;
-    }
-
-    // Source maps
-    if lower.ends_with(".js.map")
-        || lower.ends_with(".css.map")
-        || lower.ends_with(".mjs.map")
-        || lower.ends_with(".ts.map")
-    {
-        return true;
-    }
-
-    // Protobuf generated
-    if lower.ends_with(".pb.go")
-        || lower.ends_with(".pb.cc")
-        || lower.ends_with(".pb.h")
-        || lower.ends_with(".pb.rs")
-    {
-        return true;
-    }
-
-    false
-}
-
 // --- Helpers ---
 
 fn get_changed_lines(lines: &[DiffLine]) -> Vec<&DiffLine> {
@@ -540,7 +953,7 @@ mod tests {
         hunk.move_pair_id = Some("src/new.rs:somehash".to_owned());
         let result = classify_single_hunk(&hunk);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().label, vec!["hunk:moved"]);
+        assert_eq!(result.unwrap().label, vec!["move:code"]);
     }
 
     #[test]
@@ -557,7 +970,7 @@ mod tests {
         hunk.move_pair_id = Some("other:hash".to_owned());
         let result = classify_single_hunk(&hunk);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().label, vec!["hunk:moved"]);
+        assert_eq!(result.unwrap().label, vec!["move:code"]);
     }
 
     // --- Lockfile tests ---
@@ -660,6 +1073,131 @@ mod tests {
         assert_eq!(result.unwrap().label, vec!["formatting:whitespace"]);
     }
 
+    // --- Line-length tests ---
+
+    #[test]
+    fn test_line_length_wrap() {
+        // Single line wrapped to two lines
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![
+                removed("const result = foo(bar, baz, qux);"),
+                added("const result ="),
+                added("  foo(bar, baz, qux);"),
+            ],
+        );
+        let result = classify_line_length(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["formatting:line-length"]);
+    }
+
+    #[test]
+    fn test_line_length_unwrap() {
+        // Two lines joined into one
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![
+                removed("const result ="),
+                removed("  foo(bar, baz);"),
+                added("const result = foo(bar, baz);"),
+            ],
+        );
+        let result = classify_line_length(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["formatting:line-length"]);
+    }
+
+    #[test]
+    fn test_line_length_different_content() {
+        // Content actually changed, not just wrapping
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![
+                removed("const result = foo(bar, baz);"),
+                added("const result = foo(bar, qux);"),
+            ],
+        );
+        let result = classify_line_length(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_line_length_additions_only() {
+        // Only additions, no removals — not a line-length change
+        let hunk = make_hunk("src/app.ts", vec![added("const x = 1;")]);
+        let result = classify_line_length(&hunk);
+        assert!(result.is_none());
+    }
+
+    // --- Style tests ---
+
+    #[test]
+    fn test_style_semicolon_added() {
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![removed("const x = 1"), added("const x = 1;")],
+        );
+        let result = classify_style(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["formatting:style"]);
+    }
+
+    #[test]
+    fn test_style_quote_change() {
+        let hunk = make_hunk(
+            "src/app.js",
+            vec![removed("const x = 'hello'"), added("const x = \"hello\"")],
+        );
+        let result = classify_style(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["formatting:style"]);
+    }
+
+    #[test]
+    fn test_style_trailing_comma() {
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![removed("  foo: 'bar'"), added("  foo: 'bar',")],
+        );
+        let result = classify_style(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["formatting:style"]);
+    }
+
+    #[test]
+    fn test_style_real_change() {
+        // Content actually changed
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![removed("const x = 1;"), added("const x = 2;")],
+        );
+        let result = classify_style(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_style_additions_only() {
+        // Only additions, not a style change
+        let hunk = make_hunk("src/app.ts", vec![added("const x = 1;")]);
+        let result = classify_style(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_style_different_line_count() {
+        // Different number of removed and added lines
+        let hunk = make_hunk(
+            "src/app.ts",
+            vec![
+                removed("const x = 1"),
+                added("const x = 1;"),
+                added("const y = 2;"),
+            ],
+        );
+        let result = classify_style(&hunk);
+        assert!(result.is_none());
+    }
+
     // --- Comment tests ---
 
     #[test]
@@ -715,6 +1253,159 @@ mod tests {
         let result = classify_comments(&hunk);
         assert!(result.is_some());
         assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    // --- Block comment tests ---
+
+    #[test]
+    fn test_block_comment_added_js() {
+        let hunk = make_hunk("app.js", vec![added("/* This is a block comment */")]);
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    #[test]
+    fn test_block_comment_multiline_added_js() {
+        let hunk = make_hunk(
+            "app.js",
+            vec![
+                added("/* Start of comment"),
+                added("   middle of comment"),
+                added("   end of comment */"),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    #[test]
+    fn test_block_comment_removed_css() {
+        let hunk = make_hunk("styles.css", vec![removed("/* Old CSS comment */")]);
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:removed"]);
+    }
+
+    #[test]
+    fn test_block_comment_html() {
+        let hunk = make_hunk(
+            "index.html",
+            vec![added("<!-- This is an HTML comment -->")],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    #[test]
+    fn test_block_comment_multiline_html() {
+        let hunk = make_hunk(
+            "index.html",
+            vec![
+                added("<!-- Start"),
+                added("     middle"),
+                added("     end -->"),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    #[test]
+    fn test_block_comment_xml() {
+        let hunk = make_hunk("config.xml", vec![removed("<!-- Old XML comment -->")]);
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:removed"]);
+    }
+
+    #[test]
+    fn test_block_comment_svg() {
+        let hunk = make_hunk("icon.svg", vec![added("<!-- SVG comment -->")]);
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    #[test]
+    fn test_block_comment_mixed_with_code() {
+        let hunk = make_hunk(
+            "app.js",
+            vec![added("/* comment */"), added("const x = 1;")],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_none());
+    }
+
+    // --- Type annotation tests ---
+
+    #[test]
+    fn test_type_annotation_python_added() {
+        let hunk = make_hunk(
+            "app.py",
+            vec![removed("def greet(name):"), added("def greet(name: str):")],
+        );
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["type-annotations:modified"]);
+    }
+
+    #[test]
+    fn test_type_annotation_python_return_type() {
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("def greet(name):"),
+                added("def greet(name) -> str:"),
+            ],
+        );
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["type-annotations:modified"]);
+    }
+
+    #[test]
+    fn test_type_annotation_ts_added() {
+        let hunk = make_hunk(
+            "app.ts",
+            vec![removed("const x = 1"), added("const x: number = 1")],
+        );
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["type-annotations:modified"]);
+    }
+
+    #[test]
+    fn test_type_annotation_not_supported_extension() {
+        // .rs files are not supported for type annotation stripping
+        let hunk = make_hunk(
+            "app.rs",
+            vec![removed("let x = 1;"), added("let x: i32 = 1;")],
+        );
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_type_annotation_real_change() {
+        // Actual code change, not just type annotations
+        let hunk = make_hunk(
+            "app.py",
+            vec![removed("def greet(name):"), added("def hello(name: str):")],
+        );
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_type_annotation_additions_only() {
+        // Only additions — conservative, returns None
+        let hunk = make_hunk("app.py", vec![added("def greet(name: str) -> str:")]);
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_none());
     }
 
     // --- Import tests ---
@@ -957,149 +1648,5 @@ mod tests {
         let result = classify_single_hunk(&hunk);
         assert!(result.is_some());
         assert_eq!(result.unwrap().label, vec!["generated:lockfile"]);
-    }
-
-    // --- should_skip_ai tests ---
-
-    #[test]
-    fn test_skip_ai_too_many_changed_lines() {
-        let mut lines = Vec::new();
-        for i in 0..60 {
-            lines.push(added(&format!("line {i}")));
-        }
-        let hunk = make_hunk("src/big_file.rs", lines);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_small_hunk_not_skipped() {
-        let hunk = make_hunk(
-            "src/main.rs",
-            vec![added("let x = 1;"), added("let y = 2;")],
-        );
-        assert!(should_skip_ai(&hunk).is_none());
-    }
-
-    #[test]
-    fn test_skip_ai_generated_minified_js() {
-        let hunk = make_hunk("dist/bundle.min.js", vec![added("var a=1;")]);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_generated_sourcemap() {
-        let hunk = make_hunk("dist/app.js.map", vec![added("{}")]);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_generated_protobuf() {
-        let hunk = make_hunk("proto/service.pb.go", vec![added("func init() {}")]);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_minified_css() {
-        let hunk = make_hunk("styles/app.min.css", vec![added(".a{color:red}")]);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_markdown_file() {
-        let hunk = make_hunk("README.md", vec![added("# New heading")]);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_mdx_file() {
-        let hunk = make_hunk("docs/guide.mdx", vec![added("## Setup")]);
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_normal_js_not_skipped() {
-        let hunk = make_hunk("src/app.js", vec![added("const x = 1;")]);
-        assert!(should_skip_ai(&hunk).is_none());
-    }
-
-    #[test]
-    fn test_skip_ai_pure_deletion() {
-        let hunk = make_hunk(
-            "src/main.rs",
-            vec![
-                removed("fn old_function() {"),
-                removed("    println!(\"old\");"),
-                removed("}"),
-            ],
-        );
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_deletion_with_context_still_skipped() {
-        let hunk = make_hunk(
-            "src/main.rs",
-            vec![
-                context("fn main() {"),
-                removed("    old_line();"),
-                context("}"),
-            ],
-        );
-        assert!(should_skip_ai(&hunk).is_some());
-    }
-
-    #[test]
-    fn test_skip_ai_modification_not_skipped() {
-        // Has both added and removed lines — this is a modification, don't skip
-        let hunk = make_hunk(
-            "src/main.rs",
-            vec![removed("let x = 1;"), added("let x = 2;")],
-        );
-        assert!(should_skip_ai(&hunk).is_none());
-    }
-
-    #[test]
-    fn test_skip_ai_lockfile_not_skipped() {
-        // Lockfiles are handled by classify_lockfile, not should_skip_ai.
-        // should_skip_ai should still return None for lockfiles since they
-        // will already be classified before reaching this check.
-        let hunk = make_hunk("Cargo.lock", vec![added("[[package]]")]);
-        // Lockfile has additions only, is a small hunk, and is not in the generated patterns
-        // (lockfiles are handled separately). So should_skip_ai returns None.
-        assert!(should_skip_ai(&hunk).is_none());
-    }
-
-    // --- Integration: skipped_hunk_ids in classify_hunks_static ---
-
-    #[test]
-    fn test_static_classify_populates_skipped_ids() {
-        let mut large_lines = Vec::new();
-        for i in 0..60 {
-            large_lines.push(added(&format!("line {i}")));
-        }
-
-        let hunks = vec![
-            make_hunk("package-lock.json", vec![added("{}")]), // classified: lockfile
-            make_hunk("src/main.rs", large_lines),             // skipped: too large
-            make_hunk("dist/app.min.js", vec![added("var a=1;")]), // skipped: generated
-            make_hunk("src/lib.rs", vec![added("let x = 1;")]), // neither: goes to AI
-        ];
-
-        let response = classify_hunks_static(&hunks);
-
-        // lockfile classified
-        assert_eq!(response.classifications.len(), 1);
-        assert!(response
-            .classifications
-            .contains_key("package-lock.json:testhash"));
-
-        // large hunk and minified file skipped
-        assert_eq!(response.skipped_hunk_ids.len(), 2);
-        assert!(response
-            .skipped_hunk_ids
-            .contains(&"src/main.rs:testhash".to_owned()));
-        assert!(response
-            .skipped_hunk_ids
-            .contains(&"dist/app.min.js:testhash".to_owned()));
     }
 }

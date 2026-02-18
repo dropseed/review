@@ -19,7 +19,7 @@ Key command groups:
 - **Git operations**: `get_current_repo`, `list_branches`, `get_git_status`, `list_commits`, `get_commit_detail`
 - **File/diff**: `list_files`, `get_file_content`, `get_all_hunks`, `get_diff`, `get_expanded_context`
 - **Review state**: `load_review_state`, `save_review_state`, `list_saved_reviews`, `delete_review`
-- **Classification**: `classify_hunks_with_claude`, `classify_hunks_static`, `detect_hunks_move_pairs`
+- **Classification**: `classify_hunks_static`, `detect_hunks_move_pairs`
 - **Trust**: `get_trust_taxonomy`, `get_trust_taxonomy_with_custom`, `match_trust_pattern`
 - **Symbols**: `get_file_symbol_diffs`, `get_file_symbols`
 - **Navigation**: `open_repo_window`

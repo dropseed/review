@@ -211,11 +211,13 @@ function FileDiffSection({
 interface GroupDiffViewerProps {
   group: HunkGroup;
   groupIndex: number;
+  onClose: () => void;
 }
 
 export function GroupDiffViewer({
   group,
   groupIndex,
+  onClose,
 }: GroupDiffViewerProps): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -470,6 +472,23 @@ export function GroupDiffViewer({
               </button>
             </div>
           )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       </div>
 

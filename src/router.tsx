@@ -8,6 +8,7 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
+import { GuideSideNav } from "./components/GuideSideNav";
 import { SidebarPanelIcon } from "./components/ui/icons";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
@@ -29,12 +30,11 @@ import { useReviewFreshness } from "./hooks/useReviewFreshness";
  */
 function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
-  const checkClaudeAvailable = useReviewStore((s) => s.checkClaudeAvailable);
+  const changesViewMode = useReviewStore((s) => s.changesViewMode);
 
   useEffect(() => {
     loadGlobalReviews();
-    checkClaudeAvailable();
-  }, [loadGlobalReviews, checkClaudeAvailable]);
+  }, [loadGlobalReviews]);
 
   const {
     repoStatus,
@@ -90,13 +90,20 @@ function AppShell() {
 
   useWindowTitle(repoPath, comparison, comparisonReady);
 
+  const guideActive = changesViewMode === "guide";
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen">
-        <TabRail
-          onActivateReview={handleActivateReview}
-          onNewReview={handleNewReview}
-        />
+        {/* Left sidebar: TabRail (normal) or GuideSideNav (guide mode) */}
+        {guideActive ? (
+          <GuideSideNav />
+        ) : (
+          <TabRail
+            onActivateReview={handleActivateReview}
+            onNewReview={handleNewReview}
+          />
+        )}
         <div className="flex flex-1 flex-col overflow-hidden bg-surface">
           <Outlet
             context={{

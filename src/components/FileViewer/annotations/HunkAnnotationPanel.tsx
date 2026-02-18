@@ -53,8 +53,6 @@ interface HunkAnnotationPanelProps {
   focusedHunkId: string | null | undefined;
   focusedHunkRef: MutableRefObject<HTMLDivElement | null>;
   trustList: string[];
-  classifyingHunkIds: Set<string>;
-  claudeAvailable: boolean | null;
   hunkPosition?: number; // 1-indexed position in file
   totalHunksInFile?: number;
   // Similar hunks data for "N like this" modal
@@ -86,8 +84,6 @@ export function HunkAnnotationPanel({
   focusedHunkId,
   focusedHunkRef,
   trustList,
-  classifyingHunkIds,
-  claudeAvailable,
   hunkPosition,
   totalHunksInFile,
   similarHunks,
@@ -317,79 +313,31 @@ export function HunkAnnotationPanel({
         </div>
       )}
 
-      {/* Right side: classifying indicator, trust labels, reasoning, overflow menu */}
+      {/* Right side: trust labels, reasoning, overflow menu */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {/* Classifying indicator - fixed width container to prevent layout shift */}
-        <div className="w-[5.5rem] flex justify-end">
-          {classifyingHunkIds.has(hunk.id) && (
-            <div className="flex items-center gap-1 rounded-full bg-status-classifying/15 px-2 py-0.5">
-              <svg
-                className="h-3 w-3 animate-spin text-status-classifying"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              <span className="text-xxs text-status-classifying">
-                Classifying…
-              </span>
-            </div>
-          )}
-        </div>
-
         {/* Trust labels - click to toggle trust */}
         {hunkState?.label && hunkState.label.length > 0 && (
           <div className="flex items-center gap-1.5">
             <SimpleTooltip
               content={
-                hunkState.classifiedVia === "ai"
-                  ? "Classified by AI"
-                  : hunkState.classifiedVia === "static"
-                    ? "Classified by rules"
-                    : "Classified"
+                hunkState.classifiedVia === "static"
+                  ? "Classified by rules"
+                  : "Classified"
               }
             >
               <span className="flex items-center">
-                {hunkState.classifiedVia === "ai" ? (
-                  <svg
-                    className="h-3 w-3 text-status-classifying/70"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.54 20 12 16.27 7.46 20l1.36-6.91L3.82 9l6.09-.74L12 2z" />
-                  </svg>
-                ) : (
-                  <svg
-                    className="h-3 w-3 text-fg-muted"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                  </svg>
-                )}
+                <svg
+                  className="h-3 w-3 text-fg-muted"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
               </span>
             </SimpleTooltip>
             {hunkState.label.map((lbl, i) => {
@@ -494,23 +442,21 @@ export function HunkAnnotationPanel({
                   View in file
                 </DropdownMenuItem>
               )}
-              {claudeAvailable && (
-                <DropdownMenuItem onClick={() => onReclassifyHunks([hunk.id])}>
-                  <svg
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                    />
-                  </svg>
-                  Reclassify
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem onClick={() => onReclassifyHunks([hunk.id])}>
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                  />
+                </svg>
+                Reclassify
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onCopyHunk(hunk)}>
                 <svg
                   fill="none"

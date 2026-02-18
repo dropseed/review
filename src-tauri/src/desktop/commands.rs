@@ -11,7 +11,6 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
-use review::ai::classify::HunkInput;
 use review::ai::grouping::{GroupingInput, ModifiedSymbolEntry};
 use review::classify::{self, ClassifyResponse};
 use review::diff::parser::{
@@ -41,25 +40,6 @@ const DEFAULT_WINDOW_HEIGHT: f64 = 750.0;
 const MIN_WINDOW_WIDTH: f64 = 800.0;
 /// Minimum window height in logical pixels.
 const MIN_WINDOW_HEIGHT: f64 = 600.0;
-
-// --- Classification defaults ---
-
-/// Default number of hunks per classification batch.
-const DEFAULT_BATCH_SIZE: usize = 5;
-/// Minimum allowed batch size.
-const MIN_BATCH_SIZE: usize = 1;
-/// Maximum allowed batch size.
-const MAX_BATCH_SIZE: usize = 20;
-/// Default number of concurrent classification batches.
-const DEFAULT_MAX_CONCURRENT: usize = 2;
-/// Minimum concurrent batches.
-const MIN_CONCURRENT: usize = 1;
-/// Maximum concurrent batches.
-const MAX_CONCURRENT: usize = 10;
-/// Base timeout in seconds for classification.
-const CLASSIFY_BASE_TIMEOUT_SECS: u64 = 60;
-/// Additional timeout seconds per batch.
-const CLASSIFY_SECS_PER_BATCH: u64 = 30;
 
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -1064,85 +1044,6 @@ pub fn get_commit_detail(repo_path: String, hash: String) -> Result<CommitDetail
 #[tauri::command]
 pub fn check_claude_available() -> bool {
     review::ai::check_claude_available()
-}
-
-#[tauri::command]
-pub async fn classify_hunks_with_claude(
-    app: tauri::AppHandle,
-    repo_path: String,
-    hunks: Vec<HunkInput>,
-    model: Option<String>,
-    command: Option<String>,
-    batch_size: Option<usize>,
-    max_concurrent: Option<usize>,
-) -> Result<ClassifyResponse, String> {
-    use std::time::Duration;
-    use tauri::Emitter;
-    use tokio::time::timeout;
-
-    let model = model.unwrap_or_else(|| "sonnet".to_owned());
-    let batch_size = batch_size
-        .unwrap_or(DEFAULT_BATCH_SIZE)
-        .clamp(MIN_BATCH_SIZE, MAX_BATCH_SIZE);
-    let max_concurrent = max_concurrent
-        .unwrap_or(DEFAULT_MAX_CONCURRENT)
-        .clamp(MIN_CONCURRENT, MAX_CONCURRENT);
-
-    let num_batches = hunks.len().div_ceil(batch_size);
-    let timeout_secs = std::cmp::max(
-        CLASSIFY_BASE_TIMEOUT_SECS,
-        num_batches as u64 * CLASSIFY_SECS_PER_BATCH,
-    );
-
-    debug!(
-        "[classify_hunks_with_claude] repo_path={}, hunks={}, model={}, command={:?}, batch_size={}, max_concurrent={}, timeout={}s",
-        repo_path,
-        hunks.len(),
-        model,
-        command,
-        batch_size,
-        max_concurrent,
-        timeout_secs
-    );
-
-    let repo_path_buf = PathBuf::from(&repo_path);
-
-    #[derive(Clone, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct BatchCompletePayload {
-        completed_ids: Vec<String>,
-        classifications: HashMap<String, review::classify::ClassificationResult>,
-    }
-
-    let result = timeout(
-        Duration::from_secs(timeout_secs),
-        review::ai::classify::classify_hunks_batched(
-            hunks,
-            &repo_path_buf,
-            &model,
-            batch_size,
-            max_concurrent,
-            command.as_deref(),
-            move |completed_ids, classifications| {
-                let _ = app.emit(
-                    "classify:batch-complete",
-                    BatchCompletePayload {
-                        completed_ids,
-                        classifications,
-                    },
-                );
-            },
-        ),
-    )
-    .await
-    .map_err(|_| format!("Classification timed out after {timeout_secs} seconds"))?
-    .map_err(|e| e.to_string())?;
-
-    info!(
-        "[classify_hunks_with_claude] SUCCESS: {} classifications",
-        result.classifications.len()
-    );
-    Ok(result)
 }
 
 #[tauri::command]

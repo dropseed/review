@@ -14,7 +14,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
-import { Slider } from "../ui/slider";
 import { getAllUiThemes } from "../../lib/ui-themes";
 import { getApiClient } from "../../api";
 
@@ -114,15 +113,6 @@ export function SettingsModal({
   const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
   const setMatchVscodeTheme = useReviewStore((s) => s.setMatchVscodeTheme);
   const resolvedVscodeTheme = useReviewStore((s) => s.resolvedVscodeTheme);
-  const claudeAvailable = useReviewStore((s) => s.claudeAvailable);
-  const classifyCommand = useReviewStore((s) => s.classifyCommand);
-  const setClassifyCommand = useReviewStore((s) => s.setClassifyCommand);
-  const classifyBatchSize = useReviewStore((s) => s.classifyBatchSize);
-  const setClassifyBatchSize = useReviewStore((s) => s.setClassifyBatchSize);
-  const classifyMaxConcurrent = useReviewStore((s) => s.classifyMaxConcurrent);
-  const setClassifyMaxConcurrent = useReviewStore(
-    (s) => s.setClassifyMaxConcurrent,
-  );
   const sentryEnabled = useReviewStore((s) => s.sentryEnabled);
   const setSentryEnabled = useReviewStore((s) => s.setSentryEnabled);
   const soundEffectsEnabled = useReviewStore((s) => s.soundEffectsEnabled);
@@ -330,9 +320,6 @@ export function SettingsModal({
         >
           <TabsList className="mx-5 mt-1 mb-0 shrink-0">
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
-            {claudeAvailable && (
-              <TabsTrigger value="classification">Classification</TabsTrigger>
-            )}
             <TabsTrigger value="ios">iOS</TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
           </TabsList>
@@ -565,83 +552,6 @@ export function SettingsModal({
                 </div>
               </div>
             </TabsContent>
-
-            {claudeAvailable && (
-              <TabsContent value="classification">
-                <div className="divide-y divide-edge/60">
-                  <div className="px-5 py-4">
-                    <SectionHeader
-                      label="Classification"
-                      icon={
-                        <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                      }
-                    />
-
-                    <div className="mt-3 space-y-1.5">
-                      <label className="text-xxs text-fg-muted uppercase tracking-wide">
-                        Custom Command
-                      </label>
-                      <Input
-                        type="text"
-                        value={classifyCommand || ""}
-                        onChange={(e) =>
-                          setClassifyCommand(e.target.value || null)
-                        }
-                        placeholder="claude --print --model haiku"
-                        className="text-xs"
-                      />
-                      <p className="text-xxs text-fg-faint leading-relaxed">
-                        Leave blank for default. The prompt is sent via stdin.
-                      </p>
-                    </div>
-
-                    <div className="mt-4 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xxs text-fg-muted uppercase tracking-wide">
-                          Batch Size
-                        </label>
-                        <span className="text-xs font-mono text-fg-secondary">
-                          {classifyBatchSize}
-                        </span>
-                      </div>
-                      <Slider
-                        min={1}
-                        max={10}
-                        step={1}
-                        value={[classifyBatchSize]}
-                        onValueChange={([val]) => setClassifyBatchSize(val)}
-                      />
-                      <p className="text-xxs text-fg-faint leading-relaxed">
-                        Hunks per Claude call. Higher values use fewer API calls
-                        but may reduce accuracy.
-                      </p>
-                    </div>
-
-                    <div className="mt-4 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xxs text-fg-muted uppercase tracking-wide">
-                          Max Concurrent
-                        </label>
-                        <span className="text-xs font-mono text-fg-secondary">
-                          {classifyMaxConcurrent}
-                        </span>
-                      </div>
-                      <Slider
-                        min={1}
-                        max={5}
-                        step={1}
-                        value={[classifyMaxConcurrent]}
-                        onValueChange={([val]) => setClassifyMaxConcurrent(val)}
-                      />
-                      <p className="text-xxs text-fg-faint leading-relaxed">
-                        Maximum parallel Claude processes. Lower values reduce
-                        system load.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
-            )}
 
             <TabsContent value="ios">
               <div className="divide-y divide-edge/60">

@@ -41,6 +41,7 @@ export interface GroupingSlice {
   summaryStatus: GuideTaskStatus;
   diagramStatus: GuideTaskStatus;
   startGuide: () => Promise<void>;
+  exitGuide: () => void;
   generateSummary: () => Promise<void>;
   generateDiagram: () => Promise<void>;
   clearGuideSummary: () => void;
@@ -240,7 +241,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const {
         hunks,
         comparison,
-        classifyUnlabeledHunks,
+        classifyStaticHunks,
         generateGrouping,
         isGroupingStale,
         isSummaryStale,
@@ -257,11 +258,11 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const needsSummary = guideSummary == null || isSummaryStale();
       const needsDiagram = guideDiagram == null || isSummaryStale();
 
-      // Open the sidebar and switch to guide mode in the Changes tab
+      // Switch to guide mode
       set({
-        filesPanelCollapsed: false,
         changesViewMode: "guide",
-        guideContentMode: "overview",
+        selectedFile: null,
+        guideContentMode: null,
         guideLoading: true,
         classificationStatus: "loading",
         groupingStatus: needsGrouping ? "loading" : "done",
@@ -282,7 +283,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           .catch(() => set({ [field]: "error" as GuideTaskStatus }));
 
       const tasks: Promise<unknown>[] = [
-        wrap(classifyUnlabeledHunks(), "classificationStatus"),
+        wrap(classifyStaticHunks(), "classificationStatus"),
       ];
       if (needsGrouping) {
         tasks.push(wrap(generateGrouping(), "groupingStatus"));
@@ -300,13 +301,19 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       set({ guideLoading: false });
     },
 
+    exitGuide: () => {
+      set({
+        changesViewMode: "files",
+        guideContentMode: null,
+      });
+    },
+
     generateSummary: async () => {
       const {
         repoPath,
         hunks,
         comparison,
         reviewState,
-        classifyCommand,
         saveReviewState,
         startActivity,
         endActivity,
@@ -360,7 +367,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           const { title, summary } = await client.generateSummary(
             repoPath,
             summaryInputs,
-            { command: classifyCommand || undefined },
           );
 
           const finalTitle = prTitle || title;
@@ -404,7 +410,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         hunks,
         comparison,
         reviewState,
-        classifyCommand,
         saveReviewState,
         startActivity,
         endActivity,
@@ -421,7 +426,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         const diagram = await client.generateDiagram(
           repoPath,
           buildSummaryInputs(hunks, reviewState.hunks),
-          { command: classifyCommand || undefined },
         );
 
         if (get().comparison.key !== comparisonKey) return;
@@ -520,7 +524,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         hunks,
         comparison,
         reviewState,
-        classifyCommand,
         saveReviewState,
         symbolDiffs,
         symbolsLoaded,
@@ -557,7 +560,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         }));
 
         const groups = await client.generateGrouping(repoPath, groupingInputs, {
-          command: classifyCommand || undefined,
           modifiedSymbols:
             modifiedSymbols.length > 0 ? modifiedSymbols : undefined,
         });

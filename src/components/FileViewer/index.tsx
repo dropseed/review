@@ -51,7 +51,6 @@ export function FileViewer({
     updateAnnotation,
     deleteAnnotation,
     viewMode,
-    classifyingHunkIds,
     workingTreeDiffFile,
     gitStatus,
   } = useFileViewerState();
@@ -428,22 +427,10 @@ export function FileViewer({
       id: hunk.id,
       topFraction: (hunk.newStart - 1) / totalLineCount,
       heightFraction: hunk.newCount / totalLineCount,
-      status: getHunkStatus(
-        hunk.id,
-        reviewState,
-        trustList,
-        classifyingHunkIds,
-      ),
+      status: getHunkStatus(hunk.id, reviewState, trustList),
       isFocused: hunk.id === focusedHunkId,
     }));
-  }, [
-    fileContent,
-    totalLineCount,
-    reviewState,
-    trustList,
-    classifyingHunkIds,
-    focusedHunkId,
-  ]);
+  }, [fileContent, totalLineCount, reviewState, trustList, focusedHunkId]);
 
   // Track scroll position to update HunkNavigator counter
   useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);

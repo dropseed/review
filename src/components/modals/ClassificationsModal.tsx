@@ -175,11 +175,6 @@ function HunkCard({
                 Static
               </span>
             )}
-            {hunkState.classifiedVia === "ai" && (
-              <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-status-classifying/15 text-status-classifying">
-                AI
-              </span>
-            )}
           </div>
         )}
 

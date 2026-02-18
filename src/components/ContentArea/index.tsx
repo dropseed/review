@@ -35,18 +35,20 @@ export function ContentArea(): ReactNode {
   const isSplitActive = secondaryFile !== null;
   const isHorizontal = splitOrientation === "horizontal";
 
-  // Guide content takes priority when active; also show overview when no file selected
-  if (guideContentMode === "overview" || (!selectedFile && !secondaryFile)) {
-    return (
-      <Suspense fallback={null}>
-        <OverviewContent />
-      </Suspense>
-    );
-  }
+  // Group view takes priority when active
   if (guideContentMode === "group") {
     return (
       <Suspense fallback={null}>
         <MultiFileDiffViewer />
+      </Suspense>
+    );
+  }
+
+  // No file selected: show overview
+  if (!selectedFile && !secondaryFile) {
+    return (
+      <Suspense fallback={null}>
+        <OverviewContent />
       </Suspense>
     );
   }

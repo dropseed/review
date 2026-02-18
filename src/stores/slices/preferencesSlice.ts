@@ -90,9 +90,6 @@ const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeTheme: "github-dark",
   uiTheme: "review-dark",
-  classifyCommand: null as string | null,
-  classifyBatchSize: 5,
-  classifyMaxConcurrent: 2,
   recentRepositories: [] as RecentRepo[],
   diffLineDiffType: "word" as DiffLineDiffType,
   diffIndicators: "bars" as DiffIndicators,
@@ -132,11 +129,6 @@ export interface PreferencesSlice {
 
   // Diff view mode
   diffViewMode: DiffViewMode;
-
-  // Classification settings
-  classifyCommand: string | null;
-  classifyBatchSize: number;
-  classifyMaxConcurrent: number;
 
   // Recent repositories
   recentRepositories: RecentRepo[];
@@ -189,11 +181,6 @@ export interface PreferencesSlice {
   clearFileToReveal: () => void;
   revealDirectoryInTree: (path: string) => void;
   clearDirectoryToReveal: () => void;
-
-  // Classification settings actions
-  setClassifyCommand: (command: string | null) => void;
-  setClassifyBatchSize: (size: number) => void;
-  setClassifyMaxConcurrent: (count: number) => void;
 
   // Recent repositories actions
   addRecentRepository: (path: string) => Promise<void>;
@@ -385,21 +372,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
 
   clearDirectoryToReveal: () => {
     set({ directoryToReveal: null });
-  },
-
-  setClassifyCommand: (command) => {
-    set({ classifyCommand: command });
-    storage.set("classifyCommand", command);
-  },
-
-  setClassifyBatchSize: (size) => {
-    set({ classifyBatchSize: size });
-    storage.set("classifyBatchSize", size);
-  },
-
-  setClassifyMaxConcurrent: (count) => {
-    set({ classifyMaxConcurrent: count });
-    storage.set("classifyMaxConcurrent", count);
   },
 
   addRecentRepository: async (path) => {
