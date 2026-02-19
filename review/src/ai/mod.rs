@@ -156,6 +156,7 @@ fn build_claude_command(model: &str, allowed_tools: &[&str]) -> Result<Command, 
         "",
         "--disable-slash-commands",
         "--strict-mcp-config",
+        "--no-session-persistence",
     ]);
     for tool in allowed_tools {
         cmd.args(["--allowedTools", tool]);
