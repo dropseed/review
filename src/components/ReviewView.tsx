@@ -212,19 +212,30 @@ export function ReviewView({
             {/* Right: guide button + review progress */}
             <div className="flex shrink-0 items-center gap-3">
               {showStartGuide && (
-                <button
-                  type="button"
-                  onClick={handleStartGuide}
-                  disabled={guideLoading}
-                  className="guide-start-button rounded-lg px-3 py-1.5
-                             text-xs font-semibold text-guide
-                             bg-guide/[0.08] border border-guide/25
-                             hover:bg-guide/15 hover:border-guide/35
-                             transition-all duration-200
-                             disabled:opacity-50"
-                >
-                  {guideLoading ? "Starting…" : "Guided Review"}
-                </button>
+                <SimpleTooltip content="Guided Review">
+                  <button
+                    type="button"
+                    onClick={handleStartGuide}
+                    disabled={guideLoading}
+                    className="guide-start-button rounded-lg px-2 @lg:px-3 py-1.5
+                               text-xs font-semibold text-guide
+                               bg-guide/[0.08] border border-guide/25
+                               hover:bg-guide/15 hover:border-guide/35
+                               transition-all duration-200
+                               disabled:opacity-50"
+                  >
+                    <svg
+                      className="h-3.5 w-3.5 @lg:hidden"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                    <span className="hidden @lg:inline">
+                      {guideLoading ? "Starting…" : "Guided Review"}
+                    </span>
+                  </button>
+                </SimpleTooltip>
               )}
               {totalHunks > 0 ? (
                 <button

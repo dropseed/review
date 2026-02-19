@@ -60,10 +60,12 @@ export function ReviewBreadcrumb({
     <div className="flex min-w-0 items-center gap-2.5">
       <SidebarToggle />
       <div className="flex items-center gap-1.5">
-        <span className="shrink-0 text-xs font-medium text-fg-secondary">
+        <span className="hidden @md:inline shrink-0 text-xs font-medium text-fg-secondary">
           {repoName}
         </span>
-        <span className="shrink-0 text-fg-faint text-xs">/</span>
+        <span className="hidden @md:inline shrink-0 text-fg-faint text-xs">
+          /
+        </span>
         <span
           className={`shrink-0 text-xs text-fg-muted ${isPr ? "font-medium" : "font-mono"}`}
         >
@@ -82,7 +84,8 @@ export function ReviewBreadcrumb({
               className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-surface-raised transition-colors"
             >
               <span className="text-xxs text-status-modified/70 font-medium">
-                + working tree
+                <span className="@lg:hidden">+wt</span>
+                <span className="hidden @lg:inline">+ working tree</span>
               </span>
             </button>
           </SimpleTooltip>
