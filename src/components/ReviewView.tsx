@@ -81,8 +81,16 @@ export function ReviewView({
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
   const startGuide = useReviewStore((s) => s.startGuide);
   const guideLoading = useReviewStore((s) => s.guideLoading);
+  const reviewState = useReviewStore((s) => s.reviewState);
   const guideActive = changesViewMode === "guide";
-  const showStartGuide = hunks.length > 0 && !guideActive;
+  const unreviewedHunkCount = useMemo(() => {
+    const hunkStates = reviewState?.hunks;
+    return hunks.filter((h) => {
+      const s = hunkStates?.[h.id];
+      return s?.status !== "approved" && s?.status !== "rejected";
+    }).length;
+  }, [hunks, reviewState?.hunks]);
+  const showStartGuide = unreviewedHunkCount >= 4 && !guideActive;
 
   const handleStartGuide = useCallback(async () => {
     playGuideStartSound();
