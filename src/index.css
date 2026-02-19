@@ -372,6 +372,33 @@ html {
   50% { opacity: 1; transform: scale(1.12); }
 }
 
+/* Guide floating sidebar panel — gradient border + layered glow */
+.guide-floating-panel {
+  border: 1px solid transparent;
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--color-surface-panel) 95%, transparent),
+      color-mix(in srgb, var(--color-surface-panel) 95%, transparent)
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--color-guide) 30%, transparent),
+      color-mix(in srgb, var(--color-guide) 8%, transparent) 40%,
+      color-mix(in srgb, var(--color-guide) 25%, transparent)
+    );
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
+  box-shadow:
+    /* Ground shadow */
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    0 8px 20px rgba(0, 0, 0, 0.15),
+    /* Purple ambient glow (matches guide-start-button intensity) */
+    0 0 8px color-mix(in srgb, var(--color-guide) 18%, transparent),
+    0 0 24px color-mix(in srgb, var(--color-guide) 10%, transparent),
+    /* Inner top-edge highlight */
+    inset 0 1px 0 color-mix(in srgb, var(--color-guide) 10%, transparent);
+}
+
 /* Animations */
 @keyframes shimmer {
   0% {

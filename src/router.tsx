@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -24,6 +24,12 @@ import {
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
 
+const SettingsModal = lazy(() =>
+  import("./components/modals/SettingsModal").then((m) => ({
+    default: m.SettingsModal,
+  })),
+);
+
 /**
  * AppShell — layout wrapper that provides global effects and the ?repo= bootstrap.
  * Renders <Outlet /> for child routes.
@@ -32,9 +38,19 @@ function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
 
+  const [showSettings, setShowSettings] = useState(false);
+
   useEffect(() => {
     loadGlobalReviews();
   }, [loadGlobalReviews]);
+
+  // Global menu:open-settings listener (always mounted)
+  useEffect(() => {
+    const platform = getPlatformServices();
+    return platform.menuEvents.on("menu:open-settings", () =>
+      setShowSettings(true),
+    );
+  }, []);
 
   const {
     repoStatus,
@@ -97,11 +113,14 @@ function AppShell() {
       <div className="flex h-screen">
         {/* Left sidebar: TabRail (normal) or GuideSideNav (guide mode) */}
         {guideActive ? (
-          <GuideSideNav />
+          <div className="flex shrink-0 p-2">
+            <GuideSideNav />
+          </div>
         ) : (
           <TabRail
             onActivateReview={handleActivateReview}
             onNewReview={handleNewReview}
+            onOpenSettings={() => setShowSettings(true)}
           />
         )}
         <div className="flex flex-1 flex-col overflow-hidden bg-surface">
@@ -119,6 +138,15 @@ function AppShell() {
           />
         </div>
       </div>
+
+      {showSettings && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+          />
+        </Suspense>
+      )}
     </TooltipProvider>
   );
 }

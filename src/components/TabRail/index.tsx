@@ -30,9 +30,6 @@ const ComparisonPickerModal = lazy(() =>
     default: m.ComparisonPickerModal,
   })),
 );
-const SettingsModal = lazy(() =>
-  import("../modals/SettingsModal").then((m) => ({ default: m.SettingsModal })),
-);
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
 
@@ -451,26 +448,19 @@ interface TabRailProps {
     comparison: Comparison,
     githubPr?: GitHubPrRef,
   ) => Promise<void>;
+  onOpenSettings: () => void;
 }
 
 export const TabRail = memo(function TabRail({
   onActivateReview,
   onNewReview,
+  onOpenSettings,
 }: TabRailProps) {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
-  const [showSettings, setShowSettings] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const { updateAvailable, installing, installUpdate } = useAutoUpdater();
-
-  // Listen for menu:open-settings globally (TabRail is always mounted)
-  useEffect(() => {
-    const platform = getPlatformServices();
-    return platform.menuEvents.on("menu:open-settings", () =>
-      setShowSettings(true),
-    );
-  }, []);
 
   const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
   const setComparisonPickerOpen = useReviewStore(
@@ -577,7 +567,7 @@ export const TabRail = memo(function TabRail({
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setShowSettings(true)}
+                  onClick={onOpenSettings}
                   className="p-1.5 rounded text-fg-faint hover:text-fg-muted hover:bg-fg/[0.06]
                              transition-colors duration-100"
                   aria-label="Settings"
@@ -647,15 +637,6 @@ export const TabRail = memo(function TabRail({
             onClose={handleCloseModal}
             onNewReview={onNewReview}
             prefilledRepoPath={comparisonPickerRepoPath}
-          />
-        </Suspense>
-      )}
-
-      {showSettings && (
-        <Suspense fallback={null}>
-          <SettingsModal
-            isOpen={showSettings}
-            onClose={() => setShowSettings(false)}
           />
         </Suspense>
       )}

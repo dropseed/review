@@ -12,8 +12,9 @@ interface ReviewBreadcrumbProps {
 function SidebarToggle(): ReactNode {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
+  const changesViewMode = useReviewStore((s) => s.changesViewMode);
 
-  if (!collapsed) return null;
+  if (!collapsed || changesViewMode === "guide") return null;
 
   return (
     <SimpleTooltip content="Show sidebar (\u2318B)">
