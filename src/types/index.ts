@@ -352,7 +352,7 @@ export interface GroupingInput {
 
 export interface HunkGroup {
   title: string;
-  description: string;
+  description?: string;
   hunkIds: string[];
   phase?: string;
 }

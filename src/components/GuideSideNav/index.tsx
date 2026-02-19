@@ -7,7 +7,6 @@ import {
 } from "react";
 import { useReviewStore } from "../../stores";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
-import { useSidebarResize } from "../../hooks";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk } from "../../types";
 import { SummaryStats } from "../GuideView/SummaryStats";
@@ -149,12 +148,6 @@ function GroupItemOverflowMenu({
 
 export function GuideSideNav(): ReactNode {
   const progress = useReviewProgress();
-  const { sidebarWidth, handleResizeStart } = useSidebarResize({
-    sidebarPosition: "left",
-    initialWidth: 15,
-    minWidth: 12,
-    maxWidth: 30,
-  });
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
@@ -249,6 +242,26 @@ export function GuideSideNav(): ReactNode {
     stagedFilePaths,
   ]);
 
+  // Group consecutive groups that share the same phase for section headers
+  const phaseGroups = useMemo(() => {
+    const result: {
+      phase: string;
+      items: { group: (typeof reviewGroups)[0]; index: number }[];
+    }[] = [];
+    let current: (typeof result)[0] | null = null;
+    reviewGroups.forEach((group, i) => {
+      const phase = group.phase || "Changes";
+      if (!current || current.phase !== phase) {
+        current = { phase, items: [] };
+        result.push(current);
+      }
+      current.items.push({ group, index: i });
+    });
+    return result;
+  }, [reviewGroups]);
+
+  const showPhaseHeaders = phaseGroups.length > 1;
+
   // Auto-advance to next unreviewed group when current group completes
   useEffect(() => {
     if (guideContentMode !== "group" || reviewGroups.length === 0) return;
@@ -290,8 +303,8 @@ export function GuideSideNav(): ReactNode {
 
   return (
     <nav
-      className="relative flex h-full shrink-0 flex-col bg-surface border-r border-edge overflow-hidden"
-      style={{ width: `${sidebarWidth}rem` }}
+      className="guide-floating-panel relative flex h-full shrink-0 flex-col rounded-xl backdrop-blur-xl overflow-hidden"
+      style={{ width: "15rem" }}
       aria-label="Guided Review"
     >
       {/* Header */}
@@ -381,58 +394,78 @@ export function GuideSideNav(): ReactNode {
           </div>
         )}
 
-        {/* Group items */}
-        {reviewGroups.map((group, i) => {
-          const unreviewedCount = groupUnreviewedCounts.get(group.title) ?? 0;
-          const isCompleted = unreviewedCount === 0;
-          const isActive =
-            guideContentMode === "group" && activeGroupIndex === i;
-          const data = groupActionData.get(group.title);
-          return (
-            <div key={group.title} className="group flex items-center">
-              <button
-                type="button"
-                onClick={() => handleGroupClick(i)}
-                className={`flex items-start gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
-              >
-                {isCompleted ? (
-                  <span className="text-status-approved shrink-0 mt-px">
-                    <svg
-                      className="w-3 h-3"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                  </span>
-                ) : (
-                  <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums mt-px">
-                    {i + 1}
-                  </span>
-                )}
-                <span className="flex-1 text-left">{group.title}</span>
-                {!isCompleted && unreviewedCount > 0 && (
-                  <span className="text-xxs text-guide/70 tabular-nums shrink-0">
-                    {unreviewedCount}
-                  </span>
-                )}
-              </button>
-              <GroupItemOverflowMenu
-                unreviewedIds={data?.unreviewedIds ?? []}
-                reviewedIds={data?.reviewedIds ?? []}
-                onApprove={() => approveHunkIds(data?.unreviewedIds ?? [])}
-                onReject={() => rejectHunkIds(data?.unreviewedIds ?? [])}
-                onReset={() => unapproveHunkIds(data?.reviewedIds ?? [])}
-              />
-            </div>
-          );
-        })}
+        {/* Group items (with phase headers) */}
+        {phaseGroups.map(({ phase, items }) => (
+          <div key={phase}>
+            {showPhaseHeaders && (
+              <div className="px-3 pt-2 pb-0.5">
+                <span className="text-xxs font-medium text-fg-faint uppercase tracking-wider">
+                  {phase}
+                </span>
+              </div>
+            )}
+            {items.map(({ group, index: i }) => {
+              const unreviewedCount =
+                groupUnreviewedCounts.get(group.title) ?? 0;
+              const isCompleted = unreviewedCount === 0;
+              const isActive =
+                guideContentMode === "group" && activeGroupIndex === i;
+              const data = groupActionData.get(group.title);
+              return (
+                <div key={group.title} className="group flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => handleGroupClick(i)}
+                    className={`flex items-start gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
+                  >
+                    {isCompleted ? (
+                      <span className="text-status-approved shrink-0 mt-px">
+                        <svg
+                          className="w-3 h-3"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="w-4 text-center text-xxs text-fg-faint shrink-0 tabular-nums mt-px">
+                        {i + 1}
+                      </span>
+                    )}
+                    <span className="flex-1 text-left">{group.title}</span>
+                    {!isCompleted && unreviewedCount > 0 && (
+                      <span className="text-xxs text-guide/70 tabular-nums shrink-0">
+                        {unreviewedCount}
+                      </span>
+                    )}
+                  </button>
+                  <GroupItemOverflowMenu
+                    unreviewedIds={data?.unreviewedIds ?? []}
+                    reviewedIds={data?.reviewedIds ?? []}
+                    onApprove={() => approveHunkIds(data?.unreviewedIds ?? [])}
+                    onReject={() => rejectHunkIds(data?.unreviewedIds ?? [])}
+                    onReset={() => unapproveHunkIds(data?.reviewedIds ?? [])}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+
+        {/* Loading more groups indicator */}
+        {groupingLoading && hasGroups && (
+          <div className="flex items-center gap-2 px-3 py-1.5 text-fg-muted">
+            <Spinner />
+            <span className="text-xxs">Loading more groups…</span>
+          </div>
+        )}
 
         {/* All groups reviewed */}
         {hasGroups && totalGroupUnreviewed === 0 && (
@@ -443,15 +476,6 @@ export function GuideSideNav(): ReactNode {
           </div>
         )}
       </div>
-
-      {/* Resize handle (right edge) */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        onMouseDown={handleResizeStart}
-        className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-guide/50 active:bg-guide"
-      />
     </nav>
   );
 }

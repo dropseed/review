@@ -1,6 +1,6 @@
 pub mod grouping;
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use thiserror::Error;
@@ -92,19 +92,14 @@ pub fn check_claude_available() -> bool {
     find_claude_executable().is_some()
 }
 
-/// Verify Claude is available when not using a custom command.
-///
-/// When a custom command is provided, Claude CLI is not needed.
-/// Otherwise, this returns `ClaudeNotFound` if the CLI cannot be located.
-pub(crate) fn ensure_claude_available(custom_command: Option<&str>) -> Result<(), ClaudeError> {
-    if custom_command.is_none() {
-        find_claude_executable().ok_or(ClaudeError::ClaudeNotFound)?;
-    }
+/// Verify Claude CLI is available, returning `ClaudeNotFound` if not.
+pub(crate) fn ensure_claude_available() -> Result<(), ClaudeError> {
+    find_claude_executable().ok_or(ClaudeError::ClaudeNotFound)?;
     Ok(())
 }
 
 /// Find the claude executable in PATH
-pub(crate) fn find_claude_executable() -> Option<String> {
+pub fn find_claude_executable() -> Option<String> {
     // Try common locations
     let candidates = if cfg!(target_os = "windows") {
         vec!["claude.exe", "claude.cmd", "claude.bat"]
@@ -149,57 +144,53 @@ pub(crate) fn find_claude_executable() -> Option<String> {
     None
 }
 
-/// Run claude CLI with the given prompt and model, or use a custom command.
+/// Build a base `Command` for the Claude CLI with common flags applied.
+fn build_claude_command(model: &str, allowed_tools: &[&str]) -> Result<Command, ClaudeError> {
+    let claude_path = find_claude_executable().ok_or(ClaudeError::ClaudeNotFound)?;
+    let mut cmd = Command::new(claude_path);
+    cmd.args([
+        "--print",
+        "--model",
+        model,
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+    ]);
+    for tool in allowed_tools {
+        cmd.args(["--allowedTools", tool]);
+    }
+    Ok(cmd)
+}
+
+/// Format a detail string for a failed Claude process.
+fn format_exit_error(stderr: &str, stdout: &str, status: &std::process::ExitStatus) -> String {
+    let stderr_trimmed = stderr.trim();
+    let stdout_trimmed = stdout.trim();
+    if !stderr_trimmed.is_empty() {
+        stderr_trimmed.to_owned()
+    } else if !stdout_trimmed.is_empty() {
+        stdout_trimmed.to_owned()
+    } else {
+        status
+            .code()
+            .map(|c| format!("exit code {c}"))
+            .unwrap_or_else(|| "killed by signal".to_owned())
+    }
+}
+
+/// Run the Claude CLI with the given prompt and model.
 ///
 /// The prompt is piped via stdin to avoid OS argument length limits
 /// (`ARG_MAX` ~1MB on macOS) which caused failures on large reviews.
-///
-/// # Security Warning
-///
-/// The `custom_command` parameter allows arbitrary shell command execution.
-/// This is intentionally provided to allow users to use alternative AI backends
-/// or custom wrappers, but it should only be set by the user through trusted
-/// configuration (the app's settings UI). The command receives the full prompt
-/// via stdin, so ensure the command itself is trusted.
 pub(crate) fn run_claude_with_model(
     prompt: &str,
     cwd: &Path,
     model: &str,
-    custom_command: Option<&str>,
     allowed_tools: &[&str],
 ) -> Result<String, ClaudeError> {
-    // Build the Command differently depending on custom vs default CLI,
-    // but share all the spawn/stdin/wait logic below.
-    let mut cmd = if let Some(custom) = custom_command {
-        let parts: Vec<&str> = custom.split_whitespace().collect();
-        if parts.is_empty() {
-            return Err(ClaudeError::CommandFailed(
-                "Custom command is empty".to_owned(),
-            ));
-        }
-        let mut c = Command::new(parts[0]);
-        c.args(&parts[1..]);
-        c
-    } else {
-        let claude_path = find_claude_executable().ok_or(ClaudeError::ClaudeNotFound)?;
-        let mut c = Command::new(claude_path);
-        c.args([
-            "--print",
-            "--model",
-            model,
-            "--setting-sources",
-            "",
-            "--disable-slash-commands",
-            "--strict-mcp-config",
-        ]);
-        for tool in allowed_tools {
-            c.args(["--allowedTools", tool]);
-        }
-        c
-    };
+    let mut cmd = build_claude_command(model, allowed_tools)?;
 
-    // Pipe the prompt via stdin to avoid OS argument length limits
-    // (ARG_MAX ~1MB on macOS) which caused failures on large reviews.
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -220,23 +211,13 @@ pub(crate) fn run_claude_with_model(
         .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let code = output
-            .status
-            .code()
-            .map(|c| format!("exit code {c}"))
-            .unwrap_or_else(|| "killed by signal".to_string());
-
-        let detail = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            code
-        };
-
-        return Err(ClaudeError::CommandFailed(detail));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(ClaudeError::CommandFailed(format_exit_error(
+            &stderr,
+            &stdout,
+            &output.status,
+        )));
     }
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
@@ -250,4 +231,141 @@ pub(crate) fn run_claude_with_model(
     }
 
     Ok(stdout)
+}
+
+/// Run the Claude CLI with streaming stdout via `--output-format stream-json`.
+///
+/// Uses NDJSON streaming output so that each token is flushed immediately
+/// (avoids pipe-buffering that defeats streaming with plain `--print`).
+/// Calls `on_text` with each text delta as it arrives.
+/// Returns the full accumulated text output when the process exits.
+///
+/// Large diffs that use temp files + Read tool fall back to `run_claude_with_model`
+/// since tool calls break the JSON stream.
+pub fn run_claude_streaming(
+    prompt: &str,
+    cwd: &Path,
+    model: &str,
+    allowed_tools: &[&str],
+    on_text: &mut dyn FnMut(&str),
+) -> Result<String, ClaudeError> {
+    let mut cmd = build_claude_command(model, allowed_tools)?;
+    cmd.args([
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+    ]);
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .current_dir(cwd)
+        .env_remove("CLAUDECODE")
+        .spawn()
+        .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(prompt.as_bytes()).map_err(|e| {
+            ClaudeError::CommandFailed(format!("Failed to write prompt to stdin: {e}"))
+        })?;
+    }
+
+    // Take both pipes before reading either — we must drain stderr
+    // concurrently to avoid a deadlock when the OS pipe buffer fills up.
+    let stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| ClaudeError::CommandFailed("Failed to capture stdout".to_owned()))?;
+    let stderr_pipe = child.stderr.take();
+
+    // Drain stderr on a background thread to prevent pipe buffer deadlock
+    let stderr_thread = std::thread::spawn(move || {
+        let mut stderr_output = String::new();
+        if let Some(mut pipe) = stderr_pipe {
+            use std::io::Read;
+            let _ = pipe.read_to_string(&mut stderr_output);
+        }
+        stderr_output
+    });
+
+    // Read NDJSON events line-by-line as they stream in.
+    //
+    // With `--include-partial-messages`, Claude CLI emits token-level events:
+    //   {"type":"stream_event","event":{"type":"content_block_delta",
+    //    "delta":{"type":"text_delta","text":"..."}}}
+    //
+    // We also handle the final result event:
+    //   {"type":"result","result":"full text here"}
+    let reader = BufReader::new(stdout_pipe);
+    let mut full_output = String::new();
+
+    for line_result in reader.lines() {
+        let line = line_result
+            .map_err(|e| ClaudeError::CommandFailed(format!("Error reading stdout: {e}")))?;
+
+        let event: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match event_type {
+            "stream_event" => {
+                // Token-level streaming: extract text deltas
+                if let Some(text) = event
+                    .get("event")
+                    .and_then(|e| e.get("delta"))
+                    .and_then(|d| d.get("text"))
+                    .and_then(|t| t.as_str())
+                {
+                    on_text(text);
+                    full_output.push_str(text);
+                }
+            }
+            "result" => {
+                // Final result — use as canonical output, emit any missing tail
+                if let Some(result_text) = event.get("result").and_then(|r| r.as_str()) {
+                    if result_text.len() > full_output.len() {
+                        let delta = &result_text[full_output.len()..];
+                        if !delta.is_empty() {
+                            on_text(delta);
+                        }
+                    }
+                    full_output = result_text.to_owned();
+                }
+            }
+            _ => {} // system, rate_limit_event, assistant, thinking — skip
+        }
+    }
+
+    let stderr_str = stderr_thread.join().unwrap_or_default();
+
+    // Wait for the process to finish
+    let status = child
+        .wait()
+        .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
+
+    if !status.success() {
+        return Err(ClaudeError::CommandFailed(format_exit_error(
+            &stderr_str,
+            &full_output,
+            &status,
+        )));
+    }
+
+    if !stderr_str.trim().is_empty() {
+        eprintln!(
+            "[run_claude_streaming] stderr (command succeeded): {}",
+            stderr_str.trim()
+        );
+    }
+
+    if full_output.trim().is_empty() {
+        return Err(ClaudeError::EmptyResponse);
+    }
+
+    Ok(full_output)
 }

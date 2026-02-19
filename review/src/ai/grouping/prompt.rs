@@ -4,6 +4,17 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+/// How diff content is provided to the AI model.
+pub enum DiffContentMode {
+    /// Diff content is inlined directly in the prompt (faster, no tool use needed).
+    Inline,
+    /// Diff content is written to temp files; the model uses the Read tool.
+    TempFiles(HashMap<String, PathBuf>),
+}
+
+/// Maximum lines per hunk when inlining diff content.
+const INLINE_MAX_LINES_PER_HUNK: usize = 300;
+
 /// Input for grouping generation — one per hunk.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GroupingInput {
@@ -60,16 +71,24 @@ fn format_symbol_def(def: &HunkSymbolDef) -> String {
 
 /// Build the prompt sent to Claude for hunk grouping.
 ///
-/// Hunk diff content is NOT inlined to keep the prompt within token limits.
-/// Instead, each hunk's content is written to a temp file and Claude is given
-/// the `Read` tool to inspect hunks as needed. `hunk_file_paths` maps each
-/// hunk ID to its temp file path.
+/// In `Inline` mode, hunk diff content is embedded directly in the prompt
+/// (faster, no tool round-trips). In `TempFiles` mode, each hunk's content is
+/// written to a temp file and the model is given the Read tool to inspect them.
 pub fn build_grouping_prompt(
     hunks: &[GroupingInput],
     modified_symbols: &[ModifiedSymbolEntry],
-    hunk_file_paths: &HashMap<String, PathBuf>,
+    content_mode: &DiffContentMode,
 ) -> String {
     let mut prompt = String::new();
+
+    let read_tool_instruction = match content_mode {
+        DiffContentMode::TempFiles(_) => {
+            "\n- Each hunk's diff content is in a file listed below. Use the Read tool to \
+           inspect hunks when the metadata (labels, symbols, file path) is not enough \
+           to decide how to group them. You do NOT need to read every hunk.\n"
+        }
+        DiffContentMode::Inline => "",
+    };
 
     let _ = write!(
         prompt,
@@ -83,25 +102,26 @@ pub fn build_grouping_prompt(
            If in doubt, merge small groups together.\n\
          - Multiple hunks in the same file that contribute to the same feature or \
            concern should typically be grouped together, not split across groups.\n\
-         - Even without symbol data, read the diff content to identify shared names, \
+         - Even without symbol data, examine the diff content to identify shared names, \
            patterns, or types across hunks (e.g., a method defined in one hunk and \
            called in another). Group definition + usage together.\n\
-         - Include every hunk ID exactly once.\n\
-         - Each group needs a short title and a one-sentence description.\n\
          - Use symbol information to group related changes across files \
            (e.g., a function definition and its call sites).\n\
          - For hunks in files without grammar support, check the glossary \
            to identify potential symbol references in the diff content.\n\
-         - Assign each group a phase name. Phases tell a narrative — the reviewer reads Phase 1 first, then Phase 2, etc. \
-           Common phase patterns: \"Setup\" (imports, dependencies, scaffolding), \"Core changes\" (main logic), \
-           \"Integration\" (wiring, call sites), \"Tests\" (test updates), \"Cleanup\" (formatting, docs). \
-           Use names that fit the actual changes — not every phase will apply.\n\
-         - Order groups within each phase by dependency (if B uses something A introduces, A comes first).\n\
-         - Output JSON only — an array of objects with keys: title, description, hunkIds, phase.\n\
+         - Include every hunk ID exactly once.\n\
+         - Each group needs a short title. Optionally include a one-sentence description.\n\
+         - Assign each group a `phase` name identifying the broader feature or topic \
+           it belongs to (e.g., \"Authentication\", \"API client\", \"Database schema\"). \
+           Use phases to show which groups are interconnected. \
+           Unrelated groups should have different phases.\n\
+         - Groups sharing a phase must be adjacent in the output array.\n\
+         - Order groups so a reviewer reads foundational changes first, then dependent changes.\n\
+         - Output JSON only — an array of objects with keys: title, hunkIds, phase, and optionally description.\n\
          - Do NOT wrap the JSON in markdown code fences or any other text.\n\
-         - Each hunk's diff content is in a file listed below. Use the Read tool to \
-           inspect hunks when the metadata (labels, symbols, file path) is not enough \
-           to decide how to group them. You do NOT need to read every hunk.\n\n"
+         - Output the JSON array with one group object per line for readability. \
+           Begin outputting groups as soon as you've decided their contents.\n\
+         {read_tool_instruction}\n"
     );
 
     let file_count = hunks
@@ -163,8 +183,34 @@ pub fn build_grouping_prompt(
             prompt.push_str(hint);
         }
 
-        if let Some(path) = hunk_file_paths.get(&hunk.id) {
-            let _ = writeln!(prompt, "Diff content: `{}`", path.display());
+        match content_mode {
+            DiffContentMode::Inline => {
+                let lines: Vec<&str> = hunk.content.lines().collect();
+                let total = lines.len();
+                let truncated = total > INLINE_MAX_LINES_PER_HUNK;
+                let display_lines = if truncated {
+                    &lines[..INLINE_MAX_LINES_PER_HUNK]
+                } else {
+                    &lines[..]
+                };
+                prompt.push_str("```diff\n");
+                for line in display_lines {
+                    let _ = writeln!(prompt, "{}", line);
+                }
+                if truncated {
+                    let _ = writeln!(
+                        prompt,
+                        "[...truncated, {} more lines]",
+                        total - INLINE_MAX_LINES_PER_HUNK
+                    );
+                }
+                prompt.push_str("```\n");
+            }
+            DiffContentMode::TempFiles(paths) => {
+                if let Some(path) = paths.get(&hunk.id) {
+                    let _ = writeln!(prompt, "Diff content: `{}`", path.display());
+                }
+            }
         }
         prompt.push('\n');
     }

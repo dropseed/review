@@ -7,6 +7,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HunkGroup {
     pub title: String,
+    #[serde(default)]
     pub description: String,
     #[serde(rename = "hunkIds")]
     pub hunk_ids: Vec<String>,

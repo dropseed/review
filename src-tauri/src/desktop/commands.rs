@@ -2109,39 +2109,49 @@ fn claude_call_timeout_secs(num_hunks: usize) -> u64 {
 
 #[tauri::command]
 pub async fn generate_hunk_grouping(
+    app: tauri::AppHandle,
     repo_path: String,
     hunks: Vec<GroupingInput>,
-    model: Option<String>,
-    command: Option<String>,
     modified_symbols: Option<Vec<ModifiedSymbolEntry>>,
 ) -> Result<Vec<HunkGroup>, String> {
     use std::time::Duration;
+    use tauri::Emitter;
     use tokio::time::timeout;
 
-    let model = model.unwrap_or_else(|| "sonnet".to_owned());
     let symbols = modified_symbols.unwrap_or_default();
 
     debug!(
-        "[generate_hunk_grouping] repo_path={}, hunks={}, model={}, command={:?}, symbols={}",
+        "[generate_hunk_grouping] repo_path={}, hunks={}, symbols={}",
         repo_path,
         hunks.len(),
-        model,
-        command,
         symbols.len()
     );
 
     let repo_path_buf = PathBuf::from(&repo_path);
     let timeout_secs = claude_call_timeout_secs(hunks.len());
 
+    // Streaming mode: emit each group as a Tauri event as it arrives
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HunkGroup>();
+
+    // Forward groups from the channel to Tauri events
+    let emit_handle = app.clone();
+    let emit_task = tokio::spawn(async move {
+        while let Some(group) = rx.recv().await {
+            let _ = emit_handle.emit("grouping:group", &group);
+        }
+    });
+
     let result = timeout(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            review::ai::grouping::generate_grouping(
+            let mut on_group = |group: &HunkGroup| {
+                let _ = tx.send(group.clone());
+            };
+            review::ai::grouping::generate_grouping_streaming(
                 &hunks,
                 &repo_path_buf,
-                &model,
-                command.as_deref(),
                 &symbols,
+                &mut on_group,
             )
         }),
     )
@@ -2149,6 +2159,9 @@ pub async fn generate_hunk_grouping(
     .map_err(|_| format!("Hunk grouping generation timed out after {timeout_secs} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
+
+    // Wait for all events to be emitted
+    let _ = emit_task.await;
 
     info!("[generate_hunk_grouping] SUCCESS: {} groups", result.len());
     Ok(result)

@@ -16,7 +16,10 @@ scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
 scripts/dev              # Run in development mode with hot reload
 
 # Testing
-scripts/test             # TypeScript type check + Rust tests
+scripts/test             # TypeScript type check + Rust tests (fast, no API calls)
+
+# Integration tests (require `claude` CLI, make real API calls, ~10s each)
+cargo test -p review --test test_streaming -- --nocapture --ignored
 
 # Linting/Formatting
 scripts/fix              # Auto-fix: prettier + cargo fmt

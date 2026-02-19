@@ -275,8 +275,26 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       const comparisonKey = comparison.key;
 
-      set({ groupingLoading: true, groupingError: null });
+      // Clear previous groups so streaming events start fresh
+      set({ groupingLoading: true, groupingError: null, reviewGroups: [] });
       startActivity("generate-grouping", "Generating groups", 55);
+
+      // Shared finalization: persist groups to review state and update store
+      async function finalizeGroups(groups: HunkGroup[]): Promise<void> {
+        const currentState = get().reviewState;
+        if (!currentState) return;
+        set({
+          reviewState: updateReviewGuide(currentState, hunks, {
+            groups,
+            hunkIds: hunks.map((h) => h.id).sort(),
+            generatedAt: new Date().toISOString(),
+          }),
+          reviewGroups: groups,
+          identicalHunkIds: buildIdenticalHunkIds(hunks),
+          groupingLoading: false,
+        });
+        await saveReviewState();
+      }
 
       try {
         const { hunkDefines, hunkReferences, fileHasGrammar, modifiedSymbols } =
@@ -299,31 +317,50 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           hasGrammar: fileHasGrammar.get(hunk.filePath),
         }));
 
-        const groups = await client.generateGrouping(repoPath, groupingInputs, {
-          modifiedSymbols:
-            modifiedSymbols.length > 0 ? modifiedSymbols : undefined,
+        // Listen for streaming group events from Rust
+        const unlisten = client.onGroupingGroup((group) => {
+          if (get().comparison.key !== comparisonKey) return;
+          set((prev) => {
+            const update: Record<string, unknown> = {
+              reviewGroups: [...prev.reviewGroups, group],
+            };
+            // Auto-activate the first group as soon as it arrives
+            if (prev.reviewGroups.length === 0) {
+              update.guideContentMode = "group";
+              update.activeGroupIndex = 0;
+            }
+            return update;
+          });
         });
+
+        let groups: HunkGroup[];
+        try {
+          groups = await client.generateGrouping(repoPath, groupingInputs, {
+            modifiedSymbols:
+              modifiedSymbols.length > 0 ? modifiedSymbols : undefined,
+          });
+        } finally {
+          unlisten();
+        }
 
         if (get().comparison.key !== comparisonKey) return;
 
-        const identicalHunkIds = buildIdenticalHunkIds(hunks);
-
-        const currentState = get().reviewState;
-        if (!currentState) return;
-
-        set({
-          reviewState: updateReviewGuide(currentState, hunks, {
-            groups,
-            hunkIds: hunks.map((h) => h.id).sort(),
-            generatedAt: new Date().toISOString(),
-          }),
-          reviewGroups: groups,
-          identicalHunkIds,
-          groupingLoading: false,
-        });
-        await saveReviewState();
+        // Persist the final groups (includes missing-hunk fallback group)
+        await finalizeGroups(groups);
       } catch (err) {
         console.error("[generateGrouping] Failed:", err);
+
+        // If streaming delivered groups before the invoke failed (e.g. timeout),
+        // treat them as a usable result instead of showing an error.
+        const streamedGroups = get().reviewGroups;
+        if (
+          streamedGroups.length > 0 &&
+          get().comparison.key === comparisonKey
+        ) {
+          await finalizeGroups(streamedGroups);
+          return;
+        }
+
         set({
           groupingLoading: false,
           groupingError: err instanceof Error ? err.message : String(err),

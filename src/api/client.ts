@@ -217,8 +217,11 @@ export interface ApiClient {
   generateGrouping(
     repoPath: string,
     hunks: GroupingInput[],
-    options?: { command?: string; modifiedSymbols?: ModifiedSymbolEntry[] },
+    options?: { modifiedSymbols?: ModifiedSymbolEntry[] },
   ): Promise<HunkGroup[]>;
+
+  /** Listen for streaming grouping group events (returns unsubscribe fn) */
+  onGroupingGroup(callback: (group: HunkGroup) => void): () => void;
 
   // ----- Trust patterns -----
 
