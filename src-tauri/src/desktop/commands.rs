@@ -1649,16 +1649,22 @@ pub async fn get_file_symbols(
 pub async fn find_symbol_definitions(
     repo_path: String,
     symbol_name: String,
+    git_ref: Option<String>,
 ) -> Result<Vec<symbols::SymbolDefinition>, String> {
     debug!(
-        "[find_symbol_definitions] repo_path={}, symbol_name={}",
-        repo_path, symbol_name
+        "[find_symbol_definitions] repo_path={}, symbol_name={}, git_ref={:?}",
+        repo_path, symbol_name, git_ref
     );
 
     tokio::task::spawn_blocking(move || {
-        // Use git grep to find candidate files containing the symbol name
-        let output = std::process::Command::new("git")
-            .args(["grep", "-l", "-F", "--", &symbol_name])
+        // Use git grep to find candidate files containing the symbol name.
+        // When a git_ref is provided, search that tree instead of the working tree.
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["grep", "-l", "-F", "--", &symbol_name]);
+        if let Some(ref r) = git_ref {
+            cmd.arg(r);
+        }
+        let output = cmd
             .current_dir(&repo_path)
             .output()
             .map_err(|e| format!("Failed to run git grep: {e}"))?;
@@ -1666,7 +1672,14 @@ pub async fn find_symbol_definitions(
         let candidate_files: Vec<String> = if output.status.success() {
             String::from_utf8_lossy(&output.stdout)
                 .lines()
-                .map(|l| l.to_string())
+                .map(|l| {
+                    // When searching a ref, git grep outputs "ref:path" — strip the ref prefix
+                    if git_ref.is_some() {
+                        l.splitn(2, ':').nth(1).unwrap_or(l).to_string()
+                    } else {
+                        l.to_string()
+                    }
+                })
                 .collect()
         } else {
             Vec::new()
@@ -1695,11 +1708,26 @@ pub async fn find_symbol_definitions(
                     let repo = &repo_path;
                     let name = &symbol_name;
                     let fp = file_path.as_str();
+                    let r = &git_ref;
                     scope.spawn(move || {
-                        let full_path = std::path::PathBuf::from(repo).join(fp);
-                        let content = match std::fs::read_to_string(&full_path) {
-                            Ok(c) => c,
-                            Err(_) => return Vec::new(),
+                        let content = if let Some(ref git_r) = r {
+                            // Read file content from the git ref
+                            let show_output = std::process::Command::new("git")
+                                .args(["show", &format!("{git_r}:{fp}")])
+                                .current_dir(repo)
+                                .output();
+                            match show_output {
+                                Ok(o) if o.status.success() => {
+                                    String::from_utf8_lossy(&o.stdout).to_string()
+                                }
+                                _ => return Vec::new(),
+                            }
+                        } else {
+                            let full_path = std::path::PathBuf::from(repo).join(fp);
+                            match std::fs::read_to_string(&full_path) {
+                                Ok(c) => c,
+                                Err(_) => return Vec::new(),
+                            }
                         };
                         symbols::extractor::find_definitions(&content, fp, name)
                     })
@@ -2098,9 +2126,9 @@ pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryCo
 }
 
 /// Base timeout in seconds for single-call Claude operations (grouping, summary).
-const CLAUDE_CALL_BASE_TIMEOUT_SECS: u64 = 120;
+const CLAUDE_CALL_BASE_TIMEOUT_SECS: u64 = 180;
 /// Additional timeout seconds per hunk for single-call Claude operations.
-const CLAUDE_CALL_SECS_PER_HUNK: u64 = 1;
+const CLAUDE_CALL_SECS_PER_HUNK: u64 = 2;
 
 /// Compute a timeout that scales with the number of hunks being processed.
 fn claude_call_timeout_secs(num_hunks: usize) -> u64 {

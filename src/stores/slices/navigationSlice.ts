@@ -88,6 +88,12 @@ export interface NavigationSlice {
   // Request a files panel tab switch from outside the panel
   requestedFilesPanelTab: string | null;
   clearRequestedFilesPanelTab: () => void;
+
+  // Flag for symbol navigation to trigger history push instead of replace
+  isProgrammaticNavigation: boolean;
+
+  // Whether there's a pushed history entry to go back to
+  canGoBack: boolean;
 }
 
 /** Check whether a hunk in the given file is unreviewed, using the current review context. */
@@ -431,4 +437,10 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Requested files panel tab
   requestedFilesPanelTab: null,
   clearRequestedFilesPanelTab: () => set({ requestedFilesPanelTab: null }),
+
+  // Programmatic navigation flag
+  isProgrammaticNavigation: false,
+
+  // Back navigation
+  canGoBack: false,
 });

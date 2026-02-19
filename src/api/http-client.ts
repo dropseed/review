@@ -550,6 +550,7 @@ export class HttpClient implements ApiClient {
   async findSymbolDefinitions(
     _repoPath: string,
     _symbolName: string,
+    _gitRef?: string,
   ): Promise<SymbolDefinition[]> {
     console.warn("[HttpClient] findSymbolDefinitions not implemented");
     return [];

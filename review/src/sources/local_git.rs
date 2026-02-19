@@ -941,35 +941,41 @@ fn build_file_tree(
     let symlink_info: HashMap<String, SymlinkInfo> = if let Some(repo) = repo_path {
         all_files
             .iter()
-            .filter_map(|path| {
+            .map(|path| {
                 let full_path = repo.join(path);
-                let metadata = fs::symlink_metadata(&full_path).ok()?;
-                let is_symlink = metadata.file_type().is_symlink();
-
-                if is_symlink {
-                    // Check if target exists and get its type
-                    let target_meta = fs::metadata(&full_path).ok()?;
-                    let target = fs::read_link(&full_path)
-                        .ok()
-                        .map(|p| p.to_string_lossy().to_string());
-                    Some((
-                        path.clone(),
-                        SymlinkInfo {
-                            is_symlink: true,
-                            target,
-                            target_is_dir: target_meta.is_dir(),
-                        },
-                    ))
-                } else {
-                    Some((
-                        path.clone(),
+                let info = match fs::symlink_metadata(&full_path) {
+                    Ok(metadata) => {
+                        let is_symlink = metadata.file_type().is_symlink();
+                        if is_symlink {
+                            let target_is_dir = fs::metadata(&full_path)
+                                .map(|m| m.is_dir())
+                                .unwrap_or(false);
+                            let target = fs::read_link(&full_path)
+                                .ok()
+                                .map(|p| p.to_string_lossy().to_string());
+                            SymlinkInfo {
+                                is_symlink: true,
+                                target,
+                                target_is_dir,
+                            }
+                        } else {
+                            SymlinkInfo {
+                                is_symlink: false,
+                                target: None,
+                                target_is_dir: false,
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // File doesn't exist on disk (e.g., deleted file) — treat as regular file
                         SymlinkInfo {
                             is_symlink: false,
                             target: None,
                             target_is_dir: false,
-                        },
-                    ))
-                }
+                        }
+                    }
+                };
+                (path.clone(), info)
             })
             .collect()
     } else {

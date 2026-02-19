@@ -83,7 +83,13 @@ export function useFileRouteSync() {
 
     // Only navigate if the path actually changed
     if (location.pathname !== targetPath) {
-      runSync(() => navigate(targetPath, { replace: true }));
+      const { isProgrammaticNavigation } = useReviewStore.getState();
+      runSync(() =>
+        navigate(targetPath, { replace: !isProgrammaticNavigation }),
+      );
+      if (isProgrammaticNavigation) {
+        useReviewStore.setState({ canGoBack: true });
+      }
     }
   }, [
     selectedFile,

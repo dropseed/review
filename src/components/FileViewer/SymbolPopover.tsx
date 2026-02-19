@@ -1,17 +1,18 @@
 import { useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { SymbolDefinition, SymbolKind } from "../../types";
+import type { SymbolKind } from "../../types";
+import type { EnrichedDefinition } from "../../hooks/useSymbolNavigation";
 import type { SymbolReferenceInDiff } from "../../utils/findSymbolReferencesInDiff";
 
 interface SymbolPopoverProps {
   open: boolean;
   position: { x: number; y: number };
   symbolName: string;
-  definitions: SymbolDefinition[];
+  definitions: EnrichedDefinition[];
   references: SymbolReferenceInDiff[];
   loading: boolean;
   onClose: () => void;
-  onNavigateToDefinition: (def: SymbolDefinition) => void;
+  onNavigateToDefinition: (def: EnrichedDefinition) => void;
   onNavigateToReference: (ref: SymbolReferenceInDiff) => void;
 }
 
@@ -49,6 +50,28 @@ function SymbolKindBadge({ kind }: { kind: SymbolKind }) {
       {KIND_LABELS[kind] ?? kind}
     </span>
   );
+}
+
+function getChangeTypeBadgeClass(changeType: string): string {
+  switch (changeType) {
+    case "added":
+      return "bg-status-approved/15 text-status-approved";
+    case "removed":
+      return "bg-status-rejected/15 text-status-rejected";
+    default:
+      return "bg-status-modified/15 text-status-modified";
+  }
+}
+
+function getReferenceSideClass(side: string): string {
+  switch (side) {
+    case "added":
+      return "bg-status-approved";
+    case "removed":
+      return "bg-status-rejected";
+    default:
+      return "bg-fg-muted";
+  }
 }
 
 function truncatePath(path: string, maxLen = 50): string {
@@ -136,7 +159,7 @@ export function SymbolPopover({
 
   // Position the panel near the click, clamped to the viewport.
   // If there isn't enough room below, flip above the click point.
-  const panelWidth = 320; // w-80 = 20rem = 320px
+  const panelWidth = 384; // w-96 = 24rem = 384px
   const panelMaxHeight = 320; // max-h-80 = 20rem = 320px
   const gap = 8;
   const left = Math.min(position.x, window.innerWidth - panelWidth - gap);
@@ -150,7 +173,7 @@ export function SymbolPopover({
     <div
       ref={contentRef}
       style={{ position: "fixed", left, top, zIndex: 50 }}
-      className="w-80 max-h-80 overflow-auto rounded-lg border border-edge-default/50 bg-surface-panel/95 backdrop-blur-xl shadow-xl shadow-black/40 outline-hidden animate-in fade-in-0 zoom-in-95"
+      className="w-96 max-h-80 overflow-auto rounded-lg border border-edge-default/50 bg-surface-panel/95 backdrop-blur-xl shadow-xl shadow-black/40 outline-hidden animate-in fade-in-0 zoom-in-95"
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-edge/50 px-3 py-2">
@@ -186,9 +209,16 @@ export function SymbolPopover({
                   <span className="truncate text-fg-secondary font-mono">
                     {truncatePath(def.filePath)}
                   </span>
-                  <span className="ml-auto shrink-0 text-fg-muted">
+                  <span className="shrink-0 text-fg-muted">
                     :{def.startLine}
                   </span>
+                  {def.changeType && (
+                    <span
+                      className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-medium leading-none ${getChangeTypeBadgeClass(def.changeType)}`}
+                    >
+                      {def.changeType}
+                    </span>
+                  )}
                 </button>
               ))
             )}
@@ -211,11 +241,14 @@ export function SymbolPopover({
                   className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-raised/60 focus:bg-surface-raised/60 focus:outline-none transition-colors"
                   onClick={() => onNavigateToReference(ref)}
                 >
-                  <span className="truncate text-fg-muted font-mono shrink-0">
+                  <span
+                    className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${getReferenceSideClass(ref.side)}`}
+                  />
+                  <span className="shrink-0 text-fg-muted font-mono">
                     {truncatePath(ref.filePath)}
                     <span className="text-fg-muted">:{ref.lineNumber}</span>
                   </span>
-                  <span className="truncate text-fg-faint font-mono">
+                  <span className="min-w-0 truncate text-fg-faint font-mono">
                     {ref.lineContent.trim()}
                   </span>
                 </button>

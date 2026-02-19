@@ -250,6 +250,7 @@ export interface ApiClient {
   findSymbolDefinitions(
     repoPath: string,
     symbolName: string,
+    gitRef?: string,
   ): Promise<SymbolDefinition[]>;
 
   /** Extract all symbols from a file using tree-sitter */

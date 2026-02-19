@@ -1,6 +1,7 @@
 import { memo, useMemo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
+import { useNavigate } from "react-router-dom";
 import { Breadcrumbs } from "../Breadcrumbs";
 import { getPlatformServices } from "../../platform";
 import {
@@ -118,6 +119,9 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   isWorkingTreeMode,
   onExitWorkingTreeMode,
 }: FileViewerToolbarProps) {
+  const routerNavigate = useNavigate();
+  const canGoBack = useReviewStore((s) => s.canGoBack);
+
   const repoPath = useReviewStore((s) => s.repoPath);
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
@@ -283,6 +287,27 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
       }`}
     >
       <div className="flex min-w-0 items-center gap-2">
+        {canGoBack && (
+          <SimpleTooltip content="Go back">
+            <button
+              onClick={() => routerNavigate(-1)}
+              className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+              aria-label="Go back"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+            </button>
+          </SimpleTooltip>
+        )}
         <Breadcrumbs
           filePath={filePath}
           onNavigateToDirectory={revealDirectoryInTree}

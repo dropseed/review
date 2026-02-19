@@ -470,6 +470,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     saveHunkForLater: (hunkId) => {
       pushHunkUndo(get, hunkId);
       updateHunkStatuses(get, set, [hunkId], "saved_for_later");
+      get().nextHunkInFile();
     },
 
     unsaveHunkForLater: (hunkId) => {

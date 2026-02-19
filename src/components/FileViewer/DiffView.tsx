@@ -28,7 +28,7 @@ import {
   TrustedHunkBadge,
   WorkingTreeHunkPanel,
 } from "./annotations";
-import { getFirstChangedLine } from "./hunkUtils";
+import { getLastChangedLine } from "./hunkUtils";
 import type { SupportedLanguages } from "./languageMap";
 
 // Error boundary to catch rendering errors
@@ -220,7 +220,7 @@ export function DiffView({
     if (!targetHunk) return;
     if (newAnnotationLine) return;
 
-    const { lineNumber, side } = getFirstChangedLine(targetHunk);
+    const { lineNumber, side } = getLastChangedLine(targetHunk);
     setNewAnnotationLine({ lineNumber, side, hunkId: pendingCommentHunkId });
     useReviewStore.getState().setPendingCommentHunkId(null);
   }, [pendingCommentHunkId, hunks, newAnnotationLine]);
@@ -447,7 +447,10 @@ export function DiffView({
           return (
             <NewAnnotationEditor
               onSave={deps.handleSaveNewAnnotation}
-              onCancel={() => deps.setNewAnnotationLine(null)}
+              onCancel={() => {
+                useReviewStore.setState({ scrollDrivenNavigation: true });
+                deps.setNewAnnotationLine(null);
+              }}
             />
           );
 
@@ -523,8 +526,7 @@ export function DiffView({
                   s.rejectHunk(hunkId);
                   const targetHunk = deps.hunks.find((h) => h.id === hunkId);
                   if (targetHunk && !deps.newAnnotationLine) {
-                    const { lineNumber, side } =
-                      getFirstChangedLine(targetHunk);
+                    const { lineNumber, side } = getLastChangedLine(targetHunk);
                     deps.setNewAnnotationLine({ lineNumber, side, hunkId });
                   }
                 }}
@@ -564,7 +566,7 @@ export function DiffView({
                 s.rejectHunk(hunkId);
                 const targetHunk = deps.hunks.find((h) => h.id === hunkId);
                 if (targetHunk && !deps.newAnnotationLine) {
-                  const { lineNumber, side } = getFirstChangedLine(targetHunk);
+                  const { lineNumber, side } = getLastChangedLine(targetHunk);
                   deps.setNewAnnotationLine({ lineNumber, side, hunkId });
                 }
               }}

@@ -348,10 +348,12 @@ export class TauriClient implements ApiClient {
   async findSymbolDefinitions(
     repoPath: string,
     symbolName: string,
+    gitRef?: string,
   ): Promise<SymbolDefinition[]> {
     return invoke<SymbolDefinition[]>("find_symbol_definitions", {
       repoPath,
       symbolName,
+      gitRef,
     });
   }
 

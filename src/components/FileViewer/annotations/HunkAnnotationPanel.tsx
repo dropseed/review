@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
 import { isHunkTrusted } from "../../../types";
+import { useReviewStore } from "../../../stores";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -481,11 +482,27 @@ export function HunkAnnotationPanel({
           totalHunksInFile !== undefined &&
           totalHunksInFile > 1 && (
             <div className="flex items-center gap-1 text-fg-faint select-none">
-              {isFocused && <kbd className="text-fg-faint">k</kbd>}
+              {isFocused && (
+                <button
+                  onClick={() => useReviewStore.getState().prevHunk()}
+                  className="hover:text-fg-secondary transition-colors"
+                  aria-label="Previous hunk"
+                >
+                  <kbd className="text-fg-faint">k</kbd>
+                </button>
+              )}
               <span className="text-xxs tabular-nums">
                 {hunkPosition}/{totalHunksInFile}
               </span>
-              {isFocused && <kbd className="text-fg-faint">j</kbd>}
+              {isFocused && (
+                <button
+                  onClick={() => useReviewStore.getState().nextHunk()}
+                  className="hover:text-fg-secondary transition-colors"
+                  aria-label="Next hunk"
+                >
+                  <kbd className="text-fg-faint">j</kbd>
+                </button>
+              )}
             </div>
           )}
       </div>

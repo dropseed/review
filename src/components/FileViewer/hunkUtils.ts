@@ -1,20 +1,31 @@
 import type { DiffHunk } from "../../types";
 
 /**
- * Returns the first changed line in a hunk with its side and line number.
+ * Returns the last changed line in a hunk with its side and line number.
  * Used to position comment editors when rejecting or commenting on a hunk.
+ * Uses the last changed line so the comment appears on the same side as
+ * the hunk annotation panel (which is positioned at the last changed line).
  */
-export function getFirstChangedLine(hunk: DiffHunk): {
+export function getLastChangedLine(hunk: DiffHunk): {
   lineNumber: number;
   side: "old" | "new";
 } {
-  const firstChanged = hunk.lines.find(
+  const changedLines = hunk.lines.filter(
     (l) => l.type === "added" || l.type === "removed",
   );
-  const side: "old" | "new" = firstChanged?.type === "removed" ? "old" : "new";
-  const lineNumber =
-    side === "old"
-      ? (firstChanged?.oldLineNumber ?? hunk.oldStart)
-      : (firstChanged?.newLineNumber ?? hunk.newStart);
-  return { lineNumber, side };
+  const lastChanged = changedLines[changedLines.length - 1];
+
+  if (!lastChanged) {
+    return { lineNumber: hunk.newStart, side: "new" };
+  }
+  if (lastChanged.type === "removed") {
+    return {
+      lineNumber: lastChanged.oldLineNumber ?? hunk.oldStart,
+      side: "old",
+    };
+  }
+  return {
+    lineNumber: lastChanged.newLineNumber ?? hunk.newStart,
+    side: "new",
+  };
 }

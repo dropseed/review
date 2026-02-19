@@ -35,6 +35,7 @@ export function AnnotationEditor({
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       onCancel();
     }
   };
