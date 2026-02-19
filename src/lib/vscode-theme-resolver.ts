@@ -88,6 +88,10 @@ const VSCODE_TO_BUNDLED: Record<string, string> = {
   // Nord
   Nord: "nord",
   "Nord Deep": "nord",
+  // Flexoki
+  Flexoki: "flexoki-dark",
+  "Flexoki Dark": "flexoki-dark",
+  "Flexoki Light": "flexoki-light",
   // Solarized
   "Solarized Dark": "solarized-dark",
   "Solarized Light": "solarized-light",
@@ -231,6 +235,9 @@ const VSCODE_TO_SHIKI: Record<string, string> = {
   Nord: "nord",
   "Solarized Dark": "solarized-dark",
   "Solarized Light": "solarized-light",
+  Flexoki: "flexoki-dark",
+  "Flexoki Dark": "flexoki-dark",
+  "Flexoki Light": "flexoki-light",
   Monokai: "monokai",
   "One Dark Pro": "one-dark-pro",
   "Vitesse Dark": "vitesse-dark",
