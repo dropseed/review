@@ -10,7 +10,7 @@ import type { Comparison } from "../types";
 export function useWindowTitle(
   repoPath: string | null,
   comparison: Comparison,
-  comparisonReady: boolean,
+  comparisonReady: number,
 ) {
   const location = useLocation();
   const isReviewRoute = location.pathname.includes("/review/");

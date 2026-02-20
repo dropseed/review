@@ -93,7 +93,6 @@ interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
   comparisonReady: number;
-  setComparisonReady: (ready: boolean) => void;
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
   handleOpenRepo: () => Promise<void>;
@@ -132,7 +131,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
 
-  const [comparisonReady, setComparisonReady] = useState(false);
+  const [comparisonReady, setComparisonReady] = useState(0);
   const [initialLoading, setInitialLoading] = useState(false);
 
   // Keep a stable ref for navigate so the init effect doesn't re-run
@@ -170,7 +169,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         replace: true,
       });
 
-      setComparisonReady(true);
+      setComparisonReady((c) => c + 1);
       setInitialLoading(true);
       loadGlobalReviews();
     }
@@ -275,7 +274,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         // Same-repo switch — setComparison is sufficient
         setActiveReviewKey({ repoPath: currentRepoPath, comparisonKey: key });
         setComparison(comparison);
-        setComparisonReady(true);
+        setComparisonReady((c) => c + 1);
         setInitialLoading(true);
 
         // Navigate to the comparison route
@@ -293,7 +292,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     setRepoPath(null);
     setRepoStatus("welcome");
     setRepoError(null);
-    setComparisonReady(false);
+    setComparisonReady(0);
     sessionStorage.setItem(REPO_PATH_KEY, "");
     navigateRef.current("/");
   }, [setRepoPath]);
@@ -323,7 +322,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       addRecentRepository(path);
       storeRepoPath(path);
 
-      setComparisonReady(true);
+      setComparisonReady((c) => c + 1);
       setInitialLoading(true);
       navigateRef.current(`/${routePrefix}/review/${key}`);
       loadGlobalReviews();
@@ -400,7 +399,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       }
 
       // Mark ready so useComparisonLoader fires
-      setComparisonReady(true);
+      setComparisonReady((c) => c + 1);
       setInitialLoading(true);
 
       nav(`/${routePrefix}/review/${review.comparison.key}`);
@@ -436,7 +435,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         setComparison(comparison);
       }
 
-      setComparisonReady(true);
+      setComparisonReady((c) => c + 1);
       setInitialLoading(true);
       navigateRef.current(`/${routePrefix}/review/${comparison.key}`);
       loadGlobalReviews();
@@ -455,7 +454,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     repoStatus,
     repoError,
     comparisonReady,
-    setComparisonReady,
     initialLoading,
     setInitialLoading,
     handleOpenRepo,

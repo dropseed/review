@@ -6,7 +6,7 @@ import { useReviewStore } from "../stores";
 /**
  * Manages file watcher lifecycle and listens for review state/git change events.
  */
-export function useFileWatcher(comparisonReady: boolean) {
+export function useFileWatcher(comparisonReady: number) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const loadReviewState = useReviewStore((s) => s.loadReviewState);
   const refresh = useReviewStore((s) => s.refresh);

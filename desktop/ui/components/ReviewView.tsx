@@ -51,7 +51,7 @@ const ClassificationsModal = lazy(() =>
 
 interface ReviewViewProps {
   onNewWindow: () => Promise<void>;
-  comparisonReady: boolean;
+  comparisonReady: number;
 }
 
 export function ReviewView({

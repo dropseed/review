@@ -9,7 +9,7 @@ import { useReviewStore } from "../stores";
  * - Symbols: FilesPanel triggers loadSymbols when flat mode is entered
  */
 export function useComparisonLoader(
-  comparisonReady: boolean,
+  comparisonReady: number,
   setInitialLoading: (loading: boolean) => void,
 ): void {
   const repoPath = useReviewStore((s) => s.repoPath);

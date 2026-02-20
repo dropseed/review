@@ -157,7 +157,7 @@ interface AppContext {
   repoStatus: RepoStatus;
   repoError: string | null;
   repoPath: string | null;
-  comparisonReady: boolean;
+  comparisonReady: number;
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
