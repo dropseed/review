@@ -9,7 +9,13 @@ import {
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { isHunkReviewed } from "../../types";
-import type { DiffHunk, FileContent, HunkGroup, HunkState } from "../../types";
+import type {
+  DiffHunk,
+  DiffLine,
+  FileContent,
+  HunkGroup,
+  HunkState,
+} from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
 
@@ -49,6 +55,37 @@ function CheckIcon(): ReactNode {
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
   );
+}
+
+function diffLinePrefix(type: DiffLine["type"]): string {
+  switch (type) {
+    case "added":
+      return "+";
+    case "removed":
+      return "-";
+    default:
+      return " ";
+  }
+}
+
+/**
+ * Build a unified diff patch containing only the specified hunks.
+ * Extracts the diff header (everything before the first @@ line) from
+ * the full patch, then reconstructs each hunk from its lines array.
+ */
+function buildFilteredPatch(fullPatch: string, hunks: DiffHunk[]): string {
+  const headerMatch = fullPatch.match(/^([\s\S]*?)(?=^@@\s)/m);
+  const diffHeader = headerMatch ? headerMatch[1] : "";
+
+  const hunkSections = hunks.map((h) => {
+    const header = `@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@`;
+    const lines = h.lines
+      .map((l) => diffLinePrefix(l.type) + l.content)
+      .join("\n");
+    return header + "\n" + lines;
+  });
+
+  return diffHeader + hunkSections.join("\n");
 }
 
 function getUnreviewedIds(
@@ -408,6 +445,8 @@ export function GroupDiffViewer({
       );
     }
 
+    const filteredPatch = buildFilteredPatch(fc.diffPatch, fileHunks);
+
     return (
       <DiffErrorBoundary
         fallback={
@@ -421,14 +460,12 @@ export function GroupDiffViewer({
         }
       >
         <DiffView
-          diffPatch={fc.diffPatch}
+          diffPatch={filteredPatch}
           viewMode={diffViewMode === "split" ? "split" : "unified"}
           hunks={fileHunks}
           theme={codeTheme}
           fontSizeCSS={fontSizeCSS}
           fileName={filePath}
-          oldContent={fc.oldContent}
-          newContent={fc.content}
           expandUnchanged={false}
         />
       </DiffErrorBoundary>
