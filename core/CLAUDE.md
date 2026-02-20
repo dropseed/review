@@ -12,7 +12,7 @@ src/
 │   └── parser.rs       Parses unified diff format into DiffHunk structs
 ├── review/         Review state management
 │   ├── state.rs        ReviewState struct (hunks, trust_labels, notes)
-│   └── storage.rs      JSON persistence to .git/review/
+│   └── storage.rs      JSON persistence to ~/.review/
 ├── trust/          Trust pattern matching
 │   └── patterns.rs     Pattern matching (glob-style), taxonomy loading
 ├── sources/        Git operations abstraction
@@ -34,7 +34,28 @@ src/
 1. **Diff parsing**: `sources::local_git` runs `git diff` → `diff::parser::parse_diff()` → `Vec<DiffHunk>`
 2. **Classification**: `DiffHunk` → `classify::static_classify` → pattern-matched labels
 3. **Trust matching**: User's trust list + `trust::patterns::matches_pattern()` → auto-approve matching hunks
-4. **Persistence**: `ReviewState` ↔ `.git/review/reviews/<comparison>.json` via `review::storage`
+4. **Persistence**: `ReviewState` ↔ `~/.review/repos/<repo-id>/reviews/<comparison>.json` via `review::storage`
+
+## State Storage
+
+Review state is stored per-repo in `~/.review/repos/<repo-id>/` (override with `$REVIEW_HOME`). The repo ID is a SHA-256 hash of the canonical repo path.
+
+- `reviews/<comparison>.json` — Hunk labels, approvals, notes
+- `current` — Last active comparison
+- `custom-patterns.json` — Optional user-defined trust patterns
+
+Review state includes:
+
+- `hunks`: Dict mapping `filepath:hash` to `{label, reasoning, approved_via}`
+- `trust_labels`: List of trusted patterns
+- `notes`: Free-form review notes
+- `comparison`: Structured comparison info
+
+## Trust Patterns Taxonomy
+
+The taxonomy is defined in `resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `type-annotations`, `file`, `move`, `generated`.
+
+Users can extend the taxonomy by creating a `custom-patterns.json` in their review state directory with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.
 
 ## Feature Flags
 
