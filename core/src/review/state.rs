@@ -116,7 +116,7 @@ pub enum HunkStatus {
 
 impl ReviewState {
     pub fn new(comparison: Comparison) -> Self {
-        let now = chrono_now();
+        let now = now_iso8601();
         Self {
             comparison,
             hunks: HashMap::new(),
@@ -135,7 +135,7 @@ impl ReviewState {
     /// Increment version and update timestamp for a save operation
     pub fn prepare_for_save(&mut self) {
         self.version += 1;
-        self.updated_at = chrono_now();
+        self.updated_at = now_iso8601();
     }
 
     /// Create a summary of this review state
@@ -191,7 +191,7 @@ impl ReviewState {
     }
 }
 
-fn chrono_now() -> String {
+pub(crate) fn now_iso8601() -> String {
     // ISO 8601 timestamp without external crate (with milliseconds for JS compatibility)
     use std::time::{SystemTime, UNIX_EPOCH};
     let duration = SystemTime::now()
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_chrono_now_format() {
-        let timestamp = chrono_now();
+        let timestamp = now_iso8601();
         // Should be ISO 8601 format: YYYY-MM-DDTHH:MM:SS.mmmZ
         assert!(timestamp.contains('T'));
         assert!(timestamp.ends_with('Z'));

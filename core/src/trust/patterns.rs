@@ -39,7 +39,7 @@ fn fill_pattern_categories(categories: Vec<TrustCategory>) -> Vec<TrustCategory>
 
 /// Load the trust taxonomy from JSON.
 /// First tries to load from bundled resources, then falls back to hardcoded.
-pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
+fn load_taxonomy_from_json() -> Vec<TrustCategory> {
     let json_str = include_str!("../../resources/taxonomy.json");
     match serde_json::from_str::<TaxonomyFile>(json_str) {
         Ok(taxonomy) => fill_pattern_categories(taxonomy.categories),
@@ -53,28 +53,6 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
 /// The full taxonomy of trust patterns (bundled)
 pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
     load_taxonomy_from_json()
-}
-
-use std::collections::HashSet;
-use std::sync::OnceLock;
-
-/// Cached set of valid pattern IDs for efficient validation.
-/// Loaded once on first access and reused for all subsequent calls.
-static VALID_PATTERN_IDS: OnceLock<HashSet<String>> = OnceLock::new();
-
-/// Get all valid pattern IDs from the taxonomy (cached after first call)
-pub fn get_valid_pattern_ids() -> &'static HashSet<String> {
-    VALID_PATTERN_IDS.get_or_init(|| {
-        get_trust_taxonomy()
-            .into_iter()
-            .flat_map(|cat| cat.patterns.into_iter().map(|p| p.id))
-            .collect()
-    })
-}
-
-/// Check if a label is a valid pattern ID in the taxonomy (O(1) lookup)
-pub fn is_valid_pattern_id(label: &str) -> bool {
-    get_valid_pattern_ids().contains(label)
 }
 
 /// Fallback hardcoded taxonomy in case JSON loading fails

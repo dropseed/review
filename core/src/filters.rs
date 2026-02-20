@@ -53,20 +53,6 @@ pub fn should_skip_file(path: &str) -> bool {
     SKIP_PATTERNS.iter().any(|pattern| pattern.is_match(path))
 }
 
-/// Get the list of skip pattern descriptions for documentation/UI purposes.
-pub fn get_skip_pattern_descriptions() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("target/", "Rust build artifacts"),
-        ("node_modules/", "Node.js dependencies"),
-        (".fingerprint/", "Cargo fingerprints"),
-        (".git/", "Git internals"),
-        ("__pycache__/", "Python bytecode"),
-        ("dist/, build/", "Build output directories"),
-        (".next/", "Next.js build cache"),
-        ("*.lock", "Package lock files"),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -15,7 +15,6 @@
 pub mod ai;
 pub mod classify;
 pub mod diff;
-pub mod error;
 pub mod filters;
 pub mod review;
 pub mod sources;

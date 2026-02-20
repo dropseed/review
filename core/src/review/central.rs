@@ -66,7 +66,7 @@ fn canonical_path(repo_path: &Path) -> PathBuf {
 }
 
 /// Compute a 16-character hex repo ID from the canonical path.
-pub fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
+fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
     let canonical = canonical_path(repo_path);
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
@@ -82,7 +82,7 @@ pub fn get_repo_storage_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
 }
 
 /// Load the global repo index.
-pub fn load_index() -> Result<RepoIndex, CentralError> {
+fn load_index() -> Result<RepoIndex, CentralError> {
     let root = get_central_root()?;
     let index_path = root.join("index.json");
     if !index_path.exists() {
@@ -94,7 +94,7 @@ pub fn load_index() -> Result<RepoIndex, CentralError> {
 }
 
 /// Save the global repo index (atomic: write tmp + rename).
-pub fn save_index(index: &RepoIndex) -> Result<(), CentralError> {
+fn save_index(index: &RepoIndex) -> Result<(), CentralError> {
     let root = get_central_root()?;
     fs::create_dir_all(&root)?;
 
@@ -152,67 +152,7 @@ pub fn list_registered_repos() -> Result<Vec<RepoIndexEntry>, CentralError> {
     Ok(repos)
 }
 
-/// Remove a repo from the index and delete its storage directory.
-pub fn unregister_repo(repo_id: &str) -> Result<(), CentralError> {
-    let root = get_central_root()?;
-    let repo_dir = root.join("repos").join(repo_id);
-    if repo_dir.exists() {
-        fs::remove_dir_all(&repo_dir)?;
-    }
-
-    let mut index = load_index()?;
-    index.repos.remove(repo_id);
-    save_index(&index)?;
-    Ok(())
-}
-
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-}
-
-fn now_iso8601() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs();
-    let millis = duration.subsec_millis();
-
-    let days = secs / 86400;
-    let remaining = secs % 86400;
-    let hours = remaining / 3600;
-    let minutes = (remaining % 3600) / 60;
-    let seconds = remaining % 60;
-
-    let mut year = 1970i32;
-    let mut remaining_days = days as i32;
-    loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if remaining_days < days_in_year {
-            break;
-        }
-        remaining_days -= days_in_year;
-        year += 1;
-    }
-
-    let days_in_months: [i32; 12] = if is_leap_year(year) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-
-    let mut month = 1;
-    for days_in_month in &days_in_months {
-        if remaining_days < *days_in_month {
-            break;
-        }
-        remaining_days -= *days_in_month;
-        month += 1;
-    }
-    let day = remaining_days + 1;
-
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
-}
+use super::state::now_iso8601;
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -260,22 +200,6 @@ pub(crate) mod tests {
 
         let repos = list_registered_repos().unwrap();
         assert_eq!(repos.len(), 1);
-    }
-
-    #[test]
-    fn test_unregister_repo() {
-        let _lock = ENV_LOCK.lock().unwrap();
-        let (_review_home, repo_dir) = setup_test();
-        register_repo(repo_dir.path()).unwrap();
-
-        let repos = list_registered_repos().unwrap();
-        assert_eq!(repos.len(), 1);
-
-        let repo_id = compute_repo_id(repo_dir.path()).unwrap();
-        unregister_repo(&repo_id).unwrap();
-
-        let repos = list_registered_repos().unwrap();
-        assert!(repos.is_empty());
     }
 
     #[test]

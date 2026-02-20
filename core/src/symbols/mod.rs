@@ -8,7 +8,6 @@ pub mod extractor;
 pub mod graph;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// The kind of symbol extracted from source code.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -49,23 +48,6 @@ pub struct SymbolDefinition {
     pub start_line: u32,
     #[serde(rename = "endLine")]
     pub end_line: u32,
-}
-
-/// Maps symbols to hunks for a single file.
-#[derive(Debug, Clone, Serialize)]
-pub struct FileSymbolMap {
-    #[serde(rename = "filePath")]
-    pub file_path: String,
-    pub symbols: Vec<Symbol>,
-    /// Mapping from hunk ID to the names of symbols it overlaps.
-    #[serde(rename = "hunkSymbols")]
-    pub hunk_symbols: HashMap<String, Vec<String>>,
-    /// Hunk IDs that don't fall within any symbol.
-    #[serde(rename = "topLevelHunkIds")]
-    pub top_level_hunk_ids: Vec<String>,
-    /// Whether a tree-sitter grammar was available for this file.
-    #[serde(rename = "hasGrammar")]
-    pub has_grammar: bool,
 }
 
 /// Whether a symbol was added, removed, or modified.
