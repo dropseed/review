@@ -241,12 +241,6 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
-  const inactiveReviewSortOrder = useReviewStore(
-    (s) => s.inactiveReviewSortOrder,
-  );
-  const setInactiveReviewSortOrder = useReviewStore(
-    (s) => s.setInactiveReviewSortOrder,
-  );
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const reviewActiveState = useReviewStore((s) => s.reviewActiveState);
 
@@ -283,9 +277,8 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
   );
 
   const sortedInactive = useMemo(
-    () =>
-      sortReviews(inactiveReviews, inactiveReviewSortOrder, reviewDiffStats),
-    [inactiveReviews, inactiveReviewSortOrder, reviewDiffStats],
+    () => sortReviews(inactiveReviews, "repo", reviewDiffStats),
+    [inactiveReviews, reviewDiffStats],
   );
 
   // Auto-expand inactive section when the active review is in the inactive list
@@ -434,12 +427,6 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
                 {sortedInactive.length}
               </span>
             </button>
-            {!inactiveCollapsed && (
-              <SortMenu
-                sortOrder={inactiveReviewSortOrder}
-                onSetSortOrder={setInactiveReviewSortOrder}
-              />
-            )}
           </div>
           {!inactiveCollapsed &&
             sortedInactive.map((review) => {
@@ -447,7 +434,7 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
               return (
                 <TabRailItem
                   key={key}
-                  {...itemPropsFor(review, true, inactiveReviewSortOrder)}
+                  {...itemPropsFor(review, true, "repo")}
                 />
               );
             })}

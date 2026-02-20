@@ -101,7 +101,6 @@ const defaults = {
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
-  inactiveReviewSortOrder: "updated" as ReviewSortOrder,
   companionServerEnabled: false,
   companionServerToken: null as string | null,
   companionServerPort: 3333,
@@ -148,7 +147,6 @@ export interface PreferencesSlice {
 
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
-  inactiveReviewSortOrder: ReviewSortOrder;
 
   // Companion server
   companionServerEnabled: boolean;
@@ -204,7 +202,6 @@ export interface PreferencesSlice {
 
   // Review sort order actions
   setReviewSortOrder: (order: ReviewSortOrder) => void;
-  setInactiveReviewSortOrder: (order: ReviewSortOrder) => void;
 
   // Companion server actions
   setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
@@ -455,11 +452,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setReviewSortOrder: (order) => {
       set({ reviewSortOrder: order });
       storage.set("reviewSortOrder", order);
-    },
-
-    setInactiveReviewSortOrder: (order) => {
-      set({ inactiveReviewSortOrder: order });
-      storage.set("inactiveReviewSortOrder", order);
     },
 
     setCompanionServerEnabled: async (enabled) => {
