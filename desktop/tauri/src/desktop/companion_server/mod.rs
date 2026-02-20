@@ -29,12 +29,13 @@ pub fn set_auth_token(token: Option<String>) {
     }
 }
 
-/// Start the companion server as an async task.
+/// Start the companion server and wait until it is actually listening.
+/// Returns an error if the port is already in use or the server fails to start.
 /// Only starts if not already running.
-pub fn start(port: u16, cert_path: PathBuf, key_path: PathBuf) {
+pub async fn start(port: u16, cert_path: PathBuf, key_path: PathBuf) -> Result<(), String> {
     if SERVER_RUNNING.swap(true, Ordering::SeqCst) {
         warn!("Already running");
-        return;
+        return Ok(());
     }
 
     info!(
@@ -54,12 +55,29 @@ pub fn start(port: u16, cert_path: PathBuf, key_path: PathBuf) {
         *guard = Some(handle.clone());
     }
 
+    // Use the handle to detect when the server is actually listening (or fails to bind).
+    let listen_handle = handle.clone();
+
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_server(port, token, handle, cert_path, key_path).await {
             error!("Server error: {e}");
         }
         SERVER_RUNNING.store(false, Ordering::SeqCst);
     });
+
+    // Wait for the server to either start listening or fail.
+    match listen_handle.listening().await {
+        Some(addr) => {
+            info!("Confirmed listening on {addr}");
+            Ok(())
+        }
+        None => {
+            // Server failed to bind — SERVER_RUNNING is already reset by the spawned task.
+            Err(format!(
+                "Failed to start companion server on port {port} (address already in use?)"
+            ))
+        }
+    }
 }
 
 /// Get the port the companion server is (or will be) listening on.

@@ -106,6 +106,7 @@ const defaults = {
   companionServerToken: null as string | null,
   companionServerPort: 3333,
   companionServerFingerprint: null as string | null,
+  companionServerError: null as string | null,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
   matchVscodeTheme: false,
@@ -154,6 +155,7 @@ export interface PreferencesSlice {
   companionServerToken: string | null;
   companionServerPort: number;
   companionServerFingerprint: string | null;
+  companionServerError: string | null;
 
   // Guide side nav
   guideSideNavCollapsed: boolean;
@@ -207,7 +209,7 @@ export interface PreferencesSlice {
   // Companion server actions
   setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
   setCompanionServerToken: (token: string | null) => void;
-  setCompanionServerPort: (port: number) => Promise<void>;
+  setCompanionServerPort: (port: number) => void;
   generateCompanionServerToken: () => Promise<string>;
   regenerateCompanionCertificate: () => Promise<void>;
 
@@ -223,323 +225,335 @@ export interface PreferencesSlice {
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
   PreferencesSlice
-> = (storage: StorageService) => (set, get) => ({
-  ...defaults,
-  fileToReveal: null,
-  directoryToReveal: null,
-  resolvedVscodeTheme: null,
-  preferencesLoaded: false,
+> = (storage: StorageService) => (set, get) => {
+  /** Log a companion server error and disable the server in both state and storage. */
+  function handleCompanionServerError(context: string, error: unknown): void {
+    const message = String(error);
+    console.error(`${context}:`, message);
+    set({ companionServerEnabled: false, companionServerError: message });
+    storage.set("companionServerEnabled", false);
+  }
 
-  setCodeFontSize: (size) => {
-    set({ codeFontSize: size });
-    storage.set("codeFontSize", size);
-    applyFontSizeCssVariables(size);
-  },
-
-  setCodeTheme: (theme) => {
-    set({ codeTheme: theme });
-    storage.set("codeTheme", theme);
-  },
-
-  setUiTheme: (themeId) => {
-    const theme = getUiTheme(themeId);
-    set({
-      uiTheme: themeId,
-      codeTheme: theme.codeTheme,
-      matchVscodeTheme: false,
-      resolvedVscodeTheme: null,
+  /** Start the companion server on the currently configured port. */
+  function startCompanionServer(): Promise<void> {
+    return invoke("start_companion_server", {
+      port: get().companionServerPort,
     });
-    storage.set("uiTheme", themeId);
-    storage.set("codeTheme", theme.codeTheme);
-    storage.set("matchVscodeTheme", false);
-    applyUiTheme(theme);
-  },
+  }
 
-  setDiffLineDiffType: (type) => {
-    set({ diffLineDiffType: type });
-    storage.set("diffLineDiffType", type);
-  },
+  return {
+    ...defaults,
+    fileToReveal: null,
+    directoryToReveal: null,
+    resolvedVscodeTheme: null,
+    preferencesLoaded: false,
 
-  setDiffIndicators: (indicators) => {
-    set({ diffIndicators: indicators });
-    storage.set("diffIndicators", indicators);
-  },
+    setCodeFontSize: (size) => {
+      set({ codeFontSize: size });
+      storage.set("codeFontSize", size);
+      applyFontSizeCssVariables(size);
+    },
 
-  setChangesDisplayMode: (mode) => {
-    set({ changesDisplayMode: mode });
-    storage.set("changesDisplayMode", mode);
-  },
+    setCodeTheme: (theme) => {
+      set({ codeTheme: theme });
+      storage.set("codeTheme", theme);
+    },
 
-  setGitDisplayMode: (mode) => {
-    set({ gitDisplayMode: mode });
-    storage.set("gitDisplayMode", mode);
-  },
-
-  setDiffViewMode: (mode) => {
-    set({ diffViewMode: mode });
-    storage.set("diffViewMode", mode);
-  },
-
-  loadPreferences: async () => {
-    // Read settings file for custom themes
-    let settings: Record<string, unknown> | null = null;
-    try {
-      settings = await invoke<Record<string, unknown> | null>("read_settings");
-    } catch {
-      // read_settings failed — continue with defaults
-    }
-
-    // Load all standard keys in parallel, falling back to defaults
-    const keys = Object.keys(defaults) as (keyof typeof defaults)[];
-    const values = await Promise.all(keys.map((key) => storage.get(key)));
-    const loaded = Object.fromEntries(
-      keys.map((key, i) => [key, values[i] ?? defaults[key]]),
-    ) as typeof defaults;
-
-    // Migrate legacy "file" diff view mode to "new"
-    if ((loaded.diffViewMode as string) === "file") {
-      loaded.diffViewMode = "new";
-    }
-
-    // Load custom themes from settings before any theme resolution
-    if (settings && Array.isArray(settings["customThemes"])) {
-      setCustomThemes(
-        settings["customThemes"] as Array<{
-          name: string;
-          type: string;
-          colors: Record<string, string>;
-          tokenColors: unknown[];
-        }>,
-      );
-    }
-
-    // Resolve VS Code theme before setting state so we don't flash
-    // the fallback theme (the persisted codeTheme may reference a custom
-    // Shiki theme that hasn't been re-registered yet — REVIEW-9).
-    const resolvedVscode = loaded.matchVscodeTheme
-      ? await fetchAndResolveVscodeTheme()
-      : null;
-
-    set({
-      ...loaded,
-      codeTheme: resolvedVscode?.codeTheme ?? loaded.codeTheme,
-      resolvedVscodeTheme: resolvedVscode,
-    });
-
-    // Propagate Sentry consent to both JS and Rust SDKs
-    setSentryConsent(loaded.sentryEnabled);
-    invoke("set_sentry_consent", { enabled: loaded.sentryEnabled }).catch(
-      () => {},
-    );
-
-    // Propagate sound setting
-    setSoundEnabled(loaded.soundEffectsEnabled);
-
-    applyFontSizeCssVariables(loaded.codeFontSize);
-
-    // Apply UI theme (sets all semantic CSS variables + color-scheme)
-    if (resolvedVscode) {
-      applyResolvedVscodeTheme(resolvedVscode, storage);
-    } else {
-      applyUiTheme(getUiTheme(loaded.uiTheme));
-    }
-
-    // Start companion server if it was previously enabled
-    if (loaded.companionServerEnabled) {
-      invoke("start_companion_server").catch((e) => {
-        console.error("Failed to start companion server on load:", e);
+    setUiTheme: (themeId) => {
+      const theme = getUiTheme(themeId);
+      set({
+        uiTheme: themeId,
+        codeTheme: theme.codeTheme,
+        matchVscodeTheme: false,
+        resolvedVscodeTheme: null,
       });
-    }
-
-    set({ preferencesLoaded: true });
-  },
-
-  revealFileInTree: (path) => {
-    // Sets selectedFile from NavigationSlice via type assertion (cross-slice update)
-    set({
-      fileToReveal: path,
-      selectedFile: path,
-    } as Partial<PreferencesSlice>);
-  },
-
-  clearFileToReveal: () => {
-    set({ fileToReveal: null });
-  },
-
-  revealDirectoryInTree: (path) => {
-    set({ directoryToReveal: path });
-  },
-
-  clearDirectoryToReveal: () => {
-    set({ directoryToReveal: null });
-  },
-
-  addRecentRepository: async (path) => {
-    // Read directly from storage to avoid race with loadPreferences
-    const stored =
-      (await storage.get<RecentRepo[]>("recentRepositories")) ?? [];
-    const name = path.split("/").pop() || path;
-    const now = new Date().toISOString();
-
-    const filtered = stored.filter((r) => r.path !== path);
-    const updated: RecentRepo[] = [
-      { path, name, lastOpened: now },
-      ...filtered,
-    ].slice(0, MAX_RECENT_REPOS);
-
-    set({ recentRepositories: updated });
-    storage.set("recentRepositories", updated);
-  },
-
-  removeRecentRepository: (path) => {
-    const current = get().recentRepositories;
-    const updated = current.filter((r) => r.path !== path);
-    set({ recentRepositories: updated });
-    storage.set("recentRepositories", updated);
-  },
-
-  setSentryEnabled: (enabled) => {
-    set({ sentryEnabled: enabled });
-    storage.set("sentryEnabled", enabled);
-    setSentryConsent(enabled);
-    invoke("set_sentry_consent", { enabled }).catch(() => {});
-  },
-
-  setSoundEffectsEnabled: (enabled) => {
-    set({ soundEffectsEnabled: enabled });
-    storage.set("soundEffectsEnabled", enabled);
-    setSoundEnabled(enabled);
-  },
-
-  setTabRailCollapsed: (collapsed) => {
-    set({ tabRailCollapsed: collapsed });
-    storage.set("tabRailCollapsed", collapsed);
-  },
-
-  toggleTabRail: () => {
-    get().setTabRailCollapsed(!get().tabRailCollapsed);
-  },
-
-  setFilesPanelCollapsed: (collapsed) => {
-    set({ filesPanelCollapsed: collapsed });
-    storage.set("filesPanelCollapsed", collapsed);
-  },
-
-  toggleFilesPanel: () => {
-    get().setFilesPanelCollapsed(!get().filesPanelCollapsed);
-  },
-
-  setReviewSortOrder: (order) => {
-    set({ reviewSortOrder: order });
-    storage.set("reviewSortOrder", order);
-  },
-
-  setInactiveReviewSortOrder: (order) => {
-    set({ inactiveReviewSortOrder: order });
-    storage.set("inactiveReviewSortOrder", order);
-  },
-
-  setCompanionServerEnabled: async (enabled) => {
-    set({ companionServerEnabled: enabled });
-    storage.set("companionServerEnabled", enabled);
-    try {
-      if (enabled) {
-        await invoke("start_companion_server");
-        // Fetch fingerprint after server starts (cert is generated on start)
-        const fingerprint = await invoke<string | null>(
-          "get_companion_fingerprint",
-        );
-        set({ companionServerFingerprint: fingerprint });
-      } else {
-        await invoke("stop_companion_server");
-      }
-    } catch (e) {
-      console.error("Failed to toggle companion server:", e);
-    }
-  },
-
-  setCompanionServerToken: (token) => {
-    set({ companionServerToken: token });
-    storage.set("companionServerToken", token);
-  },
-
-  setCompanionServerPort: async (port) => {
-    set({ companionServerPort: port });
-    storage.set("companionServerPort", port);
-    // Restart the server if it's currently running so the new port takes effect
-    if (get().companionServerEnabled) {
-      try {
-        await invoke("stop_companion_server");
-        await invoke("start_companion_server");
-        const fingerprint = await invoke<string | null>(
-          "get_companion_fingerprint",
-        );
-        set({ companionServerFingerprint: fingerprint });
-      } catch (e) {
-        console.error("Failed to restart companion server with new port:", e);
-      }
-    }
-  },
-
-  generateCompanionServerToken: async () => {
-    const token = await invoke<string>("generate_companion_token");
-    set({ companionServerToken: token });
-    storage.set("companionServerToken", token);
-    return token;
-  },
-
-  regenerateCompanionCertificate: async () => {
-    try {
-      const fingerprint = await invoke<string>(
-        "regenerate_companion_certificate",
-      );
-      set({ companionServerFingerprint: fingerprint });
-      // Restart the server if running so it uses the new cert
-      if (get().companionServerEnabled) {
-        await invoke("stop_companion_server");
-        await invoke("start_companion_server");
-      }
-    } catch (e) {
-      console.error("Failed to regenerate certificate:", e);
-    }
-  },
-
-  setGuideSideNavCollapsed: (collapsed) => {
-    set({ guideSideNavCollapsed: collapsed });
-    storage.set("guideSideNavCollapsed", collapsed);
-  },
-
-  toggleGuideSideNav: () => {
-    get().setGuideSideNavCollapsed(!get().guideSideNavCollapsed);
-  },
-
-  setGuideSideNavWidth: (width) => {
-    set({ guideSideNavWidth: width });
-    storage.set("guideSideNavWidth", width);
-  },
-
-  setMatchVscodeTheme: async (enabled) => {
-    set({ matchVscodeTheme: enabled });
-    storage.set("matchVscodeTheme", enabled);
-    if (enabled) {
-      await get().detectAndApplyVscodeTheme();
-    } else {
-      // Revert to the selected bundled theme
-      const theme = getUiTheme(get().uiTheme);
-      set({ resolvedVscodeTheme: null, codeTheme: theme.codeTheme });
+      storage.set("uiTheme", themeId);
       storage.set("codeTheme", theme.codeTheme);
+      storage.set("matchVscodeTheme", false);
       applyUiTheme(theme);
-    }
-  },
+    },
 
-  detectAndApplyVscodeTheme: async () => {
-    const resolved = await fetchAndResolveVscodeTheme();
-    if (!resolved) return;
+    setDiffLineDiffType: (type) => {
+      set({ diffLineDiffType: type });
+      storage.set("diffLineDiffType", type);
+    },
 
-    set({
-      resolvedVscodeTheme: resolved,
-      codeTheme: resolved.codeTheme,
-    });
-    applyResolvedVscodeTheme(resolved, storage);
-  },
-});
+    setDiffIndicators: (indicators) => {
+      set({ diffIndicators: indicators });
+      storage.set("diffIndicators", indicators);
+    },
+
+    setChangesDisplayMode: (mode) => {
+      set({ changesDisplayMode: mode });
+      storage.set("changesDisplayMode", mode);
+    },
+
+    setGitDisplayMode: (mode) => {
+      set({ gitDisplayMode: mode });
+      storage.set("gitDisplayMode", mode);
+    },
+
+    setDiffViewMode: (mode) => {
+      set({ diffViewMode: mode });
+      storage.set("diffViewMode", mode);
+    },
+
+    loadPreferences: async () => {
+      // Read settings file for custom themes
+      let settings: Record<string, unknown> | null = null;
+      try {
+        settings = await invoke<Record<string, unknown> | null>(
+          "read_settings",
+        );
+      } catch {
+        // read_settings failed — continue with defaults
+      }
+
+      // Load all standard keys in parallel, falling back to defaults
+      const keys = Object.keys(defaults) as (keyof typeof defaults)[];
+      const values = await Promise.all(keys.map((key) => storage.get(key)));
+      const loaded = Object.fromEntries(
+        keys.map((key, i) => [key, values[i] ?? defaults[key]]),
+      ) as typeof defaults;
+
+      // Migrate legacy "file" diff view mode to "new"
+      if ((loaded.diffViewMode as string) === "file") {
+        loaded.diffViewMode = "new";
+      }
+
+      // Load custom themes from settings before any theme resolution
+      if (settings && Array.isArray(settings["customThemes"])) {
+        setCustomThemes(
+          settings["customThemes"] as Array<{
+            name: string;
+            type: string;
+            colors: Record<string, string>;
+            tokenColors: unknown[];
+          }>,
+        );
+      }
+
+      // Resolve VS Code theme before setting state so we don't flash
+      // the fallback theme (the persisted codeTheme may reference a custom
+      // Shiki theme that hasn't been re-registered yet — REVIEW-9).
+      const resolvedVscode = loaded.matchVscodeTheme
+        ? await fetchAndResolveVscodeTheme()
+        : null;
+
+      set({
+        ...loaded,
+        codeTheme: resolvedVscode?.codeTheme ?? loaded.codeTheme,
+        resolvedVscodeTheme: resolvedVscode,
+      });
+
+      // Propagate Sentry consent to both JS and Rust SDKs
+      setSentryConsent(loaded.sentryEnabled);
+      invoke("set_sentry_consent", { enabled: loaded.sentryEnabled }).catch(
+        () => {},
+      );
+
+      // Propagate sound setting
+      setSoundEnabled(loaded.soundEffectsEnabled);
+
+      applyFontSizeCssVariables(loaded.codeFontSize);
+
+      // Apply UI theme (sets all semantic CSS variables + color-scheme)
+      if (resolvedVscode) {
+        applyResolvedVscodeTheme(resolvedVscode, storage);
+      } else {
+        applyUiTheme(getUiTheme(loaded.uiTheme));
+      }
+
+      // Start companion server if it was previously enabled
+      if (loaded.companionServerEnabled) {
+        startCompanionServer().catch((e) => {
+          handleCompanionServerError(
+            "Failed to start companion server on load",
+            e,
+          );
+        });
+      }
+
+      set({ preferencesLoaded: true });
+    },
+
+    revealFileInTree: (path) => {
+      // Sets selectedFile from NavigationSlice via type assertion (cross-slice update)
+      set({
+        fileToReveal: path,
+        selectedFile: path,
+      } as Partial<PreferencesSlice>);
+    },
+
+    clearFileToReveal: () => {
+      set({ fileToReveal: null });
+    },
+
+    revealDirectoryInTree: (path) => {
+      set({ directoryToReveal: path });
+    },
+
+    clearDirectoryToReveal: () => {
+      set({ directoryToReveal: null });
+    },
+
+    addRecentRepository: async (path) => {
+      // Read directly from storage to avoid race with loadPreferences
+      const stored =
+        (await storage.get<RecentRepo[]>("recentRepositories")) ?? [];
+      const name = path.split("/").pop() || path;
+      const now = new Date().toISOString();
+
+      const filtered = stored.filter((r) => r.path !== path);
+      const updated: RecentRepo[] = [
+        { path, name, lastOpened: now },
+        ...filtered,
+      ].slice(0, MAX_RECENT_REPOS);
+
+      set({ recentRepositories: updated });
+      storage.set("recentRepositories", updated);
+    },
+
+    removeRecentRepository: (path) => {
+      const current = get().recentRepositories;
+      const updated = current.filter((r) => r.path !== path);
+      set({ recentRepositories: updated });
+      storage.set("recentRepositories", updated);
+    },
+
+    setSentryEnabled: (enabled) => {
+      set({ sentryEnabled: enabled });
+      storage.set("sentryEnabled", enabled);
+      setSentryConsent(enabled);
+      invoke("set_sentry_consent", { enabled }).catch(() => {});
+    },
+
+    setSoundEffectsEnabled: (enabled) => {
+      set({ soundEffectsEnabled: enabled });
+      storage.set("soundEffectsEnabled", enabled);
+      setSoundEnabled(enabled);
+    },
+
+    setTabRailCollapsed: (collapsed) => {
+      set({ tabRailCollapsed: collapsed });
+      storage.set("tabRailCollapsed", collapsed);
+    },
+
+    toggleTabRail: () => {
+      get().setTabRailCollapsed(!get().tabRailCollapsed);
+    },
+
+    setFilesPanelCollapsed: (collapsed) => {
+      set({ filesPanelCollapsed: collapsed });
+      storage.set("filesPanelCollapsed", collapsed);
+    },
+
+    toggleFilesPanel: () => {
+      get().setFilesPanelCollapsed(!get().filesPanelCollapsed);
+    },
+
+    setReviewSortOrder: (order) => {
+      set({ reviewSortOrder: order });
+      storage.set("reviewSortOrder", order);
+    },
+
+    setInactiveReviewSortOrder: (order) => {
+      set({ inactiveReviewSortOrder: order });
+      storage.set("inactiveReviewSortOrder", order);
+    },
+
+    setCompanionServerEnabled: async (enabled) => {
+      set({ companionServerEnabled: enabled, companionServerError: null });
+      storage.set("companionServerEnabled", enabled);
+      try {
+        if (enabled) {
+          await startCompanionServer();
+          // Fetch fingerprint after server starts (cert is generated on start)
+          const fingerprint = await invoke<string | null>(
+            "get_companion_fingerprint",
+          );
+          set({ companionServerFingerprint: fingerprint });
+        } else {
+          await invoke("stop_companion_server");
+        }
+      } catch (e) {
+        handleCompanionServerError("Failed to toggle companion server", e);
+      }
+    },
+
+    setCompanionServerToken: (token) => {
+      set({ companionServerToken: token });
+      storage.set("companionServerToken", token);
+    },
+
+    setCompanionServerPort: (port) => {
+      set({ companionServerPort: port, companionServerError: null });
+      storage.set("companionServerPort", port);
+    },
+
+    generateCompanionServerToken: async () => {
+      const token = await invoke<string>("generate_companion_token");
+      set({ companionServerToken: token });
+      storage.set("companionServerToken", token);
+      return token;
+    },
+
+    regenerateCompanionCertificate: async () => {
+      try {
+        const fingerprint = await invoke<string>(
+          "regenerate_companion_certificate",
+        );
+        set({
+          companionServerFingerprint: fingerprint,
+          companionServerError: null,
+        });
+        // Restart the server if running so it uses the new cert
+        if (get().companionServerEnabled) {
+          await invoke("stop_companion_server");
+          await startCompanionServer();
+        }
+      } catch (e) {
+        handleCompanionServerError("Failed to regenerate certificate", e);
+      }
+    },
+
+    setGuideSideNavCollapsed: (collapsed) => {
+      set({ guideSideNavCollapsed: collapsed });
+      storage.set("guideSideNavCollapsed", collapsed);
+    },
+
+    toggleGuideSideNav: () => {
+      get().setGuideSideNavCollapsed(!get().guideSideNavCollapsed);
+    },
+
+    setGuideSideNavWidth: (width) => {
+      set({ guideSideNavWidth: width });
+      storage.set("guideSideNavWidth", width);
+    },
+
+    setMatchVscodeTheme: async (enabled) => {
+      set({ matchVscodeTheme: enabled });
+      storage.set("matchVscodeTheme", enabled);
+      if (enabled) {
+        await get().detectAndApplyVscodeTheme();
+      } else {
+        // Revert to the selected bundled theme
+        const theme = getUiTheme(get().uiTheme);
+        set({ resolvedVscodeTheme: null, codeTheme: theme.codeTheme });
+        storage.set("codeTheme", theme.codeTheme);
+        applyUiTheme(theme);
+      }
+    },
+
+    detectAndApplyVscodeTheme: async () => {
+      const resolved = await fetchAndResolveVscodeTheme();
+      if (!resolved) return;
+
+      set({
+        resolvedVscodeTheme: resolved,
+        codeTheme: resolved.codeTheme,
+      });
+      applyResolvedVscodeTheme(resolved, storage);
+    },
+  };
+};

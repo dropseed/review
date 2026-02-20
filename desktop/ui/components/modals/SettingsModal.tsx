@@ -72,6 +72,7 @@ interface CopyableFieldProps {
   copyId: string;
   onCopy: (text: string, label: string) => void;
   truncate?: boolean;
+  onRegenerate?: () => void;
 }
 
 function CopyableField({
@@ -81,6 +82,7 @@ function CopyableField({
   copyId,
   onCopy,
   truncate,
+  onRegenerate,
 }: CopyableFieldProps): ReactNode {
   return (
     <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
@@ -92,12 +94,22 @@ function CopyableField({
           {value}
         </code>
       </div>
-      <button
-        onClick={() => onCopy(value, copyId)}
-        className="ml-2 shrink-0 rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary"
-      >
-        {copiedLabel === copyId ? "Copied" : "Copy"}
-      </button>
+      <div className="ml-2 flex shrink-0 gap-1">
+        {onRegenerate && (
+          <button
+            onClick={onRegenerate}
+            className="rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary"
+          >
+            Regenerate
+          </button>
+        )}
+        <button
+          onClick={() => onCopy(value, copyId)}
+          className="rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary"
+        >
+          {copiedLabel === copyId ? "Copied" : "Copy"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -139,6 +151,7 @@ export function SettingsModal({
   const regenerateCompanionCertificate = useReviewStore(
     (s) => s.regenerateCompanionCertificate,
   );
+  const companionServerError = useReviewStore((s) => s.companionServerError);
 
   const [machineHostname, setMachineHostname] = useState<string>("");
   const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
@@ -574,8 +587,34 @@ export function SettingsModal({
                     onCheckedChange={setCompanionServerEnabled}
                   />
 
+                  {companionServerError && (
+                    <div className="mt-2 rounded-lg bg-status-rejected/5 px-3 py-2 ring-1 ring-status-rejected/30">
+                      <p className="text-xxs text-status-rejected/90">
+                        {companionServerError}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
+                    <label className="text-xxs text-fg-muted">Port</label>
+                    <Input
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      value={companionServerPort}
+                      disabled={companionServerEnabled}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (val >= 1024 && val <= 65535) {
+                          setCompanionServerPort(val);
+                        }
+                      }}
+                      className="w-24 text-xs text-right"
+                    />
+                  </div>
+
                   {companionServerEnabled && (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-2 space-y-2">
                       {companionQrSvg && (
                         <div className="flex justify-center">
                           <div className="rounded-lg bg-white p-2">
@@ -587,22 +626,6 @@ export function SettingsModal({
                           </div>
                         </div>
                       )}
-                      <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
-                        <label className="text-xxs text-fg-muted">Port</label>
-                        <Input
-                          type="number"
-                          min={1024}
-                          max={65535}
-                          value={companionServerPort}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            if (val >= 1024 && val <= 65535) {
-                              setCompanionServerPort(val);
-                            }
-                          }}
-                          className="w-24 text-xs text-right"
-                        />
-                      </div>
                       <CopyableField
                         label="Server URL"
                         value={`https://${machineHostname || "localhost"}:${companionServerPort}`}
@@ -626,6 +649,7 @@ export function SettingsModal({
                           copiedLabel={companionCopied}
                           copyId="token"
                           onCopy={copyToClipboard}
+                          onRegenerate={generateCompanionServerToken}
                           truncate
                         />
                       )}
@@ -636,15 +660,10 @@ export function SettingsModal({
                           copiedLabel={companionCopied}
                           copyId="fingerprint"
                           onCopy={copyToClipboard}
+                          onRegenerate={regenerateCompanionCertificate}
                           truncate
                         />
                       )}
-                      <button
-                        onClick={() => regenerateCompanionCertificate()}
-                        className="mt-1 w-full rounded-lg bg-surface-raised/30 px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface-raised/50 hover:text-fg-secondary"
-                      >
-                        Regenerate Certificate
-                      </button>
                     </div>
                   )}
 

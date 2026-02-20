@@ -2284,7 +2284,7 @@ pub fn generate_companion_token() -> String {
 }
 
 #[tauri::command]
-pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn start_companion_server(app_handle: tauri::AppHandle, port: u16) -> Result<(), String> {
     use super::{companion_server, tray};
     use tauri::Manager;
 
@@ -2294,10 +2294,6 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
         let _ = write_setting("companionServerToken", serde_json::json!(t));
         t
     });
-    let port = read_setting("companionServerPort")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u16)
-        .unwrap_or(3333);
 
     // Ensure TLS certificate exists
     let app_data_dir = app_handle
@@ -2313,7 +2309,7 @@ pub fn start_companion_server(app_handle: tauri::AppHandle) -> Result<(), String
     );
 
     companion_server::set_auth_token(Some(token));
-    companion_server::start(port, cert.cert_path, cert.key_path);
+    companion_server::start(port, cert.cert_path, cert.key_path).await?;
     tray::show(&app_handle);
     Ok(())
 }
