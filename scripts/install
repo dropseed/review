@@ -18,8 +18,7 @@ fi
 ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 
 # Install npm dependencies
-npm install
+(cd desktop && npm install)
 
 # Build Rust dependencies
-cd src-tauri
 cargo build

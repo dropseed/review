@@ -9,6 +9,6 @@ while [ -L "$SOURCE" ]; do
 done
 cd "$(dirname "$SOURCE")/.."
 
-npx prettier --check "*.md" "src/**/*.{ts,tsx}" "*.{js,json}"
+(cd desktop && npx prettier --check "../*.md" "ui/**/*.{ts,tsx}" "*.{js,json}")
 
 cargo fmt --check

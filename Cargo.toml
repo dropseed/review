@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["review", "src-tauri"]
+members = ["core", "desktop/tauri"]
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -2,6 +2,6 @@
 set -e
 cd "$(dirname "$0")/.."
 
-npx prettier --write "*.md" "src/**/*.{ts,tsx}" "*.{js,json}"
+(cd desktop && npx prettier --write "../*.md" "ui/**/*.{ts,tsx}" "*.{js,json}")
 
 cargo fmt

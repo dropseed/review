@@ -2,6 +2,6 @@
 # Development script for Review desktop app
 
 set -e
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../desktop"
 
-CARGO_WATCH_DEBOUNCE=3 npm run tauri dev -- --config src-tauri/tauri.conf.dev.json
+CARGO_WATCH_DEBOUNCE=3 npm run tauri dev -- --config tauri/tauri.conf.dev.json

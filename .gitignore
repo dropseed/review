@@ -4,7 +4,7 @@ node_modules/
 # Build outputs
 dist/
 /target/
-src-tauri/gen/
+desktop/tauri/gen/
 
 # IDE
 .idea/
@@ -26,8 +26,8 @@ npm-debug.log*
 .claude/skills/
 
 # Tauri
-src-tauri/WixTools/
-src-tauri/binaries/
+desktop/tauri/WixTools/
+desktop/tauri/binaries/
 
 # Xcode
 xcuserdata/

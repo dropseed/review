@@ -1,4 +1,4 @@
-# review/ — Core Rust Library
+# core/ — Core Rust Library
 
 This crate contains all business logic with no Tauri dependencies. It can be used standalone via the CLI.
 

@@ -1,6 +1,6 @@
 /**
  * Structured error type from the Rust backend.
- * This matches the AppError enum in src-tauri/src/error.rs.
+ * This matches the AppError enum in desktop/tauri/src/error.rs.
  */
 export type AppError =
   | { type: "Git"; details: { message: string; operation: string } }

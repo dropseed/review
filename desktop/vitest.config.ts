@@ -6,18 +6,18 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(__dirname, "./ui"),
     },
   },
   test: {
     globals: true,
     environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    setupFiles: ["./ui/test/setup.ts"],
+    include: ["ui/**/*.test.ts", "ui/**/*.test.tsx"],
     coverage: {
       reporter: ["text", "json", "html"],
-      include: ["src/**/*.ts", "src/**/*.tsx"],
-      exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
+      include: ["ui/**/*.ts", "ui/**/*.tsx"],
+      exclude: ["ui/**/*.test.ts", "ui/**/*.test.tsx", "ui/test/**"],
     },
   },
 });

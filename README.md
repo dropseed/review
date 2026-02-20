@@ -51,7 +51,7 @@ scripts/build            # Build production app
 
 ```mermaid
 graph TB
-    subgraph Frontend["Frontend (src/)"]
+    subgraph Frontend["Frontend (desktop/ui/)"]
         React["React + TypeScript + Vite"]
         subgraph Zustand["Zustand Store"]
             gitSlice["gitSlice"]
@@ -64,13 +64,13 @@ graph TB
         React --> Zustand
     end
 
-    subgraph Desktop["Desktop (src-tauri/)"]
+    subgraph Desktop["Desktop (desktop/tauri/)"]
         commands["commands.rs"]
         watchers["watchers.rs"]
         companion_server["companion_server.rs"]
     end
 
-    subgraph Core["Core Library (review/)"]
+    subgraph Core["Core Library (core/)"]
         sources["sources/
         DiffSource trait
         LocalGitSource"]
@@ -111,8 +111,8 @@ graph TB
     preferencesSlice --> tauri_store
 ```
 
-- **Frontend**: React + TypeScript + Vite (`src/`), state managed with Zustand
-- **Backend**: Rust + Tauri (`src-tauri/`), classification via Claude CLI
+- **Frontend**: React + TypeScript + Vite (`desktop/ui/`), state managed with Zustand
+- **Backend**: Rust + Tauri (`desktop/tauri/`), classification via Claude CLI
 
 ## Key Concepts
 

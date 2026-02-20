@@ -1,6 +1,6 @@
-# src-tauri/ — Desktop App (Tauri)
+# desktop/tauri/ — Desktop App (Tauri)
 
-This crate wraps the `review` core library into a Tauri desktop application.
+This crate wraps the `core` library into a Tauri desktop application.
 
 ## Structure
 
@@ -37,5 +37,5 @@ The file watcher (`watchers.rs`) emits these events to the frontend:
 
 1. Add the `#[tauri::command]` function in `commands.rs`
 2. Register it in the `generate_handler![]` list in `mod.rs`
-3. Add the corresponding `invoke()` call in `src/api/tauri-client.ts`
-4. Add the method to the `ApiClient` interface in `src/api/client.ts`
+3. Add the corresponding `invoke()` call in `desktop/ui/api/tauri-client.ts`
+4. Add the method to the `ApiClient` interface in `desktop/ui/api/client.ts`

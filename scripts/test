@@ -3,12 +3,12 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "=== TypeScript Type Check ==="
-npx tsc --noEmit
+(cd desktop && npx tsc --noEmit)
 echo "TypeScript type check passed!"
 
 echo ""
 echo "=== TypeScript Tests ==="
-npm test
+(cd desktop && npm test)
 echo "TypeScript tests passed!"
 
 echo ""

@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 # (app-icon.svg stays transparent for tray icons etc.)
 node -e "
 const fs = require('fs');
-const svg = fs.readFileSync('app-icon.svg', 'utf8');
+const svg = fs.readFileSync('desktop/app-icon.svg', 'utf8');
 
 // Dark background variant for app icons (with padding so pills are inset)
 const pad = 100;
@@ -27,17 +27,17 @@ fs.writeFileSync('.app-icon-tray.svg', tray);
 "
 
 # Desktop icons (Mac .icns, Windows .ico, PNGs) — dark background
-npx @tauri-apps/cli icon .app-icon-dark.svg -o src-tauri/icons
-rm -rf src-tauri/icons/android src-tauri/icons/ios
+npx @tauri-apps/cli icon .app-icon-dark.svg -o desktop/tauri/icons
+rm -rf desktop/tauri/icons/android desktop/tauri/icons/ios
 
 # iOS app icon (1024x1024) — dark background
 sips -s format png -z 1024 1024 .app-icon-dark.svg --out ios/Review/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 
 # Tray icons (template: black on transparent, macOS handles light/dark)
-sips -s format png -z 22 22 .app-icon-tray.svg --out src-tauri/icons/tray-icon.png
-sips -s format png -z 44 44 .app-icon-tray.svg --out src-tauri/icons/tray-icon@2x.png
+sips -s format png -z 22 22 .app-icon-tray.svg --out desktop/tauri/icons/tray-icon.png
+sips -s format png -z 44 44 .app-icon-tray.svg --out desktop/tauri/icons/tray-icon@2x.png
 
 rm .app-icon-dark.svg .app-icon-tray.svg
 
 echo ""
-echo "Icons generated in src-tauri/icons/ and ios/"
+echo "Icons generated in desktop/tauri/icons/ and ios/"

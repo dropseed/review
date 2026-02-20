@@ -9,7 +9,7 @@ export default defineConfig({
   base: "/",
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(__dirname, "./ui"),
     },
   },
   // Prevent vite from obscuring rust errors
@@ -19,8 +19,8 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      // Tell vite to ignore watching `src-tauri` and `ios`
-      ignored: ["**/src-tauri/**", "**/ios/**"],
+      // Tell vite to ignore watching the Tauri crate
+      ignored: ["**/tauri/**"],
     },
   },
 });

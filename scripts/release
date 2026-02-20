@@ -18,7 +18,7 @@ echo "Running tests..."
 scripts/test
 
 # Read current version from package.json
-CURRENT=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+CURRENT=$(grep '"version"' desktop/package.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
 
 case "$BUMP" in
@@ -35,28 +35,28 @@ VERSION="${MAJOR}.${MINOR}.${PATCH}"
 echo ""
 echo "Bumping version: $CURRENT -> $VERSION"
 
-# Update package.json
-sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' package.json
+# Update desktop/package.json
+sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' desktop/package.json
 
-# Update review/Cargo.toml (only the package version, not dependency versions)
-awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" ver "\""); done=1 } 1' review/Cargo.toml > review/Cargo.toml.tmp && mv review/Cargo.toml.tmp review/Cargo.toml
+# Update core/Cargo.toml (only the package version, not dependency versions)
+awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" ver "\""); done=1 } 1' core/Cargo.toml > core/Cargo.toml.tmp && mv core/Cargo.toml.tmp core/Cargo.toml
 
-# Update src-tauri/Cargo.toml (only the package version, not dependency versions)
-awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" ver "\""); done=1 } 1' src-tauri/Cargo.toml > src-tauri/Cargo.toml.tmp && mv src-tauri/Cargo.toml.tmp src-tauri/Cargo.toml
+# Update desktop/tauri/Cargo.toml (only the package version, not dependency versions)
+awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "version = \"" ver "\""); done=1 } 1' desktop/tauri/Cargo.toml > desktop/tauri/Cargo.toml.tmp && mv desktop/tauri/Cargo.toml.tmp desktop/tauri/Cargo.toml
 
-# Update src-tauri/tauri.conf.json
-sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' src-tauri/tauri.conf.json
+# Update desktop/tauri/tauri.conf.json
+sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' desktop/tauri/tauri.conf.json
 
 # Update Cargo.lock
 echo "Running cargo check to update Cargo.lock..."
-cargo check --manifest-path src-tauri/Cargo.toml 2>/dev/null
+cargo check --manifest-path desktop/tauri/Cargo.toml 2>/dev/null
 
 echo ""
 echo "Updated versions:"
-echo "  package.json:          $(grep '"version"' package.json | head -1 | xargs)"
-echo "  review/Cargo.toml:     $(grep '^version' review/Cargo.toml | head -1 | xargs)"
-echo "  src-tauri/Cargo.toml:  $(grep '^version' src-tauri/Cargo.toml | head -1 | xargs)"
-echo "  src-tauri/tauri.conf.json: $(grep '"version"' src-tauri/tauri.conf.json | xargs)"
+echo "  desktop/package.json:          $(grep '"version"' desktop/package.json | head -1 | xargs)"
+echo "  core/Cargo.toml:               $(grep '^version' core/Cargo.toml | head -1 | xargs)"
+echo "  desktop/tauri/Cargo.toml:      $(grep '^version' desktop/tauri/Cargo.toml | head -1 | xargs)"
+echo "  desktop/tauri/tauri.conf.json: $(grep '"version"' desktop/tauri/tauri.conf.json | xargs)"
 
 # Fetch signing secrets from 1Password
 echo ""
@@ -87,20 +87,20 @@ TAURI_TARGET_TRIPLE=x86_64-apple-darwin ./scripts/build-cli
 # Build both targets
 echo ""
 echo "Building aarch64-apple-darwin..."
-npm run tauri build -- --target aarch64-apple-darwin --features symbols-all
+(cd desktop && npm run tauri build -- --target aarch64-apple-darwin --features symbols-all)
 # Detach any auto-mounted DMGs to prevent Finder from opening
 hdiutil detach /Volumes/Review 2>/dev/null || true
 
 echo ""
 echo "Building x86_64-apple-darwin..."
-npm run tauri build -- --target x86_64-apple-darwin --features symbols-all
+(cd desktop && npm run tauri build -- --target x86_64-apple-darwin --features symbols-all)
 hdiutil detach /Volumes/Review 2>/dev/null || true
 
 echo ""
 echo "Both builds succeeded!"
 
 # Commit, tag, and push (only after builds succeed)
-git add package.json review/Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json Cargo.lock
+git add desktop/package.json core/Cargo.toml desktop/tauri/Cargo.toml desktop/tauri/tauri.conf.json Cargo.lock
 git commit -m "Release v$VERSION"
 git tag -m "v$VERSION" "v$VERSION"
 

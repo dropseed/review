@@ -33,7 +33,7 @@ scripts/build            # Build production app (outputs to target/release/)
 
 The project is organized as a Cargo workspace with two crates:
 
-- **`review/`** - Core library + CLI (no Tauri dependencies)
+- **`core/`** - Core library + CLI (no Tauri dependencies)
   - `src/classify/` - Static hunk classification
   - `src/diff/` - Git diff parsing and hunk extraction
   - `src/review/` - Review state management and persistence
@@ -42,11 +42,13 @@ The project is organized as a Cargo workspace with two crates:
   - `src/cli/` - CLI commands (behind `cli` feature flag)
   - `src/bin/` - CLI binary (`review`)
 
-- **`src-tauri/`** - Desktop app (depends on `review`)
-  - `src/desktop/` - Tauri-specific code (commands, watchers, companion server)
+- **`desktop/`** - Desktop app
+  - `tauri/` - Tauri crate (depends on `core`)
+  - `ui/` - React + TypeScript frontend, state managed with Zustand
 
-- **Desktop Frontend**: React + TypeScript + Vite in `src/`, state managed with Zustand
-- **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/commands.rs`
+- **`ios/`** - Native SwiftUI companion app (connects to desktop companion server)
+
+- **Communication**: Frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/tauri/src/desktop/commands.rs`
 - **Data flow**: Rust computes diffs/hunks → Zustand stores state → User actions invoke Rust → Rust persists to `.git/review/`
 
 ## Key Concepts
@@ -99,35 +101,35 @@ When working on frontend code, use these skills:
 
 ## Key Files
 
-Note: `src/` is the frontend (React/TypeScript), `review/src/` is the Rust core library.
+Note: `desktop/ui/` is the frontend (React/TypeScript), `core/src/` is the Rust core library.
 
-- `src/stores/index.ts` - Combined Zustand store (12 slices)
-- `src/stores/slices/reviewSlice.ts` - Review state (approvals, trust labels, notes)
-- `src/stores/slices/classificationSlice.ts` - Hunk classification state
-- `src/stores/slices/navigationSlice.ts` - File/hunk navigation
-- `src/stores/slices/preferencesSlice.ts` - UI preferences (persisted via Tauri Store)
-- `src-tauri/src/desktop/commands.rs` - All Tauri commands (frontend ↔ Rust bridge)
-- `src-tauri/src/desktop/mod.rs` - App setup, menus, plugin registration
-- `review/src/classify/mod.rs` - Classification entry point
-- `review/src/trust/mod.rs` - Trust pattern matching
-- `review/src/diff/mod.rs` - Diff parsing entry point
-- `review/src/review/mod.rs` - Review state types and persistence
-- `review/resources/taxonomy.json` - Trust pattern taxonomy definition
+- `desktop/ui/stores/index.ts` - Combined Zustand store (12 slices)
+- `desktop/ui/stores/slices/reviewSlice.ts` - Review state (approvals, trust labels, notes)
+- `desktop/ui/stores/slices/classificationSlice.ts` - Hunk classification state
+- `desktop/ui/stores/slices/navigationSlice.ts` - File/hunk navigation
+- `desktop/ui/stores/slices/preferencesSlice.ts` - UI preferences (persisted via Tauri Store)
+- `desktop/tauri/src/desktop/commands.rs` - All Tauri commands (frontend ↔ Rust bridge)
+- `desktop/tauri/src/desktop/mod.rs` - App setup, menus, plugin registration
+- `core/src/classify/mod.rs` - Classification entry point
+- `core/src/trust/mod.rs` - Trust pattern matching
+- `core/src/diff/mod.rs` - Diff parsing entry point
+- `core/src/review/mod.rs` - Review state types and persistence
+- `core/resources/taxonomy.json` - Trust pattern taxonomy definition
 
 ## Conventions
 
-- **Frontend state**: Zustand store slices in `src/stores/slices/`, combined in `src/stores/index.ts`, accessed via `useReviewStore` hook
+- **Frontend state**: Zustand store slices in `desktop/ui/stores/slices/`, combined in `desktop/ui/stores/index.ts`, accessed via `useReviewStore` hook
 - **Tauri IPC**: Commands defined in `commands.rs` as `#[tauri::command]` fns, called from frontend via `invoke("command_name", { args })`
-- **API abstraction**: `src/api/` provides an `ApiClient` interface; `tauri-client.ts` wraps `invoke()` calls, `http-client.ts` is for web/debug
-- **Platform abstraction**: `src/platform/` abstracts Tauri vs web (storage, file paths)
+- **API abstraction**: `desktop/ui/api/` provides an `ApiClient` interface; `tauri-client.ts` wraps `invoke()` calls, `http-client.ts` is for web/debug
+- **Platform abstraction**: `desktop/ui/platform/` abstracts Tauri vs web (storage, file paths)
 - **Error handling**: Rust uses `anyhow::Result`, Tauri commands return `Result<T, String>`, frontend uses try/catch on `invoke()`
 - **Styling**: Tailwind CSS v4, utility classes with `tailwind-merge`
 - **File naming**: kebab-case for utilities, PascalCase for React components
-- **Components**: Feature-organized under `src/components/` (e.g., `FileViewer/`, `FilesPanel/`, `OverviewView/`, `StartScreen/`)
-- **Hooks**: Custom hooks in `src/hooks/` for lifecycle concerns (file watching, keyboard nav, scroll tracking)
+- **Components**: Feature-organized under `desktop/ui/components/` (e.g., `FileViewer/`, `FilesPanel/`, `OverviewView/`, `StartScreen/`)
+- **Hooks**: Custom hooks in `desktop/ui/hooks/` for lifecycle concerns (file watching, keyboard nav, scroll tracking)
 
 ## Trust Patterns Taxonomy
 
-The taxonomy is defined in `review/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `type-annotations`, `file`, `move`, `generated`.
+The taxonomy is defined in `core/resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `type-annotations`, `file`, `move`, `generated`.
 
 Users can extend the taxonomy by creating `.git/review/custom-patterns.json` with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.

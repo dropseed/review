@@ -1,4 +1,4 @@
-# src/ — Frontend (React + TypeScript + Vite)
+# desktop/ui/ — Frontend (React + TypeScript + Vite)
 
 ## Zustand Store
 

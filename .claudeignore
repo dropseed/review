@@ -3,4 +3,4 @@ Cargo.lock
 package-lock.json
 
 # Eval data (only relevant when working on classifier)
-review/resources/eval/
+core/resources/eval/
