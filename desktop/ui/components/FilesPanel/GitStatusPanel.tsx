@@ -120,7 +120,6 @@ export function GitStatusPanel({
   const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
 
   const {
-    expandedPaths,
     togglePath,
     selectedFile,
     repoPath,
@@ -287,7 +286,6 @@ export function GitStatusPanel({
                   key={entry.path}
                   entry={entry}
                   depth={0}
-                  expandedPaths={expandedPaths}
                   onToggle={togglePath}
                   selectedFile={selectedFile}
                   onSelectFile={handleSelectStaged}
@@ -338,7 +336,6 @@ export function GitStatusPanel({
                   key={entry.path}
                   entry={entry}
                   depth={0}
-                  expandedPaths={expandedPaths}
                   onToggle={togglePath}
                   selectedFile={selectedFile}
                   onSelectFile={handleSelectUnstaged}
@@ -383,7 +380,6 @@ export function GitStatusPanel({
                   key={entry.path}
                   entry={entry}
                   depth={0}
-                  expandedPaths={expandedPaths}
                   onToggle={togglePath}
                   selectedFile={selectedFile}
                   onSelectFile={onSelectFile}

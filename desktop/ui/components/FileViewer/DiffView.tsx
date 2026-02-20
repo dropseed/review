@@ -243,12 +243,26 @@ export function DiffView({
     return map;
   }, [allHunks]);
 
+  const fileHunkStates = useMemo(() => {
+    if (!hunkStates) return hunkStates;
+    const states: Record<string, HunkState> = {};
+    let changed = false;
+    for (const hunk of hunks) {
+      const s = hunkStates[hunk.id];
+      if (s) {
+        states[hunk.id] = s;
+        changed = true;
+      }
+    }
+    return changed ? states : undefined;
+  }, [hunks, hunkStates]);
+
   // Build line annotations for each hunk - position at last changed line
   // Memoized to preserve reference stability — @pierre/diffs uses reference
   // equality on lineAnnotations to decide whether to re-render the diff.
   const hunkAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
     return hunks.flatMap((hunk): DiffLineAnnotation<AnnotationMeta>[] => {
-      const hunkState = hunkStates?.[hunk.id];
+      const hunkState = fileHunkStates?.[hunk.id];
       // Prop hunks come from getFileContent (per-file, no movePairId).
       // Store hunks have movePairId set by detect_move_pairs. Use hunkById for O(1) lookup.
       const movePairId = hunkById.get(hunk.id)?.movePairId;
@@ -293,7 +307,7 @@ export function DiffView({
         },
       ];
     });
-  }, [hunks, hunkStates, hunkById]);
+  }, [hunks, fileHunkStates, hunkById]);
 
   // Build lookup from changed-lines key to hunk IDs for batch operations.
   // Groups identical changes across different files for "approve all identical" feature.

@@ -61,17 +61,10 @@ export function ReviewView({
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
   const hunks = useReviewStore((s) => s.hunks);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
-  const refresh = useReviewStore((s) => s.refresh);
-  const secondaryFile = useReviewStore((s) => s.secondaryFile);
-  const closeSplit = useReviewStore((s) => s.closeSplit);
   const classificationsModalOpen = useReviewStore(
     (s) => s.classificationsModalOpen,
-  );
-  const setClassificationsModalOpen = useReviewStore(
-    (s) => s.setClassificationsModalOpen,
   );
 
   const contentSearchOpen = useReviewStore((s) => s.contentSearchOpen);
@@ -79,7 +72,6 @@ export function ReviewView({
 
   // Guide button state
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
-  const startGuide = useReviewStore((s) => s.startGuide);
   const guideLoading = useReviewStore((s) => s.guideLoading);
   const reviewState = useReviewStore((s) => s.reviewState);
   const guideActive = changesViewMode === "guide";
@@ -94,8 +86,8 @@ export function ReviewView({
 
   const handleStartGuide = useCallback(async () => {
     playGuideStartSound();
-    await startGuide();
-  }, [startGuide]);
+    await useReviewStore.getState().startGuide();
+  }, []);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -110,23 +102,24 @@ export function ReviewView({
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
-      await refresh();
+      await useReviewStore.getState().refresh();
     } finally {
       setIsRefreshing(false);
     }
-  }, [refresh, isRefreshing]);
+  }, [isRefreshing]);
 
   // Close handler: cascading close (file -> split -> overview -> window)
   const handleClose = useCallback(async () => {
-    if (secondaryFile !== null) {
-      closeSplit();
-    } else if (selectedFile !== null) {
+    const state = useReviewStore.getState();
+    if (state.secondaryFile !== null) {
+      state.closeSplit();
+    } else if (state.selectedFile !== null) {
       useReviewStore.setState({ selectedFile: null });
     } else {
       const platform = getPlatformServices();
       await platform.window.close();
     }
-  }, [secondaryFile, selectedFile, closeSplit]);
+  }, []);
 
   // New tab handler: open a new tab with the current repo
   const handleNewTab = useCallback(async () => {
@@ -148,12 +141,12 @@ export function ReviewView({
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      setClassificationsModalOpen(false);
-      navigateToBrowse(filePath);
+      useReviewStore.getState().setClassificationsModalOpen(false);
+      useReviewStore.getState().navigateToBrowse(filePath);
       const idx = hunkIndexMap.get(hunkId);
       if (idx !== undefined) useReviewStore.setState({ focusedHunkIndex: idx });
     },
-    [hunkIndexMap, navigateToBrowse, setClassificationsModalOpen],
+    [hunkIndexMap],
   );
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({
@@ -384,7 +377,9 @@ export function ReviewView({
         <Suspense fallback={null}>
           <ClassificationsModal
             isOpen={classificationsModalOpen}
-            onClose={() => setClassificationsModalOpen(false)}
+            onClose={() =>
+              useReviewStore.getState().setClassificationsModalOpen(false)
+            }
             onSelectHunk={handleClassificationSelectHunk}
           />
         </Suspense>

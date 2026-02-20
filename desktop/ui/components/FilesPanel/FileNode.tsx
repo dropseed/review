@@ -21,6 +21,7 @@ import {
   WorkingTreeDot,
 } from "../tree";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
+import { useFilesPanelContext } from "./FilesPanelContext";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
@@ -38,7 +39,6 @@ function fileNameColor(isSelected: boolean, isGitignored: boolean): string {
 interface FileNodeProps {
   entry: ProcessedFileEntry;
   depth: number;
-  expandedPaths: Set<string>;
   onToggle: (path: string, isGitignored?: boolean) => void;
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
@@ -206,7 +206,6 @@ export const FileNode = memo(
   function FileNode({
     entry,
     depth,
-    expandedPaths,
     onToggle,
     selectedFile,
     onSelectFile,
@@ -225,6 +224,7 @@ export const FileNode = memo(
     collapsible = true,
     showSizeBar = false,
   }: FileNodeProps) {
+    const { expandedPaths } = useFilesPanelContext();
     if (!entry.matchesFilter) {
       return null;
     }
@@ -353,7 +353,6 @@ export const FileNode = memo(
                   key={child.path}
                   entry={child}
                   depth={depth + 1}
-                  expandedPaths={expandedPaths}
                   onToggle={onToggle}
                   selectedFile={selectedFile}
                   onSelectFile={onSelectFile}
@@ -569,7 +568,6 @@ export const FileNode = memo(
     return (
       prev.entry === next.entry &&
       prev.depth === next.depth &&
-      prev.expandedPaths === next.expandedPaths &&
       prev.selectedFile === next.selectedFile &&
       prev.hunkContext === next.hunkContext &&
       prev.onApproveAll === next.onApproveAll &&

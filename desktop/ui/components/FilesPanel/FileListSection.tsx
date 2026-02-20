@@ -52,7 +52,6 @@ export function FileListSection({
   emptyMessage,
 }: FileListSectionProps): ReactNode {
   const {
-    expandedPaths,
     togglePath,
     selectedFile,
     handleSelectFile,
@@ -80,7 +79,6 @@ export function FileListSection({
             key={entry.path}
             entry={entry}
             depth={0}
-            expandedPaths={expandedPaths}
             onToggle={togglePath}
             selectedFile={selectedFile}
             onSelectFile={handleSelectFile}

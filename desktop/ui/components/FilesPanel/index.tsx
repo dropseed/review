@@ -39,6 +39,64 @@ import {
 } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
 
+const TRUST_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-status-trusted"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </svg>
+);
+
+const NEEDS_REVIEW_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-fg-muted"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const SAVED_FOR_LATER_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-status-modified"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const REVIEWED_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-fg-muted"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+    <polyline points="22 4 12 14.01 9 11.01" />
+  </svg>
+);
+
 /** Collect all directory paths from a processed tree (for expand/collapse) */
 function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
   const paths = new Set<string>();
@@ -267,8 +325,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
   const loadSymbols = useReviewStore((s) => s.loadSymbols);
   const files = useReviewStore((s) => s.files);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const setContentSearchOpen = useReviewStore((s) => s.setContentSearchOpen);
 
   // Trigger symbol loading when switching to flat mode
   useEffect(() => {
@@ -294,19 +350,14 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Navigate to a specific hunk (used by flat mode symbol rows)
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      navigateToBrowse(filePath);
+      useReviewStore.getState().navigateToBrowse(filePath);
       const hunkIndex = hunkIndexMap.get(hunkId);
       if (hunkIndex !== undefined) {
         useReviewStore.setState({ focusedHunkIndex: hunkIndex });
       }
     },
-    [navigateToBrowse, hunkIndexMap],
+    [hunkIndexMap],
   );
-
-  // Section-level bulk approve/unapprove/reject
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
-  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
 
   const pendingHunkIds = useMemo(() => {
     return hunks
@@ -337,12 +388,14 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   }, [hunks, reviewState]);
 
   const handleApproveAllHunks = useCallback(() => {
-    if (pendingHunkIds.length > 0) approveHunkIds(pendingHunkIds);
-  }, [pendingHunkIds, approveHunkIds]);
+    if (pendingHunkIds.length > 0)
+      useReviewStore.getState().approveHunkIds(pendingHunkIds);
+  }, [pendingHunkIds]);
 
   const handleUnapproveAllHunks = useCallback(() => {
-    if (reviewedHunkIds.length > 0) unapproveHunkIds(reviewedHunkIds);
-  }, [reviewedHunkIds, unapproveHunkIds]);
+    if (reviewedHunkIds.length > 0)
+      useReviewStore.getState().unapproveHunkIds(reviewedHunkIds);
+  }, [reviewedHunkIds]);
 
   const savedForLaterHunkIds = useMemo(() => {
     return hunks
@@ -351,8 +404,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   }, [hunks, reviewState]);
 
   const handleUnsaveAll = useCallback(() => {
-    if (savedForLaterHunkIds.length > 0) unapproveHunkIds(savedForLaterHunkIds);
-  }, [savedForLaterHunkIds, unapproveHunkIds]);
+    if (savedForLaterHunkIds.length > 0)
+      useReviewStore.getState().unapproveHunkIds(savedForLaterHunkIds);
+  }, [savedForLaterHunkIds]);
 
   // Quick actions: approve/unapprove by file status (deleted, renamed, added)
   const quickActionData = useMemo(() => {
@@ -422,7 +476,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         actions.push({
           label,
           count: data.pendingIds.length,
-          onAction: () => approveHunkIds(data.pendingIds),
+          onAction: () =>
+            useReviewStore.getState().approveHunkIds(data.pendingIds),
         });
       }
     }
@@ -437,7 +492,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       });
     }
     return actions;
-  }, [quickActionData, approveHunkIds, basenameCount]);
+  }, [quickActionData, basenameCount]);
 
   // Count of approved + trusted hunks (for "Stage approved" action)
   const approvedOrTrustedCount = useMemo(() => {
@@ -494,7 +549,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         actions.push({
           label,
           count: data.approvedIds.length,
-          onAction: () => unapproveHunkIds(data.approvedIds),
+          onAction: () =>
+            useReviewStore.getState().unapproveHunkIds(data.approvedIds),
         });
       }
     }
@@ -509,20 +565,12 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       });
     }
     return actions;
-  }, [
-    quickActionData,
-    unapproveHunkIds,
-    basenameCount,
-    approvedOrTrustedCount,
-  ]);
+  }, [quickActionData, basenameCount, approvedOrTrustedCount]);
 
   // Trust section
   const knownPatternIds = useKnownPatternIds();
   const { trustedHunkCount, trustableHunkCount } =
     useTrustCounts(knownPatternIds);
-  const setTrustList = useReviewStore((s) => s.setTrustList);
-  const classifyStaticHunks = useReviewStore((s) => s.classifyStaticHunks);
-  const reclassifyHunks = useReviewStore((s) => s.reclassifyHunks);
   const isClassificationStale = useReviewStore((s) => s.isClassificationStale);
 
   const unlabeledCount = useMemo(
@@ -563,7 +611,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
         actions.push({
           label: "Untrust all",
           count: matchedArray.length,
-          onAction: () => setTrustList([]),
+          onAction: () => useReviewStore.getState().setTrustList([]),
         });
       } else {
         actions.push({
@@ -571,7 +619,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           count: matchedArray.length,
           onAction: () => {
             const merged = new Set([...currentTrustList, ...matchedArray]);
-            setTrustList([...merged]);
+            useReviewStore.getState().setTrustList([...merged]);
           },
         });
       }
@@ -583,19 +631,19 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       actions.push({
         label: "Reclassify (stale)",
         count: hunks.length,
-        onAction: () => classifyStaticHunks(),
+        onAction: () => useReviewStore.getState().classifyStaticHunks(),
       });
     } else if (unlabeledCount > 0) {
       actions.push({
         label: "Classify unclassified",
         count: unlabeledCount,
-        onAction: () => classifyStaticHunks(),
+        onAction: () => useReviewStore.getState().classifyStaticHunks(),
       });
     } else if (hunks.length > 0) {
       actions.push({
         label: "Reclassify all",
         count: hunks.length,
-        onAction: () => reclassifyHunks(),
+        onAction: () => useReviewStore.getState().reclassifyHunks(),
       });
     }
     return actions;
@@ -603,11 +651,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     isClassificationStale,
     unlabeledCount,
     hunks.length,
-    classifyStaticHunks,
-    reclassifyHunks,
     matchedPatternIds,
     reviewState?.trustList,
-    setTrustList,
   ]);
 
   // Search state
@@ -808,7 +853,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   <span className="flex-1 text-xs font-medium text-fg-muted select-none">
                     All Files
                   </span>
-                  <SearchButton onClick={() => setContentSearchOpen(true)} />
+                  <SearchButton
+                    onClick={() =>
+                      useReviewStore.getState().setContentSearchOpen(true)
+                    }
+                  />
                   <ExpandCollapseButtons
                     onExpandAll={() => expandAll(allDirPaths, renamedDirPaths)}
                     onCollapseAll={collapseAll}
@@ -845,19 +894,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       {trustableHunkCount > 0 && (
                         <SectionHeader
                           title="Trust"
-                          icon={
-                            <svg
-                              className="h-3.5 w-3.5 text-status-trusted"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                            </svg>
-                          }
+                          icon={TRUST_ICON}
                           badge={`${trustedHunkCount}/${trustableHunkCount}`}
                           badgeColor="status-trusted"
                           isOpen={trustOpen}
@@ -871,20 +908,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       {/* Needs Review section */}
                       <SectionHeader
                         title="Needs Review"
-                        icon={
-                          <svg
-                            className="h-3.5 w-3.5 text-fg-muted"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                            <circle cx="12" cy="12" r="3" />
-                          </svg>
-                        }
+                        icon={NEEDS_REVIEW_ICON}
                         badge={stats.pending}
                         badgeColor="status-pending"
                         isOpen={needsReviewOpen}
@@ -922,19 +946,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         flatSectionedFiles.savedForLater.length > 0) && (
                         <SectionHeader
                           title="Saved for Later"
-                          icon={
-                            <svg
-                              className="h-3.5 w-3.5 text-status-modified"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          }
+                          icon={SAVED_FOR_LATER_ICON}
                           badge={stats.savedForLater}
                           badgeColor="status-modified"
                           isOpen={savedForLaterOpen}
@@ -975,20 +987,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       {/* Reviewed section */}
                       <SectionHeader
                         title="Reviewed"
-                        icon={
-                          <svg
-                            className="h-3.5 w-3.5 text-fg-muted"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
-                            <polyline points="22 4 12 14.01 9 11.01" />
-                          </svg>
-                        }
+                        icon={REVIEWED_ICON}
                         badge={stats.reviewed}
                         badgeColor="status-approved"
                         isOpen={reviewedOpen}
@@ -1030,7 +1029,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                             key={entry.path}
                             entry={entry}
                             depth={0}
-                            expandedPaths={expandedPaths}
                             onToggle={togglePath}
                             selectedFile={selectedFile}
                             onSelectFile={handleSelectFile}
@@ -1062,10 +1060,14 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
           hunks={hunks}
           hunkStates={reviewState?.hunks ?? {}}
           trustList={reviewState?.trustList ?? []}
-          onApproveAll={approveHunkIds}
-          onRejectAll={rejectHunkIds}
-          onUnapproveAll={unapproveHunkIds}
-          onNavigateToFile={navigateToBrowse}
+          onApproveAll={(ids) => useReviewStore.getState().approveHunkIds(ids)}
+          onRejectAll={(ids) => useReviewStore.getState().rejectHunkIds(ids)}
+          onUnapproveAll={(ids) =>
+            useReviewStore.getState().unapproveHunkIds(ids)
+          }
+          onNavigateToFile={(path) =>
+            useReviewStore.getState().navigateToBrowse(path)
+          }
         />
       </FilesPanelProvider>
     </ReviewDataProvider>
