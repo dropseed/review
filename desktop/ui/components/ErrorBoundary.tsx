@@ -8,12 +8,18 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  copied: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      copied: false,
+    };
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -36,7 +42,27 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   handleDismiss = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      copied: false,
+    });
+  };
+
+  getErrorText(): string {
+    const parts = [this.state.error?.toString() ?? ""];
+    if (this.state.errorInfo?.componentStack) {
+      parts.push(`\n\nComponent Stack:${this.state.errorInfo.componentStack}`);
+    }
+    return parts.join("");
+  }
+
+  handleCopy = () => {
+    navigator.clipboard.writeText(this.getErrorText()).then(() => {
+      this.setState({ copied: true });
+      setTimeout(() => this.setState({ copied: false }), 2000);
+    });
   };
 
   render() {
@@ -73,15 +99,17 @@ export class ErrorBoundary extends Component<Props, State> {
                 <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg-muted">
                   Error details
                 </summary>
-                <pre className="mt-2 overflow-auto rounded bg-surface-panel p-3 text-xs text-status-rejected">
-                  {this.state.error.toString()}
-                  {this.state.errorInfo?.componentStack && (
-                    <>
-                      {"\n\nComponent Stack:"}
-                      {this.state.errorInfo.componentStack}
-                    </>
-                  )}
-                </pre>
+                <div className="relative mt-2">
+                  <button
+                    onClick={this.handleCopy}
+                    className="absolute right-2 top-2 rounded bg-surface-hover px-2 py-1 text-xs text-fg-muted hover:text-fg-secondary transition-colors"
+                  >
+                    {this.state.copied ? "Copied!" : "Copy"}
+                  </button>
+                  <pre className="overflow-auto rounded bg-surface-panel p-3 text-xs text-status-rejected">
+                    {this.getErrorText()}
+                  </pre>
+                </div>
               </details>
             )}
           </div>
