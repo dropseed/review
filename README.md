@@ -121,6 +121,12 @@ graph TB
 - **Trust Pattern** - A label like `imports:added` that can auto-approve hunks
 - **Review State** - Persisted in `.git/review/reviews/`
 
+## Privacy
+
+Review is local-first — your code stays on your machine. No diffs are uploaded to third parties.
+
+The desktop app includes optional crash reporting via [Sentry](https://sentry.io). It is **off by default** and requires explicit opt-in. When enabled, PII is stripped before transmission. No code or diff content is ever included in crash reports.
+
 ## Extending
 
 The `DiffSource` trait abstracts over the source of diffs. Currently implemented:
