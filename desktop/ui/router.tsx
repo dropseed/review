@@ -12,8 +12,10 @@ import { GuideSideNav } from "./components/GuideSideNav";
 import { SidebarPanelIcon } from "./components/ui/icons";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
+import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores";
+import type { Comparison, GitHubPrRef } from "./types";
 import {
   useRepositoryInit,
   useComparisonLoader,
@@ -119,7 +121,6 @@ function AppShell() {
         ) : (
           <TabRail
             onActivateReview={handleActivateReview}
-            onNewReview={handleNewReview}
             onOpenSettings={() => setShowSettings(true)}
           />
         )}
@@ -134,6 +135,7 @@ function AppShell() {
               handleNewWindow,
               handleCloseRepo,
               handleSelectRepo,
+              handleNewReview,
             }}
           />
         </div>
@@ -160,6 +162,11 @@ interface AppContext {
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
   handleSelectRepo: (path: string) => void;
+  handleNewReview: (
+    path: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
 }
 
 function useAppContext() {
@@ -168,7 +175,10 @@ function useAppContext() {
 
 /** Empty state — shown at "/" when no tab is active */
 function EmptyTabState() {
-  const { repoStatus, repoError, handleOpenRepo } = useAppContext();
+  const { repoStatus, repoError, handleOpenRepo, handleNewReview } =
+    useAppContext();
+  const globalReviews = useReviewStore((s) => s.globalReviews);
+  const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
   const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
@@ -209,6 +219,12 @@ function EmptyTabState() {
     );
   }
 
+  // Show the inline new-review form as the onboarding experience when
+  // there are no reviews (after loading completes)
+  if (!globalReviewsLoading && globalReviews.length === 0) {
+    return <NewReviewView onNewReview={handleNewReview} />;
+  }
+
   return (
     <div
       className="relative flex h-full items-center justify-center"
@@ -228,7 +244,7 @@ function EmptyTabState() {
       )}
       <div className="flex flex-col items-center gap-3 text-center px-6">
         <p className="text-sm text-fg-muted">
-          Open a repository to start reviewing
+          Select a review from the sidebar, or start a new one
         </p>
         <p className="text-2xs text-fg-faint">
           <kbd className="rounded bg-surface-raised px-1.5 py-0.5 text-xxs text-fg-muted font-mono">
@@ -239,6 +255,12 @@ function EmptyTabState() {
       </div>
     </div>
   );
+}
+
+/** New review — shown at "/new" */
+function NewReviewRoute() {
+  const { handleNewReview } = useAppContext();
+  return <NewReviewView onNewReview={handleNewReview} />;
 }
 
 /** Review UI — shown at /:owner/:repo/review/:comparisonKey */
@@ -266,6 +288,7 @@ export function AppRouter() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<EmptyTabState />} />
+          <Route path="/new" element={<NewReviewRoute />} />
           <Route
             path="/:owner/:repo/review/:comparisonKey/*"
             element={<ReviewRoute />}

@@ -92,7 +92,7 @@ export type RepoStatus =
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
-  comparisonReady: boolean;
+  comparisonReady: number;
   setComparisonReady: (ready: boolean) => void;
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
@@ -408,7 +408,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     [setActiveReviewKey, switchReview, setComparison],
   );
 
-  // Handle new review from ComparisonPickerModal — validates, switches, and navigates.
+  // Handle new review — validates, switches, and navigates.
   const handleNewReview = useCallback(
     async (path: string, comparison: Comparison, githubPr?: GitHubPrRef) => {
       if (!(await validateGitRepo(path))) return;

@@ -67,12 +67,6 @@ export interface NavigationSlice {
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
 
-  // Comparison picker modal
-  comparisonPickerOpen: boolean;
-  setComparisonPickerOpen: (open: boolean) => void;
-  comparisonPickerRepoPath: string | null;
-  setComparisonPickerRepoPath: (path: string | null) => void;
-
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: string | null;
   workingTreeDiffMode: "staged" | "unstaged" | null;
@@ -399,13 +393,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   classificationsModalOpen: false,
   setClassificationsModalOpen: (open) =>
     set({ classificationsModalOpen: open }),
-
-  // Comparison picker modal
-  comparisonPickerOpen: false,
-  setComparisonPickerOpen: (open) => set({ comparisonPickerOpen: open }),
-  comparisonPickerRepoPath: null,
-  setComparisonPickerRepoPath: (path) =>
-    set({ comparisonPickerRepoPath: path }),
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: null,

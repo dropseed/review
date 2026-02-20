@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
 import {
@@ -33,15 +34,12 @@ export function useMenuEvents({
   setShowContentSearch,
   setShowSymbolSearch,
 }: UseMenuEventsOptions) {
+  const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
-  const setComparisonPickerOpen = useReviewStore(
-    (s) => s.setComparisonPickerOpen,
-  );
-  const setComparisonPickerRepoPath = useReviewStore(
-    (s) => s.setComparisonPickerRepoPath,
-  );
 
   // Refs to avoid stale closures
   const handleCloseRef = useRef(handleClose);
@@ -58,6 +56,7 @@ export function useMenuEvents({
     handleRefreshRef.current = handleRefresh;
     codeFontSizeRef.current = codeFontSize;
     setCodeFontSizeRef.current = setCodeFontSize;
+    navigateRef.current = navigate;
   }, [
     handleClose,
     handleNewTab,
@@ -65,6 +64,7 @@ export function useMenuEvents({
     handleRefresh,
     codeFontSize,
     setCodeFontSize,
+    navigate,
   ]);
 
   // Listen for menu events (setup once, use refs for current values)
@@ -149,10 +149,7 @@ export function useMenuEvents({
       [
         "menu:new-review",
         () => {
-          const state = useReviewStore.getState();
-          const activeKey = state.activeReviewKey;
-          setComparisonPickerRepoPath(activeKey?.repoPath ?? null);
-          setComparisonPickerOpen(true);
+          navigateRef.current("/new");
         },
       ],
     ];
@@ -168,7 +165,5 @@ export function useMenuEvents({
     setShowContentSearch,
     setShowSymbolSearch,
     toggleTabRail,
-    setComparisonPickerOpen,
-    setComparisonPickerRepoPath,
   ]);
 }
