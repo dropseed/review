@@ -13,6 +13,10 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub repo: Option<String>,
 
+    /// Override the data directory (default: ~/.review/, env: REVIEW_HOME)
+    #[arg(long, global = true)]
+    pub home: Option<String>,
+
     /// Comparison spec (optional, auto-detects from branches if not specified)
     pub spec: Option<String>,
 }
@@ -41,21 +45,44 @@ impl Cli {
     }
 }
 
+/// Resolve a potentially relative path to an absolute one.
+fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    Ok(cwd.join(path))
+}
+
 /// Run the CLI: resolve the comparison, persist state, and open the desktop app.
 pub fn run(cli: Cli) -> Result<(), String> {
+    let has_home_override = cli.home.is_some();
+
+    // Set REVIEW_HOME early so all storage calls use the override
+    if let Some(home) = &cli.home {
+        let absolute = resolve_absolute(Path::new(home))?;
+        std::env::set_var("REVIEW_HOME", &absolute);
+    }
+
     let repo_path = cli.get_repo_path()?;
     let path = PathBuf::from(&repo_path);
 
-    // Resolve comparison: from spec or auto-detect
     let comparison = match cli.spec {
         Some(spec) => parse_comparison_spec(&path, &spec)?,
         None => get_or_detect_comparison(&path)?,
     };
 
-    // Persist review state so the GUI finds it on launch
     storage::ensure_review_exists(&path, &comparison, None).map_err(|e| e.to_string())?;
 
-    open_app(&repo_path, &comparison.key)
+    open_app(&repo_path, &comparison.key)?;
+
+    if has_home_override {
+        eprintln!(
+            "Note: --home only takes effect on a fresh launch. If Review is already running, quit it first."
+        );
+    }
+
+    Ok(())
 }
 
 /// Auto-detect the comparison from the repo's default and current branches.
@@ -120,14 +147,20 @@ fn open_app(repo_path: &str, comparison_key: &str) -> Result<(), String> {
             if !app_path.exists() {
                 return None;
             }
-            // Launch with a clean environment so the app doesn't inherit
-            // unwanted variables from the caller (e.g. CLAUDECODE when
-            // invoked via `! review` inside Claude Code).
-            let result = Command::new("open")
-                .env_clear()
+            // Clean environment so the app doesn't inherit unwanted
+            // variables from the caller (e.g. CLAUDECODE inside Claude Code).
+            let mut cmd = Command::new("open");
+            cmd.env_clear()
                 .env("HOME", std::env::var("HOME").unwrap_or_default())
                 .env("USER", std::env::var("USER").unwrap_or_default())
-                .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+                .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+
+            // Forward REVIEW_HOME so the app uses the same data directory
+            if let Ok(review_home) = std::env::var("REVIEW_HOME") {
+                cmd.env("REVIEW_HOME", review_home);
+            }
+
+            let result = cmd
                 .arg("-a")
                 .arg(app_path)
                 .arg("--args")
