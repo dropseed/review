@@ -2,7 +2,7 @@
   "name": "review",
   "private": true,
   "license": "FSL-1.1-MIT",
-  "version": "0.0.33",
+  "version": "0.0.35",
   "description": "A desktop app that helps humans review diffs more efficiently",
   "author": "Dave Gaeddert <dave.gaeddert@dropseed.dev> (https://www.dropseed.dev/)",
   "homepage": "https://github.com/dropseed/review",
