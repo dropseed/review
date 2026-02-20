@@ -14,4 +14,7 @@ export interface ProcessedFileEntry extends FileEntry {
   compactedPaths: string[];
   fileCount: number;
   siblingMaxFileCount: number;
+  totalSize: number;
+  siblingMaxSize: number;
+  latestModified: number;
 }

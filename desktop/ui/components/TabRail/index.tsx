@@ -1,7 +1,5 @@
 import {
   type ReactNode,
-  lazy,
-  Suspense,
   memo,
   useCallback,
   useEffect,
@@ -16,20 +14,10 @@ import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
-import type {
-  GlobalReviewSummary,
-  DiffShortStat,
-  Comparison,
-  GitHubPrRef,
-} from "../../types";
+import type { GlobalReviewSummary, DiffShortStat } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { SidebarPanelIcon } from "../ui/icons";
-
-const ComparisonPickerModal = lazy(() =>
-  import("../modals/ComparisonPickerModal").then((m) => ({
-    default: m.ComparisonPickerModal,
-  })),
-);
+import { SortMenu } from "../FilesPanel/SortMenu";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
 
@@ -80,96 +68,6 @@ function sortReviews(
     default:
       return [...reviews].sort(compareByUpdated);
   }
-}
-
-/** Sort menu button + dropdown. */
-function SortMenu({
-  sortOrder,
-  onSetSortOrder,
-}: {
-  sortOrder: ReviewSortOrder;
-  onSetSortOrder: (order: ReviewSortOrder) => void;
-}): ReactNode {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open]);
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="p-0.5 rounded text-fg-faint hover:text-fg-muted hover:bg-fg/[0.08]
-                   transition-colors duration-100"
-        aria-label="Sort reviews"
-        aria-expanded={open}
-        aria-haspopup="true"
-      >
-        <svg
-          className="h-3 w-3"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M3 6h18" />
-          <path d="M7 12h10" />
-          <path d="M10 18h4" />
-        </svg>
-      </button>
-      {open && (
-        <>
-          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setOpen(false);
-            }}
-            role="button"
-            tabIndex={0}
-            aria-label="Close menu"
-          />
-          <div
-            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md bg-surface-panel border border-edge-default py-1 shadow-xl"
-            role="menu"
-          >
-            {SORT_OPTIONS.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onSetSortOrder(value);
-                  setOpen(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors duration-100
-                  ${
-                    sortOrder === value
-                      ? "text-fg-secondary bg-fg/[0.06]"
-                      : "text-fg-muted hover:text-fg-secondary hover:bg-fg/[0.04]"
-                  }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
 }
 
 interface FooterVersionInfoProps {
@@ -385,8 +283,10 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
               Active
             </span>
             <SortMenu
-              sortOrder={reviewSortOrder}
-              onSetSortOrder={setReviewSortOrder}
+              options={SORT_OPTIONS}
+              value={reviewSortOrder}
+              onChange={setReviewSortOrder}
+              ariaLabel="Sort reviews"
             />
           </div>
           {sortedActive.map((review) => {
@@ -446,17 +346,11 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
 
 interface TabRailProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
-  onNewReview: (
-    path: string,
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ) => Promise<void>;
   onOpenSettings: () => void;
 }
 
 export const TabRail = memo(function TabRail({
   onActivateReview,
-  onNewReview,
   onOpenSettings,
 }: TabRailProps) {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
@@ -465,16 +359,7 @@ export const TabRail = memo(function TabRail({
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const { updateAvailable, installing, installUpdate } = useAutoUpdater();
 
-  const comparisonPickerOpen = useReviewStore((s) => s.comparisonPickerOpen);
-  const setComparisonPickerOpen = useReviewStore(
-    (s) => s.setComparisonPickerOpen,
-  );
-  const comparisonPickerRepoPath = useReviewStore(
-    (s) => s.comparisonPickerRepoPath,
-  );
-  const setComparisonPickerRepoPath = useReviewStore(
-    (s) => s.setComparisonPickerRepoPath,
-  );
+  const navigate = useNavigate();
 
   const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
     sidebarPosition: "left",
@@ -491,14 +376,8 @@ export const TabRail = memo(function TabRail({
   }, []);
 
   const handleAddReview = useCallback(() => {
-    setComparisonPickerRepoPath(null);
-    setComparisonPickerOpen(true);
-  }, [setComparisonPickerRepoPath, setComparisonPickerOpen]);
-
-  const handleCloseModal = useCallback(() => {
-    setComparisonPickerOpen(false);
-    setComparisonPickerRepoPath(null);
-  }, [setComparisonPickerOpen, setComparisonPickerRepoPath]);
+    navigate("/new");
+  }, [navigate]);
 
   function handleOpenFeedback(): void {
     getPlatformServices().opener.openUrl(`${GITHUB_REPO_URL}/issues`);
@@ -632,17 +511,6 @@ export const TabRail = memo(function TabRail({
           />
         )}
       </nav>
-
-      {comparisonPickerOpen && (
-        <Suspense fallback={null}>
-          <ComparisonPickerModal
-            isOpen={comparisonPickerOpen}
-            onClose={handleCloseModal}
-            onNewReview={onNewReview}
-            prefilledRepoPath={comparisonPickerRepoPath}
-          />
-        </Suspense>
-      )}
     </div>
   );
 });

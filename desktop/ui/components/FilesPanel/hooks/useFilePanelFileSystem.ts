@@ -17,6 +17,7 @@ export function useFilePanelFileSystem() {
   const allFilesLoading = useReviewStore((s) => s.allFilesLoading);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
+  const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
 
   const hunkStatusMap = useFileHunkStatusMap();
 
@@ -34,13 +35,13 @@ export function useFilePanelFileSystem() {
   }, [hunks]);
 
   const sectionedFiles = useMemo(
-    () => processTreeWithSections(allFiles, hunkStatusMap),
-    [allFiles, hunkStatusMap],
+    () => processTreeWithSections(allFiles, hunkStatusMap, fileSortOrder),
+    [allFiles, hunkStatusMap, fileSortOrder],
   );
 
   const allFilesTree = useMemo(
-    () => processTree(allFiles, hunkStatusMap, "browse"),
-    [allFiles, hunkStatusMap],
+    () => processTree(allFiles, hunkStatusMap, "browse", fileSortOrder),
+    [allFiles, hunkStatusMap, fileSortOrder],
   );
 
   const stats = useMemo(() => {
@@ -79,6 +80,24 @@ export function useFilePanelFileSystem() {
     };
   }, [hunkStatusMap]);
 
+  // Build a metadata lookup map for flat view sorting
+  const fileMetadataMap = useMemo(() => {
+    const map = new Map<string, { size: number; modifiedAt: number }>();
+    function collect(entries: typeof allFiles) {
+      for (const e of entries) {
+        if (!e.isDirectory) {
+          map.set(e.path, {
+            size: e.size ?? 0,
+            modifiedAt: e.modifiedAt ?? 0,
+          });
+        }
+        if (e.children) collect(e.children);
+      }
+    }
+    collect(allFiles);
+    return map;
+  }, [allFiles]);
+
   const flatSectionedFiles = useMemo(() => {
     const needsReview: string[] = [];
     const savedForLater: string[] = [];
@@ -111,11 +130,32 @@ export function useFilePanelFileSystem() {
     }
     collectStatusChanges(allFiles);
 
-    needsReview.sort((a, b) => a.localeCompare(b));
-    savedForLater.sort((a, b) => a.localeCompare(b));
-    reviewed.sort((a, b) => a.localeCompare(b));
+    function sortPaths(paths: string[]): void {
+      switch (fileSortOrder) {
+        case "size":
+          paths.sort((a, b) => {
+            const sa = fileMetadataMap.get(a)?.size ?? 0;
+            const sb = fileMetadataMap.get(b)?.size ?? 0;
+            return sb - sa || a.localeCompare(b);
+          });
+          break;
+        case "modified":
+          paths.sort((a, b) => {
+            const ma = fileMetadataMap.get(a)?.modifiedAt ?? 0;
+            const mb = fileMetadataMap.get(b)?.modifiedAt ?? 0;
+            return mb - ma || a.localeCompare(b);
+          });
+          break;
+        default:
+          paths.sort((a, b) => a.localeCompare(b));
+      }
+    }
+
+    sortPaths(needsReview);
+    sortPaths(savedForLater);
+    sortPaths(reviewed);
     return { needsReview, savedForLater, reviewed };
-  }, [hunkStatusMap, allFiles]);
+  }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap]);
 
   const fileStatusMap = useMemo(() => {
     const map = new Map<string, string>();

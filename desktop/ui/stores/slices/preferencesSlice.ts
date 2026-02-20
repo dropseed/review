@@ -85,6 +85,7 @@ export type DiffIndicators = "classic" | "bars" | "none";
 export type ChangesDisplayMode = "tree" | "flat";
 export type DiffViewMode = "unified" | "split" | "old" | "new";
 export type ReviewSortOrder = "updated" | "repo" | "size";
+export type FileSortOrder = "name" | "size" | "modified";
 
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
@@ -101,6 +102,7 @@ const defaults = {
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
+  fileSortOrder: "name" as FileSortOrder,
   companionServerEnabled: false,
   companionServerToken: null as string | null,
   companionServerPort: 3333,
@@ -147,6 +149,9 @@ export interface PreferencesSlice {
 
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
+
+  // File sort order (shared across browse + changes tabs)
+  fileSortOrder: FileSortOrder;
 
   // Companion server
   companionServerEnabled: boolean;
@@ -202,6 +207,9 @@ export interface PreferencesSlice {
 
   // Review sort order actions
   setReviewSortOrder: (order: ReviewSortOrder) => void;
+
+  // File sort order actions
+  setFileSortOrder: (order: FileSortOrder) => void;
 
   // Companion server actions
   setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
@@ -452,6 +460,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setReviewSortOrder: (order) => {
       set({ reviewSortOrder: order });
       storage.set("reviewSortOrder", order);
+    },
+
+    setFileSortOrder: (order) => {
+      set({ fileSortOrder: order });
+      storage.set("fileSortOrder", order);
     },
 
     setCompanionServerEnabled: async (enabled) => {

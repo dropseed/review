@@ -720,6 +720,8 @@ impl LocalGitSource {
                 is_symlink,
                 symlink_target,
                 renamed_from: None,
+                size: None,
+                modified_at: None,
             });
         }
 
@@ -922,11 +924,16 @@ impl LocalGitSource {
 }
 
 /// Symlink info for a file path
+#[derive(Default)]
 struct SymlinkInfo {
     is_symlink: bool,
     target: Option<String>,
     /// If symlink, whether the target is a directory
     target_is_dir: bool,
+    /// File size in bytes (None for directories or if unavailable)
+    size: Option<u64>,
+    /// Last modified time as unix timestamp in seconds (None if unavailable)
+    modified_at: Option<u64>,
 }
 
 /// Build a file tree from file paths and statuses.
@@ -956,52 +963,42 @@ fn build_file_tree(
                 let info = match fs::symlink_metadata(&full_path) {
                     Ok(metadata) => {
                         let is_symlink = metadata.file_type().is_symlink();
-                        if is_symlink {
-                            let target_is_dir = fs::metadata(&full_path)
-                                .map(|m| m.is_dir())
-                                .unwrap_or(false);
-                            let target = fs::read_link(&full_path)
+                        let modified_at = metadata.modified().ok().and_then(|t| {
+                            t.duration_since(std::time::UNIX_EPOCH)
                                 .ok()
-                                .map(|p| p.to_string_lossy().to_string());
+                                .map(|d| d.as_secs())
+                        });
+                        if is_symlink {
                             SymlinkInfo {
                                 is_symlink: true,
-                                target,
-                                target_is_dir,
+                                target: fs::read_link(&full_path)
+                                    .ok()
+                                    .map(|p| p.to_string_lossy().to_string()),
+                                target_is_dir: fs::metadata(&full_path)
+                                    .map(|m| m.is_dir())
+                                    .unwrap_or(false),
+                                modified_at,
+                                ..SymlinkInfo::default()
                             }
                         } else {
                             SymlinkInfo {
-                                is_symlink: false,
-                                target: None,
-                                target_is_dir: false,
+                                size: Some(metadata.len()),
+                                modified_at,
+                                ..SymlinkInfo::default()
                             }
                         }
                     }
-                    Err(_) => {
-                        // File doesn't exist on disk (e.g., deleted file) — treat as regular file
-                        SymlinkInfo {
-                            is_symlink: false,
-                            target: None,
-                            target_is_dir: false,
-                        }
-                    }
+                    // File doesn't exist on disk (e.g., deleted file) — treat as regular file
+                    Err(_) => SymlinkInfo::default(),
                 };
                 (path.clone(), info)
             })
             .collect()
     } else {
-        // No repo path - no symlink detection
+        // No repo path — no symlink detection or metadata
         all_files
             .iter()
-            .map(|path| {
-                (
-                    path.clone(),
-                    SymlinkInfo {
-                        is_symlink: false,
-                        target: None,
-                        target_is_dir: false,
-                    },
-                )
-            })
+            .map(|path| (path.clone(), SymlinkInfo::default()))
             .collect()
     };
 
@@ -1042,50 +1039,30 @@ fn build_file_tree(
             .filter_map(|path| {
                 let full_path = repo.join(path);
                 let metadata = fs::symlink_metadata(&full_path).ok()?;
-                let is_symlink = metadata.file_type().is_symlink();
 
-                if is_symlink {
-                    // Check if target exists
-                    if fs::metadata(&full_path).is_err() {
-                        // Broken symlink - return None to filter it out
-                        return None;
-                    }
-                    let target = fs::read_link(&full_path)
-                        .ok()
-                        .map(|p| p.to_string_lossy().to_string());
+                if metadata.file_type().is_symlink() {
+                    // Broken symlink — filter it out
+                    fs::metadata(&full_path).ok()?;
                     Some((
                         path.clone(),
                         SymlinkInfo {
                             is_symlink: true,
-                            target,
-                            target_is_dir: true, // Directories are always directories
+                            target: fs::read_link(&full_path)
+                                .ok()
+                                .map(|p| p.to_string_lossy().to_string()),
+                            target_is_dir: true,
+                            ..SymlinkInfo::default()
                         },
                     ))
                 } else {
-                    Some((
-                        path.clone(),
-                        SymlinkInfo {
-                            is_symlink: false,
-                            target: None,
-                            target_is_dir: false,
-                        },
-                    ))
+                    Some((path.clone(), SymlinkInfo::default()))
                 }
             })
             .collect()
     } else {
         all_dirs
             .iter()
-            .map(|path| {
-                (
-                    path.clone(),
-                    SymlinkInfo {
-                        is_symlink: false,
-                        target: None,
-                        target_is_dir: false,
-                    },
-                )
-            })
+            .map(|path| (path.clone(), SymlinkInfo::default()))
             .collect()
     };
 
@@ -1118,6 +1095,8 @@ fn build_file_tree(
                 is_symlink: symlink.is_some_and(|s| s.is_symlink),
                 symlink_target: symlink.and_then(|s| s.target.clone()),
                 renamed_from: None,
+                size: None,
+                modified_at: None,
             },
         );
     }
@@ -1146,6 +1125,8 @@ fn build_file_tree(
                 is_symlink: symlink.is_some_and(|s| s.is_symlink),
                 symlink_target: symlink.and_then(|s| s.target.clone()),
                 renamed_from: rename_map.get(file_path).cloned(),
+                size: symlink.and_then(|s| s.size),
+                modified_at: symlink.and_then(|s| s.modified_at),
             },
         );
     }

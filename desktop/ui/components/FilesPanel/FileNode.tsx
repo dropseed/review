@@ -25,6 +25,37 @@ import { useFilesPanelContext } from "./FilesPanelContext";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)}K`;
+  return `${(bytes / 1_000_000).toFixed(1)}M`;
+}
+
+function SizeBar({
+  totalSize,
+  siblingMaxSize,
+}: {
+  totalSize: number;
+  siblingMaxSize: number;
+}): ReactNode {
+  const pct = siblingMaxSize > 0 ? (totalSize / siblingMaxSize) * 100 : 0;
+  if (pct === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1 flex-shrink-0">
+      <span className="font-mono text-xxs tabular-nums text-fg-faint opacity-0 group-hover:opacity-100 transition-opacity">
+        {formatBytes(totalSize)}
+      </span>
+      <div className="w-12 flex justify-end">
+        <div
+          className="h-1 rounded-full bg-surface-active"
+          style={{ width: `${Math.max(pct, 10)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function directoryNameColor(isGitignored: boolean): string {
   if (isGitignored) return "text-fg-muted";
   return "text-fg-secondary";
@@ -247,11 +278,6 @@ export const FileNode = memo(
         onRejectAll
       );
 
-      const barPct =
-        showSizeBar && entry.siblingMaxFileCount > 0
-          ? (entry.fileCount / entry.siblingMaxFileCount) * 100
-          : 0;
-
       return (
         <TreeNodeItem>
           <TreeRow
@@ -281,18 +307,11 @@ export const FileNode = memo(
               )}
             </TreeRowButton>
 
-            {barPct > 0 && (
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <span className="font-mono text-xxs tabular-nums text-fg-faint opacity-0 group-hover:opacity-100 transition-opacity">
-                  {entry.fileCount}
-                </span>
-                <div className="w-12 flex justify-end">
-                  <div
-                    className="h-1 rounded-full bg-surface-active"
-                    style={{ width: `${Math.max(barPct, 10)}%` }}
-                  />
-                </div>
-              </div>
+            {showSizeBar && (
+              <SizeBar
+                totalSize={entry.totalSize}
+                siblingMaxSize={entry.siblingMaxSize}
+              />
             )}
 
             {hasReviewActions && hasReviewableContent && (
@@ -423,6 +442,13 @@ export const FileNode = memo(
                 <SymlinkIndicator target={entry.symlinkTarget} />
               )}
             </TreeRowButton>
+
+            {showSizeBar && (
+              <SizeBar
+                totalSize={entry.totalSize}
+                siblingMaxSize={entry.siblingMaxSize}
+              />
+            )}
 
             {hasReviewActions && hasReviewableContent && (
               <ApprovalButtons

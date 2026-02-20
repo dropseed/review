@@ -13,10 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../../components/ui/dropdown-menu";
-import {
-  CollapsibleSection,
-  DisplayModeToggle,
-} from "../../components/ui/collapsible-section";
+import { CollapsibleSection } from "../../components/ui/collapsible-section";
 import {
   isHunkTrusted,
   type CommitEntry,
@@ -33,7 +30,7 @@ import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
 import {
   PanelToolbar,
-  ExpandCollapseButtons,
+  ViewOptionsMenu,
   ProgressBar,
   SearchButton,
 } from "./PanelToolbar";
@@ -317,6 +314,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Changes display mode (tree vs flat) — one toggle per panel
   const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
   const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
+
+  // File sort order (shared across Browse + Changes tabs)
+  const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
+  const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
   const anyFlatMode = changesDisplayMode === "flat";
 
   // Symbol data for flat mode
@@ -842,9 +843,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     }
                     color="bg-status-approved"
                   />
-                  <DisplayModeToggle
-                    mode={changesDisplayMode}
-                    onChange={setChangesDisplayMode}
+                  <ViewOptionsMenu
+                    sortOrder={fileSortOrder}
+                    onSortOrderChange={setFileSortOrder}
+                    displayMode={changesDisplayMode}
+                    onDisplayModeChange={setChangesDisplayMode}
                   />
                 </PanelToolbar>
               )}
@@ -858,7 +861,9 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       useReviewStore.getState().setContentSearchOpen(true)
                     }
                   />
-                  <ExpandCollapseButtons
+                  <ViewOptionsMenu
+                    sortOrder={fileSortOrder}
+                    onSortOrderChange={setFileSortOrder}
                     onExpandAll={() => expandAll(allDirPaths, renamedDirPaths)}
                     onCollapseAll={collapseAll}
                   />

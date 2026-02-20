@@ -1,5 +1,6 @@
 import type { FileEntry, ReviewState, StatusEntry } from "../../types";
 import { isHunkTrusted } from "../../types";
+import type { FileSortOrder } from "../../stores/slices/preferencesSlice";
 import type {
   FileHunkStatus,
   ProcessedFileEntry,
@@ -151,6 +152,7 @@ export function processTree(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
   viewMode: FilesPanelTab,
+  sortOrder?: FileSortOrder,
 ): ProcessedFileEntry[] {
   function process(entry: FileEntry): ProcessedFileEntry {
     const fileStatus = hunkStatusMap.get(entry.path);
@@ -202,6 +204,15 @@ export function processTree(
         0,
       );
 
+      const totalSize = processedChildren.reduce(
+        (sum, c) => sum + c.totalSize,
+        0,
+      );
+      const latestModified = processedChildren.reduce(
+        (max, c) => Math.max(max, c.latestModified),
+        0,
+      );
+
       return {
         ...entry,
         status: effectiveStatus,
@@ -214,6 +225,9 @@ export function processTree(
         compactedPaths: [entry.path],
         fileCount,
         siblingMaxFileCount: 0,
+        totalSize,
+        siblingMaxSize: 0,
+        latestModified,
       };
     }
 
@@ -246,10 +260,16 @@ export function processTree(
       compactedPaths: [entry.path],
       fileCount: 0,
       siblingMaxFileCount: 0,
+      totalSize: entry.size ?? 0,
+      siblingMaxSize: 0,
+      latestModified: entry.modifiedAt ?? 0,
     };
   }
 
-  const processed = entries.map(process);
+  let processed = entries.map(process);
+  if (sortOrder && sortOrder !== "name") {
+    processed = sortTree(processed, sortOrder);
+  }
   return annotateSiblingMax(compactTree(processed));
 }
 
@@ -263,8 +283,9 @@ export interface SectionedTreeResult {
 export function processTreeWithSections(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
+  sortOrder?: FileSortOrder,
 ): SectionedTreeResult {
-  const processed = processTree(entries, hunkStatusMap, "changes");
+  const processed = processTree(entries, hunkStatusMap, "changes", sortOrder);
 
   function filterSection(
     entries: ProcessedFileEntry[],
@@ -332,20 +353,52 @@ function annotateSiblingMax(
     (max, e) => (e.isDirectory && e.fileCount > max ? e.fileCount : max),
     0,
   );
+  const maxSize = entries.reduce(
+    (max, e) => (e.totalSize > max ? e.totalSize : max),
+    0,
+  );
 
   return entries.map((entry) => {
-    if (!entry.isDirectory) return entry;
-
     const annotatedChildren = entry.children
       ? annotateSiblingMax(entry.children)
       : undefined;
 
     return {
       ...entry,
-      siblingMaxFileCount: maxFileCount,
+      siblingMaxFileCount: entry.isDirectory
+        ? maxFileCount
+        : entry.siblingMaxFileCount,
+      siblingMaxSize: maxSize,
       children: annotatedChildren,
     };
   });
+}
+
+function sortTree(
+  entries: ProcessedFileEntry[],
+  order: FileSortOrder,
+): ProcessedFileEntry[] {
+  const sorted = [...entries].sort((a, b) => {
+    // Directories first, always
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    switch (order) {
+      case "size":
+        return (
+          b.totalSize - a.totalSize ||
+          a.displayName.localeCompare(b.displayName)
+        );
+      case "modified":
+        return (
+          b.latestModified - a.latestModified ||
+          a.displayName.localeCompare(b.displayName)
+        );
+      default:
+        return a.displayName.localeCompare(b.displayName);
+    }
+  });
+  return sorted.map((e) =>
+    e.children ? { ...e, children: sortTree(e.children, order) } : e,
+  );
 }
 
 export function compactTree(

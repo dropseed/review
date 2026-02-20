@@ -79,6 +79,10 @@ pub struct FileEntry {
     pub symlink_target: Option<String>,
     #[serde(rename = "renamedFrom", skip_serializing_if = "Option::is_none")]
     pub renamed_from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(rename = "modifiedAt", skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

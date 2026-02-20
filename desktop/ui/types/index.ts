@@ -204,6 +204,10 @@ export interface FileEntry {
   symlinkTarget?: string;
   // Rename info (old path before rename)
   renamedFrom?: string;
+  // File size in bytes (only for files, from local git)
+  size?: number;
+  // Last modified time as unix timestamp in seconds (only for files, from local git)
+  modifiedAt?: number;
 }
 
 // Diff hunks

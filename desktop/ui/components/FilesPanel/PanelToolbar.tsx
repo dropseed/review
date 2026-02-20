@@ -5,7 +5,32 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
+import type {
+  ChangesDisplayMode,
+  FileSortOrder,
+} from "../../stores/slices/preferencesSlice";
+
+const SORT_LABELS: Record<FileSortOrder, string> = {
+  name: "Name",
+  size: "Size",
+  modified: "Last modified",
+};
+
+const SELECTED_CHECK = (
+  <svg
+    className="h-3 w-3 text-fg-secondary"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M5 13l4 4L19 7" />
+  </svg>
+);
 
 /** Toolbar strip below the tab switcher -- compose children for each tab's needs. */
 export function PanelToolbar({ children }: { children: ReactNode }): ReactNode {
@@ -16,13 +41,21 @@ export function PanelToolbar({ children }: { children: ReactNode }): ReactNode {
   );
 }
 
-/** Overflow menu with expand/collapse all actions. */
-export function ExpandCollapseButtons({
+/** Overflow menu with sort options and optional extra sections. */
+export function ViewOptionsMenu({
+  sortOrder,
+  onSortOrderChange,
+  displayMode,
+  onDisplayModeChange,
   onExpandAll,
   onCollapseAll,
 }: {
-  onExpandAll: () => void;
-  onCollapseAll: () => void;
+  sortOrder: FileSortOrder;
+  onSortOrderChange: (order: FileSortOrder) => void;
+  displayMode?: ChangesDisplayMode;
+  onDisplayModeChange?: (mode: ChangesDisplayMode) => void;
+  onExpandAll?: () => void;
+  onCollapseAll?: () => void;
 }): ReactNode {
   return (
     <DropdownMenu>
@@ -36,10 +69,61 @@ export function ExpandCollapseButtons({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onExpandAll}>Expand all</DropdownMenuItem>
-        <DropdownMenuItem onClick={onCollapseAll}>
-          Collapse all
-        </DropdownMenuItem>
+        {(["name", "size", "modified"] as const).map((order) => (
+          <DropdownMenuItem
+            key={order}
+            onClick={() => onSortOrderChange(order)}
+          >
+            <span className="flex-1">{SORT_LABELS[order]}</span>
+            {sortOrder === order && SELECTED_CHECK}
+          </DropdownMenuItem>
+        ))}
+        {onDisplayModeChange && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onDisplayModeChange("tree")}>
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 16 16"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
+              </svg>
+              <span className="flex-1">Tree view</span>
+              {displayMode === "tree" && SELECTED_CHECK}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onDisplayModeChange("flat")}>
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 16 16"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
+              </svg>
+              <span className="flex-1">Flat view</span>
+              {displayMode === "flat" && SELECTED_CHECK}
+            </DropdownMenuItem>
+          </>
+        )}
+        {(onExpandAll || onCollapseAll) && (
+          <>
+            <DropdownMenuSeparator />
+            {onExpandAll && (
+              <DropdownMenuItem onClick={onExpandAll}>
+                Expand all
+              </DropdownMenuItem>
+            )}
+            {onCollapseAll && (
+              <DropdownMenuItem onClick={onCollapseAll}>
+                Collapse all
+              </DropdownMenuItem>
+            )}
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
