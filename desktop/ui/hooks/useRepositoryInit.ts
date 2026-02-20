@@ -62,6 +62,19 @@ async function getDefaultComparison(
   return { key: comparison.key, comparison };
 }
 
+/** Resolve a comparison from an optional key string, falling back to the default. */
+async function resolveComparison(
+  repoPath: string,
+  comparisonKey: string | null,
+): Promise<Comparison> {
+  if (comparisonKey) {
+    const parsed = parseComparisonKey(comparisonKey);
+    if (parsed) return parsed;
+  }
+  const result = await getDefaultComparison(repoPath);
+  return result.comparison;
+}
+
 /**
  * Validate that a path is a git repository, showing an error dialog if not.
  * Returns true if valid, false otherwise.
@@ -174,19 +187,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       loadGlobalReviews();
     }
 
-    /** Resolve a comparison from an optional key string, falling back to the default. */
-    async function resolveComparison(
-      repoPath: string,
-      comparisonKey: string | null,
-    ): Promise<Comparison> {
-      if (comparisonKey) {
-        const parsed = parseComparisonKey(comparisonKey);
-        if (parsed) return parsed;
-      }
-      const result = await getDefaultComparison(repoPath);
-      return result.comparison;
-    }
-
     const init = async () => {
       // Check URL for repo path first (Tauri bootstrap)
       const { repoPath: urlRepoPath, comparisonKey: urlComparisonKey } =
@@ -201,6 +201,26 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           storeInSession: true,
         });
         return;
+      }
+
+      // Check for a pending CLI open request (cold start from `review` CLI).
+      // On cold start the default window has no URL params, and the signal
+      // file written by the CLI is the only way to know what to open.
+      try {
+        const cliRequest = await getApiClient().consumeCliRequest();
+        if (cliRequest) {
+          const comparison = await resolveComparison(
+            cliRequest.repoPath,
+            cliRequest.comparisonKey,
+          );
+          await initRepo(cliRequest.repoPath, comparison, {
+            clearLogFile: true,
+            storeInSession: true,
+          });
+          return;
+        }
+      } catch {
+        // Ignore — command may not exist on older backends
       }
 
       // Check sessionStorage (page refresh case)
@@ -256,7 +276,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     loadGlobalReviews,
   ]);
 
-  // Listen for cli:switch-comparison events from Rust (when CLI reuses an existing window)
+  // Listen for cli:switch-comparison events from Rust (when CLI reuses an existing window for the same repo)
   useEffect(() => {
     const platform = getPlatformServices();
     const unlisten = platform.menuEvents.on(
@@ -286,6 +306,61 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
     return unlisten;
   }, [setActiveReviewKey, setComparison]);
+
+  // Listen for cli:open-review events from Rust (CLI opened a review,
+  // navigate this window instead of opening a new tab).
+  useEffect(() => {
+    const platform = getPlatformServices();
+    const unlisten = platform.menuEvents.on(
+      "cli:open-review",
+      async (payload) => {
+        const data = payload as {
+          repoPath?: string;
+          comparisonKey?: string | null;
+        } | null;
+        const repoPath = data?.repoPath;
+        if (!repoPath) return;
+
+        const comparison = await resolveComparison(
+          repoPath,
+          data?.comparisonKey ?? null,
+        );
+
+        const state = useReviewStore.getState();
+        const { routePrefix } = await resolveRepoIdentity(repoPath);
+
+        setActiveReviewKey({ repoPath, comparisonKey: comparison.key });
+        await ensureReviewExists(repoPath, comparison);
+
+        if (repoPath !== state.repoPath) {
+          // Cross-repo switch — atomic update
+          switchReview(repoPath, comparison);
+          initLogPath(repoPath);
+          setRepoStatus("found");
+          setRepoError(null);
+          addRecentRepository(repoPath);
+          storeRepoPath(repoPath);
+        } else {
+          // Same repo — just switch comparison
+          setComparison(comparison);
+        }
+
+        setComparisonReady((c) => c + 1);
+        setInitialLoading(true);
+        navigateRef.current(`/${routePrefix}/review/${comparison.key}`);
+        loadGlobalReviews();
+      },
+    );
+
+    return unlisten;
+  }, [
+    switchReview,
+    setComparison,
+    setActiveReviewKey,
+    ensureReviewExists,
+    addRecentRepository,
+    loadGlobalReviews,
+  ]);
 
   // Handle closing the current repo (go to welcome page)
   const handleCloseRepo = useCallback(() => {

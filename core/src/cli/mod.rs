@@ -17,8 +17,17 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub home: Option<String>,
 
-    /// Comparison spec (optional, auto-detects from branches if not specified)
+    /// Comparison spec: "base..head" or a single ref (compared against default branch).
+    /// Auto-detects from branches if not specified.
     pub spec: Option<String>,
+
+    /// The old side of the diff (defaults to default branch)
+    #[arg(long)]
+    pub old: Option<String>,
+
+    /// The new side of the diff (defaults to current branch)
+    #[arg(long)]
+    pub new: Option<String>,
 }
 
 impl Cli {
@@ -67,9 +76,12 @@ pub fn run(cli: Cli) -> Result<(), String> {
     let repo_path = cli.get_repo_path()?;
     let path = PathBuf::from(&repo_path);
 
-    let comparison = match cli.spec {
-        Some(spec) => parse_comparison_spec(&path, &spec)?,
-        None => get_or_detect_comparison(&path)?,
+    let comparison = if let Some(spec) = cli.spec {
+        // Positional spec takes priority: "base..head" or single ref
+        parse_comparison_spec(&path, &spec)?
+    } else {
+        // Use --old/--new if provided, otherwise auto-detect from branches
+        resolve_comparison(&path, cli.old, cli.new)?
     };
 
     storage::ensure_review_exists(&path, &comparison, None).map_err(|e| e.to_string())?;
@@ -85,36 +97,36 @@ pub fn run(cli: Cli) -> Result<(), String> {
     Ok(())
 }
 
-/// Auto-detect the comparison from the repo's default and current branches.
-///
-/// Returns `<default_branch>..<current_branch>`.
-fn get_or_detect_comparison(repo_path: &Path) -> Result<Comparison, String> {
+/// Resolve a comparison from optional `--old`/`--new` overrides, falling back
+/// to the repo's default and current branches for whichever side is `None`.
+fn resolve_comparison(
+    repo_path: &Path,
+    old: Option<String>,
+    new: Option<String>,
+) -> Result<Comparison, String> {
     let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-    let default_branch = source
-        .get_default_branch()
-        .unwrap_or_else(|_| "main".to_owned());
-    let current_branch = source
-        .get_current_branch()
-        .unwrap_or_else(|_| "HEAD".to_owned());
-
-    Ok(Comparison::new(default_branch, current_branch))
+    let base = old.unwrap_or_else(|| {
+        source
+            .get_default_branch()
+            .unwrap_or_else(|_| "main".to_owned())
+    });
+    let head = new.unwrap_or_else(|| {
+        source
+            .get_current_branch()
+            .unwrap_or_else(|_| "HEAD".to_owned())
+    });
+    Ok(Comparison::new(base, head))
 }
 
 /// Parse a comparison spec (e.g. "main..feature") into a `Comparison`.
+/// A single ref is compared against the default branch.
 fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comparison, String> {
-    let (base, head) = if spec.contains("..") {
-        let parts: Vec<&str> = spec.splitn(2, "..").collect();
-        (parts[0].to_owned(), parts[1].to_owned())
+    if let Some((base, head)) = spec.split_once("..") {
+        Ok(Comparison::new(base.to_owned(), head.to_owned()))
     } else {
         // Single ref: compare default branch against the given ref
-        let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-        let default_branch = source
-            .get_default_branch()
-            .unwrap_or_else(|_| "main".to_owned());
-        (default_branch, spec.to_owned())
-    };
-
-    Ok(Comparison::new(base, head))
+        resolve_comparison(repo_path, None, Some(spec.to_owned()))
+    }
 }
 
 /// Path to the signal file used to communicate a repo path to the running app.

@@ -81,6 +81,23 @@ fn read_open_request() -> Option<(String, Option<String>)> {
     }
 }
 
+/// Emit a `cli:open-review` event to an existing window so the frontend
+/// navigates to the requested review instead of opening a new window/tab.
+#[cfg(desktop)]
+fn emit_cli_open_review(app: &tauri::AppHandle, repo_path: &str, comparison_key: Option<&str>) {
+    if let Some((_, window)) = app.webview_windows().into_iter().next() {
+        let _ = window.emit(
+            "cli:open-review",
+            serde_json::json!({
+                "repoPath": repo_path,
+                "comparisonKey": comparison_key,
+            }),
+        );
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// Run the Tauri desktop application.
 ///
 /// This sets up all plugins, menus, and command handlers, then starts
@@ -132,15 +149,8 @@ pub fn run() {
                     .cloned()
                     .collect();
                 if let Some(repo) = non_flag_args.first().cloned() {
-                    let app_clone = app.clone();
                     let comparison_key = non_flag_args.get(1).cloned();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) =
-                            commands::open_repo_window(app_clone, repo, comparison_key).await
-                        {
-                            log::error!("Failed to open repo window from CLI: {e}");
-                        }
-                    });
+                    emit_cli_open_review(app, &repo, comparison_key.as_deref());
                 }
             },
         ))
@@ -475,6 +485,7 @@ pub fn run() {
             commands::ensure_review_exists,
             commands::list_all_reviews_global,
             commands::get_review_storage_path,
+            commands::consume_cli_request,
             commands::open_repo_window,
             commands::check_claude_available,
             commands::classify_hunks_static,
@@ -529,14 +540,7 @@ pub fn run() {
                 }
                 // Check for a pending open request from the CLI
                 if let Some((repo_path, comparison_key)) = read_open_request() {
-                    let handle = app_handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) =
-                            commands::open_repo_window(handle, repo_path, comparison_key).await
-                        {
-                            log::error!("Failed to open repo from CLI signal: {e}");
-                        }
-                    });
+                    emit_cli_open_review(app_handle, &repo_path, comparison_key.as_deref());
                 }
             }
             tauri::RunEvent::Exit => {

@@ -1200,6 +1200,26 @@ pub fn stop_file_watcher(repo_path: String) {
     super::watchers::stop_watching(&repo_path);
 }
 
+/// Consume a pending CLI open request (signal file written by the `review` CLI).
+/// Returns `Some(CliOpenRequest)` on cold start when the CLI launched the app,
+/// or `None` if there is no pending request.
+#[tauri::command]
+pub fn consume_cli_request() -> Option<CliOpenRequest> {
+    let (repo_path, comparison_key) = super::read_open_request()?;
+    Some(CliOpenRequest {
+        repo_path,
+        comparison_key,
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct CliOpenRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "comparisonKey")]
+    pub comparison_key: Option<String>,
+}
+
 // Multi-window support
 #[tauri::command]
 pub async fn open_repo_window(

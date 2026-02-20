@@ -594,6 +594,13 @@ export class HttpClient implements ApiClient {
 
   // ----- Window/App -----
 
+  async consumeCliRequest(): Promise<{
+    repoPath: string;
+    comparisonKey: string | null;
+  } | null> {
+    return null;
+  }
+
   async openRepoWindow(_repoPath: string): Promise<void> {
     // Can't open windows from browser
     console.warn("[HttpClient] openRepoWindow not available in browser");

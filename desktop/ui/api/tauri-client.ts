@@ -432,6 +432,13 @@ export class TauriClient implements ApiClient {
 
   // ----- Window/App -----
 
+  async consumeCliRequest(): Promise<{
+    repoPath: string;
+    comparisonKey: string | null;
+  } | null> {
+    return invoke("consume_cli_request");
+  }
+
   async openRepoWindow(repoPath: string): Promise<void> {
     await invoke("open_repo_window", { repoPath });
   }

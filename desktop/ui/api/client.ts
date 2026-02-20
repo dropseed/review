@@ -278,6 +278,12 @@ export interface ApiClient {
 
   // ----- Window/App -----
 
+  /** Consume a pending CLI open request (cold start from `review` CLI) */
+  consumeCliRequest(): Promise<{
+    repoPath: string;
+    comparisonKey: string | null;
+  } | null>;
+
   /** Open a new window for a repository */
   openRepoWindow(repoPath: string): Promise<void>;
 
