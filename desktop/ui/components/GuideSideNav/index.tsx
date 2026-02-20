@@ -6,10 +6,8 @@ import {
   useState,
 } from "react";
 import { useReviewStore } from "../../stores";
-import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk } from "../../types";
-import { SummaryStats } from "../GuideView/SummaryStats";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -147,7 +145,6 @@ function GroupItemOverflowMenu({
 }
 
 export function GuideSideNav(): ReactNode {
-  const progress = useReviewProgress();
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
@@ -340,11 +337,6 @@ export function GuideSideNav(): ReactNode {
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
-      </div>
-
-      {/* Progress bar */}
-      <div className="shrink-0 px-3 pb-2">
-        <SummaryStats {...progress} />
       </div>
 
       {/* Group list */}

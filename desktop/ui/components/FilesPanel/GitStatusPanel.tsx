@@ -17,8 +17,55 @@ import {
 import { useFilesPanelContext } from "./FilesPanelContext";
 import { PanelToolbar, ProgressBar } from "./PanelToolbar";
 
+const STAGED_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-status-added"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+    <polyline points="22 4 12 14.01 9 11.01" />
+  </svg>
+);
+
+const UNSTAGED_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-status-modified"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+
+const UNTRACKED_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-status-info"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="8" x2="12" y2="16" />
+    <line x1="8" y1="12" x2="16" y2="12" />
+  </svg>
+);
+
 function GitSection({
   title,
+  icon,
   count,
   accentColor,
   children,
@@ -28,6 +75,7 @@ function GitSection({
   onCollapseAll,
 }: {
   title: string;
+  icon?: ReactNode;
   count: number;
   accentColor: string;
   children: ReactNode;
@@ -42,6 +90,7 @@ function GitSection({
   return (
     <CollapsibleSection
       title={title}
+      icon={icon}
       badge={count}
       badgeColor={accentColor}
       isOpen={open}
@@ -260,6 +309,7 @@ export function GitStatusPanel({
       {staged.length > 0 && (
         <GitSection
           title="Staged"
+          icon={STAGED_ICON}
           count={staged.length}
           accentColor="bg-status-added/20 text-status-added"
           menuItems={[
@@ -314,6 +364,7 @@ export function GitStatusPanel({
       {unstaged.length > 0 && (
         <GitSection
           title="Unstaged"
+          icon={UNSTAGED_ICON}
           count={unstaged.length}
           accentColor="bg-status-modified/20 text-status-modified"
           menuItems={[
@@ -364,6 +415,7 @@ export function GitStatusPanel({
       {untracked.length > 0 && (
         <GitSection
           title="Untracked"
+          icon={UNTRACKED_ICON}
           count={untracked.length}
           accentColor="bg-fg-muted/20 text-fg-muted"
           menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}

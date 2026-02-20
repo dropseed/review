@@ -449,6 +449,11 @@ export function FileViewer({
   // Track scroll position to update HunkNavigator counter
   useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);
 
+  // Check if file is gitignored (from the file tree's allFiles)
+  const isGitignored = useReviewStore((s) =>
+    hasFileStatus(s.allFiles, filePath, "gitignored"),
+  );
+
   if (loading || fileContentPath !== filePath) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -499,11 +504,6 @@ export function FileViewer({
   const showImageViewer =
     isImage ||
     (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
-
-  // Check if file is gitignored (from the file tree's allFiles)
-  const isGitignored = useReviewStore((s) =>
-    hasFileStatus(s.allFiles, filePath, "gitignored"),
-  );
 
   const contentMode: ContentMode = (() => {
     if (isGitignored) return { type: "plain" } as const;
