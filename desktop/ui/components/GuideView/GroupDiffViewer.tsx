@@ -1,16 +1,17 @@
 import {
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  useCallback,
 } from "react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk, FileContent, HunkGroup, HunkState } from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
+import { ImageViewer } from "../FileViewer/ImageViewer";
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }): ReactNode {
   return (
@@ -77,32 +78,22 @@ function getUnreviewedIds(
 
 interface FileDiffSectionProps {
   filePath: string;
-  fileContent: FileContent | undefined;
   isLoading: boolean;
-  fileHunks: DiffHunk[];
   fileUnreviewed: string[];
   fileCompleted: boolean;
-  deferDiff: boolean;
   onApproveFile: () => void;
   onRejectFile: () => void;
-  diffViewMode: string;
-  codeTheme: string;
-  fontSizeCSS: string;
+  children: ReactNode;
 }
 
 function FileDiffSection({
   filePath,
-  fileContent,
   isLoading,
-  fileHunks,
   fileUnreviewed,
   fileCompleted,
-  deferDiff,
   onApproveFile,
   onRejectFile,
-  diffViewMode,
-  codeTheme,
-  fontSizeCSS,
+  children,
 }: FileDiffSectionProps): ReactNode {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -114,8 +105,6 @@ function FileDiffSection({
     }
     prevCompleted.current = fileCompleted;
   }, [fileCompleted]);
-
-  const showDiff = !isCollapsed && !deferDiff;
 
   return (
     <div className="border-b border-edge/50">
@@ -168,40 +157,16 @@ function FileDiffSection({
         )}
       </div>
 
-      {/* Diff content */}
+      {/* Content */}
       {!isCollapsed && (
         <>
-          {isLoading && !fileContent && (
+          {isLoading && (
             <div className="flex items-center gap-2 px-4 py-6 text-fg-muted">
               <Spinner className="h-4 w-4" />
               <span className="text-xs">Loading diff...</span>
             </div>
           )}
-          {fileContent && showDiff ? (
-            <DiffErrorBoundary
-              fallback={
-                <div className="p-4">
-                  <div className="rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-3">
-                    <p className="text-xs text-status-rejected">
-                      Failed to render diff for {filePath}
-                    </p>
-                  </div>
-                </div>
-              }
-            >
-              <DiffView
-                diffPatch={fileContent.diffPatch}
-                viewMode={diffViewMode === "split" ? "split" : "unified"}
-                hunks={fileHunks}
-                theme={codeTheme}
-                fontSizeCSS={fontSizeCSS}
-                fileName={filePath}
-                oldContent={fileContent.oldContent}
-                newContent={fileContent.content}
-                expandUnchanged={false}
-              />
-            </DiffErrorBoundary>
-          ) : null}
+          {children}
         </>
       )}
     </div>
@@ -422,6 +387,54 @@ export function GroupDiffViewer({
     ],
   );
 
+  function renderFileContent(
+    fc: FileContent,
+    filePath: string,
+    fileHunks: DiffHunk[],
+  ): ReactNode {
+    if (
+      (fc.contentType === "image" || fc.contentType === "svg") &&
+      fc.imageDataUrl
+    ) {
+      return (
+        <div className="h-[400px]">
+          <ImageViewer
+            imageDataUrl={fc.imageDataUrl}
+            oldImageDataUrl={fc.oldImageDataUrl}
+            filePath={filePath}
+            hasChanges={fileHunks.length > 0}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <DiffErrorBoundary
+        fallback={
+          <div className="p-4">
+            <div className="rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-3">
+              <p className="text-xs text-status-rejected">
+                Failed to render diff for {filePath}
+              </p>
+            </div>
+          </div>
+        }
+      >
+        <DiffView
+          diffPatch={fc.diffPatch}
+          viewMode={diffViewMode === "split" ? "split" : "unified"}
+          hunks={fileHunks}
+          theme={codeTheme}
+          fontSizeCSS={fontSizeCSS}
+          fileName={filePath}
+          oldContent={fc.oldContent}
+          newContent={fc.content}
+          expandUnchanged={false}
+        />
+      </DiffErrorBoundary>
+    );
+  }
+
   return (
     <div>
       {/* Group header */}
@@ -505,23 +518,22 @@ export function GroupDiffViewer({
           autoApproveStaged,
           stagedFilePaths,
         );
+        const deferred = fileIndex >= mountedCount;
 
         return (
           <FileDiffSection
             key={filePath}
             filePath={filePath}
-            fileContent={fc}
-            isLoading={isLoading}
-            fileHunks={fileHunks}
+            isLoading={isLoading && !fc}
             fileUnreviewed={fileUnreviewed}
             fileCompleted={fileUnreviewed.length === 0}
-            deferDiff={fileIndex >= mountedCount}
             onApproveFile={() => handleApproveFileHunks(filePath)}
             onRejectFile={() => handleRejectFileHunks(filePath)}
-            diffViewMode={diffViewMode}
-            codeTheme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
-          />
+          >
+            {fc && !deferred
+              ? renderFileContent(fc, filePath, fileHunks)
+              : null}
+          </FileDiffSection>
         );
       })}
     </div>
