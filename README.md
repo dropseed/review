@@ -1,6 +1,6 @@
 # Review
 
-A desktop app that helps humans review diffs more efficiently.
+A local code review app for humans.
 
 ## Features
 
@@ -24,115 +24,19 @@ Review is for reviewing, not editing. You can't modify code from inside the app 
 
 See which functions, classes, and methods are affected by each change, powered by tree-sitter. Navigate diffs at the symbol level instead of scrolling through raw line diffs. Supports 10+ languages.
 
-## Development
-
-### Prerequisites
-
-- Node.js 18+
-- Rust (latest stable)
-
-### Setup
-
-```bash
-scripts/install
-```
-
-### Commands
-
-```bash
-scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
-scripts/dev              # Run in development mode with hot reload
-scripts/test             # TypeScript type check + Rust tests
-scripts/fix              # Auto-fix: prettier + cargo fmt
-scripts/build            # Build production app
-```
-
-## Architecture
-
-```mermaid
-graph TB
-    subgraph Frontend["Frontend (desktop/ui/)"]
-        React["React + TypeScript + Vite"]
-        subgraph Zustand["Zustand Store"]
-            gitSlice["gitSlice"]
-            filesSlice["filesSlice"]
-            reviewSlice["reviewSlice"]
-            classificationSlice["classificationSlice"]
-            navigationSlice["navigationSlice"]
-            preferencesSlice["preferencesSlice"]
-        end
-        React --> Zustand
-    end
-
-    subgraph Desktop["Desktop (desktop/tauri/)"]
-        commands["commands.rs"]
-        watchers["watchers.rs"]
-        companion_server["companion_server.rs"]
-    end
-
-    subgraph Core["Core Library (core/)"]
-        sources["sources/
-        DiffSource trait
-        LocalGitSource"]
-        diff["diff/
-        parser"]
-        review["review/
-        state, storage"]
-        trust["trust/
-        patterns, matching"]
-        classify["classify/
-        Claude API"]
-        cli["cli/ (feature-gated)
-        review"]
-    end
-
-    subgraph Storage["Storage"]
-        git_review["~/.review/repos/
-        reviews/*.json"]
-        tauri_store["Tauri Store
-        (UI preferences)"]
-    end
-
-    React -->|"invoke()"| commands
-    commands --> sources
-    commands --> diff
-    commands --> review
-    commands --> trust
-    commands --> classify
-    watchers -->|"file system events"| React
-
-    sources -->|"git operations"| diff
-    diff -->|"hunks"| review
-    trust -->|"pattern matching"| review
-    classify -->|"Claude API"| trust
-
-    review --> git_review
-    preferencesSlice --> tauri_store
-```
-
-- **Frontend**: React + TypeScript + Vite (`desktop/ui/`), state managed with Zustand
-- **Backend**: Rust + Tauri (`desktop/tauri/`), classification via Claude CLI
-
-## Key Concepts
-
-- **Comparison** - What you're reviewing (working changes, staged, branch diff)
-- **Hunk** - A block of changes, identified by `filepath:hash`
-- **Trust Pattern** - A label like `imports:added` that can auto-approve hunks
-- **Review State** - Persisted in `~/.review/repos/<repo-id>/reviews/`
-
 ## Privacy
 
 Review is local-first — your code stays on your machine. No diffs are uploaded to third parties.
 
 The desktop app includes optional crash reporting via [Sentry](https://sentry.io). It is **off by default** and requires explicit opt-in. When enabled, PII is stripped before transmission. No code or diff content is ever included in crash reports.
 
-## Extending
+## Development
 
-The `DiffSource` trait abstracts over the source of diffs. Currently implemented:
+Requires Node.js 18+ and Rust (latest stable). See `CLAUDE.md` for full development docs.
 
-- `LocalGitSource` - Local git repositories
-
-Future implementations could include:
-
-- `GitHubSource` - GitHub API for PRs
-- `GitLabSource` - GitLab API for MRs
+```bash
+scripts/install          # Install dependencies
+scripts/dev              # Run in development mode
+scripts/test             # Run tests
+scripts/build            # Build production app
+```

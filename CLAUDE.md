@@ -31,6 +31,67 @@ scripts/build            # Build production app (outputs to target/release/)
 
 ## Architecture
 
+```mermaid
+graph TB
+    subgraph Frontend["Frontend (desktop/ui/)"]
+        React["React + TypeScript + Vite"]
+        subgraph Zustand["Zustand Store"]
+            gitSlice["gitSlice"]
+            filesSlice["filesSlice"]
+            reviewSlice["reviewSlice"]
+            classificationSlice["classificationSlice"]
+            navigationSlice["navigationSlice"]
+            preferencesSlice["preferencesSlice"]
+        end
+        React --> Zustand
+    end
+
+    subgraph Desktop["Desktop (desktop/tauri/)"]
+        commands["commands.rs"]
+        watchers["watchers.rs"]
+        companion_server["companion_server.rs"]
+    end
+
+    subgraph Core["Core Library (core/)"]
+        sources["sources/
+        DiffSource trait
+        LocalGitSource"]
+        diff["diff/
+        parser"]
+        review["review/
+        state, storage"]
+        trust["trust/
+        patterns, matching"]
+        classify["classify/
+        Claude API"]
+        cli["cli/ (feature-gated)
+        review"]
+    end
+
+    subgraph Storage["Storage"]
+        git_review["~/.review/repos/
+        reviews/*.json"]
+        tauri_store["Tauri Store
+        (UI preferences)"]
+    end
+
+    React -->|"invoke()"| commands
+    commands --> sources
+    commands --> diff
+    commands --> review
+    commands --> trust
+    commands --> classify
+    watchers -->|"file system events"| React
+
+    sources -->|"git operations"| diff
+    diff -->|"hunks"| review
+    trust -->|"pattern matching"| review
+    classify -->|"Claude API"| trust
+
+    review --> git_review
+    preferencesSlice --> tauri_store
+```
+
 The project is organized as a Cargo workspace with three top-level directories:
 
 - **`core/`** — Core Rust library + CLI. All business logic, no Tauri dependencies.
@@ -52,3 +113,14 @@ Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined 
 - **Tauri IPC**: Commands defined in `commands.rs` as `#[tauri::command]` fns, called from frontend via `invoke("command_name", { args })`
 - **API abstraction**: `desktop/ui/api/` provides an `ApiClient` interface; `tauri-client.ts` wraps `invoke()` calls, `http-client.ts` is for the companion server
 - **Platform abstraction**: `desktop/ui/platform/` abstracts Tauri vs web (storage, file paths)
+
+## Extending
+
+The `DiffSource` trait abstracts over the source of diffs. Currently implemented:
+
+- `LocalGitSource` - Local git repositories
+
+Future implementations could include:
+
+- `GitHubSource` - GitHub API for PRs
+- `GitLabSource` - GitLab API for MRs
