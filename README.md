@@ -10,7 +10,7 @@ Review runs as a native desktop app on your machine. It reads directly from your
 
 ### Trust patterns
 
-Classify hunks into categories like `imports:added` or `formatting:whitespace`, then build a trust list to auto-approve entire classes of trivial changes. Focus your attention on the hunks that actually need human review. The taxonomy is extensible with custom patterns per project.
+Classify hunks into categories like `imports:added` or `formatting:whitespace`, then build a trust list to auto-approve entire classes of trivial changes. Focus your attention on the hunks that actually need human review.
 
 ### Multiple comparisons at once
 
@@ -87,9 +87,8 @@ graph TB
     end
 
     subgraph Storage["Storage"]
-        git_review[".git/review/
-        reviews/*.json
-        custom-patterns.json"]
+        git_review["~/.review/repos/
+        reviews/*.json"]
         tauri_store["Tauri Store
         (UI preferences)"]
     end
@@ -119,7 +118,7 @@ graph TB
 - **Comparison** - What you're reviewing (working changes, staged, branch diff)
 - **Hunk** - A block of changes, identified by `filepath:hash`
 - **Trust Pattern** - A label like `imports:added` that can auto-approve hunks
-- **Review State** - Persisted in `.git/review/reviews/`
+- **Review State** - Persisted in `~/.review/repos/<repo-id>/reviews/`
 
 ## Privacy
 

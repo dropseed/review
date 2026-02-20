@@ -280,7 +280,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
 
   return (
     <div
-      className={`@container flex items-center justify-between border-b px-3 py-1.5 ${
+      className={`@container flex items-center justify-between border-b px-4 py-1.5 ${
         isFocusedPane
           ? "border-status-modified/30 bg-status-modified/5"
           : "border-edge/50 bg-surface-panel"

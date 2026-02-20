@@ -188,8 +188,7 @@ export const TabRailItem = memo(function TabRailItem({
         onContextMenu={handleContextMenu}
         className={`group relative w-full text-left px-2 py-1.5 rounded-md mb-px cursor-default
                     transition-colors duration-100
-                    ${isActive ? "bg-fg/[0.08]" : "hover:bg-fg/[0.05]"}
-                    ${isInactive ? "opacity-60" : ""}`}
+                    ${isActive ? "bg-fg/[0.08]" : "hover:bg-fg/[0.05]"}`}
         aria-current={isActive ? "true" : undefined}
         title={titleText}
       >

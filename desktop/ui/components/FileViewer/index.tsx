@@ -9,7 +9,7 @@ import {
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
-import type { FileContent } from "../../types";
+import type { FileContent, FileEntry } from "../../types";
 import { isHunkReviewed, makeComparison } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
 import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
@@ -23,6 +23,20 @@ import {
 } from "./annotations/AnnotationEditor";
 import { SymbolPopover } from "./SymbolPopover";
 import type { ContentMode } from "./content-mode";
+
+/** Recursively search the file tree for an entry with the given path and status. */
+function hasFileStatus(
+  entries: FileEntry[],
+  path: string,
+  status: FileEntry["status"],
+): boolean {
+  for (const entry of entries) {
+    if (entry.path === path) return entry.status === status;
+    if (entry.children && hasFileStatus(entry.children, path, status))
+      return true;
+  }
+  return false;
+}
 
 const CMD_HOVER_STYLE_ID = "cmd-hover-style";
 const CMD_HOVER_CSS = `code span { cursor: pointer; } code span:hover { text-decoration: underline; }`;
@@ -486,7 +500,13 @@ export function FileViewer({
     isImage ||
     (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
 
+  // Check if file is gitignored (from the file tree's allFiles)
+  const isGitignored = useReviewStore((s) =>
+    hasFileStatus(s.allFiles, filePath, "gitignored"),
+  );
+
   const contentMode: ContentMode = (() => {
+    if (isGitignored) return { type: "plain" } as const;
     if (showImageViewer) return { type: "image" } as const;
     if (isSvg)
       return { type: "svg", hasRendered: !!fileContent.imageDataUrl } as const;

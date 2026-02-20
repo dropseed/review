@@ -95,7 +95,6 @@ export async function mockInvoke<T>(cmd: string, args?: unknown): Promise<T> {
       return false as T; // Claude CLI not available in browser mock
 
     case "get_trust_taxonomy":
-    case "get_trust_taxonomy_with_custom":
       return fetchJson("/taxonomy").catch(() => []);
 
     case "start_file_watcher":

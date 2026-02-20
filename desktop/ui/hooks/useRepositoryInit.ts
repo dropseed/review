@@ -377,6 +377,15 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const meta = state.repoMetadata[review.repoPath];
       const routePrefix = meta?.routePrefix ?? `local/${review.repoName}`;
 
+      // If clicking the already-active review, just navigate without resetting state
+      if (
+        state.activeReviewKey?.repoPath === review.repoPath &&
+        state.activeReviewKey?.comparisonKey === review.comparison.key
+      ) {
+        nav(`/${routePrefix}/review/${review.comparison.key}`);
+        return;
+      }
+
       setActiveReviewKey({
         repoPath: review.repoPath,
         comparisonKey: review.comparison.key,

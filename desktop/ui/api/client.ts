@@ -228,9 +228,6 @@ export interface ApiClient {
   /** Get the built-in trust taxonomy */
   getTrustTaxonomy(): Promise<TrustCategory[]>;
 
-  /** Get trust taxonomy including custom patterns from repo */
-  getTrustTaxonomyWithCustom(repoPath: string): Promise<TrustCategory[]>;
-
   /** Check if a label matches a pattern */
   matchTrustPattern(label: string, pattern: string): Promise<boolean>;
 

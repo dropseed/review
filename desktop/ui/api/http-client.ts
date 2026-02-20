@@ -503,16 +503,6 @@ export class HttpClient implements ApiClient {
     }
   }
 
-  async getTrustTaxonomyWithCustom(repoPath: string): Promise<TrustCategory[]> {
-    try {
-      return await this.fetchJson<TrustCategory[]>(
-        `/taxonomy?${this.buildRepoQuery(repoPath)}`,
-      );
-    } catch {
-      return [];
-    }
-  }
-
   async matchTrustPattern(label: string, pattern: string): Promise<boolean> {
     // Simple pattern matching in browser
     if (pattern.endsWith(":*")) {

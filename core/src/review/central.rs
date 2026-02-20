@@ -12,7 +12,6 @@
 //!       repo.json                     # { canonical_path, display_name }
 //!       reviews/
 //!         <comparison-key>.json       # ReviewState
-//!       custom-patterns.json          # Repo-specific trust overrides
 //! ```
 
 use serde::{Deserialize, Serialize};

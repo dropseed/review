@@ -329,12 +329,6 @@ export class TauriClient implements ApiClient {
     return invoke<TrustCategory[]>("get_trust_taxonomy");
   }
 
-  async getTrustTaxonomyWithCustom(repoPath: string): Promise<TrustCategory[]> {
-    return invoke<TrustCategory[]>("get_trust_taxonomy_with_custom", {
-      repoPath,
-    });
-  }
-
   async matchTrustPattern(label: string, pattern: string): Promise<boolean> {
     return invoke<boolean>("match_trust_pattern", { label, pattern });
   }

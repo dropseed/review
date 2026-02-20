@@ -20,7 +20,7 @@ Key command groups:
 - **File/diff**: `list_files`, `get_file_content`, `get_all_hunks`, `get_diff`, `get_expanded_context`
 - **Review state**: `load_review_state`, `save_review_state`, `list_saved_reviews`, `delete_review`
 - **Classification**: `classify_hunks_static`, `detect_hunks_move_pairs`
-- **Trust**: `get_trust_taxonomy`, `get_trust_taxonomy_with_custom`, `match_trust_pattern`
+- **Trust**: `get_trust_taxonomy`, `match_trust_pattern`
 - **Symbols**: `get_file_symbol_diffs`, `get_file_symbols`
 - **Navigation**: `open_repo_window`
 - **GitHub**: `check_github_available`, `list_pull_requests`

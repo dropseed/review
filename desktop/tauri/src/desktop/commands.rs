@@ -1189,11 +1189,6 @@ pub fn should_skip_file(path: String) -> bool {
     review::filters::should_skip_file(&path)
 }
 
-#[tauri::command]
-pub fn get_trust_taxonomy_with_custom(repo_path: String) -> Vec<TrustCategory> {
-    review::trust::patterns::get_trust_taxonomy_with_custom(&PathBuf::from(&repo_path))
-}
-
 // File watching
 #[tauri::command]
 pub fn start_file_watcher(app: tauri::AppHandle, repo_path: String) -> Result<(), String> {

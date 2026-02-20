@@ -12,7 +12,7 @@ import {
 function ChatBubbleIcon() {
   return (
     <svg
-      className="h-4 w-4 text-fg-muted"
+      className="h-5 w-5 text-fg-muted"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -125,7 +125,7 @@ export function FeedbackPanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="absolute bottom-4 right-4 z-[30] flex items-center gap-2 rounded-full bg-surface-panel/95 backdrop-blur-xl border border-edge-default/50 shadow-xl px-3.5 py-2 text-fg-secondary hover:bg-surface-raised/95 hover:border-edge-strong/50 transition-colors duration-150"
+        className="absolute bottom-4 right-4 z-[30] flex items-center gap-2 rounded-full bg-surface-panel/95 backdrop-blur-xl border border-edge-default/50 shadow-xl px-4 py-2.5 text-fg-secondary hover:bg-surface-raised/95 hover:border-edge-strong/50 transition-colors duration-150"
       >
         <ChatBubbleIcon />
         <span className="text-xs font-medium">Review Notes</span>

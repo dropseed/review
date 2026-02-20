@@ -1,12 +1,5 @@
 # desktop/ui/ — Frontend (React + TypeScript + Vite)
 
-## Claude Code Skills
-
-When working on frontend code, use these skills:
-
-- `/frontend-design` — For building UI components and interfaces with high design quality
-- `/web-design-guidelines` — To review UI code for accessibility and best practices
-
 ## Conventions
 
 - **Styling**: Tailwind CSS v4, utility classes with `tailwind-merge`

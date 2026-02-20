@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustPattern {
@@ -49,77 +48,6 @@ pub fn load_taxonomy_from_json() -> Vec<TrustCategory> {
             get_default_taxonomy()
         }
     }
-}
-
-/// Load custom patterns from a repository's central storage directory.
-/// Returns an empty vec if the file doesn't exist or can't be parsed.
-///
-/// Note: This function returns an empty vec on errors to allow graceful degradation.
-/// Errors are logged for debugging but don't prevent the app from working.
-pub fn load_custom_patterns(repo_path: &Path) -> Vec<TrustCategory> {
-    let custom_path = match crate::review::central::get_repo_storage_dir(repo_path) {
-        Ok(dir) => dir.join("custom-patterns.json"),
-        Err(e) => {
-            eprintln!("[load_custom_patterns] Could not resolve central storage dir: {e}");
-            return vec![];
-        }
-    };
-
-    if !custom_path.exists() {
-        return vec![];
-    }
-
-    match std::fs::read_to_string(&custom_path) {
-        Ok(content) => match serde_json::from_str::<TaxonomyFile>(&content) {
-            Ok(taxonomy) => {
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "[load_custom_patterns] Loaded {} custom categories from {}",
-                    taxonomy.categories.len(),
-                    custom_path.display()
-                );
-                fill_pattern_categories(taxonomy.categories)
-            }
-            Err(e) => {
-                eprintln!(
-                    "[load_custom_patterns] Warning: Failed to parse custom patterns at {}: {e}",
-                    custom_path.display()
-                );
-                vec![]
-            }
-        },
-        Err(e) => {
-            eprintln!(
-                "[load_custom_patterns] Warning: Failed to read custom patterns at {}: {e}",
-                custom_path.display()
-            );
-            vec![]
-        }
-    }
-}
-
-/// Get the full trust taxonomy, merging bundled patterns with custom patterns.
-/// Custom patterns are appended to the bundled taxonomy.
-pub fn get_trust_taxonomy_with_custom(repo_path: &Path) -> Vec<TrustCategory> {
-    let mut taxonomy = load_taxonomy_from_json();
-    let custom = load_custom_patterns(repo_path);
-
-    // Merge custom categories - add new ones or extend existing
-    for custom_cat in custom {
-        if let Some(existing) = taxonomy.iter_mut().find(|c| c.id == custom_cat.id) {
-            // Extend existing category with new patterns
-            for pattern in custom_cat.patterns {
-                if !existing.patterns.iter().any(|p| p.id == pattern.id) {
-                    existing.patterns.push(pattern);
-                }
-            }
-        } else {
-            // Add new category
-            taxonomy.push(custom_cat);
-        }
-    }
-
-    taxonomy
 }
 
 /// The full taxonomy of trust patterns (bundled)
@@ -233,7 +161,6 @@ fn get_default_taxonomy() -> Vec<TrustCategory> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_load_taxonomy_from_json() {
@@ -267,12 +194,5 @@ mod tests {
                 assert!(pattern.id.starts_with(&format!("{}:", category.id)));
             }
         }
-    }
-
-    #[test]
-    fn test_custom_patterns_nonexistent_path() {
-        let fake_path = PathBuf::from("/nonexistent/path");
-        let custom = load_custom_patterns(&fake_path);
-        assert!(custom.is_empty());
     }
 }

@@ -288,6 +288,22 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
     [inactiveReviews, inactiveReviewSortOrder, reviewDiffStats],
   );
 
+  // Auto-expand inactive section when the active review is in the inactive list
+  const activeReviewIsInactive = useMemo(() => {
+    if (!activeReviewKey) return false;
+    return inactiveReviews.some(
+      (r) =>
+        r.repoPath === activeReviewKey.repoPath &&
+        r.comparison.key === activeReviewKey.comparisonKey,
+    );
+  }, [activeReviewKey, inactiveReviews]);
+
+  useEffect(() => {
+    if (activeReviewIsInactive) {
+      setInactiveCollapsed(false);
+    }
+  }, [activeReviewIsInactive]);
+
   const handleDeleteReview = useCallback(
     (review: GlobalReviewSummary) => {
       deleteGlobalReview(review.repoPath, review.comparison);

@@ -22,9 +22,6 @@ npm-debug.log*
 .env.local
 .env.*.local
 
-# Claude skills (installed per-project)
-.claude/skills/
-
 # Tauri
 desktop/tauri/WixTools/
 desktop/tauri/binaries/

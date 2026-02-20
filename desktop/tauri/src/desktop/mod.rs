@@ -485,7 +485,6 @@ pub fn run() {
             commands::stop_file_watcher,
             commands::match_trust_pattern,
             commands::get_trust_taxonomy,
-            commands::get_trust_taxonomy_with_custom,
             commands::should_skip_file,
             commands::search_file_contents,
             commands::get_file_symbol_diffs,

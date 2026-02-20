@@ -42,7 +42,6 @@ Review state is stored per-repo in `~/.review/repos/<repo-id>/` (override with `
 
 - `reviews/<comparison>.json` — Hunk labels, approvals, notes
 - `current` — Last active comparison
-- `custom-patterns.json` — Optional user-defined trust patterns
 
 Review state includes:
 
@@ -54,8 +53,6 @@ Review state includes:
 ## Trust Patterns Taxonomy
 
 The taxonomy is defined in `resources/taxonomy.json` and loaded at runtime. Pattern format is `category:label` (e.g., `imports:added`, `formatting:whitespace`). Categories: `imports`, `formatting`, `comments`, `type-annotations`, `file`, `move`, `generated`.
-
-Users can extend the taxonomy by creating a `custom-patterns.json` in their review state directory with the same JSON structure. Custom patterns are merged with the bundled taxonomy at runtime.
 
 ## Feature Flags
 

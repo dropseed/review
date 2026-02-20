@@ -116,15 +116,17 @@ export function ReviewView({
     }
   }, [refresh, isRefreshing]);
 
-  // Close handler: cascading close (split -> window)
+  // Close handler: cascading close (file -> split -> overview -> window)
   const handleClose = useCallback(async () => {
     if (secondaryFile !== null) {
       closeSplit();
+    } else if (selectedFile !== null) {
+      useReviewStore.setState({ selectedFile: null });
     } else {
       const platform = getPlatformServices();
       await platform.window.close();
     }
-  }, [secondaryFile, closeSplit]);
+  }, [secondaryFile, selectedFile, closeSplit]);
 
   // New tab handler: open a new tab with the current repo
   const handleNewTab = useCallback(async () => {
@@ -186,9 +188,6 @@ export function ReviewView({
   // Celebration on 100% reviewed
   useCelebration();
 
-  const filesPanelCollapsed = useReviewStore((s) => s.filesPanelCollapsed);
-  const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
-
   const repoName =
     remoteInfo?.name ||
     repoPath?.replace(/\/+$/, "").split("/").pop() ||
@@ -244,7 +243,6 @@ export function ReviewView({
                     useReviewStore.setState({
                       selectedFile: null,
                       guideContentMode: null,
-                      filesPanelCollapsed: false,
                     });
                   }}
                   className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
@@ -292,39 +290,6 @@ export function ReviewView({
                   </SimpleTooltip>
                 </button>
               ) : null}
-              <SimpleTooltip
-                content={
-                  filesPanelCollapsed ? "Show files panel" : "Hide files panel"
-                }
-              >
-                <button
-                  type="button"
-                  onClick={toggleFilesPanel}
-                  className="flex items-center justify-center w-7 h-7 rounded-md
-                             hover:bg-surface-raised/60 transition-colors duration-100
-                             focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
-                             text-fg-muted hover:text-fg-secondary"
-                  aria-label={
-                    filesPanelCollapsed
-                      ? "Show files panel"
-                      : "Hide files panel"
-                  }
-                >
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <rect x="3" y="3" width="18" height="18" rx="3" />
-                    <line x1="15" y1="3" x2="15" y2="21" />
-                  </svg>
-                </button>
-              </SimpleTooltip>
             </div>
           </div>
           {selectedFile && <ReviewTitle />}
@@ -340,17 +305,11 @@ export function ReviewView({
       {/* FilesPanel (right side) */}
       <aside
         className="relative flex flex-shrink-0 flex-col overflow-hidden"
-        style={{ width: filesPanelCollapsed ? 0 : `${sidebarWidth}rem` }}
+        style={{ width: `${sidebarWidth}rem` }}
       >
-        {/* Sidebar content - slides via transform (no layout reflow) */}
         <div
-          className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-edge transition-transform duration-200"
-          style={{
-            width: `${sidebarWidth}rem`,
-            transform: filesPanelCollapsed
-              ? "translateX(100%)"
-              : "translateX(0)",
-          }}
+          className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-edge"
+          style={{ width: `${sidebarWidth}rem` }}
         >
           <div className="flex-1 overflow-hidden">
             <FilesPanel
@@ -359,15 +318,13 @@ export function ReviewView({
           </div>
 
           {/* Resize handle (on left edge of right sidebar) */}
-          {!filesPanelCollapsed && (
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize sidebar"
-              onMouseDown={handleResizeStart}
-              className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"
-            />
-          )}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={handleResizeStart}
+            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"
+          />
         </div>
       </aside>
 
