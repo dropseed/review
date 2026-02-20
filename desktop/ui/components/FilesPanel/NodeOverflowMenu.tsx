@@ -48,9 +48,9 @@ export function NodeOverflowMenu({
       <DropdownMenuTrigger asChild>
         <button
           onClick={(e) => e.stopPropagation()}
-          className={`flex items-center justify-center w-5 h-5 rounded
+          className={`items-center justify-center w-5 h-5 rounded
                      text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50
-                     transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                     ${open ? "flex" : "hidden group-hover:flex"}`}
         >
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
             <circle cx="12" cy="5" r="1.5" />

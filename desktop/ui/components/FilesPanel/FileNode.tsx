@@ -16,6 +16,7 @@ import {
   TreeChevron,
   TreeNodeName,
   StatusLetter,
+  HunkCount,
   SymlinkIndicator,
   TreeFileIcon,
   WorkingTreeDot,
@@ -57,8 +58,7 @@ function SizeBar({
 }
 
 function directoryNameColor(isGitignored: boolean): string {
-  if (isGitignored) return "text-fg-muted";
-  return "text-fg-secondary";
+  return isGitignored ? "text-fg-muted" : "text-fg-secondary";
 }
 
 function fileNameColor(isSelected: boolean, isGitignored: boolean): string {
@@ -107,7 +107,7 @@ export function ApprovalButtons({
   }
 
   return (
-    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="hidden items-center gap-0.5 group-hover:flex">
       {hasPending && (
         <SimpleTooltip content="Approve all">
           <button
@@ -178,7 +178,7 @@ export function StageButtons({
   if (!onStage && !onUnstage) return null;
 
   return (
-    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="hidden items-center gap-0.5 group-hover:flex">
       {onStage && (
         <SimpleTooltip content="Stage">
           <button
@@ -277,6 +277,8 @@ export const FileNode = memo(
         onUnapproveAll &&
         onRejectAll
       );
+      const hasHoverActions =
+        (hasReviewActions && hasReviewableContent) || !!onStage || !!onUnstage;
 
       return (
         <TreeNodeItem>
@@ -356,11 +358,7 @@ export const FileNode = memo(
             {entry.status && !isGitignored && (
               <StatusLetter
                 status={entry.status}
-                hideOnHover={
-                  (hasReviewActions && hasReviewableContent) ||
-                  !!onStage ||
-                  !!onUnstage
-                }
+                hideOnHover={hasHoverActions}
               />
             )}
           </TreeRow>
@@ -404,6 +402,8 @@ export const FileNode = memo(
     const hasApproved = entry.hunkStatus.approved > 0;
     const hasRejections = entry.hunkStatus.rejected > 0;
     const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
+    const hasHoverActions =
+      (hasReviewActions && hasReviewableContent) || !!onStage || !!onUnstage;
     const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
 
     return (
@@ -486,22 +486,19 @@ export const FileNode = memo(
             {workingTreeStatusMap?.has(entry.path) && (
               <WorkingTreeDot
                 status={workingTreeStatusMap.get(entry.path)!}
-                hideOnHover={
-                  (hasReviewActions && hasReviewableContent) ||
-                  !!onStage ||
-                  !!onUnstage
-                }
+                hideOnHover={hasHoverActions}
               />
             )}
 
-            <StatusLetter
-              status={entry.status}
-              hideOnHover={
-                (hasReviewActions && hasReviewableContent) ||
-                !!onStage ||
-                !!onUnstage
-              }
-            />
+            {hasReviewableContent && (
+              <HunkCount
+                status={entry.hunkStatus}
+                context={hunkContext}
+                hideOnHover={hasHoverActions}
+              />
+            )}
+
+            <StatusLetter status={entry.status} hideOnHover={hasHoverActions} />
           </TreeRow>
         </ContextMenuTrigger>
         <ContextMenuContent>

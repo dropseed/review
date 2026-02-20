@@ -27,7 +27,7 @@ export function TreeRow({
   return (
     <div
       ref={ref}
-      className={`group flex w-full items-center gap-1.5 py-0.5 pr-2 transition-colors ${className}`}
+      className={`group flex w-full min-h-6 items-center gap-1.5 py-0.5 pr-2 transition-colors ${className}`}
       style={{ paddingLeft: treeIndent(depth), ...style }}
     >
       {children}

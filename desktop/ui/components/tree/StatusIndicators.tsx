@@ -36,29 +36,61 @@ export function SymlinkIndicator({ target }: { target?: string }): ReactNode {
 export function HunkCount({
   status,
   context,
+  hideOnHover = false,
 }: {
   status: FileHunkStatus;
   context: "needs-review" | "reviewed" | "all";
+  hideOnHover?: boolean;
 }): ReactNode {
   if (status.total === 0) return null;
 
   const reviewed = status.approved + status.trusted + status.rejected;
+  const hoverClass = hideOnHover ? "group-hover:hidden" : "";
 
   if (context === "needs-review") {
     return (
-      <span className="font-mono text-xxs tabular-nums text-fg-muted">
+      <span
+        className={`font-mono text-xxs tabular-nums text-fg-muted ${hoverClass}`}
+      >
         {status.pending}
       </span>
     );
   }
 
   if (context === "reviewed") {
-    const hasRejections = status.rejected > 0;
+    // Show individual color-coded counts for each status
+    const segments: { count: number; color: string }[] = [];
+    if (status.trusted > 0)
+      segments.push({ count: status.trusted, color: "text-status-trusted" });
+    if (status.approved > 0)
+      segments.push({ count: status.approved, color: "text-status-approved" });
+    if (status.rejected > 0)
+      segments.push({ count: status.rejected, color: "text-status-rejected" });
+
+    if (segments.length === 0) return null;
+
+    // Single status — just show the number
+    if (segments.length === 1) {
+      return (
+        <span
+          className={`font-mono text-xxs tabular-nums ${hoverClass} ${segments[0].color}`}
+        >
+          {segments[0].count}
+        </span>
+      );
+    }
+
+    // Multiple statuses — show each count in its color separated by ·
     return (
       <span
-        className={`font-mono text-xxs tabular-nums ${hasRejections ? "text-status-rejected" : "text-status-approved"}`}
+        className={`font-mono text-xxs tabular-nums inline-flex items-center ${hoverClass}`}
       >
-        {reviewed}
+        {segments.map((seg, i) => (
+          <span key={i} className="inline-flex items-center">
+            {i > 0 && <span className="text-fg-faint mx-px">·</span>}
+            <span className={seg.color}>{seg.count}</span>
+          </span>
+        ))}
       </span>
     );
   }
@@ -66,7 +98,7 @@ export function HunkCount({
   const isComplete = status.pending === 0;
   return (
     <span
-      className={`font-mono text-xxs tabular-nums ${isComplete ? "text-status-approved" : "text-fg-muted"}`}
+      className={`font-mono text-xxs tabular-nums ${hoverClass} ${isComplete ? "text-status-approved" : "text-fg-muted"}`}
     >
       {reviewed}/{status.total}
     </span>

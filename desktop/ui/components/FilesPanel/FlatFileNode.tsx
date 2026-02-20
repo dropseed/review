@@ -3,16 +3,13 @@ import {
   TreeNodeItem,
   TreeRow,
   StatusLetter,
+  HunkCount,
   TreeFileIcon,
   WorkingTreeDot,
 } from "../tree";
 import type { FileHunkStatus } from "./types";
 import { ApprovalButtons, StageButtons, type HunkContext } from "./FileNode";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
-
-function flatFileNameColor(isSelected: boolean): string {
-  return isSelected ? "text-fg" : "text-fg-secondary";
-}
 
 interface FlatFileNodeProps {
   filePath: string;
@@ -36,6 +33,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   hunkStatus,
   selectedFile,
   onSelectFile,
+  hunkContext,
   onApproveAll,
   onUnapproveAll,
   onRejectAll,
@@ -49,6 +47,8 @@ export const FlatFileNode = memo(function FlatFileNode({
   const hasPending = hunkStatus.pending > 0;
   const hasApproved = hunkStatus.approved > 0;
   const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
+  const hasHoverActions =
+    (hasReviewActions && hasReviewableContent) || !!onStage || !!onUnstage;
 
   const lastSlash = filePath.lastIndexOf("/");
   const dirPath = lastSlash >= 0 ? filePath.substring(0, lastSlash + 1) : "";
@@ -72,7 +72,7 @@ export const FlatFileNode = memo(function FlatFileNode({
           onClick={() => onSelectFile(filePath)}
         >
           <span
-            className={`min-w-0 truncate text-xs ${flatFileNameColor(isSelected)}`}
+            className={`min-w-0 truncate text-xs ${isSelected ? "text-fg" : "text-fg-secondary"}`}
           >
             {dirPath && <span className="text-fg-muted">{dirPath}</span>}
             {fileName}
@@ -116,22 +116,19 @@ export const FlatFileNode = memo(function FlatFileNode({
         {workingTreeStatusMap?.has(filePath) && (
           <WorkingTreeDot
             status={workingTreeStatusMap.get(filePath)!}
-            hideOnHover={
-              (hasReviewActions && hasReviewableContent) ||
-              !!onStage ||
-              !!onUnstage
-            }
+            hideOnHover={hasHoverActions}
           />
         )}
 
-        <StatusLetter
-          status={fileStatus}
-          hideOnHover={
-            (hasReviewActions && hasReviewableContent) ||
-            !!onStage ||
-            !!onUnstage
-          }
-        />
+        {hasReviewableContent && (
+          <HunkCount
+            status={hunkStatus}
+            context={hunkContext}
+            hideOnHover={hasHoverActions}
+          />
+        )}
+
+        <StatusLetter status={fileStatus} hideOnHover={hasHoverActions} />
       </TreeRow>
     </TreeNodeItem>
   );

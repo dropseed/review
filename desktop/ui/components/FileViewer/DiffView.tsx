@@ -89,6 +89,24 @@ function isValidLineNumber(lineNumber: number): boolean {
   return lineNumber >= 1;
 }
 
+const LOCK_FILE_SUFFIXES = [
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "Cargo.lock",
+  "Gemfile.lock",
+  "composer.lock",
+];
+
+/** Count newlines in a string without allocating split arrays. */
+function countLines(s: string | undefined): number {
+  if (!s) return 0;
+  let count = 1;
+  let idx = -1;
+  while ((idx = s.indexOf("\n", idx + 1)) !== -1) count++;
+  return count;
+}
+
 // Detects when @pierre/diffs finishes syntax highlighting by polling
 // for styled <span> elements inside the shadow DOM of the diffs-container
 // custom element. We poll because the shadow root is not observable via
@@ -277,15 +295,25 @@ export function DiffView({
       let side: "additions" | "deletions";
       let lineNumber: number;
 
+      // Prefer the additions (right) side so the annotation bar renders in the
+      // "new code" pane during split view.  Only fall back to the deletions
+      // (left) side for pure-deletion hunks or move-pair sources.
+      const lastAdded = [...changedLines]
+        .reverse()
+        .find((l) => l.type === "added");
+
       if (!lastChanged) {
         side = isSource ? "deletions" : "additions";
         lineNumber = isSource ? hunk.oldStart : hunk.newStart;
-      } else if (lastChanged.type === "removed") {
+      } else if (isSource || !lastAdded) {
         side = "deletions";
-        lineNumber = lastChanged.oldLineNumber ?? hunk.oldStart;
+        lineNumber =
+          (lastChanged.type === "removed"
+            ? lastChanged.oldLineNumber
+            : lastChanged.newLineNumber) ?? hunk.oldStart;
       } else {
         side = "additions";
-        lineNumber = lastChanged.newLineNumber ?? hunk.newStart;
+        lineNumber = lastAdded.newLineNumber ?? hunk.newStart;
       }
 
       if (!isValidLineNumber(lineNumber)) {
@@ -301,7 +329,7 @@ export function DiffView({
           side,
           lineNumber,
           metadata: {
-            type: "hunk" as const,
+            type: "hunk",
             data: { hunk, hunkState, pairedHunk, isSource },
           },
         },
@@ -353,7 +381,7 @@ export function DiffView({
           {
             side: annotation.side === "old" ? "deletions" : "additions",
             lineNumber,
-            metadata: { type: "user" as const, data: { annotation } },
+            metadata: { type: "user", data: { annotation } },
           },
         ];
       },
@@ -376,7 +404,7 @@ export function DiffView({
     const newAnnotation: DiffLineAnnotation<AnnotationMeta> = {
       side: newAnnotationLine.side === "old" ? "deletions" : "additions",
       lineNumber: newLineNumber,
-      metadata: { type: "new" as const, data: {} },
+      metadata: { type: "new", data: {} },
     };
 
     return [...hunkAnnotations, ...userAnnotations, newAnnotation];
@@ -692,24 +720,11 @@ export function DiffView({
   // Performance optimization: detect large files and JSON files
   // JSON diffs are often noisy with word-level diffing; large files are slow to render
   const isJsonFile = fileName.endsWith(".json");
-  const isLockFile =
-    fileName.endsWith("package-lock.json") ||
-    fileName.endsWith("yarn.lock") ||
-    fileName.endsWith("pnpm-lock.yaml") ||
-    fileName.endsWith("Cargo.lock") ||
-    fileName.endsWith("Gemfile.lock") ||
-    fileName.endsWith("composer.lock");
-  // Count newlines without allocating split arrays
-  const totalLines = useMemo(() => {
-    const countLines = (s: string | undefined) => {
-      if (!s) return 0;
-      let count = 1;
-      let idx = -1;
-      while ((idx = s.indexOf("\n", idx + 1)) !== -1) count++;
-      return count;
-    };
-    return countLines(oldContent) + countLines(newContent);
-  }, [oldContent, newContent]);
+  const isLockFile = LOCK_FILE_SUFFIXES.some((s) => fileName.endsWith(s));
+  const totalLines = useMemo(
+    () => countLines(oldContent) + countLines(newContent),
+    [oldContent, newContent],
+  );
   const isLargeFile = totalLines > 5000;
 
   // For lock files and very large files, disable word-level diffing entirely
