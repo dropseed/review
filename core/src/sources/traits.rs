@@ -16,6 +16,10 @@ pub struct BranchList {
     pub local: Vec<String>,
     pub remote: Vec<String>,
     pub stashes: Vec<StashEntry>,
+    /// Map from branch name to ISO-8601 committer date (e.g., "2025-01-15T10:30:00+00:00").
+    /// Populated by list_branches; absent on older backends.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub dates: std::collections::HashMap<String, String>,
 }
 
 /// Git status summary for the working tree

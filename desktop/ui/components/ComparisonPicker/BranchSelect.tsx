@@ -476,4 +476,4 @@ export const BranchSelect = memo(function BranchSelect({
   );
 });
 
-export { PR_PREFIX };
+export { BranchIcon, PR_PREFIX };

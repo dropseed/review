@@ -150,9 +150,9 @@
 
   /* Semantic status colors — review states (dark: 400 shade, light: 600 shade) */
   --color-status-approved: #34d399;    /* emerald-400 */
-  --color-status-trusted: #2dd4bf;     /* teal-400 */
+  --color-status-trusted: #60a5fa;     /* blue-400 */
   --color-status-rejected: #fb7185;    /* rose-400 */
-  --color-status-pending: #a8a29e;     /* stone-400 */
+  --color-status-pending: #fb923c;     /* orange-400 */
   --color-status-saved: #fbbf24;       /* amber-400 */
 
   /* Guide accent */
@@ -382,9 +382,9 @@ html {
     ),
     linear-gradient(
       160deg,
-      color-mix(in srgb, var(--color-guide) 30%, transparent),
-      color-mix(in srgb, var(--color-guide) 8%, transparent) 40%,
-      color-mix(in srgb, var(--color-guide) 25%, transparent)
+      color-mix(in srgb, var(--color-guide) 45%, transparent),
+      color-mix(in srgb, var(--color-guide) 15%, transparent) 40%,
+      color-mix(in srgb, var(--color-guide) 35%, transparent)
     );
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;

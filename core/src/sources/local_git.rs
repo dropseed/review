@@ -183,17 +183,29 @@ impl LocalGitSource {
         let mut local = Vec::new();
         let mut remote = Vec::new();
         let mut stashes = Vec::new();
+        let mut dates = std::collections::HashMap::new();
 
         // Get local branches sorted by most recent commit date
         let local_output = self.run_git(&[
             "for-each-ref",
             "--sort=-committerdate",
-            "--format=%(refname:short)",
+            "--format=%(refname:short)\t%(committerdate:iso-strict)",
             "refs/heads/",
         ])?;
         for line in local_output.lines() {
-            let branch = line.trim();
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(2, '\t');
+            let branch = parts.next().unwrap_or("").trim();
             if !branch.is_empty() {
+                if let Some(date) = parts.next() {
+                    let date = date.trim();
+                    if !date.is_empty() {
+                        dates.insert(branch.to_owned(), date.to_owned());
+                    }
+                }
                 local.push(branch.to_owned());
             }
         }
@@ -202,27 +214,44 @@ impl LocalGitSource {
         let remote_output = self.run_git(&[
             "for-each-ref",
             "--sort=-committerdate",
-            "--format=%(refname:short)",
+            "--format=%(refname:short)\t%(committerdate:iso-strict)",
             "refs/remotes/",
         ])?;
         for line in remote_output.lines() {
-            let branch = line.trim();
-            if !branch.is_empty() && !branch.ends_with("/HEAD") {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(2, '\t');
+            let branch = parts.next().unwrap_or("").trim();
+            if !branch.is_empty() && !branch.ends_with("/HEAD") && branch.contains('/') {
+                if let Some(date) = parts.next() {
+                    let date = date.trim();
+                    if !date.is_empty() {
+                        dates.insert(branch.to_owned(), date.to_owned());
+                    }
+                }
                 remote.push(branch.to_owned());
             }
         }
 
         // Get stashes
-        if let Ok(stash_output) = self.run_git(&["stash", "list", "--format=%gd\t%s"]) {
+        if let Ok(stash_output) = self.run_git(&["stash", "list", "--format=%gd\t%cI\t%s"]) {
             for line in stash_output.lines() {
                 let line = line.trim();
                 if line.is_empty() {
                     continue;
                 }
-                // Format is "stash@{0}\tmessage"
-                let parts: Vec<&str> = line.splitn(2, '\t').collect();
+                // Format is "stash@{0}\t<date>\tmessage"
+                let parts: Vec<&str> = line.splitn(3, '\t').collect();
                 let stash_ref = parts[0].to_owned();
-                let message = parts.get(1).unwrap_or(&"").to_string();
+                if let Some(date) = parts.get(1) {
+                    let date = date.trim();
+                    if !date.is_empty() {
+                        dates.insert(stash_ref.clone(), date.to_owned());
+                    }
+                }
+                let message = parts.get(2).unwrap_or(&"").to_string();
                 stashes.push(super::traits::StashEntry { stash_ref, message });
             }
         }
@@ -236,6 +265,7 @@ impl LocalGitSource {
             local,
             remote,
             stashes,
+            dates,
         })
     }
 

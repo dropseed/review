@@ -117,6 +117,8 @@ export interface BranchList {
   local: string[];
   remote: string[];
   stashes: StashEntry[];
+  /** Map from branch name to ISO-8601 committer date. */
+  dates?: Record<string, string>;
 }
 
 // Git status types
