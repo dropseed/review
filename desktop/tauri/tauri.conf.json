@@ -5,7 +5,7 @@
   "version": "0.0.33",
   "identifier": "com.dropseed.review",
   "build": {
-    "beforeDevCommand": "../scripts/start-vite",
+    "beforeDevCommand": "../scripts/build-cli && ../scripts/start-vite",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build && ../scripts/build-cli",
     "frontendDist": "../dist"
