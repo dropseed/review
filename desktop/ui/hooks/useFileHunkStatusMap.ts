@@ -5,7 +5,7 @@ import type { FileHunkStatus } from "../components/tree/types";
 
 /**
  * Returns a Map<string, FileHunkStatus> for every file that has hunks.
- * Shared between FilesPanel and RepoSymbolsView so hunk-status computation
+ * Shared between FilesPanel and other views so hunk-status computation
  * lives in one place.
  */
 export function useFileHunkStatusMap(): Map<string, FileHunkStatus> {

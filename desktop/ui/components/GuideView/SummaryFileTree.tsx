@@ -1,4 +1,10 @@
-import { type ReactNode, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useReviewStore } from "../../stores";
 import {
   processTree,
@@ -13,9 +19,15 @@ import {
   StatusLetter,
   TreeFileIcon,
 } from "../tree";
+import { SymbolKindBadge, ChangeIndicator, sortSymbols } from "../symbols";
 import type { FileHunkStatus } from "../tree";
 import type { ProcessedFileEntry } from "../FilesPanel/types";
-import type { DiffHunk, HunkState } from "../../types";
+import type {
+  DiffHunk,
+  HunkState,
+  FileSymbolDiff,
+  SymbolDiff,
+} from "../../types";
 import { isHunkTrusted } from "../../types";
 
 /** Per-file diff + review stats, precomputed once */
@@ -121,6 +133,12 @@ function compactFiltered(entries: ProcessedFileEntry[]): ProcessedFileEntry[] {
   });
 }
 
+/** Stable React key for a SymbolDiff node */
+function symbolKey(sym: SymbolDiff): string {
+  const line = sym.newRange?.startLine ?? sym.oldRange?.startLine ?? 0;
+  return `${sym.changeType}-${sym.name}-${line}`;
+}
+
 // --- Inline sub-components ---
 
 function DiffLineStats({
@@ -214,7 +232,9 @@ interface CompactNodeProps {
   collapsed: Set<string>;
   onToggle: (path: string) => void;
   onNavigate: (filePath: string) => void;
+  onNavigateToHunk: (filePath: string, hunkId: string) => void;
   fileStats: Map<string, FileDiffStats>;
+  symbolDiffMap: Map<string, FileSymbolDiff>;
 }
 
 function CompactNode({
@@ -223,7 +243,9 @@ function CompactNode({
   collapsed,
   onToggle,
   onNavigate,
+  onNavigateToHunk,
   fileStats,
+  symbolDiffMap,
 }: CompactNodeProps): ReactNode {
   if (entry.isDirectory && entry.children) {
     const isCollapsed = collapsed.has(entry.path);
@@ -257,7 +279,9 @@ function CompactNode({
               collapsed={collapsed}
               onToggle={onToggle}
               onNavigate={onNavigate}
+              onNavigateToHunk={onNavigateToHunk}
               fileStats={fileStats}
+              symbolDiffMap={symbolDiffMap}
             />
           ))}
       </TreeNodeItem>
@@ -268,6 +292,9 @@ function CompactNode({
   const isFullyTrusted =
     entry.hunkStatus.total > 0 &&
     entry.hunkStatus.trusted === entry.hunkStatus.total;
+
+  const fileDiff = symbolDiffMap.get(entry.path);
+  const sortedSymbols = fileDiff ? sortSymbols(fileDiff.symbols) : [];
 
   return (
     <TreeNodeItem>
@@ -290,6 +317,31 @@ function CompactNode({
         <ReviewProgressBar status={entry.hunkStatus} />
         <StatusLetter status={entry.status} />
       </TreeRow>
+      {sortedSymbols.map((sym) => {
+        const firstHunkId = sym.hunkIds[0];
+        return (
+          <TreeRow
+            key={symbolKey(sym)}
+            depth={depth + 1}
+            className="hover:bg-surface-raised/40 cursor-pointer"
+          >
+            <TreeRowButton
+              onClick={
+                firstHunkId
+                  ? () => onNavigateToHunk(entry.path, firstHunkId)
+                  : undefined
+              }
+            >
+              <TreeChevron expanded={false} visible={false} />
+              <ChangeIndicator changeType={sym.changeType} />
+              <SymbolKindBadge kind={sym.kind} />
+              <TreeNodeName className="text-fg-muted text-xxs">
+                {sym.name}
+              </TreeNodeName>
+            </TreeRowButton>
+          </TreeRow>
+        );
+      })}
     </TreeNodeItem>
   );
 }
@@ -301,8 +353,26 @@ export function SummaryFileTree(): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
+  const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
+  const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
+  const loadSymbols = useReviewStore((s) => s.loadSymbols);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!symbolsLoaded && !symbolsLoading && files.length > 0) {
+      loadSymbols();
+    }
+  }, [symbolsLoaded, symbolsLoading, files.length, loadSymbols]);
+
+  const symbolDiffMap = useMemo(() => {
+    const map = new Map<string, FileSymbolDiff>();
+    for (const fd of symbolDiffs) {
+      map.set(fd.filePath, fd);
+    }
+    return map;
+  }, [symbolDiffs]);
 
   const tree = useMemo(() => {
     const hunkStatusMap = calculateFileHunkStatus(hunks, reviewState);
@@ -314,6 +384,25 @@ export function SummaryFileTree(): ReactNode {
   const fileStats = useMemo(
     () => computeFileDiffStats(hunks, reviewState),
     [hunks, reviewState],
+  );
+
+  const hunkIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < hunks.length; i++) {
+      map.set(hunks[i].id, i);
+    }
+    return map;
+  }, [hunks]);
+
+  const handleNavigateToHunk = useCallback(
+    (filePath: string, hunkId: string) => {
+      useReviewStore.getState().navigateToBrowse(filePath);
+      const hunkIndex = hunkIndexMap.get(hunkId);
+      if (hunkIndex !== undefined) {
+        useReviewStore.setState({ focusedHunkIndex: hunkIndex });
+      }
+    },
+    [hunkIndexMap],
   );
 
   function handleToggle(path: string) {
@@ -363,7 +452,9 @@ export function SummaryFileTree(): ReactNode {
             collapsed={collapsed}
             onToggle={handleToggle}
             onNavigate={navigateToBrowse}
+            onNavigateToHunk={handleNavigateToHunk}
             fileStats={fileStats}
+            symbolDiffMap={symbolDiffMap}
           />
         ))}
       </div>
