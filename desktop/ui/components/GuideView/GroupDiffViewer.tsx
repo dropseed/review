@@ -212,13 +212,15 @@ function FileDiffSection({
 
 interface GroupDiffViewerProps {
   group: HunkGroup;
-  groupIndex: number;
+  groupIndex?: number;
+  headerBadge?: ReactNode;
   onClose: () => void;
 }
 
 export function GroupDiffViewer({
   group,
   groupIndex,
+  headerBadge,
   onClose,
 }: GroupDiffViewerProps): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
@@ -477,9 +479,12 @@ export function GroupDiffViewer({
       {/* Group header */}
       <div className="sticky top-0 z-10 bg-surface-panel/95 backdrop-blur-sm border-b border-edge/50 px-4 py-3">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-guide bg-guide/10 px-2 py-0.5 rounded-full tabular-nums">
-            {groupIndex + 1}
-          </span>
+          {groupIndex != null && (
+            <span className="text-xs font-medium text-guide bg-guide/10 px-2 py-0.5 rounded-full tabular-nums">
+              {groupIndex + 1}
+            </span>
+          )}
+          {headerBadge}
           <h2 className="text-sm font-medium text-fg-secondary flex-1 min-w-0">
             {group.title}
           </h2>
@@ -493,7 +498,7 @@ export function GroupDiffViewer({
                 type="button"
                 onClick={handleUnapproveAll}
                 className="px-2 py-1 text-xs font-medium rounded-md transition-colors
-                           text-fg-muted hover:text-guide hover:bg-guide/10"
+                           text-fg-muted hover:text-fg-secondary hover:bg-surface-hover"
               >
                 Reset
               </button>

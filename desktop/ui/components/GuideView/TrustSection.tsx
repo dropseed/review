@@ -5,11 +5,6 @@ import { anyLabelMatchesPattern, type TrustCategory } from "../../types";
 import { getApiClient } from "../../api";
 import { Checkbox } from "../ui/checkbox";
 import { playApproveSound, playBulkSound } from "../../utils/sounds";
-import {
-  HunkPreviewModal,
-  InlineHunkPreviewList,
-  type PreviewHunk,
-} from "./HunkPreviewPanel";
 
 interface PatternInfo {
   id: string;
@@ -67,75 +62,53 @@ function buildPatternList(
 function PatternRow({
   pattern,
   onToggle,
-  onExpandToggle,
-  isExpanded,
-  previewHunks,
-  onSelectHunk,
-  onShowAllModal,
+  onPreview,
 }: {
   pattern: PatternInfo;
   onToggle: (id: string, trusted: boolean) => void;
-  onExpandToggle: (id: string) => void;
-  isExpanded: boolean;
-  previewHunks: PreviewHunk[];
-  onSelectHunk: (filePath: string, hunkId: string) => void;
-  onShowAllModal: (patternId: string) => void;
+  onPreview: (patternId: string) => void;
 }): ReactNode {
   const muted = pattern.count === 0;
 
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => onToggle(pattern.id, !pattern.trusted)}
-        className={`group flex items-center gap-2 w-full px-2 py-1 rounded text-left transition-colors ${
-          muted ? "opacity-50 hover:opacity-70" : "hover:bg-surface-raised/50"
-        }`}
+    <button
+      type="button"
+      onClick={() => onToggle(pattern.id, !pattern.trusted)}
+      className={`group flex items-center gap-2 w-full px-2 py-1 rounded text-left transition-colors ${
+        muted ? "opacity-50 hover:opacity-70" : "hover:bg-surface-raised/50"
+      }`}
+    >
+      <Checkbox
+        className="h-3 w-3 shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-edge-default"
+        checked={pattern.trusted}
+        tabIndex={-1}
+      />
+      <span
+        className={`flex-1 min-w-0 truncate text-xs ${pattern.trusted ? "text-status-trusted" : "text-fg-secondary"}`}
+        title={pattern.description}
       >
-        <Checkbox
-          className="h-3 w-3 shrink-0 pointer-events-none group-hover:data-[state=unchecked]:border-edge-default"
-          checked={pattern.trusted}
-          tabIndex={-1}
-        />
+        {pattern.name}
+      </span>
+      {pattern.count > 0 ? (
         <span
-          className={`flex-1 min-w-0 truncate text-xs ${pattern.trusted ? "text-status-trusted" : "text-fg-secondary"}`}
-          title={pattern.description}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPreview(pattern.id);
+          }}
+          className={`font-mono text-xxs tabular-nums shrink-0 rounded px-1 py-px transition-colors ${
+            pattern.trusted
+              ? "text-status-trusted/70 hover:bg-status-trusted/15 hover:text-status-trusted"
+              : "text-fg-faint hover:bg-surface-hover hover:text-fg-muted"
+          }`}
         >
-          {pattern.name}
+          {pattern.count}
         </span>
-        {pattern.count > 0 ? (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onExpandToggle(pattern.id);
-            }}
-            className={`font-mono text-xxs tabular-nums shrink-0 rounded px-1 py-px transition-colors ${
-              isExpanded
-                ? "bg-surface-active text-fg-secondary"
-                : pattern.trusted
-                  ? "text-status-trusted/70 hover:bg-status-trusted/15 hover:text-status-trusted"
-                  : "text-fg-faint hover:bg-surface-hover hover:text-fg-muted"
-            }`}
-          >
-            {pattern.count}
-          </span>
-        ) : (
-          <span className="font-mono text-xxs tabular-nums shrink-0 text-fg-faint px-1">
-            0
-          </span>
-        )}
-      </button>
-
-      {isExpanded && previewHunks.length > 0 && (
-        <div className="ml-7 mr-2 mt-0.5 mb-1">
-          <InlineHunkPreviewList
-            hunks={previewHunks}
-            onSelectHunk={onSelectHunk}
-            onShowAll={() => onShowAllModal(pattern.id)}
-          />
-        </div>
+      ) : (
+        <span className="font-mono text-xxs tabular-nums shrink-0 text-fg-faint px-1">
+          0
+        </span>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -144,13 +117,8 @@ export function TrustSection(): ReactNode {
   const reviewState = useReviewStore((s) => s.reviewState);
   const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
-  const [expandedPatternId, setExpandedPatternId] = useState<string | null>(
-    null,
-  );
-  const [modalPatternId, setModalPatternId] = useState<string | null>(null);
   const [showZeroMatch, setShowZeroMatch] = useState(false);
 
   useEffect(() => {
@@ -203,65 +171,22 @@ export function TrustSection(): ReactNode {
     else removeTrustPattern(id);
   };
 
-  const getPreviewHunks = (patternId: string): PreviewHunk[] => {
-    return hunks
+  const handlePreview = (patternId: string) => {
+    const patternName =
+      patterns.find((p) => p.id === patternId)?.name ?? patternId;
+    const hunkIds = hunks
       .filter((hunk) => {
         const labels = reviewState?.hunks[hunk.id]?.label ?? [];
         return anyLabelMatchesPattern(labels, patternId);
       })
-      .map((hunk) => ({
-        id: hunk.id,
-        filePath: hunk.filePath,
-        content: hunk.content,
-      }));
-  };
+      .map((hunk) => hunk.id);
 
-  const modalPreviewHunks = useMemo(() => {
-    if (!modalPatternId) return [];
-    return hunks
-      .filter((hunk) => {
-        const labels = reviewState?.hunks[hunk.id]?.label ?? [];
-        return anyLabelMatchesPattern(labels, modalPatternId);
-      })
-      .map((hunk) => ({
-        id: hunk.id,
-        filePath: hunk.filePath,
-        content: hunk.content,
-      }));
-  }, [hunks, reviewState?.hunks, modalPatternId]);
+    if (hunkIds.length === 0) return;
 
-  const patternById = useMemo(() => {
-    const map = new Map<string, { name: string }>();
-    for (const category of trustCategories) {
-      for (const pattern of category.patterns) {
-        map.set(pattern.id, pattern);
-      }
-    }
-    return map;
-  }, [trustCategories]);
-
-  const modalPatternName = useMemo(() => {
-    if (!modalPatternId) return "";
-    return patternById.get(modalPatternId)?.name ?? modalPatternId;
-  }, [modalPatternId, patternById]);
-
-  const handleSelectHunk = (filePath: string, hunkId: string) => {
-    navigateToBrowse(filePath);
-    const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
-    if (hunkIndex >= 0) {
-      useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-    }
-    setExpandedPatternId(null);
-    setModalPatternId(null);
-  };
-
-  const handleExpandToggle = (patternId: string) => {
-    setExpandedPatternId(expandedPatternId === patternId ? null : patternId);
-  };
-
-  const handleShowAllModal = (patternId: string) => {
-    setExpandedPatternId(null);
-    setModalPatternId(patternId);
+    useReviewStore.setState({
+      adhocGroup: { title: patternName, hunkIds },
+      guideContentMode: "adhoc-group",
+    });
   };
 
   const renderPatternList = (patternList: PatternInfo[]) => {
@@ -285,13 +210,7 @@ export function TrustSection(): ReactNode {
           key={pattern.id}
           pattern={pattern}
           onToggle={handleToggle}
-          onExpandToggle={handleExpandToggle}
-          isExpanded={expandedPatternId === pattern.id}
-          previewHunks={
-            expandedPatternId === pattern.id ? getPreviewHunks(pattern.id) : []
-          }
-          onSelectHunk={handleSelectHunk}
-          onShowAllModal={handleShowAllModal}
+          onPreview={handlePreview}
         />,
       );
     }
@@ -328,16 +247,6 @@ export function TrustSection(): ReactNode {
         <p className="px-2 py-2 text-xxs text-fg-faint">
           No patterns classified yet.
         </p>
-      )}
-
-      {/* Hunk preview modal */}
-      {modalPatternId && modalPreviewHunks.length > 0 && (
-        <HunkPreviewModal
-          patternName={modalPatternName}
-          hunks={modalPreviewHunks}
-          onSelectHunk={handleSelectHunk}
-          onClose={() => setModalPatternId(null)}
-        />
       )}
     </div>
   );

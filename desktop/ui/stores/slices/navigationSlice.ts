@@ -1,9 +1,10 @@
 import { isHunkReviewed, isHunkTrusted } from "../../types";
+import type { HunkGroup } from "../../types";
 import type { ReviewStore, SliceCreator } from "../types";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
-export type GuideContentMode = "group" | null;
+export type GuideContentMode = "group" | "adhoc-group" | null;
 export type ChangesViewMode = "files" | "guide";
 
 export interface NavigationSlice {
@@ -80,6 +81,9 @@ export interface NavigationSlice {
   // Active group index in focused review section
   activeGroupIndex: number;
   setActiveGroupIndex: (index: number) => void;
+
+  // Ad-hoc hunk group (used with guideContentMode "adhoc-group")
+  adhocGroup: HunkGroup | null;
 
   // Content search modal
   contentSearchOpen: boolean;
@@ -429,6 +433,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Active group index
   activeGroupIndex: 0,
   setActiveGroupIndex: (index) => set({ activeGroupIndex: index }),
+
+  // Ad-hoc group
+  adhocGroup: null,
 
   // Content search modal
   contentSearchOpen: false,

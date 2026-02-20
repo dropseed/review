@@ -35,8 +35,8 @@ export function ContentArea(): ReactNode {
   const isSplitActive = secondaryFile !== null;
   const isHorizontal = splitOrientation === "horizontal";
 
-  // Group view takes priority when active
-  if (guideContentMode === "group") {
+  // Multi-file group view takes priority when active
+  if (guideContentMode !== null) {
     return (
       <Suspense fallback={null}>
         <MultiFileDiffViewer />
