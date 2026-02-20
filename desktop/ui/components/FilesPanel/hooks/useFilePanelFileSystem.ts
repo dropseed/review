@@ -132,8 +132,9 @@ export function useFilePanelFileSystem() {
     return map;
   }, [allFiles]);
 
-  const allDirPaths = useMemo(() => {
+  const { allDirPaths, renamedDirPaths } = useMemo(() => {
     const paths = new Set<string>();
+    const renamed = new Set<string>();
     function collect(entries: typeof allFilesTree) {
       for (const entry of entries) {
         if (
@@ -141,8 +142,11 @@ export function useFilePanelFileSystem() {
           entry.matchesFilter &&
           entry.status !== "gitignored"
         ) {
+          const isRenamed = entry.status === "renamed";
           for (const p of entry.compactedPaths) {
             paths.add(p);
+            // Track renamed directories so expand-all keeps them collapsed
+            if (isRenamed) renamed.add(p);
           }
           if (entry.children) {
             collect(entry.children);
@@ -154,7 +158,7 @@ export function useFilePanelFileSystem() {
     collect(sectionedFiles.savedForLater);
     collect(sectionedFiles.reviewed);
     collect(allFilesTree);
-    return paths;
+    return { allDirPaths: paths, renamedDirPaths: renamed };
   }, [allFilesTree, sectionedFiles]);
 
   return {
@@ -168,6 +172,7 @@ export function useFilePanelFileSystem() {
     allFilesTree,
     stats,
     allDirPaths,
+    renamedDirPaths,
     hunks,
     reviewState,
   };

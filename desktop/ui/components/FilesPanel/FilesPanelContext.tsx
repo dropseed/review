@@ -18,7 +18,7 @@ interface FilesPanelContextValue {
   hunkStatusMap: Map<string, FileHunkStatus>;
   fileStatusMap: Map<string, string>;
   symbolDiffMap: Map<string, FileSymbolDiff>;
-  expandAll: (dirPaths: Set<string>) => void;
+  expandAll: (dirPaths: Set<string>, excludePaths?: Set<string>) => void;
   collapseAll: () => void;
 }
 

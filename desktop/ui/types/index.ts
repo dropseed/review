@@ -202,6 +202,8 @@ export interface FileEntry {
   // Symlink info
   isSymlink?: boolean;
   symlinkTarget?: string;
+  // Rename info (old path before rename)
+  renamedFrom?: string;
 }
 
 // Diff hunks

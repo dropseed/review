@@ -77,6 +77,8 @@ pub struct FileEntry {
     pub is_symlink: bool,
     #[serde(rename = "symlinkTarget", skip_serializing_if = "Option::is_none")]
     pub symlink_target: Option<String>,
+    #[serde(rename = "renamedFrom", skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

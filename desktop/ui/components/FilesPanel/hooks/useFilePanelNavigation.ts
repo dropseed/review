@@ -217,9 +217,20 @@ export function useFilePanelNavigation({
     [setSelectedFile, guideContentMode, navigateToBrowse],
   );
 
-  const expandAll = useCallback((allDirPaths: Set<string>) => {
-    setExpandedPaths(new Set(allDirPaths));
-  }, []);
+  const expandAll = useCallback(
+    (dirPaths: Set<string>, excludePaths?: Set<string>) => {
+      if (!excludePaths || excludePaths.size === 0) {
+        setExpandedPaths(new Set(dirPaths));
+        return;
+      }
+      const filtered = new Set<string>();
+      for (const p of dirPaths) {
+        if (!excludePaths.has(p)) filtered.add(p);
+      }
+      setExpandedPaths(filtered);
+    },
+    [],
+  );
 
   const collapseAll = useCallback(() => {
     setExpandedPaths(new Set());

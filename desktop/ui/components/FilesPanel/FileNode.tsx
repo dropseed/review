@@ -326,7 +326,15 @@ export const FileNode = memo(
               />
             )}
 
-            {entry.isSymlink && entry.status && !isGitignored && (
+            {entry.renamedFrom && (
+              <SimpleTooltip content={`Moved from ${entry.renamedFrom}`}>
+                <span className="flex-shrink-0 rounded bg-status-renamed/15 px-1 py-0.5 text-xxs font-medium text-status-renamed">
+                  Moved
+                </span>
+              </SimpleTooltip>
+            )}
+
+            {entry.status && !isGitignored && (
               <StatusLetter
                 status={entry.status}
                 hideOnHover={

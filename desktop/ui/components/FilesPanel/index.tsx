@@ -233,6 +233,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     allFilesTree,
     stats,
     allDirPaths,
+    renamedDirPaths,
     hunks,
     reviewState,
   } = useFilePanelFileSystem();
@@ -809,7 +810,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   </span>
                   <SearchButton onClick={() => setContentSearchOpen(true)} />
                   <ExpandCollapseButtons
-                    onExpandAll={() => expandAll(allDirPaths)}
+                    onExpandAll={() => expandAll(allDirPaths, renamedDirPaths)}
                     onCollapseAll={collapseAll}
                   />
                 </PanelToolbar>
@@ -896,7 +897,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         quickActions={needsReviewQuickActions}
                         onExpandAll={
                           changesDisplayMode === "tree"
-                            ? () => expandAll(needsReviewDirPaths)
+                            ? () =>
+                                expandAll(needsReviewDirPaths, renamedDirPaths)
                             : undefined
                         }
                         onCollapseAll={
@@ -947,7 +949,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                           unapproveAllLabel="Unsave all"
                           onExpandAll={
                             changesDisplayMode === "tree"
-                              ? () => expandAll(savedForLaterDirPaths)
+                              ? () =>
+                                  expandAll(
+                                    savedForLaterDirPaths,
+                                    renamedDirPaths,
+                                  )
                               : undefined
                           }
                           onCollapseAll={
@@ -995,7 +1001,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         quickActions={reviewedQuickActions}
                         onExpandAll={
                           changesDisplayMode === "tree"
-                            ? () => expandAll(reviewedDirPaths)
+                            ? () => expandAll(reviewedDirPaths, renamedDirPaths)
                             : undefined
                         }
                         onCollapseAll={

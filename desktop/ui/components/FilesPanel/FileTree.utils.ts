@@ -66,6 +66,87 @@ export function calculateFileHunkStatus(
   return statusMap;
 }
 
+/** Collect all leaf (file) statuses from a processed tree. */
+function collectLeafStatuses(
+  entries: ProcessedFileEntry[],
+): Set<FileEntry["status"]> {
+  const statuses = new Set<FileEntry["status"]>();
+  for (const entry of entries) {
+    if (!entry.matchesFilter) continue;
+    if (entry.isDirectory && entry.children) {
+      for (const s of collectLeafStatuses(entry.children)) {
+        statuses.add(s);
+      }
+    } else if (entry.status) {
+      statuses.add(entry.status);
+    }
+  }
+  return statuses;
+}
+
+/**
+ * If every leaf descendant shares the same change status, return it.
+ * Otherwise return undefined.
+ */
+function computeRolledUpStatus(
+  children: ProcessedFileEntry[],
+): FileEntry["status"] | undefined {
+  const statuses = collectLeafStatuses(children);
+  if (statuses.size === 1) {
+    const [only] = statuses;
+    if (hasChangeStatus(only)) return only;
+  }
+  return undefined;
+}
+
+/**
+ * For a renamed directory, compute the common old-dir prefix from children's renamedFrom.
+ * Returns the old directory path if all children share one, otherwise undefined.
+ *
+ * For each leaf, strips the current dir prefix from the new path and the
+ * equivalent suffix from the old path to derive the old directory.
+ * E.g., new: "src/new/foo.ts", old: "src/old/foo.ts", dirPath: "src/new"
+ *   -> suffix: "foo.ts" -> old dir: "src/old"
+ */
+function computeRolledUpRenamedFrom(
+  children: ProcessedFileEntry[],
+  dirPath: string,
+): string | undefined {
+  const dirPrefix = dirPath + "/";
+  const oldDirCandidates = new Set<string>();
+
+  function collect(entries: ProcessedFileEntry[]) {
+    for (const entry of entries) {
+      if (!entry.matchesFilter) continue;
+      if (entry.isDirectory && entry.children) {
+        if (entry.renamedFrom) {
+          oldDirCandidates.add(entry.renamedFrom);
+        } else {
+          collect(entry.children);
+        }
+      } else if (entry.renamedFrom && entry.path.startsWith(dirPrefix)) {
+        const suffix = entry.path.slice(dirPrefix.length);
+        if (entry.renamedFrom.endsWith("/" + suffix)) {
+          oldDirCandidates.add(
+            entry.renamedFrom.slice(
+              0,
+              entry.renamedFrom.length - suffix.length - 1,
+            ),
+          );
+        }
+      }
+    }
+  }
+  collect(children);
+
+  if (oldDirCandidates.size === 1) {
+    const [oldDir] = oldDirCandidates;
+    return oldDir;
+  }
+
+  return undefined;
+}
+
 export function processTree(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
@@ -92,7 +173,15 @@ export function processTree(
         aggregateStatus.total += child.hunkStatus.total;
       }
 
-      const ownStatusChanged = hasChangeStatus(entry.status);
+      // Compute rolled-up status: if every leaf descendant shares the same status, propagate it
+      const rolledUpStatus = computeRolledUpStatus(processedChildren);
+      const rolledUpRenamedFrom =
+        rolledUpStatus === "renamed"
+          ? computeRolledUpRenamedFrom(processedChildren, entry.path)
+          : undefined;
+
+      const effectiveStatus = entry.status ?? rolledUpStatus;
+      const ownStatusChanged = hasChangeStatus(effectiveStatus);
 
       // Directory matches filter if any child matches OR it has its own status change
       const anyChildMatches = processedChildren.some((c) => c.matchesFilter);
@@ -107,6 +196,8 @@ export function processTree(
 
       return {
         ...entry,
+        status: effectiveStatus,
+        renamedFrom: entry.renamedFrom ?? rolledUpRenamedFrom,
         children: processedChildren,
         hunkStatus: aggregateStatus,
         hasChanges: aggregateStatus.total > 0 || ownStatusChanged,
@@ -133,6 +224,7 @@ export function processTree(
       path: entry.path,
       isDirectory: entry.isDirectory,
       status: entry.status,
+      renamedFrom: entry.renamedFrom,
       hunkStatus,
       hasChanges,
       matchesFilter,
@@ -171,8 +263,12 @@ export function processTreeWithSections(
         if (entry.isDirectory && entry.children) {
           const filteredChildren = filterSection(entry.children, filterFn);
 
-          // Directory should be included if any children remain OR it has its own status change
-          if (filteredChildren.length === 0 && !hasChangeStatus(entry.status))
+          // Directory should be included if any children remain OR it's a symlink with its own status change
+          // (Rolled-up status from children is for display only, not section inclusion)
+          if (
+            filteredChildren.length === 0 &&
+            !(entry.isSymlink && hasChangeStatus(entry.status))
+          )
             return null;
 
           return {

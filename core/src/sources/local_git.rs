@@ -512,8 +512,9 @@ impl LocalGitSource {
     fn get_changed_files(
         &self,
         comparison: &Comparison,
-    ) -> Result<HashMap<String, FileStatus>, LocalGitError> {
+    ) -> Result<(HashMap<String, FileStatus>, HashMap<String, String>), LocalGitError> {
         let mut changes = HashMap::new();
+        let mut rename_map = HashMap::new();
 
         if self.include_working_tree(comparison) {
             // Net change status: merge_base vs working tree (single diff captures everything)
@@ -523,7 +524,7 @@ impl LocalGitSource {
                 Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
             };
             let output = self.run_git(&["diff", "--name-status", &merge_base])?;
-            self.parse_name_status(&output, &mut changes);
+            self.parse_name_status(&output, &mut changes, &mut rename_map);
         } else {
             // Committed diff between base and head refs
             let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
@@ -533,17 +534,22 @@ impl LocalGitSource {
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             let output = self.run_git(&["diff", "--name-status", &range])?;
-            self.parse_name_status(&output, &mut changes);
+            self.parse_name_status(&output, &mut changes, &mut rename_map);
         }
 
-        Ok(changes)
+        Ok((changes, rename_map))
     }
 
     #[expect(
         clippy::unused_self,
         reason = "method on LocalGitSource for consistency"
     )]
-    fn parse_name_status(&self, output: &str, changes: &mut HashMap<String, FileStatus>) {
+    fn parse_name_status(
+        &self,
+        output: &str,
+        changes: &mut HashMap<String, FileStatus>,
+        rename_map: &mut HashMap<String, String>,
+    ) {
         for line in output.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 2 {
@@ -553,8 +559,9 @@ impl LocalGitSource {
                     Some('R') => FileStatus::Renamed,
                     _ => FileStatus::Modified,
                 };
-                // For renames, parts[2] is the new name
+                // For renames, parts[1] is old name, parts[2] is the new name
                 let path = if parts[0].starts_with('R') && parts.len() >= 3 {
+                    rename_map.insert(parts[2].to_owned(), parts[1].to_owned());
                     parts[2]
                 } else {
                     parts[1]
@@ -580,7 +587,7 @@ impl LocalGitSource {
     /// Uses git ls-files with different flags to get everything
     pub fn list_all_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, LocalGitError> {
         // Get changed files with their status
-        let mut file_status = self.get_changed_files(comparison)?;
+        let (mut file_status, rename_map) = self.get_changed_files(comparison)?;
 
         // Add untracked files
         if self.include_working_tree(comparison) {
@@ -632,6 +639,7 @@ impl LocalGitSource {
             &file_status,
             &gitignored_dirs,
             Some(&self.repo_path),
+            &rename_map,
         ))
     }
 
@@ -711,6 +719,7 @@ impl LocalGitSource {
                 status: Some(FileStatus::Gitignored),
                 is_symlink,
                 symlink_target,
+                renamed_from: None,
             });
         }
 
@@ -932,6 +941,7 @@ fn build_file_tree(
     file_status: &HashMap<String, FileStatus>,
     gitignored_dirs: &HashSet<String>,
     repo_path: Option<&std::path::Path>,
+    rename_map: &HashMap<String, String>,
 ) -> Vec<FileEntry> {
     use std::fs;
 
@@ -1107,6 +1117,7 @@ fn build_file_tree(
                 status,
                 is_symlink: symlink.is_some_and(|s| s.is_symlink),
                 symlink_target: symlink.and_then(|s| s.target.clone()),
+                renamed_from: None,
             },
         );
     }
@@ -1134,6 +1145,7 @@ fn build_file_tree(
                 status,
                 is_symlink: symlink.is_some_and(|s| s.is_symlink),
                 symlink_target: symlink.and_then(|s| s.target.clone()),
+                renamed_from: rename_map.get(file_path).cloned(),
             },
         );
     }
@@ -1216,7 +1228,7 @@ impl DiffSource for LocalGitSource {
 
     fn list_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, Self::Error> {
         // Get changed files with their status
-        let mut file_status = self.get_changed_files(comparison)?;
+        let (mut file_status, rename_map) = self.get_changed_files(comparison)?;
 
         // Add untracked files (these are important for review)
         if self.include_working_tree(comparison) {
@@ -1241,6 +1253,7 @@ impl DiffSource for LocalGitSource {
             &file_status,
             &HashSet::new(),
             Some(&self.repo_path),
+            &rename_map,
         ))
     }
 
