@@ -49,6 +49,8 @@ export function useFilePanelFileSystem() {
     let reviewedFiles = 0;
     let totalHunks = 0;
     let pendingHunks = 0;
+    let approvedHunks = 0;
+    let trustedHunks = 0;
     let reviewedHunks = 0;
     let rejectedHunks = 0;
     let savedForLaterHunks = 0;
@@ -56,6 +58,8 @@ export function useFilePanelFileSystem() {
     for (const status of hunkStatusMap.values()) {
       totalHunks += status.total;
       pendingHunks += status.pending;
+      approvedHunks += status.approved;
+      trustedHunks += status.trusted;
       reviewedHunks += status.approved + status.trusted;
       rejectedHunks += status.rejected;
       savedForLaterHunks += status.savedForLater;
@@ -71,6 +75,8 @@ export function useFilePanelFileSystem() {
 
     return {
       pending: pendingHunks,
+      approved: approvedHunks,
+      trusted: trustedHunks,
       reviewed: reviewedHunks,
       total: totalHunks,
       rejected: rejectedHunks,

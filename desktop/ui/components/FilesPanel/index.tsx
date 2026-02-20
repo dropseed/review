@@ -31,7 +31,7 @@ import { TrustSection } from "../GuideView/TrustSection";
 import {
   PanelToolbar,
   ViewOptionsMenu,
-  ProgressBar,
+  StackedProgressBar,
   SearchButton,
 } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
@@ -52,7 +52,7 @@ const TRUST_ICON = (
 
 const NEEDS_REVIEW_ICON = (
   <svg
-    className="h-3.5 w-3.5 text-fg-muted"
+    className="h-3.5 w-3.5 text-status-pending"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -81,7 +81,7 @@ const SAVED_FOR_LATER_ICON = (
 
 const REVIEWED_ICON = (
   <svg
-    className="h-3.5 w-3.5 text-fg-muted"
+    className="h-3.5 w-3.5 text-status-approved"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -835,13 +835,24 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               {/* Panel toolbar */}
               {viewMode === "changes" && hasChanges && (
                 <PanelToolbar>
-                  <ProgressBar
-                    value={
-                      stats.total > 0
-                        ? (stats.reviewed + stats.rejected) / stats.total
-                        : 0
-                    }
-                    color="bg-status-approved"
+                  <StackedProgressBar
+                    segments={[
+                      {
+                        value:
+                          stats.total > 0 ? stats.trusted / stats.total : 0,
+                        color: "bg-status-trusted",
+                      },
+                      {
+                        value:
+                          stats.total > 0 ? stats.approved / stats.total : 0,
+                        color: "bg-status-approved",
+                      },
+                      {
+                        value:
+                          stats.total > 0 ? stats.rejected / stats.total : 0,
+                        color: "bg-status-rejected",
+                      },
+                    ]}
                   />
                   <ViewOptionsMenu
                     sortOrder={fileSortOrder}
@@ -910,42 +921,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         </SectionHeader>
                       )}
 
-                      {/* Needs Review section */}
-                      <SectionHeader
-                        title="Needs Review"
-                        icon={NEEDS_REVIEW_ICON}
-                        badge={stats.pending}
-                        badgeColor="status-pending"
-                        isOpen={needsReviewOpen}
-                        onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
-                        onApproveAll={
-                          pendingHunkIds.length > 0
-                            ? handleApproveAllHunks
-                            : undefined
-                        }
-                        quickActions={needsReviewQuickActions}
-                        onExpandAll={
-                          changesDisplayMode === "tree"
-                            ? () =>
-                                expandAll(needsReviewDirPaths, renamedDirPaths)
-                            : undefined
-                        }
-                        onCollapseAll={
-                          changesDisplayMode === "tree"
-                            ? collapseAll
-                            : undefined
-                        }
-                      >
-                        <FileListSection
-                          treeEntries={sectionedFiles.needsReview}
-                          flatFilePaths={flatSectionedFiles.needsReview}
-                          displayMode={changesDisplayMode}
-                          hunkContext="needs-review"
-                          emptyIcon={CHECK_ICON}
-                          emptyMessage="No files need review"
-                        />
-                      </SectionHeader>
-
                       {/* Saved for Later section */}
                       {(sectionedFiles.savedForLater.length > 0 ||
                         flatSectionedFiles.savedForLater.length > 0) && (
@@ -989,11 +964,47 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         </SectionHeader>
                       )}
 
+                      {/* Needs Review section */}
+                      <SectionHeader
+                        title="Needs Review"
+                        icon={NEEDS_REVIEW_ICON}
+                        badge={stats.pending}
+                        badgeColor="status-pending"
+                        isOpen={needsReviewOpen}
+                        onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
+                        onApproveAll={
+                          pendingHunkIds.length > 0
+                            ? handleApproveAllHunks
+                            : undefined
+                        }
+                        quickActions={needsReviewQuickActions}
+                        onExpandAll={
+                          changesDisplayMode === "tree"
+                            ? () =>
+                                expandAll(needsReviewDirPaths, renamedDirPaths)
+                            : undefined
+                        }
+                        onCollapseAll={
+                          changesDisplayMode === "tree"
+                            ? collapseAll
+                            : undefined
+                        }
+                      >
+                        <FileListSection
+                          treeEntries={sectionedFiles.needsReview}
+                          flatFilePaths={flatSectionedFiles.needsReview}
+                          displayMode={changesDisplayMode}
+                          hunkContext="needs-review"
+                          emptyIcon={CHECK_ICON}
+                          emptyMessage="No files need review"
+                        />
+                      </SectionHeader>
+
                       {/* Reviewed section */}
                       <SectionHeader
                         title="Reviewed"
                         icon={REVIEWED_ICON}
-                        badge={stats.reviewed}
+                        badge={stats.reviewed + stats.rejected}
                         badgeColor="status-approved"
                         isOpen={reviewedOpen}
                         onToggle={() => setReviewedOpen(!reviewedOpen)}

@@ -148,6 +148,28 @@ export function ProgressBar({
   );
 }
 
+/** Stacked horizontal progress bar with multiple segments. */
+export function StackedProgressBar({
+  segments,
+}: {
+  segments: { value: number; color: string }[];
+}): ReactNode {
+  return (
+    <div className="flex-1 h-1.5 rounded-full bg-surface-raised overflow-hidden flex">
+      {segments.map((seg, i) => {
+        const clamped = Math.max(0, Math.min(1, seg.value));
+        if (clamped === 0) return null;
+        return (
+          <div
+            key={i}
+            className={`h-full transition-all duration-300 ${seg.color}`}
+            style={{ width: `${clamped * 100}%` }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 /** Magnifying glass button that opens content search. */
 export function SearchButton({ onClick }: { onClick: () => void }): ReactNode {
   return (
