@@ -1039,7 +1039,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                             onOpenInSplit={openInSplit}
                             registerRef={registerRef}
                             hunkContext="all"
-                            movedFilePaths={movedFilePaths}
                             showSizeBar
                           />
                         ))

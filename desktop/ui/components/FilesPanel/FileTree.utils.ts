@@ -173,14 +173,22 @@ export function processTree(
         aggregateStatus.total += child.hunkStatus.total;
       }
 
-      // Compute rolled-up status: if every leaf descendant shares the same status, propagate it
-      const rolledUpStatus = computeRolledUpStatus(processedChildren);
+      // Compute rolled-up status in changes mode only (browse is for navigating, not reviewing)
+      const rolledUpStatus =
+        viewMode === "changes"
+          ? computeRolledUpStatus(processedChildren)
+          : undefined;
       const rolledUpRenamedFrom =
         rolledUpStatus === "renamed"
           ? computeRolledUpRenamedFrom(processedChildren, entry.path)
           : undefined;
 
-      const effectiveStatus = entry.status ?? rolledUpStatus;
+      const rawStatus = entry.status ?? rolledUpStatus;
+      // In browse mode, strip change-statuses so status indicators don't render
+      const effectiveStatus =
+        viewMode === "browse" && hasChangeStatus(rawStatus)
+          ? undefined
+          : rawStatus;
       const ownStatusChanged = hasChangeStatus(effectiveStatus);
 
       // Directory matches filter if any child matches OR it has its own status change
@@ -219,12 +227,18 @@ export function processTree(
       (viewMode === "browse" && entry.status !== "deleted") ||
       (viewMode === "changes" && hasChanges);
 
+    // In browse mode, strip change-statuses so status indicators don't render
+    const effectiveFileStatus =
+      viewMode === "browse" && hasChangeStatus(entry.status)
+        ? undefined
+        : entry.status;
+
     return {
       name: entry.name,
       path: entry.path,
       isDirectory: entry.isDirectory,
-      status: entry.status,
-      renamedFrom: entry.renamedFrom,
+      status: effectiveFileStatus,
+      renamedFrom: viewMode === "browse" ? undefined : entry.renamedFrom,
       hunkStatus,
       hasChanges,
       matchesFilter,
