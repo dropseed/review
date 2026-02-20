@@ -19,10 +19,24 @@ const dark = svg
   );
 fs.writeFileSync('.app-icon-dark.svg', dark);
 
-// Black-on-transparent variant for tray template icon
-const tray = svg
-  .replace(/fill=\"url\(#redGrad\)\"/g, 'fill=\"black\"')
-  .replace(/fill=\"url\(#greenGrad\)\"/g, 'fill=\"black\"');
+// Tray template icon: outlined pills (stroke inside) with solid +/- symbols
+const leftPill = 'M 122,16 L 152,16 A 90,90 0 0,1 242,106 L 242,406 A 90,90 0 0,1 152,496 L 122,496 A 90,90 0 0,1 32,406 L 32,106 A 90,90 0 0,1 122,16 Z';
+const rightPill = 'M 360,16 L 390,16 A 90,90 0 0,1 480,106 L 480,406 A 90,90 0 0,1 390,496 L 360,496 A 90,90 0 0,1 270,406 L 270,106 A 90,90 0 0,1 360,16 Z';
+const tray = \`<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\">
+  <defs>
+    <clipPath id=\"leftClip\"><path d=\"\${leftPill}\"/></clipPath>
+    <clipPath id=\"rightClip\"><path d=\"\${rightPill}\"/></clipPath>
+  </defs>
+  <!-- Left pill outline (clipped to inside) -->
+  <path d=\"\${leftPill}\" fill=\"none\" stroke=\"black\" stroke-width=\"48\" clip-path=\"url(#leftClip)\"/>
+  <!-- Right pill outline (clipped to inside) -->
+  <path d=\"\${rightPill}\" fill=\"none\" stroke=\"black\" stroke-width=\"48\" clip-path=\"url(#rightClip)\"/>
+  <!-- Minus sign -->
+  <rect x=\"89\" y=\"244\" width=\"96\" height=\"24\" rx=\"12\" fill=\"black\"/>
+  <!-- Plus sign -->
+  <rect x=\"327\" y=\"244\" width=\"96\" height=\"24\" rx=\"12\" fill=\"black\"/>
+  <rect x=\"363\" y=\"208\" width=\"24\" height=\"96\" rx=\"12\" fill=\"black\"/>
+</svg>\`;
 fs.writeFileSync('.app-icon-tray.svg', tray);
 "
 
