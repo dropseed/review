@@ -10,7 +10,6 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "../../utils/preferences";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
@@ -65,6 +64,26 @@ function ToggleRow({
   );
 }
 
+interface ErrorBannerProps {
+  message: string;
+  preserveWhitespace?: boolean;
+}
+
+function ErrorBanner({
+  message,
+  preserveWhitespace,
+}: ErrorBannerProps): ReactNode {
+  return (
+    <div className="mt-2 rounded-lg bg-status-rejected/5 px-3 py-2 ring-1 ring-status-rejected/30">
+      <p
+        className={`text-xxs text-status-rejected/90${preserveWhitespace ? " whitespace-pre-wrap" : ""}`}
+      >
+        {message}
+      </p>
+    </div>
+  );
+}
+
 interface CopyableFieldProps {
   label: string;
   value: string;
@@ -74,6 +93,9 @@ interface CopyableFieldProps {
   truncate?: boolean;
   onRegenerate?: () => void;
 }
+
+const FIELD_ACTION_CLASS =
+  "rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary";
 
 function CopyableField({
   label,
@@ -96,16 +118,13 @@ function CopyableField({
       </div>
       <div className="ml-2 flex shrink-0 gap-1">
         {onRegenerate && (
-          <button
-            onClick={onRegenerate}
-            className="rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary"
-          >
+          <button onClick={onRegenerate} className={FIELD_ACTION_CLASS}>
             Regenerate
           </button>
         )}
         <button
           onClick={() => onCopy(value, copyId)}
-          className="rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary"
+          className={FIELD_ACTION_CLASS}
         >
           {copiedLabel === copyId ? "Copied" : "Copy"}
         </button>
@@ -188,7 +207,11 @@ export function SettingsModal({
     generateCompanionServerToken,
   ]);
 
-  // Generate QR code when companion server is enabled and we have all the data
+  const serverUrl = `https://${machineHostname || "localhost"}:${companionServerPort}`;
+  const tailscaleUrl = tailscaleIp
+    ? `https://${tailscaleIp}:${companionServerPort}`
+    : null;
+
   useEffect(() => {
     if (
       !isOpen ||
@@ -200,10 +223,8 @@ export function SettingsModal({
       setCompanionQrSvg(null);
       return;
     }
-    const url = tailscaleIp
-      ? `https://${tailscaleIp}:${companionServerPort}`
-      : `https://${machineHostname}:${companionServerPort}`;
-    invoke<string>("generate_companion_qr", { url })
+    const qrUrl = tailscaleUrl ?? serverUrl;
+    invoke<string>("generate_companion_qr", { url: qrUrl })
       .then(setCompanionQrSvg)
       .catch(() => setCompanionQrSvg(null));
   }, [
@@ -211,9 +232,9 @@ export function SettingsModal({
     companionServerEnabled,
     companionServerToken,
     companionServerFingerprint,
-    companionServerPort,
+    serverUrl,
+    tailscaleUrl,
     machineHostname,
-    tailscaleIp,
   ]);
 
   const copyToClipboard = useCallback(async (text: string, label: string) => {
@@ -327,483 +348,372 @@ export function SettingsModal({
           </button>
         </DialogHeader>
 
-        <Tabs
-          defaultValue="appearance"
-          className="flex flex-col flex-1 min-h-0"
-        >
-          <TabsList className="mx-5 mt-1 mb-0 shrink-0">
-            <TabsTrigger value="appearance">Appearance</TabsTrigger>
-            <TabsTrigger value="ios">iOS</TabsTrigger>
-            <TabsTrigger value="general">General</TabsTrigger>
-          </TabsList>
-
-          <div className="overflow-y-auto flex-1 min-h-0">
-            <TabsContent value="appearance">
-              <div className="divide-y divide-edge/60">
-                <div className="px-5 py-4">
-                  <SectionHeader
-                    label="Code Font Size"
-                    icon={
-                      <>
-                        <polyline points="4 7 4 4 20 4 20 7" />
-                        <line x1="9" y1="20" x2="15" y2="20" />
-                        <line x1="12" y1="4" x2="12" y2="20" />
-                      </>
-                    }
-                  />
-                  <div className="flex items-center justify-between rounded-lg bg-surface-raised/50 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <SimpleTooltip content="Decrease font size (Cmd+-)">
-                        <button
-                          onClick={decreaseFontSize}
-                          disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
-                          className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M20 12H4"
-                            />
-                          </svg>
-                        </button>
-                      </SimpleTooltip>
-
-                      <div className="flex min-w-[5.5rem] flex-col items-center px-3">
-                        <span className="font-mono text-lg font-semibold text-fg tabular-nums">
-                          {codeFontSize}px
-                        </span>
-                      </div>
-
-                      <SimpleTooltip content="Increase font size (Cmd++)">
-                        <button
-                          onClick={increaseFontSize}
-                          disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
-                          className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M12 4v16m8-8H4"
-                            />
-                          </svg>
-                        </button>
-                      </SimpleTooltip>
-                    </div>
-
-                    {codeFontSize !== CODE_FONT_SIZE_DEFAULT && (
-                      <SimpleTooltip content="Reset to default (Cmd+0)">
-                        <button
-                          onClick={resetFontSize}
-                          className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
-                        >
-                          Reset
-                        </button>
-                      </SimpleTooltip>
-                    )}
-                  </div>
-                  <p className="mt-2 text-xxs text-fg-faint">
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
-                      Cmd
-                    </kbd>{" "}
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
-                      +
-                    </kbd>{" "}
-                    /{" "}
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
-                      -
-                    </kbd>{" "}
-                    to adjust,{" "}
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5">
-                      0
-                    </kbd>{" "}
-                    to reset
-                  </p>
-                </div>
-
-                <div className="px-5 py-4">
-                  <SectionHeader
-                    label="Theme"
-                    icon={
-                      <>
-                        <circle
-                          cx="13.5"
-                          cy="6.5"
-                          r="0.5"
-                          fill="currentColor"
-                        />
-                        <circle
-                          cx="17.5"
-                          cy="10.5"
-                          r="0.5"
-                          fill="currentColor"
-                        />
-                        <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
-                        <circle
-                          cx="6.5"
-                          cy="12.5"
-                          r="0.5"
-                          fill="currentColor"
-                        />
-                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z" />
-                      </>
-                    }
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    {getAllUiThemes().map((theme) => (
-                      <button
-                        key={theme.id}
-                        onClick={() => setUiTheme(theme.id)}
-                        className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${
-                          uiTheme === theme.id
-                            ? "bg-surface-raised ring-1 ring-focus-ring/50"
-                            : "bg-surface-raised/30 hover:bg-surface-raised/60"
-                        }`}
-                      >
-                        <div className="flex gap-0.5">
-                          {theme.preview.map((color, i) => (
-                            <div
-                              key={i}
-                              className="h-4 w-2 first:rounded-l last:rounded-r"
-                              style={{ backgroundColor: color }}
-                            />
-                          ))}
-                        </div>
-                        <span
-                          className={`text-xs font-medium transition-colors ${
-                            uiTheme === theme.id
-                              ? "text-fg"
-                              : "text-fg-muted group-hover:text-fg-secondary"
-                          }`}
-                        >
-                          {theme.label}
-                        </span>
-                        {uiTheme === theme.id && (
-                          <svg
-                            className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-focus-ring"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={3}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </button>
+        <div className="overflow-y-auto flex-1 min-h-0 divide-y divide-edge/60">
+          {/* Theme */}
+          <div className="px-5 py-4">
+            <SectionHeader
+              label="Theme"
+              icon={
+                <>
+                  <circle cx="13.5" cy="6.5" r="0.5" fill="currentColor" />
+                  <circle cx="17.5" cy="10.5" r="0.5" fill="currentColor" />
+                  <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
+                  <circle cx="6.5" cy="12.5" r="0.5" fill="currentColor" />
+                  <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z" />
+                </>
+              }
+            />
+            <div className="grid grid-cols-2 gap-2">
+              {getAllUiThemes().map((theme) => (
+                <button
+                  key={theme.id}
+                  onClick={() => setUiTheme(theme.id)}
+                  className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${
+                    uiTheme === theme.id
+                      ? "bg-surface-raised ring-1 ring-focus-ring/50"
+                      : "bg-surface-raised/30 hover:bg-surface-raised/60"
+                  }`}
+                >
+                  <div className="flex gap-0.5">
+                    {theme.preview.map((color, i) => (
+                      <div
+                        key={i}
+                        className="h-4 w-2 first:rounded-l last:rounded-r"
+                        style={{ backgroundColor: color }}
+                      />
                     ))}
                   </div>
-                  <p className="mt-2 text-xxs text-fg-faint">
-                    Controls the entire UI — backgrounds, text, borders, and
-                    syntax highlighting.
-                  </p>
-                </div>
-
-                <div className="px-5 py-4">
-                  <SectionHeader
-                    label="VS Code"
-                    icon={
-                      <>
-                        <path d="M9.4 1.4a1.5 1.5 0 0 1 2.13 0l8.48 8.49a1.5 1.5 0 0 1 0 2.12l-8.48 8.49a1.5 1.5 0 0 1-2.13 0L1.4 12.01a1.5 1.5 0 0 1 0-2.12Z" />
-                        <path d="m9.18 14.97-4.44-3.53a.85.85 0 0 1 0-1.33l4.44-3.53" />
-                        <path d="m14.82 14.97 4.44-3.53a.85.85 0 0 0 0-1.33l-4.44-3.53" />
-                      </>
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Match VS Code theme"
-                    checked={matchVscodeTheme}
-                    onCheckedChange={setMatchVscodeTheme}
-                  />
-
-                  {matchVscodeTheme && resolvedVscodeTheme && (
-                    <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-raised/30 px-3 py-2">
-                      <div className="flex gap-0.5">
-                        {resolvedVscodeTheme.preview.map((color, i) => (
-                          <div
-                            key={i}
-                            className="h-3 w-1.5 first:rounded-l last:rounded-r"
-                            style={{ backgroundColor: color }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-xs text-fg-secondary">
-                        {resolvedVscodeTheme.label}
-                      </span>
-                      <span className="text-xxs text-fg-faint">
-                        ({resolvedVscodeTheme.colorScheme})
-                      </span>
-                    </div>
+                  <span
+                    className={`text-xs font-medium transition-colors ${
+                      uiTheme === theme.id
+                        ? "text-fg"
+                        : "text-fg-muted group-hover:text-fg-secondary"
+                    }`}
+                  >
+                    {theme.label}
+                  </span>
+                  {uiTheme === theme.id && (
+                    <svg
+                      className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-focus-ring"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
                   )}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xxs text-fg-faint">
+              Controls the entire UI — backgrounds, text, borders, and syntax
+              highlighting.
+            </p>
 
-                  {matchVscodeTheme && !resolvedVscodeTheme && (
-                    <p className="mt-2 text-xxs text-status-warning">
-                      Could not detect VS Code theme. Make sure VS Code is
-                      installed.
-                    </p>
-                  )}
+            <div className="mt-3">
+              <ToggleRow
+                label="Match VS Code theme"
+                checked={matchVscodeTheme}
+                onCheckedChange={setMatchVscodeTheme}
+              />
+            </div>
 
-                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-                    Automatically reads your active VS Code theme and applies
-                    matching colors. Overrides the theme selection above.
-                  </p>
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="ios">
-              <div className="divide-y divide-edge/60">
-                <div className="px-5 py-4">
-                  <SectionHeader
-                    label="Companion Server"
-                    icon={
-                      <>
-                        <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-                        <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-                        <line x1="12" y1="20" x2="12.01" y2="20" />
-                      </>
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Enable companion server"
-                    checked={companionServerEnabled}
-                    onCheckedChange={setCompanionServerEnabled}
-                  />
-
-                  {companionServerError && (
-                    <div className="mt-2 rounded-lg bg-status-rejected/5 px-3 py-2 ring-1 ring-status-rejected/30">
-                      <p className="text-xxs text-status-rejected/90">
-                        {companionServerError}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
-                    <label className="text-xxs text-fg-muted">Port</label>
-                    <Input
-                      type="number"
-                      min={1024}
-                      max={65535}
-                      value={companionServerPort}
-                      disabled={companionServerEnabled}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (val >= 1024 && val <= 65535) {
-                          setCompanionServerPort(val);
-                        }
-                      }}
-                      className="w-24 text-xs text-right"
+            {matchVscodeTheme && resolvedVscodeTheme && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-raised/30 px-3 py-2">
+                <div className="flex gap-0.5">
+                  {resolvedVscodeTheme.preview.map((color, i) => (
+                    <div
+                      key={i}
+                      className="h-3 w-1.5 first:rounded-l last:rounded-r"
+                      style={{ backgroundColor: color }}
                     />
-                  </div>
+                  ))}
+                </div>
+                <span className="text-xs text-fg-secondary">
+                  {resolvedVscodeTheme.label}
+                </span>
+                <span className="text-xxs text-fg-faint">
+                  ({resolvedVscodeTheme.colorScheme})
+                </span>
+              </div>
+            )}
 
-                  {companionServerEnabled && (
-                    <div className="mt-2 space-y-2">
-                      {companionQrSvg && (
-                        <div className="flex justify-center">
-                          <div className="rounded-lg bg-white p-2">
-                            <img
-                              src={`data:image/svg+xml;utf8,${encodeURIComponent(companionQrSvg)}`}
-                              alt="QR code for iOS pairing"
-                              className="block h-auto w-full"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <CopyableField
-                        label="Server URL"
-                        value={`https://${machineHostname || "localhost"}:${companionServerPort}`}
-                        copiedLabel={companionCopied}
-                        copyId="url"
-                        onCopy={copyToClipboard}
+            {matchVscodeTheme && !resolvedVscodeTheme && (
+              <p className="mt-2 text-xxs text-status-warning">
+                Could not detect VS Code theme. Make sure VS Code is installed.
+              </p>
+            )}
+          </div>
+
+          {/* Code Font Size */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-fg-secondary">Code font size</span>
+              <div className="flex items-center gap-1.5">
+                <SimpleTooltip content="Decrease font size (Cmd+-)">
+                  <button
+                    onClick={decreaseFontSize}
+                    disabled={codeFontSize <= CODE_FONT_SIZE_MIN}
+                    className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg
+                      className="h-3 w-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M20 12H4"
                       />
-                      {tailscaleIp && (
-                        <CopyableField
-                          label="Tailscale URL"
-                          value={`https://${tailscaleIp}:${companionServerPort}`}
-                          copiedLabel={companionCopied}
-                          copyId="tailscale-url"
-                          onCopy={copyToClipboard}
-                        />
-                      )}
-                      {companionServerToken && (
-                        <CopyableField
-                          label="Auth Token"
-                          value={companionServerToken}
-                          copiedLabel={companionCopied}
-                          copyId="token"
-                          onCopy={copyToClipboard}
-                          onRegenerate={generateCompanionServerToken}
-                          truncate
-                        />
-                      )}
-                      {companionServerFingerprint && (
-                        <CopyableField
-                          label="Certificate Fingerprint"
-                          value={companionServerFingerprint}
-                          copiedLabel={companionCopied}
-                          copyId="fingerprint"
-                          onCopy={copyToClipboard}
-                          onRegenerate={regenerateCompanionCertificate}
-                          truncate
-                        />
-                      )}
-                    </div>
-                  )}
+                    </svg>
+                  </button>
+                </SimpleTooltip>
 
-                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-                    Allows the Review mobile app to connect over your local
-                    network.
-                  </p>
-                </div>
+                <span className="font-mono text-xs font-semibold text-fg tabular-nums w-10 text-center">
+                  {codeFontSize}px
+                </span>
+
+                <SimpleTooltip content="Increase font size (Cmd++)">
+                  <button
+                    onClick={increaseFontSize}
+                    disabled={codeFontSize >= CODE_FONT_SIZE_MAX}
+                    className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg
+                      className="h-3 w-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                  </button>
+                </SimpleTooltip>
+
+                {codeFontSize !== CODE_FONT_SIZE_DEFAULT && (
+                  <SimpleTooltip content="Reset to default (Cmd+0)">
+                    <button
+                      onClick={resetFontSize}
+                      className="ml-1 text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
+                    >
+                      Reset
+                    </button>
+                  </SimpleTooltip>
+                )}
               </div>
-            </TabsContent>
+            </div>
+            <p className="mt-1.5 text-xxs text-fg-faint">
+              Cmd +/- to adjust, 0 to reset
+            </p>
+          </div>
 
-            <TabsContent value="general">
-              <div className="divide-y divide-edge/60">
-                <div className="px-5 py-4">
-                  <SectionHeader
-                    label="Sound Effects"
-                    icon={
-                      <>
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                      </>
-                    }
-                  />
+          {/* Sound Effects + Crash Reporting */}
+          <div className="px-5 py-4 space-y-3">
+            <div>
+              <ToggleRow
+                label="Sound effects"
+                checked={soundEffectsEnabled}
+                onCheckedChange={setSoundEffectsEnabled}
+              />
+              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
+                Play sounds when approving, rejecting, and completing reviews.
+              </p>
+            </div>
 
-                  <ToggleRow
-                    label="Enable sound effects"
-                    checked={soundEffectsEnabled}
-                    onCheckedChange={setSoundEffectsEnabled}
-                  />
-                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-                    Play sounds when approving, rejecting, and completing
-                    reviews.
-                  </p>
+            <div>
+              <ToggleRow
+                label="Crash reporting"
+                checked={sentryEnabled}
+                onCheckedChange={setSentryEnabled}
+              />
+              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
+                When enabled, anonymous crash reports are sent to help improve
+                Review. No repository data or file contents are ever sent.
+              </p>
+            </div>
+          </div>
+
+          {/* Command Line */}
+          {!devMode && (
+            <div className="px-5 py-4">
+              <SectionHeader
+                label="Command Line"
+                icon={
+                  <>
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </>
+                }
+              />
+
+              {cliInstalled ? (
+                <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-status-approved" />
+                      <span className="text-xs text-fg-secondary">
+                        Installed at{" "}
+                        <code className="text-xxs text-fg-muted">
+                          /usr/local/bin/review
+                        </code>
+                      </span>
+                    </div>
+                    {cliSymlinkTarget && (
+                      <p className="mt-1 truncate pl-3.5 text-xxs text-fg-faint">
+                        {cliSymlinkTarget}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleCliAction("uninstall_cli")}
+                    disabled={cliLoading}
+                    className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
+                  >
+                    Uninstall
+                  </button>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+                    <span className="text-xs text-fg-muted">
+                      <code className="text-xxs">review</code> command not
+                      installed
+                    </span>
+                    <button
+                      onClick={() => handleCliAction("install_cli")}
+                      disabled={cliLoading}
+                      className="ml-3 shrink-0 rounded-md bg-surface-hover/50 px-2.5 py-1.5 text-xxs text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    >
+                      {cliLoading ? "Installing..." : "Install"}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
+                    Creates a symlink at{" "}
+                    <code className="text-fg-muted">/usr/local/bin/review</code>{" "}
+                    so you can run <code className="text-fg-muted">review</code>{" "}
+                    from any terminal.
+                  </p>
+                </>
+              )}
 
-                {!devMode && (
-                  <div className="px-5 py-4">
-                    <SectionHeader
-                      label="Command Line"
-                      icon={
-                        <>
-                          <polyline points="4 17 10 11 4 5" />
-                          <line x1="12" y1="19" x2="20" y2="19" />
-                        </>
-                      }
-                    />
+              {cliError && (
+                <ErrorBanner message={cliError} preserveWhitespace />
+              )}
+            </div>
+          )}
 
-                    {cliInstalled ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <div className="h-1.5 w-1.5 rounded-full bg-status-approved" />
-                              <span className="text-xs text-fg-secondary">
-                                Installed at{" "}
-                                <code className="text-xxs text-fg-muted">
-                                  /usr/local/bin/review
-                                </code>
-                              </span>
-                            </div>
-                            {cliSymlinkTarget && (
-                              <p className="mt-1 truncate pl-3.5 text-xxs text-fg-faint">
-                                {cliSymlinkTarget}
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleCliAction("uninstall_cli")}
-                            disabled={cliLoading}
-                            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
-                          >
-                            Uninstall
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
-                          <span className="text-xs text-fg-muted">
-                            <code className="text-xxs">review</code> command not
-                            installed
-                          </span>
-                          <button
-                            onClick={() => handleCliAction("install_cli")}
-                            disabled={cliLoading}
-                            className="ml-3 shrink-0 rounded-md bg-surface-hover/50 px-2.5 py-1.5 text-xxs text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
-                          >
-                            {cliLoading ? "Installing…" : "Install"}
-                          </button>
-                        </div>
-                        <p className="text-xxs text-fg-faint leading-relaxed">
-                          Creates a symlink at{" "}
-                          <code className="text-fg-muted">
-                            /usr/local/bin/review
-                          </code>{" "}
-                          so you can run{" "}
-                          <code className="text-fg-muted">review</code> from any
-                          terminal.
-                        </p>
-                      </div>
-                    )}
+          {/* iOS Companion */}
+          <div className="px-5 py-4">
+            <SectionHeader
+              label="iOS Companion"
+              icon={
+                <>
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                  <line x1="12" y1="20" x2="12.01" y2="20" />
+                </>
+              }
+            />
 
-                    {cliError && (
-                      <div className="mt-2 rounded-lg bg-status-rejected/5 px-3 py-2 ring-1 ring-status-rejected/30">
-                        <p className="whitespace-pre-wrap text-xxs text-status-rejected/90">
-                          {cliError}
-                        </p>
-                      </div>
-                    )}
+            <ToggleRow
+              label="Enable companion server"
+              checked={companionServerEnabled}
+              onCheckedChange={setCompanionServerEnabled}
+            />
+
+            {companionServerError && (
+              <ErrorBanner message={companionServerError} />
+            )}
+
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
+              <label className="text-xxs text-fg-muted">Port</label>
+              <Input
+                type="number"
+                min={1024}
+                max={65535}
+                value={companionServerPort}
+                disabled={companionServerEnabled}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (val >= 1024 && val <= 65535) {
+                    setCompanionServerPort(val);
+                  }
+                }}
+                className="w-24 text-xs text-right"
+              />
+            </div>
+
+            {companionServerEnabled && (
+              <div className="mt-2 space-y-2">
+                {companionQrSvg && (
+                  <div className="flex justify-center">
+                    <div className="rounded-lg bg-white p-2">
+                      <img
+                        src={`data:image/svg+xml;utf8,${encodeURIComponent(companionQrSvg)}`}
+                        alt="QR code for iOS pairing"
+                        className="block h-auto w-full"
+                      />
+                    </div>
                   </div>
                 )}
-
-                <div className="px-5 py-4">
-                  <SectionHeader
-                    label="Crash Reporting"
-                    icon={
-                      <>
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                      </>
-                    }
+                <CopyableField
+                  label="Server URL"
+                  value={serverUrl}
+                  copiedLabel={companionCopied}
+                  copyId="url"
+                  onCopy={copyToClipboard}
+                />
+                {tailscaleUrl && (
+                  <CopyableField
+                    label="Tailscale URL"
+                    value={tailscaleUrl}
+                    copiedLabel={companionCopied}
+                    copyId="tailscale-url"
+                    onCopy={copyToClipboard}
                   />
-
-                  <ToggleRow
-                    label="Send crash reports"
-                    checked={sentryEnabled}
-                    onCheckedChange={setSentryEnabled}
+                )}
+                {companionServerToken && (
+                  <CopyableField
+                    label="Auth Token"
+                    value={companionServerToken}
+                    copiedLabel={companionCopied}
+                    copyId="token"
+                    onCopy={copyToClipboard}
+                    onRegenerate={generateCompanionServerToken}
+                    truncate
                   />
-                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-                    When enabled, anonymous crash reports are sent to help
-                    improve Review. Only app errors, version, and OS info are
-                    included. No repository data or file contents are ever sent.
-                  </p>
-                </div>
+                )}
+                {companionServerFingerprint && (
+                  <CopyableField
+                    label="Certificate Fingerprint"
+                    value={companionServerFingerprint}
+                    copiedLabel={companionCopied}
+                    copyId="fingerprint"
+                    onCopy={copyToClipboard}
+                    onRegenerate={regenerateCompanionCertificate}
+                    truncate
+                  />
+                )}
               </div>
-            </TabsContent>
+            )}
+
+            <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
+              Allows the Review mobile app to connect over your local network.
+            </p>
           </div>
-        </Tabs>
+        </div>
 
         <div className="border-t border-edge bg-surface-panel/50 px-5 py-3 flex items-center justify-between">
           <button
