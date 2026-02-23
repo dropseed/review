@@ -32,15 +32,6 @@ const SELECTED_CHECK = (
   </svg>
 );
 
-/** Toolbar strip below the tab switcher -- compose children for each tab's needs. */
-export function PanelToolbar({ children }: { children: ReactNode }): ReactNode {
-  return (
-    <div className="flex items-center justify-end gap-0.5 px-3 py-1 border-b border-edge/40">
-      {children}
-    </div>
-  );
-}
-
 /** Overflow menu with sort options and optional extra sections. */
 export function ViewOptionsMenu({
   sortOrder,
@@ -129,47 +120,6 @@ export function ViewOptionsMenu({
   );
 }
 
-/** Thin horizontal progress bar. value is 0-1, color is a Tailwind bg class. */
-export function ProgressBar({
-  value,
-  color,
-}: {
-  value: number;
-  color: string;
-}): ReactNode {
-  const clamped = Math.max(0, Math.min(1, value));
-  return (
-    <div className="flex-1 h-1.5 rounded-full bg-surface-raised overflow-hidden">
-      <div
-        className={`h-full rounded-full transition-all duration-300 ${color}`}
-        style={{ width: `${clamped * 100}%` }}
-      />
-    </div>
-  );
-}
-
-/** Stacked horizontal progress bar with multiple segments. */
-export function StackedProgressBar({
-  segments,
-}: {
-  segments: { value: number; color: string }[];
-}): ReactNode {
-  return (
-    <div className="flex-1 h-1.5 rounded-full bg-surface-raised overflow-hidden flex">
-      {segments.map((seg, i) => {
-        const clamped = Math.max(0, Math.min(1, seg.value));
-        if (clamped === 0) return null;
-        return (
-          <div
-            key={i}
-            className={`h-full transition-all duration-300 ${seg.color}`}
-            style={{ width: `${clamped * 100}%` }}
-          />
-        );
-      })}
-    </div>
-  );
-}
 /** Magnifying glass button that opens content search. */
 export function SearchButton({ onClick }: { onClick: () => void }): ReactNode {
   return (

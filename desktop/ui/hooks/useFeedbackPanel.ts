@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import type { DiffHunk, LineAnnotation } from "../types";
@@ -104,8 +104,6 @@ export interface FeedbackPanelState {
   annotations: LineAnnotation[];
   setReviewNotes: (notes: string) => void;
   deleteAnnotation: (annotationId: string) => void;
-  isExpanded: boolean;
-  setIsExpanded: (expanded: boolean) => void;
   hasFeedbackToExport: boolean;
   goToFile: (filePath: string) => void;
   rejectedHunks: RejectedHunkItem[];
@@ -116,7 +114,7 @@ export interface FeedbackPanelState {
 }
 
 /**
- * Self-contained hook for the floating feedback panel.
+ * Self-contained hook for review feedback/notes state.
  * Reads all data directly from the review store.
  */
 export function useFeedbackPanel(): FeedbackPanelState {
@@ -127,11 +125,21 @@ export function useFeedbackPanel(): FeedbackPanelState {
   const clearFeedback = useReviewStore((s) => s.clearFeedback);
   const revealFileInTree = useReviewStore((s) => s.revealFileInTree);
 
-  const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const annotations = reviewState?.annotations ?? [];
   const notes = reviewState?.notes || "";
+
+  // Hide annotations whose lines no longer fall within any current hunk.
+  // The annotations stay in the persisted review state so they survive
+  // temporary hunk changes (rebases, resets, amends) and reappear if the
+  // matching hunks come back.
+  const annotations = useMemo(() => {
+    const all = reviewState?.annotations ?? [];
+    if (hunks.length === 0) return all;
+    return all.filter(
+      (a) => a.side === "file" || hunks.some((h) => isAnnotationInHunk(a, h)),
+    );
+  }, [reviewState?.annotations, hunks]);
 
   const rejectedHunks = useMemo((): RejectedHunkItem[] => {
     if (!reviewState) return [];
@@ -163,22 +171,20 @@ export function useFeedbackPanel(): FeedbackPanelState {
     const markdown = generateFeedbackMarkdown(
       hunks,
       reviewState.hunks,
-      reviewState.annotations ?? [],
+      annotations,
       reviewState.notes,
     );
     const platform = getPlatformServices();
     await platform.clipboard.writeText(markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [reviewState, hunks]);
+  }, [reviewState, hunks, annotations]);
 
   return {
     notes,
     annotations,
     setReviewNotes,
     deleteAnnotation,
-    isExpanded,
-    setIsExpanded,
     hasFeedbackToExport,
     goToFile,
     rejectedHunks,

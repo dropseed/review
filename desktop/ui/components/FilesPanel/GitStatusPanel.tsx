@@ -5,7 +5,6 @@ import {
   CollapsibleSection,
   CollapsibleSectionMenuItem,
   CollapsibleSectionMenuSeparator,
-  DisplayModeToggle,
 } from "../ui/collapsible-section";
 import { CommitPanel } from "./CommitPanel";
 import { FileNode } from "./FileNode";
@@ -16,7 +15,6 @@ import {
   EMPTY_HUNK_STATUS,
 } from "./FileTree.utils";
 import { useFilesPanelContext } from "./FilesPanelContext";
-import { PanelToolbar, ProgressBar } from "./PanelToolbar";
 
 const STAGED_ICON = (
   <svg
@@ -167,7 +165,6 @@ export function GitStatusPanel({
   const stageAll = useReviewStore((s) => s.stageAll);
   const unstageAll = useReviewStore((s) => s.unstageAll);
   const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
-  const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
 
   const {
     togglePath,
@@ -285,19 +282,9 @@ export function GitStatusPanel({
     );
   }
 
-  const totalFiles = staged.length + unstaged.length + untracked.length;
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <CommitPanel />
-
-      <PanelToolbar>
-        <ProgressBar
-          value={totalFiles > 0 ? staged.length / totalFiles : 0}
-          color="bg-status-added"
-        />
-        <DisplayModeToggle mode={gitDisplayMode} onChange={setGitDisplayMode} />
-      </PanelToolbar>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {staged.length > 0 && (

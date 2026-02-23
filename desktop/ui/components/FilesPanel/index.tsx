@@ -13,7 +13,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../../components/ui/dropdown-menu";
-import { CollapsibleSection } from "../../components/ui/collapsible-section";
+import {
+  CollapsibleSection,
+  DisplayModeToggle,
+} from "../../components/ui/collapsible-section";
 import {
   isHunkTrusted,
   type CommitEntry,
@@ -24,16 +27,12 @@ import { ReviewDataProvider } from "../ReviewDataContext";
 import { FilenameModal } from "./FilenameModal";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import { GitStatusPanel } from "./GitStatusPanel";
+import { ReviewNotesPanel } from "./ReviewNotesPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
-import {
-  PanelToolbar,
-  ViewOptionsMenu,
-  StackedProgressBar,
-  SearchButton,
-} from "./PanelToolbar";
+import { ViewOptionsMenu, SearchButton } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
 
 const TRUST_ICON = (
@@ -315,6 +314,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Changes display mode (tree vs flat) — one toggle per panel
   const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
   const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
+
+  // Git display mode
+  const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
+  const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
 
   // File sort order (shared across Browse + Changes tabs)
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
@@ -744,25 +747,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     [sectionedFiles.reviewed],
   );
 
-  // Memoize progress bar segments to avoid re-creating the array on every render
-  const progressSegments = useMemo(
-    () => [
-      {
-        value: stats.total > 0 ? stats.trusted / stats.total : 0,
-        color: "bg-status-trusted",
-      },
-      {
-        value: stats.total > 0 ? stats.approved / stats.total : 0,
-        color: "bg-status-approved",
-      },
-      {
-        value: stats.total > 0 ? stats.rejected / stats.total : 0,
-        color: "bg-status-rejected",
-      },
-    ],
-    [stats.total, stats.trusted, stats.approved, stats.rejected],
-  );
-
   // Check if there are changes in the comparison
   const hasChanges =
     sectionedFiles.needsReview.length > 0 ||
@@ -800,10 +784,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       <FilesPanelProvider value={filesPanelContextValue}>
         <div className="flex h-full flex-col">
           {/* View mode toggle */}
-          <div className="px-3 py-2">
+          <div className="flex items-center gap-1.5 px-3 py-2">
             <Tabs
               value={viewMode}
               onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
+              className="flex-1 min-w-0"
             >
               <TabsList aria-label="File view mode">
                 {showGitTab && <TabsTrigger value="git">Git</TabsTrigger>}
@@ -837,6 +822,36 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 )}
               </TabsList>
             </Tabs>
+            {/* Contextual buttons based on active tab */}
+            {viewMode === "browse" && allDirPaths.size > 0 && (
+              <SearchButton
+                onClick={() =>
+                  useReviewStore.getState().setContentSearchOpen(true)
+                }
+              />
+            )}
+            {viewMode === "changes" && hasChanges && (
+              <ViewOptionsMenu
+                sortOrder={fileSortOrder}
+                onSortOrderChange={setFileSortOrder}
+                displayMode={changesDisplayMode}
+                onDisplayModeChange={setChangesDisplayMode}
+              />
+            )}
+            {viewMode === "browse" && allDirPaths.size > 0 && (
+              <ViewOptionsMenu
+                sortOrder={fileSortOrder}
+                onSortOrderChange={setFileSortOrder}
+                onExpandAll={() => expandAll(allDirPaths, renamedDirPaths)}
+                onCollapseAll={collapseAll}
+              />
+            )}
+            {viewMode === "git" && (
+              <DisplayModeToggle
+                mode={gitDisplayMode}
+                onChange={setGitDisplayMode}
+              />
+            )}
           </div>
 
           {/* Panel content based on view mode */}
@@ -852,223 +867,175 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               onSelectCommit={handleCommitSelect}
               selectedCommitHash={selectedCommitHash}
             />
-          ) : (
-            <>
-              {/* Panel toolbar */}
-              {viewMode === "changes" && hasChanges && (
-                <PanelToolbar>
-                  <StackedProgressBar segments={progressSegments} />
-                  <ViewOptionsMenu
-                    sortOrder={fileSortOrder}
-                    onSortOrderChange={setFileSortOrder}
-                    displayMode={changesDisplayMode}
-                    onDisplayModeChange={setChangesDisplayMode}
-                  />
-                </PanelToolbar>
-              )}
-              {viewMode === "browse" && allDirPaths.size > 0 && (
-                <PanelToolbar>
-                  <span className="flex-1 text-xs font-medium text-fg-muted select-none">
-                    All Files
-                  </span>
-                  <SearchButton
-                    onClick={() =>
-                      useReviewStore.getState().setContentSearchOpen(true)
-                    }
-                  />
-                  <ViewOptionsMenu
-                    sortOrder={fileSortOrder}
-                    onSortOrderChange={setFileSortOrder}
-                    onExpandAll={() => expandAll(allDirPaths, renamedDirPaths)}
-                    onCollapseAll={collapseAll}
-                  />
-                </PanelToolbar>
-              )}
-
-              {/* File tree */}
+          ) : viewMode === "changes" ? (
+            !hasChanges ? (
+              /* Empty state when no changes exist */
+              <div className="flex flex-col items-center justify-center flex-1 px-6 py-12">
+                <div className="relative mb-6">
+                  <div className="flex gap-1.5">
+                    <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
+                    <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
+                  </div>
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
+                    <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
+                    <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-fg-muted mb-1">
+                  No changes
+                </p>
+                <p className="text-xs text-fg-muted text-center max-w-[200px]">
+                  The base and compare refs are identical
+                </p>
+              </div>
+            ) : (
               <div className="flex-1 overflow-y-auto scrollbar-thin">
-                {viewMode === "changes" ? (
-                  !hasChanges ? (
-                    /* Empty state when no changes exist */
-                    <div className="flex flex-col items-center justify-center h-full px-6 py-12">
-                      <div className="relative mb-6">
-                        <div className="flex gap-1.5">
-                          <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
-                          <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
-                        </div>
-                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-                          <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
-                          <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
-                        </div>
-                      </div>
-                      <p className="text-sm font-medium text-fg-muted mb-1">
-                        No changes
-                      </p>
-                      <p className="text-xs text-fg-muted text-center max-w-[200px]">
-                        The base and compare refs are identical
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Trust section */}
-                      {trustableHunkCount > 0 && (
-                        <SectionHeader
-                          title="Trust"
-                          icon={TRUST_ICON}
-                          badge={`${trustedHunkCount}/${trustableHunkCount}`}
-                          badgeColor="status-trusted"
-                          isOpen={trustOpen}
-                          onToggle={() => setTrustOpen(!trustOpen)}
-                          quickActions={trustQuickActions}
-                        >
-                          <TrustSection />
-                        </SectionHeader>
-                      )}
+                <ReviewNotesPanel />
 
-                      {/* Saved for Later section */}
-                      {(sectionedFiles.savedForLater.length > 0 ||
-                        flatSectionedFiles.savedForLater.length > 0) && (
-                        <SectionHeader
-                          title="Saved for Later"
-                          icon={SAVED_FOR_LATER_ICON}
-                          badge={stats.savedForLater}
-                          badgeColor="status-modified"
-                          isOpen={savedForLaterOpen}
-                          onToggle={() =>
-                            setSavedForLaterOpen(!savedForLaterOpen)
-                          }
-                          onUnapproveAll={
-                            savedForLaterHunkIds.length > 0
-                              ? handleUnsaveAll
-                              : undefined
-                          }
-                          unapproveAllLabel="Unsave all"
-                          onExpandAll={
-                            changesDisplayMode === "tree"
-                              ? () =>
-                                  expandAll(
-                                    savedForLaterDirPaths,
-                                    renamedDirPaths,
-                                  )
-                              : undefined
-                          }
-                          onCollapseAll={
-                            changesDisplayMode === "tree"
-                              ? collapseAll
-                              : undefined
-                          }
-                        >
-                          <FileListSection
-                            treeEntries={sectionedFiles.savedForLater}
-                            flatFilePaths={flatSectionedFiles.savedForLater}
-                            displayMode={changesDisplayMode}
-                            hunkContext="needs-review"
-                            emptyMessage="No files saved for later"
-                          />
-                        </SectionHeader>
-                      )}
+                {/* Reviewed section */}
+                <SectionHeader
+                  title="Reviewed"
+                  icon={REVIEWED_ICON}
+                  badge={stats.reviewed + stats.rejected}
+                  badgeColor="status-approved"
+                  isOpen={reviewedOpen}
+                  onToggle={() => setReviewedOpen(!reviewedOpen)}
+                  onUnapproveAll={
+                    reviewedHunkIds.length > 0
+                      ? handleUnapproveAllHunks
+                      : undefined
+                  }
+                  quickActions={reviewedQuickActions}
+                  onExpandAll={
+                    changesDisplayMode === "tree"
+                      ? () => expandAll(reviewedDirPaths, renamedDirPaths)
+                      : undefined
+                  }
+                  onCollapseAll={
+                    changesDisplayMode === "tree" ? collapseAll : undefined
+                  }
+                >
+                  <FileListSection
+                    treeEntries={sectionedFiles.reviewed}
+                    flatFilePaths={flatSectionedFiles.reviewed}
+                    displayMode={changesDisplayMode}
+                    hunkContext="reviewed"
+                    emptyMessage="No files reviewed yet"
+                  />
+                </SectionHeader>
 
-                      {/* Needs Review section */}
-                      <SectionHeader
-                        title="Needs Review"
-                        icon={NEEDS_REVIEW_ICON}
-                        badge={stats.pending}
-                        badgeColor="status-pending"
-                        isOpen={needsReviewOpen}
-                        onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
-                        onApproveAll={
-                          pendingHunkIds.length > 0
-                            ? handleApproveAllHunks
-                            : undefined
-                        }
-                        quickActions={needsReviewQuickActions}
-                        onExpandAll={
-                          changesDisplayMode === "tree"
-                            ? () =>
-                                expandAll(needsReviewDirPaths, renamedDirPaths)
-                            : undefined
-                        }
-                        onCollapseAll={
-                          changesDisplayMode === "tree"
-                            ? collapseAll
-                            : undefined
-                        }
-                      >
-                        <FileListSection
-                          treeEntries={sectionedFiles.needsReview}
-                          flatFilePaths={flatSectionedFiles.needsReview}
-                          displayMode={changesDisplayMode}
-                          hunkContext="needs-review"
-                          emptyIcon={CHECK_ICON}
-                          emptyMessage="No files need review"
-                        />
-                      </SectionHeader>
+                {/* Needs Review section */}
+                <SectionHeader
+                  title="Needs Review"
+                  icon={NEEDS_REVIEW_ICON}
+                  badge={stats.pending}
+                  badgeColor="status-pending"
+                  isOpen={needsReviewOpen}
+                  onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
+                  onApproveAll={
+                    pendingHunkIds.length > 0
+                      ? handleApproveAllHunks
+                      : undefined
+                  }
+                  quickActions={needsReviewQuickActions}
+                  onExpandAll={
+                    changesDisplayMode === "tree"
+                      ? () => expandAll(needsReviewDirPaths, renamedDirPaths)
+                      : undefined
+                  }
+                  onCollapseAll={
+                    changesDisplayMode === "tree" ? collapseAll : undefined
+                  }
+                >
+                  <FileListSection
+                    treeEntries={sectionedFiles.needsReview}
+                    flatFilePaths={flatSectionedFiles.needsReview}
+                    displayMode={changesDisplayMode}
+                    hunkContext="needs-review"
+                    emptyIcon={CHECK_ICON}
+                    emptyMessage="No files need review"
+                  />
+                </SectionHeader>
 
-                      {/* Reviewed section */}
-                      <SectionHeader
-                        title="Reviewed"
-                        icon={REVIEWED_ICON}
-                        badge={stats.reviewed + stats.rejected}
-                        badgeColor="status-approved"
-                        isOpen={reviewedOpen}
-                        onToggle={() => setReviewedOpen(!reviewedOpen)}
-                        onUnapproveAll={
-                          reviewedHunkIds.length > 0
-                            ? handleUnapproveAllHunks
-                            : undefined
-                        }
-                        quickActions={reviewedQuickActions}
-                        onExpandAll={
-                          changesDisplayMode === "tree"
-                            ? () => expandAll(reviewedDirPaths, renamedDirPaths)
-                            : undefined
-                        }
-                        onCollapseAll={
-                          changesDisplayMode === "tree"
-                            ? collapseAll
-                            : undefined
-                        }
-                      >
-                        <FileListSection
-                          treeEntries={sectionedFiles.reviewed}
-                          flatFilePaths={flatSectionedFiles.reviewed}
-                          displayMode={changesDisplayMode}
-                          hunkContext="reviewed"
-                          emptyMessage="No files reviewed yet"
-                        />
-                      </SectionHeader>
-                    </>
-                  )
-                ) : (
-                  <>
-                    {/* All Files tree */}
-                    <div className="py-1">
-                      {allFilesTree.length > 0 ? (
-                        allFilesTree.map((entry) => (
-                          <FileNode
-                            key={entry.path}
-                            entry={entry}
-                            depth={0}
-                            onToggle={togglePath}
-                            selectedFile={selectedFile}
-                            onSelectFile={handleSelectFile}
-                            repoPath={repoPath}
-                            revealLabel={revealLabel}
-                            onOpenInSplit={openInSplit}
-                            registerRef={registerRef}
-                            showSizeBar
-                          />
-                        ))
-                      ) : (
-                        <div className="py-4 text-center">
-                          <p className="text-xs text-fg-muted">No files</p>
-                        </div>
-                      )}
-                    </div>
-                  </>
+                {/* Saved for Later section */}
+                {(sectionedFiles.savedForLater.length > 0 ||
+                  flatSectionedFiles.savedForLater.length > 0) && (
+                  <SectionHeader
+                    title="Saved for Later"
+                    icon={SAVED_FOR_LATER_ICON}
+                    badge={stats.savedForLater}
+                    badgeColor="status-modified"
+                    isOpen={savedForLaterOpen}
+                    onToggle={() => setSavedForLaterOpen(!savedForLaterOpen)}
+                    onUnapproveAll={
+                      savedForLaterHunkIds.length > 0
+                        ? handleUnsaveAll
+                        : undefined
+                    }
+                    unapproveAllLabel="Unsave all"
+                    onExpandAll={
+                      changesDisplayMode === "tree"
+                        ? () =>
+                            expandAll(savedForLaterDirPaths, renamedDirPaths)
+                        : undefined
+                    }
+                    onCollapseAll={
+                      changesDisplayMode === "tree" ? collapseAll : undefined
+                    }
+                  >
+                    <FileListSection
+                      treeEntries={sectionedFiles.savedForLater}
+                      flatFilePaths={flatSectionedFiles.savedForLater}
+                      displayMode={changesDisplayMode}
+                      hunkContext="needs-review"
+                      emptyMessage="No files saved for later"
+                    />
+                  </SectionHeader>
+                )}
+
+                {/* Trust section */}
+                {trustableHunkCount > 0 && (
+                  <SectionHeader
+                    title="Trust"
+                    icon={TRUST_ICON}
+                    badge={`${trustedHunkCount}/${trustableHunkCount}`}
+                    badgeColor="status-trusted"
+                    isOpen={trustOpen}
+                    onToggle={() => setTrustOpen(!trustOpen)}
+                    quickActions={trustQuickActions}
+                  >
+                    <TrustSection />
+                  </SectionHeader>
                 )}
               </div>
-            </>
+            )
+          ) : (
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
+              {/* All Files tree */}
+              <div className="py-1">
+                {allFilesTree.length > 0 ? (
+                  allFilesTree.map((entry) => (
+                    <FileNode
+                      key={entry.path}
+                      entry={entry}
+                      depth={0}
+                      onToggle={togglePath}
+                      selectedFile={selectedFile}
+                      onSelectFile={handleSelectFile}
+                      repoPath={repoPath}
+                      revealLabel={revealLabel}
+                      onOpenInSplit={openInSplit}
+                      registerRef={registerRef}
+                      showSizeBar
+                    />
+                  ))
+                ) : (
+                  <div className="py-4 text-center">
+                    <p className="text-xs text-fg-muted">No files</p>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
