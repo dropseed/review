@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { makeComparison, type Comparison, type GitHubPrRef } from "../types";
 import type { GlobalReviewSummary } from "../types";
-import { initLogPath, clearLog } from "../utils/logger";
+import { clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
@@ -168,7 +168,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       options?: { clearLogFile?: boolean; storeInSession?: boolean },
     ): Promise<void> {
       switchReview(path, comparison);
-      initLogPath(path);
       if (options?.clearLogFile) clearLog();
       setRepoStatus("found");
       addRecentRepository(path);
@@ -335,7 +334,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         if (repoPath !== state.repoPath) {
           // Cross-repo switch — atomic update
           switchReview(repoPath, comparison);
-          initLogPath(repoPath);
           setRepoStatus("found");
           setRepoError(null);
           addRecentRepository(repoPath);
@@ -390,8 +388,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
       // Atomic switch — no intermediate state
       switchReview(path, comparison);
-      initLogPath(path);
-      clearLog();
       setRepoStatus("found");
       setRepoError(null);
       addRecentRepository(path);
@@ -499,8 +495,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       if (path !== state.repoPath) {
         // Different repo — atomic switch prevents phantom entries
         switchReview(path, comparison);
-        initLogPath(path);
-        clearLog();
         setRepoStatus("found");
         setRepoError(null);
         addRecentRepository(path);

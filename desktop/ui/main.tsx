@@ -3,8 +3,12 @@
 import { installMockTauri } from "./utils/tauriMock";
 installMockTauri();
 
-import { scan } from "react-scan";
+import { scan, setOptions } from "react-scan";
+import { onScanRender, initReactScanLog } from "./utils/reactScanLog";
 scan({ enabled: import.meta.env.DEV });
+// setOptions after scan() — scan's start() overwrites options from localStorage,
+// which drops non-persisted keys like onRender.
+if (import.meta.env.DEV) setOptions({ onRender: onScanRender });
 
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
@@ -13,7 +17,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "sonner";
 import "./index.css";
 import { initSentry } from "./utils/sentry";
-import { initializeLogger } from "./utils/logger";
+import { initializeLogger, initLogPath } from "./utils/logger";
 import { useReviewStore } from "./stores";
 
 import { resolveLanguages } from "@pierre/diffs";
@@ -69,8 +73,12 @@ function PreferencesGate({ children }: { children: React.ReactNode }) {
 // Initialize Sentry early (events are dropped until user opts in)
 initSentry();
 
-// Initialize file logging (patches console.*)
+// Initialize file logging (patches console.*, writes to ~/.review/app.log)
 initializeLogger();
+initLogPath();
+
+// Initialize React Scan perf log (writes to ~/.review/react-scan.jsonl)
+initReactScanLog({ clear: true });
 
 // Pre-resolve common languages in background to warm the cache.
 // WorkerPoolContextProvider calls resolveLanguages() itself during init,

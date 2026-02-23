@@ -36,7 +36,7 @@ Stored globally via Tauri Store (persists across all repositories, stored in Tau
 
 ## App Logs
 
-Frontend logs are written to `~/.review/repos/<repo-id>/app.log` (use the `getReviewStoragePath` API to find the exact path for a given repo). All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
+Frontend logs are written to `~/.review/app.log` (app-wide, not per-repo). All `console.log`, `console.warn`, `console.error`, `console.info`, and `console.debug` calls are captured with timestamps and log levels:
 
 ```
 [2026-01-26T12:00:00.000Z] [LOG] Message here
@@ -44,6 +44,16 @@ Frontend logs are written to `~/.review/repos/<repo-id>/app.log` (use the `getRe
 ```
 
 Claude can read this log file for debugging. The Debug modal (accessible in the app) shows current state; the log file shows historical activity.
+
+## React Scan Performance Log
+
+In dev mode, React Scan render events are written to `~/.review/react-scan.jsonl` as JSONL (app-wide, not per-repo). Each line records a component render with timing, phase, and what changed. The log is cleared on app start. Logging is tied to React Scan's toolbar — pausing scanning pauses logging.
+
+To analyze render performance, read the JSONL file and look for:
+- Components with high `count` values (excessive re-renders)
+- Components with `unnecessary: true` (rendered without meaningful changes)
+- High `time` values (slow renders)
+- Frequent `changes` on props/state that shouldn't be changing
 
 ## API Layer
 

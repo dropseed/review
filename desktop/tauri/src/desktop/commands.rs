@@ -869,6 +869,13 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, String> {
 }
 
 #[tauri::command]
+pub fn get_review_root() -> Result<String, String> {
+    review::review::central::get_central_root()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_review_storage_path(repo_path: String) -> Result<String, String> {
     review::review::central::get_repo_storage_dir(&PathBuf::from(&repo_path))
         .map(|p| p.to_string_lossy().to_string())
@@ -1098,8 +1105,11 @@ fn validate_review_path(path: &str) -> Result<PathBuf, String> {
     }
 
     // Allow writes to the central ~/.review/ directory
-    if path_str.contains("/.review/repos/") || path_str.contains(".review/repos/") {
-        return Ok(path_buf);
+    if let Ok(root) = review::review::central::get_central_root() {
+        let root_str = root.to_string_lossy().replace('\\', "/");
+        if path_str.starts_with(&root_str) {
+            return Ok(path_buf);
+        }
     }
 
     Err(

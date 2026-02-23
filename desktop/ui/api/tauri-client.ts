@@ -289,6 +289,10 @@ export class TauriClient implements ApiClient {
     return invoke<GlobalReviewSummary[]>("list_all_reviews_global");
   }
 
+  async getReviewRoot(): Promise<string> {
+    return invoke<string>("get_review_root");
+  }
+
   async getReviewStoragePath(repoPath: string): Promise<string> {
     return invoke<string>("get_review_storage_path", { repoPath });
   }

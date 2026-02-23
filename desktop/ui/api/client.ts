@@ -200,6 +200,9 @@ export interface ApiClient {
   /** List all reviews across all registered repos */
   listAllReviewsGlobal(): Promise<GlobalReviewSummary[]>;
 
+  /** Get the central storage root (~/.review/) */
+  getReviewRoot(): Promise<string>;
+
   /** Get the central storage path for a repo */
   getReviewStoragePath(repoPath: string): Promise<string>;
 

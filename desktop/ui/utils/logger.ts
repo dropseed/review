@@ -3,26 +3,21 @@ import { isTauriEnvironment } from "../api/client";
 
 let logFilePath: string | null = null;
 
-// Set the log file path directly (call once central storage path is known)
-export function setLogFilePath(path: string | null) {
-  logFilePath = path;
-}
+/** Resolve the app-wide log file path. Call once at startup. */
+export function initLogPath(): void {
+  if (logFilePath) return;
 
-// Resolve the central storage path for a repo and set the log file path.
-export function initLogPath(repoPath: string): void {
   getApiClient()
-    .getReviewStoragePath(repoPath)
-    .then((storagePath) => {
-      if (storagePath) {
-        setLogFilePath(`${storagePath}/app.log`);
-      }
+    .getReviewRoot()
+    .then((root) => {
+      if (!root) return;
+      logFilePath = `${root}/app.log`;
     })
     .catch(() => {
       // Silently fall back -- no log file
     });
 }
 
-// Format a log message with timestamp and level
 function formatMessage(level: string, args: unknown[]): string {
   const timestamp = new Date().toISOString();
   const message = args
@@ -38,12 +33,10 @@ function formatMessage(level: string, args: unknown[]): string {
   return `[${timestamp}] [${level}] ${message}\n`;
 }
 
-// Write to log file (fire and forget) - only in Tauri environment
-function writeToFile(line: string) {
+function writeToFile(line: string): void {
   if (!logFilePath) return;
   if (!isTauriEnvironment()) return;
 
-  // Dynamically import to avoid loading Tauri in browser
   import("@tauri-apps/api/core").then(({ invoke }) => {
     invoke("append_to_file", { path: logFilePath, contents: line }).catch(
       () => {
@@ -53,7 +46,6 @@ function writeToFile(line: string) {
   });
 }
 
-// Store original console methods
 const originalConsole = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
@@ -62,8 +54,8 @@ const originalConsole = {
   debug: console.debug.bind(console),
 };
 
-// Patch console methods to also write to file (dev only)
-export function initializeLogger() {
+/** Patch console methods to also write to file (dev only). */
+export function initializeLogger(): void {
   if (!import.meta.env.DEV) return;
   console.log = (...args: unknown[]) => {
     originalConsole.log(...args);
@@ -90,20 +82,18 @@ export function initializeLogger() {
     writeToFile(formatMessage("DEBUG", args));
   };
 
-  // Log startup
   console.log("Logger initialized");
 }
 
-// Clear the log file (dev only)
-export async function clearLog() {
+/** Clear the log file (dev only). */
+export function clearLog(): void {
   if (!import.meta.env.DEV) return;
   if (!logFilePath) return;
   if (!isTauriEnvironment()) return;
 
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("write_text_file", { path: logFilePath, contents: "" });
-  } catch {
-    // Silently fail
-  }
+  import("@tauri-apps/api/core").then(({ invoke }) => {
+    invoke("write_text_file", { path: logFilePath, contents: "" }).catch(
+      () => {},
+    );
+  });
 }

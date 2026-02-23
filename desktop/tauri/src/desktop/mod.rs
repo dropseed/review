@@ -484,6 +484,7 @@ pub fn run() {
             commands::review_exists,
             commands::ensure_review_exists,
             commands::list_all_reviews_global,
+            commands::get_review_root,
             commands::get_review_storage_path,
             commands::consume_cli_request,
             commands::open_repo_window,

@@ -453,6 +453,11 @@ export class HttpClient implements ApiClient {
     return this.fetchJson<GlobalReviewSummary[]>("/reviews");
   }
 
+  async getReviewRoot(): Promise<string> {
+    console.warn("[HttpClient] getReviewRoot not implemented");
+    return "";
+  }
+
   async getReviewStoragePath(_repoPath: string): Promise<string> {
     console.warn("[HttpClient] getReviewStoragePath not implemented");
     return "";
