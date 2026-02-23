@@ -345,27 +345,18 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return map;
   }, [symbolDiffs]);
 
-  // Index map for O(1) hunk ID → index lookups
-  const hunkIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (let i = 0; i < hunks.length; i++) map.set(hunks[i].id, i);
-    return map;
-  }, [hunks]);
-
   // Navigate to a specific hunk (used by flat mode symbol rows)
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      // Single atomic state update to avoid race between navigateToBrowse
-      // (which sets focusedHunkIndex to first unreviewed) and our override.
-      const hunkIndex = hunkIndexMap.get(hunkId);
       useReviewStore.setState({
         guideContentMode: null,
         selectedFile: filePath,
         filesPanelCollapsed: false,
-        ...(hunkIndex !== undefined && { focusedHunkIndex: hunkIndex }),
+        focusedHunkId: hunkId,
+        scrollTarget: { type: "hunk", hunkId },
       });
     },
-    [hunkIndexMap],
+    [],
   );
 
   const pendingHunkIds = useMemo(() => {

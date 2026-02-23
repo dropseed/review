@@ -4,26 +4,20 @@ import type { DiffHunk } from "../types";
 
 /**
  * Tracks which hunk is currently visible during manual scrolling and
- * updates focusedHunkIndex accordingly. Uses a debounce + RAF pattern
+ * updates focusedHunkId accordingly. Uses a debounce + RAF pattern
  * to avoid DOM queries during fast scrolling.
  *
- * Sets `scrollDrivenNavigation: true` so the DiffView scrollIntoView
- * effect can skip, preventing a feedback loop.
+ * Only sets `focusedHunkId` — never sets `scrollTarget`, so programmatic
+ * scroll in DiffView cannot create a feedback loop.
  */
 export function useScrollHunkTracking(
   scrollContainer: HTMLDivElement | null,
-  fileHunkIndices: number[],
-  allHunks: DiffHunk[],
+  fileHunks: DiffHunk[],
 ): void {
-  // Store latest values in refs so the scroll handler always sees
-  // current data without needing to re-attach the listener.
-  const fileHunkIndicesRef = useRef(fileHunkIndices);
-  fileHunkIndicesRef.current = fileHunkIndices;
+  const fileHunksRef = useRef(fileHunks);
+  fileHunksRef.current = fileHunks;
 
-  const allHunksRef = useRef(allHunks);
-  allHunksRef.current = allHunks;
-
-  const hasMultipleHunks = fileHunkIndices.length >= 2;
+  const hasMultipleHunks = fileHunks.length >= 2;
 
   useEffect(() => {
     if (!scrollContainer || !hasMultipleHunks) return;
@@ -59,8 +53,7 @@ export function useScrollHunkTracking(
 
       debounceTimer = setTimeout(() => {
         rafId = requestAnimationFrame(() => {
-          const indices = fileHunkIndicesRef.current;
-          if (indices.length < 2) return;
+          if (fileHunksRef.current.length < 2) return;
 
           const closest = findClosestHunkElement();
           if (!closest) return;
@@ -68,20 +61,13 @@ export function useScrollHunkTracking(
           const hunkId = closest.getAttribute("data-hunk-id");
           if (!hunkId) return;
 
-          const globalIndex = allHunksRef.current.findIndex(
-            (h) => h.id === hunkId,
-          );
-          if (globalIndex === -1) return;
+          // Validate the hunk belongs to the current file
+          if (!fileHunksRef.current.some((h) => h.id === hunkId)) return;
 
-          if (!indices.includes(globalIndex)) return;
+          const { focusedHunkId } = useReviewStore.getState();
+          if (focusedHunkId === hunkId) return;
 
-          const { focusedHunkIndex } = useReviewStore.getState();
-          if (focusedHunkIndex === globalIndex) return;
-
-          useReviewStore.setState({
-            focusedHunkIndex: globalIndex,
-            scrollDrivenNavigation: true,
-          });
+          useReviewStore.setState({ focusedHunkId: hunkId });
         });
       }, 150);
     }

@@ -7,11 +7,16 @@ export type SplitOrientation = "horizontal" | "vertical";
 export type GuideContentMode = "group" | "adhoc-group" | null;
 export type ChangesViewMode = "files" | "guide";
 
+export type ScrollTarget =
+  | { type: "hunk"; hunkId: string }
+  | { type: "line"; filePath: string; lineNumber: number };
+
 export interface NavigationSlice {
   // Navigation state
   selectedFile: string | null;
-  focusedHunkIndex: number;
-  scrollDrivenNavigation: boolean;
+  focusedHunkId: string | null;
+  scrollTarget: ScrollTarget | null;
+  clearScrollTarget: () => void;
 
   // Guide content mode: what ContentArea shows when guide content is active
   guideContentMode: GuideContentMode;
@@ -115,21 +120,23 @@ function isFileHunkUnreviewed(
 }
 
 /**
- * Find the index of the first unreviewed hunk for a file,
+ * Find the ID of the first unreviewed hunk for a file,
  * falling back to the first hunk in the file if all are reviewed.
- * Returns -1 if no hunks exist for the file.
+ * Returns null if no hunks exist for the file.
  */
-function findFirstUnreviewedHunkIndex(
+function findFirstUnreviewedHunkId(
   filePath: string,
   state: ReviewStore,
-): number {
-  const unreviewedIndex = state.hunks.findIndex(
-    isFileHunkUnreviewed(filePath, state),
-  );
-  if (unreviewedIndex >= 0) return unreviewedIndex;
+): string | null {
+  const unreviewed = state.hunks.find(isFileHunkUnreviewed(filePath, state));
+  if (unreviewed) return unreviewed.id;
+  return state.hunks.find((h) => h.filePath === filePath)?.id ?? null;
+}
 
-  // Fall back to first hunk in the file
-  return state.hunks.findIndex((h) => h.filePath === filePath);
+/** Find the current index of the focused hunk by ID. Returns -1 if not found. */
+function focusedHunkPosition(state: ReviewStore): number {
+  if (!state.focusedHunkId) return -1;
+  return state.hunks.findIndex((h) => h.id === state.focusedHunkId);
 }
 
 /** Check whether a file has any unreviewed hunks. */
@@ -152,8 +159,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   get,
 ) => ({
   selectedFile: null,
-  focusedHunkIndex: 0,
-  scrollDrivenNavigation: false,
+  focusedHunkId: null,
+  scrollTarget: null,
+  clearScrollTarget: () => set({ scrollTarget: null }),
 
   // Guide content mode
   guideContentMode: null,
@@ -170,16 +178,23 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     const state = get();
     const { secondaryFile, focusedPane } = state;
 
-    const targetHunkIndex = path
-      ? findFirstUnreviewedHunkIndex(path, state)
-      : -1;
-    const newFocusedHunkIndex = Math.max(targetHunkIndex, 0);
+    const targetHunkId = path ? findFirstUnreviewedHunkId(path, state) : null;
 
     const shared = {
       guideContentMode: null as GuideContentMode,
       workingTreeDiffFile: null as string | null,
       workingTreeDiffMode: null as "staged" | "unstaged" | null,
     };
+
+    const hunkNav = targetHunkId
+      ? {
+          focusedHunkId: targetHunkId,
+          scrollTarget: { type: "hunk" as const, hunkId: targetHunkId },
+        }
+      : {
+          focusedHunkId: null as string | null,
+          scrollTarget: null as ScrollTarget | null,
+        };
 
     const isSplitActive = secondaryFile !== null;
 
@@ -192,7 +207,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
         set({
           ...shared,
           secondaryFile: path,
-          focusedHunkIndex: newFocusedHunkIndex,
+          ...hunkNav,
         });
       }
       return;
@@ -205,7 +220,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
         selectedFile: secondaryFile,
         secondaryFile: null,
         focusedPane: "primary",
-        focusedHunkIndex: newFocusedHunkIndex,
+        ...hunkNav,
       });
       return;
     }
@@ -214,68 +229,82 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     set({
       ...shared,
       selectedFile: path,
-      focusedHunkIndex: newFocusedHunkIndex,
+      ...hunkNav,
     });
   },
 
   nextFile: () => {
-    const { flatFileList, selectedFile } = get();
+    const state = get();
+    const { flatFileList, selectedFile } = state;
     if (flatFileList.length === 0) return;
 
-    if (!selectedFile) {
-      set({ selectedFile: flatFileList[0], focusedHunkIndex: 0 });
-      return;
-    }
+    const nextFilePath = !selectedFile
+      ? flatFileList[0]
+      : flatFileList[
+          (flatFileList.indexOf(selectedFile) + 1) % flatFileList.length
+        ];
 
-    const currentIndex = flatFileList.indexOf(selectedFile);
-    const nextIndex = (currentIndex + 1) % flatFileList.length;
-    set({ selectedFile: flatFileList[nextIndex], focusedHunkIndex: 0 });
+    const hunkId = findFirstUnreviewedHunkId(nextFilePath, state);
+    set({
+      selectedFile: nextFilePath,
+      focusedHunkId: hunkId,
+      scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
+    });
   },
 
   prevFile: () => {
-    const { flatFileList, selectedFile } = get();
+    const state = get();
+    const { flatFileList, selectedFile } = state;
     if (flatFileList.length === 0) return;
 
-    if (!selectedFile) {
-      set({
-        selectedFile: flatFileList[flatFileList.length - 1],
-        focusedHunkIndex: 0,
-      });
-      return;
-    }
+    const prevFilePath = !selectedFile
+      ? flatFileList[flatFileList.length - 1]
+      : flatFileList[
+          flatFileList.indexOf(selectedFile) <= 0
+            ? flatFileList.length - 1
+            : flatFileList.indexOf(selectedFile) - 1
+        ];
 
-    const currentIndex = flatFileList.indexOf(selectedFile);
-    const prevIndex =
-      currentIndex <= 0 ? flatFileList.length - 1 : currentIndex - 1;
-    set({ selectedFile: flatFileList[prevIndex], focusedHunkIndex: 0 });
+    const hunkId = findFirstUnreviewedHunkId(prevFilePath, state);
+    set({
+      selectedFile: prevFilePath,
+      focusedHunkId: hunkId,
+      scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
+    });
   },
 
   nextHunk: () => {
     const state = get();
-    const { hunks, focusedHunkIndex } = state;
+    const { hunks } = state;
     if (hunks.length === 0) return;
-    // Scan forward to find the next non-trusted hunk
-    for (let i = focusedHunkIndex + 1; i < hunks.length; i++) {
+    const currentIndex = focusedHunkPosition(state);
+    for (let i = currentIndex + 1; i < hunks.length; i++) {
       if (!isHunkTrustedInState(hunks[i].id, state)) {
-        set({ focusedHunkIndex: i, selectedFile: hunks[i].filePath });
+        set({
+          focusedHunkId: hunks[i].id,
+          selectedFile: hunks[i].filePath,
+          scrollTarget: { type: "hunk", hunkId: hunks[i].id },
+        });
         return;
       }
     }
-    // All remaining hunks are trusted — stay at current position
   },
 
   prevHunk: () => {
     const state = get();
-    const { hunks, focusedHunkIndex } = state;
+    const { hunks } = state;
     if (hunks.length === 0) return;
-    // Scan backward to find the previous non-trusted hunk
-    for (let i = focusedHunkIndex - 1; i >= 0; i--) {
+    const currentIndex = focusedHunkPosition(state);
+    for (let i = currentIndex - 1; i >= 0; i--) {
       if (!isHunkTrustedInState(hunks[i].id, state)) {
-        set({ focusedHunkIndex: i, selectedFile: hunks[i].filePath });
+        set({
+          focusedHunkId: hunks[i].id,
+          selectedFile: hunks[i].filePath,
+          scrollTarget: { type: "hunk", hunkId: hunks[i].id },
+        });
         return;
       }
     }
-    // All preceding hunks are trusted — stay at current position
   },
 
   // Guide content mode
@@ -291,34 +320,42 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     }
 
     const state = get();
-    const targetHunkIndex = findFirstUnreviewedHunkIndex(filePath, state);
+    const hunkId = findFirstUnreviewedHunkId(filePath, state);
 
     set({
       guideContentMode: null,
       selectedFile: filePath,
       filesPanelCollapsed: false,
-      ...(targetHunkIndex >= 0 && { focusedHunkIndex: targetHunkIndex }),
+      ...(hunkId && {
+        focusedHunkId: hunkId,
+        scrollTarget: { type: "hunk", hunkId },
+      }),
     });
   },
 
   // Split view actions
   setSecondaryFile: (path) => set({ secondaryFile: path }),
 
-  setFocusedPane: (pane) => set({ focusedPane: pane, focusedHunkIndex: 0 }),
+  setFocusedPane: (pane) =>
+    set({ focusedPane: pane, focusedHunkId: null, scrollTarget: null }),
 
   setSplitOrientation: (orientation) => set({ splitOrientation: orientation }),
 
   openInSplit: (path) => {
-    const { selectedFile } = get();
-    // If no file is selected, open the file in primary pane instead
-    if (selectedFile === null) {
-      set({ selectedFile: path, focusedHunkIndex: 0 });
+    const state = get();
+    const hunkId = findFirstUnreviewedHunkId(path, state);
+    if (state.selectedFile === null) {
+      set({
+        selectedFile: path,
+        focusedHunkId: hunkId,
+        scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
+      });
     } else {
-      // Open in secondary pane and focus it
       set({
         secondaryFile: path,
         focusedPane: "secondary",
-        focusedHunkIndex: 0,
+        focusedHunkId: hunkId,
+        scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
         diffViewMode: "unified",
       });
     }
@@ -344,15 +381,18 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Advance to next hunk within the same file, skipping trusted hunks
   nextHunkInFile: () => {
     const state = get();
-    const { hunks, focusedHunkIndex } = state;
+    const { hunks } = state;
     if (hunks.length === 0) return;
-    const currentHunk = hunks[focusedHunkIndex];
+    const currentIndex = focusedHunkPosition(state);
+    const currentHunk = currentIndex >= 0 ? hunks[currentIndex] : null;
     if (!currentHunk) return;
-    // Scan forward within the same file, skipping trusted hunks
-    for (let i = focusedHunkIndex + 1; i < hunks.length; i++) {
+    for (let i = currentIndex + 1; i < hunks.length; i++) {
       if (hunks[i].filePath !== currentHunk.filePath) break;
       if (!isHunkTrustedInState(hunks[i].id, state)) {
-        set({ focusedHunkIndex: i });
+        set({
+          focusedHunkId: hunks[i].id,
+          scrollTarget: { type: "hunk", hunkId: hunks[i].id },
+        });
         return;
       }
     }
@@ -398,12 +438,13 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   workingTreeDiffFile: null,
   workingTreeDiffMode: null,
   selectWorkingTreeFile: (path, mode) => {
-    const targetHunkIndex = findFirstUnreviewedHunkIndex(path, get());
+    const hunkId = findFirstUnreviewedHunkId(path, get());
     set({
       selectedFile: path,
       workingTreeDiffFile: path,
       workingTreeDiffMode: mode ?? "unstaged",
-      focusedHunkIndex: Math.max(targetHunkIndex, 0),
+      focusedHunkId: hunkId,
+      scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
       guideContentMode: null,
     });
   },
@@ -413,7 +454,8 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     set({
       selectedFile: secondaryFile,
       secondaryFile: selectedFile,
-      focusedHunkIndex: 0,
+      focusedHunkId: null,
+      scrollTarget: null,
     });
   },
 

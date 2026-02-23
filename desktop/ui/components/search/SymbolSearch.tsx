@@ -341,32 +341,31 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
       navigateToBrowse(selectedFile);
 
       if (symbol.hunkIds.length > 0) {
-        // Navigate to the first hunk for this symbol
         const firstHunkId = symbol.hunkIds[0];
-        const hunkIndex = hunks.findIndex((h) => h.id === firstHunkId);
-        if (hunkIndex >= 0) {
-          useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-        }
+        useReviewStore.setState({
+          focusedHunkId: firstHunkId,
+          scrollTarget: { type: "hunk", hunkId: firstHunkId },
+        });
       } else {
         // No hunks (unchanged symbol) — find the nearest hunk by line number
-        const fileHunks = hunks
-          .map((h, i) => ({ hunk: h, index: i }))
-          .filter((h) => h.hunk.filePath === selectedFile);
+        const fileHunks = hunks.filter((h) => h.filePath === selectedFile);
 
         if (fileHunks.length > 0) {
-          // Find the hunk closest to this symbol's start line
           let closest = fileHunks[0];
           let closestDist = Math.abs(
-            (fileHunks[0].hunk.newStart ?? 0) - symbol.sortKey,
+            (fileHunks[0].newStart ?? 0) - symbol.sortKey,
           );
           for (const fh of fileHunks) {
-            const dist = Math.abs((fh.hunk.newStart ?? 0) - symbol.sortKey);
+            const dist = Math.abs((fh.newStart ?? 0) - symbol.sortKey);
             if (dist < closestDist) {
               closest = fh;
               closestDist = dist;
             }
           }
-          useReviewStore.setState({ focusedHunkIndex: closest.index });
+          useReviewStore.setState({
+            focusedHunkId: closest.id,
+            scrollTarget: { type: "hunk", hunkId: closest.id },
+          });
         }
       }
 

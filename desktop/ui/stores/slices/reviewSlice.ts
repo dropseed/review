@@ -205,23 +205,23 @@ function updateHunkStatuses(
 function pushHunkUndo(
   get: () => {
     reviewState: ReviewState | null;
-    focusedHunkIndex: number;
+    focusedHunkId: string | null;
     selectedFile: string | null;
     pushUndo: (entry: {
       hunkIds: string[];
       previousStatuses: Record<string, HunkState | undefined>;
-      focusedHunkIndex: number;
+      focusedHunkId: string | null;
       selectedFile: string | null;
     }) => void;
   },
   hunkId: string,
 ): void {
-  const { reviewState, focusedHunkIndex, selectedFile, pushUndo } = get();
+  const { reviewState, focusedHunkId, selectedFile, pushUndo } = get();
   if (!reviewState) return;
   pushUndo({
     hunkIds: [hunkId],
     previousStatuses: { [hunkId]: reviewState.hunks[hunkId] },
-    focusedHunkIndex,
+    focusedHunkId,
     selectedFile,
   });
 }

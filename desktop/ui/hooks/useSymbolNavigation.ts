@@ -149,7 +149,7 @@ function navigateToFileAndLine(filePath: string, lineNumber: number): void {
   }
 
   useReviewStore.setState({
-    scrollToLine: { filePath, lineNumber },
+    scrollTarget: { type: "line", filePath, lineNumber },
   });
 
   // Clear the flag after the route sync has a chance to read it

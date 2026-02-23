@@ -45,22 +45,17 @@ export function NarrativeContent({
       setLastClickedNarrativeLinkOffset(offset);
       navigateToBrowse(filePath);
       if (hunkId) {
-        const hunkIndex = hunks.findIndex((h) => h.id === hunkId);
-        if (hunkIndex >= 0) {
-          useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-        }
+        useReviewStore.setState({
+          focusedHunkId: hunkId,
+          scrollTarget: { type: "hunk", hunkId },
+        });
       } else if (line) {
         useReviewStore.setState({
-          scrollToLine: { filePath, lineNumber: line },
+          scrollTarget: { type: "line", filePath, lineNumber: line },
         });
       }
     },
-    [
-      navigateToBrowse,
-      hunks,
-      setLastClickedNarrativeLinkOffset,
-      onBeforeNavigate,
-    ],
+    [navigateToBrowse, setLastClickedNarrativeLinkOffset, onBeforeNavigate],
   );
 
   const markdownComponents = useMemo(

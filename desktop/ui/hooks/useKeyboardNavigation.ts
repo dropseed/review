@@ -85,7 +85,9 @@ export function useKeyboardNavigation() {
         case "a":
         case "r":
         case "s": {
-          const focusedHunk = state.hunks[state.focusedHunkIndex];
+          const focusedHunk = state.focusedHunkId
+            ? state.hunks.find((h) => h.id === state.focusedHunkId)
+            : null;
           if (!focusedHunk) break;
           if (event.key === "a") {
             state.approveHunk(focusedHunk.id);

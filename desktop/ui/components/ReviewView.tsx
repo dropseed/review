@@ -136,22 +136,17 @@ export function ReviewView({
     }
   }, [repoPath]);
 
-  // Index map for O(1) hunk ID → index lookups
-  const hunkIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (let i = 0; i < hunks.length; i++) map.set(hunks[i].id, i);
-    return map;
-  }, [hunks]);
-
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
       useReviewStore.getState().setClassificationsModalOpen(false);
       useReviewStore.getState().navigateToBrowse(filePath);
-      const idx = hunkIndexMap.get(hunkId);
-      if (idx !== undefined) useReviewStore.setState({ focusedHunkIndex: idx });
+      useReviewStore.setState({
+        focusedHunkId: hunkId,
+        scrollTarget: { type: "hunk", hunkId },
+      });
     },
-    [hunkIndexMap],
+    [],
   );
 
   const { sidebarWidth, handleResizeStart } = useSidebarResize({

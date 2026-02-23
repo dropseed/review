@@ -62,8 +62,6 @@ export function FileViewer({
     reviewState,
     allHunks,
     refreshGeneration,
-    scrollToLine,
-    clearScrollToLine,
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,
@@ -296,25 +294,25 @@ export function FileViewer({
     setLanguageOverride(undefined);
   }, [filePath]);
 
-  // Handle scrollToLine from search - switch to file view and highlight the line
-  // Wait until file content is loaded before applying the scroll
+  // Handle scrollTarget (type "line") from search/symbol navigation.
+  // Wait until file content is loaded before applying the scroll.
+  const scrollTarget = useReviewStore((s) => s.scrollTarget);
   useEffect(() => {
     if (
-      scrollToLine &&
-      scrollToLine.filePath === filePath &&
+      scrollTarget?.type === "line" &&
+      scrollTarget.filePath === filePath &&
       !loading &&
       fileContent
     ) {
-      setHighlightLine(scrollToLine.lineNumber);
-      clearScrollToLine();
+      setHighlightLine(scrollTarget.lineNumber);
+      useReviewStore.getState().clearScrollTarget();
 
-      // Clear highlight after 2 seconds
       const timeout = setTimeout(() => {
         setHighlightLine(null);
       }, 2000);
       return () => clearTimeout(timeout);
     }
-  }, [scrollToLine, filePath, loading, fileContent, clearScrollToLine]);
+  }, [scrollTarget, filePath, loading, fileContent]);
 
   // Derive a stable key from hunk IDs for this file.
   // Hunk IDs include content hashes (filepath:hash), so any actual content
@@ -406,23 +404,22 @@ export function FileViewer({
   ]);
 
   // Minimap hooks — must be before early returns
-  const fileHunkIndices = useMemo(
-    () =>
-      allHunks.reduce<number[]>((acc, h, i) => {
-        if (h.filePath === filePath) acc.push(i);
-        return acc;
-      }, []),
+  const fileHunks = useMemo(
+    () => allHunks.filter((h) => h.filePath === filePath),
     [allHunks, filePath],
   );
 
   const handleMinimapHunkClick = useCallback(
     (localIndex: number) => {
-      const globalIndex = fileHunkIndices[localIndex];
-      if (globalIndex !== undefined) {
-        useReviewStore.setState({ focusedHunkIndex: globalIndex });
+      const hunk = fileHunks[localIndex];
+      if (hunk) {
+        useReviewStore.setState({
+          focusedHunkId: hunk.id,
+          scrollTarget: { type: "hunk", hunkId: hunk.id },
+        });
       }
     },
-    [fileHunkIndices],
+    [fileHunks],
   );
 
   const totalLineCount = useMemo(() => {
@@ -456,8 +453,8 @@ export function FileViewer({
     });
   }, [fileContent, totalLineCount, reviewState, trustList, allFileAnnotations]);
 
-  // Track scroll position to update HunkNavigator counter
-  useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);
+  // Track scroll position to update focused hunk
+  useScrollHunkTracking(scrollNode, fileHunks);
 
   // Check if file is gitignored (from the file tree's allFiles)
   const isGitignored = useReviewStore((s) =>

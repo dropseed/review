@@ -10,7 +10,7 @@ export const debouncedUndoSave = createDebouncedFn(500);
 export interface UndoEntry {
   hunkIds: string[];
   previousStatuses: Record<string, HunkState | undefined>;
-  focusedHunkIndex: number;
+  focusedHunkId: string | null;
   selectedFile: string | null;
 }
 
@@ -54,8 +54,11 @@ export const createUndoSlice: SliceCreator<UndoSlice> = (set, get) => ({
         hunks: newHunks,
         updatedAt: new Date().toISOString(),
       },
-      focusedHunkIndex: entry.focusedHunkIndex,
+      focusedHunkId: entry.focusedHunkId,
       selectedFile: entry.selectedFile,
+      ...(entry.focusedHunkId && {
+        scrollTarget: { type: "hunk" as const, hunkId: entry.focusedHunkId },
+      }),
     });
 
     debouncedUndoSave(saveReviewState);

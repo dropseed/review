@@ -40,7 +40,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
   const files = useReviewStore((s) => s.files);
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
-  const focusedHunkIndex = useReviewStore((s) => s.focusedHunkIndex);
+  const focusedHunkId = useReviewStore((s) => s.focusedHunkId);
 
   const persistedJsonString = useMemo(
     () => (isOpen ? JSON.stringify({ reviewState }, null, 2) : ""),
@@ -54,7 +54,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
               repoPath,
               comparison,
               selectedFile,
-              focusedHunkIndex,
+              focusedHunkId,
               files,
               hunks,
             },
@@ -62,15 +62,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
             2,
           )
         : "",
-    [
-      isOpen,
-      repoPath,
-      comparison,
-      selectedFile,
-      focusedHunkIndex,
-      files,
-      hunks,
-    ],
+    [isOpen, repoPath, comparison, selectedFile, focusedHunkId, files, hunks],
   );
 
   const highlightedPersistedJson = useMemo(

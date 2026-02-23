@@ -69,12 +69,8 @@ export const DiffMinimap = memo(function DiffMinimap({
   const rafId = useRef(0);
   const prefersReducedMotion = usePrefersReducedMotion();
 
-  // Subscribe to focused hunk ID directly (rerender-derived-state pattern).
-  // DiffMinimap only re-renders when the focused hunk *identity* changes,
-  // not on every focusedHunkIndex update during scrolling.
-  const focusedHunkId = useReviewStore(
-    (s) => s.hunks[s.focusedHunkIndex]?.id ?? null,
-  );
+  // Subscribe to focused hunk ID directly.
+  const focusedHunkId = useReviewStore((s) => s.focusedHunkId);
 
   // Self-manage scroll tracking
   useEffect(() => {

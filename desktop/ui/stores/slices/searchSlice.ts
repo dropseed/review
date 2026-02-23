@@ -9,15 +9,12 @@ export interface SearchSlice {
   searchLoading: boolean;
   searchError: string | null;
   searchActive: boolean;
-  // Line to scroll to and highlight (null when not active)
-  scrollToLine: { filePath: string; lineNumber: number } | null;
 
   // Actions
   setSearchQuery: (query: string) => void;
   performSearch: (query: string) => Promise<void>;
   clearSearch: () => void;
   clearSearchResults: () => void;
-  clearScrollToLine: () => void;
   navigateToSearchResult: (index: number) => void;
 }
 
@@ -28,7 +25,6 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     searchLoading: false,
     searchError: null,
     searchActive: false,
-    scrollToLine: null,
 
     setSearchQuery: (query) => set({ searchQuery: query }),
 
@@ -79,31 +75,12 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         searchError: null,
       }),
 
-    clearScrollToLine: () => set({ scrollToLine: null }),
-
     navigateToSearchResult: (index) => {
-      const { searchResults, navigateToBrowse, guideContentMode, hunks } =
-        get();
+      const { searchResults, hunks, guideContentMode } = get();
       const result = searchResults[index];
       if (!result) return;
 
-      // Auto-switch to browse if in guide content, otherwise select the file
-      if (guideContentMode !== null) {
-        navigateToBrowse(result.filePath);
-      } else {
-        get().setSelectedFile(result.filePath);
-      }
-
-      // Set scroll target for line highlighting
-      set({
-        scrollToLine: {
-          filePath: result.filePath,
-          lineNumber: result.lineNumber,
-        },
-      });
-
-      // Find the hunk that contains this line and focus it
-      const hunkIndex = hunks.findIndex(
+      const hunk = hunks.find(
         (h) =>
           h.filePath === result.filePath &&
           (h.lines || []).some(
@@ -111,8 +88,16 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
           ),
       );
 
-      if (hunkIndex >= 0) {
-        set({ focusedHunkIndex: hunkIndex });
-      }
+      set({
+        ...(guideContentMode !== null && { guideContentMode: null }),
+        selectedFile: result.filePath,
+        filesPanelCollapsed: false,
+        focusedHunkId: hunk?.id ?? null,
+        scrollTarget: {
+          type: "line",
+          filePath: result.filePath,
+          lineNumber: result.lineNumber,
+        },
+      });
     },
   });

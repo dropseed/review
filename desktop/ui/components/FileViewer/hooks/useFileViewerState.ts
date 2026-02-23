@@ -16,10 +16,6 @@ export function useFileViewerState() {
   const reviewState = useReviewStore((s) => s.reviewState);
   const allHunks = useReviewStore((s) => s.hunks);
 
-  // Navigation
-  const scrollToLine = useReviewStore((s) => s.scrollToLine);
-  const clearScrollToLine = useReviewStore((s) => s.clearScrollToLine);
-
   // Working tree diff (Git panel)
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
   const gitStatus = useReviewStore((s) => s.gitStatus);
@@ -38,8 +34,6 @@ export function useFileViewerState() {
     viewMode,
     reviewState,
     allHunks,
-    scrollToLine,
-    clearScrollToLine,
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,

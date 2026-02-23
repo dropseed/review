@@ -111,7 +111,8 @@ const comparisonResetState = {
   // Navigation
   changesViewMode: "files" as const,
   selectedFile: null,
-  focusedHunkIndex: 0,
+  focusedHunkId: null,
+  scrollTarget: null,
   guideContentMode: null,
   secondaryFile: null,
   focusedPane: "primary" as const,
@@ -134,7 +135,6 @@ const repoResetState = {
   searchResults: [] as SearchMatch[],
   searchLoading: false,
   searchError: null,
-  scrollToLine: null,
   // Git
   gitStatus: null,
   stagedFilePaths: EMPTY_STAGED_SET,
