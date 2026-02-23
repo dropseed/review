@@ -15,7 +15,6 @@ import {
   TreeRowButton,
   TreeChevron,
   TreeNodeName,
-  StatusLetter,
   HunkCount,
   SymlinkIndicator,
   TreeFileIcon,
@@ -56,10 +55,6 @@ function SizeBar({
       </div>
     </div>
   );
-}
-
-function directoryNameColor(isGitignored: boolean): string {
-  return isGitignored ? "text-fg-muted" : "text-fg-secondary";
 }
 
 interface FileNodeProps {
@@ -272,8 +267,6 @@ export const FileNode = memo(
         onUnapproveAll &&
         onRejectAll
       );
-      const hasHoverActions =
-        (hasReviewActions && hasReviewableContent) || !!onStage || !!onUnstage;
 
       return (
         <TreeNodeItem>
@@ -295,7 +288,9 @@ export const FileNode = memo(
             >
               {collapsible && <TreeChevron expanded={isExpanded} />}
 
-              <TreeNodeName className={directoryNameColor(isGitignored)}>
+              <TreeNodeName
+                className={fileNameColor(false, isGitignored, entry.status)}
+              >
                 {entry.displayName}
               </TreeNodeName>
 
@@ -348,13 +343,6 @@ export const FileNode = memo(
                   Moved
                 </span>
               </SimpleTooltip>
-            )}
-
-            {entry.status && !isGitignored && (
-              <StatusLetter
-                status={entry.status}
-                hideOnHover={hasHoverActions}
-              />
             )}
           </TreeRow>
 
@@ -499,8 +487,6 @@ export const FileNode = memo(
                 hideOnHover={hasHoverActions}
               />
             )}
-
-            <StatusLetter status={entry.status} hideOnHover={hasHoverActions} />
           </TreeRow>
         </ContextMenuTrigger>
         <ContextMenuContent>

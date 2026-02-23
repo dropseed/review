@@ -16,7 +16,6 @@ import {
   TreeRowButton,
   TreeChevron,
   TreeNodeName,
-  StatusLetter,
   TreeFileIcon,
   fileNameColor,
 } from "../tree";
@@ -331,7 +330,6 @@ function CompactNode({
           deletions={stats?.deletions ?? 0}
         />
         <ReviewProgressBar status={entry.hunkStatus} />
-        <StatusLetter status={entry.status} />
       </TreeRow>
       {sortedSymbols.map((sym) => {
         const firstHunkId = sym.hunkIds[0];

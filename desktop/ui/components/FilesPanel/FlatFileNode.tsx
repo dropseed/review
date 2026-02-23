@@ -2,7 +2,6 @@ import { memo } from "react";
 import {
   TreeNodeItem,
   TreeRow,
-  StatusLetter,
   HunkCount,
   TreeFileIcon,
   WorkingTreeDot,
@@ -137,8 +136,6 @@ export const FlatFileNode = memo(function FlatFileNode({
             hideOnHover={hasHoverActions}
           />
         )}
-
-        <StatusLetter status={fileStatus} hideOnHover={hasHoverActions} />
       </TreeRow>
     </TreeNodeItem>
   );

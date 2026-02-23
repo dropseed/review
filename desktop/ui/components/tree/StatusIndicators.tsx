@@ -14,15 +14,6 @@ export function fileNameColor(
   return "text-fg-secondary";
 }
 
-const STATUS_CONFIG: Record<string, { letter: string; color: string }> = {
-  added: { letter: "A", color: "text-status-added" },
-  modified: { letter: "M", color: "text-status-modified" },
-  deleted: { letter: "D", color: "text-status-deleted" },
-  renamed: { letter: "R", color: "text-status-renamed" },
-  copied: { letter: "C", color: "text-status-renamed" },
-  untracked: { letter: "U", color: "text-status-untracked" },
-};
-
 export function SymlinkIndicator({ target }: { target?: string }): ReactNode {
   return (
     <SimpleTooltip content={target ? `Symlink \u2192 ${target}` : "Symlink"}>
@@ -113,28 +104,6 @@ export function HunkCount({
       className={`font-mono text-xxs tabular-nums ${hoverClass} ${isComplete ? "text-status-approved" : "text-fg-muted"}`}
     >
       {reviewed}/{status.total}
-    </span>
-  );
-}
-
-export function StatusLetter({
-  status,
-  hideOnHover = false,
-}: {
-  status?: string;
-  hideOnHover?: boolean;
-}): ReactNode {
-  const config = status ? STATUS_CONFIG[status] : null;
-  if (!config) {
-    return null;
-  }
-
-  const hoverClass = hideOnHover ? "group-hover:hidden" : "";
-  return (
-    <span
-      className={`w-5 text-center font-mono text-xxs font-medium ${hoverClass} ${config.color}`}
-    >
-      {config.letter}
     </span>
   );
 }

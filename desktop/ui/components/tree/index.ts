@@ -4,12 +4,10 @@ export {
   TreeRowButton,
   TreeChevron,
   TreeNodeName,
-  treeIndent,
 } from "./TreeRow";
 
 export {
   fileNameColor,
-  StatusLetter,
   HunkCount,
   SymlinkIndicator,
   WorkingTreeDot,
