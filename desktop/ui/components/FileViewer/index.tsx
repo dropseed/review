@@ -439,13 +439,22 @@ export function FileViewer({
 
   const minimapMarkers = useMemo<MinimapMarker[]>(() => {
     if (!fileContent || totalLineCount === 0) return [];
-    return fileContent.hunks.map((hunk) => ({
-      id: hunk.id,
-      topFraction: (hunk.newStart - 1) / totalLineCount,
-      heightFraction: hunk.newCount / totalLineCount,
-      status: getHunkStatus(hunk.id, reviewState, trustList),
-    }));
-  }, [fileContent, totalLineCount, reviewState, trustList]);
+    return fileContent.hunks.map((hunk) => {
+      const hasAnnotations = allFileAnnotations?.some((a) => {
+        if (a.side === "file") return false;
+        const start = a.side === "new" ? hunk.newStart : hunk.oldStart;
+        const count = a.side === "new" ? hunk.newCount : hunk.oldCount;
+        return a.lineNumber >= start && a.lineNumber < start + count;
+      });
+      return {
+        id: hunk.id,
+        topFraction: (hunk.newStart - 1) / totalLineCount,
+        heightFraction: hunk.newCount / totalLineCount,
+        status: getHunkStatus(hunk.id, reviewState, trustList),
+        hasAnnotations: hasAnnotations ?? false,
+      };
+    });
+  }, [fileContent, totalLineCount, reviewState, trustList, allFileAnnotations]);
 
   // Track scroll position to update HunkNavigator counter
   useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);

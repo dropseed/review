@@ -19,6 +19,7 @@ export interface MinimapMarker {
   topFraction: number;
   heightFraction: number;
   status: HunkStatus;
+  hasAnnotations?: boolean;
 }
 
 interface DiffMinimapProps {
@@ -170,7 +171,11 @@ export const DiffMinimap = memo(function DiffMinimap({
               e.stopPropagation();
               onMarkerClick(i);
             }}
-          />
+          >
+            {marker.hasAnnotations && (
+              <div className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-status-modified ring-1 ring-surface-panel" />
+            )}
+          </div>
         );
       })}
     </div>
