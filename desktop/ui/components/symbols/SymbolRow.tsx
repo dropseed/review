@@ -1,27 +1,17 @@
 import { type ReactNode, useState, useMemo, useCallback, memo } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
 import { useReviewStore } from "../../stores";
-import type { SymbolDiff, SymbolChangeType } from "../../types";
+import type { SymbolDiff } from "../../types";
 import {
   SymbolKindBadge,
   ChangeIndicator,
   sortSymbols,
   collectAllHunkIds,
   getHunkIdsStatus,
+  symbolNameColor,
   type SymbolHunkStatus,
 } from "../symbols";
 import { useReviewData } from "../ReviewDataContext";
-
-function symbolNameColor(changeType: SymbolChangeType): string {
-  switch (changeType) {
-    case "removed":
-      return "line-through text-status-rejected/70";
-    case "added":
-      return "text-status-approved";
-    case "modified":
-      return "text-fg-secondary";
-  }
-}
 
 // --- Interactive status toggle ---
 

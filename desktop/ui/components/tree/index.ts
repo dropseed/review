@@ -8,6 +8,7 @@ export {
 } from "./TreeRow";
 
 export {
+  fileNameColor,
   StatusLetter,
   HunkCount,
   SymlinkIndicator,

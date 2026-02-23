@@ -2,6 +2,18 @@ import type { ReactNode } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
 import type { FileHunkStatus } from "./types";
 
+export function fileNameColor(
+  isSelected: boolean,
+  isGitignored: boolean,
+  status?: string,
+): string {
+  if (isSelected) return "text-fg";
+  if (isGitignored) return "text-fg-muted";
+  if (status === "deleted") return "line-through text-status-deleted";
+  if (status === "added" || status === "untracked") return "text-status-added";
+  return "text-fg-secondary";
+}
+
 const STATUS_CONFIG: Record<string, { letter: string; color: string }> = {
   added: { letter: "A", color: "text-status-added" },
   modified: { letter: "M", color: "text-status-modified" },

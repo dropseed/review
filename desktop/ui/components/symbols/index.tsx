@@ -11,6 +11,17 @@ import { isHunkTrusted } from "../../types";
 
 export { SymbolRow, StatusToggle } from "./SymbolRow";
 
+export function symbolNameColor(changeType: SymbolChangeType): string {
+  switch (changeType) {
+    case "removed":
+      return "line-through text-status-rejected/70";
+    case "added":
+      return "text-status-approved";
+    case "modified":
+      return "text-fg-secondary";
+  }
+}
+
 // --- Symbol kind icons ---
 
 const SYMBOL_ICONS: Record<SymbolKind, { label: string; color: string }> = {
@@ -246,7 +257,7 @@ export const SymbolNode = memo(function SymbolNode({
         {/* Symbol name */}
         <SimpleTooltip content={symbol.name}>
           <button
-            className="min-w-0 flex-1 truncate text-left text-xs text-fg-secondary"
+            className={`min-w-0 flex-1 truncate text-left text-xs ${symbolNameColor(symbol.changeType)}`}
             onClick={(e) => {
               e.stopPropagation();
               handleClick();

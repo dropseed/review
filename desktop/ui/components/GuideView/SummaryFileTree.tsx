@@ -18,8 +18,14 @@ import {
   TreeNodeName,
   StatusLetter,
   TreeFileIcon,
+  fileNameColor,
 } from "../tree";
-import { SymbolKindBadge, ChangeIndicator, sortSymbols } from "../symbols";
+import {
+  SymbolKindBadge,
+  ChangeIndicator,
+  sortSymbols,
+  symbolNameColor,
+} from "../symbols";
 import type { FileHunkStatus } from "../tree";
 import type { ProcessedFileEntry } from "../FilesPanel/types";
 import type {
@@ -315,7 +321,7 @@ function CompactNode({
             isSymlink={entry.isSymlink}
             symlinkTarget={entry.symlinkTarget}
           />
-          <TreeNodeName className="text-fg-secondary">
+          <TreeNodeName className={fileNameColor(false, false, entry.status)}>
             {entry.displayName}
           </TreeNodeName>
         </TreeRowButton>
@@ -345,7 +351,9 @@ function CompactNode({
               <TreeChevron expanded={false} visible={false} />
               <ChangeIndicator changeType={sym.changeType} />
               <SymbolKindBadge kind={sym.kind} />
-              <TreeNodeName className="text-fg-muted text-xxs">
+              <TreeNodeName
+                className={`text-xxs ${symbolNameColor(sym.changeType)}`}
+              >
                 {sym.name}
               </TreeNodeName>
             </TreeRowButton>

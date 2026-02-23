@@ -20,6 +20,7 @@ import {
   SymlinkIndicator,
   TreeFileIcon,
   WorkingTreeDot,
+  fileNameColor,
 } from "../tree";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
 import { useFilesPanelContext } from "./FilesPanelContext";
@@ -59,12 +60,6 @@ function SizeBar({
 
 function directoryNameColor(isGitignored: boolean): string {
   return isGitignored ? "text-fg-muted" : "text-fg-secondary";
-}
-
-function fileNameColor(isSelected: boolean, isGitignored: boolean): string {
-  if (isSelected) return "text-fg";
-  if (isGitignored) return "text-fg-muted";
-  return "text-fg-secondary";
 }
 
 interface FileNodeProps {
@@ -433,7 +428,13 @@ export const FileNode = memo(
                 symlinkTarget={entry.symlinkTarget}
               />
 
-              <TreeNodeName className={fileNameColor(isSelected, isGitignored)}>
+              <TreeNodeName
+                className={fileNameColor(
+                  isSelected,
+                  isGitignored,
+                  entry.status,
+                )}
+              >
                 {entry.name}
               </TreeNodeName>
 

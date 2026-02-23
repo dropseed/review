@@ -6,6 +6,7 @@ import {
   HunkCount,
   TreeFileIcon,
   WorkingTreeDot,
+  fileNameColor,
 } from "../tree";
 import type { FileHunkStatus } from "./types";
 import { ApprovalButtons, StageButtons, type HunkContext } from "./FileNode";
@@ -81,7 +82,7 @@ export const FlatFileNode = memo(function FlatFileNode({
           onClick={() => onSelectFile(filePath)}
         >
           <span
-            className={`min-w-0 truncate text-xs ${isSelected ? "text-fg" : "text-fg-secondary"}`}
+            className={`min-w-0 truncate text-xs ${fileNameColor(isSelected, false, fileStatus)}`}
           >
             {dirPath && <span className="text-fg-muted">{dirPath}</span>}
             {fileName}
