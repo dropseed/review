@@ -17,7 +17,7 @@ import {
   playBulkSound,
 } from "../../utils/sounds";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
-import { groupingResetState } from "./groupingSlice";
+import { makeReviewKey } from "./groupingSlice";
 
 // Debounced save operation (exported so cancelPendingSaves can cancel it)
 export const debouncedSave = createDebouncedFn(500);
@@ -615,7 +615,14 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     resetReview: async () => {
-      const { reviewState, saveReviewState, refresh } = get();
+      const {
+        reviewState,
+        repoPath,
+        comparison,
+        saveReviewState,
+        refresh,
+        removeGroupingEntry,
+      } = get();
       if (!reviewState) return;
 
       const now = new Date().toISOString();
@@ -631,11 +638,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         totalDiffHunks: 0,
       };
 
-      set({
-        reviewState: newState,
-        reviewGroups: [],
-        identicalHunkIds: groupingResetState.identicalHunkIds,
-      });
+      set({ reviewState: newState });
+      if (repoPath) {
+        removeGroupingEntry(makeReviewKey(repoPath, comparison.key));
+      }
       await saveReviewState();
       await refresh();
     },
@@ -692,9 +698,5 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();
       get().restoreGuideFromState();
-      set({
-        classificationStatus: "idle",
-        groupingStatus: "idle",
-      });
     },
   });

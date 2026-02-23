@@ -17,6 +17,7 @@ import type {
   HunkState,
 } from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
+import { UntrackedFileView } from "../FileViewer/UntrackedFileView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }): ReactNode {
@@ -444,6 +445,19 @@ export function GroupDiffViewer({
             hasChanges={fileHunks.length > 0}
           />
         </div>
+      );
+    }
+
+    // Untracked (new) files have hunks but no diff patch from git
+    if (!fc.diffPatch && fileHunks.length > 0) {
+      return (
+        <UntrackedFileView
+          content={fc.content}
+          filePath={filePath}
+          hunks={fileHunks}
+          theme={codeTheme}
+          fontSizeCSS={fontSizeCSS}
+        />
       );
     }
 

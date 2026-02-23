@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { useReviewStore } from "../stores";
+import { makeReviewKey } from "../stores/slices/groupingSlice";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
 import {
@@ -24,7 +25,6 @@ import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
 import { ActivityBar } from "./ActivityBar";
-import { playGuideStartSound } from "../utils/sounds";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -72,7 +72,8 @@ export function ReviewView({
 
   // Guide button state
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
-  const guideLoading = useReviewStore((s) => s.guideLoading);
+  const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
+  const guideLoading = activeEntry.guideLoading;
   const reviewState = useReviewStore((s) => s.reviewState);
   const guideActive = changesViewMode === "guide";
   const unreviewedHunkCount = useMemo(() => {
@@ -84,8 +85,13 @@ export function ReviewView({
   }, [hunks, reviewState?.hunks]);
   const showStartGuide = unreviewedHunkCount >= 4 && !guideActive;
 
+  const hasGroups = activeEntry.reviewGroups.length > 0;
+  const reviewKey = makeReviewKey(repoPath ?? "", comparison.key);
+  const guideBusy = useReviewStore(
+    useCallback((s) => s.isReviewBusy(reviewKey), [reviewKey]),
+  );
+
   const handleStartGuide = useCallback(async () => {
-    playGuideStartSound();
     await useReviewStore.getState().startGuide();
   }, []);
 
@@ -206,35 +212,35 @@ export function ReviewView({
               {showStartGuide && (
                 <SimpleTooltip
                   content={
-                    reviewState?.guide
-                      ? "Continue Guided Review"
-                      : "Start Guided Review"
+                    hasGroups ? "Continue Guided Review" : "Start Guided Review"
                   }
                 >
                   <button
                     type="button"
                     onClick={handleStartGuide}
                     disabled={guideLoading}
-                    className="guide-start-button rounded-lg px-2 @lg:px-3 py-1.5
+                    className="guide-start-button flex items-center gap-1.5 rounded-lg px-2 @lg:px-3 py-1.5
                                text-xs font-semibold text-guide
                                bg-guide/[0.08] border border-guide/25
                                hover:bg-guide/15 hover:border-guide/35
                                transition-all duration-200
                                disabled:opacity-50"
                   >
-                    <svg
-                      className="h-3.5 w-3.5 @lg:hidden"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                    </svg>
+                    {guideBusy ? (
+                      <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-guide/30 border-t-guide animate-spin" />
+                    ) : (
+                      <svg
+                        className="h-3.5 w-3.5 @lg:hidden"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                      </svg>
+                    )}
                     <span className="hidden @lg:inline">
-                      {guideLoading
-                        ? "Starting…"
-                        : reviewState?.guide
-                          ? "Continue Guided Review"
-                          : "Start Guided Review"}
+                      {guideLoading && "Starting\u2026"}
+                      {!guideLoading && hasGroups && "Continue Guided Review"}
+                      {!guideLoading && !hasGroups && "Start Guided Review"}
                     </span>
                   </button>
                 </SimpleTooltip>

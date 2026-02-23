@@ -45,11 +45,29 @@ function buildHunkMap(hunks: DiffHunk[]): Map<string, DiffHunk> {
   return map;
 }
 
+function formatStalenessMessage(added: number, removed: number): string {
+  if (added > 0 && removed > 0) {
+    return `+${added} / -${removed} hunks since generated`;
+  }
+  if (added > 0) {
+    return `+${added} new ${added === 1 ? "hunk" : "hunks"} since generated`;
+  }
+  return `-${removed} ${removed === 1 ? "hunk" : "hunks"} since generated`;
+}
+
 function groupItemStyle(isActive: boolean, isCompleted: boolean): string {
   if (isActive) return "bg-guide/15 text-guide border-l-2 border-guide";
   if (isCompleted)
     return "text-fg-faint hover:text-fg-muted hover:bg-surface-raised/30 border-l-2 border-transparent";
   return "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30 border-l-2 border-transparent";
+}
+
+function ungroupedItemStyle(isActive: boolean, isCompleted: boolean): string {
+  if (isActive)
+    return "bg-fg/[0.06] text-fg-secondary border-l-2 border-dashed border-fg-faint";
+  if (isCompleted)
+    return "text-fg-faint hover:text-fg-muted hover:bg-surface-raised/30 border-l-2 border-dashed border-transparent";
+  return "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30 border-l-2 border-dashed border-transparent";
 }
 
 function GroupItemOverflowMenu({
@@ -148,15 +166,20 @@ export function GuideSideNav(): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
-  const reviewGroups = useReviewStore((s) => s.reviewGroups);
+  const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
+  const reviewGroups = activeEntry.reviewGroups;
+  const groupingLoading = activeEntry.groupingLoading;
+  const groupingError = activeEntry.groupingError;
   const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
   const setActiveGroupIndex = useReviewStore((s) => s.setActiveGroupIndex);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const setGuideContentMode = useReviewStore((s) => s.setGuideContentMode);
-  const groupingLoading = useReviewStore((s) => s.groupingLoading);
-  const groupingError = useReviewStore((s) => s.groupingError);
   const generateGrouping = useReviewStore((s) => s.generateGrouping);
-  const isGroupingStale = useReviewStore((s) => s.isGroupingStale);
+  const getGroupingStaleness = useReviewStore((s) => s.getGroupingStaleness);
+  const staleness = useMemo(
+    () => getGroupingStaleness(),
+    [getGroupingStaleness, hunks, reviewState],
+  );
   const exitGuide = useReviewStore((s) => s.exitGuide);
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
@@ -295,7 +318,7 @@ export function GuideSideNav(): ReactNode {
   // Staleness
   const guide = reviewState?.guide;
   const hasGrouping = guide != null && guide.groups.length > 0;
-  const stale = hasGrouping && isGroupingStale();
+  const stale = hasGrouping && staleness.stale;
   const hasGroups = reviewGroups.length > 0;
 
   return (
@@ -341,29 +364,18 @@ export function GuideSideNav(): ReactNode {
 
       {/* Group list */}
       <div className="flex-1 overflow-y-auto scrollbar-thin border-t border-edge/50 mt-0.5">
-        {/* Stale refresh indicator */}
+        {/* Stale indicator with delta info */}
         {stale && !groupingLoading && (
-          <div className="flex items-center gap-2 px-3 pt-1.5 pb-1">
+          <div className="px-3 pt-1.5 pb-1 flex items-center justify-between gap-2">
+            <span className="text-xxs text-fg-faint">
+              {formatStalenessMessage(staleness.added, staleness.removed)}
+            </span>
             <button
               onClick={() => generateGrouping()}
-              className="flex items-center gap-1.5 text-xxs font-medium text-status-modified hover:text-status-modified/80 transition-colors"
-              title="Groups are out of date — click to regenerate"
+              className="text-xxs font-medium text-status-modified hover:text-status-modified/80 transition-colors shrink-0"
+              title="Regenerate all groups from scratch with AI"
             >
-              <svg
-                className="w-3 h-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 2v6h-6" />
-                <path d="M3 12a9 9 0 0115.46-6.33L21 8" />
-                <path d="M3 22v-6h6" />
-                <path d="M21 12a9 9 0 01-15.46 6.33L3 16" />
-              </svg>
-              Refresh groups
+              Regenerate
             </button>
           </div>
         )}
@@ -418,7 +430,11 @@ export function GuideSideNav(): ReactNode {
                   <button
                     type="button"
                     onClick={() => handleGroupClick(i)}
-                    className={`flex items-start gap-2 flex-1 min-w-0 pl-2.5 pr-3 py-2 text-xs transition-colors ${groupItemStyle(isActive, isCompleted)}`}
+                    className={`flex items-start gap-2 flex-1 min-w-0 pl-2.5 pr-3 py-2 text-xs transition-colors ${
+                      group.ungrouped
+                        ? ungroupedItemStyle(isActive, isCompleted)
+                        : groupItemStyle(isActive, isCompleted)
+                    }`}
                   >
                     {isCompleted ? (
                       <span className="text-status-approved shrink-0 mt-0.5">
@@ -436,14 +452,35 @@ export function GuideSideNav(): ReactNode {
                           />
                         </svg>
                       </span>
+                    ) : group.ungrouped ? (
+                      <span className="w-4 text-center shrink-0 mt-px">
+                        <svg
+                          className="w-3 h-3 text-fg-faint/60 inline"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      </span>
                     ) : (
                       <span className="w-4 text-center text-xxs text-fg-faint/60 shrink-0 tabular-nums mt-0.5">
                         {i + 1}
                       </span>
                     )}
                     <span className="flex-1 text-left">{group.title}</span>
-                    {!isCompleted && unreviewedCount > 0 && (
-                      <span className="inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] rounded-full bg-guide/15 text-xxs text-guide font-medium tabular-nums shrink-0 px-1">
+                    {!isCompleted && (
+                      <span
+                        className={`inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] rounded-full text-xxs font-medium tabular-nums shrink-0 px-1 ${
+                          group.ungrouped
+                            ? "bg-fg/[0.08] text-fg-muted"
+                            : "bg-guide/15 text-guide"
+                        }`}
+                      >
                         {unreviewedCount}
                       </span>
                     )}

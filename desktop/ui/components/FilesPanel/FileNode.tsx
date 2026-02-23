@@ -426,7 +426,12 @@ export const FileNode = memo(
               onClick={() => onSelectFile(entry.path)}
               aria-selected={isSelected}
             >
-              <TreeFileIcon name={entry.name} isDirectory={false} isSymlink={entry.isSymlink} symlinkTarget={entry.symlinkTarget} />
+              <TreeFileIcon
+                name={entry.name}
+                isDirectory={false}
+                isSymlink={entry.isSymlink}
+                symlinkTarget={entry.symlinkTarget}
+              />
 
               <TreeNodeName className={fileNameColor(isSelected, isGitignored)}>
                 {entry.name}

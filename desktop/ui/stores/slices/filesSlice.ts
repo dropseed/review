@@ -11,7 +11,6 @@ import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { makeComparison } from "../../types";
 import type { UndoEntry } from "./undoSlice";
-import { groupingResetState } from "./groupingSlice";
 import { symbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
 import { EMPTY_STAGED_SET } from "./gitSlice";
@@ -110,6 +109,7 @@ const comparisonResetState = {
   flatFileList: [] as string[],
   loadingProgress: { phase: "pending" as const, current: 0, total: 0 },
   // Navigation
+  changesViewMode: "files" as const,
   selectedFile: null,
   focusedHunkIndex: 0,
   guideContentMode: null,
@@ -122,7 +122,6 @@ const comparisonResetState = {
   undoStack: [] as UndoEntry[],
   // Other slices
   ...symbolsResetState,
-  ...groupingResetState,
   ...classificationResetState,
 };
 

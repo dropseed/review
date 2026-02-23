@@ -310,17 +310,21 @@ export class TauriClient implements ApiClient {
   async generateGrouping(
     repoPath: string,
     hunks: GroupingInput[],
-    options?: { modifiedSymbols?: ModifiedSymbolEntry[] },
+    options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
   ): Promise<HunkGroup[]> {
     return invoke<HunkGroup[]>("generate_hunk_grouping", {
       repoPath,
       hunks,
       modifiedSymbols: options?.modifiedSymbols ?? null,
+      requestId: options?.requestId ?? null,
     });
   }
 
-  onGroupingGroup(callback: (group: HunkGroup) => void): () => void {
-    return this.listenForEvent("grouping:group", callback);
+  onGroupingGroup(
+    requestId: string,
+    callback: (group: HunkGroup) => void,
+  ): () => void {
+    return this.listenForEvent(`grouping:group:${requestId}`, callback);
   }
 
   // ----- Trust patterns -----

@@ -483,13 +483,19 @@ export class HttpClient implements ApiClient {
   async generateGrouping(
     _repoPath: string,
     _hunks: GroupingInput[],
-    _options?: { modifiedSymbols?: ModifiedSymbolEntry[] },
+    _options?: {
+      modifiedSymbols?: ModifiedSymbolEntry[];
+      requestId?: string;
+    },
   ): Promise<HunkGroup[]> {
     console.warn("[HttpClient] generateGrouping not implemented");
     return [];
   }
 
-  onGroupingGroup(_callback: (group: HunkGroup) => void): () => void {
+  onGroupingGroup(
+    _requestId: string,
+    _callback: (group: HunkGroup) => void,
+  ): () => void {
     return () => {};
   }
 

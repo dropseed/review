@@ -8,6 +8,7 @@ import type {
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveRepoIdentity } from "../../utils/repo-identity";
+import { makeReviewKey } from "./groupingSlice";
 
 /** A diff is considered active when it has any changed files, additions, or deletions. */
 function isDiffActive(stat: DiffShortStat): boolean {
@@ -160,6 +161,8 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   deleteGlobalReview: async (repoPath, comparison) => {
     try {
       await client.deleteReview(repoPath, comparison);
+      // Evict the keyed grouping entry for the deleted review
+      get().removeGroupingEntry(makeReviewKey(repoPath, comparison.key));
       // If the deleted review was active, clear the active key
       const { activeReviewKey } = get();
       if (

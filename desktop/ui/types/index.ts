@@ -363,6 +363,8 @@ export interface HunkGroup {
   description?: string;
   hunkIds: string[];
   phase?: string;
+  /** True when this group was created by client-side patching, not AI grouping. */
+  ungrouped?: boolean;
 }
 
 export interface GuideState {

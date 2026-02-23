@@ -4,9 +4,10 @@ import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
 
 export function MultiFileDiffViewer(): ReactNode {
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const reviewGroups = useReviewStore((s) => s.reviewGroups);
+  const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
+  const reviewGroups = activeEntry.reviewGroups;
+  const groupingLoading = activeEntry.groupingLoading;
   const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
-  const groupingLoading = useReviewStore((s) => s.groupingLoading);
   const adhocGroup = useReviewStore((s) => s.adhocGroup);
 
   const handleClose = useCallback(() => {
@@ -17,7 +18,11 @@ export function MultiFileDiffViewer(): ReactNode {
     });
   }, []);
 
-  if (groupingLoading && guideContentMode !== "adhoc-group") {
+  if (
+    groupingLoading &&
+    reviewGroups.length === 0 &&
+    guideContentMode !== "adhoc-group"
+  ) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="max-w-md w-full text-center space-y-4">

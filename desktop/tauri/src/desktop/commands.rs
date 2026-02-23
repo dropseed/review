@@ -2156,6 +2156,7 @@ pub async fn generate_hunk_grouping(
     repo_path: String,
     hunks: Vec<GroupingInput>,
     modified_symbols: Option<Vec<ModifiedSymbolEntry>>,
+    request_id: Option<String>,
 ) -> Result<Vec<HunkGroup>, String> {
     use std::time::Duration;
     use tauri::Emitter;
@@ -2173,14 +2174,21 @@ pub async fn generate_hunk_grouping(
     let repo_path_buf = PathBuf::from(&repo_path);
     let timeout_secs = claude_call_timeout_secs(hunks.len());
 
-    // Streaming mode: emit each group as a Tauri event as it arrives
+    // Streaming mode: emit each group as a Tauri event as it arrives.
+    // When a request_id is provided, scope events to that invocation to
+    // prevent cross-talk between concurrent groupings for different reviews.
+    let event_name = match &request_id {
+        Some(id) => format!("grouping:group:{}", id),
+        None => "grouping:group".to_string(),
+    };
+
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HunkGroup>();
 
     // Forward groups from the channel to Tauri events
     let emit_handle = app.clone();
     let emit_task = tokio::spawn(async move {
         while let Some(group) = rx.recv().await {
-            let _ = emit_handle.emit("grouping:group", &group);
+            let _ = emit_handle.emit(&event_name, &group);
         }
     });
 

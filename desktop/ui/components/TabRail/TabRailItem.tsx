@@ -120,6 +120,10 @@ export const TabRailItem = memo(function TabRailItem({
       s.activeReviewKey?.repoPath === review.repoPath &&
       s.activeReviewKey?.comparisonKey === review.comparison.key,
   );
+  const reviewKey = `${review.repoPath}:${review.comparison.key}`;
+  const isBusy = useReviewStore(
+    useCallback((s) => s.isReviewBusy(reviewKey), [reviewKey]),
+  );
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -198,16 +202,18 @@ export const TabRailItem = memo(function TabRailItem({
         )}
 
         <div className="flex items-center gap-1.5 min-w-0">
-          {showProgress ? (
+          {isBusy && (
+            <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-edge-strong border-t-status-modified animate-spin" />
+          )}
+          {!isBusy && showProgress && (
             <CircleProgress percent={reviewedPercent} />
-          ) : (
-            avatarUrl && (
-              <img
-                src={avatarUrl}
-                alt=""
-                className="h-3 w-3 shrink-0 rounded-sm"
-              />
-            )
+          )}
+          {!isBusy && !showProgress && avatarUrl && (
+            <img
+              src={avatarUrl}
+              alt=""
+              className="h-3 w-3 shrink-0 rounded-sm"
+            />
           )}
           <span className="text-xs text-fg-muted truncate min-w-0">
             {review.repoName}

@@ -13,25 +13,72 @@ import type {
   SymbolDiff,
 } from "../../types";
 import { getChangedLinesKey } from "../../utils/changed-lines-key";
+import { playGuideStartSound } from "../../utils/sounds";
 
 /** Singleton empty map -- preserves reference equality to avoid spurious re-renders. */
 const EMPTY_IDENTICAL_MAP = new Map<string, string[]>();
 
 export type GuideTaskStatus = "idle" | "loading" | "done" | "error";
 
-export interface GroupingSlice {
+/** Per-review grouping state stored in the keyed Map. */
+export interface GroupingEntry {
+  reviewGroups: HunkGroup[];
   groupingLoading: boolean;
   groupingError: string | null;
-  reviewGroups: HunkGroup[];
+  groupingStatus: GuideTaskStatus;
   identicalHunkIds: Map<string, string[]>;
+  guideLoading: boolean;
+  classificationStatus: GuideTaskStatus;
+}
+
+/** Frozen singleton for stable selector references when no entry exists. */
+const EMPTY_ENTRY: GroupingEntry = Object.freeze({
+  reviewGroups: [],
+  groupingLoading: false,
+  groupingError: null,
+  groupingStatus: "idle",
+  identicalHunkIds: EMPTY_IDENTICAL_MAP,
+  guideLoading: false,
+  classificationStatus: "idle",
+});
+
+/** Build a unique key for a review (repo + comparison). */
+export function makeReviewKey(repoPath: string, comparisonKey: string): string {
+  return `${repoPath}:${comparisonKey}`;
+}
+
+/** Immutable Map update helper: applies `updater` to the entry at `key`. */
+function updateGroupingEntry(
+  map: Map<string, GroupingEntry>,
+  key: string,
+  updater: (entry: GroupingEntry) => GroupingEntry,
+): Map<string, GroupingEntry> {
+  const existing = map.get(key) ?? EMPTY_ENTRY;
+  const updated = updater(existing);
+  const next = new Map(map);
+  next.set(key, updated);
+  return next;
+}
+
+/** Describes how stale the current grouping is relative to on-disk guide. */
+export interface GroupingStaleness {
+  stale: boolean;
+  added: number;
+  removed: number;
+}
+
+export interface GroupingSlice {
+  groupingStates: Map<string, GroupingEntry>;
+  getActiveGroupingEntry: () => GroupingEntry;
+  isReviewBusy: (reviewKey: string) => boolean;
+  removeGroupingEntry: (reviewKey: string) => void;
+
   isGroupingStale: () => boolean;
+  getGroupingStaleness: () => GroupingStaleness;
   generateGrouping: () => Promise<void>;
   clearGrouping: () => void;
 
   // Guide state
-  guideLoading: boolean;
-  classificationStatus: GuideTaskStatus;
-  groupingStatus: GuideTaskStatus;
   startGuide: () => Promise<void>;
   exitGuide: () => void;
   isGuideStale: () => boolean;
@@ -169,88 +216,202 @@ function buildIdenticalHunkIds(hunks: DiffHunk[]): Map<string, string[]> {
   return identicalHunkIds;
 }
 
-/** State that must be cleared when switching comparisons. */
-export const groupingResetState = {
-  groupingLoading: false,
-  groupingError: null,
-  reviewGroups: [],
-  identicalHunkIds: EMPTY_IDENTICAL_MAP,
-  guideLoading: false,
-  classificationStatus: "idle",
-  groupingStatus: "idle",
-} satisfies Partial<GroupingSlice>;
+/**
+ * Patch stale groups: remove vanished hunk IDs, drop empty groups,
+ * and bucket new hunk IDs into an ungrouped catchall at the end.
+ */
+function patchStaleGroups(
+  groups: HunkGroup[],
+  currentHunkIds: Set<string>,
+): HunkGroup[] {
+  const seenIds = new Set<string>();
+
+  // Filter vanished IDs from each group, drop groups that become empty
+  const patched: HunkGroup[] = [];
+  for (const group of groups) {
+    const filtered = group.hunkIds.filter((id) => currentHunkIds.has(id));
+    for (const id of filtered) seenIds.add(id);
+    if (filtered.length > 0) {
+      patched.push(
+        filtered.length === group.hunkIds.length
+          ? group
+          : { ...group, hunkIds: filtered },
+      );
+    }
+  }
+
+  // Bucket any new IDs into an ungrouped catchall
+  const newIds: string[] = [];
+  for (const id of currentHunkIds) {
+    if (!seenIds.has(id)) newIds.push(id);
+  }
+  if (newIds.length > 0) {
+    patched.push({
+      title: "Other changes",
+      hunkIds: newIds,
+      ungrouped: true,
+    });
+  }
+
+  return patched;
+}
+
+/** Monotonic counter used to generate unique request IDs for streaming event scoping. */
+let groupingNonce = 0;
 
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
   (client: ApiClient) => (set, get) => ({
-    ...groupingResetState,
+    groupingStates: new Map(),
+
+    getActiveGroupingEntry: () => {
+      const { repoPath, comparison, groupingStates } = get();
+      if (!repoPath) return EMPTY_ENTRY;
+      const key = makeReviewKey(repoPath, comparison.key);
+      return groupingStates.get(key) ?? EMPTY_ENTRY;
+    },
+
+    isReviewBusy: (reviewKey: string) => {
+      const entry = get().groupingStates.get(reviewKey);
+      return entry?.groupingLoading ?? false;
+    },
+
+    removeGroupingEntry: (reviewKey: string) => {
+      set((prev) => {
+        if (!prev.groupingStates.has(reviewKey)) return prev;
+        const next = new Map(prev.groupingStates);
+        next.delete(reviewKey);
+        return { groupingStates: next };
+      });
+    },
 
     isGroupingStale: () => {
+      return get().getGroupingStaleness().stale;
+    },
+
+    getGroupingStaleness: () => {
       const { reviewState, hunks } = get();
       const guide = reviewState?.guide;
-      if (!guide) return false;
+      if (!guide) return { stale: false, added: 0, removed: 0 };
 
       const storedIds = new Set(guide.hunkIds);
       const currentIds = new Set(hunks.map((h) => h.id));
 
-      if (storedIds.size !== currentIds.size) return true;
-      for (const id of storedIds) {
-        if (!currentIds.has(id)) return true;
+      let added = 0;
+      let removed = 0;
+      for (const id of currentIds) {
+        if (!storedIds.has(id)) added++;
       }
-      return false;
+      for (const id of storedIds) {
+        if (!currentIds.has(id)) removed++;
+      }
+      return { stale: added > 0 || removed > 0, added, removed };
     },
 
     startGuide: async () => {
       const {
         hunks,
         comparison,
+        repoPath,
         classifyStaticHunks,
         generateGrouping,
-        isGroupingStale,
-        reviewGroups,
+        restoreGuideFromState,
+        getActiveGroupingEntry,
+        isReviewBusy,
       } = get();
-      if (hunks.length === 0) return;
+      if (hunks.length === 0 || !repoPath) return;
 
       const comparisonKey = comparison.key;
+      const reviewKey = makeReviewKey(repoPath, comparisonKey);
 
-      // Skip steps that already have fresh data
-      const needsGrouping = reviewGroups.length === 0 || isGroupingStale();
+      // Restore from disk if no groups in memory.
+      // restoreGuideFromState handles staleness patching internally —
+      // it removes vanished hunks and buckets new ones into a catchall group.
+      if (getActiveGroupingEntry().reviewGroups.length === 0) {
+        restoreGuideFromState();
+      }
 
-      // Switch to guide mode
-      set({
+      const groupingInFlight = isReviewBusy(reviewKey);
+      const entry = getActiveGroupingEntry();
+      const needsGrouping =
+        !groupingInFlight && entry.reviewGroups.length === 0;
+      const groupingPending = needsGrouping || groupingInFlight;
+
+      // Switch to guide mode + update keyed entry
+      const groupingStatus: GuideTaskStatus = groupingPending
+        ? "loading"
+        : "done";
+      set((prev) => ({
         changesViewMode: "guide",
         selectedFile: null,
         guideContentMode: null,
-        guideLoading: true,
-        classificationStatus: "loading",
-        groupingStatus: needsGrouping ? "loading" : "done",
-      });
+        groupingStates: updateGroupingEntry(
+          prev.groupingStates,
+          reviewKey,
+          (e) => ({
+            ...e,
+            guideLoading: true,
+            classificationStatus: "loading" as GuideTaskStatus,
+            groupingStatus,
+            groupingLoading: groupingInFlight || e.groupingLoading,
+          }),
+        ),
+      }));
 
-      const wrap = (
+      /** Set a task status field in the keyed entry. */
+      const setTaskStatus = (
+        field: "classificationStatus" | "groupingStatus",
+        value: GuideTaskStatus,
+      ): void => {
+        set((prev) => ({
+          groupingStates: updateGroupingEntry(
+            prev.groupingStates,
+            reviewKey,
+            (e) => ({ ...e, [field]: value }),
+          ),
+        }));
+      };
+
+      /** Run a task and update its status field to "done" or "error". */
+      const trackTask = (
         promise: Promise<void>,
         field: "classificationStatus" | "groupingStatus",
-      ) =>
+      ): Promise<void> =>
         promise
-          .then(() => set({ [field]: "done" as GuideTaskStatus }))
-          .catch(() => set({ [field]: "error" as GuideTaskStatus }));
+          .then(() => setTaskStatus(field, "done"))
+          .catch(() => setTaskStatus(field, "error"));
 
       const tasks: Promise<unknown>[] = [
-        wrap(classifyStaticHunks(), "classificationStatus"),
+        trackTask(classifyStaticHunks(), "classificationStatus"),
       ];
       if (needsGrouping) {
-        tasks.push(wrap(generateGrouping(), "groupingStatus"));
+        tasks.push(trackTask(generateGrouping(), "groupingStatus"));
       }
 
       await Promise.allSettled(tasks);
 
-      if (get().comparison.key !== comparisonKey) return;
-      set({ guideLoading: false });
+      // Mark guide loading complete in the keyed entry
+      set((prev) => ({
+        groupingStates: updateGroupingEntry(
+          prev.groupingStates,
+          reviewKey,
+          (e) => ({ ...e, guideLoading: false }),
+        ),
+      }));
     },
 
     exitGuide: () => {
-      set({
-        changesViewMode: "files",
-        guideContentMode: null,
-      });
+      const { repoPath, comparison } = get();
+      set({ changesViewMode: "files", guideContentMode: null });
+      // Clear guideLoading so the button isn't stuck in "Starting…" state
+      // if the user exits while startGuide is still awaiting tasks.
+      if (repoPath) {
+        const key = makeReviewKey(repoPath, comparison.key);
+        set((prev) => ({
+          groupingStates: updateGroupingEntry(prev.groupingStates, key, (e) =>
+            e.guideLoading ? { ...e, guideLoading: false } : e,
+          ),
+        }));
+      }
     },
 
     isGuideStale: () => {
@@ -273,39 +434,93 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       if (!repoPath || !reviewState) return;
       if (hunks.length === 0) return;
 
+      // Narrow repoPath for closures (TypeScript doesn't track the null guard above)
+      const repo: string = repoPath;
       const comparisonKey = comparison.key;
+      const reviewKey = makeReviewKey(repoPath, comparisonKey);
+
+      // Skip if already running for this review
+      if (get().isReviewBusy(reviewKey)) return;
+
+      // Unique request ID scopes Tauri streaming events to this invocation,
+      // preventing cross-talk when multiple reviews have concurrent groupings.
+      const requestId = String(++groupingNonce);
+
+      // Scope the activity ID to this review so concurrent groupings
+      // for different reviews don't collide in the activity bar.
+      const activityId = `generate-grouping:${reviewKey}`;
+
+      playGuideStartSound();
 
       // Clear previous groups so streaming events start fresh
-      set({ groupingLoading: true, groupingError: null, reviewGroups: [] });
-      startActivity("generate-grouping", "Generating groups", 55);
-
-      // Shared finalization: persist groups to review state and update store
-      async function finalizeGroups(groups: HunkGroup[]): Promise<void> {
-        const currentState = get().reviewState;
-        if (!currentState) return;
-        set({
-          reviewState: updateReviewGuide(currentState, hunks, {
-            groups,
-            hunkIds: hunks.map((h) => h.id).sort(),
-            generatedAt: new Date().toISOString(),
+      set((prev) => ({
+        groupingStates: updateGroupingEntry(
+          prev.groupingStates,
+          reviewKey,
+          (e) => ({
+            ...e,
+            groupingLoading: true,
+            groupingError: null,
+            reviewGroups: [],
           }),
-          reviewGroups: groups,
-          identicalHunkIds: buildIdenticalHunkIds(hunks),
-          groupingLoading: false,
-        });
-        await saveReviewState();
+        ),
+      }));
+      startActivity(activityId, "Generating groups", 55);
+
+      // Persist groups to review state and update the keyed entry
+      async function finalizeGroups(groups: HunkGroup[]): Promise<void> {
+        const guideOverrides: Partial<GuideState> = {
+          groups,
+          hunkIds: hunks.map((h) => h.id).sort(),
+          generatedAt: new Date().toISOString(),
+        };
+
+        // Always update the keyed entry
+        set((prev) => ({
+          groupingStates: updateGroupingEntry(
+            prev.groupingStates,
+            reviewKey,
+            (e) => ({
+              ...e,
+              reviewGroups: groups,
+              identicalHunkIds: buildIdenticalHunkIds(hunks),
+              groupingLoading: false,
+              groupingStatus: "done",
+            }),
+          ),
+        }));
+
+        // Persist to disk
+        if (get().comparison.key === comparisonKey && get().repoPath === repo) {
+          // Still on same review — use the normal save path
+          const currentState = get().reviewState;
+          if (!currentState) return;
+          set({
+            reviewState: updateReviewGuide(currentState, hunks, guideOverrides),
+          });
+          await saveReviewState();
+        } else {
+          // Navigated away — save directly to disk
+          try {
+            const diskState = await client.loadReviewState(repo, comparison);
+            const updatedState = updateReviewGuide(
+              diskState,
+              hunks,
+              guideOverrides,
+            );
+            await client.saveReviewState(repo, updatedState);
+          } catch (saveErr) {
+            console.error(
+              "[generateGrouping] Background save failed:",
+              saveErr,
+            );
+          }
+        }
       }
 
       try {
         const { hunkDefines, hunkReferences, fileHasGrammar, modifiedSymbols } =
-          symbolsLoaded && symbolDiffs.length > 0
-            ? buildSymbolData(symbolDiffs)
-            : {
-                hunkDefines: new Map<string, HunkSymbolDef[]>(),
-                hunkReferences: new Map<string, HunkSymbolRef[]>(),
-                fileHasGrammar: new Map<string, boolean>(),
-                modifiedSymbols: [] as ModifiedSymbolEntry[],
-              };
+          buildSymbolData(symbolsLoaded ? symbolDiffs : []);
 
         const groupingInputs: GroupingInput[] = hunks.map((hunk) => ({
           id: hunk.id,
@@ -317,33 +532,42 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           hasGrammar: fileHasGrammar.get(hunk.filePath),
         }));
 
-        // Listen for streaming group events from Rust
-        const unlisten = client.onGroupingGroup((group) => {
-          if (get().comparison.key !== comparisonKey) return;
+        // Stream groups from Rust; scoped to this requestId so concurrent groupings don't cross-talk
+        const unlisten = client.onGroupingGroup(requestId, (group) => {
           set((prev) => {
-            const update: Record<string, unknown> = {
-              reviewGroups: [...prev.reviewGroups, group],
+            const entry = prev.groupingStates.get(reviewKey) ?? EMPTY_ENTRY;
+            const isFirstGroup = entry.reviewGroups.length === 0;
+            const newEntry: GroupingEntry = {
+              ...entry,
+              reviewGroups: [...entry.reviewGroups, group],
             };
-            // Auto-activate the first group as soon as it arrives
-            if (prev.reviewGroups.length === 0) {
-              update.guideContentMode = "group";
-              update.activeGroupIndex = 0;
-            }
-            return update;
+            const updated = new Map(prev.groupingStates);
+            updated.set(reviewKey, newEntry);
+
+            // Auto-activate the first group only if still on same review
+            const isStillActive =
+              prev.comparison.key === comparisonKey && prev.repoPath === repo;
+            return {
+              groupingStates: updated,
+              ...(isFirstGroup &&
+                isStillActive && {
+                  guideContentMode: "group",
+                  activeGroupIndex: 0,
+                }),
+            };
           });
         });
 
         let groups: HunkGroup[];
         try {
-          groups = await client.generateGrouping(repoPath, groupingInputs, {
+          groups = await client.generateGrouping(repo, groupingInputs, {
             modifiedSymbols:
               modifiedSymbols.length > 0 ? modifiedSymbols : undefined,
+            requestId,
           });
         } finally {
           unlisten();
         }
-
-        if (get().comparison.key !== comparisonKey) return;
 
         // Persist the final groups (includes missing-hunk fallback group)
         await finalizeGroups(groups);
@@ -352,54 +576,72 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
         // If streaming delivered groups before the invoke failed (e.g. timeout),
         // treat them as a usable result instead of showing an error.
-        const streamedGroups = get().reviewGroups;
-        if (
-          streamedGroups.length > 0 &&
-          get().comparison.key === comparisonKey
-        ) {
+        const entry = get().groupingStates.get(reviewKey);
+        const streamedGroups = entry?.reviewGroups ?? [];
+        if (streamedGroups.length > 0) {
           await finalizeGroups(streamedGroups);
           return;
         }
 
-        set({
-          groupingLoading: false,
-          groupingError: err instanceof Error ? err.message : String(err),
-        });
+        set((prev) => ({
+          groupingStates: updateGroupingEntry(
+            prev.groupingStates,
+            reviewKey,
+            (e) => ({
+              ...e,
+              groupingLoading: false,
+              groupingError: err instanceof Error ? err.message : String(err),
+            }),
+          ),
+        }));
       } finally {
-        endActivity("generate-grouping");
+        endActivity(activityId);
       }
     },
 
     clearGrouping: () => {
-      const { reviewState, saveReviewState } = get();
-      if (!reviewState) return;
+      const { repoPath, comparison, reviewState, saveReviewState } = get();
+      if (!reviewState || !repoPath) return;
 
+      const reviewKey = makeReviewKey(repoPath, comparison.key);
       const updatedState = {
         ...reviewState,
         guide: undefined,
         updatedAt: new Date().toISOString(),
       };
 
-      set({
-        reviewState: updatedState,
-        reviewGroups: [],
-        identicalHunkIds: EMPTY_IDENTICAL_MAP,
+      set((prev) => {
+        const next = new Map(prev.groupingStates);
+        next.delete(reviewKey);
+        return { reviewState: updatedState, groupingStates: next };
       });
       saveReviewState();
     },
 
     restoreGuideFromState: () => {
-      const { reviewState, hunks, isGroupingStale } = get();
+      const { reviewState, hunks, isGroupingStale, repoPath, comparison } =
+        get();
+      if (!repoPath) return;
       const guide = reviewState?.guide;
-      if (!guide) return;
+      if (!guide || guide.groups.length === 0) return;
 
-      // Check staleness — if the hunk set has changed, don't restore
-      if (isGroupingStale()) return;
+      // If stale, patch the stored groups (remove vanished IDs, bucket new ones)
+      // instead of discarding them entirely.
+      const groups = isGroupingStale()
+        ? patchStaleGroups(guide.groups, new Set(hunks.map((h) => h.id)))
+        : guide.groups;
 
-      const identicalHunkIds = buildIdenticalHunkIds(hunks);
-      set({
-        reviewGroups: guide.groups,
-        identicalHunkIds,
-      });
+      const reviewKey = makeReviewKey(repoPath, comparison.key);
+      set((prev) => ({
+        groupingStates: updateGroupingEntry(
+          prev.groupingStates,
+          reviewKey,
+          (e) => ({
+            ...e,
+            reviewGroups: groups,
+            identicalHunkIds: buildIdenticalHunkIds(hunks),
+          }),
+        ),
+      }));
     },
   });
