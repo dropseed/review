@@ -245,7 +245,7 @@ export const FileNode = memo(
     collapsible = true,
     showSizeBar = false,
   }: FileNodeProps) {
-    const { expandedPaths } = useFilesPanelContext();
+    const { expandedPaths, grayscaleIcons } = useFilesPanelContext();
     if (!entry.matchesFilter) {
       return null;
     }
@@ -414,6 +414,7 @@ export const FileNode = memo(
                 isDirectory={false}
                 isSymlink={entry.isSymlink}
                 symlinkTarget={entry.symlinkTarget}
+                grayscale={grayscaleIcons}
               />
 
               <TreeNodeName

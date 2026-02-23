@@ -21,6 +21,7 @@ interface FilesPanelContextValue {
   symbolDiffMap: Map<string, FileSymbolDiff>;
   expandAll: (dirPaths: Set<string>, excludePaths?: Set<string>) => void;
   collapseAll: () => void;
+  grayscaleIcons?: boolean;
 }
 
 const FilesPanelContext = createContext<FilesPanelContextValue | null>(null);

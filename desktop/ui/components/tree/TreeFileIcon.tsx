@@ -7,6 +7,7 @@ interface TreeFileIconProps {
   isDirectory: boolean;
   isSymlink?: boolean;
   symlinkTarget?: string;
+  grayscale?: boolean;
 }
 
 export const TreeFileIcon = memo(function TreeFileIcon({
@@ -14,9 +15,12 @@ export const TreeFileIcon = memo(function TreeFileIcon({
   isDirectory,
   isSymlink,
   symlinkTarget,
+  grayscale,
 }: TreeFileIconProps): ReactNode {
   const icon = (
-    <span className="relative flex-shrink-0 w-4 h-4 opacity-60">
+    <span
+      className={`relative flex-shrink-0 w-3.5 h-3.5 opacity-60${grayscale ? " grayscale" : ""}`}
+    >
       {isDirectory ? (
         <FolderIcon folderName={name} />
       ) : (

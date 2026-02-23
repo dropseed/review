@@ -175,6 +175,69 @@ function TrustChips({ labels }: { labels: string[] }): ReactNode {
   );
 }
 
+// --- Symbol tree node (recursive) ---
+
+function SymbolTreeNode({
+  sym,
+  depth,
+  filePath,
+  onNavigateToHunk,
+}: {
+  sym: SymbolDiff;
+  depth: number;
+  filePath: string;
+  onNavigateToHunk: (filePath: string, hunkId: string) => void;
+}): ReactNode {
+  const hasChildren = sym.children.length > 0;
+  const sortedChildren = hasChildren ? sortSymbols(sym.children) : [];
+
+  // For containers with no direct hunks, navigate to the first child's hunk
+  let firstHunkId = sym.hunkIds[0];
+  if (!firstHunkId && hasChildren) {
+    for (const child of sym.children) {
+      if (child.hunkIds.length > 0) {
+        firstHunkId = child.hunkIds[0];
+        break;
+      }
+    }
+  }
+
+  return (
+    <>
+      <TreeRow
+        depth={depth}
+        className="hover:bg-surface-raised/40 cursor-pointer"
+      >
+        <TreeRowButton
+          onClick={
+            firstHunkId
+              ? () => onNavigateToHunk(filePath, firstHunkId)
+              : undefined
+          }
+        >
+          <TreeChevron expanded={false} visible={false} />
+          <ChangeIndicator changeType={sym.changeType} />
+          <SymbolKindBadge kind={sym.kind} />
+          <TreeNodeName
+            className={`text-xxs ${symbolNameColor(sym.changeType)}`}
+          >
+            {sym.name}
+          </TreeNodeName>
+        </TreeRowButton>
+      </TreeRow>
+      {sortedChildren.map((child) => (
+        <SymbolTreeNode
+          key={symbolKey(child)}
+          sym={child}
+          depth={depth + 1}
+          filePath={filePath}
+          onNavigateToHunk={onNavigateToHunk}
+        />
+      ))}
+    </>
+  );
+}
+
 // --- Tree node ---
 
 interface CompactNodeProps {
@@ -268,33 +331,15 @@ function CompactNode({
         {isFullyTrusted && <TrustChips labels={trustInfo?.trustLabels ?? []} />}
         <ReviewProgressBar status={entry.hunkStatus} />
       </TreeRow>
-      {sortedSymbols.map((sym) => {
-        const firstHunkId = sym.hunkIds[0];
-        return (
-          <TreeRow
-            key={symbolKey(sym)}
-            depth={depth + 1}
-            className="hover:bg-surface-raised/40 cursor-pointer"
-          >
-            <TreeRowButton
-              onClick={
-                firstHunkId
-                  ? () => onNavigateToHunk(entry.path, firstHunkId)
-                  : undefined
-              }
-            >
-              <TreeChevron expanded={false} visible={false} />
-              <ChangeIndicator changeType={sym.changeType} />
-              <SymbolKindBadge kind={sym.kind} />
-              <TreeNodeName
-                className={`text-xxs ${symbolNameColor(sym.changeType)}`}
-              >
-                {sym.name}
-              </TreeNodeName>
-            </TreeRowButton>
-          </TreeRow>
-        );
-      })}
+      {sortedSymbols.map((sym) => (
+        <SymbolTreeNode
+          key={symbolKey(sym)}
+          sym={sym}
+          depth={depth + 1}
+          filePath={entry.path}
+          onNavigateToHunk={onNavigateToHunk}
+        />
+      ))}
     </TreeNodeItem>
   );
 }
@@ -349,11 +394,15 @@ export function SummaryFileTree(): ReactNode {
 
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      useReviewStore.getState().navigateToBrowse(filePath);
+      // Single atomic state update to avoid race between navigateToBrowse
+      // (which sets focusedHunkIndex to first unreviewed) and our override.
       const hunkIndex = hunkIndexMap.get(hunkId);
-      if (hunkIndex !== undefined) {
-        useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-      }
+      useReviewStore.setState({
+        guideContentMode: null,
+        selectedFile: filePath,
+        filesPanelCollapsed: false,
+        ...(hunkIndex !== undefined && { focusedHunkIndex: hunkIndex }),
+      });
     },
     [hunkIndexMap],
   );

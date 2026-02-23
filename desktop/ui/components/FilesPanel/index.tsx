@@ -355,11 +355,15 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Navigate to a specific hunk (used by flat mode symbol rows)
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      useReviewStore.getState().navigateToBrowse(filePath);
+      // Single atomic state update to avoid race between navigateToBrowse
+      // (which sets focusedHunkIndex to first unreviewed) and our override.
       const hunkIndex = hunkIndexMap.get(hunkId);
-      if (hunkIndex !== undefined) {
-        useReviewStore.setState({ focusedHunkIndex: hunkIndex });
-      }
+      useReviewStore.setState({
+        guideContentMode: null,
+        selectedFile: filePath,
+        filesPanelCollapsed: false,
+        ...(hunkIndex !== undefined && { focusedHunkIndex: hunkIndex }),
+      });
     },
     [hunkIndexMap],
   );
@@ -710,6 +714,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       symbolDiffMap,
       expandAll,
       collapseAll,
+      grayscaleIcons: viewMode !== "browse",
     }),
     [
       expandedPaths,
@@ -730,6 +735,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       symbolDiffMap,
       expandAll,
       collapseAll,
+      viewMode,
     ],
   );
 

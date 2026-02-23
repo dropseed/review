@@ -10,6 +10,7 @@ import {
 import type { FileHunkStatus } from "./types";
 import { ApprovalButtons, StageButtons, type HunkContext } from "./FileNode";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
+import { useFilesPanelContext } from "./FilesPanelContext";
 
 interface FlatFileNodeProps {
   filePath: string;
@@ -46,6 +47,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   isSymlink,
   symlinkTarget,
 }: FlatFileNodeProps) {
+  const { grayscaleIcons } = useFilesPanelContext();
   const isSelected = selectedFile === filePath;
   const hasReviewableContent = hunkStatus.total > 0;
   const hasPending = hunkStatus.pending > 0;
@@ -74,6 +76,7 @@ export const FlatFileNode = memo(function FlatFileNode({
           isDirectory={false}
           isSymlink={isSymlink}
           symlinkTarget={symlinkTarget}
+          grayscale={grayscaleIcons}
         />
 
         <button
