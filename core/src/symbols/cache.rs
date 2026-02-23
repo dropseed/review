@@ -14,8 +14,14 @@ use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// Bump this when the symbol diffing algorithm changes to auto-invalidate
+/// stale caches.
+const CACHE_VERSION: u32 = 2;
+
 #[derive(Serialize, Deserialize)]
 struct SymbolDiffCache {
+    #[serde(default)]
+    version: u32,
     diff_hash: String,
     symbol_diffs: Vec<FileSymbolDiff>,
 }
@@ -41,7 +47,7 @@ fn cache_path(repo_path: &Path, comparison: &Comparison) -> Result<PathBuf> {
 
 /// Load cached symbol diffs if the diff hash matches.
 ///
-/// Returns `Some(results)` on cache hit, `None` on miss or any error.
+/// Returns `Some(results)` on cache hit, `None` on miss or version mismatch.
 pub fn load(
     repo_path: &Path,
     comparison: &Comparison,
@@ -53,7 +59,7 @@ pub fn load(
     }
     let content = fs::read_to_string(&path)?;
     let cached: SymbolDiffCache = serde_json::from_str(&content)?;
-    if cached.diff_hash == current_diff_hash {
+    if cached.version == CACHE_VERSION && cached.diff_hash == current_diff_hash {
         Ok(Some(cached.symbol_diffs))
     } else {
         Ok(None)
@@ -72,6 +78,7 @@ pub fn save(
         fs::create_dir_all(parent)?;
     }
     let cache = SymbolDiffCache {
+        version: CACHE_VERSION,
         diff_hash: diff_hash.to_owned(),
         symbol_diffs: results.to_vec(),
     };

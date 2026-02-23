@@ -153,19 +153,10 @@ export function ReviewStatusDot({
   );
 }
 
-// --- Sort symbols by: modified first, then added, then removed, within group by line ---
+// --- Sort symbols by position in the file (like a unified diff) ---
 
 export function sortSymbols(symbols: SymbolDiff[]): SymbolDiff[] {
-  const order: Record<SymbolChangeType, number> = {
-    modified: 0,
-    added: 1,
-    removed: 2,
-  };
-
   return [...symbols].sort((a, b) => {
-    const orderDiff = order[a.changeType] - order[b.changeType];
-    if (orderDiff !== 0) return orderDiff;
-    // Within same type, sort by line number
     const aLine = a.newRange?.startLine ?? a.oldRange?.startLine ?? 0;
     const bLine = b.newRange?.startLine ?? b.oldRange?.startLine ?? 0;
     return aLine - bLine;

@@ -4,7 +4,7 @@ use super::{
     FileSymbolDiff, LineRange, Symbol, SymbolChangeType, SymbolDefinition, SymbolDiff, SymbolKind,
     SymbolReference,
 };
-use crate::diff::parser::DiffHunk;
+use crate::diff::parser::{DiffHunk, DiffLine, LineType};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Language, Node, Parser};
 
@@ -1534,31 +1534,24 @@ fn diff_symbol_lists(
                 old_matched[oi] = true;
                 new_matched[ni] = true;
 
-                // Matched pair - check if modified (any hunk overlaps old or new range)
-                let overlapping: Vec<String> = hunks
+                // Matched pair - find hunks that overlap old or new range
+                let matching_hunks: Vec<&DiffHunk> = hunks
                     .iter()
                     .filter(|h| {
                         hunk_overlaps_old_range(h, old_sym.start_line, old_sym.end_line)
                             || hunk_overlaps_new_range(h, new_sym.start_line, new_sym.end_line)
                     })
-                    .map(|h| h.id.clone())
+                    .copied()
                     .collect();
+                let overlapping: Vec<String> =
+                    matching_hunks.iter().map(|h| h.id.clone()).collect();
 
                 // Recursively diff children for container symbols
                 let child_diffs = if !old_sym.children.is_empty() || !new_sym.children.is_empty() {
-                    // For children, filter hunks to those within the container range
-                    let child_hunks: Vec<&DiffHunk> = hunks
-                        .iter()
-                        .filter(|h| {
-                            hunk_overlaps_old_range(h, old_sym.start_line, old_sym.end_line)
-                                || hunk_overlaps_new_range(h, new_sym.start_line, new_sym.end_line)
-                        })
-                        .copied()
-                        .collect();
                     diff_symbol_lists(
                         &old_sym.children,
                         &new_sym.children,
-                        &child_hunks,
+                        &matching_hunks,
                         consumed_hunk_ids,
                     )
                 } else {
@@ -1696,22 +1689,28 @@ fn diff_symbol_lists(
     result
 }
 
-/// Check if a hunk's old-side range overlaps a symbol range.
+/// Check if a hunk's old-side *changed* lines overlap a symbol range.
+/// Only considers removed lines, ignoring context lines that git includes
+/// around actual changes.
 fn hunk_overlaps_old_range(hunk: &DiffHunk, sym_start: u32, sym_end: u32) -> bool {
-    if hunk.old_count == 0 {
-        return false;
-    }
-    let hunk_end = hunk.old_start + hunk.old_count - 1;
-    ranges_overlap(hunk.old_start, hunk_end, sym_start, sym_end)
+    hunk.lines.iter().any(|line| {
+        line.line_type == LineType::Removed
+            && line
+                .old_line_number
+                .is_some_and(|ln| ln >= sym_start && ln <= sym_end)
+    })
 }
 
-/// Check if a hunk's new-side range overlaps a symbol range.
+/// Check if a hunk's new-side *changed* lines overlap a symbol range.
+/// Only considers added lines, ignoring context lines that git includes
+/// around actual changes.
 fn hunk_overlaps_new_range(hunk: &DiffHunk, sym_start: u32, sym_end: u32) -> bool {
-    if hunk.new_count == 0 {
-        return false;
-    }
-    let hunk_end = hunk.new_start + hunk.new_count - 1;
-    ranges_overlap(hunk.new_start, hunk_end, sym_start, sym_end)
+    hunk.lines.iter().any(|line| {
+        line.line_type == LineType::Added
+            && line
+                .new_line_number
+                .is_some_and(|ln| ln >= sym_start && ln <= sym_end)
+    })
 }
 
 /// Find references to modified symbols within hunks of a file.
@@ -2344,6 +2343,24 @@ const add = function(a, b) {
         new_start: u32,
         new_count: u32,
     ) -> DiffHunk {
+        // Generate realistic line data so overlap checks work correctly.
+        let mut lines = Vec::new();
+        for i in 0..old_count {
+            lines.push(DiffLine {
+                line_type: LineType::Removed,
+                content: String::new(),
+                old_line_number: Some(old_start + i),
+                new_line_number: None,
+            });
+        }
+        for i in 0..new_count {
+            lines.push(DiffLine {
+                line_type: LineType::Added,
+                content: String::new(),
+                old_line_number: None,
+                new_line_number: Some(new_start + i),
+            });
+        }
         DiffHunk {
             id: id.to_string(),
             file_path: file.to_string(),
@@ -2352,7 +2369,7 @@ const add = function(a, b) {
             new_start,
             new_count,
             content: String::new(),
-            lines: vec![],
+            lines,
             content_hash: String::new(),
             move_pair_id: None,
         }
