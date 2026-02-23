@@ -203,25 +203,49 @@ export function DiffView({
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, fileName);
 
   // Scroll to focused hunk when it changes (skip if triggered by scroll tracking).
-  // Uses store.subscribe (rerender-defer-reads) so DiffView doesn't re-render on
-  // every focusedHunkIndex change — only the leaf annotation components do.
+  // Uses store.subscribe so DiffView doesn't re-render on every focusedHunkIndex
+  // change — only the leaf annotation components do. The scroll is deferred via
+  // requestAnimationFrame so React has time to render and assign focusedHunkRef.
+  //
+  // On mount, we also do an initial scroll since the focusedHunkIndex was likely
+  // set before this DiffView mounted (file switching causes unmount/remount due
+  // to the async content load in FileViewer).
   useEffect(() => {
-    return useReviewStore.subscribe((state, prevState) => {
+    let cancelled = false;
+
+    // When scrollDrivenNavigation is set, the user scrolled to change the
+    // focused hunk — clear the flag and skip the programmatic scroll to
+    // avoid a feedback loop with useScrollHunkTracking.
+    function scrollToFocusedHunk(): void {
+      if (cancelled) return;
+      const { scrollDrivenNavigation } = useReviewStore.getState();
+      if (scrollDrivenNavigation) {
+        useReviewStore.setState({ scrollDrivenNavigation: false });
+        return;
+      }
+      focusedHunkRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+
+    // Initial scroll on mount — deferred so the annotation ref gets assigned
+    requestAnimationFrame(scrollToFocusedHunk);
+
+    // Subsequent changes after mount
+    const unsubscribe = useReviewStore.subscribe((state, prevState) => {
       const focusedId = state.hunks[state.focusedHunkIndex]?.id ?? null;
       const prevFocusedId =
         prevState.hunks[prevState.focusedHunkIndex]?.id ?? null;
       if (focusedId === prevFocusedId) return;
-      if (focusedId && focusedHunkRef.current) {
-        if (state.scrollDrivenNavigation) {
-          useReviewStore.setState({ scrollDrivenNavigation: false });
-          return;
-        }
-        focusedHunkRef.current.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-      }
+      if (!focusedId) return;
+      requestAnimationFrame(scrollToFocusedHunk);
     });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   // Annotation editing state
