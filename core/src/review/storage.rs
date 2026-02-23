@@ -69,9 +69,10 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
                 }
             }
             Err(e) => {
-                eprintln!(
+                log::warn!(
                     "[list_all_reviews_global] Error listing reviews for {}: {}",
-                    entry.path, e
+                    entry.path,
+                    e
                 );
             }
         }
@@ -175,7 +176,7 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
                         summaries.push(state.to_summary());
                     }
                     Err(e) => {
-                        eprintln!(
+                        log::warn!(
                             "[list_saved_reviews] Failed to parse {}: {}",
                             path.display(),
                             e
@@ -183,7 +184,7 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
                     }
                 },
                 Err(e) => {
-                    eprintln!(
+                    log::warn!(
                         "[list_saved_reviews] Failed to read {}: {}",
                         path.display(),
                         e

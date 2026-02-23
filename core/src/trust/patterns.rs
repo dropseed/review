@@ -44,7 +44,7 @@ fn load_taxonomy_from_json() -> Vec<TrustCategory> {
     match serde_json::from_str::<TaxonomyFile>(json_str) {
         Ok(taxonomy) => fill_pattern_categories(taxonomy.categories),
         Err(e) => {
-            eprintln!("[load_taxonomy_from_json] Failed to parse bundled taxonomy: {e}");
+            log::warn!("[load_taxonomy_from_json] Failed to parse bundled taxonomy: {e}");
             get_default_taxonomy()
         }
     }

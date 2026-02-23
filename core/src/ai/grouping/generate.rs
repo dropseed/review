@@ -4,6 +4,7 @@ use crate::ai::{
     run_claude_with_model, ClaudeError,
 };
 use crate::review::state::HunkGroup;
+use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -15,7 +16,7 @@ const INLINE_CONTENT_BUDGET_BYTES: usize = 200_000;
 fn should_inline_content(hunks: &[GroupingInput], label: &str) -> bool {
     let total_bytes: usize = hunks.iter().map(|h| h.content.len()).sum();
     let use_inline = total_bytes <= INLINE_CONTENT_BUDGET_BYTES;
-    eprintln!(
+    info!(
         "[grouping{label}] {} hunks, {total_bytes} bytes total content → {}",
         hunks.len(),
         if use_inline {
@@ -110,11 +111,11 @@ pub fn generate_grouping(
     }
 
     let prompt = build_grouping_prompt(hunks, modified_symbols, &content_mode);
-    eprintln!("[grouping] prompt length: {} bytes", prompt.len());
+    info!("[grouping] prompt length: {} bytes", prompt.len());
 
     let start = std::time::Instant::now();
     let output = run_claude_with_model(&prompt, cwd, DEFAULT_MODEL, allowed_tools)?;
-    eprintln!(
+    info!(
         "[grouping] Claude call took {:.1}s",
         start.elapsed().as_secs_f64()
     );
@@ -168,7 +169,7 @@ pub fn generate_grouping_streaming(
     let allowed_tools: &[&str] = &["none"];
 
     let prompt = build_grouping_prompt(hunks, modified_symbols, &content_mode);
-    eprintln!("[grouping:streaming] prompt length: {} bytes", prompt.len());
+    info!("[grouping:streaming] prompt length: {} bytes", prompt.len());
 
     // Incremental JSON object parser state
     let mut groups: Vec<HunkGroup> = Vec::new();
@@ -228,7 +229,7 @@ pub fn generate_grouping_streaming(
                                 on_group(&group);
                                 groups.push(group);
                             } else {
-                                eprintln!(
+                                warn!(
                                     "[grouping:streaming] failed to parse object: {}",
                                     &buf[..buf.len().min(200)]
                                 );
@@ -244,7 +245,7 @@ pub fn generate_grouping_streaming(
         },
     )?;
 
-    eprintln!(
+    info!(
         "[grouping:streaming] Claude call took {:.1}s, {} groups streamed",
         start.elapsed().as_secs_f64(),
         groups.len()

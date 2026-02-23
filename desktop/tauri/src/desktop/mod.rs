@@ -159,13 +159,32 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(
-            tauri_plugin_log::Builder::new()
+        .plugin({
+            let mut builder = tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
                 .level_for("notify", log::LevelFilter::Warn)
-                .level_for("notify_debouncer_mini", log::LevelFilter::Warn)
-                .build(),
-        )
+                .level_for("notify_debouncer_mini", log::LevelFilter::Warn);
+
+            // In dev mode, also write logs to ~/.review/app.log so we can
+            // read traces for debugging (same file the frontend logger uses).
+            if cfg!(debug_assertions) {
+                if let Some(home) = dirs::home_dir() {
+                    let review_dir = home.join(".review");
+                    let _ = std::fs::create_dir_all(&review_dir);
+                    builder = builder
+                        .target(tauri_plugin_log::Target::new(
+                            tauri_plugin_log::TargetKind::Folder {
+                                path: review_dir,
+                                file_name: Some("app.log".into()),
+                            },
+                        ))
+                        .max_file_size(10_000_000) // 10 MB
+                        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne);
+                }
+            }
+
+            builder.build()
+        })
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init());

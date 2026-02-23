@@ -1,5 +1,6 @@
 pub mod grouping;
 
+use log::warn;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -223,7 +224,7 @@ pub(crate) fn run_claude_with_model(
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
     if !stderr_str.trim().is_empty() {
-        eprintln!("[run_claude_with_model] stderr (command succeeded): {stderr_str}");
+        warn!("[run_claude_with_model] stderr (command succeeded): {stderr_str}");
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -358,7 +359,7 @@ pub fn run_claude_streaming(
     }
 
     if !stderr_str.trim().is_empty() {
-        eprintln!(
+        warn!(
             "[run_claude_streaming] stderr (command succeeded): {}",
             stderr_str.trim()
         );

@@ -107,6 +107,27 @@ Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined 
 - **Trust List**: Patterns the user has chosen to auto-approve
 - **Comparison**: The base..compare refs being reviewed
 
+## Debugging / Traces
+
+In dev mode (`scripts/dev`), Rust backend logs are written to `~/.review/app.log` via `tauri-plugin-log`. Frontend `console.*` calls are also written to this same file. This is disabled in release builds.
+
+- `scripts/traces` — Print the full log file
+- `scripts/traces -f` — Tail logs live while the app is running
+- `scripts/traces -n 100` — Show last 100 lines
+
+Key commands that include timing in their log output (look for `in <duration>`):
+
+- `list_files` / `list_all_files` — Git file listing
+- `get_all_hunks` — Git diff + hunk parsing (includes sub-timings for diff vs parse)
+- `get_file_content` — Single file content + diff retrieval
+- `get_file_symbol_diffs` / `get_repo_symbols` — Tree-sitter symbol extraction
+- `classify_hunks_static` — Static hunk classification
+- `detect_hunks_move_pairs` — Move pair detection
+- `generate_hunk_grouping` — Claude API grouping call (slowest, typically 5-30s)
+- `search_file_contents` — Git grep search
+
+When adding new commands, include timing with `Instant::now()` / `t0.elapsed()` in the success log line to keep this pattern consistent.
+
 ## Conventions
 
 - **Error handling**: Rust uses `anyhow::Result`, Tauri commands return `Result<T, String>`, frontend uses try/catch on `invoke()`

@@ -1,0 +1,19 @@
+#!/bin/bash
+# Show the app.log file from ~/.review/ (Rust backend + frontend logs in dev mode)
+set -e
+
+LOG_FILE="$HOME/.review/app.log"
+
+if [ ! -f "$LOG_FILE" ]; then
+    echo "No log file found at $LOG_FILE"
+    echo "Run 'scripts/dev' first to generate logs."
+    exit 1
+fi
+
+if [ "$1" = "-f" ]; then
+    tail -f "$LOG_FILE"
+elif [ "$1" = "-n" ]; then
+    tail -n "${2:-50}" "$LOG_FILE"
+else
+    cat "$LOG_FILE"
+fi

@@ -39,3 +39,4 @@ The file watcher (`watchers.rs`) emits these events to the frontend:
 2. Register it in the `generate_handler![]` list in `mod.rs`
 3. Add the corresponding `invoke()` call in `desktop/ui/api/tauri-client.ts`
 4. Add the method to the `ApiClient` interface in `desktop/ui/api/client.ts`
+5. For non-trivial commands, add timing: `let t0 = Instant::now();` at the start and include `t0.elapsed()` in the success `info!()` log

@@ -1055,15 +1055,17 @@ pub fn check_claude_available() -> bool {
 
 #[tauri::command]
 pub fn classify_hunks_static(hunks: Vec<DiffHunk>) -> ClassifyResponse {
+    let t0 = Instant::now();
     debug!(
         "[classify_hunks_static] Classifying {} hunks with static rules",
         hunks.len()
     );
     let result = classify::classify_hunks_static(&hunks);
     info!(
-        "[classify_hunks_static] Classified {} of {} hunks",
+        "[classify_hunks_static] Classified {} of {} hunks in {:?}",
         result.classifications.len(),
-        hunks.len()
+        hunks.len(),
+        t0.elapsed()
     );
     result
 }
@@ -1353,6 +1355,7 @@ pub async fn get_file_symbol_diffs(
     );
 
     tokio::task::spawn_blocking(move || {
+        let t0 = Instant::now();
         let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
             error!("[get_file_symbol_diffs] ERROR creating source: {e}");
             e.to_string()
@@ -1373,8 +1376,9 @@ pub async fn get_file_symbol_diffs(
         let diff_hash = symbols::cache::compute_hash(&full_diff);
         if let Ok(Some(cached)) = symbols::cache::load(&repo_path_buf, &comparison, &diff_hash) {
             info!(
-                "[get_file_symbol_diffs] CACHE HIT: {} files from cache",
-                cached.len()
+                "[get_file_symbol_diffs] CACHE HIT: {} files from cache in {:?}",
+                cached.len(),
+                t0.elapsed()
             );
             return Ok(cached);
         }
@@ -1569,8 +1573,9 @@ pub async fn get_file_symbol_diffs(
         let _ = symbols::cache::save(&repo_path_buf, &comparison, &diff_hash, &results);
 
         info!(
-            "[get_file_symbol_diffs] SUCCESS: {} files processed",
-            results.len()
+            "[get_file_symbol_diffs] SUCCESS: {} files processed in {:?}",
+            results.len(),
+            t0.elapsed()
         );
         Ok(results)
     })
@@ -1783,6 +1788,7 @@ pub fn search_file_contents(
     case_sensitive: bool,
     max_results: usize,
 ) -> Result<Vec<SearchMatch>, String> {
+    let t0 = Instant::now();
     debug!(
         "[search_file_contents] repo_path={repo_path}, query={query}, case_sensitive={case_sensitive}, max_results={max_results}"
     );
@@ -1799,7 +1805,11 @@ pub fn search_file_contents(
             e.to_string()
         })?;
 
-    info!("[search_file_contents] SUCCESS: {} matches", results.len());
+    info!(
+        "[search_file_contents] SUCCESS: {} matches in {:?}",
+        results.len(),
+        t0.elapsed()
+    );
     Ok(results)
 }
 
@@ -2172,6 +2182,7 @@ pub async fn generate_hunk_grouping(
     use tauri::Emitter;
     use tokio::time::timeout;
 
+    let t0 = Instant::now();
     let symbols = modified_symbols.unwrap_or_default();
 
     debug!(
@@ -2224,7 +2235,11 @@ pub async fn generate_hunk_grouping(
     // Wait for all events to be emitted
     let _ = emit_task.await;
 
-    info!("[generate_hunk_grouping] SUCCESS: {} groups", result.len());
+    info!(
+        "[generate_hunk_grouping] SUCCESS: {} groups in {:?}",
+        result.len(),
+        t0.elapsed()
+    );
     Ok(result)
 }
 
