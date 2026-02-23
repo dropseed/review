@@ -56,6 +56,31 @@ export function OverviewContent(): ReactNode {
   const progress = useReviewProgress();
   const githubPrTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
 
+  if (progress.totalHunks === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center overflow-hidden">
+        <div className="flex flex-col items-center animate-fade-in">
+          <div className="relative mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-[3.5rem] rounded-md bg-surface-raised/60 border border-edge-default/40" />
+              <div className="flex flex-col gap-[3px]">
+                <div className="w-2.5 h-px bg-fg-faint/50 rounded-full" />
+                <div className="w-2.5 h-px bg-fg-faint/50 rounded-full" />
+              </div>
+              <div className="w-11 h-[3.5rem] rounded-md bg-surface-raised/60 border border-edge-default/40" />
+            </div>
+          </div>
+          <p className="text-sm font-medium text-fg-muted mb-1">
+            Nothing to review
+          </p>
+          <p className="text-xs text-fg-faint text-center max-w-[220px] leading-relaxed">
+            No differences between the base and compare refs
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto scrollbar-thin">
