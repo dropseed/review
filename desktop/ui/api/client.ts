@@ -225,6 +225,12 @@ export interface ApiClient {
     options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
   ): Promise<HunkGroup[]>;
 
+  /** Listen for streaming grouping group events (returns unsubscribe fn) */
+  onGroupingGroup(
+    requestId: string,
+    callback: (group: HunkGroup) => void,
+  ): () => void;
+
   // ----- Commit -----
 
   /** Create a git commit with streaming pre-commit output */
@@ -240,10 +246,15 @@ export interface ApiClient {
     callback: (line: CommitOutputLine) => void,
   ): () => void;
 
-  /** Listen for streaming grouping group events (returns unsubscribe fn) */
-  onGroupingGroup(
+  // ----- Commit message generation -----
+
+  /** Generate a commit message from the staged diff using Claude */
+  generateCommitMessage(repoPath: string, requestId: string): Promise<string>;
+
+  /** Listen for streaming commit message text chunks (returns unsubscribe fn) */
+  onCommitMessageChunk(
     requestId: string,
-    callback: (group: HunkGroup) => void,
+    callback: (chunk: string) => void,
   ): () => void;
 
   // ----- Trust patterns -----

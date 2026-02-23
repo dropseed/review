@@ -23,6 +23,7 @@ export interface GitSlice {
   commitInProgress: boolean;
   commitOutput: CommitOutputLine[];
   commitResult: CommitResult | null;
+  commitMessageGenerating: boolean;
 
   // Actions
   loadGitStatus: () => Promise<void>;
@@ -36,6 +37,7 @@ export interface GitSlice {
   setCommitMessage: (msg: string) => void;
   commitStaged: () => Promise<void>;
   clearCommitResult: () => void;
+  generateCommitMessage: () => Promise<void>;
 }
 
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
@@ -48,6 +50,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     commitInProgress: false,
     commitOutput: [],
     commitResult: null,
+    commitMessageGenerating: false,
 
     loadGitStatus: async () => {
       const { repoPath } = get();
@@ -175,5 +178,36 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
     clearCommitResult: () => {
       set({ commitResult: null, commitOutput: [] });
+    },
+
+    generateCommitMessage: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+
+      const requestId = `commit-msg-${++commitNonce}`;
+
+      set({ commitMessageGenerating: true, commitMessage: "" });
+
+      const unsubscribe = client.onCommitMessageChunk(requestId, (chunk) => {
+        set((state) => ({
+          commitMessage: state.commitMessage + chunk,
+        }));
+      });
+
+      get().startActivity(requestId, "Generating commit message...", 60);
+
+      try {
+        const finalMessage = await client.generateCommitMessage(
+          repoPath,
+          requestId,
+        );
+        set({ commitMessage: finalMessage });
+      } catch (err) {
+        console.error("Failed to generate commit message:", err);
+      } finally {
+        unsubscribe();
+        get().endActivity(requestId);
+        set({ commitMessageGenerating: false });
+      }
     },
   });

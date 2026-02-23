@@ -328,6 +328,22 @@ export class TauriClient implements ApiClient {
     return this.listenForEvent(`commit:output:${requestId}`, callback);
   }
 
+  // ----- Commit message generation -----
+
+  async generateCommitMessage(
+    repoPath: string,
+    requestId: string,
+  ): Promise<string> {
+    return invoke<string>("generate_commit_message", { repoPath, requestId });
+  }
+
+  onCommitMessageChunk(
+    requestId: string,
+    callback: (chunk: string) => void,
+  ): () => void {
+    return this.listenForEvent(`commit-message:chunk:${requestId}`, callback);
+  }
+
   // ----- Grouping -----
 
   async generateGrouping(

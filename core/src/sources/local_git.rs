@@ -905,6 +905,30 @@ impl LocalGitSource {
         Ok(output.trim().to_owned())
     }
 
+    /// Get the full staged diff (git diff --cached).
+    pub fn get_staged_diff(&self) -> Result<String, LocalGitError> {
+        self.run_git(&[
+            "diff",
+            "--cached",
+            "--histogram",
+            "--no-renames",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+        ])
+    }
+
+    /// Get recent full commit messages (subject + body) for style context.
+    pub fn get_recent_commit_messages(&self, n: usize) -> Result<Vec<String>, LocalGitError> {
+        let limit_str = format!("-{n}");
+        // Use %B (full message) with a unique separator between commits
+        let output = self.run_git(&["log", &limit_str, "--format=%B---commit-separator---"])?;
+        Ok(output
+            .split("---commit-separator---")
+            .map(|m| m.trim().to_owned())
+            .filter(|m| !m.is_empty())
+            .collect())
+    }
+
     /// Search file contents using git grep
     ///
     /// Returns matches from tracked files in the repository.

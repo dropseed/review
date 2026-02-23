@@ -1,3 +1,4 @@
+pub mod commit_message;
 pub mod grouping;
 
 use log::warn;

@@ -503,6 +503,23 @@ export class HttpClient implements ApiClient {
     return () => {};
   }
 
+  // ----- Commit message generation -----
+
+  async generateCommitMessage(
+    _repoPath: string,
+    _requestId: string,
+  ): Promise<string> {
+    console.warn("[HttpClient] generateCommitMessage not implemented");
+    return "";
+  }
+
+  onCommitMessageChunk(
+    _requestId: string,
+    _callback: (chunk: string) => void,
+  ): () => void {
+    return () => {};
+  }
+
   // ----- Grouping -----
 
   async generateGrouping(

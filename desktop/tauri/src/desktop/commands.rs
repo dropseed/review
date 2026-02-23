@@ -2371,6 +2371,70 @@ pub async fn generate_hunk_grouping(
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn generate_commit_message(
+    app: tauri::AppHandle,
+    repo_path: String,
+    request_id: String,
+) -> Result<String, String> {
+    use tauri::Emitter;
+
+    let t0 = Instant::now();
+    let event_name = format!("commit-message:chunk:{request_id}");
+
+    debug!("[generate_commit_message] repo_path={repo_path}, request_id={request_id}");
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let emit_handle = app.clone();
+    let emit_task = tokio::spawn(async move {
+        while let Some(chunk) = rx.recv().await {
+            let _ = emit_handle.emit(&event_name, &chunk);
+        }
+    });
+
+    let result = tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&repo_path);
+        let source = LocalGitSource::new(repo_path.clone()).map_err(|e| e.to_string())?;
+        let staged_diff = source.get_staged_diff().map_err(|e| e.to_string())?;
+        if staged_diff.trim().is_empty() {
+            return Err("No staged changes to generate a message for".to_owned());
+        }
+        let recent_messages = source.get_recent_commit_messages(10).unwrap_or_default();
+
+        let mut on_text = |text: &str| {
+            let _ = tx.send(text.to_owned());
+        };
+        review::ai::commit_message::generate_commit_message_streaming(
+            &staged_diff,
+            &recent_messages,
+            &repo_path,
+            &mut on_text,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Wait for all events to be emitted
+    let _ = emit_task.await;
+
+    match &result {
+        Ok(msg) => info!(
+            "[generate_commit_message] SUCCESS: {} chars in {:?}",
+            msg.len(),
+            t0.elapsed()
+        ),
+        Err(e) => error!(
+            "[generate_commit_message] ERROR: {} in {:?}",
+            e,
+            t0.elapsed()
+        ),
+    }
+
+    result
+}
+
 // --- Settings file I/O ---
 
 /// Return the path to `~/.review/settings.json` (respects `$REVIEW_HOME`).
