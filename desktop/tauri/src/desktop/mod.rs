@@ -485,6 +485,7 @@ pub fn run() {
             commands::unstage_all,
             commands::stage_hunks,
             commands::unstage_hunks,
+            commands::git_commit,
             commands::get_working_tree_file_content,
             commands::list_commits,
             commands::get_commit_detail,

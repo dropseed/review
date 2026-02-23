@@ -883,6 +883,28 @@ impl LocalGitSource {
         Ok(())
     }
 
+    /// Spawn a `git commit` child process with piped stdout/stderr.
+    ///
+    /// Unlike `run_git()`, this returns the child process immediately so the
+    /// caller can stream output lines in real time (e.g. for pre-commit hooks).
+    pub fn spawn_commit(&self, message: &str) -> Result<std::process::Child, LocalGitError> {
+        Command::new("git")
+            .args(["commit", "-m", message])
+            .current_dir(&self.repo_path)
+            .env("FORCE_COLOR", "1")
+            .env("CLICOLOR_FORCE", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(LocalGitError::Io)
+    }
+
+    /// Get the short hash of HEAD (e.g. "a1b2c3d").
+    pub fn get_head_short_hash(&self) -> Result<String, LocalGitError> {
+        let output = self.run_git(&["rev-parse", "--short", "HEAD"])?;
+        Ok(output.trim().to_owned())
+    }
+
     /// Search file contents using git grep
     ///
     /// Returns matches from tracked files in the repository.

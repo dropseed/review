@@ -15,6 +15,8 @@ import type {
   Comparison,
   CommitDetail,
   CommitEntry,
+  CommitOutputLine,
+  CommitResult,
   DetectMovePairsResponse,
   DiffHunk,
   DiffShortStat,
@@ -307,6 +309,23 @@ export class TauriClient implements ApiClient {
     return invoke<DetectMovePairsResponse>("detect_hunks_move_pairs", {
       hunks,
     });
+  }
+
+  // ----- Commit -----
+
+  async gitCommit(
+    repoPath: string,
+    message: string,
+    requestId: string,
+  ): Promise<CommitResult> {
+    return invoke<CommitResult>("git_commit", { repoPath, message, requestId });
+  }
+
+  onCommitOutput(
+    requestId: string,
+    callback: (line: CommitOutputLine) => void,
+  ): () => void {
+    return this.listenForEvent(`commit:output:${requestId}`, callback);
   }
 
   // ----- Grouping -----

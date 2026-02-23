@@ -7,6 +7,7 @@ import {
   CollapsibleSectionMenuSeparator,
   DisplayModeToggle,
 } from "../ui/collapsible-section";
+import { CommitPanel } from "./CommitPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import {
@@ -204,16 +205,6 @@ export function GitStatusPanel({
     return processTree(fileEntries, emptyHunkStatusMap, "changes");
   }, [gitStatus, emptyHunkStatusMap]);
 
-  const handleStageFile = useCallback(
-    (path: string) => stageFile(path),
-    [stageFile],
-  );
-
-  const handleUnstageFile = useCallback(
-    (path: string) => unstageFile(path),
-    [unstageFile],
-  );
-
   const stagedFlat = useMemo(
     () => gitStatus?.staged ?? [],
     [gitStatus?.staged],
@@ -297,7 +288,9 @@ export function GitStatusPanel({
   const totalFiles = staged.length + unstaged.length + untracked.length;
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <CommitPanel />
+
       <PanelToolbar>
         <ProgressBar
           value={totalFiles > 0 ? staged.length / totalFiles : 0}
@@ -306,156 +299,158 @@ export function GitStatusPanel({
         <DisplayModeToggle mode={gitDisplayMode} onChange={setGitDisplayMode} />
       </PanelToolbar>
 
-      {untracked.length > 0 && (
-        <GitSection
-          title="Untracked"
-          icon={UNTRACKED_ICON}
-          count={untracked.length}
-          accentColor="bg-fg-muted/20 text-fg-muted"
-          menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
-          onExpandAll={
-            gitDisplayMode === "tree"
-              ? () => expandAll(untrackedDirPaths)
-              : undefined
-          }
-          onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
-        >
-          {gitDisplayMode === "tree"
-            ? untrackedTree.map((entry) => (
-                <FileNode
-                  key={entry.path}
-                  entry={entry}
-                  depth={0}
-                  onToggle={togglePath}
-                  selectedFile={selectedFile}
-                  onSelectFile={onSelectFile}
-                  repoPath={repoPath}
-                  revealLabel={revealLabel}
-                  registerRef={registerRef}
-                  hunkContext="all"
-                  onStage={handleStageFile}
-                />
-              ))
-            : untrackedFlat.map((entry) => (
-                <FlatFileNode
-                  key={entry.path}
-                  filePath={entry.path}
-                  fileStatus={entry.status}
-                  hunkStatus={EMPTY_HUNK_STATUS}
-                  selectedFile={selectedFile}
-                  onSelectFile={onSelectFile}
-                  hunkContext="all"
-                  onStage={handleStageFile}
-                />
-              ))}
-        </GitSection>
-      )}
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {staged.length > 0 && (
+          <GitSection
+            title="Staged"
+            icon={STAGED_ICON}
+            count={staged.length}
+            accentColor="bg-status-added/20 text-status-added"
+            menuItems={[
+              {
+                label: "Approve all staged",
+                onClick: () => alert("Approve all staged — coming soon"),
+              },
+              { label: "Unstage all", onClick: () => unstageAll() },
+              {
+                label: "Unstage rejected",
+                onClick: () => alert("Unstage rejected — coming soon"),
+              },
+            ]}
+            onExpandAll={
+              gitDisplayMode === "tree"
+                ? () => expandAll(stagedDirPaths)
+                : undefined
+            }
+            onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
+          >
+            {gitDisplayMode === "tree"
+              ? stagedTree.map((entry) => (
+                  <FileNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={0}
+                    onToggle={togglePath}
+                    selectedFile={selectedFile}
+                    onSelectFile={handleSelectStaged}
+                    repoPath={repoPath}
+                    revealLabel={revealLabel}
+                    registerRef={registerRef}
+                    hunkContext="all"
+                    onUnstage={unstageFile}
+                  />
+                ))
+              : stagedFlat.map((entry) => (
+                  <FlatFileNode
+                    key={entry.path}
+                    filePath={entry.path}
+                    fileStatus={entry.status}
+                    hunkStatus={EMPTY_HUNK_STATUS}
+                    selectedFile={selectedFile}
+                    onSelectFile={handleSelectStaged}
+                    hunkContext="all"
+                    onUnstage={unstageFile}
+                  />
+                ))}
+          </GitSection>
+        )}
 
-      {unstaged.length > 0 && (
-        <GitSection
-          title="Unstaged"
-          icon={UNSTAGED_ICON}
-          count={unstaged.length}
-          accentColor="bg-status-pending/20 text-status-pending"
-          menuItems={[
-            {
-              label: "Stage reviewed",
-              onClick: () => alert("Stage reviewed — coming soon"),
-            },
-            { label: "Stage all", onClick: () => stageAll() },
-          ]}
-          onExpandAll={
-            gitDisplayMode === "tree"
-              ? () => expandAll(unstagedDirPaths)
-              : undefined
-          }
-          onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
-        >
-          {gitDisplayMode === "tree"
-            ? unstagedTree.map((entry) => (
-                <FileNode
-                  key={entry.path}
-                  entry={entry}
-                  depth={0}
-                  onToggle={togglePath}
-                  selectedFile={selectedFile}
-                  onSelectFile={handleSelectUnstaged}
-                  repoPath={repoPath}
-                  revealLabel={revealLabel}
-                  registerRef={registerRef}
-                  hunkContext="all"
-                  onStage={handleStageFile}
-                />
-              ))
-            : unstagedFlat.map((entry) => (
-                <FlatFileNode
-                  key={entry.path}
-                  filePath={entry.path}
-                  fileStatus={entry.status}
-                  hunkStatus={EMPTY_HUNK_STATUS}
-                  selectedFile={selectedFile}
-                  onSelectFile={handleSelectUnstaged}
-                  hunkContext="all"
-                  onStage={handleStageFile}
-                />
-              ))}
-        </GitSection>
-      )}
+        {unstaged.length > 0 && (
+          <GitSection
+            title="Unstaged"
+            icon={UNSTAGED_ICON}
+            count={unstaged.length}
+            accentColor="bg-status-pending/20 text-status-pending"
+            menuItems={[
+              {
+                label: "Stage reviewed",
+                onClick: () => alert("Stage reviewed — coming soon"),
+              },
+              { label: "Stage all", onClick: () => stageAll() },
+            ]}
+            onExpandAll={
+              gitDisplayMode === "tree"
+                ? () => expandAll(unstagedDirPaths)
+                : undefined
+            }
+            onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
+          >
+            {gitDisplayMode === "tree"
+              ? unstagedTree.map((entry) => (
+                  <FileNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={0}
+                    onToggle={togglePath}
+                    selectedFile={selectedFile}
+                    onSelectFile={handleSelectUnstaged}
+                    repoPath={repoPath}
+                    revealLabel={revealLabel}
+                    registerRef={registerRef}
+                    hunkContext="all"
+                    onStage={stageFile}
+                  />
+                ))
+              : unstagedFlat.map((entry) => (
+                  <FlatFileNode
+                    key={entry.path}
+                    filePath={entry.path}
+                    fileStatus={entry.status}
+                    hunkStatus={EMPTY_HUNK_STATUS}
+                    selectedFile={selectedFile}
+                    onSelectFile={handleSelectUnstaged}
+                    hunkContext="all"
+                    onStage={stageFile}
+                  />
+                ))}
+          </GitSection>
+        )}
 
-      {staged.length > 0 && (
-        <GitSection
-          title="Staged"
-          icon={STAGED_ICON}
-          count={staged.length}
-          accentColor="bg-status-added/20 text-status-added"
-          menuItems={[
-            {
-              label: "Approve all staged",
-              onClick: () => alert("Approve all staged — coming soon"),
-            },
-            { label: "Unstage all", onClick: () => unstageAll() },
-            {
-              label: "Unstage rejected",
-              onClick: () => alert("Unstage rejected — coming soon"),
-            },
-          ]}
-          onExpandAll={
-            gitDisplayMode === "tree"
-              ? () => expandAll(stagedDirPaths)
-              : undefined
-          }
-          onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
-        >
-          {gitDisplayMode === "tree"
-            ? stagedTree.map((entry) => (
-                <FileNode
-                  key={entry.path}
-                  entry={entry}
-                  depth={0}
-                  onToggle={togglePath}
-                  selectedFile={selectedFile}
-                  onSelectFile={handleSelectStaged}
-                  repoPath={repoPath}
-                  revealLabel={revealLabel}
-                  registerRef={registerRef}
-                  hunkContext="all"
-                  onUnstage={handleUnstageFile}
-                />
-              ))
-            : stagedFlat.map((entry) => (
-                <FlatFileNode
-                  key={entry.path}
-                  filePath={entry.path}
-                  fileStatus={entry.status}
-                  hunkStatus={EMPTY_HUNK_STATUS}
-                  selectedFile={selectedFile}
-                  onSelectFile={handleSelectStaged}
-                  hunkContext="all"
-                  onUnstage={handleUnstageFile}
-                />
-              ))}
-        </GitSection>
-      )}
+        {untracked.length > 0 && (
+          <GitSection
+            title="Untracked"
+            icon={UNTRACKED_ICON}
+            count={untracked.length}
+            accentColor="bg-fg-muted/20 text-fg-muted"
+            menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
+            onExpandAll={
+              gitDisplayMode === "tree"
+                ? () => expandAll(untrackedDirPaths)
+                : undefined
+            }
+            onCollapseAll={gitDisplayMode === "tree" ? collapseAll : undefined}
+          >
+            {gitDisplayMode === "tree"
+              ? untrackedTree.map((entry) => (
+                  <FileNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={0}
+                    onToggle={togglePath}
+                    selectedFile={selectedFile}
+                    onSelectFile={onSelectFile}
+                    repoPath={repoPath}
+                    revealLabel={revealLabel}
+                    registerRef={registerRef}
+                    hunkContext="all"
+                    onStage={stageFile}
+                  />
+                ))
+              : untrackedFlat.map((entry) => (
+                  <FlatFileNode
+                    key={entry.path}
+                    filePath={entry.path}
+                    fileStatus={entry.status}
+                    hunkStatus={EMPTY_HUNK_STATUS}
+                    selectedFile={selectedFile}
+                    onSelectFile={onSelectFile}
+                    hunkContext="all"
+                    onStage={stageFile}
+                  />
+                ))}
+          </GitSection>
+        )}
+      </div>
     </div>
   );
 }

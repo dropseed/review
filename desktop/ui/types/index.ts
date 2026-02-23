@@ -556,6 +556,19 @@ export interface DiffShortStat {
   deletions: number;
 }
 
+// Commit streaming types
+export interface CommitOutputLine {
+  text: string;
+  stream: "stdout" | "stderr";
+  seq: number;
+}
+
+export interface CommitResult {
+  success: boolean;
+  commitHash: string | null;
+  summary: string;
+}
+
 // File content from backend
 export type ContentType = "text" | "image" | "svg" | "binary";
 

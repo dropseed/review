@@ -1,15 +1,28 @@
 import type { ApiClient } from "../../api";
-import type { GitStatusSummary, RemoteInfo } from "../../types";
+import type {
+  CommitOutputLine,
+  CommitResult,
+  GitStatusSummary,
+  RemoteInfo,
+} from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 
 /** Singleton empty set -- preserves reference equality to avoid spurious re-renders. */
 export const EMPTY_STAGED_SET = new Set<string>();
+
+let commitNonce = 0;
 
 export interface GitSlice {
   // Git state
   gitStatus: GitStatusSummary | null;
   stagedFilePaths: Set<string>;
   remoteInfo: RemoteInfo | null;
+
+  // Commit state
+  commitMessage: string;
+  commitInProgress: boolean;
+  commitOutput: CommitOutputLine[];
+  commitResult: CommitResult | null;
 
   // Actions
   loadGitStatus: () => Promise<void>;
@@ -20,6 +33,9 @@ export interface GitSlice {
   unstageAll: () => Promise<void>;
   stageHunks: (filePath: string, contentHashes: string[]) => Promise<void>;
   unstageHunks: (filePath: string, contentHashes: string[]) => Promise<void>;
+  setCommitMessage: (msg: string) => void;
+  commitStaged: () => Promise<void>;
+  clearCommitResult: () => void;
 }
 
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
@@ -27,6 +43,11 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     gitStatus: null,
     stagedFilePaths: EMPTY_STAGED_SET,
     remoteInfo: null,
+
+    commitMessage: "",
+    commitInProgress: false,
+    commitOutput: [],
+    commitResult: null,
 
     loadGitStatus: async () => {
       const { repoPath } = get();
@@ -94,5 +115,65 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       if (!repoPath) return;
       await client.unstageHunks(repoPath, filePath, contentHashes);
       await get().loadGitStatus();
+    },
+
+    setCommitMessage: (msg: string) => {
+      set({ commitMessage: msg });
+    },
+
+    commitStaged: async () => {
+      const { repoPath, commitMessage } = get();
+      if (!repoPath || !commitMessage.trim()) return;
+
+      const requestId = `commit-${++commitNonce}`;
+
+      // Subscribe to output events before starting.
+      // Lines arrive in order from the channel, so append without sorting.
+      const unsubscribe = client.onCommitOutput(requestId, (line) => {
+        set((state) => ({
+          commitOutput: [...state.commitOutput, line],
+        }));
+      });
+
+      set({
+        commitInProgress: true,
+        commitOutput: [],
+        commitResult: null,
+      });
+
+      get().startActivity(requestId, "Committing...", 60);
+
+      try {
+        const result = await client.gitCommit(
+          repoPath,
+          commitMessage,
+          requestId,
+        );
+
+        set({ commitResult: result, commitInProgress: false });
+
+        if (result.success) {
+          // Clear message on success, reload git status
+          set({ commitMessage: "" });
+          await get().loadGitStatus();
+        }
+        // On failure, preserve commitMessage for retry
+      } catch (err) {
+        set({
+          commitResult: {
+            success: false,
+            commitHash: null,
+            summary: String(err),
+          },
+          commitInProgress: false,
+        });
+      } finally {
+        unsubscribe();
+        get().endActivity(requestId);
+      }
+    },
+
+    clearCommitResult: () => {
+      set({ commitResult: null, commitOutput: [] });
     },
   });

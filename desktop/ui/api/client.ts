@@ -14,6 +14,8 @@ import type {
   PullRequest,
   CommitEntry,
   CommitDetail,
+  CommitOutputLine,
+  CommitResult,
   FileEntry,
   FileContent,
   ReviewState,
@@ -222,6 +224,21 @@ export interface ApiClient {
     hunks: GroupingInput[],
     options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
   ): Promise<HunkGroup[]>;
+
+  // ----- Commit -----
+
+  /** Create a git commit with streaming pre-commit output */
+  gitCommit(
+    repoPath: string,
+    message: string,
+    requestId: string,
+  ): Promise<CommitResult>;
+
+  /** Listen for streaming commit output lines (returns unsubscribe fn) */
+  onCommitOutput(
+    requestId: string,
+    callback: (line: CommitOutputLine) => void,
+  ): () => void;
 
   /** Listen for streaming grouping group events (returns unsubscribe fn) */
   onGroupingGroup(

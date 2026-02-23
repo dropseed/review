@@ -14,6 +14,8 @@ import type {
   PullRequest,
   CommitEntry,
   CommitDetail,
+  CommitOutputLine,
+  CommitResult,
   DiffShortStat,
   FileEntry,
   FileContent,
@@ -481,6 +483,24 @@ export class HttpClient implements ApiClient {
       // Fallback: return hunks as-is with no pairs
       return { pairs: [], hunks };
     }
+  }
+
+  // ----- Commit -----
+
+  async gitCommit(
+    _repoPath: string,
+    _message: string,
+    _requestId: string,
+  ): Promise<CommitResult> {
+    console.warn("[HttpClient] gitCommit not implemented");
+    return { success: false, commitHash: null, summary: "Not implemented" };
+  }
+
+  onCommitOutput(
+    _requestId: string,
+    _callback: (line: CommitOutputLine) => void,
+  ): () => void {
+    return () => {};
   }
 
   // ----- Grouping -----
