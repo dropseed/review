@@ -10,7 +10,8 @@ interface GitStatusModalProps {
 }
 
 export function GitStatusModal({ isOpen, onClose }: GitStatusModalProps) {
-  const { gitStatus, repoPath } = useReviewStore();
+  const gitStatus = useReviewStore((s) => s.gitStatus);
+  const repoPath = useReviewStore((s) => s.repoPath);
   const [rawStatus, setRawStatus] = useState<string>("");
   const [copied, setCopied] = useState(false);
 

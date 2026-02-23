@@ -167,8 +167,6 @@ interface DiffViewProps {
   fileName: string;
   oldContent?: string;
   newContent?: string;
-  // Focused hunk for keyboard navigation
-  focusedHunkId?: string | null;
   /** Language override for syntax highlighting */
   language?: SupportedLanguages;
   /** Whether to expand all unchanged sections (default: true for full file view) */
@@ -185,7 +183,6 @@ export function DiffView({
   fileName,
   oldContent,
   newContent,
-  focusedHunkId,
   language,
   expandUnchanged: expandUnchangedProp = true,
 }: DiffViewProps): ReactNode {
@@ -205,20 +202,27 @@ export function DiffView({
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, fileName);
 
-  // Scroll to focused hunk when it changes (skip if triggered by scroll tracking)
+  // Scroll to focused hunk when it changes (skip if triggered by scroll tracking).
+  // Uses store.subscribe (rerender-defer-reads) so DiffView doesn't re-render on
+  // every focusedHunkIndex change — only the leaf annotation components do.
   useEffect(() => {
-    if (focusedHunkId && focusedHunkRef.current) {
-      const { scrollDrivenNavigation } = useReviewStore.getState();
-      if (scrollDrivenNavigation) {
-        useReviewStore.setState({ scrollDrivenNavigation: false });
-        return;
+    return useReviewStore.subscribe((state, prevState) => {
+      const focusedId = state.hunks[state.focusedHunkIndex]?.id ?? null;
+      const prevFocusedId =
+        prevState.hunks[prevState.focusedHunkIndex]?.id ?? null;
+      if (focusedId === prevFocusedId) return;
+      if (focusedId && focusedHunkRef.current) {
+        if (state.scrollDrivenNavigation) {
+          useReviewStore.setState({ scrollDrivenNavigation: false });
+          return;
+        }
+        focusedHunkRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       }
-      focusedHunkRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [focusedHunkId]);
+    });
+  }, []);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
@@ -449,7 +453,6 @@ export function DiffView({
     setEditingAnnotationId: typeof setEditingAnnotationId;
     hunks: typeof hunks;
     getSimilarHunks: typeof getSimilarHunks;
-    focusedHunkId: typeof focusedHunkId;
     focusedHunkRef: typeof focusedHunkRef;
     reviewState: typeof reviewState;
     hunkStates: typeof hunkStates;
@@ -467,7 +470,6 @@ export function DiffView({
     setEditingAnnotationId,
     hunks,
     getSimilarHunks,
-    focusedHunkId,
     focusedHunkRef,
     reviewState,
     hunkStates,
@@ -527,7 +529,6 @@ export function DiffView({
             return (
               <WorkingTreeHunkPanel
                 hunk={hunk}
-                focusedHunkId={deps.focusedHunkId}
                 focusedHunkRef={deps.focusedHunkRef}
                 hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
                 totalHunksInFile={deps.hunks.length}
@@ -555,7 +556,6 @@ export function DiffView({
               <TrustedHunkBadge
                 hunk={hunk}
                 hunkState={hunkState}
-                focusedHunkId={deps.focusedHunkId}
                 focusedHunkRef={deps.focusedHunkRef}
                 trustList={trustList}
                 onApprove={(hunkId) => {
@@ -588,7 +588,6 @@ export function DiffView({
               hunkState={hunkState}
               pairedHunk={pairedHunk}
               isSource={isSource}
-              focusedHunkId={deps.focusedHunkId}
               focusedHunkRef={deps.focusedHunkRef}
               trustList={deps.reviewState?.trustList ?? []}
               hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}

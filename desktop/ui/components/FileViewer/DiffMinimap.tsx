@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import type { ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { usePrefersReducedMotion } from "../../hooks";
+import { useReviewStore } from "../../stores";
 
 // --- Public types ---
 
@@ -18,7 +19,6 @@ export interface MinimapMarker {
   topFraction: number;
   heightFraction: number;
   status: HunkStatus;
-  isFocused: boolean;
 }
 
 interface DiffMinimapProps {
@@ -59,7 +59,7 @@ const STATUS_COLORS: Record<HunkStatus, string> = {
 
 // --- Component ---
 
-export function DiffMinimap({
+export const DiffMinimap = memo(function DiffMinimap({
   markers,
   scrollContainer,
   onMarkerClick,
@@ -67,6 +67,13 @@ export function DiffMinimap({
   const viewportRef = useRef<HTMLDivElement>(null);
   const rafId = useRef(0);
   const prefersReducedMotion = usePrefersReducedMotion();
+
+  // Subscribe to focused hunk ID directly (rerender-derived-state pattern).
+  // DiffMinimap only re-renders when the focused hunk *identity* changes,
+  // not on every focusedHunkIndex update during scrolling.
+  const focusedHunkId = useReviewStore(
+    (s) => s.hunks[s.focusedHunkIndex]?.id ?? null,
+  );
 
   // Self-manage scroll tracking
   useEffect(() => {
@@ -145,9 +152,10 @@ export function DiffMinimap({
           marker.status === "classifying" && !prefersReducedMotion
             ? " animate-pulse"
             : "";
-        const focusRing = marker.isFocused
-          ? " ring-1 ring-status-modified/80 ring-offset-1 ring-offset-surface-panel"
-          : "";
+        const focusRing =
+          marker.id === focusedHunkId
+            ? " ring-1 ring-status-modified/80 ring-offset-1 ring-offset-surface-panel"
+            : "";
 
         return (
           <div
@@ -167,4 +175,4 @@ export function DiffMinimap({
       })}
     </div>
   );
-}
+});

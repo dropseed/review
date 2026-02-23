@@ -1,4 +1,5 @@
-import type { FileContent, ReviewState } from "../../types";
+import { memo } from "react";
+import type { LineAnnotation, FileContent } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
 import { isMarkdownFile } from "./languageMap";
 import { PlainCodeView } from "./PlainCodeView";
@@ -14,13 +15,12 @@ interface FileContentRendererProps {
   contentMode: ContentMode;
   codeTheme: string;
   fontSizeCSS: string;
-  focusedHunkId: string | null;
   effectiveLanguage: SupportedLanguages | undefined;
   markdownViewMode: "preview" | "code";
   highlightLine: number | null;
   lineHeight: number;
   onViewInFile: (line: number) => void;
-  reviewState: ReviewState | null;
+  annotations: LineAnnotation[] | undefined;
   addAnnotation: (
     filePath: string,
     lineNumber: number,
@@ -31,27 +31,22 @@ interface FileContentRendererProps {
   deleteAnnotation: (id: string) => void;
 }
 
-export function FileContentRenderer({
+export const FileContentRenderer = memo(function FileContentRenderer({
   filePath,
   fileContent,
   contentMode,
   codeTheme,
   fontSizeCSS,
-  focusedHunkId,
   effectiveLanguage,
   markdownViewMode,
   highlightLine,
   lineHeight,
   onViewInFile,
-  reviewState,
+  annotations: fileAnnotations,
   addAnnotation,
   updateAnnotation,
   deleteAnnotation,
 }: FileContentRendererProps) {
-  const fileAnnotations = reviewState?.annotations?.filter(
-    (a) => a.filePath === filePath,
-  );
-
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
     return <MarkdownViewer content={fileContent.content} />;
@@ -167,7 +162,6 @@ export function FileContentRenderer({
           fileName={filePath}
           oldContent={fileContent.oldContent}
           newContent={fileContent.content}
-          focusedHunkId={focusedHunkId}
           language={effectiveLanguage}
           expandUnchanged={expandUnchanged}
         />
@@ -200,7 +194,7 @@ export function FileContentRenderer({
         </DiffErrorBoundary>
       );
   }
-}
+});
 
 function RenderErrorFallback({ filePath }: { filePath: string }) {
   return (

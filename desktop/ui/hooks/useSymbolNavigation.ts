@@ -239,7 +239,10 @@ export function useSymbolNavigation() {
 
   const closePopover = useCallback(() => {
     abortRef.current?.abort();
-    setState((prev) => ({ ...prev, popoverOpen: false, loading: false }));
+    setState((prev) => {
+      if (!prev.popoverOpen && !prev.loading) return prev;
+      return { ...prev, popoverOpen: false, loading: false };
+    });
   }, []);
 
   const navigateToDefinition = useCallback(

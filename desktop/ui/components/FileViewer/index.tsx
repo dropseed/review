@@ -24,6 +24,10 @@ import {
 import { SymbolPopover } from "./SymbolPopover";
 import type { ContentMode } from "./content-mode";
 
+const PLAIN_MODE: ContentMode = { type: "plain" };
+const IMAGE_MODE: ContentMode = { type: "image" };
+const UNTRACKED_MODE: ContentMode = { type: "untracked" };
+
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
   entries: FileEntry[],
@@ -58,7 +62,6 @@ export function FileViewer({
     reviewState,
     allHunks,
     refreshGeneration,
-    focusedHunkIndex,
     scrollToLine,
     clearScrollToLine,
     addAnnotation,
@@ -149,11 +152,6 @@ export function FileViewer({
     };
   }, [scrollNode]);
 
-  // Get the focused hunk ID if it's in this file
-  const focusedHunk = allHunks[focusedHunkIndex];
-  const focusedHunkId =
-    focusedHunk?.filePath === filePath ? focusedHunk.id : null;
-
   // Generate CSS for font size injection into pierre/diffs
   // Pierre/diffs uses --diffs-font-size and --diffs-line-height CSS variables
   const lineHeight = Math.round(codeFontSize * 1.5);
@@ -227,15 +225,19 @@ export function FileViewer({
     });
   }, []);
 
-  // File-level annotations (lineNumber === 0, side === "file")
+  // All annotations for this file (passed to FileContentRenderer)
+  const allFileAnnotations = useMemo(() => {
+    return reviewState?.annotations?.filter((a) => a.filePath === filePath);
+  }, [reviewState?.annotations, filePath]);
+
+  // File-level annotations only (lineNumber === 0, side === "file")
   const fileAnnotations = useMemo(() => {
     return (
-      reviewState?.annotations?.filter(
-        (a) =>
-          a.filePath === filePath && a.lineNumber === 0 && a.side === "file",
+      allFileAnnotations?.filter(
+        (a) => a.lineNumber === 0 && a.side === "file",
       ) ?? []
     );
-  }, [reviewState?.annotations, filePath]);
+  }, [allFileAnnotations]);
 
   const handleAddFileComment = useCallback(() => {
     setFileCommentEditorOpen(true);
@@ -442,9 +444,8 @@ export function FileViewer({
       topFraction: (hunk.newStart - 1) / totalLineCount,
       heightFraction: hunk.newCount / totalLineCount,
       status: getHunkStatus(hunk.id, reviewState, trustList),
-      isFocused: hunk.id === focusedHunkId,
     }));
-  }, [fileContent, totalLineCount, reviewState, trustList, focusedHunkId]);
+  }, [fileContent, totalLineCount, reviewState, trustList]);
 
   // Track scroll position to update HunkNavigator counter
   useScrollHunkTracking(scrollNode, fileHunkIndices, allHunks);
@@ -453,6 +454,28 @@ export function FileViewer({
   const isGitignored = useReviewStore((s) =>
     hasFileStatus(s.allFiles, filePath, "gitignored"),
   );
+
+  // Memoize contentMode before early returns so hook call order stays constant.
+  // When fileContent is null the value is unused but the hook still runs.
+  const contentMode = useMemo<ContentMode>(() => {
+    if (!fileContent) return PLAIN_MODE;
+    const hasChanges = fileContent.hunks.length > 0;
+    const isUntracked = hasChanges && !fileContent.diffPatch;
+    const contentType = fileContent.contentType || "text";
+    const isImage = contentType === "image";
+    const isSvgFile = contentType === "svg";
+    const showImage =
+      isImage ||
+      (isSvgFile && svgViewMode === "rendered" && fileContent.imageDataUrl);
+
+    if (isGitignored) return PLAIN_MODE;
+    if (showImage) return IMAGE_MODE;
+    if (isSvgFile)
+      return { type: "svg", hasRendered: !!fileContent.imageDataUrl } as const;
+    if (isUntracked) return UNTRACKED_MODE;
+    if (hasChanges) return { type: "diff", viewMode } as const;
+    return PLAIN_MODE;
+  }, [fileContent, isGitignored, svgViewMode, viewMode]);
 
   if (loading || fileContentPath !== filePath) {
     return (
@@ -495,25 +518,8 @@ export function FileViewer({
   }
 
   const hasChanges = fileContent.hunks.length > 0;
-  const isUntracked = hasChanges && !fileContent.diffPatch;
-  const contentType = fileContent.contentType || "text";
-  const isImage = contentType === "image";
-  const isSvg = contentType === "svg";
   const detectedLanguage = detectLanguage(filePath, fileContent.content);
   const effectiveLanguage = languageOverride ?? detectedLanguage;
-  const showImageViewer =
-    isImage ||
-    (isSvg && svgViewMode === "rendered" && fileContent.imageDataUrl);
-
-  const contentMode: ContentMode = (() => {
-    if (isGitignored) return { type: "plain" } as const;
-    if (showImageViewer) return { type: "image" } as const;
-    if (isSvg)
-      return { type: "svg", hasRendered: !!fileContent.imageDataUrl } as const;
-    if (isUntracked) return { type: "untracked" } as const;
-    if (hasChanges) return { type: "diff", viewMode } as const;
-    return { type: "plain" } as const;
-  })();
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
@@ -609,13 +615,12 @@ export function FileViewer({
             contentMode={contentMode}
             codeTheme={codeTheme}
             fontSizeCSS={fontSizeCSS}
-            focusedHunkId={focusedHunkId}
             effectiveLanguage={effectiveLanguage}
             markdownViewMode={markdownViewMode}
             highlightLine={highlightLine}
             lineHeight={lineHeight}
             onViewInFile={setHighlightLine}
-            reviewState={reviewState}
+            annotations={allFileAnnotations}
             addAnnotation={addAnnotation}
             updateAnnotation={updateAnnotation}
             deleteAnnotation={deleteAnnotation}

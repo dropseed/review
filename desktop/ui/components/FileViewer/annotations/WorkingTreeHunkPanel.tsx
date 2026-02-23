@@ -1,5 +1,6 @@
 import type { MutableRefObject, ReactNode } from "react";
 import type { DiffHunk } from "../../../types";
+import { useIsFocusedHunk } from "../../../hooks";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -10,7 +11,6 @@ import { SimpleTooltip } from "../../ui/tooltip";
 
 interface WorkingTreeHunkPanelProps {
   hunk: DiffHunk;
-  focusedHunkId: string | null | undefined;
   focusedHunkRef: MutableRefObject<HTMLDivElement | null>;
   hunkPosition?: number;
   totalHunksInFile?: number;
@@ -23,7 +23,6 @@ interface WorkingTreeHunkPanelProps {
 
 export function WorkingTreeHunkPanel({
   hunk,
-  focusedHunkId,
   focusedHunkRef,
   hunkPosition,
   totalHunksInFile,
@@ -33,7 +32,7 @@ export function WorkingTreeHunkPanel({
   onCopyHunk,
   onViewInFile,
 }: WorkingTreeHunkPanelProps): ReactNode {
-  const isFocused = hunk.id === focusedHunkId;
+  const isFocused = useIsFocusedHunk(hunk.id);
 
   const borderClass = isFocused
     ? "border border-edge-strong/60 ring-1 ring-fg/25"

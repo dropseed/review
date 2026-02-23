@@ -58,24 +58,21 @@ export function UntrackedFileView({
   onUpdateAnnotation,
   onDeleteAnnotation,
 }: UntrackedFileViewProps) {
-  const {
-    reviewState,
-    approveHunk,
-    unapproveHunk,
-    rejectHunk,
-    unrejectHunk,
-    hunks: allHunks,
-    setSelectedFile,
-  } = useReviewStore();
-
   // Get the synthetic hunk for this untracked file
   const hunk = hunks[0];
-  const hunkState = reviewState?.hunks[hunk?.id];
+
+  const hunkState = useReviewStore((s) => s.reviewState?.hunks[hunk?.id]);
+  const trustList = useReviewStore((s) => s.reviewState?.trustList ?? []);
+  const approveHunk = useReviewStore((s) => s.approveHunk);
+  const unapproveHunk = useReviewStore((s) => s.unapproveHunk);
+  const rejectHunk = useReviewStore((s) => s.rejectHunk);
+  const unrejectHunk = useReviewStore((s) => s.unrejectHunk);
+  const allHunks = useReviewStore((s) => s.hunks);
+  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
+
   const isApproved = hunkState?.status === "approved";
   const isRejected = hunkState?.status === "rejected";
-  const isTrusted =
-    !hunkState?.status &&
-    isHunkTrusted(hunkState, reviewState?.trustList ?? []);
+  const isTrusted = !hunkState?.status && isHunkTrusted(hunkState, trustList);
 
   const lineCount = content.split("\n").length;
 

@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 
 interface BreadcrumbsProps {
   filePath: string;
   onNavigateToDirectory?: (dirPath: string) => void;
 }
 
-export function Breadcrumbs({
+export const Breadcrumbs = memo(function Breadcrumbs({
   filePath,
   onNavigateToDirectory,
 }: BreadcrumbsProps): ReactNode {
@@ -38,4 +38,4 @@ export function Breadcrumbs({
       })}
     </nav>
   );
-}
+});

@@ -23,14 +23,14 @@ export function ContentSearch({
   isOpen,
   onClose,
 }: ContentSearchProps): ReactNode {
-  const {
-    searchResults,
-    searchLoading,
-    searchError,
-    performSearch,
-    clearSearchResults,
-    navigateToSearchResult,
-  } = useReviewStore();
+  const searchResults = useReviewStore((s) => s.searchResults);
+  const searchLoading = useReviewStore((s) => s.searchLoading);
+  const searchError = useReviewStore((s) => s.searchError);
+  const performSearch = useReviewStore((s) => s.performSearch);
+  const clearSearchResults = useReviewStore((s) => s.clearSearchResults);
+  const navigateToSearchResult = useReviewStore(
+    (s) => s.navigateToSearchResult,
+  );
 
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);

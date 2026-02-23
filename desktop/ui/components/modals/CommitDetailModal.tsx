@@ -70,7 +70,7 @@ export function CommitDetailModal({
   onClose,
   commitHash,
 }: CommitDetailModalProps): ReactNode {
-  const { repoPath } = useReviewStore();
+  const repoPath = useReviewStore((s) => s.repoPath);
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);

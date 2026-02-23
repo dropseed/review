@@ -18,6 +18,54 @@ import { DiffOptionsPopover } from "./DiffOptionsPopover";
 import { SimilarFilesModal } from "./annotations/SimilarFilesModal";
 import type { ContentMode } from "./content-mode";
 
+const EMPTY_HUNK_STATES: Record<string, never> = {};
+const EMPTY_TRUST_LIST: string[] = [];
+
+/**
+ * Isolates the heavy `hunks` + `reviewState` subscriptions needed to check
+ * whether similar files exist.  By keeping these in a leaf component the
+ * parent FileViewerToolbar avoids re-rendering whenever hunks or review
+ * state change.
+ */
+function SimilarFilesButton({
+  filePath,
+  onNavigateToFile,
+}: {
+  filePath: string;
+  onNavigateToFile: (path: string) => void;
+}): JSX.Element | null {
+  const hunks = useReviewStore((s) => s.hunks);
+  const reviewState = useReviewStore((s) => s.reviewState);
+  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
+  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
+
+  const basename = filePath.split("/").pop() ?? "";
+  const matchCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const h of hunks) {
+      const name = h.filePath.split("/").pop();
+      if (name === basename && h.filePath !== filePath) {
+        seen.add(h.filePath);
+      }
+    }
+    return seen.size;
+  }, [hunks, basename, filePath]);
+
+  if (matchCount === 0) return null;
+
+  return (
+    <SimilarFilesModal
+      currentFilePath={filePath}
+      hunks={hunks}
+      hunkStates={reviewState?.hunks ?? EMPTY_HUNK_STATES}
+      trustList={reviewState?.trustList ?? EMPTY_TRUST_LIST}
+      onApproveAll={approveHunkIds}
+      onRejectAll={rejectHunkIds}
+      onNavigateToFile={onNavigateToFile}
+    />
+  );
+}
+
 interface ToggleButtonGroupProps<T extends string> {
   options: [T, string, string?][];
   value: T;
@@ -128,24 +176,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
   const viewMode = useReviewStore((s) => s.diffViewMode);
   const setViewMode = useReviewStore((s) => s.setDiffViewMode);
-  const hunks = useReviewStore((s) => s.hunks);
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-
-  // Count other files sharing this basename for the SimilarFilesModal trigger
-  const basename = filePath.split("/").pop() ?? "";
-  const matchingFileCount = useMemo(() => {
-    const seen = new Set<string>();
-    for (const h of hunks) {
-      const name = h.filePath.split("/").pop();
-      if (name === basename && h.filePath !== filePath) {
-        seen.add(h.filePath);
-      }
-    }
-    return seen.size;
-  }, [hunks, basename, filePath]);
 
   const fullPath = `${repoPath}/${filePath}`;
 
@@ -176,17 +207,10 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           <span className="rounded bg-status-approved/15 px-1.5 py-0.5 text-xxs font-medium text-status-approved">
             New
           </span>
-          {matchingFileCount > 0 && (
-            <SimilarFilesModal
-              currentFilePath={filePath}
-              hunks={hunks}
-              hunkStates={reviewState?.hunks ?? {}}
-              trustList={reviewState?.trustList ?? []}
-              onApproveAll={approveHunkIds}
-              onRejectAll={rejectHunkIds}
-              onNavigateToFile={navigateToBrowse}
-            />
-          )}
+          <SimilarFilesButton
+            filePath={filePath}
+            onNavigateToFile={navigateToBrowse}
+          />
         </>
       );
     }
@@ -261,17 +285,10 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
             </button>
           </SimpleTooltip>
         )}
-        {matchingFileCount > 0 && (
-          <SimilarFilesModal
-            currentFilePath={filePath}
-            hunks={hunks}
-            hunkStates={reviewState?.hunks ?? {}}
-            trustList={reviewState?.trustList ?? []}
-            onApproveAll={approveHunkIds}
-            onRejectAll={rejectHunkIds}
-            onNavigateToFile={navigateToBrowse}
-          />
-        )}
+        <SimilarFilesButton
+          filePath={filePath}
+          onNavigateToFile={navigateToBrowse}
+        />
       </>
     );
   }

@@ -229,7 +229,9 @@ function HighlightedText({
 }
 
 export function FileFinder({ isOpen, onClose }: FileFinderProps) {
-  const { allFiles, files, navigateToBrowse } = useReviewStore();
+  const allFiles = useReviewStore((s) => s.allFiles);
+  const files = useReviewStore((s) => s.files);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);

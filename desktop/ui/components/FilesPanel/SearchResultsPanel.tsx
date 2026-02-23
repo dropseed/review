@@ -12,16 +12,16 @@ function getEmptyStateMessage(query: string, isLoading: boolean): string {
 }
 
 export function SearchResultsPanel(): ReactNode {
-  const {
-    searchQuery,
-    searchResults,
-    searchLoading,
-    searchError,
-    performSearch,
-    clearSearch,
-    clearSearchResults,
-    navigateToSearchResult,
-  } = useReviewStore();
+  const searchQuery = useReviewStore((s) => s.searchQuery);
+  const searchResults = useReviewStore((s) => s.searchResults);
+  const searchLoading = useReviewStore((s) => s.searchLoading);
+  const searchError = useReviewStore((s) => s.searchError);
+  const performSearch = useReviewStore((s) => s.performSearch);
+  const clearSearch = useReviewStore((s) => s.clearSearch);
+  const clearSearchResults = useReviewStore((s) => s.clearSearchResults);
+  const navigateToSearchResult = useReviewStore(
+    (s) => s.navigateToSearchResult,
+  );
 
   const [query, setQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);

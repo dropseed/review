@@ -2,6 +2,7 @@ import type { MutableRefObject } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
 import { isHunkTrusted } from "../../../types";
 import { useReviewStore } from "../../../stores";
+import { useIsFocusedHunk } from "../../../hooks";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -51,7 +52,6 @@ interface HunkAnnotationPanelProps {
   hunkState: HunkState | undefined;
   pairedHunk: DiffHunk | null;
   isSource: boolean;
-  focusedHunkId: string | null | undefined;
   focusedHunkRef: MutableRefObject<HTMLDivElement | null>;
   trustList: string[];
   hunkPosition?: number; // 1-indexed position in file
@@ -82,7 +82,6 @@ export function HunkAnnotationPanel({
   hunkState,
   pairedHunk,
   isSource,
-  focusedHunkId,
   focusedHunkRef,
   trustList,
   hunkPosition,
@@ -111,7 +110,7 @@ export function HunkAnnotationPanel({
   const isRejected = reviewStatus === "rejected";
   const isSavedForLater = reviewStatus === "saved_for_later";
   const isTrusted = reviewStatus === "trusted";
-  const isFocused = hunk.id === focusedHunkId;
+  const isFocused = useIsFocusedHunk(hunk.id);
 
   const borderClass = isFocused
     ? "border border-edge-strong/60 ring-1 ring-fg/25"

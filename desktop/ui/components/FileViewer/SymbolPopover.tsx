@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { memo, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { SymbolKind } from "../../types";
 import type { EnrichedDefinition } from "../../hooks/useSymbolNavigation";
@@ -81,7 +81,7 @@ function truncatePath(path: string, maxLen = 50): string {
   return "…/" + parts.slice(-2).join("/");
 }
 
-export function SymbolPopover({
+export const SymbolPopover = memo(function SymbolPopover({
   open,
   position,
   symbolName,
@@ -260,4 +260,4 @@ export function SymbolPopover({
     </div>,
     document.body,
   );
-}
+});

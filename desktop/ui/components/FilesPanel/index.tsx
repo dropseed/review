@@ -744,6 +744,25 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     [sectionedFiles.reviewed],
   );
 
+  // Memoize progress bar segments to avoid re-creating the array on every render
+  const progressSegments = useMemo(
+    () => [
+      {
+        value: stats.total > 0 ? stats.trusted / stats.total : 0,
+        color: "bg-status-trusted",
+      },
+      {
+        value: stats.total > 0 ? stats.approved / stats.total : 0,
+        color: "bg-status-approved",
+      },
+      {
+        value: stats.total > 0 ? stats.rejected / stats.total : 0,
+        color: "bg-status-rejected",
+      },
+    ],
+    [stats.total, stats.trusted, stats.approved, stats.rejected],
+  );
+
   // Check if there are changes in the comparison
   const hasChanges =
     sectionedFiles.needsReview.length > 0 ||
@@ -838,25 +857,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               {/* Panel toolbar */}
               {viewMode === "changes" && hasChanges && (
                 <PanelToolbar>
-                  <StackedProgressBar
-                    segments={[
-                      {
-                        value:
-                          stats.total > 0 ? stats.trusted / stats.total : 0,
-                        color: "bg-status-trusted",
-                      },
-                      {
-                        value:
-                          stats.total > 0 ? stats.approved / stats.total : 0,
-                        color: "bg-status-approved",
-                      },
-                      {
-                        value:
-                          stats.total > 0 ? stats.rejected / stats.total : 0,
-                        color: "bg-status-rejected",
-                      },
-                    ]}
-                  />
+                  <StackedProgressBar segments={progressSegments} />
                   <ViewOptionsMenu
                     sortOrder={fileSortOrder}
                     onSortOrderChange={setFileSortOrder}
