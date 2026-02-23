@@ -20,7 +20,6 @@ import {
 } from "../hooks";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
-import { FeedbackPanel } from "./FeedbackPanel";
 import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
@@ -181,7 +180,6 @@ export function ReviewView({
     approvedHunks,
     rejectedHunks,
     reviewedHunks,
-    state,
   } = useReviewProgress();
 
   // Celebration on 100% reviewed
@@ -257,16 +255,6 @@ export function ReviewView({
                   className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
                              hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
                 >
-                  {state === "approved" && (
-                    <span className="hidden @md:inline text-xs font-medium text-status-approved">
-                      Approved
-                    </span>
-                  )}
-                  {state === "changes_requested" && (
-                    <span className="hidden @md:inline text-xs font-medium text-status-rejected">
-                      Changes Requested
-                    </span>
-                  )}
                   <span className="font-mono text-xs tabular-nums text-fg-muted">
                     {reviewedHunks}/{totalHunks}
                   </span>
@@ -295,6 +283,29 @@ export function ReviewView({
                       size={20}
                       strokeWidth={2.5}
                       className="shrink-0 cursor-default"
+                      segments={[
+                        {
+                          percent:
+                            totalHunks > 0
+                              ? (trustedHunks / totalHunks) * 100
+                              : 0,
+                          color: "var(--color-status-trusted)",
+                        },
+                        {
+                          percent:
+                            totalHunks > 0
+                              ? (approvedHunks / totalHunks) * 100
+                              : 0,
+                          color: "var(--color-status-approved)",
+                        },
+                        {
+                          percent:
+                            totalHunks > 0
+                              ? (rejectedHunks / totalHunks) * 100
+                              : 0,
+                          color: "var(--color-status-rejected)",
+                        },
+                      ]}
                     />
                   </SimpleTooltip>
                 </button>
@@ -307,7 +318,6 @@ export function ReviewView({
         {/* Main content */}
         <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">
           <ContentArea />
-          <FeedbackPanel />
         </main>
       </div>
 
