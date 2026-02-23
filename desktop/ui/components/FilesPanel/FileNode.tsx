@@ -77,7 +77,7 @@ interface FileNodeProps {
   revealLabel: string;
   onOpenInSplit?: (path: string) => void;
   registerRef: (path: string, ref: HTMLButtonElement | null) => void;
-  hunkContext: HunkContext;
+  hunkContext?: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
   onRejectAll?: (path: string, isDir: boolean) => void;
@@ -426,7 +426,7 @@ export const FileNode = memo(
               onClick={() => onSelectFile(entry.path)}
               aria-selected={isSelected}
             >
-              <TreeFileIcon name={entry.name} isDirectory={false} />
+              <TreeFileIcon name={entry.name} isDirectory={false} isSymlink={entry.isSymlink} symlinkTarget={entry.symlinkTarget} />
 
               <TreeNodeName className={fileNameColor(isSelected, isGitignored)}>
                 {entry.name}
@@ -436,10 +436,6 @@ export const FileNode = memo(
                 <span className="flex-shrink-0 rounded bg-status-renamed/15 px-1 py-0.5 text-xxs font-medium text-status-renamed">
                   Moved
                 </span>
-              )}
-
-              {entry.isSymlink && (
-                <SymlinkIndicator target={entry.symlinkTarget} />
               )}
             </TreeRowButton>
 
@@ -490,7 +486,7 @@ export const FileNode = memo(
               />
             )}
 
-            {hasReviewableContent && (
+            {hasReviewableContent && hunkContext && (
               <HunkCount
                 status={entry.hunkStatus}
                 context={hunkContext}

@@ -178,6 +178,20 @@ export function useFilePanelFileSystem() {
     return map;
   }, [allFiles]);
 
+  const symlinkMap = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    function collect(entries: typeof allFiles) {
+      for (const e of entries) {
+        if (e.isSymlink) {
+          map.set(e.path, e.symlinkTarget);
+        }
+        if (e.children) collect(e.children);
+      }
+    }
+    collect(allFiles);
+    return map;
+  }, [allFiles]);
+
   const { allDirPaths, renamedDirPaths } = useMemo(() => {
     const paths = new Set<string>();
     const renamed = new Set<string>();
@@ -221,5 +235,6 @@ export function useFilePanelFileSystem() {
     renamedDirPaths,
     hunks,
     reviewState,
+    symlinkMap,
   };
 }

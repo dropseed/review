@@ -251,6 +251,8 @@ export function processTree(
       name: entry.name,
       path: entry.path,
       isDirectory: entry.isDirectory,
+      isSymlink: entry.isSymlink,
+      symlinkTarget: entry.symlinkTarget,
       status: effectiveFileStatus,
       renamedFrom: viewMode === "browse" ? undefined : entry.renamedFrom,
       hunkStatus,

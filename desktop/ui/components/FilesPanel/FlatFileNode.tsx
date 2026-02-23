@@ -25,6 +25,8 @@ interface FlatFileNodeProps {
   onStage?: (path: string, isDir: boolean) => void;
   onUnstage?: (path: string, isDir: boolean) => void;
   workingTreeStatusMap?: Map<string, string>;
+  isSymlink?: boolean;
+  symlinkTarget?: string;
 }
 
 export const FlatFileNode = memo(function FlatFileNode({
@@ -41,6 +43,8 @@ export const FlatFileNode = memo(function FlatFileNode({
   onStage,
   onUnstage,
   workingTreeStatusMap,
+  isSymlink,
+  symlinkTarget,
 }: FlatFileNodeProps) {
   const isSelected = selectedFile === filePath;
   const hasReviewableContent = hunkStatus.total > 0;
@@ -65,7 +69,12 @@ export const FlatFileNode = memo(function FlatFileNode({
             : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
         }
       >
-        <TreeFileIcon name={fileName} isDirectory={false} />
+        <TreeFileIcon
+          name={fileName}
+          isDirectory={false}
+          isSymlink={isSymlink}
+          symlinkTarget={symlinkTarget}
+        />
 
         <button
           className="flex flex-1 items-center text-left min-w-0"

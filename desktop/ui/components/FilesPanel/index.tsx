@@ -291,6 +291,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     renamedDirPaths,
     hunks,
     reviewState,
+    symlinkMap,
   } = useFilePanelFileSystem();
 
   // Navigation
@@ -702,6 +703,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       movedFilePaths,
       hunkStatusMap,
       fileStatusMap,
+      symlinkMap,
       symbolDiffMap,
       expandAll,
       collapseAll,
@@ -721,6 +723,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       movedFilePaths,
       hunkStatusMap,
       fileStatusMap,
+      symlinkMap,
       symbolDiffMap,
       expandAll,
       collapseAll,
@@ -1052,7 +1055,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                             revealLabel={revealLabel}
                             onOpenInSplit={openInSplit}
                             registerRef={registerRef}
-                            hunkContext="all"
                             showSizeBar
                           />
                         ))

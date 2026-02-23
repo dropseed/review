@@ -65,6 +65,7 @@ export function FileListSection({
     movedFilePaths,
     hunkStatusMap,
     fileStatusMap,
+    symlinkMap,
   } = useFilesPanelContext();
 
   if (displayMode === "tree") {
@@ -117,6 +118,8 @@ export function FileListSection({
           onUnapproveAll={handleUnapproveAll}
           onRejectAll={handleRejectAll}
           movedFilePaths={movedFilePaths}
+          isSymlink={symlinkMap.has(filePath)}
+          symlinkTarget={symlinkMap.get(filePath)}
         />
       ))}
     </div>

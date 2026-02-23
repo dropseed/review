@@ -259,7 +259,7 @@ function CompactNode({
         >
           <TreeRowButton onClick={() => onToggle(entry.path)}>
             <TreeChevron expanded={!isCollapsed} />
-            <TreeFileIcon name={entry.displayName} isDirectory />
+            <TreeFileIcon name={entry.displayName} isDirectory isSymlink={entry.isSymlink} symlinkTarget={entry.symlinkTarget} />
             <TreeNodeName className="text-fg-muted">
               {entry.displayName}
             </TreeNodeName>
@@ -304,7 +304,7 @@ function CompactNode({
       >
         <TreeRowButton onClick={() => onNavigate(entry.path)}>
           <TreeChevron expanded={false} visible={false} />
-          <TreeFileIcon name={entry.displayName} isDirectory={false} />
+          <TreeFileIcon name={entry.displayName} isDirectory={false} isSymlink={entry.isSymlink} symlinkTarget={entry.symlinkTarget} />
           <TreeNodeName className="text-fg-secondary">
             {entry.displayName}
           </TreeNodeName>
