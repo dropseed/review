@@ -960,6 +960,134 @@ pub fn unstage_hunks(
         .map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CommitStream {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitOutputLine {
+    pub text: String,
+    pub stream: CommitStream,
+    pub seq: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitResult {
+    pub success: bool,
+    pub commit_hash: Option<String>,
+    pub summary: String,
+}
+
+/// Spawn a thread that reads lines from a pipe and sends them as `CommitOutputLine` messages.
+fn spawn_stream_reader(
+    pipe: Option<impl std::io::Read + Send + 'static>,
+    stream: CommitStream,
+    tx: tokio::sync::mpsc::UnboundedSender<CommitOutputLine>,
+    seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+) -> std::thread::JoinHandle<()> {
+    use std::io::BufRead;
+
+    std::thread::spawn(move || {
+        let Some(pipe) = pipe else { return };
+        let reader = std::io::BufReader::new(pipe);
+        for line in reader.lines().flatten() {
+            let s = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let _ = tx.send(CommitOutputLine {
+                text: line,
+                stream,
+                seq: s,
+            });
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn git_commit(
+    app: tauri::AppHandle,
+    repo_path: String,
+    message: String,
+    request_id: String,
+) -> Result<CommitResult, String> {
+    use std::sync::atomic::AtomicU64;
+    use tauri::Emitter;
+
+    let t0 = Instant::now();
+    let event_name = format!("commit:output:{request_id}");
+
+    debug!("[git_commit] repo_path={repo_path}, request_id={request_id}");
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<CommitOutputLine>();
+
+    // Forward lines from the channel to Tauri events
+    let emit_handle = app.clone();
+    let emit_event = event_name.clone();
+    let emit_task = tokio::spawn(async move {
+        while let Some(line) = rx.recv().await {
+            let _ = emit_handle.emit(&emit_event, &line);
+        }
+    });
+
+    let result = tokio::task::spawn_blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+        let mut child = source.spawn_commit(&message).map_err(|e| e.to_string())?;
+
+        let seq = std::sync::Arc::new(AtomicU64::new(0));
+
+        let stdout_thread = spawn_stream_reader(
+            child.stdout.take(),
+            CommitStream::Stdout,
+            tx.clone(),
+            seq.clone(),
+        );
+        let stderr_thread = spawn_stream_reader(child.stderr.take(), CommitStream::Stderr, tx, seq);
+
+        let status = child.wait().map_err(|e| e.to_string())?;
+
+        let _ = stdout_thread.join();
+        let _ = stderr_thread.join();
+
+        if status.success() {
+            let commit_hash = source.get_head_short_hash().ok();
+            Ok(CommitResult {
+                success: true,
+                commit_hash,
+                summary: "Commit created successfully".to_owned(),
+            })
+        } else {
+            let code = status.code().unwrap_or(-1);
+            Ok(CommitResult {
+                success: false,
+                commit_hash: None,
+                summary: format!("git commit exited with code {code}"),
+            })
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Wait for all events to be emitted
+    let _ = emit_task.await;
+
+    match &result {
+        Ok(r) if r.success => {
+            info!("[git_commit] SUCCESS in {:?}", t0.elapsed());
+        }
+        Ok(r) => {
+            info!("[git_commit] FAILED: {} in {:?}", r.summary, t0.elapsed());
+        }
+        Err(e) => {
+            error!("[git_commit] ERROR: {} in {:?}", e, t0.elapsed());
+        }
+    }
+
+    result
+}
+
 #[tauri::command]
 pub fn get_working_tree_file_content(
     repo_path: String,

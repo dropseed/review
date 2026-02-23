@@ -41,15 +41,6 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.href = "/";
   };
 
-  handleDismiss = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null,
-      copied: false,
-    });
-  };
-
   getErrorText(): string {
     const parts = [this.state.error?.toString() ?? ""];
     if (this.state.errorInfo?.componentStack) {
@@ -79,20 +70,12 @@ export class ErrorBoundary extends Component<Props, State> {
               application.
             </p>
 
-            <div className="flex items-center justify-center gap-3">
-              <button
-                onClick={this.handleDismiss}
-                className="rounded-md bg-surface-hover px-4 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-active transition-colors"
-              >
-                Dismiss
-              </button>
-              <button
-                onClick={this.handleReload}
-                className="rounded-md bg-status-modified px-4 py-2 text-sm font-medium text-surface hover:bg-status-modified transition-colors"
-              >
-                Reload Application
-              </button>
-            </div>
+            <button
+              onClick={this.handleReload}
+              className="rounded-md bg-status-modified px-4 py-2 text-sm font-medium text-surface hover:bg-status-modified transition-colors"
+            >
+              Reload Application
+            </button>
 
             {this.state.error && (
               <details className="mt-6 text-left">
