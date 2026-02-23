@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useListContinuation } from "../../../hooks";
 import type { LineAnnotation } from "../../../types";
 import { SimpleTooltip } from "../../ui/tooltip";
 
@@ -21,13 +22,15 @@ export function AnnotationEditor({
   const [value, setValue] = useState(initialContent || "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const handleListKeyDown = useListContinuation(textareaRef, setValue);
+
   useEffect(() => {
     if (autoFocus && textareaRef.current) {
       textareaRef.current.focus();
     }
   }, [autoFocus]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       if (value.trim()) {
@@ -37,6 +40,8 @@ export function AnnotationEditor({
       e.preventDefault();
       e.stopPropagation();
       onCancel();
+    } else {
+      handleListKeyDown(e);
     }
   };
 
