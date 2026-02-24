@@ -1,4 +1,6 @@
 import { memo, type ReactNode } from "react";
+import { useReviewStore } from "../../stores";
+import { REVEAL_LABEL } from "../../hooks/useRevealLabel";
 import { getPlatformServices } from "../../platform";
 import {
   ContextMenu,
@@ -53,7 +55,6 @@ interface FileNodeProps {
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
   repoPath: string | null;
-  revealLabel: string;
   onOpenInSplit?: (path: string) => void;
   registerRef: (path: string, ref: HTMLButtonElement | null) => void;
   hunkContext?: HunkContext;
@@ -220,7 +221,6 @@ export const FileNode = memo(
     selectedFile,
     onSelectFile,
     repoPath,
-    revealLabel,
     onOpenInSplit,
     registerRef,
     hunkContext,
@@ -234,7 +234,8 @@ export const FileNode = memo(
     collapsible = true,
     showSizeBar = false,
   }: FileNodeProps) {
-    const { expandedPaths, grayscaleIcons } = useFilesPanelContext();
+    const { expandedPaths, grayscaleIcons, showRevealInBrowse } =
+      useFilesPanelContext();
     if (!entry.matchesFilter) {
       return null;
     }
@@ -346,7 +347,6 @@ export const FileNode = memo(
                   selectedFile={selectedFile}
                   onSelectFile={onSelectFile}
                   repoPath={repoPath}
-                  revealLabel={revealLabel}
                   onOpenInSplit={onOpenInSplit}
                   registerRef={registerRef}
                   hunkContext={hunkContext}
@@ -450,7 +450,7 @@ export const FileNode = memo(
                 onRejectAll={() => onRejectAll!(entry.path, false)}
                 onUnapproveAll={() => onUnapproveAll!(entry.path, false)}
                 onOpenInSplit={onOpenInSplit}
-                revealLabel={revealLabel}
+                showRevealInBrowse={showRevealInBrowse}
               />
             )}
 
@@ -481,25 +481,44 @@ export const FileNode = memo(
         </ContextMenuTrigger>
         <ContextMenuContent>
           {onOpenInSplit && (
-            <>
-              <ContextMenuItem onSelect={() => onOpenInSplit(entry.path)}>
-                <svg
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 4v16M15 4v16"
-                  />
-                </svg>
-                Open in Split View
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
+            <ContextMenuItem onSelect={() => onOpenInSplit(entry.path)}>
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 4v16M15 4v16"
+                />
+              </svg>
+              Open in Split View
+            </ContextMenuItem>
           )}
+          {showRevealInBrowse && (
+            <ContextMenuItem
+              onSelect={() =>
+                useReviewStore.getState().revealInBrowse(entry.path)
+              }
+            >
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
+                />
+              </svg>
+              Reveal in Browse
+            </ContextMenuItem>
+          )}
+          {(onOpenInSplit || showRevealInBrowse) && <ContextMenuSeparator />}
           <ContextMenuItem
             onSelect={async () => {
               const platform = getPlatformServices();
@@ -559,7 +578,7 @@ export const FileNode = memo(
                 d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
               />
             </svg>
-            {revealLabel}
+            {REVEAL_LABEL}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -576,7 +595,6 @@ export const FileNode = memo(
       prev.onRejectAll === next.onRejectAll &&
       prev.movedFilePaths === next.movedFilePaths &&
       prev.repoPath === next.repoPath &&
-      prev.revealLabel === next.revealLabel &&
       prev.onOpenInSplit === next.onOpenInSplit &&
       prev.onStage === next.onStage &&
       prev.onUnstage === next.onUnstage &&

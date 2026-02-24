@@ -8,7 +8,6 @@ interface FilesPanelContextValue {
   selectedFile: string | null;
   handleSelectFile: (path: string) => void;
   repoPath: string | null;
-  revealLabel: string;
   openInSplit: (filePath: string) => void;
   registerRef: (path: string, el: HTMLButtonElement | null) => void;
   handleApproveAll: (path: string, isDir: boolean) => void;
@@ -22,6 +21,7 @@ interface FilesPanelContextValue {
   expandAll: (dirPaths: Set<string>, excludePaths?: Set<string>) => void;
   collapseAll: () => void;
   grayscaleIcons?: boolean;
+  showRevealInBrowse?: boolean;
 }
 
 const FilesPanelContext = createContext<FilesPanelContextValue | null>(null);

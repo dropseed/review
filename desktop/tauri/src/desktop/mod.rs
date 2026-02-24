@@ -34,6 +34,7 @@ pub struct MenuItems {
     pub find_symbols: MenuItem<tauri::Wry>,
     pub search_in_files: MenuItem<tauri::Wry>,
     pub toggle_sidebar: MenuItem<tauri::Wry>,
+    pub reveal_in_browse: MenuItem<tauri::Wry>,
 }
 
 /// Managed state that controls whether Sentry events are actually sent.
@@ -287,6 +288,12 @@ pub fn run() {
                 .enabled(false)
                 .build(app)?;
 
+            let reveal_in_browse = MenuItemBuilder::new("Reveal in Browse")
+                .id("reveal_in_browse")
+                .accelerator("CmdOrCtrl+Alt+\\")
+                .enabled(false)
+                .build(app)?;
+
             let new_review = MenuItemBuilder::new("New Review")
                 .id("new_review")
                 .accelerator("CmdOrCtrl+Shift+N")
@@ -335,6 +342,7 @@ pub fn run() {
                 .item(&search_in_files)
                 .separator()
                 .item(&toggle_sidebar)
+                .item(&reveal_in_browse)
                 .separator()
                 .item(&actual_size)
                 .item(&zoom_in)
@@ -383,6 +391,7 @@ pub fn run() {
                 find_symbols,
                 search_in_files,
                 toggle_sidebar,
+                reveal_in_browse,
             });
 
             Ok(())
@@ -452,6 +461,9 @@ pub fn run() {
                 }
                 "toggle_sidebar" => {
                     let _: Result<(), _> = app.emit("menu:toggle-sidebar", ());
+                }
+                "reveal_in_browse" => {
+                    let _: Result<(), _> = app.emit("menu:reveal-in-browse", ());
                 }
                 "new_review" => {
                     let _: Result<(), _> = app.emit("menu:new-review", ());

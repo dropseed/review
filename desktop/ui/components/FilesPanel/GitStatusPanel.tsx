@@ -170,7 +170,6 @@ export function GitStatusPanel({
     togglePath,
     selectedFile,
     repoPath,
-    revealLabel,
     registerRef,
     expandAll,
     collapseAll,
@@ -321,7 +320,6 @@ export function GitStatusPanel({
                     selectedFile={selectedFile}
                     onSelectFile={handleSelectStaged}
                     repoPath={repoPath}
-                    revealLabel={revealLabel}
                     registerRef={registerRef}
                     hunkContext="all"
                     onUnstage={unstageFile}
@@ -372,7 +370,6 @@ export function GitStatusPanel({
                     selectedFile={selectedFile}
                     onSelectFile={handleSelectUnstaged}
                     repoPath={repoPath}
-                    revealLabel={revealLabel}
                     registerRef={registerRef}
                     hunkContext="all"
                     onStage={stageFile}
@@ -417,7 +414,6 @@ export function GitStatusPanel({
                     selectedFile={selectedFile}
                     onSelectFile={onSelectFile}
                     repoPath={repoPath}
-                    revealLabel={revealLabel}
                     registerRef={registerRef}
                     hunkContext="all"
                     onStage={stageFile}

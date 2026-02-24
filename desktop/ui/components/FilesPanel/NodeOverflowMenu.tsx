@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { getPlatformServices } from "../../platform";
 import { useReviewStore } from "../../stores";
+import { REVEAL_LABEL } from "../../hooks/useRevealLabel";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -19,7 +20,7 @@ interface NodeOverflowMenuProps {
   onRejectAll: () => void;
   onUnapproveAll: () => void;
   onOpenInSplit?: (path: string) => void;
-  revealLabel?: string;
+  showRevealInBrowse?: boolean;
 }
 
 export function NodeOverflowMenu({
@@ -32,7 +33,7 @@ export function NodeOverflowMenu({
   onRejectAll,
   onUnapproveAll,
   onOpenInSplit,
-  revealLabel = "Reveal in Finder",
+  showRevealInBrowse,
 }: NodeOverflowMenuProps) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const [open, setOpen] = useState(false);
@@ -118,25 +119,42 @@ export function NodeOverflowMenu({
         {showFileActions && (
           <>
             {onOpenInSplit && (
-              <>
-                <DropdownMenuItem onClick={() => onOpenInSplit(path)}>
-                  <svg
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 4v16M15 4v16"
-                    />
-                  </svg>
-                  Open in Split View
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
+              <DropdownMenuItem onClick={() => onOpenInSplit(path)}>
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 4v16M15 4v16"
+                  />
+                </svg>
+                Open in Split View
+              </DropdownMenuItem>
             )}
+            {showRevealInBrowse && (
+              <DropdownMenuItem
+                onClick={() => useReviewStore.getState().revealInBrowse(path)}
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
+                  />
+                </svg>
+                Reveal in Browse
+              </DropdownMenuItem>
+            )}
+            {(onOpenInSplit || showRevealInBrowse) && <DropdownMenuSeparator />}
             <DropdownMenuItem
               onClick={async () => {
                 const platform = getPlatformServices();
@@ -196,7 +214,7 @@ export function NodeOverflowMenu({
                   d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                 />
               </svg>
-              {revealLabel}
+              {REVEAL_LABEL}
             </DropdownMenuItem>
           </>
         )}

@@ -1,9 +1,4 @@
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 import { useReviewStore } from "../../stores";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk } from "../../types";
@@ -374,56 +369,56 @@ export function GuideSideNav(): ReactNode {
                       : groupItemStyle(isActive, isCompleted)
                   }`}
                 >
-                    {isCompleted ? (
-                      <span className="text-status-approved shrink-0 mt-0.5">
-                        <svg
-                          className="w-3.5 h-3.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={3}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      </span>
-                    ) : group.ungrouped ? (
-                      <span className="w-4 text-center shrink-0 mt-px">
-                        <svg
-                          className="w-3 h-3 text-fg-faint/60 inline"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
+                  {isCompleted ? (
+                    <span className="text-status-approved shrink-0 mt-0.5">
+                      <svg
+                        className="w-3.5 h-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                        >
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                      </span>
-                    ) : (
-                      <span className="w-4 text-center text-xxs text-fg-faint/60 shrink-0 tabular-nums mt-0.5">
-                        {i + 1}
-                      </span>
-                    )}
-                    <span className="flex-1 text-left line-clamp-2">
-                      {group.title}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
                     </span>
-                    {!isCompleted && (
-                      <span
-                        className={`inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] rounded-full text-xxs font-medium tabular-nums shrink-0 px-1 ${
-                          group.ungrouped
-                            ? "bg-fg/[0.08] text-fg-muted"
-                            : "bg-guide/15 text-guide"
-                        }`}
+                  ) : group.ungrouped ? (
+                    <span className="w-4 text-center shrink-0 mt-px">
+                      <svg
+                        className="w-3 h-3 text-fg-faint/60 inline"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       >
-                        {unreviewedCount}
-                      </span>
-                    )}
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </span>
+                  ) : (
+                    <span className="w-4 text-center text-xxs text-fg-faint/60 shrink-0 tabular-nums mt-0.5">
+                      {i + 1}
+                    </span>
+                  )}
+                  <span className="flex-1 text-left line-clamp-2">
+                    {group.title}
+                  </span>
+                  {!isCompleted && (
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] rounded-full text-xxs font-medium tabular-nums shrink-0 px-1 ${
+                        group.ungrouped
+                          ? "bg-fg/[0.08] text-fg-muted"
+                          : "bg-guide/15 text-guide"
+                      }`}
+                    >
+                      {unreviewedCount}
+                    </span>
+                  )}
                 </button>
               );
             })}

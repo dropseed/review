@@ -152,6 +152,15 @@ export function useMenuEvents({
           navigateRef.current("/new");
         },
       ],
+      [
+        "menu:reveal-in-browse",
+        () => {
+          const selectedFile = useReviewStore.getState().selectedFile;
+          if (selectedFile) {
+            useReviewStore.getState().revealInBrowse(selectedFile);
+          }
+        },
+      ],
     ];
 
     const unlistenFns = listeners.map(([event, handler]) => on(event, handler));

@@ -56,7 +56,6 @@ export function FileListSection({
     selectedFile,
     handleSelectFile,
     repoPath,
-    revealLabel,
     openInSplit,
     registerRef,
     handleApproveAll,
@@ -84,7 +83,6 @@ export function FileListSection({
             selectedFile={selectedFile}
             onSelectFile={handleSelectFile}
             repoPath={repoPath}
-            revealLabel={revealLabel}
             onOpenInSplit={openInSplit}
             registerRef={registerRef}
             hunkContext={hunkContext}

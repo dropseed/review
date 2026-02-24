@@ -2277,6 +2277,10 @@ pub fn update_menu_state(
         .toggle_sidebar
         .set_enabled(in_review)
         .map_err(|e| e.to_string())?;
+    items
+        .reveal_in_browse
+        .set_enabled(in_review)
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }

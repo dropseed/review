@@ -7,7 +7,6 @@ import {
   useFilePanelApproval,
 } from "./hooks";
 import { useReviewStore } from "../../stores";
-import { getPlatformServices } from "../../platform";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
   DropdownMenuItem,
@@ -662,17 +661,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
   const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
-  const [revealLabel, setRevealLabel] = useState("Reveal in Finder");
-  useEffect(() => {
-    const platformName = getPlatformServices().window.getPlatformName();
-    if (platformName === "macos") {
-      setRevealLabel("Reveal in Finder");
-    } else if (platformName === "windows") {
-      setRevealLabel("Reveal in Explorer");
-    } else {
-      setRevealLabel("Reveal in Files");
-    }
-  }, []);
 
   // Context value for FlatFileNode tree (avoids prop drilling hunkStates/trustList)
   const reviewDataContextValue = useMemo(
@@ -692,7 +680,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       selectedFile,
       handleSelectFile,
       repoPath,
-      revealLabel,
       openInSplit,
       registerRef,
       handleApproveAll,
@@ -706,6 +693,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       expandAll,
       collapseAll,
       grayscaleIcons: viewMode !== "browse",
+      showRevealInBrowse: viewMode !== "browse",
     }),
     [
       expandedPaths,
@@ -713,7 +701,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       selectedFile,
       handleSelectFile,
       repoPath,
-      revealLabel,
       openInSplit,
       registerRef,
       handleApproveAll,
@@ -1020,7 +1007,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       selectedFile={selectedFile}
                       onSelectFile={handleSelectFile}
                       repoPath={repoPath}
-                      revealLabel={revealLabel}
                       onOpenInSplit={openInSplit}
                       registerRef={registerRef}
                       showSizeBar

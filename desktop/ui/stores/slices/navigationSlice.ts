@@ -40,6 +40,7 @@ export interface NavigationSlice {
 
   // Navigation actions
   navigateToBrowse: (filePath?: string) => void;
+  revealInBrowse: (filePath: string) => void;
 
   // Split view actions
   setSecondaryFile: (path: string | null) => void;
@@ -330,6 +331,15 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
         focusedHunkId: hunkId,
         scrollTarget: { type: "hunk", hunkId },
       }),
+    });
+  },
+
+  revealInBrowse: (filePath) => {
+    set({
+      requestedFilesPanelTab: "browse",
+      fileToReveal: filePath,
+      selectedFile: filePath,
+      filesPanelCollapsed: false,
     });
   },
 
