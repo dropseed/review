@@ -141,14 +141,14 @@ export function CommitsPanel({
                        transition-colors duration-75
                        ${
                          isSelected
-                           ? "bg-status-modified/10 border-l-2 border-l-status-modified"
+                           ? "bg-focus-ring/10 border-l-2 border-l-focus-ring"
                            : "hover:bg-surface-raised/40 border-l-2 border-l-transparent"
                        }`}
           >
             <div className="flex items-baseline gap-2 min-w-0">
               <span
                 className={`font-mono text-xxs shrink-0 ${
-                  isSelected ? "text-status-modified" : "text-fg-muted"
+                  isSelected ? "text-focus-ring" : "text-fg-muted"
                 }`}
               >
                 {commit.shortHash}

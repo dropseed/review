@@ -67,7 +67,7 @@ export const FlatFileNode = memo(function FlatFileNode({
         depth={0}
         className={
           isSelected
-            ? "bg-status-modified/15 border-l-2 border-l-status-modified"
+            ? "bg-focus-ring/15 border-l-2 border-l-focus-ring"
             : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
         }
       >

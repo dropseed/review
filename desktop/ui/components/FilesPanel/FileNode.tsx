@@ -388,7 +388,7 @@ export const FileNode = memo(
             depth={depth}
             className={
               isSelected
-                ? "bg-status-modified/15 border-l-2 border-l-status-modified"
+                ? "bg-focus-ring/15 border-l-2 border-l-focus-ring"
                 : isGitignored
                   ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
                   : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
