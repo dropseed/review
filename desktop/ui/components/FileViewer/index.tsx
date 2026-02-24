@@ -329,6 +329,8 @@ export function FileViewer({
   );
 
   const prevFilePathRef = useRef(filePath);
+  const fileContentRef = useRef(fileContent);
+  fileContentRef.current = fileContent;
 
   useEffect(() => {
     if (!repoPath || !comparison) return;
@@ -339,7 +341,8 @@ export function FileViewer({
     prevFilePathRef.current = filePath;
 
     // Only show spinner on file switch or initial load
-    if (isFileSwitch || !fileContent) {
+    const showSpinner = isFileSwitch || !fileContent;
+    if (showSpinner) {
       setLoading(true);
     }
     if (isFileSwitch) {
@@ -347,48 +350,62 @@ export function FileViewer({
     }
     setError(null);
 
-    // When viewing a Git panel file with a specific mode, use the dedicated API
-    const contentPromise =
-      isWorkingTreeMode && workingTreeDiffMode
-        ? getApiClient().getWorkingTreeFileContent(
-            repoPath,
-            filePath,
-            workingTreeDiffMode === "staged",
-          )
-        : (() => {
-            // Fallback: combined diff from HEAD vs working tree
-            const effectiveComparison =
-              isWorkingTreeMode && gitStatus
-                ? makeComparison("HEAD", gitStatus.currentBranch)
-                : comparison;
+    const api = getApiClient();
 
-            return getApiClient().getFileContent(
-              repoPath,
-              filePath,
-              effectiveComparison,
-              isWorkingTreeMode ? undefined : reviewState?.githubPr,
-            );
-          })();
+    // When viewing a Git panel file with a specific mode, use the dedicated API
+    let contentPromise: Promise<FileContent>;
+    if (isWorkingTreeMode && workingTreeDiffMode) {
+      contentPromise = api.getWorkingTreeFileContent(
+        repoPath,
+        filePath,
+        workingTreeDiffMode === "staged",
+      );
+    } else {
+      const effectiveComparison =
+        isWorkingTreeMode && gitStatus
+          ? makeComparison("HEAD", gitStatus.currentBranch)
+          : comparison;
+
+      contentPromise = api.getFileContent(
+        repoPath,
+        filePath,
+        effectiveComparison,
+        isWorkingTreeMode ? undefined : reviewState?.githubPr,
+      );
+    }
 
     contentPromise
       .then((result) => {
-        if (!cancelled) {
-          setFileContent(result);
-          setFileContentPath(filePath);
-          setLoading(false);
-          // Sync store hunks with fresh per-file data so the sidebar
-          // stays consistent with what the diff view actually renders.
-          // Skip sync for working tree diffs — these aren't review hunks.
-          if (!isWorkingTreeMode) {
-            useReviewStore.getState().syncFileHunks(filePath, result.hunks);
-          }
+        if (cancelled) return;
+
+        // Skip re-render if file content hasn't actually changed —
+        // preserves scroll position when unrelated files trigger a refresh.
+        const prev = fileContentRef.current;
+        const isUnchanged =
+          prev &&
+          !isFileSwitch &&
+          result.content === prev.content &&
+          result.diffPatch === prev.diffPatch;
+
+        if (isUnchanged) {
+          if (showSpinner) setLoading(false);
+          return;
+        }
+
+        setFileContent(result);
+        setFileContentPath(filePath);
+        setLoading(false);
+        // Sync store hunks with fresh per-file data so the sidebar
+        // stays consistent with what the diff view actually renders.
+        // Skip sync for working tree diffs — these aren't review hunks.
+        if (!isWorkingTreeMode) {
+          useReviewStore.getState().syncFileHunks(filePath, result.hunks);
         }
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(String(err));
-          setLoading(false);
-        }
+        if (cancelled) return;
+        setError(String(err));
+        setLoading(false);
       });
 
     return () => {
