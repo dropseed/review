@@ -190,7 +190,6 @@ export function DiffView({
   const reviewState = useReviewStore((s) => s.reviewState);
   const allHunks = useReviewStore((s) => s.hunks);
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
-  const prefDiffIndicators = useReviewStore((s) => s.diffIndicators);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
@@ -812,7 +811,7 @@ export function DiffView({
     diffStyle: "unified" | "split";
     theme: { dark: string; light: string };
     themeType: "dark";
-    diffIndicators: "classic" | "bars" | "none";
+    diffIndicators: "none";
     disableBackground: boolean;
     enableHoverUtility: boolean;
     enableLineSelection: boolean;
@@ -836,7 +835,7 @@ export function DiffView({
         light: theme,
       },
       themeType: "dark",
-      diffIndicators: prefDiffIndicators,
+      diffIndicators: "none",
       disableBackground: false,
       enableHoverUtility: true,
       enableLineSelection: true,
@@ -862,7 +861,6 @@ export function DiffView({
   }, [
     viewMode,
     theme,
-    prefDiffIndicators,
     fontSizeCSS,
     annotationHighlightCSS,
     lineDiffType,

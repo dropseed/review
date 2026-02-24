@@ -1,9 +1,6 @@
 import { memo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
-import type {
-  DiffLineDiffType,
-  DiffIndicators,
-} from "../../stores/slices/preferencesSlice";
+import type { DiffLineDiffType } from "../../stores/slices/preferencesSlice";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { SimpleTooltip } from "../ui/tooltip";
 
@@ -11,12 +8,6 @@ const HIGHLIGHTING_OPTIONS: [DiffLineDiffType, string][] = [
   ["word", "Word"],
   ["word-alt", "Word Alt"],
   ["char", "Char"],
-  ["none", "None"],
-];
-
-const INDICATOR_OPTIONS: [DiffIndicators, string][] = [
-  ["classic", "Classic (+/-)"],
-  ["bars", "Bars"],
   ["none", "None"],
 ];
 
@@ -60,19 +51,9 @@ function OptionButton({
   );
 }
 
-interface OptionSectionProps {
-  title: string;
-  hasBorderTop?: boolean;
-}
-
-function OptionSectionHeader({
-  title,
-  hasBorderTop,
-}: OptionSectionProps): JSX.Element {
+function OptionSectionHeader({ title }: { title: string }): JSX.Element {
   return (
-    <div
-      className={`border-b border-edge px-3 py-2 ${hasBorderTop ? "border-t" : ""}`}
-    >
+    <div className="border-b border-edge px-3 py-2">
       <span className="text-xxs font-medium uppercase tracking-wide text-fg-muted">
         {title}
       </span>
@@ -82,9 +63,7 @@ function OptionSectionHeader({
 
 export const DiffOptionsPopover = memo(function DiffOptionsPopover() {
   const diffLineDiffType = useReviewStore((s) => s.diffLineDiffType);
-  const diffIndicators = useReviewStore((s) => s.diffIndicators);
   const setDiffLineDiffType = useReviewStore((s) => s.setDiffLineDiffType);
-  const setDiffIndicators = useReviewStore((s) => s.setDiffIndicators);
 
   return (
     <Popover>
@@ -115,17 +94,6 @@ export const DiffOptionsPopover = memo(function DiffOptionsPopover() {
               label={label}
               isSelected={diffLineDiffType === value}
               onClick={() => setDiffLineDiffType(value)}
-            />
-          ))}
-        </div>
-        <OptionSectionHeader title="Indicators" hasBorderTop />
-        <div className="p-1">
-          {INDICATOR_OPTIONS.map(([value, label]) => (
-            <OptionButton
-              key={value}
-              label={label}
-              isSelected={diffIndicators === value}
-              onClick={() => setDiffIndicators(value)}
             />
           ))}
         </div>

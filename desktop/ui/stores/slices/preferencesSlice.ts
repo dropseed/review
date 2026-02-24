@@ -104,7 +104,6 @@ export function resolveViewModeForFile(
 }
 
 export type DiffLineDiffType = "word" | "word-alt" | "char" | "none";
-export type DiffIndicators = "classic" | "bars" | "none";
 export type ChangesDisplayMode = "tree" | "flat";
 export type DiffViewMode = "unified" | "split" | "old" | "new";
 export type ReviewSortOrder = "updated" | "repo" | "size";
@@ -116,7 +115,6 @@ const defaults = {
   uiTheme: "review-dark",
   recentRepositories: [] as RecentRepo[],
   diffLineDiffType: "word" as DiffLineDiffType,
-  diffIndicators: "bars" as DiffIndicators,
   changesDisplayMode: "tree" as ChangesDisplayMode,
   gitDisplayMode: "tree" as ChangesDisplayMode,
   diffViewMode: "split" as DiffViewMode,
@@ -147,7 +145,6 @@ export interface PreferencesSlice {
 
   // Diff display settings
   diffLineDiffType: DiffLineDiffType;
-  diffIndicators: DiffIndicators;
 
   // Changes panel display mode (per panel)
   changesDisplayMode: ChangesDisplayMode;
@@ -202,7 +199,6 @@ export interface PreferencesSlice {
   setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
-  setDiffIndicators: (indicators: DiffIndicators) => void;
   setChangesDisplayMode: (mode: ChangesDisplayMode) => void;
   setGitDisplayMode: (mode: ChangesDisplayMode) => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
@@ -307,11 +303,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setDiffLineDiffType: (type) => {
       set({ diffLineDiffType: type });
       storage.set("diffLineDiffType", type);
-    },
-
-    setDiffIndicators: (indicators) => {
-      set({ diffIndicators: indicators });
-      storage.set("diffIndicators", indicators);
     },
 
     setChangesDisplayMode: (mode) => {
