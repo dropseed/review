@@ -31,6 +31,7 @@ export function useComparisonLoader(
       syncTotalDiffHunks,
       classifyStaticHunks,
       restoreGuideFromState,
+      restoreNavigationSnapshot,
     } = useReviewStore.getState();
 
     // Clear stale search results from previous comparison
@@ -57,6 +58,8 @@ export function useComparisonLoader(
         classifyStaticHunks();
         // Restore guide data from persisted state (if still fresh)
         restoreGuideFromState();
+        // Restore navigation snapshot (selected file, view mode) from last visit
+        restoreNavigationSnapshot();
         // Fire-and-forget: remote info is cosmetic (header breadcrumb)
         loadRemoteInfo();
       } catch (err) {

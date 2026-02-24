@@ -125,7 +125,7 @@ function isFileHunkUnreviewed(
  * falling back to the first hunk in the file if all are reviewed.
  * Returns null if no hunks exist for the file.
  */
-function findFirstUnreviewedHunkId(
+export function findFirstUnreviewedHunkId(
   filePath: string,
   state: ReviewStore,
 ): string | null {

@@ -9,6 +9,16 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveRepoIdentity } from "../../utils/repo-identity";
 import { makeReviewKey } from "./groupingSlice";
+import {
+  type ChangesViewMode,
+  findFirstUnreviewedHunkId,
+} from "./navigationSlice";
+
+/** Snapshot of navigation state saved when switching away from a review. */
+export interface NavigationSnapshot {
+  selectedFile: string | null;
+  changesViewMode: ChangesViewMode;
+}
 
 /** A diff is considered active when it has any changed files, additions, or deletions. */
 function isDiffActive(stat: DiffShortStat): boolean {
@@ -18,6 +28,11 @@ function isDiffActive(stat: DiffShortStat): boolean {
 /** Build the composite key used to track per-review state (stats, freshness, etc.). */
 function reviewKey(review: GlobalReviewSummary): string {
   return `${review.repoPath}:${review.comparison.key}`;
+}
+
+/** Build the composite key for per-review navigation snapshots. */
+function snapshotKey(repoPath: string, comparisonKey: string): string {
+  return `${repoPath}:${comparisonKey}`;
 }
 
 export interface ActiveReviewKey {
@@ -42,6 +57,8 @@ export interface GlobalReviewsSlice {
     string,
     { oldSha: string | null; newSha: string | null }
   >;
+  /** Per-review navigation snapshots for tab-like restore behavior. */
+  navigationSnapshots: Record<string, NavigationSnapshot>;
 
   loadGlobalReviews: () => Promise<void>;
   setActiveReviewKey: (key: ActiveReviewKey | null) => void;
@@ -55,6 +72,10 @@ export interface GlobalReviewsSlice {
     comparison: Comparison,
   ) => Promise<void>;
   checkReviewsFreshness: () => Promise<void>;
+  /** Save current navigation state before switching away from a review. */
+  saveNavigationSnapshot: () => void;
+  /** Restore navigation state when switching back to a review (after files load). */
+  restoreNavigationSnapshot: () => void;
 }
 
 export const createGlobalReviewsSlice: SliceCreatorWithClient<
@@ -67,6 +88,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   reviewDiffStats: {},
   reviewActiveState: {},
   reviewCachedShas: {},
+  navigationSnapshots: {},
 
   loadGlobalReviews: async () => {
     set({ globalReviewsLoading: true });
@@ -163,6 +185,10 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       await client.deleteReview(repoPath, comparison);
       // Evict the keyed grouping entry for the deleted review
       get().removeGroupingEntry(makeReviewKey(repoPath, comparison.key));
+      // Clean up navigation snapshot
+      const key = snapshotKey(repoPath, comparison.key);
+      const { [key]: _, ...rest } = get().navigationSnapshots;
+      set({ navigationSnapshots: rest });
       // If the deleted review was active, clear the active key
       const { activeReviewKey } = get();
       if (
@@ -175,6 +201,41 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       await get().loadGlobalReviews();
     } catch (err) {
       console.error("Failed to delete review:", err);
+    }
+  },
+
+  saveNavigationSnapshot: () => {
+    const { repoPath, comparison, selectedFile, changesViewMode } = get();
+    if (!repoPath) return;
+    const key = snapshotKey(repoPath, comparison.key);
+    set({
+      navigationSnapshots: {
+        ...get().navigationSnapshots,
+        [key]: { selectedFile, changesViewMode },
+      },
+    });
+  },
+
+  restoreNavigationSnapshot: () => {
+    const state = get();
+    const { repoPath, comparison, flatFileList } = state;
+    if (!repoPath) return;
+    const key = snapshotKey(repoPath, comparison.key);
+    const snapshot = state.navigationSnapshots[key];
+    if (!snapshot) return;
+
+    // Restore selectedFile only if it still exists in the current file list
+    if (snapshot.selectedFile && flatFileList.includes(snapshot.selectedFile)) {
+      const hunkId = findFirstUnreviewedHunkId(snapshot.selectedFile, state);
+      set({
+        changesViewMode: snapshot.changesViewMode,
+        selectedFile: snapshot.selectedFile,
+        guideContentMode: null,
+        focusedHunkId: hunkId,
+        scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
+      });
+    } else {
+      set({ changesViewMode: snapshot.changesViewMode });
     }
   },
 

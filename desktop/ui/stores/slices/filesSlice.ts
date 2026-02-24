@@ -176,6 +176,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
 
     setComparison: (comparison) => {
       cancelPendingSaves();
+      get().saveNavigationSnapshot();
       get().clearAllActivities();
       // Clear stale data and signal that new data is loading.
       set({
@@ -186,6 +187,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
 
     switchReview: (path, comparison) => {
       cancelPendingSaves();
+      get().saveNavigationSnapshot();
       get().clearAllActivities();
 
       // Atomic update: sets both repoPath and comparison together with the
