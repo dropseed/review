@@ -55,6 +55,14 @@ pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
     load_taxonomy_from_json()
 }
 
+/// Return all pattern IDs from the taxonomy (e.g. "imports:added", "formatting:whitespace", etc.)
+pub fn get_all_pattern_ids() -> Vec<String> {
+    get_trust_taxonomy()
+        .into_iter()
+        .flat_map(|cat| cat.patterns.into_iter().map(|p| p.id))
+        .collect()
+}
+
 /// Fallback hardcoded taxonomy in case JSON loading fails
 fn get_default_taxonomy() -> Vec<TrustCategory> {
     vec![

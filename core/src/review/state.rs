@@ -1,5 +1,6 @@
 use crate::sources::traits::Comparison;
 use crate::trust::matches_pattern;
+use crate::trust::patterns::get_all_pattern_ids;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -120,7 +121,7 @@ impl ReviewState {
         Self {
             comparison,
             hunks: HashMap::new(),
-            trust_list: Vec::new(),
+            trust_list: get_all_pattern_ids(),
             notes: String::new(),
             annotations: Vec::new(),
             created_at: now.clone(),
@@ -287,7 +288,12 @@ mod tests {
 
         assert_eq!(state.comparison.key, "main..HEAD");
         assert!(state.hunks.is_empty());
-        assert!(state.trust_list.is_empty());
+        // All taxonomy patterns are enabled by default
+        assert!(!state.trust_list.is_empty());
+        assert!(state.trust_list.contains(&"imports:added".to_string()));
+        assert!(state
+            .trust_list
+            .contains(&"formatting:whitespace".to_string()));
         assert!(state.notes.is_empty());
         assert!(state.annotations.is_empty());
     }
