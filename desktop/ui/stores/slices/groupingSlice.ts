@@ -12,6 +12,7 @@ import type {
   ReviewState,
   SymbolDiff,
 } from "../../types";
+import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey } from "../../utils/changed-lines-key";
 import { playGuideStartSound } from "../../utils/sounds";
 
@@ -77,6 +78,10 @@ export interface GroupingSlice {
   getGroupingStaleness: () => GroupingStaleness;
   generateGrouping: () => Promise<void>;
   clearGrouping: () => void;
+
+  /** When true, exclude already-approved/rejected hunks from grouping (useful for iteration reviews). */
+  excludeReviewedFromGrouping: boolean;
+  setExcludeReviewedFromGrouping: (value: boolean) => void;
 
   // Guide state
   startGuide: () => Promise<void>;
@@ -262,6 +267,9 @@ let groupingNonce = 0;
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
   (client: ApiClient) => (set, get) => ({
     groupingStates: new Map(),
+    excludeReviewedFromGrouping: false,
+    setExcludeReviewedFromGrouping: (value: boolean) =>
+      set({ excludeReviewedFromGrouping: value }),
 
     getActiveGroupingEntry: () => {
       const { repoPath, comparison, groupingStates } = get();
@@ -522,11 +530,33 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         const { hunkDefines, hunkReferences, fileHasGrammar, modifiedSymbols } =
           buildSymbolData(symbolsLoaded ? symbolDiffs : []);
 
-        const groupingInputs: GroupingInput[] = hunks.map((hunk) => ({
+        // Always exclude trusted hunks (auto-approved via trust list patterns).
+        // Optionally also exclude explicitly approved/rejected hunks (useful
+        // when re-reviewing iterations where some hunks are already handled).
+        const { trustList, hunks: hunkStates } = reviewState;
+        const excludeReviewed = get().excludeReviewedFromGrouping;
+        const filteredHunks = hunks.filter((hunk) => {
+          const state = hunkStates[hunk.id];
+          if (isHunkTrusted(state, trustList)) return false;
+          if (
+            excludeReviewed &&
+            (state?.status === "approved" || state?.status === "rejected")
+          )
+            return false;
+          return true;
+        });
+
+        if (filteredHunks.length < hunks.length) {
+          console.log(
+            `[generateGrouping] Excluded ${hunks.length - filteredHunks.length} hunks (${filteredHunks.length} remaining, excludeReviewed=${excludeReviewed})`,
+          );
+        }
+
+        const groupingInputs: GroupingInput[] = filteredHunks.map((hunk) => ({
           id: hunk.id,
           filePath: hunk.filePath,
           content: hunk.content,
-          label: reviewState.hunks[hunk.id]?.label,
+          label: hunkStates[hunk.id]?.label,
           symbols: hunkDefines.get(hunk.id),
           references: hunkReferences.get(hunk.id),
           hasGrammar: fileHasGrammar.get(hunk.filePath),
