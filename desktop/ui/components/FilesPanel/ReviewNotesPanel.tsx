@@ -191,86 +191,89 @@ export function ReviewNotesPanel(): ReactNode {
           style={{ minHeight: "32px", maxHeight: "120px" }}
         />
 
-        <div className="flex items-center justify-between">
-          <button
-            onClick={async () => {
-              if (confirmingReset) {
-                await resetReview();
-                setConfirmingReset(false);
-              } else {
-                setConfirmingReset(true);
-                setTimeout(() => setConfirmingReset(false), 3000);
+        {hasFeedbackToExport && (
+          <div className="flex items-center justify-between">
+            <button
+              onClick={async () => {
+                if (confirmingReset) {
+                  await resetReview();
+                  setConfirmingReset(false);
+                } else {
+                  setConfirmingReset(true);
+                  setTimeout(() => setConfirmingReset(false), 3000);
+                }
+              }}
+              title={
+                confirmingReset ? "Click again to confirm" : "Reset review"
               }
-            }}
-            title={confirmingReset ? "Click again to confirm" : "Reset review"}
-            className={`h-5 px-1.5 rounded text-[10px] flex items-center gap-1 ${
-              confirmingReset
-                ? "text-status-rejected"
-                : "text-fg-muted hover:text-fg hover:bg-surface-hover"
-            }`}
-          >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+              className={`h-5 px-1.5 rounded text-[10px] flex items-center gap-1 ${
+                confirmingReset
+                  ? "text-status-rejected"
+                  : "text-fg-muted hover:text-fg hover:bg-surface-hover"
+              }`}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-              />
-            </svg>
-            {confirmingReset ? "Confirm" : "Reset"}
-          </button>
-          <button
-            onClick={copyFeedbackToClipboard}
-            disabled={!hasFeedbackToExport}
-            title="Copy feedback as Markdown"
-            className={`h-5 px-1.5 rounded text-[10px] font-medium flex items-center gap-1 disabled:opacity-30 ${
-              copied
-                ? "text-status-approved"
-                : "text-fg-muted hover:text-fg hover:bg-surface-hover"
-            }`}
-          >
-            {copied ? (
-              <>
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                Copied
-              </>
-            ) : (
-              <>
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-                Copy
-              </>
-            )}
-          </button>
-        </div>
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+                />
+              </svg>
+              {confirmingReset ? "Confirm" : "Reset"}
+            </button>
+            <button
+              onClick={copyFeedbackToClipboard}
+              title="Copy feedback as Markdown"
+              className={`h-5 px-1.5 rounded text-[10px] font-medium flex items-center gap-1 ${
+                copied
+                  ? "text-status-approved"
+                  : "text-fg-muted hover:text-fg hover:bg-surface-hover"
+              }`}
+            >
+              {copied ? (
+                <>
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  Copied
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {rejectedHunks.length > 0 && (
           <div className="flex flex-col">

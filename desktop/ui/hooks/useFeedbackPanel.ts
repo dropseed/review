@@ -159,13 +159,6 @@ export function useFeedbackPanel(): FeedbackPanelState {
     annotations.length > 0 ||
     notes.trim().length > 0;
 
-  const goToFile = useCallback(
-    (filePath: string) => {
-      revealFileInTree(filePath);
-    },
-    [revealFileInTree],
-  );
-
   const copyFeedbackToClipboard = useCallback(async () => {
     if (!reviewState) return;
     const markdown = generateFeedbackMarkdown(
@@ -186,7 +179,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
     setReviewNotes,
     deleteAnnotation,
     hasFeedbackToExport,
-    goToFile,
+    goToFile: revealFileInTree,
     rejectedHunks,
     feedbackCount,
     copied,
