@@ -26,12 +26,6 @@ import { useFilesPanelContext } from "./FilesPanelContext";
 
 export type HunkContext = "needs-review" | "reviewed" | "all";
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1000) return `${bytes} B`;
-  if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)}K`;
-  return `${(bytes / 1_000_000).toFixed(1)}M`;
-}
-
 function SizeBar({
   totalSize,
   siblingMaxSize,
@@ -43,16 +37,11 @@ function SizeBar({
   if (pct === 0) return null;
 
   return (
-    <div className="flex items-center gap-1 flex-shrink-0">
-      <span className="font-mono text-xxs tabular-nums text-fg-faint opacity-0 group-hover:opacity-100 transition-opacity">
-        {formatBytes(totalSize)}
-      </span>
-      <div className="w-12 flex justify-end">
-        <div
-          className="h-1 rounded-full bg-surface-active"
-          style={{ width: `${Math.max(pct, 10)}%` }}
-        />
-      </div>
+    <div className="w-12 flex justify-end flex-shrink-0">
+      <div
+        className="h-1 rounded-full bg-surface-active"
+        style={{ width: `${Math.max(pct, 10)}%` }}
+      />
     </div>
   );
 }
