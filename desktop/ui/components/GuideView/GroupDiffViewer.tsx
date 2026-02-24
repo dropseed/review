@@ -121,6 +121,7 @@ interface FileDiffSectionProps {
   fileCompleted: boolean;
   onApproveFile: () => void;
   onRejectFile: () => void;
+  onViewFile: () => void;
   children: ReactNode;
 }
 
@@ -131,6 +132,7 @@ function FileDiffSection({
   fileCompleted,
   onApproveFile,
   onRejectFile,
+  onViewFile,
   children,
 }: FileDiffSectionProps): ReactNode {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -167,6 +169,26 @@ function FileDiffSection({
           className="font-mono text-xs text-fg-muted flex-1 truncate text-left hover:text-fg-secondary transition-colors"
         >
           {filePath}
+        </button>
+        <button
+          type="button"
+          onClick={onViewFile}
+          className="shrink-0 text-fg-muted hover:text-fg-secondary transition-colors p-0.5 rounded hover:bg-surface-hover"
+          title="View full file"
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+            <path d="M15 3h6v6" />
+            <path d="M10 14L21 3" />
+          </svg>
         </button>
         {fileCompleted ? (
           <span className="text-status-approved shrink-0">
@@ -236,6 +258,7 @@ export function GroupDiffViewer({
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const [fileContents, setFileContents] = useState<Map<string, FileContent>>(
     new Map(),
@@ -589,6 +612,7 @@ export function GroupDiffViewer({
             fileCompleted={fileUnreviewed.length === 0}
             onApproveFile={() => handleApproveFileHunks(filePath)}
             onRejectFile={() => handleRejectFileHunks(filePath)}
+            onViewFile={() => navigateToBrowse(filePath)}
           >
             {fc && !deferred
               ? renderFileContent(fc, filePath, fileHunks)
