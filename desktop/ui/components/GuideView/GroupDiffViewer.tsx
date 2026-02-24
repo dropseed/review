@@ -16,6 +16,7 @@ import type {
   HunkGroup,
   HunkState,
 } from "../../types";
+import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { UntrackedFileView } from "../FileViewer/UntrackedFileView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
@@ -55,6 +56,41 @@ function CheckIcon(): ReactNode {
     >
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
+  );
+}
+
+/** Collapse "old"/"new" view modes to "unified" for contexts that only support unified/split. */
+function effectiveViewMode(mode: DiffViewMode): "unified" | "split" {
+  return mode === "split" ? "split" : "unified";
+}
+
+interface ViewModeToggleProps {
+  diffViewMode: DiffViewMode;
+  onChangeMode: (mode: DiffViewMode) => void;
+}
+
+function ViewModeToggle({
+  diffViewMode,
+  onChangeMode,
+}: ViewModeToggleProps): ReactNode {
+  const active = effectiveViewMode(diffViewMode);
+  return (
+    <div className="flex items-center rounded bg-surface-raised/30 p-0.5">
+      {(["unified", "split"] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => onChangeMode(mode)}
+          className={`rounded px-2 py-0.5 text-xxs font-medium transition-colors ${
+            active === mode
+              ? "bg-surface-hover/50 text-fg-secondary"
+              : "text-fg-muted hover:text-fg-secondary"
+          }`}
+        >
+          {mode === "unified" ? "Unified" : "Split"}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -256,6 +292,7 @@ export function GroupDiffViewer({
   const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
   const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
+  const setDiffViewMode = useReviewStore((s) => s.setDiffViewMode);
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
@@ -500,7 +537,7 @@ export function GroupDiffViewer({
       >
         <DiffView
           diffPatch={filteredPatch}
-          viewMode={diffViewMode === "split" ? "split" : "unified"}
+          viewMode={effectiveViewMode(diffViewMode)}
           hunks={fileHunks}
           theme={codeTheme}
           fontSizeCSS={fontSizeCSS}
@@ -552,6 +589,10 @@ export function GroupDiffViewer({
                 <CheckIcon />
                 Done
               </span>
+              <ViewModeToggle
+                diffViewMode={diffViewMode}
+                onChangeMode={setDiffViewMode}
+              />
               <button
                 type="button"
                 onClick={handleUnapproveAll}
@@ -567,6 +608,10 @@ export function GroupDiffViewer({
                 {group.hunkIds.length} hunks · {filePaths.length}{" "}
                 {filePaths.length === 1 ? "file" : "files"}
               </span>
+              <ViewModeToggle
+                diffViewMode={diffViewMode}
+                onChangeMode={setDiffViewMode}
+              />
               <button
                 type="button"
                 onClick={handleApproveAll}
