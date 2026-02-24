@@ -147,7 +147,7 @@ function FileDiffSection({
   return (
     <div className="border-b border-edge/50">
       {/* File path header */}
-      <div className="sticky top-[52px] z-[9] bg-surface-panel/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-edge/30">
+      <div className="sticky top-[72px] z-[9] bg-surface-panel/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-edge/30">
         <button
           type="button"
           onClick={() => setIsCollapsed((prev) => !prev)}
@@ -491,7 +491,8 @@ export function GroupDiffViewer({
   return (
     <div>
       {/* Group header */}
-      <div className="sticky top-0 z-10 bg-surface-panel/95 backdrop-blur-sm border-b border-edge/50 px-4 py-3">
+      <div className="sticky top-0 z-10 bg-surface-panel/95 backdrop-blur-sm border-b border-edge/50 px-4 py-2.5">
+        {/* Row 1: Badge + title + close button */}
         <div className="flex items-center gap-3">
           {groupIndex != null && (
             <span className="text-xs font-medium text-guide bg-guide/10 px-2 py-0.5 rounded-full tabular-nums">
@@ -499,12 +500,32 @@ export function GroupDiffViewer({
             </span>
           )}
           {headerBadge}
-          <h2 className="text-sm font-medium text-fg-secondary flex-1 min-w-0">
+          <h2 className="text-sm font-medium text-fg-secondary flex-1 min-w-0 truncate">
             {group.title}
           </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {/* Row 2: Metadata + action buttons */}
+        <div className="flex items-center gap-2 mt-1.5">
           {isCompleted ? (
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="flex items-center gap-1.5 text-status-approved text-xs font-medium">
+            <>
+              <span className="flex items-center gap-1.5 text-status-approved text-xs font-medium flex-1">
                 <CheckIcon />
                 Done
               </span>
@@ -516,10 +537,10 @@ export function GroupDiffViewer({
               >
                 Reset
               </button>
-            </div>
+            </>
           ) : (
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xxs text-fg-muted tabular-nums">
+            <>
+              <span className="text-xxs text-fg-muted tabular-nums flex-1">
                 {group.hunkIds.length} hunks · {filePaths.length}{" "}
                 {filePaths.length === 1 ? "file" : "files"}
               </span>
@@ -539,25 +560,8 @@ export function GroupDiffViewer({
               >
                 Reject all
               </button>
-            </div>
+            </>
           )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
         </div>
       </div>
 

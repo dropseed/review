@@ -3,7 +3,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useState,
 } from "react";
 import { useReviewStore } from "../../stores";
 import { isHunkReviewed } from "../../types";
@@ -85,94 +84,6 @@ function ungroupedItemStyle(isActive: boolean, isCompleted: boolean): string {
   return "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised/30 border-l-2 border-dashed border-transparent";
 }
 
-function GroupItemOverflowMenu({
-  unreviewedIds,
-  reviewedIds,
-  onApprove,
-  onReject,
-  onReset,
-}: {
-  unreviewedIds: string[];
-  reviewedIds: string[];
-  onApprove: () => void;
-  onReject: () => void;
-  onReset: () => void;
-}): ReactNode {
-  const [open, setOpen] = useState(false);
-  const hasUnreviewed = unreviewedIds.length > 0;
-  const hasReviewed = reviewedIds.length > 0;
-
-  if (!hasUnreviewed && !hasReviewed) return null;
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          onClick={(e) => e.stopPropagation()}
-          className={`mr-1 flex items-center justify-center w-5 h-5 rounded shrink-0
-                     text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50
-                     transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-        >
-          <VerticalDotsIcon className="w-3 h-3" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {hasUnreviewed && (
-          <>
-            <DropdownMenuItem onClick={onApprove}>
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              Approve all hunks
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onReject}>
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              Reject all hunks
-            </DropdownMenuItem>
-          </>
-        )}
-        {hasReviewed && (
-          <DropdownMenuItem onClick={onReset}>
-            <svg
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-              />
-            </svg>
-            Reset review
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 export function GuideSideNav(): ReactNode {
   const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -192,9 +103,6 @@ export function GuideSideNav(): ReactNode {
     [getGroupingStaleness, hunks, reviewState],
   );
   const exitGuide = useReviewStore((s) => s.exitGuide);
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
-  const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
   const excludeReviewed = useReviewStore((s) => s.excludeReviewedFromGrouping);
   const setExcludeReviewed = useReviewStore(
     (s) => s.setExcludeReviewedFromGrouping,
@@ -240,42 +148,6 @@ export function GuideSideNav(): ReactNode {
     for (const c of groupUnreviewedCounts.values()) count += c;
     return count;
   }, [groupUnreviewedCounts]);
-
-  const groupActionData = useMemo(() => {
-    const data = new Map<
-      string,
-      { unreviewedIds: string[]; reviewedIds: string[] }
-    >();
-    for (const group of reviewGroups) {
-      const unreviewedIds: string[] = [];
-      const reviewedIds: string[] = [];
-      for (const id of group.hunkIds) {
-        const hunk = hunkById.get(id);
-        if (!hunk) continue;
-        const state = hunkStates?.[id];
-        if (state?.status === "approved" || state?.status === "rejected") {
-          reviewedIds.push(id);
-        } else if (
-          !isHunkReviewed(state, trustList, {
-            autoApproveStaged,
-            stagedFilePaths,
-            filePath: hunk.filePath,
-          })
-        ) {
-          unreviewedIds.push(id);
-        }
-      }
-      data.set(group.title, { unreviewedIds, reviewedIds });
-    }
-    return data;
-  }, [
-    reviewGroups,
-    hunkById,
-    hunkStates,
-    trustList,
-    autoApproveStaged,
-    stagedFilePaths,
-  ]);
 
   // Group consecutive groups that share the same phase for section headers
   const phaseGroups = useMemo(() => {
@@ -491,18 +363,17 @@ export function GuideSideNav(): ReactNode {
               const isCompleted = unreviewedCount === 0;
               const isActive =
                 guideContentMode === "group" && activeGroupIndex === i;
-              const data = groupActionData.get(group.title);
               return (
-                <div key={group.title} className="group flex items-center">
-                  <button
-                    type="button"
-                    onClick={() => handleGroupClick(i)}
-                    className={`flex items-start gap-2 flex-1 min-w-0 pl-2.5 pr-3 py-2 text-xs transition-colors ${
-                      group.ungrouped
-                        ? ungroupedItemStyle(isActive, isCompleted)
-                        : groupItemStyle(isActive, isCompleted)
-                    }`}
-                  >
+                <button
+                  key={group.title}
+                  type="button"
+                  onClick={() => handleGroupClick(i)}
+                  className={`flex items-start gap-2 w-full pl-2.5 pr-3 py-2 text-xs transition-colors ${
+                    group.ungrouped
+                      ? ungroupedItemStyle(isActive, isCompleted)
+                      : groupItemStyle(isActive, isCompleted)
+                  }`}
+                >
                     {isCompleted ? (
                       <span className="text-status-approved shrink-0 mt-0.5">
                         <svg
@@ -539,7 +410,9 @@ export function GuideSideNav(): ReactNode {
                         {i + 1}
                       </span>
                     )}
-                    <span className="flex-1 text-left">{group.title}</span>
+                    <span className="flex-1 text-left line-clamp-2">
+                      {group.title}
+                    </span>
                     {!isCompleted && (
                       <span
                         className={`inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] rounded-full text-xxs font-medium tabular-nums shrink-0 px-1 ${
@@ -551,15 +424,7 @@ export function GuideSideNav(): ReactNode {
                         {unreviewedCount}
                       </span>
                     )}
-                  </button>
-                  <GroupItemOverflowMenu
-                    unreviewedIds={data?.unreviewedIds ?? []}
-                    reviewedIds={data?.reviewedIds ?? []}
-                    onApprove={() => approveHunkIds(data?.unreviewedIds ?? [])}
-                    onReject={() => rejectHunkIds(data?.unreviewedIds ?? [])}
-                    onReset={() => unapproveHunkIds(data?.reviewedIds ?? [])}
-                  />
-                </div>
+                </button>
               );
             })}
           </div>
