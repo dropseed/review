@@ -10,7 +10,6 @@ export function useFileViewerState() {
   // Preferences
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const viewMode = useReviewStore((s) => s.diffViewMode);
 
   // Review state
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -31,7 +30,6 @@ export function useFileViewerState() {
     refreshGeneration,
     codeTheme,
     codeFontSize,
-    viewMode,
     reviewState,
     allHunks,
     addAnnotation,

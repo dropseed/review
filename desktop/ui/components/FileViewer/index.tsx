@@ -23,6 +23,7 @@ import {
 } from "./annotations/AnnotationEditor";
 import { SymbolPopover } from "./SymbolPopover";
 import type { ContentMode } from "./content-mode";
+import { useDiffViewMode } from "./hooks/useDiffViewMode";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
@@ -65,10 +66,11 @@ export function FileViewer({
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,
-    viewMode,
     workingTreeDiffFile,
     gitStatus,
   } = useFileViewerState();
+
+  const [viewMode] = useDiffViewMode(filePath);
 
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);

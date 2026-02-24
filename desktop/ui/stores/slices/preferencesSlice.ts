@@ -80,6 +80,29 @@ export const CODE_FONT_SIZE_STEP = 1;
 
 const MAX_RECENT_REPOS = 5;
 
+/** Extract lowercase file extension (without dot) from a file path, or empty string. */
+function getFileExtension(filePath: string): string {
+  const lastDot = filePath.lastIndexOf(".");
+  const lastSlash = filePath.lastIndexOf("/");
+  if (lastDot > lastSlash) {
+    return filePath.slice(lastDot + 1).toLowerCase();
+  }
+  return "";
+}
+
+/** Resolve the effective diff view mode for a file, checking per-extension overrides first. */
+export function resolveViewModeForFile(
+  filePath: string,
+  diffViewMode: DiffViewMode,
+  diffViewModeByExtension: Record<string, DiffViewMode>,
+): DiffViewMode {
+  const ext = getFileExtension(filePath);
+  if (ext && ext in diffViewModeByExtension) {
+    return diffViewModeByExtension[ext];
+  }
+  return diffViewMode;
+}
+
 export type DiffLineDiffType = "word" | "word-alt" | "char" | "none";
 export type DiffIndicators = "classic" | "bars" | "none";
 export type ChangesDisplayMode = "tree" | "flat";
@@ -97,6 +120,7 @@ const defaults = {
   changesDisplayMode: "tree" as ChangesDisplayMode,
   gitDisplayMode: "tree" as ChangesDisplayMode,
   diffViewMode: "split" as DiffViewMode,
+  diffViewModeByExtension: {} as Record<string, DiffViewMode>,
   sentryEnabled: false,
   soundEffectsEnabled: true,
   tabRailCollapsed: false,
@@ -131,6 +155,7 @@ export interface PreferencesSlice {
 
   // Diff view mode
   diffViewMode: DiffViewMode;
+  diffViewModeByExtension: Record<string, DiffViewMode>;
 
   // Recent repositories
   recentRepositories: RecentRepo[];
@@ -181,6 +206,7 @@ export interface PreferencesSlice {
   setChangesDisplayMode: (mode: ChangesDisplayMode) => void;
   setGitDisplayMode: (mode: ChangesDisplayMode) => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
+  setDiffViewModeForFile: (filePath: string, mode: DiffViewMode) => void;
   loadPreferences: () => Promise<void>;
   revealFileInTree: (path: string) => void;
   clearFileToReveal: () => void;
@@ -301,6 +327,19 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setDiffViewMode: (mode) => {
       set({ diffViewMode: mode });
       storage.set("diffViewMode", mode);
+    },
+
+    setDiffViewModeForFile: (filePath, mode) => {
+      const ext = getFileExtension(filePath);
+      if (ext) {
+        const byExt = { ...get().diffViewModeByExtension, [ext]: mode };
+        set({ diffViewModeByExtension: byExt });
+        storage.set("diffViewModeByExtension", byExt);
+      } else {
+        // Extensionless files (Makefile, Dockerfile, etc.) — set global default
+        set({ diffViewMode: mode });
+        storage.set("diffViewMode", mode);
+      }
     },
 
     loadPreferences: async () => {
