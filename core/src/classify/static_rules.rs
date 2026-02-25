@@ -484,20 +484,26 @@ fn strip_python_type_annotations(line: &str) -> String {
                 continue;
             }
 
-            // Check if the character before the colon suggests a parameter name
-            let prev_word_end = before.trim_end();
-            if prev_word_end.ends_with(')') || prev_word_end.ends_with(']') {
-                // After closing paren/bracket — likely dict/slice, keep it
+            // If the character before the colon is a closing delimiter or string,
+            // this is likely a dict literal, slice, or keyed expression — not a type annotation
+            let prev_char = before.trim_end().chars().last();
+            if matches!(prev_char, Some(')' | ']' | '"' | '\'')) {
                 result.push(ch);
                 i += 1;
                 continue;
             }
 
-            // This looks like a type annotation — skip until comma, closing paren, equals, or end
+            // Scan ahead to find the extent of the potential type annotation
             let mut j = i + 1;
             let mut depth = 0i32;
+            let mut has_paren_at_depth0 = false;
             while j < len {
                 let c2 = chars[j];
+                if c2 == '(' && depth == 0 {
+                    // Function call at top level — not a type annotation
+                    // (type generics use [] not (), and Callable[] nests () inside [])
+                    has_paren_at_depth0 = true;
+                }
                 if c2 == '[' || c2 == '(' {
                     depth += 1;
                 } else if c2 == ']' || c2 == ')' {
@@ -511,6 +517,15 @@ fn strip_python_type_annotations(line: &str) -> String {
                 }
                 j += 1;
             }
+
+            // If the "type" contains a function call, it's a value, not a type annotation
+            if has_paren_at_depth0 {
+                result.push(ch);
+                i += 1;
+                continue;
+            }
+
+            // This looks like a type annotation — skip it
             // Insert space before `=` to maintain word boundary, but not
             // before `)`, `,`, or end-of-line where it would be extra
             if j < len && chars[j] == '=' {
@@ -1404,6 +1419,35 @@ mod tests {
     fn test_type_annotation_additions_only() {
         // Only additions — conservative, returns None
         let hunk = make_hunk("app.py", vec![added("def greet(name: str) -> str:")]);
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_type_annotation_python_dict_entry_with_function_call() {
+        // Dict entry where value is a function call — should NOT be classified
+        // as type-annotations:modified (the colon is key:value, not param:type)
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("            DB_NAMESPACE: db.settings_dict.get(\"NAME\"),"),
+                added("            DB_NAMESPACE: db.settings_dict.get(\"DATABASE\"),"),
+            ],
+        );
+        let result = classify_type_annotations(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_type_annotation_python_dict_entry_with_string_key() {
+        // Dict entry with string key — should NOT be classified
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("    \"key\": old_value,"),
+                added("    \"key\": new_value,"),
+            ],
+        );
         let result = classify_type_annotations(&hunk);
         assert!(result.is_none());
     }
