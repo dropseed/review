@@ -20,19 +20,13 @@ function isAnnotationInHunk(a: LineAnnotation, hunk: DiffHunk): boolean {
 
 /**
  * Generates feedback markdown for clipboard export.
- * Format: bullets with file:line references (no diff code blocks).
- * Rejected hunks include matching annotations as sub-bullets.
+ * Accepts already-grouped data to avoid re-deriving the grouping.
  */
 function generateFeedbackMarkdown(
-  hunks: DiffHunk[],
-  hunkStates: Record<string, { status?: string }>,
-  annotations: LineAnnotation[],
+  rejectedHunks: RejectedHunkWithAnnotations[],
+  standaloneAnnotations: LineAnnotation[],
   notes: string,
 ): string {
-  const rejectedHunks = hunks.filter(
-    (h) => hunkStates[h.id]?.status === "rejected",
-  );
-
   const lines: string[] = [];
 
   lines.push("# Review Feedback");
@@ -43,36 +37,19 @@ function generateFeedbackMarkdown(
     lines.push("");
 
     for (const hunk of rejectedHunks) {
-      lines.push(`- **${hunk.filePath}:${hunkLineRange(hunk)}**`);
-
-      const hunkAnnotations = annotations.filter((a) =>
-        isAnnotationInHunk(a, hunk),
-      );
-      for (const annotation of hunkAnnotations) {
+      lines.push(`- **${hunk.filePath}:${hunk.lineRange}**`);
+      for (const annotation of hunk.annotations) {
         lines.push(`  - ${annotation.content}`);
       }
     }
     lines.push("");
   }
 
-  // Annotations not already shown under a rejected hunk
-  const annotationIdsInRejectedHunks = new Set<string>();
-  for (const hunk of rejectedHunks) {
-    for (const a of annotations) {
-      if (isAnnotationInHunk(a, hunk)) {
-        annotationIdsInRejectedHunks.add(a.id);
-      }
-    }
-  }
-  const remainingAnnotations = annotations.filter(
-    (a) => !annotationIdsInRejectedHunks.has(a.id),
-  );
-
-  if (remainingAnnotations.length > 0) {
+  if (standaloneAnnotations.length > 0) {
     lines.push("## Annotations");
     lines.push("");
 
-    for (const annotation of remainingAnnotations) {
+    for (const annotation of standaloneAnnotations) {
       const lineRef = annotation.endLineNumber
         ? `${annotation.lineNumber}-${annotation.endLineNumber}`
         : `${annotation.lineNumber}`;
@@ -93,20 +70,21 @@ function generateFeedbackMarkdown(
   return lines.join("\n");
 }
 
-export interface RejectedHunkItem {
+export interface RejectedHunkWithAnnotations {
   filePath: string;
   lineRange: string;
   hunkId: string;
+  annotations: LineAnnotation[];
 }
 
 export interface FeedbackPanelState {
   notes: string;
-  annotations: LineAnnotation[];
+  standaloneAnnotations: LineAnnotation[];
   setReviewNotes: (notes: string) => void;
   deleteAnnotation: (annotationId: string) => void;
   hasFeedbackToExport: boolean;
   goToFile: (filePath: string) => void;
-  rejectedHunks: RejectedHunkItem[];
+  rejectedHunks: RejectedHunkWithAnnotations[];
   feedbackCount: number;
   copied: boolean;
   copyFeedbackToClipboard: () => Promise<void>;
@@ -141,7 +119,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
     );
   }, [reviewState?.annotations, hunks]);
 
-  const rejectedHunks = useMemo((): RejectedHunkItem[] => {
+  const rejectedHunks = useMemo((): RejectedHunkWithAnnotations[] => {
     if (!reviewState) return [];
     return hunks
       .filter((h) => reviewState.hunks[h.id]?.status === "rejected")
@@ -149,33 +127,39 @@ export function useFeedbackPanel(): FeedbackPanelState {
         filePath: h.filePath,
         lineRange: hunkLineRange(h),
         hunkId: h.id,
+        annotations: annotations.filter((a) => isAnnotationInHunk(a, h)),
       }));
-  }, [hunks, reviewState]);
+  }, [hunks, reviewState, annotations]);
 
-  const feedbackCount = rejectedHunks.length + annotations.length;
+  const standaloneAnnotations = useMemo(() => {
+    const coveredIds = new Set(
+      rejectedHunks.flatMap((rh) => rh.annotations.map((a) => a.id)),
+    );
+    return annotations.filter((a) => !coveredIds.has(a.id));
+  }, [rejectedHunks, annotations]);
+
+  const feedbackCount = rejectedHunks.length + standaloneAnnotations.length;
 
   const hasFeedbackToExport =
     rejectedHunks.length > 0 ||
-    annotations.length > 0 ||
+    standaloneAnnotations.length > 0 ||
     notes.trim().length > 0;
 
   const copyFeedbackToClipboard = useCallback(async () => {
-    if (!reviewState) return;
     const markdown = generateFeedbackMarkdown(
-      hunks,
-      reviewState.hunks,
-      annotations,
-      reviewState.notes,
+      rejectedHunks,
+      standaloneAnnotations,
+      notes,
     );
     const platform = getPlatformServices();
     await platform.clipboard.writeText(markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [reviewState, hunks, annotations]);
+  }, [rejectedHunks, standaloneAnnotations, notes]);
 
   return {
     notes,
-    annotations,
+    standaloneAnnotations,
     setReviewNotes,
     deleteAnnotation,
     hasFeedbackToExport,

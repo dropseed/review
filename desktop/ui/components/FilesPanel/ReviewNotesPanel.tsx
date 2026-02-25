@@ -53,7 +53,7 @@ function FilePathLabel({ filePath }: { filePath: string }): ReactNode {
 export function ReviewNotesPanel(): ReactNode {
   const {
     notes,
-    annotations,
+    standaloneAnnotations,
     setReviewNotes,
     deleteAnnotation,
     hasFeedbackToExport,
@@ -285,35 +285,70 @@ export function ReviewNotesPanel(): ReactNode {
                 {rejectedHunks.length}
               </span>
             </div>
-            <div className="max-h-24 overflow-y-auto scrollbar-thin flex flex-col gap-px">
+            <div className="max-h-40 overflow-y-auto scrollbar-thin flex flex-col gap-px">
               {rejectedHunks.map((item) => (
-                <button
-                  key={item.hunkId}
-                  onClick={() => goToFile(item.filePath)}
-                  className="flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-r border-l-2 border-l-status-rejected/30 hover:border-l-status-rejected/70 hover:bg-surface-hover/60 transition-colors text-left group/item"
-                >
-                  <FilePathLabel filePath={item.filePath} />
-                  <span className="shrink-0 text-[9px] tabular-nums text-fg-muted/40 bg-surface-raised/60 rounded px-1 py-px">
-                    {item.lineRange}
-                  </span>
-                </button>
+                <div key={item.hunkId} className="flex flex-col">
+                  <button
+                    onClick={() => goToFile(item.filePath)}
+                    className="flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-r border-l-2 border-l-status-rejected/30 hover:border-l-status-rejected/70 hover:bg-surface-hover/60 transition-colors text-left group/item"
+                  >
+                    <FilePathLabel filePath={item.filePath} />
+                    <span className="shrink-0 text-[9px] tabular-nums text-fg-muted/40 bg-surface-raised/60 rounded px-1 py-px">
+                      {item.lineRange}
+                    </span>
+                  </button>
+                  {item.annotations.map((a) => (
+                    <div
+                      key={a.id}
+                      className="group/nested relative ml-2.5 rounded-r border-l-2 border-l-status-modified/30 hover:border-l-status-modified/70 hover:bg-surface-hover/60 transition-colors"
+                    >
+                      <button
+                        onClick={() => goToFile(a.filePath)}
+                        className="w-full text-left pl-1.5 pr-5 py-0.5"
+                      >
+                        <p className="text-[10px] leading-snug text-fg-muted/70 line-clamp-2">
+                          {a.content}
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => deleteAnnotation(a.id)}
+                        className="absolute top-0.5 right-0.5 p-0.5 rounded text-fg-faint hover:text-status-rejected hover:bg-status-rejected/15 opacity-0 group-hover/nested:opacity-100 transition-opacity"
+                        aria-label="Delete comment"
+                      >
+                        <svg
+                          className="h-2.5 w-2.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
         )}
 
-        {annotations.length > 0 && (
+        {standaloneAnnotations.length > 0 && (
           <div className="flex flex-col">
             <div className="px-1 pb-0.5 flex items-center gap-1.5">
               <span className="text-[10px] font-medium text-status-modified/80">
                 Comments
               </span>
               <span className="text-[9px] tabular-nums text-fg-muted/40">
-                {annotations.length}
+                {standaloneAnnotations.length}
               </span>
             </div>
             <div className="max-h-28 overflow-y-auto scrollbar-thin flex flex-col gap-px">
-              {annotations.map((a) => (
+              {standaloneAnnotations.map((a) => (
                 <div
                   key={a.id}
                   className="group/item relative rounded-r border-l-2 border-l-status-modified/30 hover:border-l-status-modified/70 hover:bg-surface-hover/60 transition-colors"
