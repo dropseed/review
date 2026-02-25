@@ -1,6 +1,9 @@
 import { memo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
-import type { DiffLineDiffType } from "../../stores/slices/preferencesSlice";
+import type {
+  DiffLineDiffType,
+  DiffOverflow,
+} from "../../stores/slices/preferencesSlice";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { SimpleTooltip } from "../ui/tooltip";
 
@@ -9,6 +12,11 @@ const HIGHLIGHTING_OPTIONS: [DiffLineDiffType, string][] = [
   ["word-alt", "Word Alt"],
   ["char", "Char"],
   ["none", "None"],
+];
+
+const OVERFLOW_OPTIONS: [DiffOverflow, string][] = [
+  ["scroll", "Scroll"],
+  ["wrap", "Wrap"],
 ];
 
 function CheckIcon(): JSX.Element {
@@ -64,6 +72,8 @@ function OptionSectionHeader({ title }: { title: string }): JSX.Element {
 export const DiffOptionsPopover = memo(function DiffOptionsPopover() {
   const diffLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const setDiffLineDiffType = useReviewStore((s) => s.setDiffLineDiffType);
+  const diffOverflow = useReviewStore((s) => s.diffOverflow);
+  const setDiffOverflow = useReviewStore((s) => s.setDiffOverflow);
 
   return (
     <Popover>
@@ -94,6 +104,17 @@ export const DiffOptionsPopover = memo(function DiffOptionsPopover() {
               label={label}
               isSelected={diffLineDiffType === value}
               onClick={() => setDiffLineDiffType(value)}
+            />
+          ))}
+        </div>
+        <OptionSectionHeader title="Overflow" />
+        <div className="p-1">
+          {OVERFLOW_OPTIONS.map(([value, label]) => (
+            <OptionButton
+              key={value}
+              label={label}
+              isSelected={diffOverflow === value}
+              onClick={() => setDiffOverflow(value)}
             />
           ))}
         </div>

@@ -190,6 +190,7 @@ export function DiffView({
   const reviewState = useReviewStore((s) => s.reviewState);
   const allHunks = useReviewStore((s) => s.hunks);
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
+  const diffOverflow = useReviewStore((s) => s.diffOverflow);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
@@ -823,6 +824,7 @@ export function DiffView({
     tokenizeMaxLineLength: number;
     maxLineDiffLength: number;
     lineDiffType: "word" | "word-alt" | "char" | "none";
+    overflow: "scroll" | "wrap";
   };
 
   // Memoize diffOptions with custom equality check to prevent unnecessary re-renders
@@ -848,6 +850,7 @@ export function DiffView({
       tokenizeMaxLineLength: 1000, // Skip syntax highlighting for very long lines
       maxLineDiffLength: 500, // Skip word-level diff for long lines
       lineDiffType, // Adaptive based on file type/size, user preference as default
+      overflow: diffOverflow,
     };
     // Use areOptionsEqual from @pierre/diffs to avoid unnecessary re-renders
     if (
@@ -864,6 +867,7 @@ export function DiffView({
     fontSizeCSS,
     annotationHighlightCSS,
     lineDiffType,
+    diffOverflow,
     handleLineSelectionEnd,
     expandUnchangedProp,
   ]);
