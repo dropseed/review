@@ -191,8 +191,16 @@ export function GuideSideNav(): ReactNode {
 
   const showPhaseHeaders = phaseGroups.length > 1;
 
+  // Suppress auto-advance immediately after the user clicks a group,
+  // so their explicit selection isn't overridden by the effect below.
+  const userNavigatedRef = useRef(false);
+
   // Auto-advance to next unreviewed group when current group completes
   useEffect(() => {
+    if (userNavigatedRef.current) {
+      userNavigatedRef.current = false;
+      return;
+    }
     if (guideContentMode !== "group" || reviewGroups.length === 0) return;
     const currentGroup = reviewGroups[activeGroupIndex];
     if (!currentGroup) return;
@@ -218,6 +226,7 @@ export function GuideSideNav(): ReactNode {
 
   const handleGroupClick = useCallback(
     (index: number) => {
+      userNavigatedRef.current = true;
       setActiveGroupIndex(index);
       setGuideContentMode("group");
     },
