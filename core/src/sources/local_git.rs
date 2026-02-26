@@ -777,12 +777,6 @@ impl LocalGitSource {
         Ok(())
     }
 
-    /// Stage all changes (git add -A)
-    pub fn stage_all(&self) -> Result<(), LocalGitError> {
-        self.run_git(&["add", "-A"])?;
-        Ok(())
-    }
-
     /// Unstage all staged changes (git restore --staged .)
     pub fn unstage_all(&self) -> Result<(), LocalGitError> {
         self.run_git(&["restore", "--staged", "."])?;

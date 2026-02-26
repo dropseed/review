@@ -35,6 +35,7 @@ import type {
   RemoteInfo,
   GroupingInput,
   HunkGroup,
+  GroupingEvent,
   ModifiedSymbolEntry,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
@@ -69,9 +70,6 @@ export interface ApiClient {
 
   /** Unstage a single file */
   unstageFile(repoPath: string, path: string): Promise<void>;
-
-  /** Stage all changes */
-  stageAll(repoPath: string): Promise<void>;
 
   /** Unstage all staged changes */
   unstageAll(repoPath: string): Promise<void>;
@@ -225,11 +223,14 @@ export interface ApiClient {
     options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
   ): Promise<HunkGroup[]>;
 
-  /** Listen for streaming grouping group events (returns unsubscribe fn) */
-  onGroupingGroup(
+  /** Listen for streaming grouping events (returns unsubscribe fn) */
+  onGroupingEvent(
     requestId: string,
-    callback: (group: HunkGroup) => void,
+    callback: (event: GroupingEvent) => void,
   ): () => void;
+
+  /** Cancel an in-flight grouping generation by request ID */
+  cancelGrouping(requestId: string): Promise<void>;
 
   // ----- Commit -----
 

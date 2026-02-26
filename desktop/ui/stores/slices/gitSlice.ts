@@ -30,7 +30,6 @@ export interface GitSlice {
   loadRemoteInfo: () => Promise<void>;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
-  stageAll: () => Promise<void>;
   unstageAll: () => Promise<void>;
   stageHunks: (filePath: string, contentHashes: string[]) => Promise<void>;
   unstageHunks: (filePath: string, contentHashes: string[]) => Promise<void>;
@@ -89,13 +88,6 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       const { repoPath } = get();
       if (!repoPath) return;
       await client.unstageFile(repoPath, path);
-      await get().loadGitStatus();
-    },
-
-    stageAll: async () => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-      await client.stageAll(repoPath);
       await get().loadGitStatus();
     },
 

@@ -138,6 +138,9 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(SentryConsent(consent.clone()))
+        .manage(commands::ActiveGroupings(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -497,7 +500,6 @@ pub fn run() {
             commands::get_git_status_raw,
             commands::stage_file,
             commands::unstage_file,
-            commands::stage_all,
             commands::unstage_all,
             commands::stage_hunks,
             commands::unstage_hunks,
@@ -541,6 +543,7 @@ pub fn run() {
             commands::get_repo_symbols,
             commands::find_symbol_definitions,
             commands::generate_hunk_grouping,
+            commands::cancel_hunk_grouping,
             commands::generate_commit_message,
             commands::is_dev_mode,
             commands::is_git_repo,

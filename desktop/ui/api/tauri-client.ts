@@ -28,6 +28,7 @@ import type {
   RepoFileSymbols,
   GitHubPrRef,
   GitStatusSummary,
+  GroupingEvent,
   GroupingInput,
   HunkGroup,
   ModifiedSymbolEntry,
@@ -84,10 +85,6 @@ export class TauriClient implements ApiClient {
 
   async unstageFile(repoPath: string, path: string): Promise<void> {
     await invoke("unstage_file", { repoPath, path });
-  }
-
-  async stageAll(repoPath: string): Promise<void> {
-    await invoke("stage_all", { repoPath });
   }
 
   async unstageAll(repoPath: string): Promise<void> {
@@ -359,11 +356,15 @@ export class TauriClient implements ApiClient {
     });
   }
 
-  onGroupingGroup(
+  onGroupingEvent(
     requestId: string,
-    callback: (group: HunkGroup) => void,
+    callback: (event: GroupingEvent) => void,
   ): () => void {
-    return this.listenForEvent(`grouping:group:${requestId}`, callback);
+    return this.listenForEvent(`grouping:event:${requestId}`, callback);
+  }
+
+  async cancelGrouping(requestId: string): Promise<void> {
+    await invoke("cancel_hunk_grouping", { requestId });
   }
 
   // ----- Trust patterns -----

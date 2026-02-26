@@ -33,6 +33,7 @@ import type {
   RepoFileSymbols,
   SymbolDefinition,
   RemoteInfo,
+  GroupingEvent,
   GroupingInput,
   HunkGroup,
   ModifiedSymbolEntry,
@@ -185,10 +186,6 @@ export class HttpClient implements ApiClient {
 
   async unstageFile(_repoPath: string, _path: string): Promise<void> {
     console.warn("[HttpClient] unstageFile not implemented");
-  }
-
-  async stageAll(_repoPath: string): Promise<void> {
-    console.warn("[HttpClient] stageAll not implemented");
   }
 
   async unstageAll(_repoPath: string): Promise<void> {
@@ -534,11 +531,15 @@ export class HttpClient implements ApiClient {
     return [];
   }
 
-  onGroupingGroup(
+  onGroupingEvent(
     _requestId: string,
-    _callback: (group: HunkGroup) => void,
+    _callback: (event: GroupingEvent) => void,
   ): () => void {
     return () => {};
+  }
+
+  async cancelGrouping(_requestId: string): Promise<void> {
+    // No-op in browser mode
   }
 
   // ----- Trust patterns -----

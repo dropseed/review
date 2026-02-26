@@ -43,7 +43,14 @@ const MIN_WINDOW_HEIGHT: f64 = 600.0;
 
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
+
+/// Managed state holding cancel flags for active grouping operations,
+/// keyed by request ID. Setting the flag to `true` signals the streaming
+/// loop to kill the Claude child process and return `Cancelled`.
+pub struct ActiveGroupings(pub std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>);
 
 // --- Types ---
 
@@ -922,12 +929,6 @@ pub fn stage_file(repo_path: String, path: String) -> Result<(), String> {
 pub fn unstage_file(repo_path: String, path: String) -> Result<(), String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.unstage_file(&path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn stage_all(repo_path: String) -> Result<(), String> {
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-    source.stage_all().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2309,6 +2310,7 @@ pub async fn generate_hunk_grouping(
     hunks: Vec<GroupingInput>,
     modified_symbols: Option<Vec<ModifiedSymbolEntry>>,
     request_id: Option<String>,
+    active_groupings: tauri::State<'_, ActiveGroupings>,
 ) -> Result<Vec<HunkGroup>, String> {
     use std::time::Duration;
     use tauri::Emitter;
@@ -2327,35 +2329,48 @@ pub async fn generate_hunk_grouping(
     let repo_path_buf = PathBuf::from(&repo_path);
     let timeout_secs = claude_call_timeout_secs(hunks.len());
 
-    // Streaming mode: emit each group as a Tauri event as it arrives.
+    // Streaming mode: emit each event (group or partial title) as a Tauri event.
     // When a request_id is provided, scope events to that invocation to
     // prevent cross-talk between concurrent groupings for different reviews.
     let event_name = match &request_id {
-        Some(id) => format!("grouping:group:{}", id),
-        None => "grouping:group".to_string(),
+        Some(id) => format!("grouping:event:{}", id),
+        None => "grouping:event".to_string(),
     };
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HunkGroup>();
+    // Register a cancel flag so `cancel_hunk_grouping` can signal this operation.
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Some(ref id) = request_id {
+        active_groupings
+            .0
+            .lock()
+            .unwrap()
+            .insert(id.clone(), cancel.clone());
+    }
 
-    // Forward groups from the channel to Tauri events
+    let (tx, mut rx) =
+        tokio::sync::mpsc::unbounded_channel::<review::ai::grouping::GroupingEvent>();
+
+    // Forward events from the channel to Tauri events
     let emit_handle = app.clone();
     let emit_task = tokio::spawn(async move {
-        while let Some(group) = rx.recv().await {
-            let _ = emit_handle.emit(&event_name, &group);
+        while let Some(event) = rx.recv().await {
+            let _ = emit_handle.emit(&event_name, &event);
         }
     });
 
+    let cancel_clone = cancel.clone();
     let result = timeout(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            let mut on_group = |group: &HunkGroup| {
-                let _ = tx.send(group.clone());
+            let mut on_event = |event: review::ai::grouping::GroupingEvent| {
+                let _ = tx.send(event);
             };
             review::ai::grouping::generate_grouping_streaming(
                 &hunks,
                 &repo_path_buf,
                 &symbols,
-                &mut on_group,
+                &mut on_event,
+                Some(&cancel_clone),
             )
         }),
     )
@@ -2363,6 +2378,11 @@ pub async fn generate_hunk_grouping(
     .map_err(|_| format!("Hunk grouping generation timed out after {timeout_secs} seconds"))?
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
+
+    // Clean up the cancel flag
+    if let Some(ref id) = request_id {
+        active_groupings.0.lock().unwrap().remove(id);
+    }
 
     // Wait for all events to be emitted
     let _ = emit_task.await;
@@ -2373,6 +2393,20 @@ pub async fn generate_hunk_grouping(
         t0.elapsed()
     );
     Ok(result)
+}
+
+#[tauri::command]
+pub fn cancel_hunk_grouping(
+    request_id: String,
+    active_groupings: tauri::State<'_, ActiveGroupings>,
+) {
+    if let Some(flag) = active_groupings.0.lock().unwrap().get(&request_id) {
+        info!(
+            "[cancel_hunk_grouping] Cancelling request_id={}",
+            request_id
+        );
+        flag.store(true, Ordering::Relaxed);
+    }
 }
 
 #[tauri::command]

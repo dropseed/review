@@ -162,7 +162,6 @@ export function GitStatusPanel({
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const stageFile = useReviewStore((s) => s.stageFile);
   const unstageFile = useReviewStore((s) => s.unstageFile);
-  const stageAll = useReviewStore((s) => s.stageAll);
   const unstageAll = useReviewStore((s) => s.unstageAll);
   const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
 
@@ -351,7 +350,10 @@ export function GitStatusPanel({
                 label: "Stage reviewed",
                 onClick: () => alert("Stage reviewed — coming soon"),
               },
-              { label: "Stage all", onClick: () => stageAll() },
+              {
+                label: "Stage unstaged",
+                onClick: () => unstaged.forEach((e) => stageFile(e.path)),
+              },
             ]}
             onExpandAll={
               gitDisplayMode === "tree"
@@ -396,7 +398,12 @@ export function GitStatusPanel({
             icon={UNTRACKED_ICON}
             count={untracked.length}
             accentColor="bg-fg-muted/20 text-fg-muted"
-            menuItems={[{ label: "Stage all", onClick: () => stageAll() }]}
+            menuItems={[
+              {
+                label: "Stage untracked",
+                onClick: () => untracked.forEach((p) => stageFile(p)),
+              },
+            ]}
             onExpandAll={
               gitDisplayMode === "tree"
                 ? () => expandAll(untrackedDirPaths)
