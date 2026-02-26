@@ -17,6 +17,7 @@ import {
 } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
+import { suppressScrollTracking } from "../../hooks/scrollState";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -65,7 +66,6 @@ function isDeletionOnly(hunk: DiffHunk): boolean {
   );
 }
 
-// Metadata for hunk annotations
 interface HunkAnnotationMeta {
   hunk: DiffHunk;
   hunkState: HunkState | undefined;
@@ -73,12 +73,10 @@ interface HunkAnnotationMeta {
   isSource: boolean;
 }
 
-// Metadata for user annotations
 interface UserAnnotationMeta {
   annotation: LineAnnotation;
 }
 
-// Combined annotation type for rendering
 type AnnotationMeta =
   | { type: "hunk"; data: HunkAnnotationMeta }
   | { type: "user"; data: UserAnnotationMeta }
@@ -203,13 +201,10 @@ export function DiffView({
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, fileName);
 
   // Scroll to focused hunk when scrollTarget changes (type "hunk").
-  // Uses store.subscribe so DiffView doesn't re-render on every scrollTarget
-  // change — only the leaf annotation components do. The scroll is deferred via
-  // requestAnimationFrame so React has time to render and assign focusedHunkRef.
-  //
-  // On mount, we also handle an existing scrollTarget since it was likely
-  // set before this DiffView mounted (file switching causes unmount/remount due
-  // to the async content load in FileViewer).
+  // Uses store.subscribe to avoid re-rendering on every scrollTarget change.
+  // Deferred via rAF so React has time to render and assign focusedHunkRef.
+  // Also handles an existing scrollTarget on mount (file switching causes
+  // unmount/remount due to async content load in FileViewer).
   useEffect(() => {
     let cancelled = false;
 
@@ -218,6 +213,7 @@ export function DiffView({
       const { scrollTarget } = useReviewStore.getState();
       if (!scrollTarget || scrollTarget.type !== "hunk") return;
       useReviewStore.getState().clearScrollTarget();
+      suppressScrollTracking(600);
       focusedHunkRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "center",

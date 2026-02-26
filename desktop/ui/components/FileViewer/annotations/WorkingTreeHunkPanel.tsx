@@ -34,17 +34,12 @@ export function WorkingTreeHunkPanel({
 }: WorkingTreeHunkPanelProps): ReactNode {
   const isFocused = useIsFocusedHunk(hunk.id);
 
-  const borderClass = isFocused
-    ? "border border-edge-strong/60 ring-1 ring-fg/25"
-    : "border border-edge-default/40";
-
   return (
     <div
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
-      className={`@container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 ${borderClass} bg-surface-raised/90`}
+      className="group/panel @container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 border border-edge-default/40 data-[scroll-focused]:border-edge-strong/60 data-[scroll-focused]:ring-1 data-[scroll-focused]:ring-fg/25 bg-surface-raised/90"
     >
-      {/* Primary action: Stage or Unstage */}
       {mode === "unstaged" ? (
         <SimpleTooltip content="Stage this hunk">
           <button
@@ -93,9 +88,7 @@ export function WorkingTreeHunkPanel({
         </SimpleTooltip>
       )}
 
-      {/* Right side: overflow menu + position */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {/* Overflow menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -162,16 +155,19 @@ export function WorkingTreeHunkPanel({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Hunk position with j/k hints */}
         {hunkPosition !== undefined &&
           totalHunksInFile !== undefined &&
           totalHunksInFile > 1 && (
             <div className="flex items-center gap-1 text-fg-faint select-none">
-              {isFocused && <kbd className="text-fg-faint">k</kbd>}
+              <kbd className="text-fg-faint invisible group-data-[scroll-focused]/panel:visible">
+                k
+              </kbd>
               <span className="text-xxs tabular-nums">
                 {hunkPosition}/{totalHunksInFile}
               </span>
-              {isFocused && <kbd className="text-fg-faint">j</kbd>}
+              <kbd className="text-fg-faint invisible group-data-[scroll-focused]/panel:visible">
+                j
+              </kbd>
             </div>
           )}
       </div>

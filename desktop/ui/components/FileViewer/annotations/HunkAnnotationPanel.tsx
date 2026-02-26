@@ -110,19 +110,17 @@ export function HunkAnnotationPanel({
   const isRejected = reviewStatus === "rejected";
   const isSavedForLater = reviewStatus === "saved_for_later";
   const isTrusted = reviewStatus === "trusted";
+  // Drives ref assignment and tabIndex only. Visual focus (border, ring,
+  // button visibility) uses the data-scroll-focused DOM attribute to avoid
+  // React re-renders during active scrolling.
   const isFocused = useIsFocusedHunk(hunk.id);
-
-  const borderClass = isFocused
-    ? "border border-edge-strong/60 ring-1 ring-fg/25"
-    : "border border-edge-default/40";
 
   return (
     <div
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
-      className={`@container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 ${borderClass} ${getHunkBackgroundClass(reviewStatus)}`}
+      className={`group/panel @container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 border border-edge-default/40 data-[scroll-focused]:border-edge-strong/60 data-[scroll-focused]:ring-1 data-[scroll-focused]:ring-fg/25 ${getHunkBackgroundClass(reviewStatus)}`}
     >
-      {/* Move pair indicator */}
       {pairedHunk && (
         <MovePairModal
           currentHunk={hunk}
@@ -135,7 +133,6 @@ export function HunkAnnotationPanel({
         />
       )}
 
-      {/* Action buttons - grouped with keyboard shortcuts */}
       {isApproved ? (
         <SimpleTooltip content="Click to unapprove">
           <button
@@ -230,11 +227,11 @@ export function HunkAnnotationPanel({
                 />
               </svg>
               <span className="hidden @md:inline">Approve</span>
-              {isFocused && (
-                <kbd className="ml-0.5 text-xxs opacity-60 hidden @md:inline">
+              <span className="hidden @md:inline">
+                <kbd className="ml-0.5 text-xxs opacity-0 group-data-[scroll-focused]/panel:opacity-60">
                   a
                 </kbd>
-              )}
+              </span>
             </button>
           </SimpleTooltip>
           <SimpleTooltip
@@ -263,11 +260,11 @@ export function HunkAnnotationPanel({
                 />
               </svg>
               <span className="hidden @md:inline">Reject</span>
-              {isFocused && (
-                <kbd className="ml-0.5 text-xxs opacity-60 hidden @md:inline">
+              <span className="hidden @md:inline">
+                <kbd className="ml-0.5 text-xxs opacity-0 group-data-[scroll-focused]/panel:opacity-60">
                   r
                 </kbd>
-              )}
+              </span>
             </button>
           </SimpleTooltip>
           <SimpleTooltip content="Save for later (s)">
@@ -294,14 +291,13 @@ export function HunkAnnotationPanel({
                 />
               </svg>
               <span className="hidden @md:inline">Later</span>
-              {isFocused && (
-                <kbd className="ml-0.5 text-xxs opacity-60 hidden @md:inline">
+              <span className="hidden @md:inline">
+                <kbd className="ml-0.5 text-xxs opacity-0 group-data-[scroll-focused]/panel:opacity-60">
                   s
                 </kbd>
-              )}
+              </span>
             </button>
           </SimpleTooltip>
-          {/* Similar hunks modal trigger - "N like this" */}
           <SimilarHunksModal
             currentHunk={hunk}
             similarHunks={similarHunks}
@@ -313,9 +309,7 @@ export function HunkAnnotationPanel({
         </div>
       )}
 
-      {/* Right side: trust labels, reasoning, overflow menu */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {/* Trust labels - click to toggle trust */}
         {hunkState?.label && hunkState.label.length > 0 && (
           <div className="flex items-center gap-1.5">
             <SimpleTooltip
@@ -369,7 +363,6 @@ export function HunkAnnotationPanel({
           </div>
         )}
 
-        {/* Reasoning indicator - shows when reasoning exists */}
         {hunkState?.reasoning && (
           <SimpleTooltip content={hunkState.reasoning}>
             <span className="text-fg-faint hover:text-fg-muted cursor-help transition-colors">
@@ -391,16 +384,40 @@ export function HunkAnnotationPanel({
           </SimpleTooltip>
         )}
 
-        {/* Overflow menu */}
-        <div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
-                aria-label="More options"
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
+              aria-label="More options"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z"
+                />
+              </svg>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {onViewInFile && (
+              <DropdownMenuItem
+                onClick={() => {
+                  const firstChanged = hunk.lines.find(
+                    (l) => l.type === "added" || l.type === "removed",
+                  );
+                  const targetLine =
+                    firstChanged?.newLineNumber ?? hunk.newStart;
+                  onViewInFile(targetLine);
+                }}
               >
                 <svg
-                  className="h-4 w-4"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -409,99 +426,68 @@ export function HunkAnnotationPanel({
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
                   />
                 </svg>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {onViewInFile && (
-                <DropdownMenuItem
-                  onClick={() => {
-                    // Find first changed line to jump to
-                    const firstChanged = hunk.lines.find(
-                      (l) => l.type === "added" || l.type === "removed",
-                    );
-                    const targetLine =
-                      firstChanged?.newLineNumber ?? hunk.newStart;
-                    onViewInFile(targetLine);
-                  }}
-                >
-                  <svg
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                    />
-                  </svg>
-                  View in file
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={() => onReclassifyHunks([hunk.id])}>
-                <svg
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                  />
-                </svg>
-                Reclassify
+                View in file
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onCopyHunk(hunk)}>
-                <svg
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-                Copy hunk
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            )}
+            <DropdownMenuItem onClick={() => onReclassifyHunks([hunk.id])}>
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                />
+              </svg>
+              Reclassify
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onCopyHunk(hunk)}>
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+              Copy hunk
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        {/* Hunk position with j/k hints */}
         {hunkPosition !== undefined &&
           totalHunksInFile !== undefined &&
           totalHunksInFile > 1 && (
             <div className="flex items-center gap-1 text-fg-faint select-none">
-              {isFocused && (
-                <button
-                  onClick={() => useReviewStore.getState().prevHunk()}
-                  className="hover:text-fg-secondary transition-colors"
-                  aria-label="Previous hunk"
-                >
-                  <kbd className="text-fg-faint">k</kbd>
-                </button>
-              )}
+              <button
+                onClick={() => useReviewStore.getState().prevHunk()}
+                className="invisible group-data-[scroll-focused]/panel:visible hover:text-fg-secondary transition-colors"
+                aria-label="Previous hunk"
+                tabIndex={isFocused ? 0 : -1}
+              >
+                <kbd className="text-fg-faint">k</kbd>
+              </button>
               <span className="text-xxs tabular-nums">
                 {hunkPosition}/{totalHunksInFile}
               </span>
-              {isFocused && (
-                <button
-                  onClick={() => useReviewStore.getState().nextHunk()}
-                  className="hover:text-fg-secondary transition-colors"
-                  aria-label="Next hunk"
-                >
-                  <kbd className="text-fg-faint">j</kbd>
-                </button>
-              )}
+              <button
+                onClick={() => useReviewStore.getState().nextHunk()}
+                className="invisible group-data-[scroll-focused]/panel:visible hover:text-fg-secondary transition-colors"
+                aria-label="Next hunk"
+                tabIndex={isFocused ? 0 : -1}
+              >
+                <kbd className="text-fg-faint">j</kbd>
+              </button>
             </div>
           )}
       </div>

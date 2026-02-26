@@ -37,13 +37,8 @@ export function TrustedHunkBadge({
     <div
       data-hunk-id={hunk.id}
       ref={isFocused ? focusedHunkRef : undefined}
-      className={`flex items-center gap-2 px-3 py-1 mx-2 my-1 rounded-md transition-[border-color,box-shadow] duration-150 ${
-        isFocused
-          ? "border border-edge-strong/40 ring-1 ring-fg/15 bg-status-renamed/5"
-          : "border border-transparent bg-status-renamed/[0.03]"
-      }`}
+      className="flex items-center gap-2 px-3 py-1 mx-2 my-1 rounded-md transition-[border-color,box-shadow] duration-150 border border-transparent data-[scroll-focused]:border-edge-strong/40 data-[scroll-focused]:ring-1 data-[scroll-focused]:ring-fg/15 bg-status-renamed/[0.03] data-[scroll-focused]:bg-status-renamed/5"
     >
-      {/* Shield icon */}
       <svg
         className="h-3 w-3 shrink-0 text-status-renamed/60"
         viewBox="0 0 24 24"
@@ -57,7 +52,6 @@ export function TrustedHunkBadge({
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
 
-      {/* Trust label pills */}
       <div className="flex items-center gap-1">
         {trustedLabels.map((lbl, i) => (
           <span
@@ -69,7 +63,6 @@ export function TrustedHunkBadge({
         ))}
       </div>
 
-      {/* Dropdown with actions */}
       <div className="ml-auto">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
