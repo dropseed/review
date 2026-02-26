@@ -104,6 +104,10 @@ fn emit_cli_open_review(app: &tauri::AppHandle, repo_path: &str, comparison_key:
 /// This sets up all plugins, menus, and command handlers, then starts
 /// the Tauri event loop.
 pub fn run() {
+    // Fix PATH when launched from Finder/Dock (macOS gives GUI apps a minimal environment).
+    // This is a no-op when launched from a terminal.
+    fix_path_env::fix();
+
     // Initialize Sentry early so it captures any panics during setup.
     // Events are silently dropped until the user opts in via preferences.
     let consent = Arc::new(AtomicBool::new(false));
