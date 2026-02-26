@@ -60,6 +60,7 @@ export function FileViewer({
     repoPath,
     codeTheme,
     codeFontSize,
+    codeFontFamily,
     reviewState,
     allHunks,
     refreshGeneration,
@@ -152,10 +153,9 @@ export function FileViewer({
     };
   }, [scrollNode]);
 
-  // Generate CSS for font size injection into pierre/diffs
-  // Pierre/diffs uses --diffs-font-size and --diffs-line-height CSS variables
+  // Generate CSS for font injection into pierre/diffs shadow DOM
   const lineHeight = Math.round(codeFontSize * 1.5);
-  const fontSizeCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; }`;
+  const fontCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; --diffs-font-family: ${codeFontFamily}; }`;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
@@ -639,7 +639,7 @@ export function FileViewer({
             fileContent={fileContent}
             contentMode={contentMode}
             codeTheme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
+            fontCSS={fontCSS}
             effectiveLanguage={effectiveLanguage}
             markdownViewMode={markdownViewMode}
             highlightLine={highlightLine}

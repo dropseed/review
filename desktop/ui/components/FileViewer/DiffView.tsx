@@ -159,7 +159,7 @@ interface DiffViewProps {
   viewMode: "unified" | "split";
   hunks: DiffHunk[];
   theme: string;
-  fontSizeCSS: string;
+  fontCSS: string;
   onViewInFile?: (line: number) => void;
   // File contents for expansion support
   fileName: string;
@@ -176,7 +176,7 @@ export function DiffView({
   viewMode,
   hunks,
   theme,
-  fontSizeCSS,
+  fontCSS,
   onViewInFile,
   fileName,
   oldContent,
@@ -838,7 +838,7 @@ export function DiffView({
       enableHoverUtility: true,
       enableLineSelection: true,
       onLineSelectionEnd: handleLineSelectionEnd,
-      unsafeCSS: fontSizeCSS + annotationHighlightCSS,
+      unsafeCSS: fontCSS + annotationHighlightCSS,
       expandUnchanged: expandUnchangedProp,
       expansionLineCount: 20,
       hunkSeparators: "line-info",
@@ -860,7 +860,7 @@ export function DiffView({
   }, [
     viewMode,
     theme,
-    fontSizeCSS,
+    fontCSS,
     annotationHighlightCSS,
     lineDiffType,
     diffOverflow,

@@ -19,7 +19,7 @@ interface PlainCodeViewProps {
   filePath: string;
   highlightLine?: number | null;
   theme: string;
-  fontSizeCSS: string;
+  fontCSS: string;
   /** Language override for syntax highlighting */
   language?: SupportedLanguages;
   /** Line height in pixels for scroll calculation */
@@ -39,7 +39,7 @@ export function PlainCodeView({
   filePath,
   highlightLine,
   theme,
-  fontSizeCSS,
+  fontCSS,
   language,
   lineHeight = 21,
   annotations = [],
@@ -240,7 +240,7 @@ export function PlainCodeView({
           },
           themeType: "dark",
           disableFileHeader: true,
-          unsafeCSS: fontSizeCSS,
+          unsafeCSS: fontCSS,
           enableHoverUtility: true,
         }}
       />

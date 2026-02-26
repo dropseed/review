@@ -14,7 +14,7 @@ interface FileContentRendererProps {
   fileContent: FileContent;
   contentMode: ContentMode;
   codeTheme: string;
-  fontSizeCSS: string;
+  fontCSS: string;
   effectiveLanguage: SupportedLanguages | undefined;
   markdownViewMode: "preview" | "code";
   highlightLine: number | null;
@@ -36,7 +36,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   fileContent,
   contentMode,
   codeTheme,
-  fontSizeCSS,
+  fontCSS,
   effectiveLanguage,
   markdownViewMode,
   highlightLine,
@@ -75,7 +75,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
             filePath={filePath}
             hunks={fileContent.hunks}
             theme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
+            fontCSS={fontCSS}
             language={effectiveLanguage}
             annotations={fileAnnotations}
             onAddAnnotation={(lineNumber, content) =>
@@ -129,7 +129,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
               filePath={filePath}
               highlightLine={highlightLine}
               theme={codeTheme}
-              fontSizeCSS={fontSizeCSS}
+              fontCSS={fontCSS}
               language={effectiveLanguage}
               lineHeight={lineHeight}
               annotations={fileAnnotations}
@@ -157,7 +157,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
           viewMode={viewMode}
           hunks={fileContent.hunks}
           theme={codeTheme}
-          fontSizeCSS={fontSizeCSS}
+          fontCSS={fontCSS}
           onViewInFile={onViewInFile}
           fileName={filePath}
           oldContent={fileContent.oldContent}
@@ -181,7 +181,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
             filePath={filePath}
             highlightLine={highlightLine}
             theme={codeTheme}
-            fontSizeCSS={fontSizeCSS}
+            fontCSS={fontCSS}
             language={effectiveLanguage}
             lineHeight={lineHeight}
             annotations={fileAnnotations}

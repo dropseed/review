@@ -295,6 +295,7 @@ export function GroupDiffViewer({
   const setDiffViewMode = useReviewStore((s) => s.setDiffViewMode);
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const [fileContents, setFileContents] = useState<Map<string, FileContent>>(
@@ -425,7 +426,7 @@ export function GroupDiffViewer({
   }, [mountedCount, filePaths.length]);
 
   const lineHeight = Math.round(codeFontSize * 1.5);
-  const fontSizeCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; }`;
+  const fontCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; --diffs-font-family: ${codeFontFamily}; }`;
 
   const handleApproveAll = useCallback(() => {
     if (unreviewedIds.length > 0) approveHunkIds(unreviewedIds);
@@ -516,7 +517,7 @@ export function GroupDiffViewer({
           filePath={filePath}
           hunks={fileHunks}
           theme={codeTheme}
-          fontSizeCSS={fontSizeCSS}
+          fontCSS={fontCSS}
         />
       );
     }
@@ -540,7 +541,7 @@ export function GroupDiffViewer({
           viewMode={effectiveViewMode(diffViewMode)}
           hunks={fileHunks}
           theme={codeTheme}
-          fontSizeCSS={fontSizeCSS}
+          fontCSS={fontCSS}
           fileName={filePath}
           expandUnchanged={false}
         />

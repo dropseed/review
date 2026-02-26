@@ -8,6 +8,7 @@ import {
   CODE_FONT_SIZE_MIN,
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_STEP,
+  CODE_FONT_FAMILY_DEFAULT,
 } from "../../utils/preferences";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -139,6 +140,8 @@ export function SettingsModal({
 }: SettingsModalProps): ReactNode {
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
+  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const setCodeFontFamily = useReviewStore((s) => s.setCodeFontFamily);
   const uiTheme = useReviewStore((s) => s.uiTheme);
   const setUiTheme = useReviewStore((s) => s.setUiTheme);
   const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
@@ -172,10 +175,15 @@ export function SettingsModal({
   );
   const companionServerError = useReviewStore((s) => s.companionServerError);
 
+  const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
   const [machineHostname, setMachineHostname] = useState<string>("");
   const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
   const [companionCopied, setCompanionCopied] = useState<string | null>(null);
   const [companionQrSvg, setCompanionQrSvg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) setFontFamilyDraft(codeFontFamily);
+  }, [isOpen, codeFontFamily]);
 
   useEffect(() => {
     if (isOpen) {
@@ -304,6 +312,15 @@ export function SettingsModal({
 
   function resetFontSize() {
     setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
+  }
+
+  function commitFontFamily() {
+    const trimmed = fontFamilyDraft.trim();
+    if (trimmed && trimmed !== codeFontFamily) {
+      setCodeFontFamily(trimmed);
+    } else {
+      setFontFamilyDraft(codeFontFamily);
+    }
   }
 
   return (
@@ -515,6 +532,33 @@ export function SettingsModal({
             </div>
             <p className="mt-1.5 text-xxs text-fg-faint">
               Cmd +/- to adjust, 0 to reset
+            </p>
+
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-fg-secondary">
+                Code font family
+              </span>
+              {codeFontFamily !== CODE_FONT_FAMILY_DEFAULT && (
+                <button
+                  onClick={() => setCodeFontFamily(CODE_FONT_FAMILY_DEFAULT)}
+                  className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            <Input
+              value={fontFamilyDraft}
+              onChange={(e) => setFontFamilyDraft(e.target.value)}
+              onBlur={commitFontFamily}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitFontFamily();
+              }}
+              className="mt-1.5 w-full text-xs font-mono"
+              placeholder={CODE_FONT_FAMILY_DEFAULT}
+            />
+            <p className="mt-1.5 text-xxs text-fg-faint">
+              Comma-separated font names
             </p>
           </div>
 

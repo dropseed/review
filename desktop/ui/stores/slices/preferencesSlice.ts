@@ -50,6 +50,11 @@ function applyResolvedVscodeTheme(
   );
 }
 
+/** Apply --code-font-family CSS variable. */
+function applyFontFamilyCssVariables(family: string): void {
+  document.documentElement.style.setProperty("--code-font-family", family);
+}
+
 /** Apply code font size CSS variables (--code-font-size and --ui-scale). */
 function applyFontSizeCssVariables(size: number): void {
   document.documentElement.style.setProperty("--code-font-size", `${size}px`);
@@ -77,6 +82,9 @@ export const CODE_FONT_SIZE_DEFAULT = 11;
 export const CODE_FONT_SIZE_MIN = 8;
 export const CODE_FONT_SIZE_MAX = 32;
 export const CODE_FONT_SIZE_STEP = 1;
+
+export const CODE_FONT_FAMILY_DEFAULT =
+  "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace";
 
 const MAX_RECENT_REPOS = 5;
 
@@ -112,6 +120,7 @@ export type FileSortOrder = "name" | "size" | "modified";
 
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
+  codeFontFamily: CODE_FONT_FAMILY_DEFAULT,
   codeTheme: "github-dark",
   uiTheme: "review-dark",
   recentRepositories: [] as RecentRepo[],
@@ -140,6 +149,7 @@ const defaults = {
 export interface PreferencesSlice {
   // UI settings
   codeFontSize: number;
+  codeFontFamily: string;
   codeTheme: string;
   uiTheme: string;
   fileToReveal: string | null;
@@ -199,6 +209,7 @@ export interface PreferencesSlice {
 
   // Actions
   setCodeFontSize: (size: number) => void;
+  setCodeFontFamily: (family: string) => void;
   setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
@@ -283,6 +294,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       set({ codeFontSize: size });
       storage.set("codeFontSize", size);
       applyFontSizeCssVariables(size);
+    },
+
+    setCodeFontFamily: (family) => {
+      set({ codeFontFamily: family });
+      storage.set("codeFontFamily", family);
+      applyFontFamilyCssVariables(family);
     },
 
     setCodeTheme: (theme) => {
@@ -400,6 +417,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       setSoundEnabled(loaded.soundEffectsEnabled);
 
       applyFontSizeCssVariables(loaded.codeFontSize);
+      applyFontFamilyCssVariables(loaded.codeFontFamily);
 
       // Apply UI theme (sets all semantic CSS variables + color-scheme)
       if (resolvedVscode) {

@@ -104,6 +104,9 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
           },
           securityLevel: "strict",
           fontFamily:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--code-font-family")
+              .trim() ||
             "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
         });
 

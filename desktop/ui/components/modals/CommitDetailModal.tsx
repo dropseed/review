@@ -73,6 +73,7 @@ export function CommitDetailModal({
   const repoPath = useReviewStore((s) => s.repoPath);
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   // Commit diffs always use unified or split (old/new modes don't apply)
   const effectiveDiffStyle = diffViewMode === "unified" ? "unified" : "split";
@@ -279,7 +280,7 @@ export function CommitDetailModal({
                         light: codeTheme,
                       },
                       themeType: "dark" as const,
-                      unsafeCSS: `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${Math.round(codeFontSize * 1.5)}px; }`,
+                      unsafeCSS: `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${Math.round(codeFontSize * 1.5)}px; --diffs-font-family: ${codeFontFamily}; }`,
                     }}
                   />
                 </div>

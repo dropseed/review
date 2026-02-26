@@ -33,7 +33,7 @@ interface UntrackedFileViewProps {
   filePath: string;
   hunks: DiffHunk[];
   theme: string;
-  fontSizeCSS: string;
+  fontCSS: string;
   /** Language override for syntax highlighting */
   language?: SupportedLanguages;
   /** Annotations for this file */
@@ -51,7 +51,7 @@ export function UntrackedFileView({
   filePath,
   hunks,
   theme,
-  fontSizeCSS,
+  fontCSS,
   language,
   annotations = [],
   onAddAnnotation,
@@ -371,7 +371,7 @@ export function UntrackedFileView({
           },
           themeType: "dark",
           disableFileHeader: true,
-          unsafeCSS: fontSizeCSS,
+          unsafeCSS: fontCSS,
           enableHoverUtility: true,
         }}
       />
