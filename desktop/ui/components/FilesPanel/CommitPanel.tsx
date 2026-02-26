@@ -109,7 +109,11 @@ export function CommitPanel(): ReactNode {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
-  const ansi = useMemo(() => new AnsiUp(), []);
+  const ansi = useMemo(() => {
+    const a = new AnsiUp();
+    a.use_classes = true;
+    return a;
+  }, []);
   const [outputExpanded, setOutputExpanded] = useState(false);
   const [sectionOpen, setSectionOpen] = useState(true);
 
@@ -240,11 +244,11 @@ export function CommitPanel(): ReactNode {
         </div>
 
         {commitOutput.length > 0 && (
-          <div className="rounded bg-black/80 font-mono text-[10px] leading-tight text-neutral-300 overflow-hidden">
+          <div className="rounded bg-surface-inset font-mono text-[10px] leading-tight text-fg-secondary overflow-hidden">
             {hiddenCount > 0 && (
               <button
                 onClick={() => setOutputExpanded(true)}
-                className="w-full px-2 py-0.5 text-neutral-500 hover:text-neutral-300 text-center"
+                className="w-full px-2 py-0.5 text-fg-muted hover:text-fg-secondary text-center"
               >
                 Show {hiddenCount} more {hiddenCount === 1 ? "line" : "lines"}
               </button>

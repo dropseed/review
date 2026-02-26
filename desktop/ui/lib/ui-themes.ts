@@ -71,6 +71,14 @@ export interface UiThemeTokens {
   // Diff
   "diff-added": string;
   "diff-removed": string;
+
+  // Named palette (for ANSI terminal output and non-semantic color needs)
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +119,12 @@ const DARK_DEFAULT_TOKENS: UiThemeTokens = {
   "status-info": "#38bdf8",
   "diff-added": "#7aad8a",
   "diff-removed": "#e0776b",
+  red: "#fb7185",
+  green: "#34d399",
+  yellow: "#fbbf24",
+  blue: "#60a5fa",
+  magenta: "#c084fc",
+  cyan: "#22d3ee",
 };
 
 // ---------------------------------------------------------------------------
@@ -544,6 +558,12 @@ export const UI_THEMES: UiTheme[] = [
       "status-info": "#0284c7",
       "diff-added": "#5a9e6f",
       "diff-removed": "#c9584c",
+      red: "#e11d48",
+      green: "#059669",
+      yellow: "#d97706",
+      blue: "#2563eb",
+      magenta: "#9333ea",
+      cyan: "#0891b2",
     },
   },
   {
@@ -570,6 +590,12 @@ export const UI_THEMES: UiTheme[] = [
       "edge-strong": "#484f58",
       "focus-ring": "#58a6ff",
       link: "#58a6ff",
+      red: "#ff7b72",
+      green: "#3fb950",
+      yellow: "#d29922",
+      blue: "#58a6ff",
+      magenta: "#bc8cff",
+      cyan: "#39d2f5",
     },
   },
   {
@@ -601,6 +627,12 @@ export const UI_THEMES: UiTheme[] = [
       guide: "#bd93f9",
       "status-modified": "#ffb86c",
       "status-renamed": "#8be9fd",
+      red: "#ff5555",
+      green: "#50fa7b",
+      yellow: "#f1fa8c",
+      blue: "#6272a4",
+      magenta: "#ff79c6",
+      cyan: "#8be9fd",
     },
   },
   {
@@ -632,6 +664,12 @@ export const UI_THEMES: UiTheme[] = [
       guide: "#bb9af7",
       "status-modified": "#e0af68",
       "status-renamed": "#7dcfff",
+      red: "#f7768e",
+      green: "#9ece6a",
+      yellow: "#e0af68",
+      blue: "#7aa2f7",
+      magenta: "#bb9af7",
+      cyan: "#7dcfff",
     },
   },
   {
@@ -663,6 +701,12 @@ export const UI_THEMES: UiTheme[] = [
       guide: "#b48ead",
       "status-modified": "#ebcb8b",
       "status-renamed": "#88c0d0",
+      red: "#bf616a",
+      green: "#a3be8c",
+      yellow: "#ebcb8b",
+      blue: "#81a1c1",
+      magenta: "#b48ead",
+      cyan: "#88c0d0",
     },
   },
   {
@@ -694,6 +738,12 @@ export const UI_THEMES: UiTheme[] = [
       guide: "#6c71c4",
       "status-modified": "#b58900",
       "status-renamed": "#268bd2",
+      red: "#dc322f",
+      green: "#859900",
+      yellow: "#b58900",
+      blue: "#268bd2",
+      magenta: "#d33682",
+      cyan: "#2aa198",
     },
   },
   {
@@ -736,6 +786,12 @@ export const UI_THEMES: UiTheme[] = [
       "status-info": "#4385BE",
       "diff-added": "#879A39",
       "diff-removed": "#D14D41",
+      red: "#D14D41",
+      green: "#879A39",
+      yellow: "#D0A215",
+      blue: "#4385BE",
+      magenta: "#CE5D97",
+      cyan: "#3AA99F",
     },
   },
   {
@@ -778,6 +834,12 @@ export const UI_THEMES: UiTheme[] = [
       "status-info": "#205EA6",
       "diff-added": "#66800B",
       "diff-removed": "#AF3029",
+      red: "#AF3029",
+      green: "#66800B",
+      yellow: "#AD8301",
+      blue: "#205EA6",
+      magenta: "#A02F6F",
+      cyan: "#24837B",
     },
   },
   {
@@ -820,6 +882,12 @@ export const UI_THEMES: UiTheme[] = [
       "status-info": "#268bd2",
       "diff-added": "#5a9e6f",
       "diff-removed": "#c9584c",
+      red: "#dc322f",
+      green: "#859900",
+      yellow: "#b58900",
+      blue: "#268bd2",
+      magenta: "#d33682",
+      cyan: "#2aa198",
     },
   },
 ];
@@ -904,6 +972,12 @@ const TOKEN_TO_CSS_VAR: Record<keyof UiThemeTokens, string> = {
   "status-info": "--color-status-info",
   "diff-added": "--color-diff-added",
   "diff-removed": "--color-diff-removed",
+  red: "--color-red",
+  green: "--color-green",
+  yellow: "--color-yellow",
+  blue: "--color-blue",
+  magenta: "--color-magenta",
+  cyan: "--color-cyan",
 };
 
 /**

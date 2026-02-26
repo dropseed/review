@@ -327,6 +327,12 @@ const DARK_FALLBACK_TOKENS: UiThemeTokens = {
   "status-info": "#38bdf8",
   "diff-added": "#7aad8a",
   "diff-removed": "#e0776b",
+  red: "#fb7185",
+  green: "#34d399",
+  yellow: "#fbbf24",
+  blue: "#60a5fa",
+  magenta: "#c084fc",
+  cyan: "#22d3ee",
 };
 
 const LIGHT_FALLBACK_TOKENS: UiThemeTokens = {
@@ -363,6 +369,12 @@ const LIGHT_FALLBACK_TOKENS: UiThemeTokens = {
   "status-info": "#0284c7",
   "diff-added": "#5a9e6f",
   "diff-removed": "#c9584c",
+  red: "#e11d48",
+  green: "#059669",
+  yellow: "#d97706",
+  blue: "#2563eb",
+  magenta: "#9333ea",
+  cyan: "#0891b2",
 };
 
 // ---------------------------------------------------------------------------

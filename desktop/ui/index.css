@@ -173,6 +173,14 @@
   /* Diff highlighting — theme-overridable */
   --color-diff-added: #7aad8a;         /* sage-400 */
   --color-diff-removed: #e0776b;       /* terracotta-400 */
+
+  /* Named palette (for ANSI terminal output and non-semantic color needs) */
+  --color-red: #fb7185;
+  --color-green: #34d399;
+  --color-yellow: #fbbf24;
+  --color-blue: #60a5fa;
+  --color-magenta: #c084fc;
+  --color-cyan: #22d3ee;
 }
 
 :root {
@@ -590,6 +598,35 @@ kbd {
 @utility text-violet-400 {
   color: #c4b5fd;
 }
+
+/* ANSI terminal color classes (used by ansi_up with use_classes=true) */
+.ansi-black-fg   { color: var(--color-fg-faint); }
+.ansi-red-fg     { color: var(--color-red); }
+.ansi-green-fg   { color: var(--color-green); }
+.ansi-yellow-fg  { color: var(--color-yellow); }
+.ansi-blue-fg    { color: var(--color-blue); }
+.ansi-magenta-fg { color: var(--color-magenta); }
+.ansi-cyan-fg    { color: var(--color-cyan); }
+.ansi-white-fg   { color: var(--color-fg); }
+
+.ansi-bright-black-fg   { color: var(--color-fg-muted); }
+.ansi-bright-red-fg     { color: var(--color-red); }
+.ansi-bright-green-fg   { color: var(--color-green); }
+.ansi-bright-yellow-fg  { color: var(--color-yellow); }
+.ansi-bright-blue-fg    { color: var(--color-blue); }
+.ansi-bright-magenta-fg { color: var(--color-magenta); }
+.ansi-bright-cyan-fg    { color: var(--color-cyan); }
+.ansi-bright-white-fg   { color: var(--color-fg); }
+
+/* Background variants (rarely used by hook output) */
+.ansi-black-bg   { background-color: var(--color-surface); }
+.ansi-red-bg     { background-color: var(--color-red); }
+.ansi-green-bg   { background-color: var(--color-green); }
+.ansi-yellow-bg  { background-color: var(--color-yellow); }
+.ansi-blue-bg    { background-color: var(--color-blue); }
+.ansi-magenta-bg { background-color: var(--color-magenta); }
+.ansi-cyan-bg    { background-color: var(--color-cyan); }
+.ansi-white-bg   { background-color: var(--color-fg); }
 
 /* File tree item optimization — skip layout/paint for off-screen nodes */
 .file-node-item {
