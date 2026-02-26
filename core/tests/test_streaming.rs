@@ -6,7 +6,7 @@
 //! This exercises the real `run_claude_streaming` and `generate_grouping_streaming`
 //! code paths, printing timestamps so you can verify tokens arrive incrementally.
 
-use review::ai::grouping::{generate_grouping_streaming, GroupingInput};
+use review::ai::grouping::{generate_grouping_streaming, GroupingEvent, GroupingInput};
 use std::time::Instant;
 
 /// Create a GroupingInput with defaults for optional fields.
@@ -131,8 +131,12 @@ fn test_stream_json_delivers_tokens_incrementally() {
     let start = Instant::now();
     let mut chunk_times: Vec<(f64, String)> = Vec::new();
 
-    let result =
-        review::ai::run_claude_streaming(prompt, &cwd, "haiku", &["none"], &mut |text: &str| {
+    let result = review::ai::run_claude_streaming(
+        prompt,
+        &cwd,
+        "haiku",
+        &["none"],
+        &mut |text: &str| {
             let elapsed = start.elapsed().as_secs_f64();
             let display = text.replace('\n', "↵");
             eprintln!(
@@ -141,7 +145,9 @@ fn test_stream_json_delivers_tokens_incrementally() {
                 &display[..display.len().min(80)]
             );
             chunk_times.push((elapsed, text.to_owned()));
-        });
+        },
+        None,
+    );
 
     match result {
         Ok(full_output) => {
@@ -350,14 +356,27 @@ fn test_grouping_streams_multiple_groups_progressively() {
         hunks.len()
     );
 
-    let result = generate_grouping_streaming(&hunks, &cwd, &[], &mut |group| {
-        let elapsed = start.elapsed().as_secs_f64();
-        eprintln!(
-            "[{:6.2}s] GROUP: \"{}\" (phase: {:?}) → {:?}",
-            elapsed, group.title, group.phase, group.hunk_ids,
-        );
-        group_times.push((elapsed, group.title.clone()));
-    });
+    let result = generate_grouping_streaming(
+        &hunks,
+        &cwd,
+        &[],
+        &mut |event| {
+            let elapsed = start.elapsed().as_secs_f64();
+            match &event {
+                GroupingEvent::Group(group) => {
+                    eprintln!(
+                        "[{:6.2}s] GROUP: \"{}\" (phase: {:?}) → {:?}",
+                        elapsed, group.title, group.phase, group.hunk_ids,
+                    );
+                    group_times.push((elapsed, group.title.clone()));
+                }
+                GroupingEvent::PartialTitle { title } => {
+                    eprintln!("[{:6.2}s] PARTIAL TITLE: \"{}\"", elapsed, title);
+                }
+            }
+        },
+        None,
+    );
 
     match result {
         Ok(groups) => {

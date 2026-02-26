@@ -7,6 +7,7 @@ export function MultiFileDiffViewer(): ReactNode {
   const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
   const reviewGroups = activeEntry.reviewGroups;
   const groupingLoading = activeEntry.groupingLoading;
+  const groupingPartialTitle = activeEntry.groupingPartialTitle;
   const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
   const adhocGroup = useReviewStore((s) => s.adhocGroup);
 
@@ -33,7 +34,8 @@ export function MultiFileDiffViewer(): ReactNode {
             Analyzing changes...
           </h2>
           <p className="text-sm text-fg-muted">
-            Claude is organizing hunks into logical groups for review.
+            {groupingPartialTitle ||
+              "Claude is organizing hunks into logical groups for review."}
           </p>
         </div>
       </div>

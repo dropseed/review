@@ -367,6 +367,11 @@ export interface HunkGroup {
   ungrouped?: boolean;
 }
 
+/** A single event emitted during streaming grouping. */
+export type GroupingEvent =
+  | { type: "partialTitle"; title: string }
+  | ({ type: "group" } & HunkGroup);
+
 export interface GuideState {
   groups: HunkGroup[];
   hunkIds: string[];

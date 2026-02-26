@@ -5,8 +5,21 @@ use crate::ai::{
 };
 use crate::review::state::HunkGroup;
 use log::{info, warn};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
+/// A single event emitted during streaming grouping.
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum GroupingEvent {
+    /// A partial title for the in-progress group.
+    PartialTitle { title: String },
+    /// A fully parsed group.
+    Group(HunkGroup),
+}
 
 /// Maximum total bytes of diff content to inline in the prompt (~50K tokens).
 /// When the total exceeds this, fall back to temp files + Read tool.
@@ -138,8 +151,50 @@ pub fn generate_grouping(
     Ok(groups)
 }
 
-/// Generate hunk groupings with streaming: emits each parsed `HunkGroup`
-/// via the `on_group` callback as soon as the model produces it.
+/// Extract a complete `"title": "..."` value from a partial JSON buffer.
+///
+/// Handles escaped quotes within the title value by iterating char-by-char.
+/// Returns `None` if no complete title value is found yet.
+fn extract_partial_title(buf: &str) -> Option<String> {
+    // Find `"title"` key followed by `:` and opening `"`
+    let key = "\"title\"";
+    let key_pos = buf.find(key)?;
+    let after_key = &buf[key_pos + key.len()..];
+
+    // Skip whitespace, colon, more whitespace, and opening quote
+    let value_start = after_key
+        .trim_start()
+        .strip_prefix(':')?
+        .trim_start()
+        .strip_prefix('"')?;
+
+    // Scan for closing quote, handling escaped characters
+    let mut result = String::new();
+    let mut chars = value_start.chars();
+    loop {
+        match chars.next() {
+            None => return None, // Title not yet complete
+            Some('\\') => {
+                // Escaped character — take the next char literally
+                match chars.next() {
+                    None => return None,
+                    Some(c) => {
+                        result.push('\\');
+                        result.push(c);
+                    }
+                }
+            }
+            Some('"') => {
+                // Closing quote — title is complete
+                return Some(result);
+            }
+            Some(c) => result.push(c),
+        }
+    }
+}
+
+/// Generate hunk groupings with streaming: emits `GroupingEvent`s via the
+/// `on_event` callback as groups and partial titles arrive from the model.
 ///
 /// Uses `--output-format stream-json` so tokens are flushed immediately,
 /// enabling progressive display. Temp-file mode falls back to non-streaming.
@@ -149,7 +204,8 @@ pub fn generate_grouping_streaming(
     hunks: &[GroupingInput],
     cwd: &Path,
     modified_symbols: &[ModifiedSymbolEntry],
-    on_group: &mut dyn FnMut(&HunkGroup),
+    on_event: &mut dyn FnMut(GroupingEvent),
+    cancel: Option<&Arc<AtomicBool>>,
 ) -> Result<Vec<HunkGroup>, ClaudeError> {
     if hunks.is_empty() {
         return Ok(Vec::new());
@@ -177,6 +233,7 @@ pub fn generate_grouping_streaming(
     let mut brace_depth: i32 = 0;
     let mut in_string = false;
     let mut escape_next = false;
+    let mut title_emitted = false;
 
     let start = std::time::Instant::now();
     let _output = run_claude_streaming(
@@ -203,8 +260,17 @@ pub fn generate_grouping_streaming(
                 }
 
                 if ch == '"' && brace_depth > 0 {
-                    in_string = !in_string;
                     buf.push(ch);
+                    // When closing a string, check if we just completed the title value
+                    if in_string && !title_emitted {
+                        if let Some(title) = extract_partial_title(&buf) {
+                            if !title.is_empty() {
+                                on_event(GroupingEvent::PartialTitle { title });
+                                title_emitted = true;
+                            }
+                        }
+                    }
+                    in_string = !in_string;
                     continue;
                 }
 
@@ -226,8 +292,8 @@ pub fn generate_grouping_streaming(
                         if brace_depth == 0 {
                             // Complete JSON object — try to parse
                             if let Ok(group) = serde_json::from_str::<HunkGroup>(&buf) {
-                                on_group(&group);
-                                groups.push(group);
+                                groups.push(group.clone());
+                                on_event(GroupingEvent::Group(group));
                             } else {
                                 warn!(
                                     "[grouping:streaming] failed to parse object: {}",
@@ -235,6 +301,7 @@ pub fn generate_grouping_streaming(
                                 );
                             }
                             buf.clear();
+                            title_emitted = false;
                         }
                     }
                 } else if brace_depth > 0 {
@@ -243,6 +310,7 @@ pub fn generate_grouping_streaming(
                 // Characters outside braces (array brackets, commas, whitespace, markdown fences) are ignored
             }
         },
+        cancel,
     )?;
 
     info!(
@@ -255,4 +323,51 @@ pub fn generate_grouping_streaming(
     append_missing_hunks(&mut groups, &all_ids);
 
     Ok(groups)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_partial_title_complete() {
+        let buf = r#"{"title": "Refactor auth module", "description": "..."}"#;
+        assert_eq!(
+            extract_partial_title(buf),
+            Some("Refactor auth module".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_partial_title_incomplete() {
+        let buf = r#"{"title": "Refactor auth mod"#;
+        assert_eq!(extract_partial_title(buf), None);
+    }
+
+    #[test]
+    fn extract_partial_title_escaped_quotes() {
+        let buf = r#"{"title": "Handle \"edge\" cases", "hunk_ids": []}"#;
+        assert_eq!(
+            extract_partial_title(buf),
+            Some(r#"Handle \"edge\" cases"#.to_string())
+        );
+    }
+
+    #[test]
+    fn extract_partial_title_no_title_key() {
+        let buf = r#"{"description": "some text"}"#;
+        assert_eq!(extract_partial_title(buf), None);
+    }
+
+    #[test]
+    fn extract_partial_title_empty_title() {
+        let buf = r#"{"title": "", "hunk_ids": []}"#;
+        assert_eq!(extract_partial_title(buf), Some("".to_string()));
+    }
+
+    #[test]
+    fn extract_partial_title_whitespace_around_colon() {
+        let buf = r#"{"title"  :  "Spaced out"}"#;
+        assert_eq!(extract_partial_title(buf), Some("Spaced out".to_string()));
+    }
 }

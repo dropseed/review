@@ -1,4 +1,11 @@
-import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useReviewStore } from "../../stores";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk } from "../../types";
@@ -48,6 +55,24 @@ function Spinner({ className = "h-3 w-3" }: { className?: string }): ReactNode {
   );
 }
 
+/** Ticking elapsed-time display that updates every second. */
+function ElapsedTimer(): ReactNode {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (elapsed < 1) return null;
+  return (
+    <span className="text-xxs text-fg-faint tabular-nums ml-1">{elapsed}s</span>
+  );
+}
+
 function buildHunkMap(hunks: DiffHunk[]): Map<string, DiffHunk> {
   const map = new Map<string, DiffHunk>();
   for (const h of hunks) map.set(h.id, h);
@@ -87,6 +112,7 @@ export function GuideSideNav(): ReactNode {
   const reviewGroups = activeEntry.reviewGroups;
   const groupingLoading = activeEntry.groupingLoading;
   const groupingError = activeEntry.groupingError;
+  const groupingPartialTitle = activeEntry.groupingPartialTitle;
   const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
   const setActiveGroupIndex = useReviewStore((s) => s.setActiveGroupIndex);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
@@ -97,6 +123,7 @@ export function GuideSideNav(): ReactNode {
     () => getGroupingStaleness(),
     [getGroupingStaleness, hunks, reviewState],
   );
+  const cancelGrouping = useReviewStore((s) => s.cancelGrouping);
   const exitGuide = useReviewStore((s) => s.exitGuide);
   const excludeReviewed = useReviewStore((s) => s.excludeReviewedFromGrouping);
   const setExcludeReviewed = useReviewStore(
@@ -338,7 +365,20 @@ export function GuideSideNav(): ReactNode {
             <div className="flex items-center justify-center gap-2 text-fg-muted">
               <Spinner />
               <span className="text-xs">Generating groups…</span>
+              <ElapsedTimer />
             </div>
+            {groupingPartialTitle && (
+              <p className="text-xxs text-fg-faint mt-1.5 truncate px-2">
+                {groupingPartialTitle}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={cancelGrouping}
+              className="mt-2 text-xxs text-fg-faint hover:text-fg-muted transition-colors"
+            >
+              Cancel
+            </button>
           </div>
         )}
 
@@ -427,9 +467,23 @@ export function GuideSideNav(): ReactNode {
 
         {/* Loading more groups indicator */}
         {groupingLoading && hasGroups && (
-          <div className="flex items-center gap-2 px-3 py-1.5 text-fg-muted">
-            <Spinner />
-            <span className="text-xxs">Loading more groups…</span>
+          <div className="px-3 py-1.5 text-fg-muted">
+            <div className="flex items-center gap-2">
+              <Spinner />
+              <span className="text-xxs flex-1">Loading more groups…</span>
+              <button
+                type="button"
+                onClick={cancelGrouping}
+                className="text-xxs text-fg-faint hover:text-fg-muted transition-colors shrink-0"
+              >
+                Stop
+              </button>
+            </div>
+            {groupingPartialTitle && (
+              <p className="text-xxs text-fg-faint truncate mt-0.5 pl-5">
+                {groupingPartialTitle}
+              </p>
+            )}
           </div>
         )}
 

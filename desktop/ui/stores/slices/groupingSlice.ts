@@ -27,6 +27,9 @@ export interface GroupingEntry {
   groupingLoading: boolean;
   groupingError: string | null;
   groupingStatus: GuideTaskStatus;
+  groupingPartialTitle: string | null;
+  /** Active request ID for cancellation support. */
+  groupingRequestId: string | null;
   identicalHunkIds: Map<string, string[]>;
   guideLoading: boolean;
   classificationStatus: GuideTaskStatus;
@@ -38,6 +41,8 @@ const EMPTY_ENTRY: GroupingEntry = Object.freeze({
   groupingLoading: false,
   groupingError: null,
   groupingStatus: "idle",
+  groupingPartialTitle: null,
+  groupingRequestId: null,
   identicalHunkIds: EMPTY_IDENTICAL_MAP,
   guideLoading: false,
   classificationStatus: "idle",
@@ -77,6 +82,7 @@ export interface GroupingSlice {
   isGroupingStale: () => boolean;
   getGroupingStaleness: () => GroupingStaleness;
   generateGrouping: () => Promise<void>;
+  cancelGrouping: () => void;
   clearGrouping: () => void;
 
   /** When true, exclude already-approved/rejected hunks from grouping (useful for iteration reviews). */
@@ -469,6 +475,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
             ...e,
             groupingLoading: true,
             groupingError: null,
+            groupingRequestId: requestId,
             reviewGroups: [],
           }),
         ),
@@ -494,6 +501,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
               identicalHunkIds: buildIdenticalHunkIds(hunks),
               groupingLoading: false,
               groupingStatus: "done",
+              groupingPartialTitle: null,
+              groupingRequestId: null,
             }),
           ),
         }));
@@ -562,30 +571,41 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           hasGrammar: fileHasGrammar.get(hunk.filePath),
         }));
 
-        // Stream groups from Rust; scoped to this requestId so concurrent groupings don't cross-talk
-        const unlisten = client.onGroupingGroup(requestId, (group) => {
-          set((prev) => {
-            const entry = prev.groupingStates.get(reviewKey) ?? EMPTY_ENTRY;
-            const isFirstGroup = entry.reviewGroups.length === 0;
-            const newEntry: GroupingEntry = {
-              ...entry,
-              reviewGroups: [...entry.reviewGroups, group],
-            };
-            const updated = new Map(prev.groupingStates);
-            updated.set(reviewKey, newEntry);
+        // Stream events from Rust; scoped to this requestId so concurrent groupings don't cross-talk
+        const unlisten = client.onGroupingEvent(requestId, (event) => {
+          if (event.type === "group") {
+            set((prev) => {
+              const entry = prev.groupingStates.get(reviewKey) ?? EMPTY_ENTRY;
+              const isFirstGroup = entry.reviewGroups.length === 0;
+              const newEntry: GroupingEntry = {
+                ...entry,
+                reviewGroups: [...entry.reviewGroups, event],
+                groupingPartialTitle: null,
+              };
+              const updated = new Map(prev.groupingStates);
+              updated.set(reviewKey, newEntry);
 
-            // Auto-activate the first group only if still on same review
-            const isStillActive =
-              prev.comparison.key === comparisonKey && prev.repoPath === repo;
-            return {
-              groupingStates: updated,
-              ...(isFirstGroup &&
-                isStillActive && {
-                  guideContentMode: "group",
-                  activeGroupIndex: 0,
-                }),
-            };
-          });
+              // Auto-activate the first group only if still on same review
+              const isStillActive =
+                prev.comparison.key === comparisonKey && prev.repoPath === repo;
+              return {
+                groupingStates: updated,
+                ...(isFirstGroup &&
+                  isStillActive && {
+                    guideContentMode: "group",
+                    activeGroupIndex: 0,
+                  }),
+              };
+            });
+          } else if (event.type === "partialTitle") {
+            set((prev) => ({
+              groupingStates: updateGroupingEntry(
+                prev.groupingStates,
+                reviewKey,
+                (e) => ({ ...e, groupingPartialTitle: event.title }),
+              ),
+            }));
+          }
         });
 
         let groups: HunkGroup[];
@@ -602,10 +622,15 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         // Persist the final groups (includes missing-hunk fallback group)
         await finalizeGroups(groups);
       } catch (err) {
-        console.error("[generateGrouping] Failed:", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isCancelled = errMsg === "Cancelled";
 
-        // If streaming delivered groups before the invoke failed (e.g. timeout),
-        // treat them as a usable result instead of showing an error.
+        if (!isCancelled) {
+          console.error("[generateGrouping] Failed:", err);
+        }
+
+        // If streaming delivered groups before the invoke failed (e.g. timeout
+        // or cancellation), treat them as a usable result instead of showing an error.
         const entry = get().groupingStates.get(reviewKey);
         const streamedGroups = entry?.reviewGroups ?? [];
         if (streamedGroups.length > 0) {
@@ -620,13 +645,25 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
             (e) => ({
               ...e,
               groupingLoading: false,
-              groupingError: err instanceof Error ? err.message : String(err),
+              groupingRequestId: null,
+              // Don't show an error for user-initiated cancellation
+              groupingError: isCancelled ? null : errMsg,
             }),
           ),
         }));
       } finally {
         endActivity(activityId);
       }
+    },
+
+    cancelGrouping: () => {
+      const { repoPath, comparison, groupingStates } = get();
+      if (!repoPath) return;
+      const reviewKey = makeReviewKey(repoPath, comparison.key);
+      const requestId = groupingStates.get(reviewKey)?.groupingRequestId;
+      if (!requestId) return;
+
+      client.cancelGrouping(requestId);
     },
 
     clearGrouping: () => {

@@ -46,7 +46,7 @@ pub fn generate_commit_message_streaming(
     );
 
     let allowed_tools: &[&str] = &["none"];
-    let output = run_claude_streaming(&prompt, cwd, DEFAULT_MODEL, allowed_tools, on_text)?;
+    let output = run_claude_streaming(&prompt, cwd, DEFAULT_MODEL, allowed_tools, on_text, None)?;
 
     // Trim any leading/trailing whitespace the model may add
     Ok(output.trim().to_owned())

@@ -5,6 +5,8 @@ use log::warn;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -85,6 +87,8 @@ pub enum ClaudeError {
     ParseError(String),
     #[error("Empty response from Claude")]
     EmptyResponse,
+    #[error("Cancelled")]
+    Cancelled,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -251,6 +255,7 @@ pub fn run_claude_streaming(
     model: &str,
     allowed_tools: &[&str],
     on_text: &mut dyn FnMut(&str),
+    cancel: Option<&Arc<AtomicBool>>,
 ) -> Result<String, ClaudeError> {
     let mut cmd = build_claude_command(model, allowed_tools)?;
     cmd.args([
@@ -305,6 +310,14 @@ pub fn run_claude_streaming(
     let mut full_output = String::new();
 
     for line_result in reader.lines() {
+        // Check cancellation before processing each line
+        if let Some(flag) = cancel {
+            if flag.load(Ordering::Relaxed) {
+                let _ = child.kill();
+                return Err(ClaudeError::Cancelled);
+            }
+        }
+
         let line = line_result
             .map_err(|e| ClaudeError::CommandFailed(format!("Error reading stdout: {e}")))?;
 

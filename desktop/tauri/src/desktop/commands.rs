@@ -2374,18 +2374,20 @@ pub async fn generate_hunk_grouping(
             )
         }),
     )
-    .await
-    .map_err(|_| format!("Hunk grouping generation timed out after {timeout_secs} seconds"))?
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    .await;
 
-    // Clean up the cancel flag
+    // Always clean up the cancel flag, even on error/timeout
     if let Some(ref id) = request_id {
         active_groupings.0.lock().unwrap().remove(id);
     }
 
     // Wait for all events to be emitted
     let _ = emit_task.await;
+
+    let result = result
+        .map_err(|_| format!("Hunk grouping generation timed out after {timeout_secs} seconds"))?
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
 
     info!(
         "[generate_hunk_grouping] SUCCESS: {} groups in {:?}",
