@@ -12,7 +12,11 @@ import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { FileContent, FileEntry } from "../../types";
 import { isHunkReviewed, makeComparison } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
-import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
+import {
+  DiffMinimap,
+  getMarkerStatus,
+  type MinimapMarker,
+} from "./DiffMinimap";
 import { useScrollHunkTracking, useSymbolNavigation } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
@@ -437,33 +441,68 @@ export function FileViewer({
     [allHunks, filePath],
   );
 
-  const handleMinimapHunkClick = useCallback(
-    (localIndex: number) => {
-      const hunk = fileHunks[localIndex];
-      if (hunk) {
-        useReviewStore.setState({
-          focusedHunkId: hunk.id,
-          scrollTarget: { type: "hunk", hunkId: hunk.id },
-        });
-      }
-    },
-    [fileHunks],
-  );
-
   const totalLineCount = useMemo(() => {
-    const s = fileContent?.content;
+    const s =
+      viewMode === "old" ? fileContent?.oldContent : fileContent?.content;
     if (!s) return 0;
     let count = 1;
     for (let i = 0; i < s.length; i++) {
       if (s.charCodeAt(i) === 10) count++;
     }
     return count;
-  }, [fileContent?.content]);
+  }, [fileContent?.content, fileContent?.oldContent, viewMode]);
 
   const trustList = reviewState?.trustList ?? [];
 
   const minimapMarkers = useMemo<MinimapMarker[]>(() => {
     if (!fileContent || totalLineCount === 0) return [];
+
+    // In old/new view modes, build markers from the actual changed lines
+    // visible in that view, not from hunk boundaries. A hunk with only
+    // additions has nothing to show in "old" mode and vice versa.
+    if (viewMode === "old" || viewMode === "new") {
+      const isOld = viewMode === "old";
+      const lineType = isOld ? "removed" : "added";
+      const lineNumKey = isOld ? "oldLineNumber" : "newLineNumber";
+      const status = isOld ? "deleted" : "added";
+
+      const markers: MinimapMarker[] = [];
+      for (const hunk of fileContent.hunks) {
+        // Collect line numbers of changed lines on this side
+        const lineNums: number[] = [];
+        for (const line of hunk.lines) {
+          if (line.type === lineType && line[lineNumKey] != null) {
+            lineNums.push(line[lineNumKey]!);
+          }
+        }
+        if (lineNums.length === 0) continue;
+
+        // Find contiguous runs to create tight markers
+        lineNums.sort((a, b) => a - b);
+        let runStart = lineNums[0];
+        let runEnd = lineNums[0];
+        for (let i = 1; i <= lineNums.length; i++) {
+          if (i < lineNums.length && lineNums[i] === runEnd + 1) {
+            runEnd = lineNums[i];
+          } else {
+            const count = runEnd - runStart + 1;
+            markers.push({
+              id: `${hunk.id}:${runStart}`,
+              topFraction: (runStart - 1) / totalLineCount,
+              heightFraction: count / totalLineCount,
+              status,
+              scrollLine: runStart,
+            });
+            if (i < lineNums.length) {
+              runStart = lineNums[i];
+              runEnd = lineNums[i];
+            }
+          }
+        }
+      }
+      return markers;
+    }
+
     return fileContent.hunks.map((hunk) => {
       const hasAnnotations = allFileAnnotations?.some((a) => {
         if (a.side === "file") return false;
@@ -471,15 +510,42 @@ export function FileViewer({
         const count = a.side === "new" ? hunk.newCount : hunk.oldCount;
         return a.lineNumber >= start && a.lineNumber < start + count;
       });
+
       return {
         id: hunk.id,
         topFraction: (hunk.newStart - 1) / totalLineCount,
         heightFraction: hunk.newCount / totalLineCount,
-        status: getHunkStatus(hunk.id, reviewState, trustList),
+        status: getMarkerStatus(hunk.id, reviewState, trustList),
         hasAnnotations: hasAnnotations ?? false,
       };
     });
-  }, [fileContent, totalLineCount, reviewState, trustList, allFileAnnotations]);
+  }, [
+    fileContent,
+    totalLineCount,
+    reviewState,
+    trustList,
+    allFileAnnotations,
+    viewMode,
+  ]);
+
+  const handleMinimapMarkerClick = useCallback(
+    (localIndex: number) => {
+      if (viewMode === "old" || viewMode === "new") {
+        // In old/new mode markers are per-line-run, not per-hunk.
+        const marker = minimapMarkers[localIndex];
+        if (!marker || marker.scrollLine == null) return;
+        setHighlightLine(marker.scrollLine);
+      } else {
+        const hunk = fileHunks[localIndex];
+        if (!hunk) return;
+        useReviewStore.setState({
+          focusedHunkId: hunk.id,
+          scrollTarget: { type: "hunk", hunkId: hunk.id },
+        });
+      }
+    },
+    [fileHunks, viewMode, minimapMarkers],
+  );
 
   // Track scroll position to update focused hunk
   useScrollHunkTracking(scrollNode, fileHunks);
@@ -664,7 +730,7 @@ export function FileViewer({
           <DiffMinimap
             markers={minimapMarkers}
             scrollContainer={scrollNode}
-            onMarkerClick={handleMinimapHunkClick}
+            onMarkerClick={handleMinimapMarkerClick}
           />
         )}
       </div>

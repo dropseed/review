@@ -90,7 +90,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
     case "diff": {
       const { viewMode } = contentMode;
 
-      // Old/New file view modes - show file content without diff highlighting
+      // Old/New file view modes - show file content with subtle diff highlighting
       if (viewMode === "old" || viewMode === "new") {
         const isOldMode = viewMode === "old";
         const content = isOldMode
@@ -138,6 +138,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
               }
               onUpdateAnnotation={updateAnnotation}
               onDeleteAnnotation={deleteAnnotation}
+              extraCSS={buildDiffHighlightCSS(fileContent, viewMode)}
             />
           </DiffErrorBoundary>
         );
@@ -195,6 +196,42 @@ export const FileContentRenderer = memo(function FileContentRenderer({
       );
   }
 });
+
+/** Builds unsafeCSS to highlight added/removed lines in old/new file view */
+function buildDiffHighlightCSS(
+  fileContent: FileContent,
+  viewMode: "old" | "new",
+): string {
+  const isOldMode = viewMode === "old";
+  const lineType = isOldMode ? "removed" : "added";
+  const lineNumberKey = isOldMode ? "oldLineNumber" : "newLineNumber";
+
+  const lineNumbers: number[] = [];
+  for (const hunk of fileContent.hunks) {
+    for (const line of hunk.lines) {
+      if (line.type === lineType && line[lineNumberKey] != null) {
+        lineNumbers.push(line[lineNumberKey]);
+      }
+    }
+  }
+
+  if (lineNumbers.length === 0) return "";
+
+  const selectors = lineNumbers.map((n) => `[data-line="${n}"]`).join(", ");
+  const bgVar = isOldMode ? "--diffs-bg-deletion" : "--diffs-bg-addition";
+  const numVar = isOldMode
+    ? "--diffs-bg-deletion-number"
+    : "--diffs-bg-addition-number";
+
+  return `
+:is(${selectors}) > [data-column-content] {
+  background-color: var(${bgVar}) !important;
+}
+:is(${selectors}) > [data-column-number] {
+  background-color: var(${numVar}) !important;
+}
+`;
+}
 
 function RenderErrorFallback({ filePath }: { filePath: string }) {
   return (

@@ -6,19 +6,22 @@ import { useReviewStore } from "../../stores";
 
 // --- Public types ---
 
-export type HunkStatus =
+export type MarkerStatus =
   | "pending"
   | "trusted"
   | "approved"
   | "rejected"
   | "saved_for_later"
-  | "classifying";
+  | "classifying"
+  | "added"
+  | "deleted";
 
 export interface MinimapMarker {
   id: string;
   topFraction: number;
   heightFraction: number;
-  status: HunkStatus;
+  status: MarkerStatus;
+  scrollLine?: number;
   hasAnnotations?: boolean;
 }
 
@@ -30,11 +33,11 @@ interface DiffMinimapProps {
 
 // --- Helpers ---
 
-export function getHunkStatus(
+export function getMarkerStatus(
   hunkId: string,
   reviewState: ReviewState | null,
   trustList: string[],
-): HunkStatus {
+): MarkerStatus {
   const hunkState = reviewState?.hunks[hunkId];
   if (!hunkState) return "pending";
 
@@ -49,13 +52,15 @@ export function getHunkStatus(
 }
 
 // Semantic status colors
-const STATUS_COLORS: Record<HunkStatus, string> = {
+const STATUS_COLORS: Record<MarkerStatus, string> = {
   pending: "bg-status-pending",
   trusted: "bg-status-trusted",
   approved: "bg-status-approved",
   rejected: "bg-status-rejected",
   saved_for_later: "bg-status-saved",
   classifying: "bg-guide",
+  added: "bg-status-added",
+  deleted: "bg-status-deleted",
 };
 
 // --- Component ---

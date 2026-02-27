@@ -32,6 +32,8 @@ interface PlainCodeViewProps {
   onUpdateAnnotation?: (id: string, content: string) => void;
   /** Callback when deleting an annotation */
   onDeleteAnnotation?: (id: string) => void;
+  /** Extra CSS to inject into the shadow DOM (e.g. diff line highlights) */
+  extraCSS?: string;
 }
 
 export function PlainCodeView({
@@ -46,6 +48,7 @@ export function PlainCodeView({
   onAddAnnotation,
   onUpdateAnnotation,
   onDeleteAnnotation,
+  extraCSS,
 }: PlainCodeViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -240,7 +243,7 @@ export function PlainCodeView({
           },
           themeType: "dark",
           disableFileHeader: true,
-          unsafeCSS: fontCSS,
+          unsafeCSS: fontCSS + (extraCSS ?? ""),
           enableHoverUtility: true,
         }}
       />
