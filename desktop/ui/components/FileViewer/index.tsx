@@ -15,7 +15,11 @@ import { FileContentRenderer } from "./FileContentRenderer";
 import { DiffMinimap, getHunkStatus, type MinimapMarker } from "./DiffMinimap";
 import { useScrollHunkTracking, useSymbolNavigation } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
-import { detectLanguage, type SupportedLanguages } from "./languageMap";
+import {
+  detectLanguage,
+  isMarkdownFile,
+  type SupportedLanguages,
+} from "./languageMap";
 import { FileViewerToolbar } from "./FileViewerToolbar";
 import {
   AnnotationEditor,
@@ -49,11 +53,13 @@ const CMD_HOVER_CSS = `code span { cursor: pointer; } code span:hover { text-dec
 interface FileViewerProps {
   filePath: string;
   isFocusedPane?: boolean;
+  pane?: "primary" | "secondary";
 }
 
 export function FileViewer({
   filePath,
   isFocusedPane,
+  pane,
 }: FileViewerProps): ReactNode {
   const {
     comparison,
@@ -169,7 +175,7 @@ export function FileViewer({
   );
   // For markdown files: toggle between preview and code/diff view
   const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">(
-    "code",
+    pane === "secondary" && isMarkdownFile(filePath) ? "preview" : "code",
   );
 
   // Language override for syntax highlighting
@@ -209,10 +215,13 @@ export function FileViewer({
       state.setSplitOrientation(
         state.splitOrientation === "horizontal" ? "vertical" : "horizontal",
       );
+    } else if (isMarkdownFile(filePath)) {
+      setMarkdownViewMode("code");
+      state.setSecondaryFile(filePath);
     } else {
       state.openEmptySplit();
     }
-  }, []);
+  }, [filePath]);
 
   const handleClose = useCallback(() => {
     useReviewStore.getState().setSelectedFile(null);

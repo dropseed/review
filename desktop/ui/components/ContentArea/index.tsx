@@ -58,7 +58,7 @@ export function ContentArea(): ReactNode {
     if (!selectedFile) return null;
     return (
       <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-        <FileViewer filePath={selectedFile} />
+        <FileViewer filePath={selectedFile} pane="primary" />
       </div>
     );
   }
@@ -81,6 +81,7 @@ export function ContentArea(): ReactNode {
           <FileViewer
             filePath={selectedFile}
             isFocusedPane={focusedPane === "primary"}
+            pane="primary"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-fg-muted text-sm">
@@ -107,6 +108,7 @@ export function ContentArea(): ReactNode {
           <FileViewer
             filePath={secondaryFile}
             isFocusedPane={focusedPane === "secondary"}
+            pane="secondary"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-fg-muted text-sm">
