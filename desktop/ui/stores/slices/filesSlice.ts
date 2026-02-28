@@ -175,6 +175,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     setComparison: (comparison) => {
+      get().flushSidebarProgress();
       cancelPendingSaves();
       get().saveNavigationSnapshot();
       get().clearAllActivities();
@@ -186,6 +187,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     switchReview: (path, comparison) => {
+      get().flushSidebarProgress();
       cancelPendingSaves();
       get().saveNavigationSnapshot();
       get().clearAllActivities();

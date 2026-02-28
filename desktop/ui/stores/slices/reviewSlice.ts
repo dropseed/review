@@ -93,6 +93,9 @@ export interface ReviewSlice {
   // Sync total diff hunk count into review state
   syncTotalDiffHunks: () => void;
 
+  // Flush current progress to globalReviews (for use before switching away)
+  flushSidebarProgress: () => void;
+
   // Trust list actions
   addTrustPattern: (pattern: string) => void;
   removeTrustPattern: (pattern: string) => void;
@@ -580,7 +583,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     syncTotalDiffHunks: () => {
-      const { reviewState, hunks } = get();
+      const { reviewState, hunks, saveReviewState } = get();
       if (
         !reviewState ||
         hunks.length === 0 ||
@@ -595,6 +598,15 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Immediately patch globalReviews so the sidebar shows correct progress
       // (otherwise it stays inflated until the next saveReviewState call)
       patchGlobalReviewProgress(get, set, updated);
+
+      // Persist the corrected totalDiffHunks to disk so it survives app restarts
+      debouncedSave(saveReviewState);
+    },
+
+    flushSidebarProgress: () => {
+      const { reviewState, hunks } = get();
+      if (!reviewState || hunks.length === 0) return;
+      patchGlobalReviewProgress(get, set, reviewState);
     },
 
     addTrustPattern: (pattern) => {
