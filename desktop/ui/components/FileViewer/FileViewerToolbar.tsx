@@ -126,6 +126,7 @@ interface FileViewerToolbarProps {
   filePath: string;
   contentMode: ContentMode;
   hasChanges: boolean;
+  isNewFile?: boolean;
   reviewProgress?: { reviewed: number; total: number };
   effectiveLanguage: SupportedLanguages | undefined;
   detectedLanguage: SupportedLanguages | undefined;
@@ -150,6 +151,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   filePath,
   contentMode,
   hasChanges,
+  isNewFile,
   reviewProgress,
   effectiveLanguage,
   detectedLanguage,
@@ -205,20 +207,6 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   };
 
   function renderFileStatusBadge(): JSX.Element | null {
-    if (contentMode.type === "untracked") {
-      return (
-        <>
-          <span className="rounded bg-status-approved/15 px-1.5 py-0.5 text-xxs font-medium text-status-approved">
-            New
-          </span>
-          <SimilarFilesButton
-            filePath={filePath}
-            onNavigateToFile={navigateToBrowse}
-          />
-        </>
-      );
-    }
-
     if (isWorkingTreeMode) {
       return (
         <span className="flex items-center gap-1 rounded bg-status-renamed/15 px-1.5 py-0.5 text-xxs font-medium text-status-renamed">
@@ -260,6 +248,11 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
 
     return (
       <>
+        {isNewFile && (
+          <span className="rounded bg-status-approved/15 px-1.5 py-0.5 text-xxs font-medium text-status-approved">
+            New
+          </span>
+        )}
         <span
           className={`rounded px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeClass}`}
         >

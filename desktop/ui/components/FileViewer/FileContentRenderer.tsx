@@ -3,7 +3,6 @@ import type { LineAnnotation, FileContent } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
 import { isMarkdownFile } from "./languageMap";
 import { PlainCodeView } from "./PlainCodeView";
-import { UntrackedFileView } from "./UntrackedFileView";
 import { DiffView, DiffErrorBoundary } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
@@ -62,29 +61,6 @@ export const FileContentRenderer = memo(function FileContentRenderer({
           filePath={filePath}
           hasChanges={fileContent.hunks.length > 0}
         />
-      );
-
-    case "untracked":
-      return (
-        <DiffErrorBoundary
-          key={filePath}
-          fallback={<RenderErrorFallback filePath={filePath} />}
-        >
-          <UntrackedFileView
-            content={fileContent.content}
-            filePath={filePath}
-            hunks={fileContent.hunks}
-            theme={codeTheme}
-            fontCSS={fontCSS}
-            language={effectiveLanguage}
-            annotations={fileAnnotations}
-            onAddAnnotation={(lineNumber, content) =>
-              addAnnotation(filePath, lineNumber, "file", content)
-            }
-            onUpdateAnnotation={updateAnnotation}
-            onDeleteAnnotation={deleteAnnotation}
-          />
-        </DiffErrorBoundary>
       );
 
     case "diff": {

@@ -35,7 +35,6 @@ import { useDiffViewMode } from "./hooks/useDiffViewMode";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
-const UNTRACKED_MODE: ContentMode = { type: "untracked" };
 
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
@@ -560,7 +559,6 @@ export function FileViewer({
   const contentMode = useMemo<ContentMode>(() => {
     if (!fileContent) return PLAIN_MODE;
     const hasChanges = fileContent.hunks.length > 0;
-    const isUntracked = hasChanges && !fileContent.diffPatch;
     const contentType = fileContent.contentType || "text";
     const isImage = contentType === "image";
     const isSvgFile = contentType === "svg";
@@ -572,7 +570,6 @@ export function FileViewer({
     if (showImage) return IMAGE_MODE;
     if (isSvgFile)
       return { type: "svg", hasRendered: !!fileContent.imageDataUrl } as const;
-    if (isUntracked) return UNTRACKED_MODE;
     if (hasChanges) return { type: "diff", viewMode } as const;
     return PLAIN_MODE;
   }, [fileContent, isGitignored, svgViewMode, viewMode]);
@@ -618,6 +615,8 @@ export function FileViewer({
   }
 
   const hasChanges = fileContent.hunks.length > 0;
+  const isNewFile =
+    hasChanges && !fileContent.oldContent && !fileContent.diffPatch;
   const detectedLanguage = detectLanguage(filePath, fileContent.content);
   const effectiveLanguage = languageOverride ?? detectedLanguage;
 
@@ -627,6 +626,7 @@ export function FileViewer({
         filePath={filePath}
         contentMode={contentMode}
         hasChanges={hasChanges}
+        isNewFile={isNewFile}
         reviewProgress={isWorkingTreeMode ? undefined : reviewProgress}
         effectiveLanguage={effectiveLanguage}
         detectedLanguage={detectedLanguage}
@@ -704,9 +704,7 @@ export function FileViewer({
         <div
           ref={setScrollNode}
           className={`min-w-0 flex-1 h-full overflow-auto bg-surface-panel ${
-            contentMode.type === "diff" || contentMode.type === "untracked"
-              ? "scrollbar-none"
-              : "scrollbar-thin"
+            contentMode.type === "diff" ? "scrollbar-none" : "scrollbar-thin"
           }`}
         >
           <FileContentRenderer
@@ -726,7 +724,7 @@ export function FileViewer({
             deleteAnnotation={deleteAnnotation}
           />
         </div>
-        {(contentMode.type === "diff" || contentMode.type === "untracked") && (
+        {contentMode.type === "diff" && (
           <DiffMinimap
             markers={minimapMarkers}
             scrollContainer={scrollNode}
