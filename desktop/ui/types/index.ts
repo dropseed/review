@@ -372,10 +372,15 @@ export type GroupingEvent =
   | { type: "partialTitle"; title: string }
   | ({ type: "group" } & HunkGroup);
 
-export interface GuideState {
+export interface GuideGenerated {
   groups: HunkGroup[];
   hunkIds: string[];
   generatedAt: string;
+}
+
+export interface Guide {
+  autoStart?: boolean;
+  state?: GuideGenerated;
 }
 
 export interface ReviewState {
@@ -388,7 +393,7 @@ export interface ReviewState {
   createdAt: string;
   updatedAt: string;
   version: number; // Version counter for optimistic concurrency control
-  guide?: GuideState; // AI-generated guide state (grouping)
+  guide?: Guide; // Guide config + AI-generated state (grouping)
   totalDiffHunks: number; // Total diff hunks (including unclassified) for accurate progress
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
 }

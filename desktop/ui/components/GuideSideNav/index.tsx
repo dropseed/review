@@ -234,8 +234,8 @@ export function GuideSideNav(): ReactNode {
   );
 
   // Staleness
-  const guide = reviewState?.guide;
-  const hasGrouping = guide != null && guide.groups.length > 0;
+  const generated = reviewState?.guide?.state;
+  const hasGrouping = generated != null && generated.groups.length > 0;
   const stale = hasGrouping && staleness.stale;
   const hasGroups = reviewGroups.length > 0;
 

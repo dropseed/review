@@ -17,12 +17,14 @@ import {
   useKeyboardNavigation,
   useReviewProgress,
   useCelebration,
+  useAutoStartGuide,
 } from "../hooks";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
+import { Switch } from "./ui/switch";
 import { ActivityBar } from "./ActivityBar";
 
 const DebugModal = lazy(() =>
@@ -78,8 +80,8 @@ export function ReviewView({
   const unreviewedHunkCount = useMemo(() => {
     const hunkStates = reviewState?.hunks;
     return hunks.filter((h) => {
-      const s = hunkStates?.[h.id];
-      return s?.status !== "approved" && s?.status !== "rejected";
+      const hs = hunkStates?.[h.id];
+      return hs?.status !== "approved" && hs?.status !== "rejected";
     }).length;
   }, [hunks, reviewState?.hunks]);
   const showStartGuide = unreviewedHunkCount >= 4 && !guideActive;
@@ -180,6 +182,13 @@ export function ReviewView({
   // Celebration on 100% reviewed
   useCelebration();
 
+  // Auto-start guided review
+  const { secondsRemaining } = useAutoStartGuide();
+  const autoStartGuide = useReviewStore(
+    (s) => s.reviewState?.guide?.autoStart ?? false,
+  );
+  const setAutoStartGuide = useReviewStore((s) => s.setAutoStartGuide);
+
   const repoName =
     remoteInfo?.name ||
     repoPath?.replace(/\/+$/, "").split("/").pop() ||
@@ -231,6 +240,26 @@ export function ReviewView({
                     {!guideLoading && !hasGroups && "Start Guided Review"}
                   </span>
                 </button>
+              )}
+              {showStartGuide && (
+                <SimpleTooltip content="Auto-start guided review when hunks load">
+                  <label className="flex items-center gap-1.5 cursor-default">
+                    <Switch
+                      checked={autoStartGuide}
+                      onCheckedChange={setAutoStartGuide}
+                      className="scale-75 origin-right"
+                    />
+                    <span className="text-[10px] font-medium text-fg-muted select-none">
+                      Auto
+                      {autoStartGuide && secondsRemaining !== null && (
+                        <span className="ml-0.5 tabular-nums">
+                          {" "}
+                          {secondsRemaining}s
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                </SimpleTooltip>
               )}
               {totalHunks > 0 ? (
                 <button

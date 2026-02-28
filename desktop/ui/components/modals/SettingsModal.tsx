@@ -9,6 +9,9 @@ import {
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_STEP,
   CODE_FONT_FAMILY_DEFAULT,
+  AUTO_START_DELAY_DEFAULT,
+  AUTO_START_DELAY_MIN,
+  AUTO_START_DELAY_STEP,
 } from "../../utils/preferences";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -174,6 +177,8 @@ export function SettingsModal({
     (s) => s.regenerateCompanionCertificate,
   );
   const companionServerError = useReviewStore((s) => s.companionServerError);
+  const autoStartDelay = useReviewStore((s) => s.autoStartDelay);
+  const setAutoStartDelay = useReviewStore((s) => s.setAutoStartDelay);
 
   const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
   const [machineHostname, setMachineHostname] = useState<string>("");
@@ -312,6 +317,20 @@ export function SettingsModal({
 
   function resetFontSize() {
     setCodeFontSize(CODE_FONT_SIZE_DEFAULT);
+  }
+
+  function decreaseAutoStartDelay() {
+    setAutoStartDelay(
+      Math.max(autoStartDelay - AUTO_START_DELAY_STEP, AUTO_START_DELAY_MIN),
+    );
+  }
+
+  function increaseAutoStartDelay() {
+    setAutoStartDelay(autoStartDelay + AUTO_START_DELAY_STEP);
+  }
+
+  function resetAutoStartDelay() {
+    setAutoStartDelay(AUTO_START_DELAY_DEFAULT);
   }
 
   function commitFontFamily() {
@@ -586,6 +605,80 @@ export function SettingsModal({
                 Review. No repository data or file contents are ever sent.
               </p>
             </div>
+          </div>
+
+          {/* Guide */}
+          <div className="px-5 py-4">
+            <SectionHeader
+              label="Guide"
+              icon={
+                <>
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </>
+              }
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-fg-secondary">
+                Auto-start delay
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={decreaseAutoStartDelay}
+                  disabled={autoStartDelay <= AUTO_START_DELAY_MIN}
+                  className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M20 12H4"
+                    />
+                  </svg>
+                </button>
+
+                <span className="font-mono text-xs font-semibold text-fg tabular-nums w-10 text-center">
+                  {autoStartDelay}s
+                </span>
+
+                <button
+                  onClick={increaseAutoStartDelay}
+                  className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                </button>
+
+                {autoStartDelay !== AUTO_START_DELAY_DEFAULT && (
+                  <button
+                    onClick={resetAutoStartDelay}
+                    className="ml-1 text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="mt-1.5 text-xxs text-fg-faint">
+              How long to wait before auto-starting guided review.
+            </p>
           </div>
 
           {/* Command Line */}

@@ -43,12 +43,16 @@ final class GuideManager {
 
         // Save groups immediately
         let hunkIds = hunks.map(\.id)
-        let guide = GuideState(
+        let generated = GuideGenerated(
             groups: groups,
             hunkIds: hunkIds,
             generatedAt: ISO8601DateFormatter().string(from: Date()),
             title: nil,
             summary: nil
+        )
+        let guide = Guide(
+            autoStart: reviewState?.guide?.autoStart,
+            state: generated
         )
         stateManager.updateGuide(guide)
 
@@ -61,12 +65,16 @@ final class GuideManager {
                 hunks: hunks,
                 reviewState: reviewState
             )
-            let updatedGuide = GuideState(
+            let updatedGenerated = GuideGenerated(
                 groups: groups,
                 hunkIds: hunkIds,
-                generatedAt: guide.generatedAt,
+                generatedAt: generated.generatedAt,
                 title: result.title,
                 summary: result.summary
+            )
+            let updatedGuide = Guide(
+                autoStart: guide.autoStart,
+                state: updatedGenerated
             )
             stateManager.updateGuide(updatedGuide)
         } catch {
@@ -75,7 +83,8 @@ final class GuideManager {
         isGeneratingSummary = false
     }
 
-    func isGuideStale(guide: GuideState, currentHunks: [DiffHunk]) -> Bool {
-        Set(guide.hunkIds) != Set(currentHunks.map(\.id))
+    func isGuideStale(guide: Guide, currentHunks: [DiffHunk]) -> Bool {
+        guard let generated = guide.state else { return false }
+        return Set(generated.hunkIds) != Set(currentHunks.map(\.id))
     }
 }

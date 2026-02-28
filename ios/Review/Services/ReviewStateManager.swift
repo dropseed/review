@@ -86,7 +86,7 @@ final class ReviewStateManager {
         scheduleSave()
     }
 
-    func updateGuide(_ guide: GuideState?) {
+    func updateGuide(_ guide: Guide?) {
         guard var state = reviewState else { return }
         state.guide = guide
         state.updatedAt = ISO8601DateFormatter().string(from: Date())

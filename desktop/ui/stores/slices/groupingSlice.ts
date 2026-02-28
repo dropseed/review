@@ -4,7 +4,7 @@ import type {
   DiffHunk,
   FileSymbolDiff,
   GroupingInput,
-  GuideState,
+  GuideGenerated,
   HunkGroup,
   HunkSymbolDef,
   HunkSymbolRef,
@@ -166,13 +166,13 @@ function buildSymbolData(symbolDiffs: FileSymbolDiff[]): SymbolData {
 }
 
 /**
- * Build an updated GuideState, preserving existing fields and applying overrides.
+ * Build an updated GuideGenerated, preserving existing fields and applying overrides.
  */
-function buildGuideUpdate(
-  existing: GuideState | undefined,
+function buildGuideGenerated(
+  existing: GuideGenerated | undefined,
   hunks: DiffHunk[],
-  overrides: Partial<GuideState>,
-): GuideState {
+  overrides: Partial<GuideGenerated>,
+): GuideGenerated {
   return {
     groups: existing?.groups ?? [],
     hunkIds: existing?.hunkIds ?? hunks.map((h) => h.id).sort(),
@@ -182,16 +182,20 @@ function buildGuideUpdate(
 }
 
 /**
- * Build an updated ReviewState with new guide data and a fresh timestamp.
+ * Build an updated ReviewState with new guide generated data and a fresh timestamp.
+ * Preserves guide-level config (autoStart) while updating the generated state.
  */
 function updateReviewGuide(
   state: ReviewState,
   hunks: DiffHunk[],
-  guideOverrides: Partial<GuideState>,
+  guideOverrides: Partial<GuideGenerated>,
 ): ReviewState {
   return {
     ...state,
-    guide: buildGuideUpdate(state.guide, hunks, guideOverrides),
+    guide: {
+      ...state.guide,
+      state: buildGuideGenerated(state.guide?.state, hunks, guideOverrides),
+    },
     updatedAt: new Date().toISOString(),
   };
 }
@@ -304,10 +308,10 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     getGroupingStaleness: () => {
       const { reviewState, hunks } = get();
-      const guide = reviewState?.guide;
-      if (!guide) return { stale: false, added: 0, removed: 0 };
+      const generated = reviewState?.guide?.state;
+      if (!generated) return { stale: false, added: 0, removed: 0 };
 
-      const storedIds = new Set(guide.hunkIds);
+      const storedIds = new Set(generated.hunkIds);
       const currentIds = new Set(hunks.map((h) => h.id));
 
       let added = 0;
@@ -347,7 +351,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const groupingInFlight = isReviewBusy(reviewKey);
       const entry = getActiveGroupingEntry();
       const needsGrouping =
-        !groupingInFlight && entry.reviewGroups.length === 0;
+        !groupingInFlight &&
+        (entry.reviewGroups.length === 0 || get().isGroupingStale());
       const groupingPending = needsGrouping || groupingInFlight;
 
       // Switch to guide mode + update keyed entry
@@ -484,7 +489,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
       // Persist groups to review state and update the keyed entry
       async function finalizeGroups(groups: HunkGroup[]): Promise<void> {
-        const guideOverrides: Partial<GuideState> = {
+        const guideOverrides: Partial<GuideGenerated> = {
           groups,
           hunkIds: hunks.map((h) => h.id).sort(),
           generatedAt: new Date().toISOString(),
@@ -671,9 +676,12 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       if (!reviewState || !repoPath) return;
 
       const reviewKey = makeReviewKey(repoPath, comparison.key);
+      // Preserve guide-level config (autoStart) while clearing generated state
       const updatedState = {
         ...reviewState,
-        guide: undefined,
+        guide: reviewState.guide
+          ? { autoStart: reviewState.guide.autoStart }
+          : undefined,
         updatedAt: new Date().toISOString(),
       };
 
@@ -689,14 +697,14 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const { reviewState, hunks, isGroupingStale, repoPath, comparison } =
         get();
       if (!repoPath) return;
-      const guide = reviewState?.guide;
-      if (!guide || guide.groups.length === 0) return;
+      const generated = reviewState?.guide?.state;
+      if (!generated || generated.groups.length === 0) return;
 
       // If stale, patch the stored groups (remove vanished IDs, bucket new ones)
       // instead of discarding them entirely.
       const groups = isGroupingStale()
-        ? patchStaleGroups(guide.groups, new Set(hunks.map((h) => h.id)))
-        : guide.groups;
+        ? patchStaleGroups(generated.groups, new Set(hunks.map((h) => h.id)))
+        : generated.groups;
 
       const reviewKey = makeReviewKey(repoPath, comparison.key);
       set((prev) => ({

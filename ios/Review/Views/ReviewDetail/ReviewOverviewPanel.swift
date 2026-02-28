@@ -6,7 +6,7 @@ struct ReviewOverviewPanel: View {
 
     private var state: ReviewState? { stateManager.reviewState }
     private var pr: GitHubPrRef? { state?.githubPr }
-    private var guide: GuideState? { state?.guide }
+    private var guide: Guide? { state?.guide }
 
     var body: some View {
         NavigationStack {
@@ -49,7 +49,7 @@ struct ReviewOverviewPanel: View {
                     }
                 }
 
-                if let summary = guide?.summary, !summary.isEmpty {
+                if let summary = guide?.state?.summary, !summary.isEmpty {
                     Section("Summary") {
                         Text(summary)
                             .font(.subheadline)

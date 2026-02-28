@@ -83,6 +83,10 @@ export const CODE_FONT_SIZE_MIN = 8;
 export const CODE_FONT_SIZE_MAX = 32;
 export const CODE_FONT_SIZE_STEP = 1;
 
+export const AUTO_START_DELAY_DEFAULT = 60;
+export const AUTO_START_DELAY_MIN = 10;
+export const AUTO_START_DELAY_STEP = 10;
+
 export const CODE_FONT_FAMILY_DEFAULT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace";
 
@@ -144,6 +148,7 @@ const defaults = {
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
   matchVscodeTheme: false,
+  autoStartDelay: AUTO_START_DELAY_DEFAULT,
 };
 
 export interface PreferencesSlice {
@@ -204,6 +209,9 @@ export interface PreferencesSlice {
   /** The currently resolved VS Code theme (null when not using VS Code match) */
   resolvedVscodeTheme: UiTheme | null;
 
+  // Guide auto-start delay (seconds)
+  autoStartDelay: number;
+
   /** True once loadPreferences() has completed (theme, fonts, etc. are ready) */
   preferencesLoaded: boolean;
 
@@ -263,6 +271,9 @@ export interface PreferencesSlice {
   // VS Code theme matching actions
   setMatchVscodeTheme: (enabled: boolean) => Promise<void>;
   detectAndApplyVscodeTheme: () => Promise<void>;
+
+  // Guide auto-start delay actions
+  setAutoStartDelay: (seconds: number) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -605,6 +616,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         storage.set("codeTheme", theme.codeTheme);
         applyUiTheme(theme);
       }
+    },
+
+    setAutoStartDelay: (seconds) => {
+      set({ autoStartDelay: seconds });
+      storage.set("autoStartDelay", seconds);
     },
 
     detectAndApplyVscodeTheme: async () => {

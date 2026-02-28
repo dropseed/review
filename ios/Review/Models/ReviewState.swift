@@ -53,12 +53,17 @@ struct HunkGroup: Codable, Identifiable, Hashable, Sendable {
     var id: String { title }
 }
 
-struct GuideState: Codable, Hashable, Sendable {
+struct GuideGenerated: Codable, Hashable, Sendable {
     let groups: [HunkGroup]
     let hunkIds: [String]
     let generatedAt: String
     let title: String?
     let summary: String?
+}
+
+struct Guide: Codable, Hashable, Sendable {
+    var autoStart: Bool?
+    var state: GuideGenerated?
 }
 
 struct ReviewState: Codable, Sendable {
@@ -72,7 +77,7 @@ struct ReviewState: Codable, Sendable {
     var version: Int
     var totalDiffHunks: Int
     let githubPr: GitHubPrRef?
-    var guide: GuideState?
+    var guide: Guide?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -86,6 +91,6 @@ struct ReviewState: Codable, Sendable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
         totalDiffHunks = try container.decodeIfPresent(Int.self, forKey: .totalDiffHunks) ?? 0
         githubPr = try container.decodeIfPresent(GitHubPrRef.self, forKey: .githubPr)
-        guide = try container.decodeIfPresent(GuideState.self, forKey: .guide)
+        guide = try container.decodeIfPresent(Guide.self, forKey: .guide)
     }
 }

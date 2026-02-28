@@ -32,3 +32,4 @@ export { useFileHunkStatusMap } from "./useFileHunkStatusMap";
 export { useIsFocusedHunk } from "./useIsFocusedHunk";
 export { useListContinuation } from "./useListContinuation";
 export { suppressScrollTracking } from "./scrollState";
+export { useAutoStartGuide } from "./useAutoStartGuide";

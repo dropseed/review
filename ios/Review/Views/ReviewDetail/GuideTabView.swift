@@ -9,8 +9,12 @@ struct GuideTabView: View {
     let repoPath: String
     let comparison: Comparison
 
-    private var guide: GuideState? {
+    private var guide: Guide? {
         stateManager.reviewState?.guide
+    }
+
+    private var generated: GuideGenerated? {
+        guide?.state
     }
 
     private var isStale: Bool {
@@ -22,8 +26,8 @@ struct GuideTabView: View {
         Group {
             if guideManager.isGenerating {
                 generatingView
-            } else if let guide {
-                guideContentView(guide)
+            } else if let generated {
+                guideContentView(generated)
             } else {
                 emptyView
             }
@@ -61,7 +65,7 @@ struct GuideTabView: View {
         }
     }
 
-    private func guideContentView(_ guide: GuideState) -> some View {
+    private func guideContentView(_ generated: GuideGenerated) -> some View {
         List {
             if isStale {
                 Section {
@@ -85,12 +89,12 @@ struct GuideTabView: View {
                 }
             }
 
-            if let summary = guide.summary {
+            if let summary = generated.summary {
                 Section {
                     Text(markdownAttributedString(summary))
                         .font(.subheadline)
                 } header: {
-                    Text(guide.title ?? "Summary")
+                    Text(generated.title ?? "Summary")
                 }
             }
 
@@ -107,7 +111,7 @@ struct GuideTabView: View {
             }
 
             Section("Groups") {
-                ForEach(guide.groups) { group in
+                ForEach(generated.groups) { group in
                     NavigationLink(value: GroupDetailDestination(
                         group: group,
                         repoPath: repoPath,
