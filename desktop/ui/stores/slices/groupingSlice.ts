@@ -81,7 +81,7 @@ export interface GroupingSlice {
 
   isGroupingStale: () => boolean;
   getGroupingStaleness: () => GroupingStaleness;
-  generateGrouping: () => Promise<void>;
+  generateGrouping: (options?: { silent?: boolean }) => Promise<void>;
   cancelGrouping: () => void;
   clearGrouping: () => void;
 
@@ -438,7 +438,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       return isGroupingStale() || isClassificationStale();
     },
 
-    generateGrouping: async () => {
+    generateGrouping: async (options) => {
       const {
         repoPath,
         hunks,
@@ -469,7 +469,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       // for different reviews don't collide in the activity bar.
       const activityId = `generate-grouping:${reviewKey}`;
 
-      playGuideStartSound();
+      if (!options?.silent) playGuideStartSound();
 
       // Clear previous groups so streaming events start fresh
       set((prev) => ({

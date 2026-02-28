@@ -94,7 +94,7 @@ export function useAutoStartGuide(): { secondsRemaining: number | null } {
       triggeredKeys.current.add(reviewKey);
       // Only generate groups + classify — don't switch to guide view mode
       state.classifyStaticHunks();
-      state.generateGrouping();
+      state.generateGrouping({ silent: true });
     }, autoStartDelay * 1_000);
 
     console.log(`[auto-guide] Timer reset (${autoStartDelay}s)`);
