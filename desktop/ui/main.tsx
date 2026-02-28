@@ -5,7 +5,7 @@ installMockTauri();
 
 import { scan, setOptions } from "react-scan";
 import { onScanRender, initReactScanLog } from "./utils/reactScanLog";
-scan({ enabled: import.meta.env.DEV });
+scan({});
 // setOptions after scan() — scan's start() overwrites options from localStorage,
 // which drops non-persisted keys like onRender.
 if (import.meta.env.DEV) setOptions({ onRender: onScanRender });
