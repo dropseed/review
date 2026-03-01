@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import type { Components } from "react-markdown";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { getPlatformServices } from "../../../platform";
 
 interface MarkdownRendererProps {
   content: string;
@@ -45,6 +47,24 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     // Pre wrapper for code blocks
     pre({ children }) {
       return <pre className="my-4 overflow-hidden rounded-lg">{children}</pre>;
+    },
+    // Open external links in system browser instead of navigating the webview
+    a({ href, children }: { href?: string; children?: ReactNode }) {
+      if (href?.startsWith("#")) {
+        return <a href={href}>{children}</a>;
+      }
+      return (
+        <a
+          href={href}
+          onClick={(e) => {
+            e.preventDefault();
+            if (href) getPlatformServices().opener.openUrl(href);
+          }}
+          rel="noopener noreferrer"
+        >
+          {children}
+        </a>
+      );
     },
   };
 
