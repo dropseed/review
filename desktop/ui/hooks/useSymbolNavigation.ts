@@ -11,6 +11,7 @@ import {
   findSymbolReferencesInDiff,
   type SymbolReferenceInDiff,
 } from "../utils/findSymbolReferencesInDiff";
+import { getClickedSpan } from "../utils/getUrlAtClick";
 
 // Language keywords to filter out (combined across JS/TS, Rust, Python, Go)
 const KEYWORDS = new Set([
@@ -343,16 +344,7 @@ export function useSymbolNavigation() {
  * the text content is a valid, non-keyword identifier.
  */
 function getWordAtClick(event: MouseEvent): string | null {
-  const path = event.composedPath();
-  let targetSpan: HTMLElement | null = null;
-
-  for (const el of path) {
-    if (el instanceof HTMLElement && el.tagName === "SPAN") {
-      targetSpan = el;
-      break;
-    }
-  }
-
+  const targetSpan = getClickedSpan(event);
   if (!targetSpan) return null;
 
   const text = targetSpan.textContent?.trim();

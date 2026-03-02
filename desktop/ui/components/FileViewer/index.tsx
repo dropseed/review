@@ -24,6 +24,8 @@ import {
   isMarkdownFile,
   type SupportedLanguages,
 } from "./languageMap";
+import { getUrlAtClick } from "../../utils/getUrlAtClick";
+import { getPlatformServices } from "../../platform";
 import { FileViewerToolbar } from "./FileViewerToolbar";
 import {
   AnnotationEditor,
@@ -51,7 +53,7 @@ function hasFileStatus(
 }
 
 const CMD_HOVER_STYLE_ID = "cmd-hover-style";
-const CMD_HOVER_CSS = `code span { cursor: pointer; } code span:hover { text-decoration: underline; }`;
+const CMD_HOVER_CSS = `code span { cursor: pointer; }`;
 
 interface FileViewerProps {
   filePath: string;
@@ -130,21 +132,103 @@ export function FileViewer({
       getShadowRoot()?.getElementById(CMD_HOVER_STYLE_ID)?.remove();
     };
 
+    // Track Cmd state imperatively — no React state, no re-renders
+    let cmdDown = false;
+    let hoveredSpan: HTMLElement | null = null;
+
+    const clearHoverStyle = () => {
+      if (hoveredSpan) {
+        hoveredSpan.style.textDecoration = "";
+        hoveredSpan = null;
+      }
+    };
+
+    const handleMouseOver = (e: Event) => {
+      if (!cmdDown) return;
+      const target = (e as MouseEvent).composedPath?.()[0];
+      if (
+        target instanceof HTMLElement &&
+        target.tagName === "SPAN" &&
+        target.textContent?.trim()
+      ) {
+        if (target !== hoveredSpan) {
+          clearHoverStyle();
+          target.style.textDecoration = "underline";
+          hoveredSpan = target;
+        }
+      } else {
+        clearHoverStyle();
+      }
+    };
+
+    const handleMouseOut = (e: Event) => {
+      if (!hoveredSpan) return;
+      const target = (e as MouseEvent).composedPath?.()[0];
+      if (target === hoveredSpan) {
+        clearHoverStyle();
+      }
+    };
+
     // Toggle CSS directly from key events — no React state involved
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Meta") injectStyle();
+      if (e.key === "Meta") {
+        cmdDown = true;
+        injectStyle();
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Meta") removeStyle();
+      if (e.key === "Meta") {
+        cmdDown = false;
+        clearHoverStyle();
+        removeStyle();
+      }
     };
-    const handleBlur = () => removeStyle();
+    const handleBlur = () => {
+      cmdDown = false;
+      clearHoverStyle();
+      removeStyle();
+    };
 
     const handleClick = (e: MouseEvent) => {
-      if (e.metaKey) handleSymbolClickRef.current(e);
+      if (e.metaKey) {
+        const url = getUrlAtClick(e);
+        if (url) {
+          e.preventDefault();
+          e.stopPropagation();
+          getPlatformServices().opener.openUrl(url);
+          return;
+        }
+        handleSymbolClickRef.current(e);
+      }
     };
 
     // Dismiss popover when the diff scrolls — the symbol moves away from the anchor
     const handleScroll = () => closePopoverRef.current();
+
+    // Attach mouseover/mouseout to shadow root if available, else the node
+    const attachHoverListeners = () => {
+      const shadow = getShadowRoot();
+      const hoverTarget = shadow ?? node;
+      hoverTarget.addEventListener("mouseover", handleMouseOver);
+      hoverTarget.addEventListener("mouseout", handleMouseOut);
+      return hoverTarget;
+    };
+
+    // Shadow root may not exist yet (custom element may upgrade later),
+    // so attach now and re-attach via MutationObserver if needed.
+    let hoverTarget = attachHoverListeners();
+
+    const observer = new MutationObserver(() => {
+      const shadow = getShadowRoot();
+      if (!shadow) return;
+      hoverTarget.removeEventListener("mouseover", handleMouseOver);
+      hoverTarget.removeEventListener("mouseout", handleMouseOut);
+      hoverTarget = shadow;
+      shadow.addEventListener("mouseover", handleMouseOver);
+      shadow.addEventListener("mouseout", handleMouseOut);
+      observer.disconnect();
+    });
+    observer.observe(node, { childList: true, subtree: true });
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -153,7 +237,11 @@ export function FileViewer({
     node.addEventListener("scroll", handleScroll, { passive: true });
 
     return () => {
+      clearHoverStyle();
       removeStyle();
+      observer.disconnect();
+      hoverTarget.removeEventListener("mouseover", handleMouseOver);
+      hoverTarget.removeEventListener("mouseout", handleMouseOut);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
