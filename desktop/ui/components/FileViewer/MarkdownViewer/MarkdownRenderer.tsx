@@ -22,8 +22,10 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         return <MermaidDiagram code={codeString} />;
       }
 
-      // Inline code
-      if (!className) {
+      // Inline code (no language class and single-line content)
+      // Fenced code blocks without a language also lack className,
+      // so check for newlines to distinguish from inline code.
+      if (!className && !String(children).includes("\n")) {
         return (
           <code
             className="markdown-inline-code rounded px-1.5 py-0.5 font-mono text-sm"
@@ -37,7 +39,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       // Code blocks
       return (
         <code
-          className={`markdown-block-code block overflow-x-auto rounded-lg p-4 font-mono text-sm ${className}`}
+          className={`markdown-block-code block overflow-x-auto rounded-lg p-4 font-mono text-sm ${className || ""}`}
           {...props}
         >
           {children}
