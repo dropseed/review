@@ -531,8 +531,6 @@ export function GroupDiffViewer({
           theme={codeTheme}
           fontCSS={fontCSS}
           fileName={filePath}
-          oldContent={fc.oldContent}
-          newContent={fc.content}
           expandUnchanged={false}
         />
       </DiffErrorBoundary>
