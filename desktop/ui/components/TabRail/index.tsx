@@ -17,6 +17,7 @@ import { TabRailItem } from "./TabRailItem";
 import type { GlobalReviewSummary, DiffShortStat } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { SidebarPanelIcon } from "../ui/icons";
+import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { SortMenu } from "../FilesPanel/SortMenu";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
@@ -501,13 +502,9 @@ export const TabRail = memo(function TabRail({
         </div>
 
         {!collapsed && (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
+          <SidebarResizeHandle
+            position="right"
             onMouseDown={handleResizeStart}
-            className="absolute top-0 right-0 h-full w-1 cursor-col-resize
-                       hover:bg-status-modified/50 active:bg-status-modified"
           />
         )}
       </nav>

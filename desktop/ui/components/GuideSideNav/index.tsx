@@ -6,7 +6,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useReviewStore } from "../../stores";
+import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk } from "../../types";
 import {
@@ -239,10 +241,17 @@ export function GuideSideNav(): ReactNode {
   const stale = hasGrouping && staleness.stale;
   const hasGroups = reviewGroups.length > 0;
 
+  const { sidebarWidth, handleResizeStart } = useSidebarResize({
+    sidebarPosition: "left",
+    initialWidth: 15,
+    minWidth: 12,
+    maxWidth: 28,
+  });
+
   return (
     <nav
       className="guide-floating-panel relative flex h-full shrink-0 flex-col rounded-xl backdrop-blur-xl overflow-hidden"
-      style={{ width: "15rem" }}
+      style={{ width: `${sidebarWidth}rem` }}
       aria-label="Guided Review"
     >
       {/* Header */}
@@ -519,6 +528,8 @@ export function GuideSideNav(): ReactNode {
           </span>
         </label>
       </div>
+
+      <SidebarResizeHandle position="right" onMouseDown={handleResizeStart} />
     </nav>
   );
 }

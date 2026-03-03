@@ -64,6 +64,11 @@ export function useSidebarResize({
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
     };
   }, [sidebarPosition, minWidth, maxWidth]);
 
