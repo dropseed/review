@@ -12,7 +12,7 @@ import type {
   ReviewState,
   SymbolDiff,
 } from "../../types";
-import { isHunkTrusted } from "../../types";
+import { isHunkReviewed } from "../../types";
 import { getChangedLinesKey } from "../../utils/changed-lines-key";
 import { playGuideStartSound } from "../../utils/sounds";
 
@@ -277,7 +277,7 @@ let groupingNonce = 0;
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
   (client: ApiClient) => (set, get) => ({
     groupingStates: new Map(),
-    excludeReviewedFromGrouping: false,
+    excludeReviewedFromGrouping: true,
     setExcludeReviewedFromGrouping: (value: boolean) =>
       set({ excludeReviewedFromGrouping: value }),
 
@@ -544,20 +544,14 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         const { hunkDefines, hunkReferences, fileHasGrammar, modifiedSymbols } =
           buildSymbolData(symbolsLoaded ? symbolDiffs : []);
 
-        // Always exclude trusted hunks (auto-approved via trust list patterns).
-        // Optionally also exclude explicitly approved/rejected hunks (useful
-        // when re-reviewing iterations where some hunks are already handled).
+        // Optionally exclude reviewed hunks (trusted, approved, or rejected)
+        // so the guided review focuses on hunks that still need attention.
         const { trustList, hunks: hunkStates } = reviewState;
         const excludeReviewed = get().excludeReviewedFromGrouping;
         const filteredHunks = hunks.filter((hunk) => {
+          if (!excludeReviewed) return true;
           const state = hunkStates[hunk.id];
-          if (isHunkTrusted(state, trustList)) return false;
-          if (
-            excludeReviewed &&
-            (state?.status === "approved" || state?.status === "rejected")
-          )
-            return false;
-          return true;
+          return !isHunkReviewed(state, trustList);
         });
 
         if (filteredHunks.length < hunks.length) {
