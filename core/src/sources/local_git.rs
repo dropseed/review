@@ -1108,24 +1108,29 @@ fn build_file_tree(
             .iter()
             .filter_map(|path| {
                 let full_path = repo.join(path);
-                let metadata = fs::symlink_metadata(&full_path).ok()?;
-
-                if metadata.file_type().is_symlink() {
-                    // Broken symlink — filter it out
-                    fs::metadata(&full_path).ok()?;
-                    Some((
-                        path.clone(),
-                        SymlinkInfo {
-                            is_symlink: true,
-                            target: fs::read_link(&full_path)
-                                .ok()
-                                .map(|p| p.to_string_lossy().to_string()),
-                            target_is_dir: true,
-                            ..SymlinkInfo::default()
-                        },
-                    ))
-                } else {
-                    Some((path.clone(), SymlinkInfo::default()))
+                match fs::symlink_metadata(&full_path) {
+                    Ok(metadata) => {
+                        if metadata.file_type().is_symlink() {
+                            // Broken symlink — filter it out
+                            fs::metadata(&full_path).ok()?;
+                            Some((
+                                path.clone(),
+                                SymlinkInfo {
+                                    is_symlink: true,
+                                    target: fs::read_link(&full_path)
+                                        .ok()
+                                        .map(|p| p.to_string_lossy().to_string()),
+                                    target_is_dir: true,
+                                    ..SymlinkInfo::default()
+                                },
+                            ))
+                        } else {
+                            Some((path.clone(), SymlinkInfo::default()))
+                        }
+                    }
+                    // Directory doesn't exist on disk (e.g., all files inside were
+                    // deleted) — keep it so child entries are not orphaned.
+                    Err(_) => Some((path.clone(), SymlinkInfo::default())),
                 }
             })
             .collect()
