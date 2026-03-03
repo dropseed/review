@@ -84,6 +84,18 @@ export function useAutoStartGuide(): { secondsRemaining: number | null } {
         return;
       }
 
+      // Guide already started manually or groups already generated
+      if (
+        state.changesViewMode === "guide" ||
+        state.getActiveGroupingEntry().reviewGroups.length > 0
+      ) {
+        console.log(
+          "[auto-guide] Skipped: guide already active or groups exist",
+        );
+        triggeredKeys.current.add(reviewKey);
+        return;
+      }
+
       // Already generating
       if (state.isReviewBusy(reviewKey)) {
         console.log("[auto-guide] Skipped: already generating for", reviewKey);
