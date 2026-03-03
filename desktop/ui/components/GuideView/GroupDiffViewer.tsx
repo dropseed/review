@@ -108,10 +108,21 @@ function diffLinePrefix(type: DiffLine["type"]): string {
  * Build a unified diff patch containing only the specified hunks.
  * Extracts the diff header (everything before the first @@ line) from
  * the full patch, then reconstructs each hunk from its lines array.
+ * When the source patch is empty (e.g., untracked/new files), generates
+ * a synthetic header so the patch-only rendering path works correctly.
  */
-function buildFilteredPatch(fullPatch: string, hunks: DiffHunk[]): string {
-  const headerMatch = fullPatch.match(/^([\s\S]*?)(?=^@@\s)/m);
-  const diffHeader = headerMatch ? headerMatch[1] : "";
+function buildFilteredPatch(
+  fullPatch: string,
+  hunks: DiffHunk[],
+  filePath: string,
+): string {
+  let diffHeader: string;
+  if (fullPatch) {
+    const headerMatch = fullPatch.match(/^([\s\S]*?)(?=^@@\s)/m);
+    diffHeader = headerMatch ? headerMatch[1] : "";
+  } else {
+    diffHeader = `--- /dev/null\n+++ b/${filePath}\n`;
+  }
 
   const hunkSections = hunks.map((h) => {
     const header = `@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@`;
@@ -508,9 +519,7 @@ export function GroupDiffViewer({
       );
     }
 
-    const filteredPatch = fc.diffPatch
-      ? buildFilteredPatch(fc.diffPatch, fileHunks)
-      : "";
+    const filteredPatch = buildFilteredPatch(fc.diffPatch, fileHunks, filePath);
 
     return (
       <DiffErrorBoundary
