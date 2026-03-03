@@ -6,7 +6,6 @@ import {
   useCallback,
 } from "react";
 import { useFeedbackPanel, useListContinuation } from "../../hooks";
-import { useReviewStore } from "../../stores";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
 
@@ -65,7 +64,6 @@ export function ReviewNotesPanel(): ReactNode {
     clearFeedback,
   } = useFeedbackPanel();
 
-  const resetReview = useReviewStore((s) => s.resetReview);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isOpen, setIsOpen] = useState(true);
   const [confirmingReset, setConfirmingReset] = useState(false);
@@ -194,9 +192,9 @@ export function ReviewNotesPanel(): ReactNode {
         {hasFeedbackToExport && (
           <div className="flex items-center justify-between">
             <button
-              onClick={async () => {
+              onClick={() => {
                 if (confirmingReset) {
-                  await resetReview();
+                  clearFeedback();
                   setConfirmingReset(false);
                 } else {
                   setConfirmingReset(true);
@@ -204,7 +202,7 @@ export function ReviewNotesPanel(): ReactNode {
                 }
               }}
               title={
-                confirmingReset ? "Click again to confirm" : "Reset review"
+                confirmingReset ? "Click again to confirm" : "Clear feedback"
               }
               className={`h-5 px-1.5 rounded text-[10px] flex items-center gap-1 ${
                 confirmingReset
@@ -225,7 +223,7 @@ export function ReviewNotesPanel(): ReactNode {
                   d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
                 />
               </svg>
-              {confirmingReset ? "Confirm" : "Reset"}
+              {confirmingReset ? "Confirm" : "Clear"}
             </button>
             <button
               onClick={copyFeedbackToClipboard}

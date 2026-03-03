@@ -26,6 +26,7 @@ import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
 import { Switch } from "./ui/switch";
 import { ActivityBar } from "./ActivityBar";
+import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -354,13 +355,9 @@ export function ReviewView({
             />
           </div>
 
-          {/* Resize handle (on left edge of right sidebar) */}
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
+          <SidebarResizeHandle
+            position="left"
             onMouseDown={handleResizeStart}
-            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"
           />
         </div>
       </aside>
