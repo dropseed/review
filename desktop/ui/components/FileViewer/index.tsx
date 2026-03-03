@@ -82,12 +82,12 @@ export function FileViewer({
     gitStatus,
   } = useFileViewerState();
 
-  const [viewMode] = useDiffViewMode(filePath);
-
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
+
+  const [viewMode, setViewMode] = useDiffViewMode(filePath, isSplitActive);
 
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
 
@@ -722,6 +722,8 @@ export function FileViewer({
         isLanguageOverridden={languageOverride !== undefined}
         markdownViewMode={markdownViewMode}
         svgViewMode={svgViewMode}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
         onLanguageChange={setLanguageOverride}
         onMarkdownViewModeChange={setMarkdownViewMode}
         onSvgViewModeChange={setSvgViewMode}

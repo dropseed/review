@@ -1,7 +1,6 @@
 import { memo, useMemo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
-import { useDiffViewMode } from "./hooks/useDiffViewMode";
 import { useNavigate } from "react-router-dom";
 import { Breadcrumbs } from "../Breadcrumbs";
 import { getPlatformServices } from "../../platform";
@@ -133,6 +132,8 @@ interface FileViewerToolbarProps {
   isLanguageOverridden: boolean;
   markdownViewMode: "preview" | "code";
   svgViewMode: "rendered" | "code";
+  viewMode: DiffViewMode;
+  onViewModeChange: (mode: DiffViewMode) => void;
   onLanguageChange: (lang: SupportedLanguages | undefined) => void;
   onMarkdownViewModeChange: (mode: "preview" | "code") => void;
   onSvgViewModeChange: (mode: "rendered" | "code") => void;
@@ -158,6 +159,8 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   isLanguageOverridden,
   markdownViewMode,
   svgViewMode,
+  viewMode,
+  onViewModeChange,
   onLanguageChange,
   onMarkdownViewModeChange,
   onSvgViewModeChange,
@@ -178,7 +181,6 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
   const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
-  const [viewMode, setViewModeForFile] = useDiffViewMode(filePath);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const revealInBrowse = useReviewStore((s) => s.revealInBrowse);
 
@@ -202,7 +204,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   };
 
   const handleDiffViewModeChange = (mode: DiffViewMode) => {
-    setViewModeForFile(mode);
+    onViewModeChange(mode);
     onClearHighlight();
   };
 
