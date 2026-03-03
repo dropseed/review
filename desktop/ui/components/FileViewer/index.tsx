@@ -356,6 +356,7 @@ export function FileViewer({
     setFileCommentEditorOpen(false);
     setEditingFileCommentId(null);
     setInFileSearchOpen(false);
+    setHighlightLine(null);
   }, [filePath]);
 
   // Cmd+F listener to open in-file search
