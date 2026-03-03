@@ -38,7 +38,12 @@ export function useKeyboardNavigation() {
 
       const state = useReviewStore.getState();
 
-      // Escape: close split view
+      // Escape: dismiss commit view first, then close split view
+      if (event.key === "Escape" && state.viewingCommitHash !== null) {
+        event.preventDefault();
+        state.setViewingCommitHash(null);
+        return;
+      }
       if (event.key === "Escape" && state.secondaryFile !== null) {
         event.preventDefault();
         state.closeSplit();

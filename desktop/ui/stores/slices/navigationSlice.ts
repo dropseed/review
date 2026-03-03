@@ -85,6 +85,10 @@ export interface NavigationSlice {
   // Ad-hoc hunk group (used with guideContentMode "adhoc-group")
   adhocGroup: HunkGroup | null;
 
+  // Viewing a commit diff inline
+  viewingCommitHash: string | null;
+  setViewingCommitHash: (hash: string | null) => void;
+
   // Content search modal
   contentSearchOpen: boolean;
   setContentSearchOpen: (open: boolean) => void;
@@ -185,6 +189,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       guideContentMode: null as GuideContentMode,
       workingTreeDiffFile: null as string | null,
       workingTreeDiffMode: null as "staged" | "unstaged" | null,
+      viewingCommitHash: null as string | null,
     };
 
     const hunkNav = targetHunkId
@@ -316,7 +321,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   navigateToBrowse: (filePath?) => {
     if (filePath === undefined) {
-      set({ guideContentMode: null });
+      set({ guideContentMode: null, viewingCommitHash: null });
       return;
     }
 
@@ -325,6 +330,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
     set({
       guideContentMode: null,
+      viewingCommitHash: null,
       selectedFile: filePath,
       filesPanelCollapsed: false,
       ...(hunkId && {
@@ -336,6 +342,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   revealInBrowse: (filePath) => {
     set({
+      viewingCommitHash: null,
       requestedFilesPanelTab: "browse",
       fileToReveal: filePath,
       selectedFile: filePath,
@@ -475,6 +482,10 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Ad-hoc group
   adhocGroup: null,
+
+  // Viewing a commit diff inline
+  viewingCommitHash: null,
+  setViewingCommitHash: (hash) => set({ viewingCommitHash: hash }),
 
   // Content search modal
   contentSearchOpen: false,

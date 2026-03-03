@@ -31,11 +31,6 @@ import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
 );
-const CommitDetailModal = lazy(() =>
-  import("./modals/CommitDetailModal").then((m) => ({
-    default: m.CommitDetailModal,
-  })),
-);
 const FileFinder = lazy(() =>
   import("./search/FileFinder").then((m) => ({ default: m.FileFinder })),
 );
@@ -101,9 +96,7 @@ export function ReviewView({
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
-  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
-    null,
-  );
+  const setViewingCommitHash = useReviewStore((s) => s.setViewingCommitHash);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -116,10 +109,12 @@ export function ReviewView({
     }
   }, [isRefreshing]);
 
-  // Close handler: cascading close (file -> split -> overview -> window)
+  // Close handler: cascading close (commit view -> split -> file -> window)
   const handleClose = useCallback(async () => {
     const state = useReviewStore.getState();
-    if (state.secondaryFile !== null) {
+    if (state.viewingCommitHash !== null) {
+      state.setViewingCommitHash(null);
+    } else if (state.secondaryFile !== null) {
       state.closeSplit();
     } else if (state.selectedFile !== null) {
       useReviewStore.setState({ selectedFile: null });
@@ -351,7 +346,7 @@ export function ReviewView({
         >
           <div className="flex-1 overflow-hidden">
             <FilesPanel
-              onSelectCommit={(commit) => setSelectedCommitHash(commit.hash)}
+              onSelectCommit={(commit) => setViewingCommitHash(commit.hash)}
             />
           </div>
 
@@ -368,17 +363,6 @@ export function ReviewView({
           <DebugModal
             isOpen={showDebugModal}
             onClose={() => setShowDebugModal(false)}
-          />
-        </Suspense>
-      )}
-
-      {/* Commit Detail Modal */}
-      {selectedCommitHash && (
-        <Suspense fallback={null}>
-          <CommitDetailModal
-            isOpen={!!selectedCommitHash}
-            onClose={() => setSelectedCommitHash(null)}
-            commitHash={selectedCommitHash}
           />
         </Suspense>
       )}
