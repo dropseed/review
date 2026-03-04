@@ -89,6 +89,10 @@ export interface GroupingSlice {
   excludeReviewedFromGrouping: boolean;
   setExcludeReviewedFromGrouping: (value: boolean) => void;
 
+  /** Countdown seconds for auto-start guide (null when not counting down). */
+  autoStartSecondsRemaining: number | null;
+  setAutoStartSecondsRemaining: (value: number | null) => void;
+
   // Guide state
   startGuide: () => Promise<void>;
   exitGuide: () => void;
@@ -280,6 +284,9 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     excludeReviewedFromGrouping: true,
     setExcludeReviewedFromGrouping: (value: boolean) =>
       set({ excludeReviewedFromGrouping: value }),
+    autoStartSecondsRemaining: null,
+    setAutoStartSecondsRemaining: (value: number | null) =>
+      set({ autoStartSecondsRemaining: value }),
 
     getActiveGroupingEntry: () => {
       const { repoPath, comparison, groupingStates } = get();

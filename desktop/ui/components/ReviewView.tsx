@@ -179,7 +179,8 @@ export function ReviewView({
   useCelebration();
 
   // Auto-start guided review
-  const { secondsRemaining } = useAutoStartGuide();
+  useAutoStartGuide();
+  const secondsRemaining = useReviewStore((s) => s.autoStartSecondsRemaining);
   const autoStartGuide = useReviewStore(
     (s) => s.reviewState?.guide?.autoStart ?? false,
   );

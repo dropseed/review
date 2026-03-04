@@ -132,6 +132,7 @@ export function GuideSideNav(): ReactNode {
     (s) => s.setExcludeReviewedFromGrouping,
   );
   const clearGrouping = useReviewStore((s) => s.clearGrouping);
+  const autoStartSeconds = useReviewStore((s) => s.autoStartSecondsRemaining);
 
   const hunkById = useMemo(() => buildHunkMap(hunks), [hunks]);
   const trustList = reviewState?.trustList ?? [];
@@ -516,7 +517,7 @@ export function GuideSideNav(): ReactNode {
       </div>
 
       {/* Footer options */}
-      <div className="shrink-0 border-t border-edge/50 px-3 py-2">
+      <div className="shrink-0 border-t border-edge/50 px-3 py-2 space-y-1.5">
         <label className="flex items-center gap-1.5 cursor-pointer">
           <Checkbox
             checked={excludeReviewed}
@@ -527,6 +528,12 @@ export function GuideSideNav(): ReactNode {
             Exclude reviewed hunks
           </span>
         </label>
+        {autoStartSeconds !== null && (
+          <p className="text-xxs text-fg-faint tabular-nums">
+            {hasGrouping ? "Regenerating" : "Auto-starting"} in{" "}
+            {autoStartSeconds}s…
+          </p>
+        )}
       </div>
 
       <SidebarResizeHandle position="right" onMouseDown={handleResizeStart} />

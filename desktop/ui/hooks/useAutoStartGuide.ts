@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { useReviewStore } from "../stores";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
 
@@ -7,14 +7,14 @@ import { makeReviewKey } from "../stores/slices/groupingSlice";
  * Kicks off classification + grouping in the background without switching to
  * guide view mode (the sidebar stays closed until the user opens it).
  * Resets the timer whenever hunks change or a load/refresh is in progress.
- * Only fires once per review key per session.
  *
- * Returns `secondsRemaining` (counting down while waiting, null otherwise).
+ * When groups already exist but are stale (hunks changed), starts a countdown
+ * to regenerate them automatically.
+ *
+ * Writes `autoStartSecondsRemaining` to the store so both the header and
+ * GuideSideNav can display the countdown.
  */
-export function useAutoStartGuide(): { secondsRemaining: number | null } {
-  const triggeredKeys = useRef(new Set<string>());
-  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
-
+export function useAutoStartGuide(): void {
   const autoStart = useReviewStore(
     (s) => s.reviewState?.guide?.autoStart ?? false,
   );
@@ -25,36 +25,39 @@ export function useAutoStartGuide(): { secondsRemaining: number | null } {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparisonKey = useReviewStore((s) => s.comparison.key);
   const autoStartDelay = useReviewStore((s) => s.autoStartDelay);
+  // Derive staleness from primitive fields so the selector doesn't run O(n) set
+  // comparisons on every unrelated store update (e.g. countdown ticks).
+  const isGroupingStale = useReviewStore((s) => {
+    const generated = s.reviewState?.guide?.state;
+    if (!generated) return false;
+    const storedIds = generated.hunkIds;
+    const currentIds = s.hunks;
+    if (storedIds.length !== currentIds.length) return true;
+    const storedSet = new Set(storedIds);
+    return currentIds.some((h) => !storedSet.has(h.id));
+  });
 
   useEffect(() => {
+    const setSeconds = useReviewStore.getState().setAutoStartSecondsRemaining;
+
     if (!autoStart) {
-      setSecondsRemaining(null);
+      setSeconds(null);
       return;
     }
 
-    setSecondsRemaining(autoStartDelay);
+    setSeconds(autoStartDelay);
 
     const interval = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev !== null && prev > 1) return prev - 1;
-        return prev;
-      });
+      const current = useReviewStore.getState().autoStartSecondsRemaining;
+      if (current !== null && current > 1) {
+        setSeconds(current - 1);
+      }
     }, 1_000);
 
     const timer = setTimeout(() => {
-      setSecondsRemaining(null);
+      setSeconds(null);
 
       const state = useReviewStore.getState();
-      const reviewKey = makeReviewKey(
-        state.repoPath ?? "",
-        state.comparison.key,
-      );
-
-      // Already triggered for this review
-      if (triggeredKeys.current.has(reviewKey)) {
-        console.log("[auto-guide] Already triggered for", reviewKey);
-        return;
-      }
 
       // Still loading
       if (state.loadingProgress !== null) {
@@ -84,29 +87,35 @@ export function useAutoStartGuide(): { secondsRemaining: number | null } {
         return;
       }
 
-      // Guide already started manually or groups already generated
-      if (
-        state.changesViewMode === "guide" ||
-        state.getActiveGroupingEntry().reviewGroups.length > 0
-      ) {
-        console.log(
-          "[auto-guide] Skipped: guide already active or groups exist",
-        );
-        triggeredKeys.current.add(reviewKey);
-        return;
-      }
-
       // Already generating
+      const reviewKey = makeReviewKey(state.repoPath, state.comparison.key);
       if (state.isReviewBusy(reviewKey)) {
         console.log("[auto-guide] Skipped: already generating for", reviewKey);
         return;
       }
 
-      console.log("[auto-guide] Auto-starting generation for", reviewKey);
-      triggeredKeys.current.add(reviewKey);
-      // Only generate groups + classify — don't switch to guide view mode
-      state.classifyStaticHunks();
-      state.generateGrouping({ silent: true });
+      const hasGroups = state.getActiveGroupingEntry().reviewGroups.length > 0;
+      const stale = state.isGroupingStale();
+
+      if (hasGroups && stale) {
+        // Groups exist but are stale — regenerate (non-silent so the user knows)
+        console.log(
+          "[auto-guide] Auto-regenerating stale groups for",
+          reviewKey,
+        );
+        state.generateGrouping();
+      } else if (hasGroups && !stale) {
+        // Groups exist and are fresh — nothing to do
+        console.log("[auto-guide] Skipped: groups exist and are fresh");
+      } else if (state.changesViewMode === "guide") {
+        // Guide already active with no groups — skip (startGuide handles this)
+        console.log("[auto-guide] Skipped: guide already active");
+      } else {
+        // No groups yet — first-time auto-start
+        console.log("[auto-guide] Auto-starting generation for", reviewKey);
+        state.classifyStaticHunks();
+        state.generateGrouping({ silent: true });
+      }
     }, autoStartDelay * 1_000);
 
     console.log(`[auto-guide] Timer reset (${autoStartDelay}s)`);
@@ -114,9 +123,15 @@ export function useAutoStartGuide(): { secondsRemaining: number | null } {
     return () => {
       clearTimeout(timer);
       clearInterval(interval);
-      setSecondsRemaining(null);
+      setSeconds(null);
     };
-  }, [autoStart, hunks, isLoading, repoPath, comparisonKey, autoStartDelay]);
-
-  return { secondsRemaining };
+  }, [
+    autoStart,
+    hunks,
+    isLoading,
+    repoPath,
+    comparisonKey,
+    autoStartDelay,
+    isGroupingStale,
+  ]);
 }
