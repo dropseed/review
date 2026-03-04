@@ -1,21 +1,33 @@
 /**
- * Module-level flag to suppress scroll tracking during programmatic scrolls
- * (e.g., scrollIntoView on file open or keyboard navigation).
+ * Module-level flags to suppress scroll-related behaviors during programmatic
+ * scrolls (e.g., scrollIntoView on file open or keyboard navigation).
  *
- * This prevents useScrollHunkTracking from updating focusedHunkId while
- * a smooth scroll animation is in progress, avoiding a feedback loop.
+ * Each flag is a timestamped window: call suppress() to start, isSuppressed()
+ * returns true until the window expires. Multiple calls extend the window.
  */
 
-let suppressedUntil = 0;
-
-/** Suppress scroll tracking for the given duration. Extends the window if longer. */
-export function suppressScrollTracking(durationMs: number): void {
-  const until = Date.now() + durationMs;
-  if (until > suppressedUntil) {
-    suppressedUntil = until;
-  }
+function makeSuppressWindow() {
+  let suppressedUntil = 0;
+  return {
+    suppress(durationMs: number): void {
+      const until = Date.now() + durationMs;
+      if (until > suppressedUntil) suppressedUntil = until;
+    },
+    isSuppressed(): boolean {
+      return Date.now() < suppressedUntil;
+    },
+  };
 }
 
-export function isScrollTrackingSuppressed(): boolean {
-  return Date.now() < suppressedUntil;
-}
+/** Prevents useScrollHunkTracking from updating focusedHunkId during smooth scroll. */
+const trackingWindow = makeSuppressWindow();
+export const suppressScrollTracking = (ms: number) =>
+  trackingWindow.suppress(ms);
+export const isScrollTrackingSuppressed = () => trackingWindow.isSuppressed();
+
+/** Prevents useScrollAnchor from fighting smooth scroll animations. */
+const correctionWindow = makeSuppressWindow();
+export const suppressScrollCorrection = (ms: number) =>
+  correctionWindow.suppress(ms);
+export const isScrollCorrectionSuppressed = () =>
+  correctionWindow.isSuppressed();

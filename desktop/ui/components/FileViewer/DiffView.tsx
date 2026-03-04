@@ -17,7 +17,10 @@ import {
 } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
-import { suppressScrollTracking } from "../../hooks/scrollState";
+import {
+  suppressScrollTracking,
+  suppressScrollCorrection,
+} from "../../hooks/scrollState";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -217,6 +220,7 @@ export function DiffView({
       if (!scrollTarget || scrollTarget.type !== "hunk") return;
       useReviewStore.getState().clearScrollTarget();
       suppressScrollTracking(600);
+      suppressScrollCorrection(600);
       focusedHunkRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "center",
@@ -251,6 +255,7 @@ export function DiffView({
       const lineEl = shadow.querySelector(`[data-line="${highlightLine}"]`);
       if (lineEl) {
         suppressScrollTracking(600);
+        suppressScrollCorrection(600);
         (lineEl as HTMLElement).scrollIntoView({
           behavior: "smooth",
           block: "center",

@@ -19,7 +19,7 @@ import {
 } from "./DiffMinimap";
 import {
   useScrollHunkTracking,
-  useScrollBottomPreserver,
+  useScrollAnchor,
   useSymbolNavigation,
 } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
@@ -641,7 +641,7 @@ export function FileViewer({
 
   // Track scroll position to update focused hunk
   useScrollHunkTracking(scrollNode, fileHunks);
-  useScrollBottomPreserver(scrollNode);
+  useScrollAnchor(scrollNode, filePath);
 
   // Check if file is gitignored (from the file tree's allFiles)
   const isGitignored = useReviewStore((s) =>
@@ -799,7 +799,7 @@ export function FileViewer({
         )}
         <div
           ref={setScrollNode}
-          className={`min-w-0 flex-1 h-full overflow-auto [overflow-anchor:none] bg-surface-panel ${
+          className={`min-w-0 flex-1 h-full overflow-auto bg-surface-panel ${
             contentMode.type === "diff" ? "scrollbar-none" : "scrollbar-thin"
           }`}
         >
