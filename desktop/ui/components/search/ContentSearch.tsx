@@ -4,6 +4,7 @@ import { useReviewStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { HighlightedLine } from "../ui/HighlightedLine";
 import { groupSearchResultsByFile } from "../../utils/search";
+import { SimpleTooltip } from "../ui/tooltip";
 import { Dialog, DialogOverlay, DialogPortal } from "../ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
@@ -31,6 +32,10 @@ export function ContentSearch({
   const navigateToSearchResult = useReviewStore(
     (s) => s.navigateToSearchResult,
   );
+  const searchCaseSensitive = useReviewStore((s) => s.searchCaseSensitive);
+  const setSearchCaseSensitive = useReviewStore(
+    (s) => s.setSearchCaseSensitive,
+  );
 
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -47,7 +52,7 @@ export function ContentSearch({
     } else {
       clearSearchResults();
     }
-  }, [debouncedQuery, performSearch, clearSearchResults]);
+  }, [debouncedQuery, performSearch, clearSearchResults, searchCaseSensitive]);
 
   // Reset selection when results change
   useEffect(() => {
@@ -96,6 +101,14 @@ export function ContentSearch({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Alt+C toggles case sensitivity (VS Code convention)
+      if (e.altKey && e.key === "c") {
+        e.preventDefault();
+        const current = useReviewStore.getState().searchCaseSensitive;
+        useReviewStore.getState().setSearchCaseSensitive(!current);
+        return;
+      }
+
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -165,6 +178,27 @@ export function ContentSearch({
                     spellCheck={false}
                     className="flex-1 bg-transparent text-sm text-fg placeholder-fg-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 rounded px-1 py-1"
                   />
+                  <SimpleTooltip
+                    content={
+                      searchCaseSensitive
+                        ? "Case sensitive (on)"
+                        : "Case sensitive (off)"
+                    }
+                  >
+                    <button
+                      onClick={() =>
+                        setSearchCaseSensitive(!searchCaseSensitive)
+                      }
+                      className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold transition-colors flex-shrink-0 ${
+                        searchCaseSensitive
+                          ? "bg-status-modified/20 text-status-modified"
+                          : "text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50"
+                      }`}
+                      aria-label="Toggle case sensitivity"
+                    >
+                      Aa
+                    </button>
+                  </SimpleTooltip>
                   {searchLoading && (
                     <div className="h-4 w-4 rounded-full border-2 border-edge-strong border-t-fg-secondary animate-spin" />
                   )}

@@ -22,6 +22,7 @@ export function SearchResultsPanel(): ReactNode {
   const navigateToSearchResult = useReviewStore(
     (s) => s.navigateToSearchResult,
   );
+  const searchCaseSensitive = useReviewStore((s) => s.searchCaseSensitive);
 
   const [query, setQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +40,7 @@ export function SearchResultsPanel(): ReactNode {
     } else {
       clearSearchResults();
     }
-  }, [debouncedQuery, performSearch, clearSearchResults]);
+  }, [debouncedQuery, performSearch, clearSearchResults, searchCaseSensitive]);
 
   const groupedResults = useMemo(
     () => groupSearchResultsByFile(searchResults),

@@ -9,9 +9,11 @@ export interface SearchSlice {
   searchLoading: boolean;
   searchError: string | null;
   searchActive: boolean;
+  searchCaseSensitive: boolean;
 
   // Actions
   setSearchQuery: (query: string) => void;
+  setSearchCaseSensitive: (value: boolean) => void;
   performSearch: (query: string) => Promise<void>;
   clearSearch: () => void;
   clearSearchResults: () => void;
@@ -25,11 +27,13 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     searchLoading: false,
     searchError: null,
     searchActive: false,
+    searchCaseSensitive: false,
 
     setSearchQuery: (query) => set({ searchQuery: query }),
+    setSearchCaseSensitive: (value) => set({ searchCaseSensitive: value }),
 
     performSearch: async (query) => {
-      const { repoPath } = get();
+      const { repoPath, searchCaseSensitive } = get();
       if (!repoPath || !query.trim()) {
         set({ searchResults: [], searchLoading: false, searchError: null });
         return;
@@ -41,7 +45,7 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         const results = await client.searchFileContents(
           repoPath,
           query,
-          false, // case insensitive by default
+          searchCaseSensitive,
           100, // max results
         );
         set({
