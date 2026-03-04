@@ -18,6 +18,7 @@ export {
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 export { useCelebration } from "./useCelebration";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";
+export { useScrollBottomPreserver } from "./useScrollBottomPreserver";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
 export { useFeedbackPanel } from "./useFeedbackPanel";
