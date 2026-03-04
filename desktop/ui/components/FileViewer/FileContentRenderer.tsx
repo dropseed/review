@@ -141,6 +141,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
           newContent={fileContent.content}
           language={effectiveLanguage}
           expandUnchanged={expandUnchanged}
+          highlightLine={highlightLine}
         />
       );
     }

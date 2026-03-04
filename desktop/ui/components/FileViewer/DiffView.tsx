@@ -169,6 +169,8 @@ interface DiffViewProps {
   language?: SupportedLanguages;
   /** Whether to expand all unchanged sections (default: true for full file view) */
   expandUnchanged?: boolean;
+  /** Line number to scroll to (from in-file search) */
+  highlightLine?: number | null;
 }
 
 export function DiffView({
@@ -183,6 +185,7 @@ export function DiffView({
   newContent,
   language,
   expandUnchanged: expandUnchangedProp = true,
+  highlightLine,
 }: DiffViewProps): ReactNode {
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -237,6 +240,25 @@ export function DiffView({
       unsubscribe();
     };
   }, []);
+
+  // Scroll to highlighted line (from in-file search) inside shadow DOM
+  useEffect(() => {
+    if (!highlightLine || !diffContainerRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      const shadow =
+        diffContainerRef.current?.querySelector("diffs-container")?.shadowRoot;
+      if (!shadow) return;
+      const lineEl = shadow.querySelector(`[data-line="${highlightLine}"]`);
+      if (lineEl) {
+        suppressScrollTracking(600);
+        (lineEl as HTMLElement).scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [highlightLine]);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
