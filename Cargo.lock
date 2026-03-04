@@ -4293,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "review"
-version = "0.0.52"
+version = "0.0.53"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -4331,7 +4331,7 @@ dependencies = [
 
 [[package]]
 name = "review-desktop"
-version = "0.0.52"
+version = "0.0.53"
 dependencies = [
  "axum",
  "axum-server",
