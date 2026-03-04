@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useReviewStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { HighlightedLine } from "../ui/HighlightedLine";
+import { SimpleTooltip } from "../ui/tooltip";
 import { groupSearchResultsByFile } from "../../utils/search";
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
@@ -23,6 +24,9 @@ export function SearchResultsPanel(): ReactNode {
     (s) => s.navigateToSearchResult,
   );
   const searchCaseSensitive = useReviewStore((s) => s.searchCaseSensitive);
+  const setSearchCaseSensitive = useReviewStore(
+    (s) => s.setSearchCaseSensitive,
+  );
 
   const [query, setQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +86,25 @@ export function SearchResultsPanel(): ReactNode {
             spellCheck={false}
             className="flex-1 bg-transparent text-xs text-fg placeholder-fg-muted focus:outline-hidden min-w-0"
           />
+          <SimpleTooltip
+            content={
+              searchCaseSensitive
+                ? "Case sensitive (on)"
+                : "Case sensitive (off)"
+            }
+          >
+            <button
+              onClick={() => setSearchCaseSensitive(!searchCaseSensitive)}
+              className={`flex h-5 w-5 items-center justify-center rounded text-xxs font-bold transition-colors flex-shrink-0 ${
+                searchCaseSensitive
+                  ? "bg-status-modified/20 text-status-modified"
+                  : "text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50"
+              }`}
+              aria-label="Toggle case sensitivity"
+            >
+              Aa
+            </button>
+          </SimpleTooltip>
           {searchLoading && (
             <div className="h-3.5 w-3.5 rounded-full border-2 border-surface-active border-t-fg-secondary animate-spin flex-shrink-0" />
           )}
