@@ -163,6 +163,14 @@ export interface Comparison {
   key: string; // Always "{base}..{head}"
 }
 
+/**
+ * Return the git range string for a comparison, or undefined when
+ * base and head are identical (no divergent range to query).
+ */
+export function getComparisonRange(c: Comparison): string | undefined {
+  return c.base !== c.head ? c.key : undefined;
+}
+
 // Helper to create a Comparison object
 export function makeComparison(base: string, head: string): Comparison {
   const key = `${base}..${head}`;
@@ -557,6 +565,8 @@ export interface ReviewFreshnessResult {
   oldSha: string | null;
   newSha: string | null;
   diffStats: DiffShortStat | null;
+  /** Refs from the comparison that no longer exist (e.g. deleted branch). */
+  missingRefs?: string[];
 }
 
 // Lightweight diff statistics from git diff --shortstat

@@ -1163,11 +1163,12 @@ pub fn list_commits(
     repo_path: String,
     limit: Option<usize>,
     branch: Option<String>,
+    range: Option<String>,
 ) -> Result<Vec<CommitEntry>, String> {
     let limit = limit.unwrap_or(50);
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source
-        .list_commits(limit, branch.as_deref())
+        .list_commits(limit, branch.as_deref(), range.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -1962,6 +1963,9 @@ pub struct ReviewFreshnessResult {
     pub old_sha: Option<String>,
     pub new_sha: Option<String>,
     pub diff_stats: Option<DiffShortStat>,
+    /// Refs from the comparison that no longer exist (e.g. deleted branch).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_refs: Vec<String>,
 }
 
 #[tauri::command]
@@ -1992,6 +1996,23 @@ fn is_diff_active(stats: &Option<DiffShortStat>) -> bool {
         .is_some_and(|s| s.file_count > 0 || s.additions > 0 || s.deletions > 0)
 }
 
+/// Detect missing refs by checking if a non-empty ref resolved to the empty tree.
+/// This avoids extra git processes since we reuse the already-resolved SHAs.
+fn missing_refs_from_resolved(
+    comparison: &Comparison,
+    resolved_old: &str,
+    resolved_new: &str,
+) -> Vec<String> {
+    let mut missing = Vec::new();
+    if !comparison.base.is_empty() && resolved_old == LocalGitSource::EMPTY_TREE {
+        missing.push(comparison.base.clone());
+    }
+    if !comparison.head.is_empty() && resolved_new == LocalGitSource::EMPTY_TREE {
+        missing.push(comparison.head.clone());
+    }
+    missing
+}
+
 fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshnessResult {
     let key = format!("{}:{}", input.repo_path, input.comparison.key);
 
@@ -2008,6 +2029,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
                         old_sha: None,
                         new_sha: Some(status.head_ref_oid),
                         diff_stats: None,
+                        missing_refs: vec![],
                     };
                 }
                 // PR is open — check if head SHA changed
@@ -2023,6 +2045,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
                         old_sha: input.cached_old_sha,
                         new_sha: Some(status.head_ref_oid),
                         diff_stats: None,
+                        missing_refs: vec![],
                     };
                 }
                 // Head changed — re-check diff stats
@@ -2035,6 +2058,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
                             old_sha: None,
                             new_sha: Some(status.head_ref_oid),
                             diff_stats: None,
+                            missing_refs: vec![],
                         };
                     }
                 };
@@ -2045,6 +2069,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
                     old_sha: None,
                     new_sha: Some(status.head_ref_oid),
                     diff_stats: stats,
+                    missing_refs: vec![],
                 };
             }
             Err(_) => {
@@ -2055,6 +2080,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
                     old_sha: None,
                     new_sha: None,
                     diff_stats: None,
+                    missing_refs: vec![],
                 };
             }
         }
@@ -2070,6 +2096,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
                 old_sha: None,
                 new_sha: None,
                 diff_stats: None,
+                missing_refs: vec![],
             };
         }
     };
@@ -2083,12 +2110,26 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
             old_sha: None,
             new_sha: None,
             diff_stats: stats,
+            missing_refs: vec![],
         };
     }
 
-    // Non-working-tree local comparisons: use SHA fingerprinting
+    // Non-working-tree local comparisons: resolve SHAs (also detects missing refs)
     let resolved_old = source.resolve_ref_or_empty_tree(&input.comparison.base);
     let resolved_new = source.resolve_ref_or_empty_tree(&input.comparison.head);
+
+    // Detect missing refs: a non-empty ref that resolved to EMPTY_TREE means the branch is gone
+    let missing_refs = missing_refs_from_resolved(&input.comparison, &resolved_old, &resolved_new);
+    if !missing_refs.is_empty() {
+        return ReviewFreshnessResult {
+            key,
+            is_active: false,
+            old_sha: None,
+            new_sha: None,
+            diff_stats: None,
+            missing_refs,
+        };
+    }
 
     let old_unchanged = input
         .cached_old_sha
@@ -2109,6 +2150,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
             old_sha: Some(resolved_old),
             new_sha: Some(resolved_new),
             diff_stats: None,
+            missing_refs: vec![],
         };
     }
 
@@ -2120,6 +2162,7 @@ fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshness
         old_sha: Some(resolved_old),
         new_sha: Some(resolved_new),
         diff_stats: stats,
+        missing_refs: vec![],
     }
 }
 

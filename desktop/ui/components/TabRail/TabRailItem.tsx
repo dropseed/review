@@ -70,6 +70,7 @@ interface TabRailItemProps {
   avatarUrl?: string | null;
   sortOrder?: ReviewSortOrder;
   diffStats?: DiffShortStat;
+  missingRefs?: string[];
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
 }
@@ -98,6 +99,8 @@ function arePropsEqual(
   // DiffStats (object ref may change)
   if (prev.diffStats?.additions !== next.diffStats?.additions) return false;
   if (prev.diffStats?.deletions !== next.diffStats?.deletions) return false;
+  // Missing refs
+  if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
   // Callbacks
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
@@ -112,6 +115,7 @@ export const TabRailItem = memo(function TabRailItem({
   avatarUrl,
   sortOrder,
   diffStats,
+  missingRefs,
   onActivate,
   onDelete,
 }: TabRailItemProps) {
@@ -130,6 +134,7 @@ export const TabRailItem = memo(function TabRailItem({
 
   const pr = review.githubPr;
   const isPr = pr != null;
+  const hasMissingRefs = missingRefs != null && missingRefs.length > 0;
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -173,9 +178,11 @@ export const TabRailItem = memo(function TabRailItem({
     ? pr.title || `PR #${pr.number}`
     : formatBranchComparison(review.comparison, defaultBranch);
 
-  const titleText = isPr
-    ? `${repoName} - PR #${pr.number}: ${pr.title}`
-    : `${repoName} - ${formatBranchComparison(review.comparison, defaultBranch)}`;
+  const titleText = hasMissingRefs
+    ? `Branch deleted: ${missingRefs.join(", ")}`
+    : isPr
+      ? `${repoName} - PR #${pr.number}: ${pr.title}`
+      : `${repoName} - ${formatBranchComparison(review.comparison, defaultBranch)}`;
 
   return (
     <>
@@ -205,10 +212,26 @@ export const TabRailItem = memo(function TabRailItem({
           {isBusy && (
             <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-edge-strong border-t-status-modified animate-spin" />
           )}
-          {!isBusy && showProgress && (
+          {!isBusy && hasMissingRefs && (
+            <svg
+              className="h-3.5 w-3.5 shrink-0 text-status-rejected"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          )}
+          {!isBusy && !hasMissingRefs && showProgress && (
             <CircleProgress percent={reviewedPercent} />
           )}
-          {!isBusy && !showProgress && avatarUrl && (
+          {!isBusy && !hasMissingRefs && !showProgress && avatarUrl && (
             <img
               src={avatarUrl}
               alt=""

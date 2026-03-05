@@ -236,10 +236,12 @@ export class HttpClient implements ApiClient {
     repoPath: string,
     limit?: number,
     branch?: string,
+    range?: string,
   ): Promise<CommitEntry[]> {
     let query = this.buildRepoQuery(repoPath);
     if (limit != null) query += `&limit=${limit}`;
     if (branch) query += `&branch=${encodeURIComponent(branch)}`;
+    if (range) query += `&range=${encodeURIComponent(range)}`;
     return this.fetchJson<CommitEntry[]>(`/git/commits?${query}`);
   }
 
@@ -665,6 +667,7 @@ export class HttpClient implements ApiClient {
       oldSha: null,
       newSha: null,
       diffStats: null,
+      missingRefs: [],
     }));
   }
 

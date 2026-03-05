@@ -94,7 +94,16 @@ impl LocalGitSource {
 
     /// The well-known SHA for git's empty tree object.
     /// This exists in every git repo and represents a tree with no files.
-    const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+    /// Check whether a git ref can be resolved (i.e. the branch/tag/commit exists).
+    pub fn ref_exists(&self, git_ref: &str) -> bool {
+        // Empty string means "empty tree" base (snapshots) — treat as valid.
+        if git_ref.is_empty() {
+            return true;
+        }
+        self.run_git(&["rev-parse", "--verify", git_ref]).is_ok()
+    }
 
     /// Resolve a ref to a commit SHA hash, falling back to the empty tree
     /// if the ref doesn't exist (e.g., HEAD in an empty repo with no commits).
@@ -115,10 +124,10 @@ impl LocalGitSource {
             }
         }
         // Fall back to checking if main or master exists
-        if self.run_git(&["rev-parse", "--verify", "main"]).is_ok() {
+        if self.ref_exists("main") {
             return Ok("main".to_owned());
         }
-        if self.run_git(&["rev-parse", "--verify", "master"]).is_ok() {
+        if self.ref_exists("master") {
             return Ok("master".to_owned());
         }
         // Empty repo: no refs exist yet, check what HEAD points to
@@ -351,10 +360,11 @@ impl LocalGitSource {
         &self,
         limit: usize,
         branch: Option<&str>,
+        range: Option<&str>,
     ) -> Result<Vec<CommitEntry>, LocalGitError> {
         let limit_str = format!("-{limit}");
         let format_str = "%H%n%h%n%s%n%an%n%aI";
-        let ref_arg = branch.unwrap_or("HEAD");
+        let ref_arg = range.or(branch).unwrap_or("HEAD");
 
         let output = self.run_git(&[
             "log",

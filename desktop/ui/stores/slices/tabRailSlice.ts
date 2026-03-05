@@ -57,6 +57,8 @@ export interface GlobalReviewsSlice {
     string,
     { oldSha: string | null; newSha: string | null }
   >;
+  /** Per-review missing refs (deleted branches). Empty array = all refs valid. */
+  reviewMissingRefs: Record<string, string[]>;
   /** Per-review navigation snapshots for tab-like restore behavior. */
   navigationSnapshots: Record<string, NavigationSnapshot>;
 
@@ -88,6 +90,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   reviewDiffStats: {},
   reviewActiveState: {},
   reviewCachedShas: {},
+  reviewMissingRefs: {},
   navigationSnapshots: {},
 
   loadGlobalReviews: async () => {
@@ -259,6 +262,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       const newActiveState = { ...get().reviewActiveState };
       const newCachedShas = { ...get().reviewCachedShas };
       const newDiffStats = { ...get().reviewDiffStats };
+      const newMissingRefs = { ...get().reviewMissingRefs };
 
       for (const result of results) {
         newActiveState[result.key] = result.isActive;
@@ -271,12 +275,18 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         if (result.diffStats) {
           newDiffStats[result.key] = result.diffStats;
         }
+        if (result.missingRefs && result.missingRefs.length > 0) {
+          newMissingRefs[result.key] = result.missingRefs;
+        } else {
+          delete newMissingRefs[result.key];
+        }
       }
 
       set({
         reviewActiveState: newActiveState,
         reviewCachedShas: newCachedShas,
         reviewDiffStats: newDiffStats,
+        reviewMissingRefs: newMissingRefs,
       });
     } catch (err) {
       console.error("Failed to check reviews freshness:", err);

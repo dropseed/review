@@ -142,6 +142,7 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const reviewActiveState = useReviewStore((s) => s.reviewActiveState);
+  const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
 
   const reviewState = useReviewStore((s) => s.reviewState);
   const hunks = useReviewStore((s) => s.hunks);
@@ -234,6 +235,7 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
       avatarUrl: meta?.avatarUrl,
       sortOrder: currentSortOrder,
       diffStats: reviewDiffStats[key],
+      missingRefs: reviewMissingRefs[key],
       onActivate: onActivateReview,
       onDelete: handleDeleteReview,
     };
