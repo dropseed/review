@@ -106,6 +106,7 @@ export interface ApiClient {
     repoPath: string,
     limit?: number,
     branch?: string,
+    range?: string,
   ): Promise<CommitEntry[]>;
 
   /** Get detailed information about a specific commit */

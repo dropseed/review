@@ -7,8 +7,8 @@ export interface HistorySlice {
   historyLoading: boolean;
   commitsLoaded: boolean;
 
-  loadCommits: (repoPath: string, limit?: number) => Promise<void>;
-  refreshCommits: (repoPath: string, limit?: number) => Promise<void>;
+  loadCommits: (repoPath: string, range?: string) => Promise<void>;
+  refreshCommits: (repoPath: string, range?: string) => Promise<void>;
 }
 
 export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
@@ -17,10 +17,15 @@ export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
     historyLoading: false,
     commitsLoaded: false,
 
-    loadCommits: async (repoPath: string, limit?: number) => {
+    loadCommits: async (repoPath: string, range?: string) => {
       set({ historyLoading: true });
       try {
-        const commits = await client.listCommits(repoPath, limit);
+        const commits = await client.listCommits(
+          repoPath,
+          undefined,
+          undefined,
+          range,
+        );
         set({ commits, historyLoading: false, commitsLoaded: true });
       } catch (err) {
         console.error("Failed to load commits:", err);
@@ -28,9 +33,14 @@ export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
       }
     },
 
-    refreshCommits: async (repoPath: string, limit?: number) => {
+    refreshCommits: async (repoPath: string, range?: string) => {
       try {
-        const commits = await client.listCommits(repoPath, limit);
+        const commits = await client.listCommits(
+          repoPath,
+          undefined,
+          undefined,
+          range,
+        );
         set({ commits, commitsLoaded: true });
       } catch (err) {
         console.error("Failed to refresh commits:", err);

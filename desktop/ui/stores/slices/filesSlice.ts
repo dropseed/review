@@ -121,6 +121,9 @@ const comparisonResetState = {
   // Review
   reviewState: null,
   undoStack: [] as UndoEntry[],
+  // History
+  commits: [] as CommitEntry[],
+  commitsLoaded: false,
   // Other slices
   ...symbolsResetState,
   ...classificationResetState,
@@ -138,9 +141,6 @@ const repoResetState = {
   // Git
   gitStatus: null,
   stagedFilePaths: EMPTY_STAGED_SET,
-  // History
-  commits: [] as CommitEntry[],
-  commitsLoaded: false,
 };
 
 export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =

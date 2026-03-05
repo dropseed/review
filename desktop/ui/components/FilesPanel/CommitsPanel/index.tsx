@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useReviewStore } from "../../../stores";
+import { getComparisonRange } from "../../../types";
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
@@ -39,12 +40,14 @@ export function CommitsPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
-  // Load commits on mount (or when repoPath changes)
+  const range = getComparisonRange(comparison);
+
+  // Load commits on mount or when comparison changes
   useEffect(() => {
     if (repoPath && !commitsLoaded && !historyLoading) {
-      loadCommits(repoPath);
+      loadCommits(repoPath, range);
     }
-  }, [repoPath, commitsLoaded, historyLoading, loadCommits]);
+  }, [repoPath, commitsLoaded, historyLoading, loadCommits, range]);
 
   // Scroll selected commit into view
   useEffect(() => {

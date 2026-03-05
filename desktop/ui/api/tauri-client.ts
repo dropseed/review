@@ -133,8 +133,14 @@ export class TauriClient implements ApiClient {
     repoPath: string,
     limit?: number,
     branch?: string,
+    range?: string,
   ): Promise<CommitEntry[]> {
-    return invoke<CommitEntry[]>("list_commits", { repoPath, limit, branch });
+    return invoke<CommitEntry[]>("list_commits", {
+      repoPath,
+      limit,
+      branch,
+      range,
+    });
   }
 
   async getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail> {

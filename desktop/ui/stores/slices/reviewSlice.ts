@@ -1,13 +1,14 @@
 import type { ApiClient } from "../../api";
-import type {
-  Comparison,
-  DiffHunk,
-  GlobalReviewSummary,
-  HunkState,
-  ReviewState,
-  ReviewSummary,
-  RejectionFeedback,
-  LineAnnotation,
+import {
+  getComparisonRange,
+  type Comparison,
+  type DiffHunk,
+  type GlobalReviewSummary,
+  type HunkState,
+  type ReviewState,
+  type ReviewSummary,
+  type RejectionFeedback,
+  type LineAnnotation,
 } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { createDebouncedFn } from "../types";
@@ -697,24 +698,30 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     refresh: async () => {
       const {
         repoPath,
+        comparison,
         loadFiles,
         loadAllFiles,
         loadReviewState,
         loadGitStatus,
         refreshCommits,
         classifyStaticHunks,
+        loadGlobalReviews,
+        checkReviewsFreshness,
       } = get();
 
       // Increment refresh generation to trigger re-fetches in components like FileViewer
       set({ refreshGeneration: get().refreshGeneration + 1 });
 
       // Load data in parallel; pass isRefreshing=true to suppress progress indicators
+      const range = getComparisonRange(comparison);
       await Promise.all([
         loadReviewState(),
         loadFiles(true),
         loadAllFiles(true),
         loadGitStatus(),
-        repoPath ? refreshCommits(repoPath) : Promise.resolve(),
+        loadGlobalReviews(),
+        checkReviewsFreshness(),
+        repoPath ? refreshCommits(repoPath, range) : Promise.resolve(),
       ]);
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();

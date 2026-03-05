@@ -65,13 +65,15 @@ pub async fn get_remote_info(RepoPath(repo): RepoPath) -> Result<Json<RemoteInfo
 pub(in crate::desktop::companion_server) struct CommitsQuery {
     limit: Option<usize>,
     branch: Option<String>,
+    range: Option<String>,
 }
 
 pub async fn list_commits(
     RepoPath(repo): RepoPath,
     axum::extract::Query(q): axum::extract::Query<CommitsQuery>,
 ) -> Result<Json<Vec<CommitEntry>>, ApiError> {
-    let commits = commands::list_commits(repo, q.limit, q.branch).map_err(ApiError::Internal)?;
+    let commits =
+        commands::list_commits(repo, q.limit, q.branch, q.range).map_err(ApiError::Internal)?;
     Ok(Json(commits))
 }
 
