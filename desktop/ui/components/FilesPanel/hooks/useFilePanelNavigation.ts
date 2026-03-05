@@ -46,9 +46,11 @@ export function useFilePanelNavigation({
     hunks.length === 0 ? "browse" : "changes",
   );
   const userHasChosenFilesPanelTab = useRef(false);
+  const pendingScrollTarget = useRef<string | null>(null);
 
   const handleSetFilesPanelTab = useCallback((mode: FilesPanelTab) => {
     userHasChosenFilesPanelTab.current = true;
+    pendingScrollTarget.current = null;
     setFilesPanelTab(mode);
   }, []);
 
@@ -134,30 +136,34 @@ export function useFilePanelNavigation({
   const expandAndScrollTo = useCallback(
     (targetPath: string, includeTarget: boolean) => {
       const parts = targetPath.split("/");
-      const pathsToExpand = new Set(expandedPaths);
       const end = includeTarget ? parts.length : parts.length - 1;
-      for (let i = 1; i <= end; i++) {
-        pathsToExpand.add(parts.slice(0, i).join("/"));
-      }
-      setExpandedPaths(pathsToExpand);
-
-      const timerId = setTimeout(() => {
-        const ref = fileRefs.current.get(targetPath);
-        if (ref) {
-          ref.scrollIntoView({ behavior: "smooth", block: "center" });
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        for (let i = 1; i <= end; i++) {
+          next.add(parts.slice(0, i).join("/"));
         }
-      }, 100);
-      return () => clearTimeout(timerId);
+        return next;
+      });
+
+      // Try scrolling immediately; if the ref isn't registered yet
+      // (e.g. tab is still switching), store as pending so registerRef
+      // can scroll when the element mounts.
+      const ref = fileRefs.current.get(targetPath);
+      if (ref) {
+        ref.scrollIntoView({ behavior: "smooth", block: "center" });
+        pendingScrollTarget.current = null;
+      } else {
+        pendingScrollTarget.current = targetPath;
+      }
     },
-    [expandedPaths],
+    [],
   );
 
   // Reveal file in tree
   useEffect(() => {
     if (!fileToReveal) return;
-    const cleanup = expandAndScrollTo(fileToReveal, false);
+    expandAndScrollTo(fileToReveal, false);
     clearFileToReveal();
-    return cleanup;
   }, [fileToReveal, clearFileToReveal, expandAndScrollTo]);
 
   // Reveal directory in tree (from breadcrumb clicks)
@@ -172,9 +178,8 @@ export function useFilePanelNavigation({
       setFilesPanelTab("browse");
     }
 
-    const cleanup = expandAndScrollTo(directoryToReveal, true);
+    expandAndScrollTo(directoryToReveal, true);
     clearDirectoryToReveal();
-    return cleanup;
   }, [
     directoryToReveal,
     clearDirectoryToReveal,
@@ -240,6 +245,10 @@ export function useFilePanelNavigation({
     (path: string, el: HTMLButtonElement | null) => {
       if (el) {
         fileRefs.current.set(path, el);
+        if (pendingScrollTarget.current === path) {
+          pendingScrollTarget.current = null;
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
       } else {
         fileRefs.current.delete(path);
       }
