@@ -83,7 +83,11 @@ export interface CommitEntry {
   shortHash: string;
   message: string;
   author: string;
+  authorEmail: string;
   date: string;
+  fileCount?: number;
+  additions?: number;
+  deletions?: number;
 }
 
 // Detailed commit information including changed files

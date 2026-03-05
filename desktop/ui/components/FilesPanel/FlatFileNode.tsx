@@ -48,6 +48,7 @@ export const FlatFileNode = memo(function FlatFileNode({
   symlinkTarget,
 }: FlatFileNodeProps) {
   const { grayscaleIcons, showRevealInBrowse } = useFilesPanelContext();
+
   const isSelected = selectedFile === filePath;
   const hasReviewableContent = hunkStatus.total > 0;
   const hasPending = hunkStatus.pending > 0;

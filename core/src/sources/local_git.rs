@@ -363,30 +363,47 @@ impl LocalGitSource {
         range: Option<&str>,
     ) -> Result<Vec<CommitEntry>, LocalGitError> {
         let limit_str = format!("-{limit}");
-        let format_str = "%H%n%h%n%s%n%an%n%aI";
+        let format_str = "--COMMIT--%n%H%n%h%n%s%n%an%n%ae%n%aI";
         let ref_arg = range.or(branch).unwrap_or("HEAD");
 
         let output = self.run_git(&[
             "log",
             &limit_str,
             &format!("--format={format_str}"),
+            "--shortstat",
             ref_arg,
         ])?;
 
         let mut commits = Vec::new();
-        let lines: Vec<&str> = output.lines().collect();
 
-        // Each commit produces exactly 5 lines
-        for chunk in lines.chunks(5) {
-            if chunk.len() == 5 {
-                commits.push(CommitEntry {
-                    hash: chunk[0].to_owned(),
-                    short_hash: chunk[1].to_owned(),
-                    message: chunk[2].to_owned(),
-                    author: chunk[3].to_owned(),
-                    date: chunk[4].to_owned(),
-                });
+        // Split on the --COMMIT-- delimiter; first chunk before any delimiter is empty
+        for chunk in output.split("--COMMIT--\n").skip(1) {
+            let lines: Vec<&str> = chunk.lines().filter(|l| !l.is_empty()).collect();
+            if lines.len() < 6 {
+                continue;
             }
+
+            // First 6 non-empty lines are: hash, short_hash, subject, author, email, date
+            // Any remaining non-empty line is the shortstat output
+            let (file_count, additions, deletions) = if lines.len() > 6 {
+                let (f, a, d) = parse_shortstat(lines[6]);
+                (Some(f), Some(a), Some(d))
+            } else {
+                // Merge commits or commits with no diff produce no shortstat
+                (None, None, None)
+            };
+
+            commits.push(CommitEntry {
+                hash: lines[0].to_owned(),
+                short_hash: lines[1].to_owned(),
+                message: lines[2].to_owned(),
+                author: lines[3].to_owned(),
+                author_email: lines[4].to_owned(),
+                date: lines[5].to_owned(),
+                file_count,
+                additions,
+                deletions,
+            });
         }
 
         Ok(commits)

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { getComparisonRange } from "../../../types";
 
@@ -21,6 +21,27 @@ function formatRelativeTime(isoDate: string): string {
   return date.toLocaleDateString();
 }
 
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) return words[0].substring(0, 2).toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+
+function emailToHue(email: string): number {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = email.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return ((hash % 360) + 360) % 360;
+}
+
+const AVATAR_BASE_STYLE: React.CSSProperties = {
+  width: 14,
+  height: 14,
+  fontSize: 7,
+  lineHeight: 1,
+};
+
 interface CommitsPanelProps {
   onSelectCommit: (hash: string) => void;
   selectedCommitHash: string | null;
@@ -41,6 +62,21 @@ export function CommitsPanel({
   const selectedRef = useRef<HTMLButtonElement>(null);
 
   const range = getComparisonRange(comparison);
+
+  // Memoize per-author badge styles for stable references
+  const authorStyles = useMemo(() => {
+    const map = new Map<string, React.CSSProperties>();
+    for (const c of commits) {
+      if (!map.has(c.authorEmail)) {
+        const hue = emailToHue(c.authorEmail);
+        map.set(c.authorEmail, {
+          ...AVATAR_BASE_STYLE,
+          backgroundColor: `hsl(${hue}, 45%, 55%)`,
+        });
+      }
+    }
+    return map;
+  }, [commits]);
 
   // Load commits on mount or when comparison changes
   useEffect(() => {
@@ -132,9 +168,13 @@ export function CommitsPanel({
         </span>
       </div>
 
-      {commits.map((commit) => {
+      {commits.map((commit, index) => {
         const isSelected = commit.hash === selectedCommitHash;
-
+        const prevCommit = index > 0 ? commits[index - 1] : null;
+        const isDifferentAuthor =
+          prevCommit && prevCommit.authorEmail !== commit.authorEmail;
+        const badgeStyle = authorStyles.get(commit.authorEmail);
+        const hasStats = commit.fileCount != null;
         return (
           <button
             key={commit.hash}
@@ -142,6 +182,7 @@ export function CommitsPanel({
             onClick={() => onSelectCommit(commit.hash)}
             className={`w-full text-left px-3 py-2 border-b border-edge/40
                        transition-colors duration-75
+                       ${isDifferentAuthor ? "border-t-2 border-t-edge/60" : ""}
                        ${
                          isSelected
                            ? "bg-focus-ring/10 border-l-2 border-l-focus-ring"
@@ -156,21 +197,45 @@ export function CommitsPanel({
               >
                 {commit.shortHash}
               </span>
-              <span
-                className={`text-xs truncate ${
-                  isSelected ? "text-fg-secondary" : "text-fg-secondary"
-                }`}
-              >
+              <span className="text-xs truncate text-fg-secondary">
                 {commit.message}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span
+                className="flex-shrink-0 inline-flex items-center justify-center rounded-full text-white font-medium"
+                style={badgeStyle}
+                title={`${commit.author} <${commit.authorEmail}>`}
+              >
+                {getInitials(commit.author)}
+              </span>
               <span className="text-xxs text-fg-faint truncate">
                 {commit.author}
               </span>
-              <span className="text-xxs text-fg-faint">
+              <span className="text-xxs text-fg-faint shrink-0">&middot;</span>
+              <span className="text-xxs text-fg-faint shrink-0">
                 {formatRelativeTime(commit.date)}
               </span>
+              {hasStats && (
+                <>
+                  <span className="text-xxs text-fg-faint shrink-0">
+                    &middot;
+                  </span>
+                  <span className="flex items-center gap-1 text-xxs text-fg-faint tabular-nums shrink-0">
+                    <span>{commit.fileCount ?? 0}f</span>
+                    {commit.additions != null && commit.additions > 0 && (
+                      <span className="text-status-added">
+                        +{commit.additions}
+                      </span>
+                    )}
+                    {commit.deletions != null && commit.deletions > 0 && (
+                      <span className="text-status-deleted">
+                        -{commit.deletions}
+                      </span>
+                    )}
+                  </span>
+                </>
+              )}
             </div>
           </button>
         );

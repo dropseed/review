@@ -108,7 +108,14 @@ pub struct CommitEntry {
     pub short_hash: String,
     pub message: String,
     pub author: String,
+    pub author_email: String,
     pub date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<u32>,
 }
 
 /// Detailed commit information including changed files

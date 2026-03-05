@@ -306,6 +306,15 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     registerRef,
   } = useFilePanelNavigation({ sectionedFiles });
 
+  // Wrap handleSelectFile to also clear commit selection
+  const handleSelectFileAndClearCommit = useCallback(
+    (path: string) => {
+      setSelectedCommitHash(null);
+      handleSelectFile(path);
+    },
+    [handleSelectFile],
+  );
+
   // Approval actions
   const { handleApproveAll, handleUnapproveAll, handleRejectAll } =
     useFilePanelApproval();
@@ -678,7 +687,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       expandedPaths,
       togglePath,
       selectedFile,
-      handleSelectFile,
+      handleSelectFile: handleSelectFileAndClearCommit,
       repoPath,
       openInSplit,
       registerRef,
@@ -699,7 +708,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       expandedPaths,
       togglePath,
       selectedFile,
-      handleSelectFile,
+      handleSelectFileAndClearCommit,
       repoPath,
       openInSplit,
       registerRef,
@@ -843,7 +852,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             <SearchResultsPanel />
           ) : viewMode === "git" ? (
             <GitStatusPanel
-              onSelectFile={handleSelectFile}
+              onSelectFile={handleSelectFileAndClearCommit}
               onSelectWorkingTreeFile={selectWorkingTreeFile}
             />
           ) : viewMode === "commits" ? (
@@ -1005,7 +1014,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       depth={0}
                       onToggle={togglePath}
                       selectedFile={selectedFile}
-                      onSelectFile={handleSelectFile}
+                      onSelectFile={handleSelectFileAndClearCommit}
                       repoPath={repoPath}
                       onOpenInSplit={openInSplit}
                       registerRef={registerRef}
