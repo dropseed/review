@@ -664,6 +664,15 @@ impl LocalGitSource {
             }
         }
 
+        // Remove files that are inside gitignored directories — those directories
+        // are lazy-loaded, so tracked files inside them would incorrectly contribute
+        // size/metadata to the collapsed directory entry.
+        all_files.retain(|path| {
+            !gitignored_dirs
+                .iter()
+                .any(|dir| path.starts_with(dir) && path.as_bytes().get(dir.len()) == Some(&b'/'))
+        });
+
         Ok(build_file_tree(
             all_files,
             &file_status,
