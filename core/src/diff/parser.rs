@@ -43,6 +43,31 @@ pub enum LineType {
     Removed,
 }
 
+/// Extract a rename map from a multi-file diff: new_path → old_path.
+///
+/// For renamed files, `--- a/old_path` differs from `+++ b/new_path`.
+/// Returns only entries where the paths actually differ.
+pub fn extract_rename_map(diff_output: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let mut old_file: Option<String> = None;
+
+    for line in diff_output.lines() {
+        if line.starts_with("diff --git ") {
+            old_file = None;
+        } else if let Some(path) = line.strip_prefix("--- a/") {
+            old_file = Some(path.to_owned());
+        } else if let Some(new_path) = line.strip_prefix("+++ b/") {
+            if let Some(ref old_path) = old_file {
+                if old_path != new_path {
+                    map.insert(new_path.to_owned(), old_path.clone());
+                }
+            }
+        }
+    }
+
+    map
+}
+
 /// Parse a git diff output into hunks
 pub fn parse_diff(diff_output: &str, file_path: &str) -> Vec<DiffHunk> {
     let mut hunks = Vec::new();

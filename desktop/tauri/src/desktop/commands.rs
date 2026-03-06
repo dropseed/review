@@ -1539,6 +1539,7 @@ pub async fn get_file_symbol_diffs(
         }
 
         let all_hunks = parse_multi_file_diff(&full_diff);
+        let rename_map = review::diff::parser::extract_rename_map(&full_diff);
 
         // Pass 1: compute FileSymbolDiff per file (parallel), also return file contents for reuse
         let pass1_results: Vec<(
@@ -1555,10 +1556,15 @@ pub async fn get_file_symbol_diffs(
                     let old_ref = old_ref.as_str();
                     let comparison = &comparison;
                     let repo_path = repo_path.as_str();
+                    let rename_map = &rename_map;
                     s.spawn(move || {
-                        // Get old content
+                        // Get old content (use old path for renamed files)
+                        let old_path = rename_map
+                            .get(file_path.as_str())
+                            .map(|s| s.as_str())
+                            .unwrap_or(file_path);
                         let old_content = source
-                            .get_file_bytes(file_path, old_ref)
+                            .get_file_bytes(old_path, old_ref)
                             .ok()
                             .and_then(|bytes| String::from_utf8(bytes).ok());
 

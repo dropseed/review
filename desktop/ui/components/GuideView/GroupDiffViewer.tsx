@@ -121,7 +121,7 @@ function buildFilteredPatch(
     const headerMatch = fullPatch.match(/^([\s\S]*?)(?=^@@\s)/m);
     diffHeader = headerMatch ? headerMatch[1] : "";
   } else {
-    diffHeader = `--- /dev/null\n+++ b/${filePath}\n`;
+    diffHeader = `--- /dev/null\n+++ ${filePath}\n`;
   }
 
   const hunkSections = hunks.map((h) => {
