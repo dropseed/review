@@ -343,7 +343,7 @@ pub fn get_file_content_sync(
     })?;
 
     if !file_exists {
-        debug!("[get_file_content] handling deleted file");
+        debug!("[get_file_content] handling file not on disk");
         let diff_output = source
             .get_diff(&comparison, Some(&file_path))
             .map_err(|e| {
@@ -363,8 +363,33 @@ pub fn get_file_content_sync(
             Err(_) => None,
         };
 
+        // For committed comparisons, the file may exist on the head ref even
+        // though it's not on disk (e.g. new file on a branch we don't have
+        // checked out).  Fetch content from the head ref so the diff renders.
+        let content = if !source.include_working_tree(&comparison) {
+            match source.get_file_bytes(&file_path, &comparison.head) {
+                Ok(bytes) => {
+                    debug!(
+                        "[get_file_content] got content from head ref {}: {} bytes",
+                        comparison.head,
+                        bytes.len()
+                    );
+                    String::from_utf8(bytes).unwrap_or_default()
+                }
+                Err(e) => {
+                    debug!(
+                        "[get_file_content] no content at head ref {}: {e}",
+                        comparison.head
+                    );
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        };
+
         return Ok(FileContent {
-            content: String::new(),
+            content,
             old_content,
             diff_patch: diff_output,
             hunks,
