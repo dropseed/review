@@ -249,8 +249,12 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const comparisonKey = comparison.key;
       const isStale = () => get().comparison.key !== comparisonKey;
 
-      // Clear symbols so they reload when the Symbols tab is next opened
-      clearSymbols();
+      // Clear symbols so they reload when the Symbols tab is next opened.
+      // Skip during refresh to avoid a visual flash — symbols will update
+      // naturally when the FileViewer re-fetches with new data.
+      if (!isRefreshing) {
+        clearSymbols();
+      }
 
       const loadStart = performance.now();
 

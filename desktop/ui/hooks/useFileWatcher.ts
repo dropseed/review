@@ -24,6 +24,8 @@ export function useFileWatcher(comparisonReady: number) {
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
   const comparisonReadyRef = useRef(comparisonReady);
   const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshInProgressRef = useRef(false);
+  const refreshRequestedRef = useRef(false);
   const activeReviewKeyRef = useRef(activeReviewKey);
   const comparisonRef = useRef(comparison);
   const setActiveReviewKeyRef = useRef(setActiveReviewKey);
@@ -128,7 +130,35 @@ export function useFileWatcher(comparisonReady: number) {
     console.log("[watcher] Listening for review-state-changed");
 
     // Git state changed (branch switch, new commit, etc.)
-    // Debounce at 2s to avoid rapid refreshes during active editing
+    // Debounce at 2s to avoid rapid refreshes during active editing.
+    // Guard against overlapping refreshes: if one is in progress, defer
+    // the next until it completes (then debounce again).
+    const scheduleRefresh = () => {
+      clearTimeout(gitChangedTimerRef.current!);
+      console.log("[watcher] Debouncing refresh (2s)...");
+      gitChangedTimerRef.current = setTimeout(async () => {
+        gitChangedTimerRef.current = null;
+        if (refreshInProgressRef.current) {
+          console.log("[watcher] Refresh already in progress, deferring...");
+          refreshRequestedRef.current = true;
+          return;
+        }
+        refreshInProgressRef.current = true;
+        console.log("[watcher] Refreshing...");
+        try {
+          await refreshRef.current();
+        } finally {
+          refreshInProgressRef.current = false;
+          // If another change came in while we were refreshing, schedule again
+          if (refreshRequestedRef.current) {
+            refreshRequestedRef.current = false;
+            console.log("[watcher] Deferred refresh requested, scheduling...");
+            scheduleRefresh();
+          }
+        }
+      }, 2000);
+    };
+
     unlistenFns.push(
       apiClient.onGitChanged((eventRepoPath) => {
         console.log("[watcher] Received git-changed event:", eventRepoPath);
@@ -138,16 +168,7 @@ export function useFileWatcher(comparisonReady: number) {
             console.log("[watcher] Skipping refresh - no comparison selected");
             return;
           }
-          // Clear any pending debounce timer
-          if (gitChangedTimerRef.current) {
-            clearTimeout(gitChangedTimerRef.current);
-          }
-          console.log("[watcher] Debouncing refresh (2s)...");
-          gitChangedTimerRef.current = setTimeout(() => {
-            gitChangedTimerRef.current = null;
-            console.log("[watcher] Refreshing...");
-            refreshRef.current();
-          }, 2000);
+          scheduleRefresh();
         }
         // Always update sidebar freshness on git changes
         checkReviewsFreshnessRef.current();
@@ -156,9 +177,10 @@ export function useFileWatcher(comparisonReady: number) {
     console.log("[watcher] Listening for git-changed");
 
     return () => {
-      if (gitChangedTimerRef.current) {
-        clearTimeout(gitChangedTimerRef.current);
-      }
+      clearTimeout(gitChangedTimerRef.current!);
+      gitChangedTimerRef.current = null;
+      refreshInProgressRef.current = false;
+      refreshRequestedRef.current = false;
       unlistenFns.forEach((fn) => fn());
     };
   }, [repoPath]);

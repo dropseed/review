@@ -709,9 +709,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         checkReviewsFreshness,
       } = get();
 
-      // Increment refresh generation to trigger re-fetches in components like FileViewer
-      set({ refreshGeneration: get().refreshGeneration + 1 });
-
       // Load data in parallel; pass isRefreshing=true to suppress progress indicators
       const range = getComparisonRange(comparison);
       await Promise.all([
@@ -723,6 +720,13 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         checkReviewsFreshness(),
         repoPath ? refreshCommits(repoPath, range) : Promise.resolve(),
       ]);
+
+      // Increment refresh generation AFTER data loads to trigger re-fetches
+      // in components like FileViewer only when new data is actually ready.
+      // (Previously this was at the top, causing a flash as components
+      // re-fetched while stale data was still loading.)
+      set({ refreshGeneration: get().refreshGeneration + 1 });
+
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();
       get().restoreGuideFromState();
