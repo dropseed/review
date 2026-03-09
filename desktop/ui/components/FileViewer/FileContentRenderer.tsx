@@ -195,17 +195,31 @@ function buildDiffHighlightCSS(
   if (lineNumbers.length === 0) return "";
 
   const selectors = lineNumbers.map((n) => `[data-line="${n}"]`).join(", ");
-  const bgVar = isOldMode ? "--diffs-bg-deletion" : "--diffs-bg-addition";
-  const numVar = isOldMode
-    ? "--diffs-bg-deletion-number"
-    : "--diffs-bg-addition-number";
+
+  // Match pierre's bars indicator style: a 4px bar on the left of the line number column
+  // Additions get a solid bar, deletions get a hatched/striped bar
+  const barCSS = isOldMode
+    ? `background-image: linear-gradient(0deg, var(--diffs-bg-deletion) 50%, var(--diffs-deletion-base) 50%);
+  background-repeat: repeat;
+  background-size: 2px 2px;
+  background-size: calc(1lh / round(1lh / 2px)) calc(1lh / round(1lh / 2px));`
+    : `background-color: var(--diffs-addition-base);`;
 
   return `
-:is(${selectors}) > [data-column-content] {
-  background-color: var(${bgVar}) !important;
-}
 :is(${selectors}) > [data-column-number] {
-  background-color: var(${numVar}) !important;
+  position: relative;
+}
+:is(${selectors}) > [data-column-number]::before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  user-select: none;
+  contain: layout paint;
+  ${barCSS}
 }
 `;
 }
