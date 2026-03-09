@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
 import rehypeSlug from "rehype-slug";
 import type { Components } from "react-markdown";
 import { MermaidDiagram } from "./MermaidDiagram";
@@ -73,7 +74,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   return (
     <div className="markdown-prose">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkFrontmatter]}
         rehypePlugins={[rehypeSlug]}
         components={components}
       >
