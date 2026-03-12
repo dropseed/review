@@ -420,21 +420,6 @@ export function GroupDiffViewer({
 
   const isCompleted = unreviewedIds.length === 0;
 
-  // Progressive rendering: mount first 2 files immediately, then 1 more per frame
-  const [mountedCount, setMountedCount] = useState(
-    Math.min(2, filePaths.length),
-  );
-  useEffect(() => {
-    setMountedCount(Math.min(2, filePaths.length));
-  }, [filePaths.length]);
-  useEffect(() => {
-    if (mountedCount >= filePaths.length) return;
-    const id = setTimeout(() => {
-      setMountedCount((prev) => prev + 1);
-    }, 0);
-    return () => clearTimeout(id);
-  }, [mountedCount, filePaths.length]);
-
   const lineHeight = Math.round(codeFontSize * 1.5);
   const fontCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; --diffs-font-family: ${codeFontFamily}; }`;
 
@@ -632,7 +617,7 @@ export function GroupDiffViewer({
       </div>
 
       {/* File sections */}
-      {filePaths.map((filePath, fileIndex) => {
+      {filePaths.map((filePath) => {
         const fc = fileContents.get(filePath);
         const fileHunks = hunksPerFile.get(filePath) ?? [];
         const isLoading = loadingFiles.has(filePath);
@@ -644,8 +629,6 @@ export function GroupDiffViewer({
           autoApproveStaged,
           stagedFilePaths,
         );
-        const deferred = fileIndex >= mountedCount;
-
         return (
           <FileDiffSection
             key={filePath}
@@ -657,9 +640,7 @@ export function GroupDiffViewer({
             onRejectFile={() => handleRejectFileHunks(filePath)}
             onViewFile={() => navigateToBrowse(filePath)}
           >
-            {fc && !deferred
-              ? renderFileContent(fc, filePath, fileHunks)
-              : null}
+            {fc ? renderFileContent(fc, filePath, fileHunks) : null}
           </FileDiffSection>
         );
       })}

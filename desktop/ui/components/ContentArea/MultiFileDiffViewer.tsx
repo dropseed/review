@@ -1,6 +1,9 @@
 import { type ReactNode, useCallback } from "react";
+import { Virtualizer } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
+
+const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
 export function MultiFileDiffViewer(): ReactNode {
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
@@ -57,7 +60,7 @@ export function MultiFileDiffViewer(): ReactNode {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <Virtualizer className="flex-1 scrollbar-thin" style={VIRTUALIZER_STYLE}>
         <GroupDiffViewer
           group={group}
           groupIndex={groupIndex}
@@ -70,7 +73,7 @@ export function MultiFileDiffViewer(): ReactNode {
           }
           onClose={handleClose}
         />
-      </div>
+      </Virtualizer>
     </div>
   );
 }

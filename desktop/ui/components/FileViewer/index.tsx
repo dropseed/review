@@ -6,6 +6,8 @@ import {
   useCallback,
   useRef,
 } from "react";
+import { Virtualizer as VirtualizerClass } from "@pierre/diffs";
+import { VirtualizerContext } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
@@ -93,7 +95,21 @@ export function FileViewer({
 
   const [viewMode, setViewMode] = useDiffViewMode(filePath, isSplitActive);
 
-  const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
+  const [virtualizer] = useState(() => new VirtualizerClass());
+  useEffect(() => {
+    return () => virtualizer.cleanUp();
+  }, [virtualizer]);
+  const [scrollNode, setScrollNodeState] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const setScrollNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node) virtualizer.setup(node);
+      else virtualizer.cleanUp();
+      setScrollNodeState(node);
+    },
+    [virtualizer],
+  );
 
   // Symbol navigation (Cmd+Click)
   const {
@@ -797,29 +813,35 @@ export function FileViewer({
             />
           </div>
         )}
-        <div
-          ref={setScrollNode}
-          className={`min-w-0 flex-1 h-full overflow-auto bg-surface-panel ${
-            contentMode.type === "diff" ? "scrollbar-none" : "scrollbar-thin"
-          }`}
-        >
-          <FileContentRenderer
-            filePath={filePath}
-            fileContent={fileContent}
-            contentMode={contentMode}
-            codeTheme={codeTheme}
-            fontCSS={fontCSS}
-            effectiveLanguage={effectiveLanguage}
-            markdownViewMode={markdownViewMode}
-            highlightLine={highlightLine}
-            lineHeight={lineHeight}
-            onViewInFile={setHighlightLine}
-            annotations={allFileAnnotations}
-            addAnnotation={addAnnotation}
-            updateAnnotation={updateAnnotation}
-            deleteAnnotation={deleteAnnotation}
-          />
-        </div>
+        <VirtualizerContext.Provider value={virtualizer}>
+          <div
+            ref={setScrollNode}
+            className={`min-w-0 flex-1 h-full overflow-auto bg-surface-panel ${
+              contentMode.type === "diff" ? "scrollbar-none" : "scrollbar-thin"
+            }`}
+          >
+            {/* Virtualizer.setup() uses root.firstElementChild as the content
+                container for resize observation. Do not remove this wrapper. */}
+            <div>
+              <FileContentRenderer
+                filePath={filePath}
+                fileContent={fileContent}
+                contentMode={contentMode}
+                codeTheme={codeTheme}
+                fontCSS={fontCSS}
+                effectiveLanguage={effectiveLanguage}
+                markdownViewMode={markdownViewMode}
+                highlightLine={highlightLine}
+                lineHeight={lineHeight}
+                onViewInFile={setHighlightLine}
+                annotations={allFileAnnotations}
+                addAnnotation={addAnnotation}
+                updateAnnotation={updateAnnotation}
+                deleteAnnotation={deleteAnnotation}
+              />
+            </div>
+          </div>
+        </VirtualizerContext.Provider>
         {contentMode.type === "diff" && (
           <DiffMinimap
             markers={minimapMarkers}

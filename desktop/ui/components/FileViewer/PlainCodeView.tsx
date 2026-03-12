@@ -181,11 +181,11 @@ export function PlainCodeView({
     );
   };
 
-  // Render hover utility for adding annotations
+  // Render gutter utility for adding annotations
   // For file view, the callback returns { lineNumber } without side
   // Always render the button — the shadow DOM controls visibility by
   // moving the slot container to the hovered line.
-  const renderHoverUtility = (
+  const renderGutterUtility = (
     getHoveredLine: () => { lineNumber: number } | undefined,
   ) => {
     if (!onAddAnnotation) return null;
@@ -235,7 +235,7 @@ export function PlainCodeView({
         }
         lineAnnotations={lineAnnotations}
         renderAnnotation={renderAnnotation}
-        renderHoverUtility={renderHoverUtility}
+        renderGutterUtility={renderGutterUtility}
         options={{
           theme: {
             dark: theme,
@@ -244,7 +244,7 @@ export function PlainCodeView({
           themeType: "dark",
           disableFileHeader: true,
           unsafeCSS: fontCSS + (extraCSS ?? ""),
-          enableHoverUtility: true,
+          enableGutterUtility: true,
         }}
       />
     </div>

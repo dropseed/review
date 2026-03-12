@@ -1,8 +1,10 @@
-import { PatchDiff } from "@pierre/diffs/react";
+import { PatchDiff, Virtualizer } from "@pierre/diffs/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import type { CommitDetail } from "../../types";
+
+const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
 function formatDate(isoDate: string): string {
   try {
@@ -106,7 +108,10 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
   }, [hash, repoPath]);
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-y-auto">
+    <Virtualizer
+      className="flex flex-1 flex-col min-h-0"
+      style={VIRTUALIZER_STYLE}
+    >
       {/* Header bar */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-edge/60 bg-surface sticky top-0 z-10">
         <button
@@ -277,6 +282,6 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
           ))}
         </>
       )}
-    </div>
+    </Virtualizer>
   );
 }

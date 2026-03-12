@@ -837,7 +837,7 @@ export function DiffView({
     themeType: "dark";
     diffIndicators: "none";
     disableBackground: boolean;
-    enableHoverUtility: boolean;
+    enableGutterUtility: boolean;
     enableLineSelection: boolean;
     onLineSelectionEnd: typeof handleLineSelectionEnd;
     unsafeCSS: string;
@@ -862,7 +862,7 @@ export function DiffView({
       themeType: "dark",
       diffIndicators: "none",
       disableBackground: false,
-      enableHoverUtility: true,
+      enableGutterUtility: true,
       enableLineSelection: true,
       onLineSelectionEnd: handleLineSelectionEnd,
       unsafeCSS: fontCSS + annotationHighlightCSS,
@@ -895,11 +895,11 @@ export function DiffView({
     expandUnchangedProp,
   ]);
 
-  // Stable renderHoverUtility using ref pattern to avoid re-renders
+  // Stable renderGutterUtility using ref pattern to avoid re-renders
   const setNewAnnotationLineRef = useRef(setNewAnnotationLine);
   setNewAnnotationLineRef.current = setNewAnnotationLine;
 
-  const renderHoverUtility = useCallback(
+  const renderGutterUtility = useCallback(
     (
       getHoveredLine: () =>
         | { lineNumber: number; side: "additions" | "deletions" }
@@ -972,7 +972,7 @@ export function DiffView({
             newFile={newFile}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
-            renderHoverUtility={renderHoverUtility}
+            renderGutterUtility={renderGutterUtility}
             options={diffOptions}
           />
         ) : (
@@ -980,7 +980,7 @@ export function DiffView({
             fileDiff={parsedFileDiff!}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
-            renderHoverUtility={renderHoverUtility}
+            renderGutterUtility={renderGutterUtility}
             options={diffOptions}
           />
         )}
