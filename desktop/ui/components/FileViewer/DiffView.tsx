@@ -17,6 +17,7 @@ import {
 } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
+import { stringHash } from "../../utils/string-hash";
 import {
   suppressScrollTracking,
   suppressScrollCorrection,
@@ -721,7 +722,7 @@ export function DiffView({
           name: fileName,
           contents: oldContent ?? "",
           lang: language,
-          cacheKey: `old:${fileName}:${(oldContent ?? "").length}`,
+          cacheKey: `old:${fileName}:${stringHash(oldContent ?? "")}`,
         }
       : undefined;
     if (areFilesEqual(oldFileRef.current, nextFile)) {
@@ -738,7 +739,7 @@ export function DiffView({
           name: fileName,
           contents: newContent ?? "",
           lang: language,
-          cacheKey: `new:${fileName}:${(newContent ?? "").length}`,
+          cacheKey: `new:${fileName}:${stringHash(newContent ?? "")}`,
         }
       : undefined;
     if (areFilesEqual(newFileRef.current, nextFile)) {

@@ -8,6 +8,7 @@ import {
 } from "./annotations/AnnotationEditor";
 import type { SupportedLanguages } from "./languageMap";
 import { SimpleTooltip } from "../ui/tooltip";
+import { stringHash } from "../../utils/string-hash";
 
 // Metadata for annotations in file view
 type FileAnnotationMeta =
@@ -219,15 +220,20 @@ export function PlainCodeView({
     );
   };
 
+  const fileContents = useMemo(
+    () => ({
+      name: filePath,
+      contents: content,
+      lang: language,
+      cacheKey: `file:${filePath}:${stringHash(content)}`,
+    }),
+    [filePath, content, language],
+  );
+
   return (
     <div ref={containerRef}>
       <PierreFile
-        file={{
-          name: filePath,
-          contents: content,
-          lang: language,
-          cacheKey: `file:${filePath}:${content.length}`,
-        }}
+        file={fileContents}
         selectedLines={
           highlightLine
             ? { start: highlightLine, end: highlightLine, side: "additions" }
