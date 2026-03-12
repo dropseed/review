@@ -7,6 +7,10 @@ export default defineConfig({
   plugins: [react()],
   // Use absolute paths for BrowserRouter compatibility
   base: "/",
+  // @pierre/diffs workers use code-splitting, which requires ES module format
+  worker: {
+    format: "es",
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./ui"),
