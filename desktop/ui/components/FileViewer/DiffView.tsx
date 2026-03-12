@@ -203,9 +203,22 @@ export function DiffView({
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
 
-  // Track when syntax highlighting finishes
+  // Hash file contents once for use in cache keys and content-change detection.
+  const oldContentHash = useMemo(
+    () => stringHash(oldContent ?? ""),
+    [oldContent],
+  );
+  const newContentHash = useMemo(
+    () => stringHash(newContent ?? ""),
+    [newContent],
+  );
+
+  // Track when syntax highlighting finishes.
+  // Include content hashes so the shimmer resets when file content changes
+  // (the MultiFileDiff key forces a remount, recreating the shadow DOM).
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
-  const highlightReady = useSyntaxHighlightReady(diffContainerRef, fileName);
+  const contentKey = `${fileName}:${oldContentHash}:${newContentHash}`;
+  const highlightReady = useSyntaxHighlightReady(diffContainerRef, contentKey);
 
   // Scroll to focused hunk when scrollTarget changes (type "hunk").
   // Uses store.subscribe to avoid re-rendering on every scrollTarget change.
@@ -722,7 +735,7 @@ export function DiffView({
           name: fileName,
           contents: oldContent ?? "",
           lang: language,
-          cacheKey: `old:${fileName}:${stringHash(oldContent ?? "")}`,
+          cacheKey: `old:${fileName}:${oldContentHash}`,
         }
       : undefined;
     if (areFilesEqual(oldFileRef.current, nextFile)) {
@@ -739,7 +752,7 @@ export function DiffView({
           name: fileName,
           contents: newContent ?? "",
           lang: language,
-          cacheKey: `new:${fileName}:${stringHash(newContent ?? "")}`,
+          cacheKey: `new:${fileName}:${newContentHash}`,
         }
       : undefined;
     if (areFilesEqual(newFileRef.current, nextFile)) {
@@ -969,6 +982,7 @@ export function DiffView({
       >
         {hasFileContents && oldFile && newFile ? (
           <MultiFileDiff
+            key={`${oldFile.cacheKey}|${newFile.cacheKey}`}
             oldFile={oldFile}
             newFile={newFile}
             lineAnnotations={lineAnnotations}
