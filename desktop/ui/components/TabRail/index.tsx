@@ -143,6 +143,9 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const reviewActiveState = useReviewStore((s) => s.reviewActiveState);
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
+  const pinnedReviewKeys = useReviewStore((s) => s.pinnedReviewKeys);
+  const pinReview = useReviewStore((s) => s.pinReview);
+  const unpinReview = useReviewStore((s) => s.unpinReview);
 
   const reviewState = useReviewStore((s) => s.reviewState);
   const hunks = useReviewStore((s) => s.hunks);
@@ -155,26 +158,48 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
 
   const [inactiveCollapsed, setInactiveCollapsed] = useState(true);
 
-  const { activeReviews, inactiveReviews } = useMemo(() => {
-    const active: GlobalReviewSummary[] = [];
+  const { pinnedActive, unpinnedActive, inactiveReviews } = useMemo(() => {
+    const pinnedSet = new Set(pinnedReviewKeys);
+    const pinned: GlobalReviewSummary[] = [];
+    const unpinned: GlobalReviewSummary[] = [];
     const inactive: GlobalReviewSummary[] = [];
     for (const review of globalReviews) {
       const key = reviewKey(review);
+      const isPinned = pinnedSet.has(key);
       // Default to active if state is unknown (loading / not yet checked)
       const isActive = reviewActiveState[key] ?? true;
-      if (isActive) {
-        active.push(review);
+      if (isPinned) {
+        pinned.push(review);
+      } else if (isActive) {
+        unpinned.push(review);
       } else {
         inactive.push(review);
       }
     }
-    return { activeReviews: active, inactiveReviews: inactive };
-  }, [globalReviews, reviewActiveState]);
-
-  const sortedActive = useMemo(
-    () => sortReviews(activeReviews, reviewSortOrder, reviewDiffStats),
-    [activeReviews, reviewSortOrder, reviewDiffStats],
-  );
+    // Pinned: maintain the order from pinnedReviewKeys
+    const pinIndex = new Map(pinnedReviewKeys.map((k, i) => [k, i]));
+    pinned.sort(
+      (a, b) =>
+        (pinIndex.get(reviewKey(a)) ?? 0) - (pinIndex.get(reviewKey(b)) ?? 0),
+    );
+    // Unpinned: sort by user's chosen sort order
+    const sortedUnpinned = sortReviews(
+      unpinned,
+      reviewSortOrder,
+      reviewDiffStats,
+    );
+    return {
+      pinnedActive: pinned,
+      unpinnedActive: sortedUnpinned,
+      inactiveReviews: inactive,
+    };
+  }, [
+    globalReviews,
+    reviewActiveState,
+    pinnedReviewKeys,
+    reviewSortOrder,
+    reviewDiffStats,
+  ]);
 
   const sortedInactive = useMemo(
     () => sortReviews(inactiveReviews, "repo", reviewDiffStats),
@@ -211,9 +236,23 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
     [deleteGlobalReview],
   );
 
+  const handleTogglePin = useCallback(
+    (review: GlobalReviewSummary) => {
+      const key = reviewKey(review);
+      const { pinnedReviewKeys: keys } = useReviewStore.getState();
+      if (keys.includes(key)) {
+        unpinReview(key);
+      } else {
+        pinReview(key);
+      }
+    },
+    [pinReview, unpinReview],
+  );
+
   function itemPropsFor(
     review: GlobalReviewSummary,
     isInactive: boolean,
+    isPinned: boolean,
     currentSortOrder: ReviewSortOrder,
   ) {
     const meta = repoMetadata[review.repoPath];
@@ -232,12 +271,14 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
       repoName: meta?.routePrefix ?? review.repoName,
       defaultBranch: meta?.defaultBranch,
       isInactive,
+      isPinned,
       avatarUrl: meta?.avatarUrl,
       sortOrder: currentSortOrder,
       diffStats: reviewDiffStats[key],
       missingRefs: reviewMissingRefs[key],
       onActivate: onActivateReview,
       onDelete: handleDeleteReview,
+      onTogglePin: handleTogglePin,
     };
   }
 
@@ -279,7 +320,7 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
         </div>
       )}
 
-      {sortedActive.length > 0 && (
+      {(pinnedActive.length > 0 || unpinnedActive.length > 0) && (
         <>
           <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
             <span className="text-[9px] uppercase tracking-wider text-fg-faint">
@@ -292,12 +333,24 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
               ariaLabel="Sort reviews"
             />
           </div>
-          {sortedActive.map((review) => {
+          {pinnedActive.map((review) => {
             const key = reviewKey(review);
             return (
               <TabRailItem
                 key={key}
-                {...itemPropsFor(review, false, reviewSortOrder)}
+                {...itemPropsFor(review, false, true, reviewSortOrder)}
+              />
+            );
+          })}
+          {pinnedActive.length > 0 && unpinnedActive.length > 0 && (
+            <div className="mx-2 my-1 border-b border-edge-default" />
+          )}
+          {unpinnedActive.map((review) => {
+            const key = reviewKey(review);
+            return (
+              <TabRailItem
+                key={key}
+                {...itemPropsFor(review, false, false, reviewSortOrder)}
               />
             );
           })}
@@ -306,7 +359,9 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
 
       {sortedInactive.length > 0 && (
         <>
-          {sortedActive.length > 0 && <div className="h-2" />}
+          {(pinnedActive.length > 0 || unpinnedActive.length > 0) && (
+            <div className="h-2" />
+          )}
           <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
             <button
               type="button"
@@ -337,7 +392,7 @@ function TabRailList({ onActivateReview }: TabRailListProps): ReactNode {
               return (
                 <TabRailItem
                   key={key}
-                  {...itemPropsFor(review, true, "repo")}
+                  {...itemPropsFor(review, true, false, "repo")}
                 />
               );
             })}

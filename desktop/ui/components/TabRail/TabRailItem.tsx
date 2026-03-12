@@ -67,12 +67,14 @@ interface TabRailItemProps {
   repoName: string;
   defaultBranch?: string;
   isInactive?: boolean;
+  isPinned?: boolean;
   avatarUrl?: string | null;
   sortOrder?: ReviewSortOrder;
   diffStats?: DiffShortStat;
   missingRefs?: string[];
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
+  onTogglePin?: (review: GlobalReviewSummary) => void;
 }
 
 /** Value-based comparison so items skip re-render when globalReviews is reconstructed. */
@@ -101,9 +103,12 @@ function arePropsEqual(
   if (prev.diffStats?.deletions !== next.diffStats?.deletions) return false;
   // Missing refs
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
+  // Pinned state
+  if (prev.isPinned !== next.isPinned) return false;
   // Callbacks
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
+  if (prev.onTogglePin !== next.onTogglePin) return false;
   return true;
 }
 
@@ -112,12 +117,14 @@ export const TabRailItem = memo(function TabRailItem({
   repoName,
   defaultBranch,
   isInactive,
+  isPinned,
   avatarUrl,
   sortOrder,
   diffStats,
   missingRefs,
   onActivate,
   onDelete,
+  onTogglePin,
 }: TabRailItemProps) {
   const isActive = useReviewStore(
     (s) =>
@@ -238,6 +245,16 @@ export const TabRailItem = memo(function TabRailItem({
               className="h-3 w-3 shrink-0 rounded-sm"
             />
           )}
+          {isPinned && (
+            <svg
+              className="h-2.5 w-2.5 shrink-0 text-fg-faint -mr-0.5"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M16 2l-4 4-5-1-2 2 4.5 4.5L4 17l1 1 5.5-5.5L15 17l2-2-1-5 4-4-4-4z" />
+            </svg>
+          )}
           <span className="text-xs text-fg-muted truncate min-w-0">
             {review.repoName}
           </span>
@@ -309,6 +326,18 @@ export const TabRailItem = memo(function TabRailItem({
             className="fixed z-50 min-w-[160px] rounded-lg border border-edge-default bg-surface-raised/90 backdrop-blur-xl py-1 shadow-xl"
             style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
+            {onTogglePin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  onTogglePin(review);
+                }}
+                className="w-full px-3 py-1.5 text-left text-xs text-fg-secondary hover:bg-fg/[0.08] transition-colors"
+              >
+                {isPinned ? "Unpin Review" : "Pin Review"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
