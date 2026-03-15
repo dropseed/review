@@ -1,8 +1,3 @@
-// Install mock Tauri APIs before any Tauri calls happen
-// This must run before App renders and triggers useEffect hooks
-import { installMockTauri } from "./utils/tauriMock";
-installMockTauri();
-
 import { scan, setOptions } from "react-scan";
 import { onScanRender, initReactScanLog } from "./utils/reactScanLog";
 scan({});

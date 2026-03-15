@@ -140,11 +140,6 @@ const defaults = {
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
   fileSortOrder: "name" as FileSortOrder,
-  companionServerEnabled: false,
-  companionServerToken: null as string | null,
-  companionServerPort: 3333,
-  companionServerFingerprint: null as string | null,
-  companionServerError: null as string | null,
   pinnedReviewKeys: [] as string[],
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -193,13 +188,6 @@ export interface PreferencesSlice {
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
-
-  // Companion server
-  companionServerEnabled: boolean;
-  companionServerToken: string | null;
-  companionServerPort: number;
-  companionServerFingerprint: string | null;
-  companionServerError: string | null;
 
   // Pinned reviews
   pinnedReviewKeys: string[];
@@ -260,13 +248,6 @@ export interface PreferencesSlice {
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
 
-  // Companion server actions
-  setCompanionServerEnabled: (enabled: boolean) => Promise<void>;
-  setCompanionServerToken: (token: string | null) => void;
-  setCompanionServerPort: (port: number) => void;
-  generateCompanionServerToken: () => Promise<string>;
-  regenerateCompanionCertificate: () => Promise<void>;
-
   // Pinned reviews actions
   pinReview: (key: string) => void;
   unpinReview: (key: string) => void;
@@ -287,21 +268,6 @@ export interface PreferencesSlice {
 export const createPreferencesSlice: SliceCreatorWithStorage<
   PreferencesSlice
 > = (storage: StorageService) => (set, get) => {
-  /** Log a companion server error and disable the server in both state and storage. */
-  function handleCompanionServerError(context: string, error: unknown): void {
-    const message = String(error);
-    console.error(`${context}:`, message);
-    set({ companionServerEnabled: false, companionServerError: message });
-    storage.set("companionServerEnabled", false);
-  }
-
-  /** Start the companion server on the currently configured port. */
-  function startCompanionServer(): Promise<void> {
-    return invoke("start_companion_server", {
-      port: get().companionServerPort,
-    });
-  }
-
   return {
     ...defaults,
     fileToReveal: null,
@@ -445,16 +411,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         applyUiTheme(getUiTheme(loaded.uiTheme));
       }
 
-      // Start companion server if it was previously enabled
-      if (loaded.companionServerEnabled) {
-        startCompanionServer().catch((e) => {
-          handleCompanionServerError(
-            "Failed to start companion server on load",
-            e,
-          );
-        });
-      }
-
       set({ preferencesLoaded: true });
     },
 
@@ -541,61 +497,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setFileSortOrder: (order) => {
       set({ fileSortOrder: order });
       storage.set("fileSortOrder", order);
-    },
-
-    setCompanionServerEnabled: async (enabled) => {
-      set({ companionServerEnabled: enabled, companionServerError: null });
-      storage.set("companionServerEnabled", enabled);
-      try {
-        if (enabled) {
-          await startCompanionServer();
-          // Fetch fingerprint after server starts (cert is generated on start)
-          const fingerprint = await invoke<string | null>(
-            "get_companion_fingerprint",
-          );
-          set({ companionServerFingerprint: fingerprint });
-        } else {
-          await invoke("stop_companion_server");
-        }
-      } catch (e) {
-        handleCompanionServerError("Failed to toggle companion server", e);
-      }
-    },
-
-    setCompanionServerToken: (token) => {
-      set({ companionServerToken: token });
-      storage.set("companionServerToken", token);
-    },
-
-    setCompanionServerPort: (port) => {
-      set({ companionServerPort: port, companionServerError: null });
-      storage.set("companionServerPort", port);
-    },
-
-    generateCompanionServerToken: async () => {
-      const token = await invoke<string>("generate_companion_token");
-      set({ companionServerToken: token });
-      storage.set("companionServerToken", token);
-      return token;
-    },
-
-    regenerateCompanionCertificate: async () => {
-      try {
-        const fingerprint = await invoke<string>(
-          "regenerate_companion_certificate",
-        );
-        set({
-          companionServerFingerprint: fingerprint,
-          companionServerError: null,
-        });
-        // Restart the server if running so it uses the new cert
-        if (get().companionServerEnabled) {
-          await invoke("stop_companion_server");
-          await startCompanionServer();
-        }
-      } catch (e) {
-        handleCompanionServerError("Failed to regenerate certificate", e);
-      }
     },
 
     pinReview: (key) => {

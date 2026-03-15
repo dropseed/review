@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { hostname as getHostname } from "@tauri-apps/plugin-os";
 import { useReviewStore } from "../../stores";
 import {
   CODE_FONT_SIZE_DEFAULT,
@@ -88,55 +86,6 @@ function ErrorBanner({
   );
 }
 
-interface CopyableFieldProps {
-  label: string;
-  value: string;
-  copiedLabel: string | null;
-  copyId: string;
-  onCopy: (text: string, label: string) => void;
-  truncate?: boolean;
-  onRegenerate?: () => void;
-}
-
-const FIELD_ACTION_CLASS =
-  "rounded-md px-2 py-1 text-xxs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary";
-
-function CopyableField({
-  label,
-  value,
-  copiedLabel,
-  copyId,
-  onCopy,
-  truncate,
-  onRegenerate,
-}: CopyableFieldProps): ReactNode {
-  return (
-    <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <div className="text-xxs text-fg-muted mb-0.5">{label}</div>
-        <code
-          className={`text-xs text-fg-muted${truncate ? " block truncate" : ""}`}
-        >
-          {value}
-        </code>
-      </div>
-      <div className="ml-2 flex shrink-0 gap-1">
-        {onRegenerate && (
-          <button onClick={onRegenerate} className={FIELD_ACTION_CLASS}>
-            Regenerate
-          </button>
-        )}
-        <button
-          onClick={() => onCopy(value, copyId)}
-          className={FIELD_ACTION_CLASS}
-        >
-          {copiedLabel === copyId ? "Copied" : "Copy"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function SettingsModal({
   isOpen,
   onClose,
@@ -156,109 +105,14 @@ export function SettingsModal({
   const setSoundEffectsEnabled = useReviewStore(
     (s) => s.setSoundEffectsEnabled,
   );
-  const companionServerEnabled = useReviewStore(
-    (s) => s.companionServerEnabled,
-  );
-  const setCompanionServerEnabled = useReviewStore(
-    (s) => s.setCompanionServerEnabled,
-  );
-  const companionServerToken = useReviewStore((s) => s.companionServerToken);
-  const companionServerPort = useReviewStore((s) => s.companionServerPort);
-  const setCompanionServerPort = useReviewStore(
-    (s) => s.setCompanionServerPort,
-  );
-  const generateCompanionServerToken = useReviewStore(
-    (s) => s.generateCompanionServerToken,
-  );
-  const companionServerFingerprint = useReviewStore(
-    (s) => s.companionServerFingerprint,
-  );
-  const regenerateCompanionCertificate = useReviewStore(
-    (s) => s.regenerateCompanionCertificate,
-  );
-  const companionServerError = useReviewStore((s) => s.companionServerError);
   const autoStartDelay = useReviewStore((s) => s.autoStartDelay);
   const setAutoStartDelay = useReviewStore((s) => s.setAutoStartDelay);
 
   const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
-  const [machineHostname, setMachineHostname] = useState<string>("");
-  const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
-  const [companionCopied, setCompanionCopied] = useState<string | null>(null);
-  const [companionQrSvg, setCompanionQrSvg] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) setFontFamilyDraft(codeFontFamily);
   }, [isOpen, codeFontFamily]);
-
-  useEffect(() => {
-    if (isOpen) {
-      getHostname()
-        .then((h) => setMachineHostname(h ?? "localhost"))
-        .catch(() => setMachineHostname("localhost"));
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen && companionServerEnabled) {
-      invoke<string | null>("get_tailscale_ip")
-        .then(setTailscaleIp)
-        .catch(() => setTailscaleIp(null));
-    } else {
-      setTailscaleIp(null);
-    }
-  }, [isOpen, companionServerEnabled]);
-
-  // Auto-generate token if enabled but no token exists
-  useEffect(() => {
-    if (isOpen && companionServerEnabled && !companionServerToken) {
-      generateCompanionServerToken();
-    }
-  }, [
-    isOpen,
-    companionServerEnabled,
-    companionServerToken,
-    generateCompanionServerToken,
-  ]);
-
-  const serverUrl = `https://${machineHostname || "localhost"}:${companionServerPort}`;
-  const tailscaleUrl = tailscaleIp
-    ? `https://${tailscaleIp}:${companionServerPort}`
-    : null;
-
-  useEffect(() => {
-    if (
-      !isOpen ||
-      !companionServerEnabled ||
-      !companionServerToken ||
-      !companionServerFingerprint ||
-      !machineHostname
-    ) {
-      setCompanionQrSvg(null);
-      return;
-    }
-    const qrUrl = tailscaleUrl ?? serverUrl;
-    invoke<string>("generate_companion_qr", { url: qrUrl })
-      .then(setCompanionQrSvg)
-      .catch(() => setCompanionQrSvg(null));
-  }, [
-    isOpen,
-    companionServerEnabled,
-    companionServerToken,
-    companionServerFingerprint,
-    serverUrl,
-    tailscaleUrl,
-    machineHostname,
-  ]);
-
-  const copyToClipboard = useCallback(async (text: string, label: string) => {
-    try {
-      await writeText(text);
-      setCompanionCopied(label);
-      setTimeout(() => setCompanionCopied(null), 2000);
-    } catch {
-      // Ignore clipboard errors
-    }
-  }, []);
 
   // CLI install status (hidden in dev mode)
   const [devMode, setDevMode] = useState(false);
@@ -749,107 +603,6 @@ export function SettingsModal({
               )}
             </div>
           )}
-
-          {/* iOS Companion */}
-          <div className="px-5 py-4">
-            <SectionHeader
-              label="iOS Companion"
-              icon={
-                <>
-                  <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-                  <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-                  <line x1="12" y1="20" x2="12.01" y2="20" />
-                </>
-              }
-            />
-
-            <ToggleRow
-              label="Enable companion server"
-              checked={companionServerEnabled}
-              onCheckedChange={setCompanionServerEnabled}
-            />
-
-            {companionServerError && (
-              <ErrorBanner message={companionServerError} />
-            )}
-
-            <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2">
-              <label className="text-xxs text-fg-muted">Port</label>
-              <Input
-                type="number"
-                min={1024}
-                max={65535}
-                value={companionServerPort}
-                disabled={companionServerEnabled}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (val >= 1024 && val <= 65535) {
-                    setCompanionServerPort(val);
-                  }
-                }}
-                className="w-24 text-xs text-right"
-              />
-            </div>
-
-            {companionServerEnabled && (
-              <div className="mt-2 space-y-2">
-                {companionQrSvg && (
-                  <div className="flex justify-center">
-                    <div className="rounded-lg bg-white p-2">
-                      <img
-                        src={`data:image/svg+xml;utf8,${encodeURIComponent(companionQrSvg)}`}
-                        alt="QR code for iOS pairing"
-                        className="block h-auto w-full"
-                      />
-                    </div>
-                  </div>
-                )}
-                <CopyableField
-                  label="Server URL"
-                  value={serverUrl}
-                  copiedLabel={companionCopied}
-                  copyId="url"
-                  onCopy={copyToClipboard}
-                />
-                {tailscaleUrl && (
-                  <CopyableField
-                    label="Tailscale URL"
-                    value={tailscaleUrl}
-                    copiedLabel={companionCopied}
-                    copyId="tailscale-url"
-                    onCopy={copyToClipboard}
-                  />
-                )}
-                {companionServerToken && (
-                  <CopyableField
-                    label="Auth Token"
-                    value={companionServerToken}
-                    copiedLabel={companionCopied}
-                    copyId="token"
-                    onCopy={copyToClipboard}
-                    onRegenerate={generateCompanionServerToken}
-                    truncate
-                  />
-                )}
-                {companionServerFingerprint && (
-                  <CopyableField
-                    label="Certificate Fingerprint"
-                    value={companionServerFingerprint}
-                    copiedLabel={companionCopied}
-                    copyId="fingerprint"
-                    onCopy={copyToClipboard}
-                    onRegenerate={regenerateCompanionCertificate}
-                    truncate
-                  />
-                )}
-              </div>
-            )}
-
-            <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-              Allows the Review mobile app to connect over your local network.
-            </p>
-          </div>
         </div>
 
         <div className="border-t border-edge bg-surface-panel/50 px-5 py-3 flex items-center justify-between">

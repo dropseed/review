@@ -59,8 +59,7 @@ To analyze render performance, read the JSONL file and look for:
 
 - `api/client.ts` — `ApiClient` interface (all backend operations)
 - `api/tauri-client.ts` — Production implementation wrapping Tauri `invoke()` calls
-- `api/http-client.ts` — Web/mobile implementation using HTTP (talks to companion server)
-- `api/index.ts` — Factory that picks the right client based on environment
+- `api/index.ts` — Factory that creates the API client
 
 ## Platform Abstraction
 

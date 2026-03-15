@@ -49,7 +49,6 @@ graph TB
     subgraph Desktop["Desktop (desktop/tauri/)"]
         commands["commands.rs"]
         watchers["watchers.rs"]
-        companion_server["companion_server.rs"]
     end
 
     subgraph Core["Core Library (core/)"]
@@ -96,7 +95,6 @@ The project is organized as a Cargo workspace with three top-level directories:
 
 - **`core/`** — Core Rust library + CLI. All business logic, no Tauri dependencies.
 - **`desktop/`** — Desktop app. Contains `tauri/` (Rust Tauri crate) and `ui/` (React frontend).
-- **`ios/`** — Native SwiftUI companion app. Connects to the desktop companion server over HTTP.
 
 Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/tauri/src/desktop/commands.rs`. Data flows: Rust computes diffs/hunks → Zustand stores state → user actions invoke Rust → Rust persists to `~/.review/`.
 
@@ -132,7 +130,7 @@ When adding new commands, include timing with `Instant::now()` / `t0.elapsed()` 
 
 - **Error handling**: Rust uses `anyhow::Result`, Tauri commands return `Result<T, String>`, frontend uses try/catch on `invoke()`
 - **Tauri IPC**: Commands defined in `commands.rs` as `#[tauri::command]` fns, called from frontend via `invoke("command_name", { args })`
-- **API abstraction**: `desktop/ui/api/` provides an `ApiClient` interface; `tauri-client.ts` wraps `invoke()` calls, `http-client.ts` is for the companion server
+- **API abstraction**: `desktop/ui/api/` provides an `ApiClient` interface; `tauri-client.ts` wraps `invoke()` calls
 - **Platform abstraction**: `desktop/ui/platform/` abstracts Tauri vs web (storage, file paths)
 
 ## Extending

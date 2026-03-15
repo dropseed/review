@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 review = { path = "../../core", features = ["symbols-dev"] }
 
 # Tauri and plugins
-tauri = { version = "2.10", features = ["devtools", "tray-icon", "image-png"] }
+tauri = { version = "2.10", features = ["devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
@@ -43,16 +43,7 @@ notify = "6.0"
 notify-debouncer-mini = "0.4"
 ignore = "0.4"
 chrono = "0.4"
-axum = "0.8"
-axum-server = { version = "0.8", features = ["tls-rustls"] }
-rustls = { version = "0.23", features = ["ring"] }
-tower-http = { version = "0.6", features = ["cors"] }
-tower = "0.5"
-rcgen = "0.13"
-sha2 = "0.10"
-getrandom = "0.2"
 sentry = "0.35"
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 dirs = "6"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 

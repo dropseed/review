@@ -3,11 +3,8 @@
 //! This module contains all Tauri-specific code including:
 //! - Command handlers (commands.rs)
 //! - File system watchers (watchers.rs)
-//! - Companion HTTP server (companion_server.rs)
 
 pub mod commands;
-pub mod companion_server;
-pub mod tray;
 pub mod watchers;
 
 // Re-export commands for convenient access
@@ -553,14 +550,6 @@ pub fn run() {
             commands::set_sentry_consent,
             commands::update_menu_state,
             commands::check_reviews_freshness,
-            commands::generate_companion_token,
-            commands::start_companion_server,
-            commands::stop_companion_server,
-            commands::get_companion_server_status,
-            commands::get_companion_fingerprint,
-            commands::regenerate_companion_certificate,
-            commands::generate_companion_qr,
-            commands::get_tailscale_ip,
             commands::detect_vscode_theme,
             commands::set_window_background_color,
             commands::read_settings,
@@ -584,13 +573,7 @@ pub fn run() {
                     emit_cli_open_review(app_handle, &repo_path, comparison_key.as_deref());
                 }
             }
-            tauri::RunEvent::Exit => {
-                if companion_server::is_running() {
-                    log::info!("Stopping companion server before exit");
-                    companion_server::stop();
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-            }
+            tauri::RunEvent::Exit => {}
             _ => {}
         }
     });
