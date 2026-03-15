@@ -7,8 +7,9 @@ export function fileNameColor(
   isGitignored: boolean,
   status?: string,
 ): string {
-  if (isSelected) return "text-fg";
-  if (isGitignored) return "text-fg-muted";
+  const deleted = status === "deleted" ? "line-through " : "";
+  if (isSelected) return `${deleted}text-fg`;
+  if (isGitignored) return `${deleted}text-fg-muted`;
   if (status === "deleted") return "line-through text-status-deleted";
   if (status === "added" || status === "untracked") return "text-status-added";
   return "text-fg-secondary";
