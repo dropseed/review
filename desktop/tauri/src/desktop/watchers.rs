@@ -157,6 +157,8 @@ fn should_ignore_path(path_str: &str) -> bool {
 /// Categorize what kind of change occurred
 enum ChangeKind {
     ReviewState,
+    /// A git-internal state change (index, HEAD, refs/heads) that affects branch/working-tree status.
+    GitState,
     WorkingTree,
     Ignored,
 }
@@ -166,6 +168,19 @@ fn is_log_file(path_str: &str) -> bool {
     std::path::Path::new(path_str)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("log"))
+}
+
+/// Returns true if the path refers to a git-internal state file
+/// (index, HEAD, refs/heads/) that affects branch and working-tree status.
+/// Used by both the full watcher (to emit `local-activity-changed`) and
+/// the lightweight local-activity watcher (to filter meaningful events).
+fn is_git_state_path(path_str: &str) -> bool {
+    path_str.contains("/.git/refs/heads/")
+        || path_str.contains("\\.git\\refs\\heads\\")
+        || path_str.ends_with("/.git/HEAD")
+        || path_str.ends_with("\\.git\\HEAD")
+        || path_str.ends_with("/.git/index")
+        || path_str.ends_with("\\.git\\index")
 }
 
 fn categorize_change(path_str: &str) -> ChangeKind {
@@ -187,7 +202,11 @@ fn categorize_change(path_str: &str) -> ChangeKind {
         return ChangeKind::ReviewState;
     }
 
-    // Everything else is a working tree change (including git refs, HEAD, index)
+    if is_git_state_path(path_str) {
+        return ChangeKind::GitState;
+    }
+
+    // Everything else is a working tree change (regular file edits)
     ChangeKind::WorkingTree
 }
 
@@ -228,6 +247,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
             match result {
                 Ok(events) => {
                     let mut review_changed = false;
+                    let mut git_state_changed = false;
                     let mut working_tree_changed = false;
 
                     for event in events {
@@ -261,6 +281,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         if !matches!(category, ChangeKind::Ignored) {
                             let category_str = match &category {
                                 ChangeKind::ReviewState => "ReviewState",
+                                ChangeKind::GitState => "GitState",
                                 ChangeKind::WorkingTree => "WorkingTree",
                                 ChangeKind::Ignored => "Ignored",
                             };
@@ -273,6 +294,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         match category {
                             ChangeKind::ReviewState => {
                                 review_changed = true;
+                            }
+                            ChangeKind::GitState => {
+                                git_state_changed = true;
                             }
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
@@ -287,9 +311,19 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         let _ = app_clone.emit("review-state-changed", &repo_for_closure);
                     }
 
-                    if working_tree_changed {
+                    // Git state changes (index, HEAD, refs/heads) are a subset of
+                    // working tree changes — emit git-changed for both.
+                    if working_tree_changed || git_state_changed {
                         eprintln!("[watcher] Working tree changed for {repo_for_closure}");
                         let _ = app_clone.emit("git-changed", &repo_for_closure);
+                    }
+
+                    // The lightweight local-activity watcher is skipped for repos with
+                    // the full watcher, so we emit local-activity-changed here to keep
+                    // the sidebar's branch data up to date on commits/staging/switches.
+                    if git_state_changed {
+                        eprintln!("[watcher] Local activity changed for {repo_for_closure}");
+                        let _ = app_clone.emit("local-activity-changed", &repo_for_closure);
                     }
                 }
                 Err(e) => {
@@ -394,10 +428,9 @@ pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
             Duration::from_millis(500),
             move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
                 if let Ok(events) = result {
-                    let any_meaningful = events.iter().any(|e| {
-                        let p = e.path.to_string_lossy();
-                        p.contains("/refs/heads/") || p.ends_with("/HEAD") || p.ends_with("/index")
-                    });
+                    let any_meaningful = events
+                        .iter()
+                        .any(|e| is_git_state_path(&e.path.to_string_lossy()));
                     if any_meaningful {
                         eprintln!("[watcher] Local activity changed for {repo_path_str}");
                         let _ = app_clone.emit("local-activity-changed", &repo_path_str);
