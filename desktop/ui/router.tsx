@@ -48,6 +48,15 @@ function AppShell() {
     loadLocalActivity();
   }, [loadGlobalReviews, loadLocalActivity]);
 
+  // Poll local activity periodically to catch working tree changes in
+  // non-active repos (their lightweight watchers only see git metadata).
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadLocalActivity();
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [loadLocalActivity]);
+
   // Global menu:open-settings listener (always mounted)
   useEffect(() => {
     const platform = getPlatformServices();

@@ -103,7 +103,10 @@ export function ReviewView({
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
-      await useReviewStore.getState().refresh();
+      await Promise.all([
+        useReviewStore.getState().refresh(),
+        useReviewStore.getState().loadLocalActivity(),
+      ]);
     } finally {
       setIsRefreshing(false);
     }

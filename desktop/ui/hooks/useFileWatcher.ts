@@ -168,26 +168,8 @@ export function useFileWatcher(comparisonReady: number) {
       }, 2000);
     };
 
-    unlistenFns.push(
-      apiClient.onGitChanged((eventRepoPath) => {
-        console.log("[watcher] Received git-changed event:", eventRepoPath);
-        if (eventRepoPath === repoPathRef.current) {
-          // Only refresh if a comparison has been selected (not on start screen)
-          if (!comparisonReadyRef.current) {
-            console.log("[watcher] Skipping refresh - no comparison selected");
-            return;
-          }
-          scheduleRefresh();
-        }
-        // Always update sidebar freshness on git changes
-        checkReviewsFreshnessRef.current();
-      }),
-    );
-    console.log("[watcher] Listening for git-changed");
-
-    // Local activity changed (branch added/deleted in any registered repo)
-    // Debounce at 500ms to avoid rapid refreshes during git rebase.
-    // Guard against overlapping loads (same pattern as scheduleRefresh above).
+    // Local activity changed — debounce at 500ms to avoid rapid refreshes
+    // during git rebase. Guard against overlapping loads.
     const scheduleLocalActivity = () => {
       if (localActivityTimerRef.current) {
         clearTimeout(localActivityTimerRef.current);
@@ -210,6 +192,27 @@ export function useFileWatcher(comparisonReady: number) {
         }
       }, 500);
     };
+
+    unlistenFns.push(
+      apiClient.onGitChanged((eventRepoPath) => {
+        console.log("[watcher] Received git-changed event:", eventRepoPath);
+        if (eventRepoPath === repoPathRef.current) {
+          // Only refresh if a comparison has been selected (not on start screen)
+          if (!comparisonReadyRef.current) {
+            console.log("[watcher] Skipping refresh - no comparison selected");
+            return;
+          }
+          scheduleRefresh();
+          // Also refresh local activity so the sidebar shows the repo as
+          // soon as it becomes dirty (git-changed fires on working tree
+          // changes too, not just git state changes).
+          scheduleLocalActivity();
+        }
+        // Always update sidebar freshness on git changes
+        checkReviewsFreshnessRef.current();
+      }),
+    );
+    console.log("[watcher] Listening for git-changed");
 
     unlistenFns.push(
       apiClient.onLocalActivityChanged(() => {
