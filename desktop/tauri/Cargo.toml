@@ -1,6 +1,6 @@
 [package]
 name = "review-desktop"
-version = "0.0.62"
+version = "0.0.63"
 description = "A diff review desktop app"
 license = "FSL-1.1-MIT"
 edition = "2021"
