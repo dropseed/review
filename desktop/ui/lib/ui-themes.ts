@@ -997,18 +997,6 @@ export function applyUiTheme(theme: UiTheme): void {
 }
 
 /**
- * Remove all theme overrides, reverting to CSS defaults.
- */
-export function clearUiTheme(): void {
-  const el = document.documentElement;
-  el.style.removeProperty("color-scheme");
-
-  for (const cssVar of Object.values(TOKEN_TO_CSS_VAR)) {
-    el.style.removeProperty(cssVar);
-  }
-}
-
-/**
  * Find a theme by ID (searches bundled and custom). Returns the default dark theme if not found.
  */
 export function getUiTheme(id: string): UiTheme {

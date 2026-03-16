@@ -49,10 +49,3 @@ export function createPlatformServices(): PlatformServices {
     return getWebServices();
   }
 }
-
-/**
- * Override the platform services (useful for testing).
- */
-export function setPlatformServices(services: PlatformServices): void {
-  platformServices = services;
-}

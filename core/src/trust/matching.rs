@@ -65,23 +65,23 @@ fn simple_glob_match(label: &str, pattern: &str) -> bool {
     true
 }
 
-/// Check if a label matches any pattern in a list.
-pub fn matches_any_pattern(label: &str, patterns: &[String]) -> bool {
-    patterns
-        .iter()
-        .any(|pattern| matches_pattern(label, pattern))
-}
-
-/// Check if any label in a list matches any pattern.
-pub fn any_label_matches_any_pattern(labels: &[String], patterns: &[String]) -> bool {
-    labels
-        .iter()
-        .any(|label| matches_any_pattern(label, patterns))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Check if a label matches any pattern in a list.
+    fn matches_any_pattern(label: &str, patterns: &[String]) -> bool {
+        patterns
+            .iter()
+            .any(|pattern| matches_pattern(label, pattern))
+    }
+
+    /// Check if any label in a list matches any pattern.
+    fn any_label_matches_any_pattern(labels: &[String], patterns: &[String]) -> bool {
+        labels
+            .iter()
+            .any(|label| matches_any_pattern(label, patterns))
+    }
 
     // Parity tests - these must pass in both TypeScript and Rust
 

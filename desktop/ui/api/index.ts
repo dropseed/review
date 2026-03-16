@@ -28,10 +28,3 @@ export function getApiClient(): ApiClient {
   }
   return apiClient;
 }
-
-/**
- * Override the API client (useful for testing).
- */
-export function setApiClient(client: ApiClient): void {
-  apiClient = client;
-}

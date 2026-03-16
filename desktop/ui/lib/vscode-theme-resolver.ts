@@ -14,13 +14,6 @@ import { UI_THEMES } from "./ui-themes";
 // Types
 // ---------------------------------------------------------------------------
 
-/** Subset of VS Code theme JSON we care about */
-export interface VscodeThemeJson {
-  name?: string;
-  type?: "dark" | "light" | "hc";
-  colors?: Record<string, string>;
-}
-
 /** Result from the Rust `detect_vscode_theme` command */
 export interface VscodeThemeDetection {
   name: string;

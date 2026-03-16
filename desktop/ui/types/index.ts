@@ -306,11 +306,6 @@ export function isHunkReviewed(
   return isHunkTrusted(hunkState, trustList);
 }
 
-// Helper to check if a hunk is saved for later
-export function isHunkSavedForLater(hunkState: HunkState | undefined): boolean {
-  return hunkState?.status === "saved_for_later";
-}
-
 // Line annotations for inline comments
 export interface LineAnnotation {
   id: string;
@@ -522,11 +517,6 @@ export interface SymbolEdge {
 export interface FileCluster {
   files: string[];
   edges: SymbolEdge[];
-}
-
-export interface DependencyGraph {
-  edges: SymbolEdge[];
-  clusters: FileCluster[];
 }
 
 // API operation types

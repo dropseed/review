@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 /// How diff content is provided to the AI model.
-pub enum DiffContentMode {
+pub(crate) enum DiffContentMode {
     /// Diff content is inlined directly in the prompt (faster, no tool use needed).
     Inline,
     /// Diff content is written to temp files; the model uses the Read tool.
@@ -74,7 +74,7 @@ fn format_symbol_def(def: &HunkSymbolDef) -> String {
 /// In `Inline` mode, hunk diff content is embedded directly in the prompt
 /// (faster, no tool round-trips). In `TempFiles` mode, each hunk's content is
 /// written to a temp file and the model is given the Read tool to inspect them.
-pub fn build_grouping_prompt(
+pub(crate) fn build_grouping_prompt(
     hunks: &[GroupingInput],
     modified_symbols: &[ModifiedSymbolEntry],
     content_mode: &DiffContentMode,

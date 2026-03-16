@@ -1,42 +1,7 @@
 import type { SupportedLanguages } from "@pierre/diffs/react";
-import type { ContentType } from "../../types";
 
 // Re-export for convenience
 export type { SupportedLanguages };
-
-// Image extensions
-const imageExtensions = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "avif",
-  "ico",
-  "icns",
-  "bmp",
-]);
-
-// Get content type based on file extension
-export function getContentType(filePath: string): ContentType {
-  const ext = filePath.split(".").pop()?.toLowerCase() || "";
-
-  if (ext === "svg") {
-    return "svg"; // SVG can be both image and text
-  }
-
-  if (imageExtensions.has(ext)) {
-    return "image";
-  }
-
-  // Check if it's a known text/code file
-  if (langMap[ext]) {
-    return "text";
-  }
-
-  // Default to text for unknown extensions
-  return "text";
-}
 
 // Map file extensions to pierre/diffs supported languages
 const langMap: Record<string, SupportedLanguages> = {

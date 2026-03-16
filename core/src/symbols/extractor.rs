@@ -4,7 +4,7 @@ use super::{
     FileSymbolDiff, LineRange, Symbol, SymbolChangeType, SymbolDefinition, SymbolDiff, SymbolKind,
     SymbolReference,
 };
-use crate::diff::parser::{DiffHunk, DiffLine, LineType};
+use crate::diff::parser::{DiffHunk, LineType};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Language, Node, Parser};
 
@@ -1392,70 +1392,6 @@ fn extract_symbols_from_body(parent: Node, source: &str, ext: &str) -> Vec<Symbo
     symbols
 }
 
-/// Map hunks to symbols based on line range overlap.
-///
-/// A hunk overlaps a symbol if the hunk's new-file line range intersects
-/// the symbol's line range.
-pub fn map_hunks_to_symbols(
-    hunks: &[DiffHunk],
-    symbols: &[Symbol],
-    file_path: &str,
-) -> (HashMap<String, Vec<String>>, Vec<String>) {
-    let mut hunk_symbols: HashMap<String, Vec<String>> = HashMap::new();
-    let mut top_level_hunk_ids: Vec<String> = Vec::new();
-
-    // Flatten symbols including children for overlap checking
-    let all_symbols = flatten_symbols(symbols);
-
-    for hunk in hunks {
-        if hunk.file_path != file_path {
-            continue;
-        }
-
-        let hunk_start = hunk.new_start;
-        let hunk_end = if hunk.new_count == 0 {
-            hunk.new_start
-        } else {
-            hunk.new_start + hunk.new_count - 1
-        };
-
-        let mut matched_names: Vec<String> = Vec::new();
-
-        for (name, start, end) in &all_symbols {
-            if ranges_overlap(hunk_start, hunk_end, *start, *end) {
-                matched_names.push(name.clone());
-            }
-        }
-
-        if matched_names.is_empty() {
-            top_level_hunk_ids.push(hunk.id.clone());
-        } else {
-            // Deduplicate
-            matched_names.dedup();
-            hunk_symbols.insert(hunk.id.clone(), matched_names);
-        }
-    }
-
-    (hunk_symbols, top_level_hunk_ids)
-}
-
-/// Flatten a symbol tree into (name, start_line, end_line) tuples.
-fn flatten_symbols(symbols: &[Symbol]) -> Vec<(String, u32, u32)> {
-    let mut result = Vec::new();
-    for sym in symbols {
-        result.push((sym.name.clone(), sym.start_line, sym.end_line));
-        for child in &sym.children {
-            result.push((child.name.clone(), child.start_line, child.end_line));
-        }
-    }
-    result
-}
-
-/// Check if two line ranges overlap (both inclusive).
-fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
-    a_start <= b_end && b_start <= a_end
-}
-
 /// Compute a symbol-level diff for a single file.
 ///
 /// Parses old and new versions with tree-sitter, matches symbols by (name, kind),
@@ -2096,6 +2032,71 @@ fn collect_rust_use_names(node: Node, source: &str, names: &mut HashSet<String>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diff::parser::DiffLine;
+
+    /// Map hunks to symbols based on line range overlap.
+    ///
+    /// A hunk overlaps a symbol if the hunk's new-file line range intersects
+    /// the symbol's line range.
+    fn map_hunks_to_symbols(
+        hunks: &[DiffHunk],
+        symbols: &[Symbol],
+        file_path: &str,
+    ) -> (HashMap<String, Vec<String>>, Vec<String>) {
+        let mut hunk_symbols: HashMap<String, Vec<String>> = HashMap::new();
+        let mut top_level_hunk_ids: Vec<String> = Vec::new();
+
+        // Flatten symbols including children for overlap checking
+        let all_symbols = flatten_symbols(symbols);
+
+        for hunk in hunks {
+            if hunk.file_path != file_path {
+                continue;
+            }
+
+            let hunk_start = hunk.new_start;
+            let hunk_end = if hunk.new_count == 0 {
+                hunk.new_start
+            } else {
+                hunk.new_start + hunk.new_count - 1
+            };
+
+            let mut matched_names: Vec<String> = Vec::new();
+
+            for (name, start, end) in &all_symbols {
+                if ranges_overlap(hunk_start, hunk_end, *start, *end) {
+                    matched_names.push(name.clone());
+                }
+            }
+
+            if matched_names.is_empty() {
+                top_level_hunk_ids.push(hunk.id.clone());
+            } else {
+                // Deduplicate
+                matched_names.dedup();
+                hunk_symbols.insert(hunk.id.clone(), matched_names);
+            }
+        }
+
+        (hunk_symbols, top_level_hunk_ids)
+    }
+
+    /// Flatten a symbol tree into (name, start_line, end_line) tuples.
+    fn flatten_symbols(symbols: &[Symbol]) -> Vec<(String, u32, u32)> {
+        let mut result = Vec::new();
+        for sym in symbols {
+            result.push((sym.name.clone(), sym.start_line, sym.end_line));
+            for child in &sym.children {
+                result.push((child.name.clone(), child.start_line, child.end_line));
+            }
+        }
+        result
+    }
+
+    /// Check if two line ranges overlap (both inclusive).
+    fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
+        a_start <= b_end && b_start <= a_end
+    }
 
     #[cfg(feature = "symbols-rust-lang")]
     #[test]

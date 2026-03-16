@@ -92,7 +92,7 @@ const DEFAULT_MODEL: &str = "sonnet";
 /// Hunk diff content is written to temp files and Claude is given the
 /// `Read` tool so it can selectively inspect hunks as needed, keeping the
 /// prompt within token limits for large reviews.
-pub fn generate_grouping(
+pub(crate) fn generate_grouping(
     hunks: &[GroupingInput],
     cwd: &Path,
     modified_symbols: &[ModifiedSymbolEntry],

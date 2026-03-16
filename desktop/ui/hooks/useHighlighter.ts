@@ -149,28 +149,3 @@ export function useHighlighter(): {
 
   return { highlighter, loading, error };
 }
-
-export function highlightCode(
-  highlighter: Highlighter,
-  code: string,
-  language: BundledLanguage,
-): string {
-  try {
-    return highlighter.codeToHtml(code, {
-      lang: language,
-      theme: "github-dark",
-    });
-  } catch {
-    // If the language is not loaded, return escaped code
-    return `<pre><code>${escapeHtml(code)}</code></pre>`;
-  }
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}

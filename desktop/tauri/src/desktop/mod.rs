@@ -103,7 +103,7 @@ fn emit_cli_open_review(app: &tauri::AppHandle, repo_path: &str, comparison_key:
 pub fn run() {
     // Fix PATH when launched from Finder/Dock (macOS gives GUI apps a minimal environment).
     // This is a no-op when launched from a terminal.
-    fix_path_env::fix();
+    let _ = fix_path_env::fix();
 
     // Initialize Sentry early so it captures any panics during setup.
     // Events are silently dropped until the user opts in via preferences.

@@ -402,7 +402,7 @@ impl LocalGitSource {
     fn parse_branches_batch(
         &self,
         output: &str,
-        default_branch: &str,
+        _default_branch: &str,
         current_branch: &str,
         has_wt_changes: bool,
         wt_stats: &Option<DiffShortStat>,
