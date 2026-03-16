@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { CommitsPanel } from "./CommitsPanel";
 import { FileNode } from "./FileNode";
 import {
@@ -739,6 +739,30 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     () => collectDirPaths(sectionedFiles.reviewed),
     [sectionedFiles.reviewed],
   );
+
+  // Combined dir paths across all change sections (for auto-expand)
+  const allChangesDirPaths = useMemo(() => {
+    const combined = new Set<string>();
+    for (const p of needsReviewDirPaths) combined.add(p);
+    for (const p of savedForLaterDirPaths) combined.add(p);
+    for (const p of reviewedDirPaths) combined.add(p);
+    return combined;
+  }, [needsReviewDirPaths, savedForLaterDirPaths, reviewedDirPaths]);
+
+  // Auto-expand tree when switching to tree mode or loading a new comparison.
+  // Resets when leaving tree mode or when dir paths empty (new comparison loading).
+  const hasAutoExpandedChanges = useRef(false);
+
+  useEffect(() => {
+    if (changesDisplayMode !== "tree" || allChangesDirPaths.size === 0) {
+      hasAutoExpandedChanges.current = false;
+      return;
+    }
+    if (!hasAutoExpandedChanges.current) {
+      hasAutoExpandedChanges.current = true;
+      expandAll(allChangesDirPaths, renamedDirPaths);
+    }
+  }, [changesDisplayMode, allChangesDirPaths, renamedDirPaths, expandAll]);
 
   // Check if there are changes in the comparison
   const hasChanges =
