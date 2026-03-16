@@ -35,6 +35,7 @@ import {
 } from "./annotations";
 import { getLastChangedLine } from "./hunkUtils";
 import type { SupportedLanguages } from "./languageMap";
+import { scrollToLinePosition } from "../../utils/scroll";
 
 // Error boundary to catch rendering errors
 export class DiffErrorBoundary extends Component<
@@ -175,6 +176,8 @@ interface DiffViewProps {
   expandUnchanged?: boolean;
   /** Line number to scroll to (from in-file search) */
   highlightLine?: number | null;
+  /** Line height in px — used to compute scroll position for off-screen targets */
+  lineHeight?: number;
 }
 
 export function DiffView({
@@ -190,6 +193,7 @@ export function DiffView({
   language,
   expandUnchanged: expandUnchangedProp = true,
   highlightLine,
+  lineHeight = 21,
 }: DiffViewProps): ReactNode {
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -225,20 +229,54 @@ export function DiffView({
   // Deferred via rAF so React has time to render and assign focusedHunkRef.
   // Also handles an existing scrollTarget on mount (file switching causes
   // unmount/remount due to async content load in FileViewer).
+  //
+  // @pierre/diffs virtualizes lines outside the viewport, so annotation
+  // elements for off-screen hunks have no layout (their shadow-DOM slot
+  // doesn't exist). When that happens we use the standard virtualization
+  // scroll-to pattern: compute approximate offset → scroll container →
+  // virtualizer renders target area → precise scrollIntoView.
+  const scrollFallbackRef = useRef({ hunks, lineHeight });
+  scrollFallbackRef.current = { hunks, lineHeight };
+
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     function handleScrollTarget(): void {
       if (cancelled) return;
       const { scrollTarget } = useReviewStore.getState();
       if (!scrollTarget || scrollTarget.type !== "hunk") return;
+      const targetHunkId = scrollTarget.hunkId;
       useReviewStore.getState().clearScrollTarget();
       suppressScrollTracking(600);
       suppressScrollCorrection(600);
-      focusedHunkRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+
+      // Fast path: annotation is within the render range and has layout.
+      const el = focusedHunkRef.current;
+      if (el && el.getBoundingClientRect().height > 0) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      // Standard virtualization scroll-to: approximate position first,
+      // then refine after the virtualizer renders the target area.
+      const { hunks: h, lineHeight: lh } = scrollFallbackRef.current;
+      const hunk = h.find((x) => x.id === targetHunkId);
+      if (!hunk) return;
+      scrollToLinePosition(diffContainerRef.current, hunk.newStart, lh);
+
+      retryTimer = setTimeout(() => {
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          const refined = focusedHunkRef.current;
+          if (refined && refined.getBoundingClientRect().height > 0) {
+            suppressScrollTracking(600);
+            suppressScrollCorrection(600);
+            refined.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        });
+      }, 400);
     }
 
     // Initial scroll on mount (scrollTarget may already be set)
@@ -255,17 +293,25 @@ export function DiffView({
 
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
       unsubscribe();
     };
   }, []);
 
-  // Scroll to highlighted line (from in-file search) inside shadow DOM
+  // Scroll to highlighted line (from in-file search) inside shadow DOM.
+  // Same virtualization fallback as scroll-to-hunk above.
   useEffect(() => {
     if (!highlightLine || !diffContainerRef.current) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
     const frame = requestAnimationFrame(() => {
+      if (cancelled) return;
       const shadow =
         diffContainerRef.current?.querySelector("diffs-container")?.shadowRoot;
       if (!shadow) return;
+
+      // Fast path: line element exists in the render range.
       const lineEl = shadow.querySelector(`[data-line="${highlightLine}"]`);
       if (lineEl) {
         suppressScrollTracking(600);
@@ -274,10 +320,39 @@ export function DiffView({
           behavior: "smooth",
           block: "center",
         });
+        return;
       }
+
+      // Approximate scroll, then retry after virtualizer renders.
+      suppressScrollTracking(600);
+      suppressScrollCorrection(600);
+      scrollToLinePosition(diffContainerRef.current, highlightLine, lineHeight);
+
+      retryTimer = setTimeout(() => {
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          const retryEl = shadow.querySelector(
+            `[data-line="${highlightLine}"]`,
+          );
+          if (retryEl) {
+            suppressScrollTracking(600);
+            suppressScrollCorrection(600);
+            (retryEl as HTMLElement).scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+          }
+        });
+      }, 400);
     });
-    return () => cancelAnimationFrame(frame);
-  }, [highlightLine]);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(retryTimer);
+    };
+  }, [highlightLine, lineHeight]);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
