@@ -465,33 +465,22 @@ pub fn detect_move_pairs(hunks: &mut [DiffHunk]) -> Vec<MovePair> {
     // Find matching pairs
     for (hash, deletion_indices) in &deletions_by_hash {
         if let Some(addition_indices) = additions_by_hash.get(hash) {
-            // Match deletions with additions
+            // Match deletions with additions and set move_pair_id directly by index
             for &del_idx in deletion_indices {
                 for &add_idx in addition_indices {
-                    let del_hunk = &hunks[del_idx];
-                    let add_hunk = &hunks[add_idx];
-
-                    // Only consider moves between different files
-                    if del_hunk.file_path != add_hunk.file_path {
+                    if hunks[del_idx].file_path != hunks[add_idx].file_path {
+                        let source_id = hunks[del_idx].id.clone();
+                        let dest_id = hunks[add_idx].id.clone();
+                        hunks[del_idx].move_pair_id = Some(dest_id.clone());
+                        hunks[add_idx].move_pair_id = Some(source_id.clone());
                         move_pairs.push(MovePair {
-                            source_hunk_id: del_hunk.id.clone(),
-                            dest_hunk_id: add_hunk.id.clone(),
-                            source_file_path: del_hunk.file_path.clone(),
-                            dest_file_path: add_hunk.file_path.clone(),
+                            source_hunk_id: source_id,
+                            dest_hunk_id: dest_id,
+                            source_file_path: hunks[del_idx].file_path.clone(),
+                            dest_file_path: hunks[add_idx].file_path.clone(),
                         });
                     }
                 }
-            }
-        }
-    }
-
-    // Update hunk move_pair_id fields
-    for pair in &move_pairs {
-        for hunk in hunks.iter_mut() {
-            if hunk.id == pair.source_hunk_id {
-                hunk.move_pair_id = Some(pair.dest_hunk_id.clone());
-            } else if hunk.id == pair.dest_hunk_id {
-                hunk.move_pair_id = Some(pair.source_hunk_id.clone());
             }
         }
     }

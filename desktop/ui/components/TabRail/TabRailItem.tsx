@@ -10,6 +10,7 @@ import { useReviewStore } from "../../stores";
 import { CircleProgress } from "../ui/circle-progress";
 import { formatAge, compactNum } from "../../utils/format-age";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
+import { computeReviewProgress } from "../../hooks/useReviewProgress";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -133,12 +134,21 @@ export const TabRailItem = memo(function TabRailItem({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showContextMenu]);
 
-  const reviewedPercent =
-    review.totalHunks > 0
-      ? Math.round((review.reviewedHunks / review.totalHunks) * 100)
-      : 0;
+  // For the active review, derive progress from live hunks to avoid stale summary data.
+  const livePercent = useReviewStore((s) => {
+    if (!isActive || s.hunks.length === 0) return null;
+    const progress = computeReviewProgress(s.hunks, s.reviewState);
+    return progress.totalHunks > 0 ? progress.reviewedPercent : 0;
+  });
 
-  const showProgress = review.totalHunks > 0;
+  const reviewedPercent =
+    livePercent !== null
+      ? livePercent
+      : review.totalHunks > 0
+        ? Math.round((review.reviewedHunks / review.totalHunks) * 100)
+        : 0;
+
+  const showProgress = livePercent !== null ? true : review.totalHunks > 0;
 
   const age = formatAge(review.updatedAt);
 

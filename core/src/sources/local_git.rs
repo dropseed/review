@@ -84,6 +84,7 @@ pub enum LocalGitError {
 #[derive(Debug)]
 pub struct LocalGitSource {
     repo_path: PathBuf,
+    merge_base_cache: std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
 }
 
 impl LocalGitSource {
@@ -91,7 +92,10 @@ impl LocalGitSource {
         if !repo_path.join(".git").exists() {
             return Err(LocalGitError::NotARepo);
         }
-        Ok(Self { repo_path })
+        Ok(Self {
+            repo_path,
+            merge_base_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        })
     }
 
     /// Check if the comparison head is the current branch, meaning working
@@ -899,10 +903,19 @@ impl LocalGitSource {
         Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
     }
 
-    /// Get the merge-base between two refs
+    /// Get the merge-base between two refs (cached per instance).
     fn get_merge_base(&self, ref1: &str, ref2: &str) -> Result<String, LocalGitError> {
+        let key = (ref1.to_owned(), ref2.to_owned());
+        if let Some(cached) = self.merge_base_cache.lock().unwrap().get(&key) {
+            return Ok(cached.clone());
+        }
         let output = self.run_git(&["merge-base", ref1, ref2])?;
-        Ok(output.trim().to_owned())
+        let result = output.trim().to_owned();
+        self.merge_base_cache
+            .lock()
+            .unwrap()
+            .insert(key, result.clone());
+        Ok(result)
     }
 
     fn get_changed_files(

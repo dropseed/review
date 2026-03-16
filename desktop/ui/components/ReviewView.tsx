@@ -294,7 +294,11 @@ export function ReviewView({
                     }
                   >
                     <CircleProgress
-                      percent={Math.round((reviewedHunks / totalHunks) * 100)}
+                      percent={
+                        totalHunks > 0
+                          ? Math.round((reviewedHunks / totalHunks) * 100)
+                          : 0
+                      }
                       size={20}
                       strokeWidth={2.5}
                       className="shrink-0 cursor-default"

@@ -779,21 +779,33 @@ pub fn get_all_hunks_sync(
         diff_start.elapsed()
     );
 
-    // Parse all hunks from the combined diff
-    let parse_start = Instant::now();
-    let mut all_hunks = parse_multi_file_diff(&full_diff);
-    debug!(
-        "[get_all_hunks] parsed {} hunks in {:?}",
-        all_hunks.len(),
-        parse_start.elapsed()
-    );
+    // Try hunk cache before parsing
+    let repo_path_buf = PathBuf::from(&repo_path);
+    let diff_hash = review::diff::cache::compute_hash(&full_diff);
+    let mut all_hunks = if let Ok(Some(cached)) =
+        review::diff::cache::load(&repo_path_buf, &comparison, &diff_hash)
+    {
+        debug!("[get_all_hunks] hunk cache HIT");
+        cached
+    } else {
+        let parse_start = Instant::now();
+        let parsed = parse_multi_file_diff(&full_diff);
+        debug!(
+            "[get_all_hunks] parsed {} hunks in {:?}",
+            parsed.len(),
+            parse_start.elapsed()
+        );
+        // Save to cache (best-effort)
+        let _ = review::diff::cache::save(&repo_path_buf, &comparison, &diff_hash, &parsed);
+        parsed
+    };
+    drop(full_diff);
 
     // Build a set of file paths that got hunks from the diff
     let files_with_hunks: HashSet<String> = all_hunks.iter().map(|h| h.file_path.clone()).collect();
 
     // For requested files that have no diff hunks, check if they're
     // untracked (new) and create untracked hunks for them
-    let repo_path_buf = PathBuf::from(&repo_path);
     for file_path in &file_paths {
         if !files_with_hunks.contains(file_path.as_str()) {
             let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
@@ -1110,7 +1122,7 @@ pub struct CommitResult {
 fn spawn_stream_reader(
     pipe: Option<impl std::io::Read + Send + 'static>,
     stream: CommitStream,
-    tx: tokio::sync::mpsc::UnboundedSender<CommitOutputLine>,
+    tx: tokio::sync::mpsc::Sender<CommitOutputLine>,
     seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
 ) -> std::thread::JoinHandle<()> {
     use std::io::BufRead;
@@ -1120,7 +1132,7 @@ fn spawn_stream_reader(
         let reader = std::io::BufReader::new(pipe);
         for line in reader.lines().flatten() {
             let s = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let _ = tx.send(CommitOutputLine {
+            let _ = tx.blocking_send(CommitOutputLine {
                 text: line,
                 stream,
                 seq: s,
@@ -1144,7 +1156,7 @@ pub async fn git_commit(
 
     debug!("[git_commit] repo_path={repo_path}, request_id={request_id}");
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<CommitOutputLine>();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<CommitOutputLine>(128);
 
     // Forward lines from the channel to Tauri events
     let emit_handle = app.clone();
@@ -1870,16 +1882,17 @@ pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>,
 
         let mut results = Vec::new();
         for file_path in &tracked_files {
-            let syms = if symbols::extractor::get_language_for_file(file_path).is_some() {
-                let full_path = repo_path_buf.join(file_path);
-                std::fs::read_to_string(&full_path)
-                    .ok()
-                    .and_then(|content| symbols::extractor::extract_symbols(&content, file_path))
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-
+            if symbols::extractor::get_language_for_file(file_path).is_none() {
+                continue;
+            }
+            let full_path = repo_path_buf.join(file_path);
+            let syms = std::fs::read_to_string(&full_path)
+                .ok()
+                .and_then(|content| symbols::extractor::extract_symbols(&content, file_path))
+                .unwrap_or_default();
+            if syms.is_empty() {
+                continue;
+            }
             results.push(RepoFileSymbols {
                 file_path: file_path.clone(),
                 symbols: syms,
@@ -1888,9 +1901,9 @@ pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>,
 
         results.sort_by(|a, b| a.file_path.cmp(&b.file_path));
         info!(
-            "[get_repo_symbols] SUCCESS: {} files ({} with symbols) in {:?}",
+            "[get_repo_symbols] SUCCESS: {} files with symbols (from {} tracked) in {:?}",
             results.len(),
-            results.iter().filter(|r| !r.symbols.is_empty()).count(),
+            tracked_files.len(),
             t0.elapsed()
         );
         Ok(results)
@@ -2096,22 +2109,28 @@ pub struct ReviewFreshnessResult {
     pub missing_refs: Vec<String>,
 }
 
+static FRESHNESS_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(6);
+
 #[tauri::command]
 pub async fn check_reviews_freshness(
     reviews: Vec<ReviewFreshnessInput>,
 ) -> Vec<ReviewFreshnessResult> {
     let handles: Vec<_> = reviews
         .into_iter()
-        .map(|input| tokio::task::spawn_blocking(move || check_single_review_freshness(input)))
+        .map(|input| {
+            tokio::spawn(async move {
+                let _permit = FRESHNESS_SEMAPHORE.acquire().await.unwrap();
+                tokio::task::spawn_blocking(move || check_single_review_freshness(input)).await
+            })
+        })
         .collect();
 
     let mut results = Vec::new();
     for handle in handles {
         match handle.await {
-            Ok(result) => results.push(result),
-            Err(e) => {
-                error!("[check_reviews_freshness] task panicked: {e}");
-            }
+            Ok(Ok(result)) => results.push(result),
+            Ok(Err(e)) => error!("[check_reviews_freshness] task panicked: {e}"),
+            Err(e) => error!("[check_reviews_freshness] join error: {e}"),
         }
     }
     results
@@ -2518,8 +2537,7 @@ pub async fn generate_hunk_grouping(
             .insert(id.clone(), cancel.clone());
     }
 
-    let (tx, mut rx) =
-        tokio::sync::mpsc::unbounded_channel::<review::ai::grouping::GroupingEvent>();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<review::ai::grouping::GroupingEvent>(128);
 
     // Forward events from the channel to Tauri events
     let emit_handle = app.clone();
@@ -2534,7 +2552,7 @@ pub async fn generate_hunk_grouping(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             let mut on_event = |event: review::ai::grouping::GroupingEvent| {
-                let _ = tx.send(event);
+                let _ = tx.blocking_send(event);
             };
             review::ai::grouping::generate_grouping_streaming(
                 &hunks,
@@ -2595,7 +2613,7 @@ pub async fn generate_commit_message(
 
     debug!("[generate_commit_message] repo_path={repo_path}, request_id={request_id}");
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(128);
 
     let emit_handle = app.clone();
     let emit_task = tokio::spawn(async move {
@@ -2614,7 +2632,7 @@ pub async fn generate_commit_message(
         let recent_messages = source.get_recent_commit_messages(10).unwrap_or_default();
 
         let mut on_text = |text: &str| {
-            let _ = tx.send(text.to_owned());
+            let _ = tx.blocking_send(text.to_owned());
         };
         review::ai::commit_message::generate_commit_message_streaming(
             &staged_diff,

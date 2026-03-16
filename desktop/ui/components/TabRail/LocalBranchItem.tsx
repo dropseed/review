@@ -9,6 +9,7 @@ import {
   statsHash,
 } from "../../stores/slices/localActivitySlice";
 import { CircleProgress } from "../ui/circle-progress";
+import { computeReviewProgress } from "../../hooks/useReviewProgress";
 
 interface LocalBranchItemProps {
   branch: LocalBranchInfo;
@@ -50,8 +51,16 @@ export const LocalBranchItem = memo(function LocalBranchItem({
       s.activeReviewKey?.comparisonKey === comparisonKey,
   );
 
-  // Look up review progress percent (primitive for stable Zustand equality)
+  // Look up review progress percent (primitive for stable Zustand equality).
+  // For the active review, derive from live hunks/reviewState to avoid stale summary data.
   const reviewPercent = useReviewStore((s) => {
+    const active =
+      s.activeReviewKey?.repoPath === repoPath &&
+      s.activeReviewKey?.comparisonKey === comparisonKey;
+    if (active && s.hunks.length > 0) {
+      const progress = computeReviewProgress(s.hunks, s.reviewState);
+      return progress.totalHunks > 0 ? progress.reviewedPercent : -1;
+    }
     const key = makeReviewKey(repoPath, comparisonKey);
     const review = s.globalReviewsByKey[key];
     if (!review || review.totalHunks === 0) return -1;

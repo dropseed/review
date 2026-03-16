@@ -10,7 +10,7 @@ function ProgressSegment({
   total: number;
   className: string;
 }): ReactNode {
-  if (count === 0) return null;
+  if (count === 0 || total === 0) return null;
   return (
     <div
       className={`${className} transition-[width] duration-500 ease-out`}
