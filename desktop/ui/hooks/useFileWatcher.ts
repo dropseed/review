@@ -31,6 +31,8 @@ export function useFileWatcher(comparisonReady: number) {
   );
   const refreshInProgressRef = useRef(false);
   const refreshRequestedRef = useRef(false);
+  const localActivityInProgressRef = useRef(false);
+  const localActivityRequestedRef = useRef(false);
   const activeReviewKeyRef = useRef(activeReviewKey);
   const comparisonRef = useRef(comparison);
   const setActiveReviewKeyRef = useRef(setActiveReviewKey);
@@ -185,16 +187,34 @@ export function useFileWatcher(comparisonReady: number) {
 
     // Local activity changed (branch added/deleted in any registered repo)
     // Debounce at 500ms to avoid rapid refreshes during git rebase.
+    // Guard against overlapping loads (same pattern as scheduleRefresh above).
+    const scheduleLocalActivity = () => {
+      if (localActivityTimerRef.current) {
+        clearTimeout(localActivityTimerRef.current);
+      }
+      localActivityTimerRef.current = setTimeout(async () => {
+        localActivityTimerRef.current = null;
+        if (localActivityInProgressRef.current) {
+          localActivityRequestedRef.current = true;
+          return;
+        }
+        localActivityInProgressRef.current = true;
+        try {
+          await loadLocalActivityRef.current();
+        } finally {
+          localActivityInProgressRef.current = false;
+          if (localActivityRequestedRef.current) {
+            localActivityRequestedRef.current = false;
+            scheduleLocalActivity();
+          }
+        }
+      }, 500);
+    };
+
     unlistenFns.push(
       apiClient.onLocalActivityChanged(() => {
         console.log("[watcher] Received local-activity-changed event");
-        if (localActivityTimerRef.current) {
-          clearTimeout(localActivityTimerRef.current);
-        }
-        localActivityTimerRef.current = setTimeout(() => {
-          localActivityTimerRef.current = null;
-          loadLocalActivityRef.current();
-        }, 500);
+        scheduleLocalActivity();
       }),
     );
     console.log("[watcher] Listening for local-activity-changed");
@@ -208,6 +228,8 @@ export function useFileWatcher(comparisonReady: number) {
       }
       refreshInProgressRef.current = false;
       refreshRequestedRef.current = false;
+      localActivityInProgressRef.current = false;
+      localActivityRequestedRef.current = false;
       unlistenFns.forEach((fn) => fn());
     };
   }, [repoPath]);

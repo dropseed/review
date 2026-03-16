@@ -15,6 +15,11 @@ use tauri::{AppHandle, Emitter};
 /// Debounce interval for file system events in milliseconds.
 const WATCHER_DEBOUNCE_MS: u64 = 200;
 
+/// Event names emitted to the frontend. Must match the strings in `tauri-client.ts`.
+const EVENT_REVIEW_STATE_CHANGED: &str = "review-state-changed";
+const EVENT_GIT_CHANGED: &str = "git-changed";
+const EVENT_LOCAL_ACTIVITY_CHANGED: &str = "local-activity-changed";
+
 /// Log a message to the app.log file (for debugging watcher events, dev only)
 #[cfg(debug_assertions)]
 fn log_to_file(repo_path: &Path, message: &str) {
@@ -308,14 +313,14 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                     // Emit events to frontend
                     if review_changed {
                         eprintln!("[watcher] Review state changed for {repo_for_closure}");
-                        let _ = app_clone.emit("review-state-changed", &repo_for_closure);
+                        let _ = app_clone.emit(EVENT_REVIEW_STATE_CHANGED, &repo_for_closure);
                     }
 
                     // Git state changes (index, HEAD, refs/heads) are a subset of
                     // working tree changes — emit git-changed for both.
                     if working_tree_changed || git_state_changed {
                         eprintln!("[watcher] Working tree changed for {repo_for_closure}");
-                        let _ = app_clone.emit("git-changed", &repo_for_closure);
+                        let _ = app_clone.emit(EVENT_GIT_CHANGED, &repo_for_closure);
                     }
 
                     // The lightweight local-activity watcher is skipped for repos with
@@ -323,7 +328,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                     // the sidebar's branch data up to date on commits/staging/switches.
                     if git_state_changed {
                         eprintln!("[watcher] Local activity changed for {repo_for_closure}");
-                        let _ = app_clone.emit("local-activity-changed", &repo_for_closure);
+                        let _ = app_clone.emit(EVENT_LOCAL_ACTIVITY_CHANGED, &repo_for_closure);
                     }
                 }
                 Err(e) => {
@@ -433,7 +438,7 @@ pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
                         .any(|e| is_git_state_path(&e.path.to_string_lossy()));
                     if any_meaningful {
                         eprintln!("[watcher] Local activity changed for {repo_path_str}");
-                        let _ = app_clone.emit("local-activity-changed", &repo_path_str);
+                        let _ = app_clone.emit(EVENT_LOCAL_ACTIVITY_CHANGED, &repo_path_str);
                     }
                 }
             },

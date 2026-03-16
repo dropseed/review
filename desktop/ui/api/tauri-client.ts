@@ -45,6 +45,11 @@ import type {
   TrustCategory,
 } from "../types";
 
+/** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
+const EVENT_REVIEW_STATE_CHANGED = "review-state-changed";
+const EVENT_GIT_CHANGED = "git-changed";
+const EVENT_LOCAL_ACTIVITY_CHANGED = "local-activity-changed";
+
 export class TauriClient implements ApiClient {
   // ----- Git operations -----
 
@@ -488,15 +493,15 @@ export class TauriClient implements ApiClient {
   }
 
   onReviewStateChanged(callback: (repoPath: string) => void): () => void {
-    return this.listenForEvent("review-state-changed", callback);
+    return this.listenForEvent(EVENT_REVIEW_STATE_CHANGED, callback);
   }
 
   onGitChanged(callback: (repoPath: string) => void): () => void {
-    return this.listenForEvent("git-changed", callback);
+    return this.listenForEvent(EVENT_GIT_CHANGED, callback);
   }
 
   onLocalActivityChanged(callback: (repoPath: string) => void): () => void {
-    return this.listenForEvent("local-activity-changed", callback);
+    return this.listenForEvent(EVENT_LOCAL_ACTIVITY_CHANGED, callback);
   }
 
   // ----- Window/App -----

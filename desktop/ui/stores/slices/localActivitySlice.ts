@@ -70,6 +70,17 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
       try {
         const activity = await client.listAllLocalActivity();
 
+        // Skip state update if the activity data hasn't changed (avoids
+        // unnecessary re-renders of sidebar components on no-op refreshes).
+        const prev = get().localActivity;
+        if (
+          prev.length === activity.length &&
+          JSON.stringify(prev) === JSON.stringify(activity)
+        ) {
+          set({ localActivityLoading: false });
+          return;
+        }
+
         // Prune lastSeenDiffStats to only branches that still exist in any repo
         const validKeys = new Set<string>();
         for (const repo of activity) {
