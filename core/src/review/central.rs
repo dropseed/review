@@ -152,6 +152,25 @@ pub fn list_registered_repos() -> Result<Vec<RepoIndexEntry>, CentralError> {
     Ok(repos)
 }
 
+/// Unregister a repo from the index. Does not delete review files.
+pub fn unregister_repo(repo_path: &Path) -> Result<(), CentralError> {
+    let repo_id = compute_repo_id(repo_path)?;
+    let mut index = load_index()?;
+    index.repos.remove(&repo_id);
+    save_index(&index)?;
+    Ok(())
+}
+
+/// Register a repo only if the given path is a valid git repository.
+/// Returns Ok(true) if registered, Ok(false) if not a git repo.
+pub fn register_repo_if_valid(repo_path: &Path) -> Result<bool, CentralError> {
+    if !repo_path.join(".git").exists() {
+        return Ok(false);
+    }
+    register_repo(repo_path)?;
+    Ok(true)
+}
+
 use super::state::now_iso8601;
 
 #[cfg(test)]

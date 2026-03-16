@@ -118,6 +118,11 @@ interface UseRepositoryInitReturn {
     comparison: Comparison,
     githubPr?: GitHubPrRef,
   ) => Promise<void>;
+  handleActivateLocalBranch: (
+    repoPath: string,
+    branch: string,
+    defaultBranch: string,
+  ) => void;
 }
 
 /**
@@ -139,7 +144,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const ensureReviewExists = useReviewStore((s) => s.ensureReviewExists);
-
   // Repository status tracking
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
@@ -173,7 +177,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       addRecentRepository(path);
       if (options?.storeInSession) storeRepoPath(path);
 
-      setActiveReviewKey({ repoPath: path, comparisonKey: comparison.key });
+      setActiveReviewKey({
+        repoPath: path,
+        comparisonKey: comparison.key,
+      });
       await ensureReviewExists(path, comparison);
 
       const { routePrefix } = await resolveRepoIdentity(path);
@@ -291,7 +298,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         if (!currentRepoPath) return;
 
         // Same-repo switch — setComparison is sufficient
-        setActiveReviewKey({ repoPath: currentRepoPath, comparisonKey: key });
+        setActiveReviewKey({
+          repoPath: currentRepoPath,
+          comparisonKey: key,
+        });
         setComparison(comparison);
         setComparisonReady((c) => c + 1);
         setInitialLoading(true);
@@ -328,7 +338,10 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         const state = useReviewStore.getState();
         const { routePrefix } = await resolveRepoIdentity(repoPath);
 
-        setActiveReviewKey({ repoPath, comparisonKey: comparison.key });
+        setActiveReviewKey({
+          repoPath,
+          comparisonKey: comparison.key,
+        });
         await ensureReviewExists(repoPath, comparison);
 
         if (repoPath !== state.repoPath) {
@@ -519,6 +532,46 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     ],
   );
 
+  // Activate a local branch (ephemeral, no review file created)
+  const handleActivateLocalBranch = useCallback(
+    (repoPath: string, branch: string, defaultBranch: string) => {
+      const nav = navigateRef.current;
+      const state = useReviewStore.getState();
+      const comparison = makeComparison(defaultBranch, branch);
+
+      // Save navigation snapshot before switching
+      state.saveNavigationSnapshot();
+
+      // Mark diff as seen so the unseen indicator clears
+      const branchInfo = state.localActivity
+        .find((r) => r.repoPath === repoPath)
+        ?.branches.find((b) => b.name === branch);
+      if (branchInfo) {
+        state.markDiffSeen(repoPath, branch, branchInfo.workingTreeStats);
+      }
+
+      setActiveReviewKey({
+        repoPath,
+        comparisonKey: comparison.key,
+      });
+
+      if (repoPath !== state.repoPath) {
+        switchReview(repoPath, comparison);
+      } else {
+        setComparison(comparison);
+      }
+
+      setComparisonReady((c) => c + 1);
+      setInitialLoading(true);
+
+      // Navigate using repo name from local activity
+      resolveRepoIdentity(repoPath).then(({ routePrefix }) => {
+        nav(`/${routePrefix}/review/${comparison.key}`);
+      });
+    },
+    [setActiveReviewKey, switchReview, setComparison],
+  );
+
   return {
     repoStatus,
     repoError,
@@ -531,5 +584,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     handleSelectRepo,
     handleActivateReview,
     handleNewReview,
+    handleActivateLocalBranch,
   };
 }

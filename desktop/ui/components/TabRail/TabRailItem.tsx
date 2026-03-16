@@ -8,6 +8,8 @@ import type {
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { useReviewStore } from "../../stores";
 import { CircleProgress } from "../ui/circle-progress";
+import { formatAge, compactNum } from "../../utils/format-age";
+import { makeReviewKey } from "../../stores/slices/groupingSlice";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -21,31 +23,6 @@ function formatBranchComparison(
     return comparison.head;
   }
   return `${comparison.base}..${comparison.head}`;
-}
-
-/** Format a date as relative age: "2m", "3h", "5d", "2w", "3mo" */
-function formatAge(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const seconds = Math.floor((now - then) / 1000);
-
-  if (seconds < 60) return "now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 14) return `${days}d`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 8) return `${weeks}w`;
-  const months = Math.floor(days / 30);
-  return `${months}mo`;
-}
-
-/** Format a number compactly: 1234 → "1.2k" */
-function compactNum(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }
 
 /** GitHub pull request icon (open state style). */
@@ -66,15 +43,12 @@ interface TabRailItemProps {
   review: GlobalReviewSummary;
   repoName: string;
   defaultBranch?: string;
-  isInactive?: boolean;
-  isPinned?: boolean;
   avatarUrl?: string | null;
   sortOrder?: ReviewSortOrder;
   diffStats?: DiffShortStat;
   missingRefs?: string[];
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
-  onTogglePin?: (review: GlobalReviewSummary) => void;
 }
 
 /** Value-based comparison so items skip re-render when globalReviews is reconstructed. */
@@ -82,7 +56,6 @@ function arePropsEqual(
   prev: TabRailItemProps,
   next: TabRailItemProps,
 ): boolean {
-  // Review identity + rendered data (objects are new refs on each loadGlobalReviews)
   if (prev.review.repoPath !== next.review.repoPath) return false;
   if (prev.review.comparison.key !== next.review.comparison.key) return false;
   if (prev.review.updatedAt !== next.review.updatedAt) return false;
@@ -92,23 +65,15 @@ function arePropsEqual(
   if (prev.review.githubPr?.number !== next.review.githubPr?.number)
     return false;
   if (prev.review.githubPr?.title !== next.review.githubPr?.title) return false;
-  // Scalar props
   if (prev.repoName !== next.repoName) return false;
   if (prev.defaultBranch !== next.defaultBranch) return false;
-  if (prev.isInactive !== next.isInactive) return false;
   if (prev.avatarUrl !== next.avatarUrl) return false;
   if (prev.sortOrder !== next.sortOrder) return false;
-  // DiffStats (object ref may change)
   if (prev.diffStats?.additions !== next.diffStats?.additions) return false;
   if (prev.diffStats?.deletions !== next.diffStats?.deletions) return false;
-  // Missing refs
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
-  // Pinned state
-  if (prev.isPinned !== next.isPinned) return false;
-  // Callbacks
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
-  if (prev.onTogglePin !== next.onTogglePin) return false;
   return true;
 }
 
@@ -116,22 +81,19 @@ export const TabRailItem = memo(function TabRailItem({
   review,
   repoName,
   defaultBranch,
-  isInactive,
-  isPinned,
   avatarUrl,
   sortOrder,
   diffStats,
   missingRefs,
   onActivate,
   onDelete,
-  onTogglePin,
 }: TabRailItemProps) {
   const isActive = useReviewStore(
     (s) =>
       s.activeReviewKey?.repoPath === review.repoPath &&
       s.activeReviewKey?.comparisonKey === review.comparison.key,
   );
-  const reviewKey = `${review.repoPath}:${review.comparison.key}`;
+  const reviewKey = makeReviewKey(review.repoPath, review.comparison.key);
   const isBusy = useReviewStore(
     useCallback((s) => s.isReviewBusy(reviewKey), [reviewKey]),
   );
@@ -176,7 +138,7 @@ export const TabRailItem = memo(function TabRailItem({
       ? Math.round((review.reviewedHunks / review.totalHunks) * 100)
       : 0;
 
-  const showProgress = !isInactive && review.totalHunks > 0;
+  const showProgress = review.totalHunks > 0;
 
   const age = formatAge(review.updatedAt);
 
@@ -204,7 +166,7 @@ export const TabRailItem = memo(function TabRailItem({
           }
         }}
         onContextMenu={handleContextMenu}
-        className={`group relative w-full text-left px-2 py-1.5 rounded-md mb-px cursor-default
+        className={`group relative w-full text-left px-2.5 py-2 rounded-md mb-0.5 cursor-default
                     transition-colors duration-100
                     ${isActive ? "bg-fg/[0.08]" : "hover:bg-fg/[0.05]"}`}
         aria-current={isActive ? "true" : undefined}
@@ -244,16 +206,6 @@ export const TabRailItem = memo(function TabRailItem({
               alt=""
               className="h-3 w-3 shrink-0 rounded-sm"
             />
-          )}
-          {isPinned && (
-            <svg
-              className="h-2.5 w-2.5 shrink-0 text-fg-faint -mr-0.5"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M16 2l-4 4-5-1-2 2 4.5 4.5L4 17l1 1 5.5-5.5L15 17l2-2-1-5 4-4-4-4z" />
-            </svg>
           )}
           <span className="text-xs text-fg-muted truncate min-w-0">
             {review.repoName}
@@ -326,18 +278,6 @@ export const TabRailItem = memo(function TabRailItem({
             className="fixed z-50 min-w-[160px] rounded-lg border border-edge-default bg-surface-raised/90 backdrop-blur-xl py-1 shadow-xl"
             style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
-            {onTogglePin && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowContextMenu(false);
-                  onTogglePin(review);
-                }}
-                className="w-full px-3 py-1.5 text-left text-xs text-fg-secondary hover:bg-fg/[0.08] transition-colors"
-              >
-                {isPinned ? "Unpin Review" : "Pin Review"}
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {

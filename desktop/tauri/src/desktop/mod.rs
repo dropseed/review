@@ -398,6 +398,15 @@ pub fn run() {
                 reveal_in_browse,
             });
 
+            // Start lightweight watchers for local activity on registered repos
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Err(e) = crate::desktop::watchers::start_local_activity_watchers(app_handle)
+                {
+                    eprintln!("[setup] Failed to start local activity watchers: {e}");
+                }
+            });
+
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -493,6 +502,11 @@ pub fn run() {
             commands::get_remote_info,
             commands::get_default_branch,
             commands::list_branches,
+            commands::list_local_branches,
+            commands::list_worktrees,
+            commands::list_all_local_activity,
+            commands::register_repo,
+            commands::unregister_repo,
             commands::get_git_status,
             commands::get_git_status_raw,
             commands::stage_file,

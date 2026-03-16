@@ -17,6 +17,7 @@ import type { GroupingSlice } from "./slices/groupingSlice";
 import type { UndoSlice } from "./slices/undoSlice";
 import type { GlobalReviewsSlice } from "./slices/tabRailSlice";
 import type { ActivitySlice } from "./slices/activitySlice";
+import type { LocalActivitySlice } from "./slices/localActivitySlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -31,7 +32,8 @@ export type ReviewStore = PreferencesSlice &
   GroupingSlice &
   UndoSlice &
   GlobalReviewsSlice &
-  ActivitySlice;
+  ActivitySlice &
+  LocalActivitySlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;
@@ -43,6 +45,12 @@ export type SliceCreatorWithClient<T> = (
 
 // Helper type for creating slices with storage service
 export type SliceCreatorWithStorage<T> = (
+  storage: StorageService,
+) => StateCreator<ReviewStore, [], [], T>;
+
+// Helper type for creating slices with both API client and storage service
+export type SliceCreatorWithClientAndStorage<T> = (
+  client: ApiClient,
   storage: StorageService,
 ) => StateCreator<ReviewStore, [], [], T>;
 

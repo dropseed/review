@@ -38,13 +38,15 @@ const SettingsModal = lazy(() =>
  */
 function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
+  const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
 
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     loadGlobalReviews();
-  }, [loadGlobalReviews]);
+    loadLocalActivity();
+  }, [loadGlobalReviews, loadLocalActivity]);
 
   // Global menu:open-settings listener (always mounted)
   useEffect(() => {
@@ -64,6 +66,7 @@ function AppShell() {
     handleCloseRepo,
     handleSelectRepo,
     handleActivateReview,
+    handleActivateLocalBranch,
     handleNewReview,
   } = useRepositoryInit();
 
@@ -121,6 +124,7 @@ function AppShell() {
         ) : (
           <TabRail
             onActivateReview={handleActivateReview}
+            onActivateLocalBranch={handleActivateLocalBranch}
             onOpenSettings={() => setShowSettings(true)}
           />
         )}

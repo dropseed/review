@@ -37,6 +37,7 @@ import type {
   HunkGroup,
   GroupingEvent,
   ModifiedSymbolEntry,
+  RepoLocalActivity,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
 } from "../types";
@@ -296,6 +297,17 @@ export interface ApiClient {
   /** Extract symbols from all tracked files in the repo */
   getRepoSymbols(repoPath: string): Promise<RepoFileSymbols[]>;
 
+  // ----- Local activity -----
+
+  /** List all local branch activity across registered repos */
+  listAllLocalActivity(): Promise<RepoLocalActivity[]>;
+
+  /** Register a repo in the central index (returns true if valid git repo) */
+  registerRepo(repoPath: string): Promise<boolean>;
+
+  /** Unregister a repo from the central index */
+  unregisterRepo(repoPath: string): Promise<void>;
+
   // ----- File watcher -----
 
   /** Start watching for file changes in the repo */
@@ -311,6 +323,9 @@ export interface ApiClient {
 
   /** Subscribe to git change events */
   onGitChanged(callback: (repoPath: string) => void): () => void;
+
+  /** Subscribe to local activity change events (branch added/deleted in any repo) */
+  onLocalActivityChanged(callback: (repoPath: string) => void): () => void;
 
   // ----- Window/App -----
 

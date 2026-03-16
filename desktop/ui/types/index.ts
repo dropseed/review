@@ -605,3 +605,25 @@ export interface FileContent {
   imageDataUrl?: string;
   oldImageDataUrl?: string;
 }
+
+// Local activity types
+export interface LocalBranchInfo {
+  name: string;
+  isCurrent: boolean;
+  commitsAhead: number;
+  hasWorkingTreeChanges: boolean;
+  lastCommitDate: string;
+  lastCommitMessage: string;
+  worktreePath: string | null;
+  /** Most recent modification time of any changed file (Unix millis), only for working tree changes. */
+  lastModifiedAt: number | null;
+  /** Diff stats for working tree changes (files changed, additions, deletions). */
+  workingTreeStats: DiffShortStat | null;
+}
+
+export interface RepoLocalActivity {
+  repoPath: string;
+  repoName: string;
+  defaultBranch: string;
+  branches: LocalBranchInfo[];
+}

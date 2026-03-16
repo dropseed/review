@@ -34,6 +34,7 @@ import type {
   ModifiedSymbolEntry,
   PullRequest,
   RemoteInfo,
+  RepoLocalActivity,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
   ReviewState,
@@ -429,6 +430,20 @@ export class TauriClient implements ApiClient {
     return invoke<RepoFileSymbols[]>("get_repo_symbols", { repoPath });
   }
 
+  // ----- Local activity -----
+
+  async listAllLocalActivity(): Promise<RepoLocalActivity[]> {
+    return invoke<RepoLocalActivity[]>("list_all_local_activity");
+  }
+
+  async registerRepo(repoPath: string): Promise<boolean> {
+    return invoke<boolean>("register_repo", { repoPath });
+  }
+
+  async unregisterRepo(repoPath: string): Promise<void> {
+    await invoke("unregister_repo", { repoPath });
+  }
+
   // ----- File watcher -----
 
   async startFileWatcher(repoPath: string): Promise<void> {
@@ -478,6 +493,10 @@ export class TauriClient implements ApiClient {
 
   onGitChanged(callback: (repoPath: string) => void): () => void {
     return this.listenForEvent("git-changed", callback);
+  }
+
+  onLocalActivityChanged(callback: (repoPath: string) => void): () => void {
+    return this.listenForEvent("local-activity-changed", callback);
   }
 
   // ----- Window/App -----

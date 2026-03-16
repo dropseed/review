@@ -1,5 +1,80 @@
 import { useEffect } from "react";
 import { useReviewStore } from "../stores";
+import {
+  makeComparison,
+  type Comparison,
+  type RepoLocalActivity,
+  type GlobalReviewSummary,
+} from "../types";
+import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
+import { makeReviewKey } from "../stores/slices/groupingSlice";
+import { LOCAL_REPO_DEFAULT_COLLAPSED } from "../stores/slices/localActivitySlice";
+
+interface SidebarItem {
+  key: string;
+  reviewKey: ActiveReviewKey;
+  comparison: Comparison;
+}
+
+/** Build a flat list of all sidebar items (local branches first, then reviews). */
+function buildSidebarItemList(state: {
+  localActivity: RepoLocalActivity[];
+  globalReviews: GlobalReviewSummary[];
+  localRepoCollapsed: Record<string, boolean>;
+  localViewMode: "changes" | "all";
+}): SidebarItem[] {
+  const items: SidebarItem[] = [];
+
+  // Local branches first (filter by view mode and skip collapsed repos in "all" mode)
+  for (const repo of state.localActivity) {
+    if (
+      state.localViewMode === "all" &&
+      (state.localRepoCollapsed[repo.repoPath] ?? LOCAL_REPO_DEFAULT_COLLAPSED)
+    )
+      continue;
+    for (const branch of repo.branches) {
+      if (state.localViewMode === "changes" && !branch.hasWorkingTreeChanges)
+        continue;
+      const comparison = makeComparison(repo.defaultBranch, branch.name);
+      items.push({
+        key: makeReviewKey(repo.repoPath, comparison.key),
+        reviewKey: {
+          repoPath: repo.repoPath,
+          comparisonKey: comparison.key,
+        },
+        comparison,
+      });
+    }
+  }
+
+  // Then reviews
+  for (const review of state.globalReviews) {
+    items.push({
+      key: makeReviewKey(review.repoPath, review.comparison.key),
+      reviewKey: {
+        repoPath: review.repoPath,
+        comparisonKey: review.comparison.key,
+      },
+      comparison: review.comparison,
+    });
+  }
+
+  return items;
+}
+
+/** Activate a sidebar item: save snapshot, switch review/comparison. */
+function activateSidebarItem(
+  state: ReturnType<typeof useReviewStore.getState>,
+  item: SidebarItem,
+): void {
+  state.saveNavigationSnapshot();
+  state.setActiveReviewKey(item.reviewKey);
+  if (item.reviewKey.repoPath !== state.repoPath) {
+    state.switchReview(item.reviewKey.repoPath, item.comparison);
+  } else {
+    state.setComparison(item.comparison);
+  }
+}
 
 /**
  * Handles keyboard navigation and shortcuts.
@@ -64,6 +139,46 @@ export function useKeyboardNavigation() {
       }
 
       // Cmd/Ctrl+0, Cmd/Ctrl+=, Cmd/Ctrl+- are handled via Tauri menu accelerators + useMenuEvents
+
+      // Cmd+ArrowUp / Cmd+ArrowDown: cycle through sidebar items
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          event.preventDefault();
+          const items = buildSidebarItemList(state);
+          if (items.length === 0) return;
+
+          const currentKey = state.activeReviewKey
+            ? makeReviewKey(
+                state.activeReviewKey.repoPath,
+                state.activeReviewKey.comparisonKey,
+              )
+            : null;
+          const currentIdx = currentKey
+            ? items.findIndex((item) => item.key === currentKey)
+            : -1;
+
+          let nextIdx: number;
+          if (event.key === "ArrowDown") {
+            nextIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
+          } else {
+            nextIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
+          }
+
+          const next = items[nextIdx];
+          if (next) activateSidebarItem(state, next);
+          return;
+        }
+
+        // Cmd+1 through Cmd+9: jump to sidebar item by position
+        const digit = parseInt(event.key, 10);
+        if (digit >= 1 && digit <= 9) {
+          event.preventDefault();
+          const items = buildSidebarItemList(state);
+          const target = items[digit - 1];
+          if (target) activateSidebarItem(state, target);
+          return;
+        }
+      }
 
       // Don't handle single-key shortcuts when modifier keys are held
       if (event.metaKey || event.ctrlKey || event.altKey) {

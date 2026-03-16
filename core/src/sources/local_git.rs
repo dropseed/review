@@ -43,6 +43,34 @@ pub struct SearchMatch {
     pub line_content: String,
 }
 
+/// Information about a local branch that is ahead of the default branch
+/// or has uncommitted working tree changes.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBranchInfo {
+    pub name: String,
+    pub is_current: bool,
+    pub commits_ahead: u32,
+    pub has_working_tree_changes: bool,
+    pub last_commit_date: String,
+    pub last_commit_message: String,
+    pub worktree_path: Option<String>,
+    /// Most recent modification time of any changed file (Unix millis), only set for working tree changes.
+    pub last_modified_at: Option<u64>,
+    /// Diff stats for working tree changes (files changed, additions, deletions).
+    pub working_tree_stats: Option<DiffShortStat>,
+}
+
+/// Information about a git worktree.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub branch: Option<String>,
+    pub is_main: bool,
+    pub commit_hash: String,
+}
+
 #[derive(Error, Debug)]
 pub enum LocalGitError {
     #[error("Git error: {0}")]
@@ -276,6 +304,317 @@ impl LocalGitSource {
             stashes,
             dates,
         })
+    }
+
+    /// List local branches that are ahead of the given default branch
+    /// or have uncommitted working tree changes.
+    pub fn list_branches_ahead(
+        &self,
+        default_branch: &str,
+    ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
+        let current_branch = self.get_current_branch().unwrap_or_default();
+
+        // Check if current branch has working tree changes (staged, unstaged, or untracked)
+        let wt_status = self
+            .run_git(&["status", "--porcelain=v1"])
+            .unwrap_or_default();
+        let has_wt_changes = !wt_status.trim().is_empty();
+
+        // Compute working tree stats and last modified time for the current branch
+        let (wt_stats, wt_last_modified) = if has_wt_changes {
+            // Diff stats: working tree vs HEAD
+            let stats = self
+                .run_git(&["diff", "--shortstat", "HEAD"])
+                .map(|output| parse_shortstat(&output))
+                .map(|(files, adds, dels)| {
+                    // Also count untracked files
+                    let untracked =
+                        wt_status.lines().filter(|l| l.starts_with("??")).count() as u32;
+                    DiffShortStat {
+                        file_count: files + untracked,
+                        additions: adds,
+                        deletions: dels,
+                    }
+                })
+                .ok();
+
+            // Last modified: most recent mtime of changed files
+            let last_mod = self.get_working_tree_last_modified(&wt_status);
+
+            (stats, last_mod)
+        } else {
+            (None, None)
+        };
+
+        // Get worktree info for cross-referencing
+        let worktrees = self.list_worktrees().unwrap_or_default();
+        let worktree_map: HashMap<String, String> = worktrees
+            .iter()
+            .filter_map(|wt| wt.branch.as_ref().map(|b| (b.clone(), wt.path.clone())))
+            .collect();
+
+        // Try batch approach first using %(ahead-behind:<ref>) (Git 2.36+)
+        // This gets all ahead counts in a single git call instead of N+1
+        let batch_format = format!(
+            "%(refname:short)\t%(ahead-behind:{default_branch})\t%(committerdate:iso-strict)\t%(subject)"
+        );
+        let mut branches = match self.run_git(&[
+            "for-each-ref",
+            &format!("--format={batch_format}"),
+            "refs/heads/",
+        ]) {
+            Ok(output) => self.parse_branches_batch(
+                &output,
+                default_branch,
+                &current_branch,
+                has_wt_changes,
+                &wt_stats,
+                &wt_last_modified,
+                &worktree_map,
+            ),
+            Err(_) => {
+                // Fall back to N+1 approach for older Git versions
+                self.list_branches_ahead_fallback(
+                    default_branch,
+                    &current_branch,
+                    has_wt_changes,
+                    &wt_stats,
+                    &wt_last_modified,
+                    &worktree_map,
+                )?
+            }
+        };
+
+        // Ensure the current branch with working tree changes is sorted first
+        // (it's the most relevant item for local work)
+        branches.sort_by(|a, b| {
+            // Current branch with working tree changes always first
+            let a_wt = a.is_current && a.has_working_tree_changes;
+            let b_wt = b.is_current && b.has_working_tree_changes;
+            b_wt.cmp(&a_wt)
+                .then_with(|| b.last_commit_date.cmp(&a.last_commit_date))
+        });
+
+        Ok(branches)
+    }
+
+    /// Parse branch info from batch `for-each-ref` output that includes `%(ahead-behind:)`.
+    fn parse_branches_batch(
+        &self,
+        output: &str,
+        default_branch: &str,
+        current_branch: &str,
+        has_wt_changes: bool,
+        wt_stats: &Option<DiffShortStat>,
+        wt_last_modified: &Option<u64>,
+        worktree_map: &HashMap<String, String>,
+    ) -> Vec<LocalBranchInfo> {
+        let mut branches = Vec::new();
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.splitn(4, '\t').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+
+            let name = parts[0].trim().to_owned();
+            let is_current = name == *current_branch;
+
+            // Parse ahead-behind: format is "<ahead> <behind>"
+            let ahead_behind = parts.get(1).unwrap_or(&"0 0").trim();
+            let commits_ahead = ahead_behind
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0);
+
+            // Include branch if it's ahead, is the current branch, or is in a worktree
+            let in_worktree = worktree_map.contains_key(&name);
+            let include = commits_ahead > 0 || is_current || in_worktree;
+            if !include {
+                continue;
+            }
+
+            let last_commit_date = parts.get(2).unwrap_or(&"").trim().to_owned();
+            let last_commit_message = parts.get(3).unwrap_or(&"").trim().to_owned();
+
+            let is_wt = is_current && has_wt_changes;
+            branches.push(LocalBranchInfo {
+                is_current,
+                has_working_tree_changes: is_wt,
+                worktree_path: worktree_map.get(&name).cloned(),
+                name,
+                commits_ahead,
+                last_commit_date,
+                last_commit_message,
+                last_modified_at: if is_wt { *wt_last_modified } else { None },
+                working_tree_stats: if is_wt { wt_stats.clone() } else { None },
+            });
+        }
+
+        branches
+    }
+
+    /// Fallback for Git < 2.36 that doesn't support `%(ahead-behind:)`.
+    /// Runs one `rev-list --count` per branch (N+1 approach).
+    fn list_branches_ahead_fallback(
+        &self,
+        default_branch: &str,
+        current_branch: &str,
+        has_wt_changes: bool,
+        wt_stats: &Option<DiffShortStat>,
+        wt_last_modified: &Option<u64>,
+        worktree_map: &HashMap<String, String>,
+    ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
+        let output = self.run_git(&[
+            "for-each-ref",
+            "--format=%(refname:short)\t%(committerdate:iso-strict)\t%(subject)",
+            "refs/heads/",
+        ])?;
+
+        let mut branches = Vec::new();
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.splitn(3, '\t').collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            let name = parts[0].trim().to_owned();
+            let is_current = name == *current_branch;
+            let last_commit_date = parts.get(1).unwrap_or(&"").trim().to_owned();
+            let last_commit_message = parts.get(2).unwrap_or(&"").trim().to_owned();
+
+            // Count commits ahead of default branch
+            let commits_ahead = if name == default_branch {
+                0 // default branch is 0 ahead of itself
+            } else {
+                let ahead_arg = format!("{default_branch}..{name}");
+                match self.run_git(&["rev-list", "--count", &ahead_arg]) {
+                    Ok(count_str) => count_str.trim().parse::<u32>().unwrap_or(0),
+                    Err(_) => 0,
+                }
+            };
+
+            // Include branch if it's ahead, is the current branch, or is in a worktree
+            let in_worktree = worktree_map.contains_key(&name);
+            let include = commits_ahead > 0 || is_current || in_worktree;
+            if !include {
+                continue;
+            }
+
+            let is_wt = is_current && has_wt_changes;
+            branches.push(LocalBranchInfo {
+                is_current,
+                has_working_tree_changes: is_wt,
+                worktree_path: worktree_map.get(&name).cloned(),
+                name,
+                commits_ahead,
+                last_commit_date,
+                last_commit_message,
+                last_modified_at: if is_wt { *wt_last_modified } else { None },
+                working_tree_stats: if is_wt { wt_stats.clone() } else { None },
+            });
+        }
+
+        Ok(branches)
+    }
+
+    /// Get the most recent modification time (Unix millis) among changed files in the working tree.
+    fn get_working_tree_last_modified(&self, status_output: &str) -> Option<u64> {
+        let mut latest: Option<std::time::SystemTime> = None;
+
+        for line in status_output.lines() {
+            if line.len() < 3 {
+                continue;
+            }
+            let path = &line[3..];
+            // Handle renames: "R  old -> new"
+            let actual_path = if path.contains(" -> ") {
+                path.split(" -> ").last().unwrap_or(path)
+            } else {
+                path
+            };
+            let full_path = self.repo_path.join(actual_path);
+            if let Ok(metadata) = std::fs::metadata(&full_path) {
+                if let Ok(modified) = metadata.modified() {
+                    if latest.is_none() || modified > latest.unwrap() {
+                        latest = Some(modified);
+                    }
+                }
+            }
+        }
+
+        latest.map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
+        })
+    }
+
+    /// List all worktrees for this repository.
+    /// Parses `git worktree list --porcelain` output.
+    pub fn list_worktrees(&self) -> Result<Vec<WorktreeInfo>, LocalGitError> {
+        let output = self.run_git(&["worktree", "list", "--porcelain"])?;
+        let mut worktrees = Vec::new();
+
+        let mut current_path: Option<String> = None;
+        let mut current_hash = String::new();
+        let mut current_branch: Option<String> = None;
+        let mut is_bare = false;
+
+        for line in output.lines() {
+            if let Some(path) = line.strip_prefix("worktree ") {
+                // Save previous worktree if any
+                if let Some(path) = current_path.take() {
+                    if !is_bare {
+                        worktrees.push(WorktreeInfo {
+                            path,
+                            branch: current_branch.take(),
+                            is_main: worktrees.is_empty(), // First worktree is main
+                            commit_hash: std::mem::take(&mut current_hash),
+                        });
+                    }
+                }
+                current_path = Some(path.to_owned());
+                current_hash = String::new();
+                current_branch = None;
+                is_bare = false;
+            } else if let Some(hash) = line.strip_prefix("HEAD ") {
+                current_hash = hash.trim().to_owned();
+            } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+                current_branch = branch_ref
+                    .strip_prefix("refs/heads/")
+                    .map(|b| b.to_owned())
+                    .or_else(|| Some(branch_ref.to_owned()));
+            } else if line == "bare" {
+                is_bare = true;
+            }
+        }
+
+        // Don't forget the last entry
+        if let Some(path) = current_path {
+            if !is_bare {
+                worktrees.push(WorktreeInfo {
+                    path,
+                    branch: current_branch,
+                    is_main: worktrees.is_empty(),
+                    commit_hash: current_hash,
+                });
+            }
+        }
+
+        Ok(worktrees)
     }
 
     /// Get structured git status (staged, unstaged, untracked)

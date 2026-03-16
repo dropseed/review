@@ -31,6 +31,10 @@ export function shouldIgnoreReviewStateReload(): boolean {
   return Date.now() - lastSaveTimestamp < SAVE_GRACE_PERIOD_MS;
 }
 
+// Track which local-source reviews have already had their file created on disk,
+// so we don't call ensureReviewExists on every debounced save.
+const ensuredLocalReviews = new Set<string>();
+
 export interface ReviewSlice {
   // Review state
   reviewState: ReviewState | null;
@@ -308,6 +312,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
           // Skip if in-memory state is newer (unsaved changes pending)
           if (latestState.updatedAt > state.updatedAt) return;
         }
+        ensuredLocalReviews.add(makeReviewKey(repoPath, comparisonKey));
         set({ reviewState: state });
       } catch (err) {
         if (get().comparison.key !== comparisonKey) return;
@@ -331,6 +336,37 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     saveReviewState: async () => {
       let { repoPath, reviewState, hunks, comparison } = get();
       if (!repoPath || !reviewState) return;
+
+      // Skip saving if the review file hasn't been created yet and the state
+      // is pristine (no human actions). This avoids creating review files for
+      // comparisons the user merely clicked on without taking any action.
+      const ensureKey = makeReviewKey(repoPath, comparison.key);
+      if (!ensuredLocalReviews.has(ensureKey)) {
+        const hasHunkActions = Object.values(reviewState.hunks).some(
+          (h) => h.status != null,
+        );
+        const hasNotes = reviewState.notes.length > 0;
+        const hasAnnotations =
+          reviewState.annotations && reviewState.annotations.length > 0;
+        const hasTrustChanges = reviewState.trustList.length > 0;
+
+        if (
+          !hasHunkActions &&
+          !hasNotes &&
+          !hasAnnotations &&
+          !hasTrustChanges
+        ) {
+          return; // Pristine — don't create a review file
+        }
+
+        // First meaningful action — ensure review exists on disk
+        try {
+          await client.ensureReviewExists(repoPath, comparison);
+          ensuredLocalReviews.add(ensureKey);
+        } catch (err) {
+          console.error("Failed to create review file:", err);
+        }
+      }
 
       // Defense-in-depth: skip save if review state belongs to a different comparison
       // (catches races where a stale debounced save fires after switching)

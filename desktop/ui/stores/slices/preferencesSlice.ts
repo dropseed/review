@@ -140,7 +140,6 @@ const defaults = {
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
   fileSortOrder: "name" as FileSortOrder,
-  pinnedReviewKeys: [] as string[],
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
   matchVscodeTheme: false,
@@ -188,9 +187,6 @@ export interface PreferencesSlice {
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
-
-  // Pinned reviews
-  pinnedReviewKeys: string[];
 
   // Guide side nav
   guideSideNavCollapsed: boolean;
@@ -247,10 +243,6 @@ export interface PreferencesSlice {
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
-
-  // Pinned reviews actions
-  pinReview: (key: string) => void;
-  unpinReview: (key: string) => void;
 
   // Guide side nav actions
   setGuideSideNavCollapsed: (collapsed: boolean) => void;
@@ -497,23 +489,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setFileSortOrder: (order) => {
       set({ fileSortOrder: order });
       storage.set("fileSortOrder", order);
-    },
-
-    pinReview: (key) => {
-      const current = get().pinnedReviewKeys;
-      if (!current.includes(key)) {
-        const updated = [...current, key];
-        set({ pinnedReviewKeys: updated });
-        storage.set("pinnedReviewKeys", updated);
-      }
-    },
-
-    unpinReview: (key) => {
-      const current = get().pinnedReviewKeys;
-      if (!current.includes(key)) return;
-      const updated = current.filter((k) => k !== key);
-      set({ pinnedReviewKeys: updated });
-      storage.set("pinnedReviewKeys", updated);
     },
 
     setGuideSideNavCollapsed: (collapsed) => {

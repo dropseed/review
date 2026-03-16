@@ -16,6 +16,7 @@ import { createGroupingSlice } from "./slices/groupingSlice";
 import { createUndoSlice } from "./slices/undoSlice";
 import { createGlobalReviewsSlice } from "./slices/tabRailSlice";
 import { createActivitySlice } from "./slices/activitySlice";
+import { createLocalActivitySlice } from "./slices/localActivitySlice";
 
 // Get dependencies
 const apiClient = getApiClient();
@@ -36,4 +37,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createUndoSlice(...args),
   ...createGlobalReviewsSlice(apiClient)(...args),
   ...createActivitySlice(...args),
+  ...createLocalActivitySlice(apiClient, platform.storage)(...args),
 }));

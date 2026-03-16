@@ -7,7 +7,7 @@ import type {
 } from "../../types";
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
-import { resolveRepoIdentity } from "../../utils/repo-identity";
+import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { makeReviewKey } from "./groupingSlice";
 import {
   type ChangesViewMode,
@@ -25,16 +25,6 @@ function isDiffActive(stat: DiffShortStat): boolean {
   return stat.fileCount > 0 || stat.additions > 0 || stat.deletions > 0;
 }
 
-/** Build the composite key used to track per-review state (stats, freshness, etc.). */
-function reviewKey(review: GlobalReviewSummary): string {
-  return `${review.repoPath}:${review.comparison.key}`;
-}
-
-/** Build the composite key for per-review navigation snapshots. */
-function snapshotKey(repoPath: string, comparisonKey: string): string {
-  return `${repoPath}:${comparisonKey}`;
-}
-
 export interface ActiveReviewKey {
   repoPath: string;
   comparisonKey: string;
@@ -48,6 +38,7 @@ export interface RepoMetadata {
 
 export interface GlobalReviewsSlice {
   globalReviews: GlobalReviewSummary[];
+  globalReviewsByKey: Record<string, GlobalReviewSummary>;
   globalReviewsLoading: boolean;
   activeReviewKey: ActiveReviewKey | null;
   repoMetadata: Record<string, RepoMetadata>;
@@ -84,6 +75,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   GlobalReviewsSlice
 > = (client: ApiClient) => (set, get) => ({
   globalReviews: [],
+  globalReviewsByKey: {},
   globalReviewsLoading: false,
   activeReviewKey: null,
   repoMetadata: {},
@@ -104,62 +96,34 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       );
 
       // Resolve metadata for any new repos
-      const { repoMetadata } = get();
       const uniqueRepoPaths = [...new Set(reviews.map((r) => r.repoPath))];
-      const newMetadata = { ...repoMetadata };
-      const toResolve = uniqueRepoPaths.filter((p) => !newMetadata[p]);
-
-      if (toResolve.length > 0) {
-        const results = await Promise.allSettled(
-          toResolve.map(async (repoPath) => {
-            const [identity, defaultBranch] = await Promise.all([
-              resolveRepoIdentity(repoPath),
-              client.getDefaultBranch(repoPath).catch(() => "main"),
-            ]);
-            // Derive org avatar from browse URL (e.g. https://github.com/org/repo → https://github.com/org.png)
-            let avatarUrl: string | null = null;
-            if (identity.browseUrl) {
-              try {
-                const url = new URL(identity.browseUrl);
-                const org = url.pathname.split("/")[1];
-                if (org) {
-                  avatarUrl = `${url.origin}/${org}.png?size=64`;
-                }
-              } catch {
-                // Invalid URL, skip avatar
-              }
-            }
-            return {
-              repoPath,
-              routePrefix: identity.routePrefix,
-              defaultBranch,
-              avatarUrl,
-            };
-          }),
-        );
-
-        for (const result of results) {
-          if (result.status === "fulfilled") {
-            const { repoPath, routePrefix, defaultBranch, avatarUrl } =
-              result.value;
-            newMetadata[repoPath] = { routePrefix, defaultBranch, avatarUrl };
-          }
-        }
-      }
+      const newMetadata = await resolveNewRepoMetadata(
+        uniqueRepoPaths,
+        get().repoMetadata,
+        client,
+      );
 
       // Build diff stats and active state from inline data
       const newStats: Record<string, DiffShortStat> = {};
       const activeState: Record<string, boolean> = {};
       for (const review of reviews) {
         if (review.diffStats) {
-          const key = reviewKey(review);
+          const key = makeReviewKey(review.repoPath, review.comparison.key);
           newStats[key] = review.diffStats;
           activeState[key] = isDiffActive(review.diffStats);
         }
       }
 
+      // Build indexed map for O(1) lookup by key
+      const reviewsByKey: Record<string, GlobalReviewSummary> = {};
+      for (const review of reviews) {
+        const key = makeReviewKey(review.repoPath, review.comparison.key);
+        reviewsByKey[key] = review;
+      }
+
       set({
         globalReviews: reviews,
+        globalReviewsByKey: reviewsByKey,
         globalReviewsLoading: false,
         repoMetadata: newMetadata,
         reviewDiffStats: newStats,
@@ -189,7 +153,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       // Evict the keyed grouping entry for the deleted review
       get().removeGroupingEntry(makeReviewKey(repoPath, comparison.key));
       // Clean up navigation snapshot
-      const key = snapshotKey(repoPath, comparison.key);
+      const key = makeReviewKey(repoPath, comparison.key);
       const { [key]: _, ...rest } = get().navigationSnapshots;
       set({ navigationSnapshots: rest });
       // If the deleted review was active, clear the active key
@@ -210,7 +174,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   saveNavigationSnapshot: () => {
     const { repoPath, comparison, selectedFile, changesViewMode } = get();
     if (!repoPath) return;
-    const key = snapshotKey(repoPath, comparison.key);
+    const key = makeReviewKey(repoPath, comparison.key);
     set({
       navigationSnapshots: {
         ...get().navigationSnapshots,
@@ -223,7 +187,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     const state = get();
     const { repoPath, comparison, flatFileList } = state;
     if (!repoPath) return;
-    const key = snapshotKey(repoPath, comparison.key);
+    const key = makeReviewKey(repoPath, comparison.key);
     const snapshot = state.navigationSnapshots[key];
     if (!snapshot) return;
 
@@ -247,7 +211,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     if (globalReviews.length === 0) return;
 
     const inputs: ReviewFreshnessInput[] = globalReviews.map((review) => {
-      const key = reviewKey(review);
+      const key = makeReviewKey(review.repoPath, review.comparison.key);
       const cached = reviewCachedShas[key];
       return {
         repoPath: review.repoPath,

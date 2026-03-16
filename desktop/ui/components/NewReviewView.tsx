@@ -1,4 +1,5 @@
 import { type ReactNode, useState, useCallback } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { Comparison, GitHubPrRef } from "../types";
 import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
@@ -14,12 +15,16 @@ interface NewReviewViewProps {
 }
 
 export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
+  const navigate = useNavigate();
   const savedReviews = useReviewStore((s) => s.savedReviews);
   const recentRepositories = useReviewStore((s) => s.recentRepositories);
 
   const existingComparisonKeys = savedReviews.map((r) => r.comparison.key);
 
-  const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(
+    searchParams.get("repo"),
+  );
 
   const handleOpenRepository = useCallback(async () => {
     const platform = getPlatformServices();
@@ -61,7 +66,29 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
       <div className="w-full max-w-xl px-6">
         <div className="space-y-6">
           {/* Header */}
-          <div className="text-center">
+          <div className="text-center relative">
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="absolute right-0 top-0 flex items-center justify-center w-7 h-7 rounded-md
+                         text-fg-muted hover:text-fg-secondary hover:bg-fg/[0.08]
+                         transition-colors duration-100"
+              aria-label="Close"
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
             <h1 className="text-lg font-medium text-fg-secondary">
               New Review
             </h1>

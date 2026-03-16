@@ -327,6 +327,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     if let Some(ref mut map) = *watchers {
         // Stop existing watcher for this repo if any
         map.remove(&repo_path_str);
+        // Also remove the lightweight local-activity watcher if present,
+        // since the full watcher covers refs/heads/ changes too
+        map.remove(&format!("local-activity:{repo_path_str}"));
         map.insert(repo_path_str.clone(), handle);
     }
 
@@ -345,4 +348,108 @@ pub fn stop_watching(repo_path: &str) {
             eprintln!("[watcher] Stopped file watcher for {repo_path}");
         }
     }
+}
+
+/// Start lightweight watchers on all registered repos to detect branch/ref changes.
+/// Watches `.git/refs/heads/` and `.git/HEAD` for each repo.
+/// Emits `"local-activity-changed"` event when branch state changes.
+pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
+    init_watchers();
+
+    let repos = review::review::central::list_registered_repos().map_err(|e| e.to_string())?;
+
+    // 1. Lock once to determine which repos need watchers, then drop lock
+    let repos_to_watch: Vec<_> = {
+        let watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
+        repos
+            .iter()
+            .filter(|repo_entry| {
+                let repo_path = PathBuf::from(&repo_entry.path);
+                let git_dir = repo_path.join(".git");
+                if !git_dir.exists() {
+                    return false;
+                }
+                // Skip repos already watched by the full watcher
+                if let Some(ref map) = *watchers {
+                    if map.contains_key(&repo_entry.path) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect()
+    };
+
+    // 2. Create all debouncers without holding the lock
+    let mut new_handles: Vec<(String, WatcherHandle)> = Vec::new();
+
+    for repo_entry in &repos_to_watch {
+        let repo_path = PathBuf::from(&repo_entry.path);
+        let git_dir = repo_path.join(".git");
+
+        let app_clone = app.clone();
+        let repo_path_str = repo_entry.path.clone();
+
+        let mut debouncer = new_debouncer(
+            Duration::from_millis(500),
+            move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+                if let Ok(events) = result {
+                    let any_meaningful = events.iter().any(|e| {
+                        let p = e.path.to_string_lossy();
+                        p.contains("/refs/heads/") || p.ends_with("/HEAD") || p.ends_with("/index")
+                    });
+                    if any_meaningful {
+                        eprintln!("[watcher] Local activity changed for {repo_path_str}");
+                        let _ = app_clone.emit("local-activity-changed", &repo_path_str);
+                    }
+                }
+            },
+        )
+        .map_err(|e| format!("Failed to create local activity watcher: {e}"))?;
+
+        // Watch .git/refs/heads/ for branch changes
+        let refs_heads = git_dir.join("refs").join("heads");
+        if refs_heads.exists() {
+            debouncer
+                .watcher()
+                .watch(&refs_heads, RecursiveMode::Recursive)
+                .ok();
+        }
+
+        // Watch .git/HEAD for branch switches
+        debouncer
+            .watcher()
+            .watch(&git_dir.join("HEAD"), RecursiveMode::NonRecursive)
+            .ok();
+
+        // Watch .git/index for staging changes (working tree dirty state)
+        debouncer
+            .watcher()
+            .watch(&git_dir.join("index"), RecursiveMode::NonRecursive)
+            .ok();
+
+        let key = format!("local-activity:{}", repo_entry.path);
+        new_handles.push((
+            key,
+            WatcherHandle {
+                _debouncer: debouncer,
+            },
+        ));
+    }
+
+    // 3. Lock once to insert all handles
+    {
+        let mut watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
+        if let Some(ref mut map) = *watchers {
+            for (key, handle) in new_handles {
+                map.insert(key, handle);
+            }
+        }
+    }
+
+    eprintln!(
+        "[watcher] Started local activity watchers for {} repos",
+        repos_to_watch.len()
+    );
+    Ok(())
 }

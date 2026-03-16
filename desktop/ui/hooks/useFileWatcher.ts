@@ -12,6 +12,7 @@ export function useFileWatcher(comparisonReady: number) {
   const refresh = useReviewStore((s) => s.refresh);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
+  const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const comparison = useReviewStore((s) => s.comparison);
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
@@ -22,8 +23,12 @@ export function useFileWatcher(comparisonReady: number) {
   const refreshRef = useRef(refresh);
   const loadGlobalReviewsRef = useRef(loadGlobalReviews);
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
+  const loadLocalActivityRef = useRef(loadLocalActivity);
   const comparisonReadyRef = useRef(comparisonReady);
   const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const refreshInProgressRef = useRef(false);
   const refreshRequestedRef = useRef(false);
   const activeReviewKeyRef = useRef(activeReviewKey);
@@ -36,6 +41,7 @@ export function useFileWatcher(comparisonReady: number) {
     refreshRef.current = refresh;
     loadGlobalReviewsRef.current = loadGlobalReviews;
     checkReviewsFreshnessRef.current = checkReviewsFreshness;
+    loadLocalActivityRef.current = loadLocalActivity;
     comparisonReadyRef.current = comparisonReady;
     activeReviewKeyRef.current = activeReviewKey;
     comparisonRef.current = comparison;
@@ -46,6 +52,7 @@ export function useFileWatcher(comparisonReady: number) {
     refresh,
     loadGlobalReviews,
     checkReviewsFreshness,
+    loadLocalActivity,
     comparisonReady,
     activeReviewKey,
     comparison,
@@ -176,9 +183,29 @@ export function useFileWatcher(comparisonReady: number) {
     );
     console.log("[watcher] Listening for git-changed");
 
+    // Local activity changed (branch added/deleted in any registered repo)
+    // Debounce at 500ms to avoid rapid refreshes during git rebase.
+    unlistenFns.push(
+      apiClient.onLocalActivityChanged(() => {
+        console.log("[watcher] Received local-activity-changed event");
+        if (localActivityTimerRef.current) {
+          clearTimeout(localActivityTimerRef.current);
+        }
+        localActivityTimerRef.current = setTimeout(() => {
+          localActivityTimerRef.current = null;
+          loadLocalActivityRef.current();
+        }, 500);
+      }),
+    );
+    console.log("[watcher] Listening for local-activity-changed");
+
     return () => {
       clearTimeout(gitChangedTimerRef.current!);
       gitChangedTimerRef.current = null;
+      if (localActivityTimerRef.current) {
+        clearTimeout(localActivityTimerRef.current);
+        localActivityTimerRef.current = null;
+      }
       refreshInProgressRef.current = false;
       refreshRequestedRef.current = false;
       unlistenFns.forEach((fn) => fn());
