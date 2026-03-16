@@ -140,32 +140,16 @@ export function useKeyboardNavigation() {
 
       // Cmd/Ctrl+0, Cmd/Ctrl+=, Cmd/Ctrl+- are handled via Tauri menu accelerators + useMenuEvents
 
-      // Cmd+ArrowUp / Cmd+ArrowDown: cycle through sidebar items
+      // Cmd+ArrowUp / Cmd+ArrowDown: jump to first/last hunk in current file
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
-        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        if (event.key === "ArrowUp") {
           event.preventDefault();
-          const items = buildSidebarItemList(state);
-          if (items.length === 0) return;
-
-          const currentKey = state.activeReviewKey
-            ? makeReviewKey(
-                state.activeReviewKey.repoPath,
-                state.activeReviewKey.comparisonKey,
-              )
-            : null;
-          const currentIdx = currentKey
-            ? items.findIndex((item) => item.key === currentKey)
-            : -1;
-
-          let nextIdx: number;
-          if (event.key === "ArrowDown") {
-            nextIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
-          } else {
-            nextIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
-          }
-
-          const next = items[nextIdx];
-          if (next) activateSidebarItem(state, next);
+          state.firstHunkInFile();
+          return;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          state.lastHunkInFile();
           return;
         }
 

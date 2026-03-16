@@ -55,6 +55,10 @@ export interface NavigationSlice {
   pendingCommentHunkId: string | null;
   setPendingCommentHunkId: (hunkId: string | null) => void;
 
+  // Jump to first/last hunk in the current file
+  firstHunkInFile: () => void;
+  lastHunkInFile: () => void;
+
   // Advance to next hunk within the same file
   nextHunkInFile: () => void;
 
@@ -157,6 +161,35 @@ function isHunkTrustedInState(hunkId: string, state: ReviewStore): boolean {
   // Only skip if trusted AND not explicitly actioned (approved/rejected/saved)
   if (hunkState?.status) return false;
   return isHunkTrusted(hunkState, reviewState.trustList);
+}
+
+/** Jump to the first or last hunk in the current file. */
+function jumpToFileEdge(
+  get: () => ReviewStore,
+  set: (partial: Partial<ReviewStore>) => void,
+  edge: "first" | "last",
+): void {
+  const { hunks, selectedFile } = get();
+  if (!selectedFile) return;
+
+  let target: (typeof hunks)[number] | undefined;
+  if (edge === "first") {
+    target = hunks.find((h) => h.filePath === selectedFile);
+  } else {
+    for (let i = hunks.length - 1; i >= 0; i--) {
+      if (hunks[i].filePath === selectedFile) {
+        target = hunks[i];
+        break;
+      }
+    }
+  }
+
+  if (target) {
+    set({
+      focusedHunkId: target.id,
+      scrollTarget: { type: "hunk", hunkId: target.id },
+    });
+  }
 }
 
 export const createNavigationSlice: SliceCreator<NavigationSlice> = (
@@ -394,6 +427,10 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Pending comment
   pendingCommentHunkId: null,
   setPendingCommentHunkId: (hunkId) => set({ pendingCommentHunkId: hunkId }),
+
+  // Jump to first/last hunk in the current file
+  firstHunkInFile: () => jumpToFileEdge(get, set, "first"),
+  lastHunkInFile: () => jumpToFileEdge(get, set, "last"),
 
   // Advance to next hunk within the same file, skipping trusted hunks
   nextHunkInFile: () => {
