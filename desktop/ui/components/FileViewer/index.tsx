@@ -38,6 +38,8 @@ import {
   AnnotationDisplay,
 } from "./annotations/AnnotationEditor";
 import { SymbolPopover } from "./SymbolPopover";
+import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
+import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
 
@@ -92,6 +94,9 @@ export function FileViewer({
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
+  const showOutline = useReviewStore((s) => s.showOutline);
+  const fileSymbols = useFileSymbols(filePath);
+  const hasSymbols = fileSymbols !== null && fileSymbols.length > 0;
 
   const [viewMode, setViewMode] = useDiffViewMode(filePath, isSplitActive);
 
@@ -759,6 +764,7 @@ export function FileViewer({
         onExitWorkingTreeMode={
           isWorkingTreeMode ? handleExitWorkingTreeMode : undefined
         }
+        hasSymbols={hasSymbols}
       />
 
       {/* File-level annotations */}
@@ -812,6 +818,13 @@ export function FileViewer({
               onClose={handleCloseSearch}
             />
           </div>
+        )}
+        {showOutline && hasSymbols && (
+          <SymbolOutlinePanel
+            filePath={filePath}
+            scrollNode={scrollNode}
+            symbols={fileSymbols}
+          />
         )}
         <VirtualizerContext.Provider value={virtualizer}>
           <div

@@ -35,6 +35,9 @@ pub struct Symbol {
     #[serde(rename = "endLine")]
     pub end_line: u32,
     pub children: Vec<Symbol>,
+    /// Heading depth for markdown symbols (1–6), None for code symbols.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
 }
 
 /// A symbol definition found via name lookup (includes file path).

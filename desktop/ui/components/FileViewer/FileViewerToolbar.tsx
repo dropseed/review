@@ -121,6 +121,37 @@ const DIFF_VIEW_OPTIONS: [DiffViewMode, string][] = [
   ["new", "New"],
 ];
 
+function OutlineToggleButton() {
+  const showOutline = useReviewStore((s) => s.showOutline);
+  const toggleOutline = useReviewStore((s) => s.toggleOutline);
+
+  return (
+    <SimpleTooltip content="Symbol outline">
+      <button
+        onClick={toggleOutline}
+        className={`flex items-center justify-center w-6 h-6 rounded transition-colors ${
+          showOutline
+            ? "text-fg-secondary bg-surface-raised/50"
+            : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised"
+        }`}
+        aria-label="Toggle symbol outline"
+      >
+        <svg
+          className="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 6h16M4 12h10M4 18h14" />
+        </svg>
+      </button>
+    </SimpleTooltip>
+  );
+}
+
 interface FileViewerToolbarProps {
   filePath: string;
   contentMode: ContentMode;
@@ -146,6 +177,7 @@ interface FileViewerToolbarProps {
   isFocusedPane?: boolean;
   isWorkingTreeMode?: boolean;
   onExitWorkingTreeMode?: () => void;
+  hasSymbols?: boolean;
 }
 
 export const FileViewerToolbar = memo(function FileViewerToolbar({
@@ -173,6 +205,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   isFocusedPane,
   isWorkingTreeMode,
   onExitWorkingTreeMode,
+  hasSymbols,
 }: FileViewerToolbarProps) {
   const routerNavigate = useNavigate();
   const canGoBack = useReviewStore((s) => s.canGoBack);
@@ -492,6 +525,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
             <DiffOptionsPopover />
           </>
         )}
+        {hasSymbols && <OutlineToggleButton />}
         {onSplitOrRotate && (
           <SimpleTooltip
             content={isSplitActive ? "Rotate split" : "Split view"}

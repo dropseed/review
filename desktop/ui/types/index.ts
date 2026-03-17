@@ -466,6 +466,7 @@ export interface FileSymbol {
   startLine: number;
   endLine: number;
   children: FileSymbol[];
+  depth?: number;
 }
 
 export interface RepoFileSymbols {

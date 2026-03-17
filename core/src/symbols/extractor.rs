@@ -167,6 +167,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "struct_item" => {
@@ -177,6 +178,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "enum_item" => {
@@ -187,6 +189,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "trait_item" => {
@@ -198,6 +201,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "impl_item" => {
@@ -209,6 +213,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "type_item" => {
@@ -219,6 +224,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "mod_item" => {
@@ -232,6 +238,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                     start_line: node.start_position().row as u32 + 1,
                     end_line: node.end_position().row as u32 + 1,
                     children,
+                    depth: None,
                 })
             } else {
                 None
@@ -254,6 +261,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "class_declaration" => {
@@ -265,6 +273,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "interface_declaration" => {
@@ -275,6 +284,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "type_alias_declaration" => {
@@ -285,6 +295,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "enum_declaration" => {
@@ -295,6 +306,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "export_statement" => {
@@ -331,6 +343,7 @@ fn extract_variable_function(node: Node, source: &str) -> Option<Symbol> {
                         start_line: node.start_position().row as u32 + 1,
                         end_line: node.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
                 _ => {}
@@ -359,6 +372,7 @@ fn extract_class_methods_js(class_node: Node, source: &str) -> Vec<Symbol> {
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
             }
@@ -382,6 +396,7 @@ fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "class_definition" => {
@@ -393,6 +408,7 @@ fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "decorated_definition" => {
@@ -429,6 +445,7 @@ fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
             }
@@ -443,6 +460,7 @@ fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
                                 start_line: child.start_position().row as u32 + 1,
                                 end_line: child.end_position().row as u32 + 1,
                                 children: vec![],
+                                depth: None,
                             });
                         }
                     }
@@ -468,6 +486,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "method_declaration" => {
@@ -487,6 +506,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "type_declaration" => {
@@ -507,6 +527,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
                         start_line: node.start_position().row as u32 + 1,
                         end_line: node.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
             }
@@ -545,6 +566,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "singleton_method" => {
@@ -555,6 +577,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "class" => {
@@ -566,6 +589,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "module" => {
@@ -577,6 +601,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         _ => None,
@@ -601,6 +626,7 @@ fn extract_ruby_methods(node: Node, source: &str) -> Vec<Symbol> {
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
             }
@@ -612,6 +638,7 @@ fn extract_ruby_methods(node: Node, source: &str) -> Vec<Symbol> {
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
             }
@@ -653,6 +680,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "interface_declaration" => {
@@ -663,6 +691,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "method_declaration" => {
@@ -673,6 +702,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "enum_declaration" => {
@@ -683,6 +713,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         _ => None,
@@ -706,6 +737,7 @@ fn extract_java_members(node: Node, source: &str) -> Vec<Symbol> {
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
                     children: vec![],
+                    depth: None,
                 });
             }
         }
@@ -728,6 +760,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "struct_specifier" => {
@@ -738,6 +771,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "enum_specifier" => {
@@ -748,6 +782,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "type_definition" => {
@@ -758,6 +793,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "declaration" => {
@@ -807,6 +843,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "class_specifier" => {
@@ -818,6 +855,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "struct_specifier" => {
@@ -828,6 +866,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "enum_specifier" => {
@@ -838,6 +877,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "namespace_definition" => {
@@ -849,6 +889,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "declaration" => {
@@ -889,6 +930,7 @@ fn extract_cpp_class_members(node: Node, source: &str) -> Vec<Symbol> {
                             start_line: child.start_position().row as u32 + 1,
                             end_line: child.end_position().row as u32 + 1,
                             children: vec![],
+                            depth: None,
                         });
                     }
                 }
@@ -905,6 +947,7 @@ fn extract_cpp_class_members(node: Node, source: &str) -> Vec<Symbol> {
                                 start_line: child.start_position().row as u32 + 1,
                                 end_line: child.end_position().row as u32 + 1,
                                 children: vec![],
+                                depth: None,
                             });
                         }
                     }
@@ -948,6 +991,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "interface_declaration" => {
@@ -958,6 +1002,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "method_declaration" => {
@@ -968,6 +1013,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "struct_declaration" => {
@@ -978,6 +1024,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "enum_declaration" => {
@@ -988,6 +1035,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "namespace_declaration" => {
@@ -999,6 +1047,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         _ => None,
@@ -1022,6 +1071,7 @@ fn extract_csharp_members(node: Node, source: &str) -> Vec<Symbol> {
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
                     children: vec![],
+                    depth: None,
                 });
             }
         }
@@ -1061,6 +1111,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "function_definition" => {
@@ -1071,6 +1122,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "method_declaration" => {
@@ -1081,6 +1133,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "interface_declaration" => {
@@ -1091,6 +1144,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "trait_declaration" => {
@@ -1102,6 +1156,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children,
+                depth: None,
             })
         }
         "program" => {
@@ -1135,6 +1190,7 @@ fn extract_php_members(node: Node, source: &str) -> Vec<Symbol> {
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
                     children: vec![],
+                    depth: None,
                 });
             }
         }
@@ -1160,6 +1216,7 @@ fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                         start_line: node.start_position().row as u32 + 1,
                         end_line: node.end_position().row as u32 + 1,
                         children: vec![],
+                        depth: None,
                     });
                 }
             }
@@ -1174,6 +1231,7 @@ fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "keyframes_statement" => {
@@ -1194,6 +1252,7 @@ fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         _ => None,
@@ -1236,6 +1295,7 @@ fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth: None,
             })
         }
         "script_element" => Some(Symbol {
@@ -1244,6 +1304,7 @@ fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
             children: vec![],
+            depth: None,
         }),
         "style_element" => Some(Symbol {
             name: "<style>".to_owned(),
@@ -1251,6 +1312,7 @@ fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
             children: vec![],
+            depth: None,
         }),
         _ => None,
     }
@@ -1307,6 +1369,9 @@ fn markdown_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<S
             if name.is_empty() {
                 return None;
             }
+            // Count '#' characters to determine heading level (1–6)
+            let level = heading_text.chars().take_while(|&c| c == '#').count() as u32;
+            let depth = if level > 0 { Some(level) } else { None };
             // Use Module for headings as they represent document sections
             Some(Symbol {
                 name,
@@ -1314,6 +1379,7 @@ fn markdown_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<S
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
                 children: vec![],
+                depth,
             })
         }
         _ => None,
@@ -1366,6 +1432,7 @@ fn extract_methods_from_body(parent: Node, source: &str, _ext: &str) -> Vec<Symb
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
                     children: vec![],
+                    depth: None,
                 });
             }
         }
@@ -2268,6 +2335,7 @@ func (s *Server) Start() {
                 start_line: 2,
                 end_line: 5,
                 children: vec![],
+                depth: None,
             },
             Symbol {
                 name: "world".to_string(),
@@ -2275,6 +2343,7 @@ func (s *Server) Start() {
                 start_line: 10,
                 end_line: 15,
                 children: vec![],
+                depth: None,
             },
         ];
 
@@ -2880,18 +2949,22 @@ API docs.
 
         let intro = symbols.iter().find(|s| s.name == "Introduction").unwrap();
         assert_eq!(intro.kind, SymbolKind::Module);
+        assert_eq!(intro.depth, Some(1));
 
         let getting_started = symbols
             .iter()
             .find(|s| s.name == "Getting Started")
             .unwrap();
         assert_eq!(getting_started.kind, SymbolKind::Module);
+        assert_eq!(getting_started.depth, Some(2));
 
         let install = symbols.iter().find(|s| s.name == "Installation").unwrap();
         assert_eq!(install.kind, SymbolKind::Module);
+        assert_eq!(install.depth, Some(3));
 
         let api = symbols.iter().find(|s| s.name == "API Reference").unwrap();
         assert_eq!(api.kind, SymbolKind::Module);
+        assert_eq!(api.depth, Some(2));
     }
 
     #[cfg(feature = "symbols-typescript")]

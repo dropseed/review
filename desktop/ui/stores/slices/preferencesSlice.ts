@@ -144,6 +144,7 @@ const defaults = {
   guideSideNavWidth: 240,
   matchVscodeTheme: false,
   autoStartDelay: AUTO_START_DELAY_DEFAULT,
+  showOutline: false,
 };
 
 export interface PreferencesSlice {
@@ -200,6 +201,9 @@ export interface PreferencesSlice {
   // Guide auto-start delay (seconds)
   autoStartDelay: number;
 
+  // Symbol outline panel
+  showOutline: boolean;
+
   /** True once loadPreferences() has completed (theme, fonts, etc. are ready) */
   preferencesLoaded: boolean;
 
@@ -255,6 +259,10 @@ export interface PreferencesSlice {
 
   // Guide auto-start delay actions
   setAutoStartDelay: (seconds: number) => void;
+
+  // Symbol outline actions
+  setShowOutline: (show: boolean) => void;
+  toggleOutline: () => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -522,6 +530,15 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setAutoStartDelay: (seconds) => {
       set({ autoStartDelay: seconds });
       storage.set("autoStartDelay", seconds);
+    },
+
+    setShowOutline: (show) => {
+      set({ showOutline: show });
+      storage.set("showOutline", show);
+    },
+
+    toggleOutline: () => {
+      get().setShowOutline(!get().showOutline);
     },
 
     detectAndApplyVscodeTheme: async () => {
