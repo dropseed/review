@@ -47,10 +47,10 @@ fn open_request_path() -> std::path::PathBuf {
     std::path::PathBuf::from(tmp).join("review-open-request")
 }
 
-/// Read and delete the signal file. Returns `(repo_path, optional_comparison_key)`
+/// Read and delete the signal file. Returns `(repo_path, optional_comparison_key, optional_focused_file)`
 /// if the file exists and was written recently (within 30 seconds).
 #[cfg(desktop)]
-fn read_open_request() -> Option<(String, Option<String>)> {
+fn read_open_request() -> Option<(String, Option<String>, Option<String>)> {
     let path = open_request_path();
     let content = std::fs::read_to_string(&path).ok()?;
     let _ = std::fs::remove_file(&path);
@@ -59,6 +59,10 @@ fn read_open_request() -> Option<(String, Option<String>)> {
     let timestamp: u64 = lines.next()?.parse().ok()?;
     let repo_path = lines.next()?.trim().to_owned();
     let comparison_key = lines
+        .next()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    let focused_file = lines
         .next()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
@@ -75,20 +79,26 @@ fn read_open_request() -> Option<(String, Option<String>)> {
     if repo_path.is_empty() {
         None
     } else {
-        Some((repo_path, comparison_key))
+        Some((repo_path, comparison_key, focused_file))
     }
 }
 
 /// Emit a `cli:open-review` event to an existing window so the frontend
 /// navigates to the requested review instead of opening a new window/tab.
 #[cfg(desktop)]
-fn emit_cli_open_review(app: &tauri::AppHandle, repo_path: &str, comparison_key: Option<&str>) {
+fn emit_cli_open_review(
+    app: &tauri::AppHandle,
+    repo_path: &str,
+    comparison_key: Option<&str>,
+    focused_file: Option<&str>,
+) {
     if let Some((_, window)) = app.webview_windows().into_iter().next() {
         let _ = window.emit(
             "cli:open-review",
             serde_json::json!({
                 "repoPath": repo_path,
                 "comparisonKey": comparison_key,
+                "focusedFile": focused_file,
             }),
         );
         let _ = window.show();
@@ -155,7 +165,13 @@ pub fn run() {
                     .collect();
                 if let Some(repo) = non_flag_args.first().cloned() {
                     let comparison_key = non_flag_args.get(1).cloned();
-                    emit_cli_open_review(app, &repo, comparison_key.as_deref());
+                    let focused_file = non_flag_args.get(2).cloned();
+                    emit_cli_open_review(
+                        app,
+                        &repo,
+                        comparison_key.as_deref(),
+                        focused_file.as_deref(),
+                    );
                 }
             },
         ))
@@ -520,6 +536,7 @@ pub fn run() {
             commands::get_commit_detail,
             commands::list_files,
             commands::list_all_files,
+            commands::list_repo_files,
             commands::list_directory_contents,
             commands::get_file_content,
             commands::get_all_hunks,
@@ -569,6 +586,10 @@ pub fn run() {
             commands::read_settings,
             commands::write_settings,
             commands::open_settings_file,
+            commands::path_is_file,
+            commands::read_raw_file,
+            commands::get_file_raw_content,
+            commands::list_directory_plain,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -583,8 +604,27 @@ pub fn run() {
                     let _ = window.set_focus();
                 }
                 // Check for a pending open request from the CLI
-                if let Some((repo_path, comparison_key)) = read_open_request() {
-                    emit_cli_open_review(app_handle, &repo_path, comparison_key.as_deref());
+                if let Some((repo_path, comparison_key, focused_file)) = read_open_request() {
+                    emit_cli_open_review(
+                        app_handle,
+                        &repo_path,
+                        comparison_key.as_deref(),
+                        focused_file.as_deref(),
+                    );
+                }
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => {
+                // Handle files opened via "Open with Review" in Finder.
+                // macOS delivers file:// URLs for file associations.
+                for url in urls {
+                    if url.scheme() == "file" {
+                        if let Ok(path) = url.to_file_path() {
+                            let path_str = path.to_string_lossy().to_string();
+                            log::info!("Opened file via file association: {}", path_str);
+                            emit_cli_open_review(app_handle, &path_str, None, None);
+                        }
+                    }
                 }
             }
             tauri::RunEvent::Exit => {}

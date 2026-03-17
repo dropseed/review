@@ -290,7 +290,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     getActiveGroupingEntry: () => {
       const { repoPath, comparison, groupingStates } = get();
-      if (!repoPath) return EMPTY_ENTRY;
+      if (!repoPath || !comparison) return EMPTY_ENTRY;
       const key = makeReviewKey(repoPath, comparison.key);
       return groupingStates.get(key) ?? EMPTY_ENTRY;
     },
@@ -343,7 +343,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         getActiveGroupingEntry,
         isReviewBusy,
       } = get();
-      if (hunks.length === 0 || !repoPath) return;
+      if (hunks.length === 0 || !repoPath || !comparison) return;
 
       const comparisonKey = comparison.key;
       const reviewKey = makeReviewKey(repoPath, comparisonKey);
@@ -430,7 +430,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       set({ changesViewMode: "files", guideContentMode: null });
       // Clear guideLoading so the button isn't stuck in "Starting…" state
       // if the user exits while startGuide is still awaiting tasks.
-      if (repoPath) {
+      if (repoPath && comparison) {
         const key = makeReviewKey(repoPath, comparison.key);
         set((prev) => ({
           groupingStates: updateGroupingEntry(prev.groupingStates, key, (e) =>
@@ -457,7 +457,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         startActivity,
         endActivity,
       } = get();
-      if (!repoPath || !reviewState) return;
+      if (!repoPath || !reviewState || !comparison) return;
       if (hunks.length === 0) return;
 
       // Narrow repoPath for closures (TypeScript doesn't track the null guard above)
@@ -520,7 +520,10 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         }));
 
         // Persist to disk
-        if (get().comparison.key === comparisonKey && get().repoPath === repo) {
+        if (
+          get().comparison?.key === comparisonKey &&
+          get().repoPath === repo
+        ) {
           // Still on same review — use the normal save path
           const currentState = get().reviewState;
           if (!currentState) return;
@@ -531,7 +534,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         } else {
           // Navigated away — save directly to disk
           try {
-            const diskState = await client.loadReviewState(repo, comparison);
+            const diskState = await client.loadReviewState(repo, comparison!);
             const updatedState = updateReviewGuide(
               diskState,
               hunks,
@@ -593,7 +596,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
               // Auto-activate the first group only if still on same review
               const isStillActive =
-                prev.comparison.key === comparisonKey && prev.repoPath === repo;
+                prev.comparison?.key === comparisonKey &&
+                prev.repoPath === repo;
               return {
                 groupingStates: updated,
                 ...(isFirstGroup &&
@@ -664,7 +668,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     cancelGrouping: () => {
       const { repoPath, comparison, groupingStates } = get();
-      if (!repoPath) return;
+      if (!repoPath || !comparison) return;
       const reviewKey = makeReviewKey(repoPath, comparison.key);
       const requestId = groupingStates.get(reviewKey)?.groupingRequestId;
       if (!requestId) return;
@@ -674,7 +678,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     clearGrouping: () => {
       const { repoPath, comparison, reviewState, saveReviewState } = get();
-      if (!reviewState || !repoPath) return;
+      if (!reviewState || !repoPath || !comparison) return;
 
       const reviewKey = makeReviewKey(repoPath, comparison.key);
       // Preserve guide-level config (autoStart) while clearing generated state
@@ -697,7 +701,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     restoreGuideFromState: () => {
       const { reviewState, hunks, isGroupingStale, repoPath, comparison } =
         get();
-      if (!repoPath) return;
+      if (!repoPath || !comparison) return;
       const generated = reviewState?.guide?.state;
       if (!generated || generated.groups.length === 0) return;
 

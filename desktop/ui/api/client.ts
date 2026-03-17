@@ -133,6 +133,9 @@ export interface ApiClient {
   /** List all files in the repository (for file finder) */
   listAllFiles(repoPath: string, comparison: Comparison): Promise<FileEntry[]>;
 
+  /** List all tracked files in the repository (no comparison needed, for browse mode) */
+  listRepoFiles(repoPath: string): Promise<FileEntry[]>;
+
   /** List contents of a directory (for lazy-loading gitignored directories) */
   listDirectoryContents(
     repoPath: string,
@@ -333,6 +336,7 @@ export interface ApiClient {
   consumeCliRequest(): Promise<{
     repoPath: string;
     comparisonKey: string | null;
+    focusedFile: string | null;
   } | null>;
 
   /** Open a new window for a repository */
@@ -345,6 +349,18 @@ export interface ApiClient {
 
   /** Check if a path is a git repository */
   isGitRepo(path: string): Promise<boolean>;
+
+  /** Check if a path is a file (not a directory) */
+  pathIsFile(path: string): Promise<boolean>;
+
+  /** Read a raw file from disk (no git needed, for standalone file viewing) */
+  readRawFile(path: string): Promise<FileContent>;
+
+  /** Get raw file content at HEAD from a git repo (no diff, browse mode) */
+  getFileRawContent(repoPath: string, filePath: string): Promise<FileContent>;
+
+  /** List files in a plain directory (no git needed, for Layer 0 browsing) */
+  listDirectoryPlain(dirPath: string): Promise<FileEntry[]>;
 
   // ----- VS Code theme -----
 

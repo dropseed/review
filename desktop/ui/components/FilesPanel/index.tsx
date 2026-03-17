@@ -255,6 +255,7 @@ interface FilesPanelProps {
 }
 
 export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
+  const comparison = useReviewStore((s) => s.comparison);
   const commits = useReviewStore((s) => s.commits);
 
   // Track selected commit hash locally (for highlighting in CommitsPanel)
@@ -808,10 +809,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               className="flex-1 min-w-0"
             >
               <TabsList aria-label="File view mode">
-                {showGitTab && <TabsTrigger value="git">Git</TabsTrigger>}
-                <TabsTrigger value="changes">Review</TabsTrigger>
+                {comparison && showGitTab && (
+                  <TabsTrigger value="git">Git</TabsTrigger>
+                )}
+                {comparison && (
+                  <TabsTrigger value="changes">Review</TabsTrigger>
+                )}
                 <TabsTrigger value="browse">Browse</TabsTrigger>
-                <TabsTrigger value="commits">Commits</TabsTrigger>
+                {comparison && (
+                  <TabsTrigger value="commits">Commits</TabsTrigger>
+                )}
                 {searchActive && (
                   <TabsTrigger
                     value="search"

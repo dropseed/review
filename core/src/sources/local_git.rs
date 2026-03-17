@@ -1061,6 +1061,27 @@ impl LocalGitSource {
         ))
     }
 
+    /// List all tracked files in the repository (no comparison needed).
+    ///
+    /// Runs `git ls-files` and returns a file tree with no change status,
+    /// suitable for "browse mode" where the user wants to see every file
+    /// in the repo without a diff comparison.
+    pub fn list_tracked_files(&self) -> Result<Vec<FileEntry>, LocalGitError> {
+        let tracked = self.run_git(&["ls-files"])?;
+        let all_files: HashSet<String> = tracked.lines().map(|l| l.to_owned()).collect();
+        let file_status: HashMap<String, FileStatus> = HashMap::new();
+        let gitignored_dirs: HashSet<String> = HashSet::new();
+        let rename_map: HashMap<String, String> = HashMap::new();
+
+        Ok(build_file_tree(
+            all_files,
+            &file_status,
+            &gitignored_dirs,
+            Some(&self.repo_path),
+            &rename_map,
+        ))
+    }
+
     /// List contents of a directory (used for lazy-loading gitignored directories).
     ///
     /// Returns a flat list of FileEntry items for the immediate children of the

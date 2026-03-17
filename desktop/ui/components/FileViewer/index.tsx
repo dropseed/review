@@ -458,8 +458,10 @@ export function FileViewer({
   const fileContentRef = useRef(fileContent);
   fileContentRef.current = fileContent;
 
+  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
+
   useEffect(() => {
-    if (!repoPath || !comparison) return;
+    if (!repoPath) return;
 
     let cancelled = false;
 
@@ -478,14 +480,22 @@ export function FileViewer({
 
     const api = getApiClient();
 
-    // When viewing a Git panel file with a specific mode, use the dedicated API
+    // Build the content promise based on the mode
     let contentPromise: Promise<FileContent>;
-    if (isWorkingTreeMode && workingTreeDiffMode) {
+    if (isStandaloneFile) {
+      // Standalone file mode: read raw file from disk (no git needed)
+      const absolutePath = repoPath + "/" + filePath;
+      contentPromise = api.readRawFile(absolutePath);
+    } else if (isWorkingTreeMode && workingTreeDiffMode) {
+      // When viewing a Git panel file with a specific mode, use the dedicated API
       contentPromise = api.getWorkingTreeFileContent(
         repoPath,
         filePath,
         workingTreeDiffMode === "staged",
       );
+    } else if (comparison === null) {
+      // Browse mode: get raw file content at HEAD (no diff needed)
+      contentPromise = api.getFileRawContent(repoPath, filePath);
     } else {
       const effectiveComparison =
         isWorkingTreeMode && gitStatus
@@ -523,8 +533,8 @@ export function FileViewer({
         setLoading(false);
         // Sync store hunks with fresh per-file data so the sidebar
         // stays consistent with what the diff view actually renders.
-        // Skip sync for working tree diffs — these aren't review hunks.
-        if (!isWorkingTreeMode) {
+        // Skip sync for working tree diffs and standalone files — these aren't review hunks.
+        if (!isWorkingTreeMode && !isStandaloneFile) {
           useReviewStore.getState().syncFileHunks(filePath, result.hunks);
         }
       })
@@ -546,6 +556,7 @@ export function FileViewer({
     isWorkingTreeMode,
     workingTreeDiffMode,
     gitStatus,
+    isStandaloneFile,
   ]);
 
   // Minimap hooks — must be before early returns

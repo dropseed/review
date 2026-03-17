@@ -23,7 +23,7 @@ export function useAutoStartGuide(): void {
   // Including isLoading in deps ensures the timer restarts after loading completes.
   const isLoading = useReviewStore((s) => s.loadingProgress !== null);
   const repoPath = useReviewStore((s) => s.repoPath);
-  const comparisonKey = useReviewStore((s) => s.comparison.key);
+  const comparisonKey = useReviewStore((s) => s.comparison?.key);
   const autoStartDelay = useReviewStore((s) => s.autoStartDelay);
   // Derive staleness from primitive fields so the selector doesn't run O(n) set
   // comparisons on every unrelated store update (e.g. countdown ticks).
@@ -88,7 +88,7 @@ export function useAutoStartGuide(): void {
       }
 
       // Already generating
-      const reviewKey = makeReviewKey(state.repoPath, state.comparison.key);
+      const reviewKey = makeReviewKey(state.repoPath, state.comparison!.key);
       if (state.isReviewBusy(reviewKey)) {
         console.log("[auto-guide] Skipped: already generating for", reviewKey);
         return;

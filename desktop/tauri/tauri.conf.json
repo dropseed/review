@@ -36,7 +36,69 @@
     "createUpdaterArtifacts": "v1Compatible",
     "macOS": {
       "entitlements": "Entitlements.plist"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["txt", "md", "json", "yaml", "yml", "toml"],
+        "mimeType": "text/plain",
+        "role": "Viewer",
+        "description": "Text file"
+      },
+      {
+        "ext": ["rs"],
+        "mimeType": "text/x-rust",
+        "role": "Viewer",
+        "description": "Rust source file"
+      },
+      {
+        "ext": ["ts", "tsx"],
+        "mimeType": "text/x-typescript",
+        "role": "Viewer",
+        "description": "TypeScript source file"
+      },
+      {
+        "ext": ["js", "jsx"],
+        "mimeType": "text/javascript",
+        "role": "Viewer",
+        "description": "JavaScript source file"
+      },
+      {
+        "ext": ["py"],
+        "mimeType": "text/x-python",
+        "role": "Viewer",
+        "description": "Python source file"
+      },
+      {
+        "ext": ["go"],
+        "mimeType": "text/x-go",
+        "role": "Viewer",
+        "description": "Go source file"
+      },
+      {
+        "ext": ["rb"],
+        "mimeType": "text/x-ruby",
+        "role": "Viewer",
+        "description": "Ruby source file"
+      },
+      {
+        "ext": ["java"],
+        "mimeType": "text/x-java",
+        "role": "Viewer",
+        "description": "Java source file"
+      },
+      {
+        "ext": ["c", "h"],
+        "mimeType": "text/x-c",
+        "role": "Viewer",
+        "description": "C source file"
+      },
+      {
+        "ext": ["cpp"],
+        "mimeType": "text/x-c++src",
+        "role": "Viewer",
+        "description": "C++ source file"
+      }
+    ]
   },
   "plugins": {
     "updater": {

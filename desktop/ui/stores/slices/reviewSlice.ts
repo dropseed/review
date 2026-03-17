@@ -123,7 +123,7 @@ export interface ReviewSlice {
 function patchGlobalReviewProgress(
   get: () => {
     repoPath: string | null;
-    comparison: Comparison;
+    comparison: Comparison | null;
     hunks: DiffHunk[];
     globalReviews: GlobalReviewSummary[];
   },
@@ -131,7 +131,7 @@ function patchGlobalReviewProgress(
   reviewState: ReviewState,
 ): void {
   const { repoPath, comparison, hunks, globalReviews } = get();
-  if (!repoPath) return;
+  if (!repoPath || !comparison) return;
 
   const progress = computeReviewProgress(hunks, reviewState);
   const patched = globalReviews.map((r) => {
@@ -296,13 +296,13 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     loadReviewState: async () => {
       const { repoPath, comparison } = get();
-      if (!repoPath) return;
+      if (!repoPath || !comparison) return;
 
       const comparisonKey = comparison.key;
       try {
         const state = await client.loadReviewState(repoPath, comparison);
         // Discard result if comparison changed while loading
-        if (get().comparison.key !== comparisonKey) return;
+        if (get().comparison?.key !== comparisonKey) return;
         // Re-read current state after await — it may have been updated
         // by user actions (e.g. setTrustList) while the load was in flight
         const latestState = get().reviewState;
@@ -315,7 +315,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         ensuredLocalReviews.add(makeReviewKey(repoPath, comparisonKey));
         set({ reviewState: state });
       } catch (err) {
-        if (get().comparison.key !== comparisonKey) return;
+        if (get().comparison?.key !== comparisonKey) return;
         console.error("Failed to load review state:", err);
         set({
           reviewState: {
@@ -335,7 +335,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     saveReviewState: async () => {
       let { repoPath, reviewState, hunks, comparison } = get();
-      if (!repoPath || !reviewState) return;
+      if (!repoPath || !reviewState || !comparison) return;
 
       // Skip saving if the review file hasn't been created yet and the state
       // is pristine (no human actions). This avoids creating review files for
@@ -396,8 +396,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
         // Version conflict: reload disk state for its version and retry
         try {
-          const { comparison } = get();
-          const diskState = await client.loadReviewState(repoPath, comparison);
+          const { comparison: currentComparison } = get();
+          if (!currentComparison) return;
+          const diskState = await client.loadReviewState(
+            repoPath,
+            currentComparison,
+          );
           const currentState = get().reviewState!;
           await saveAndUpdateVersion({
             ...currentState,
@@ -681,7 +685,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         refresh,
         removeGroupingEntry,
       } = get();
-      if (!reviewState) return;
+      if (!reviewState || !comparison) return;
 
       const now = new Date().toISOString();
       const newState: ReviewState = {
@@ -744,6 +748,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         loadGlobalReviews,
         checkReviewsFreshness,
       } = get();
+
+      if (!comparison) return;
 
       // Load data in parallel; pass isRefreshing=true to suppress progress indicators
       const range = getComparisonRange(comparison);

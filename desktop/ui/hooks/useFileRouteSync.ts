@@ -65,6 +65,9 @@ export function useFileRouteSync() {
     }
   }, [urlFilePath, flatFileList, navigateToBrowse]);
 
+  // Detect whether we're on a browse or review route
+  const isBrowseRoute = location.pathname.includes("/browse");
+
   // --- Store → URL ---
   // When selectedFile or guideContentMode changes, update the URL.
   // Skip URL updates in guide mode to avoid a race condition where the
@@ -73,9 +76,12 @@ export function useFileRouteSync() {
   useEffect(() => {
     if (isSyncingRef.current) return;
     if (guideContentMode !== null) return;
-    if (!owner || !repo || !comparisonKey) return;
+    if (!owner || !repo) return;
+    if (!isBrowseRoute && !comparisonKey) return;
 
-    const basePath = `/${owner}/${repo}/review/${comparisonKey}`;
+    const basePath = isBrowseRoute
+      ? `/${owner}/${repo}/browse`
+      : `/${owner}/${repo}/review/${comparisonKey}`;
 
     const targetPath = selectedFile
       ? `${basePath}/file/${selectedFile}`
@@ -97,6 +103,7 @@ export function useFileRouteSync() {
     owner,
     repo,
     comparisonKey,
+    isBrowseRoute,
     location.pathname,
     navigate,
   ]);

@@ -53,8 +53,22 @@ function PrBodySection(): ReactNode {
 }
 
 export function OverviewContent(): ReactNode {
+  const comparison = useReviewStore((s) => s.comparison);
   const progress = useReviewProgress();
   const githubPrTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
+
+  // Browse mode: no comparison set
+  if (!comparison) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center overflow-hidden">
+        <div className="flex flex-col items-center animate-fade-in">
+          <p className="text-sm text-fg-muted">
+            Select a file to view its contents
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (progress.totalHunks === 0) {
     return (

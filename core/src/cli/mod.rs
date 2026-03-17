@@ -1,7 +1,7 @@
 use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -9,49 +9,63 @@ use std::process::{Command, Stdio};
 #[command(name = "review")]
 #[command(author, version, about = "Review diffs more efficiently", long_about = None)]
 pub struct Cli {
-    /// Repository path (defaults to current directory)
-    #[arg(short, long, global = true)]
-    pub repo: Option<String>,
-
     /// Override the data directory (default: ~/.review/, env: REVIEW_HOME)
     #[arg(long, global = true)]
     pub home: Option<String>,
 
-    /// Comparison spec: "base..head" or a single ref (compared against default branch).
-    /// Auto-detects from branches if not specified.
-    pub spec: Option<String>,
+    #[command(subcommand)]
+    pub command: Option<Commands>,
 
-    /// The old side of the diff (defaults to default branch)
-    #[arg(long)]
-    pub old: Option<String>,
-
-    /// The new side of the diff (defaults to current branch)
-    #[arg(long)]
-    pub new: Option<String>,
+    /// Path to open (file or directory, defaults to current directory)
+    pub path: Option<String>,
 }
 
-impl Cli {
-    /// Get the repository path, using current directory as default
-    fn get_repo_path(&self) -> Result<String, String> {
-        if let Some(ref repo) = self.repo {
-            return Ok(repo.clone());
+#[derive(Debug, Subcommand)]
+pub enum Commands {
+    /// Start a review: resolve a comparison, create review state, and open the app
+    Start {
+        /// Repository path (defaults to current directory)
+        #[arg(short, long)]
+        repo: Option<String>,
+
+        /// Comparison spec: "base..head" or a single ref (compared against default branch).
+        /// Auto-detects from branches if not specified.
+        spec: Option<String>,
+
+        /// The old side of the diff (defaults to default branch)
+        #[arg(long)]
+        old: Option<String>,
+
+        /// The new side of the diff (defaults to current branch)
+        #[arg(long)]
+        new: Option<String>,
+    },
+}
+
+/// Walk up from `start` to find a directory containing `.git/`.
+fn find_repo_root(start: &Path) -> Option<PathBuf> {
+    let mut current = start;
+    loop {
+        if current.join(".git").exists() {
+            return Some(current.to_path_buf());
         }
-
-        let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-
-        let mut current = cwd.as_path();
-        loop {
-            if current.join(".git").exists() {
-                return Ok(current.to_string_lossy().to_string());
-            }
-            match current.parent() {
-                Some(parent) => current = parent,
-                None => break,
-            }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => return None,
         }
-
-        Err("Not a git repository. Use --repo to specify a repository path.".to_owned())
     }
+}
+
+/// Get the repository path from an explicit `--repo` flag, or walk up from cwd.
+fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
+    if let Some(ref repo) = repo {
+        return Ok(repo.clone());
+    }
+
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    find_repo_root(&cwd)
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Not a git repository. Use --repo to specify a repository path.".to_owned())
 }
 
 /// Resolve a potentially relative path to an absolute one.
@@ -63,7 +77,42 @@ fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
     Ok(cwd.join(path))
 }
 
-/// Run the CLI: resolve the comparison, persist state, and open the desktop app.
+/// Resolve the path given to `review [path]`. Returns `(repo_or_path, Option<relative_file_path>)`.
+/// When the target is a file inside a git repo, the relative path from the repo root is returned.
+/// When no git repo is found, returns `(target_path, None)`.
+fn resolve_open_path(path: Option<String>) -> Result<(String, Option<String>), String> {
+    let target = match path {
+        Some(p) => resolve_absolute(Path::new(&p))?,
+        None => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+
+    // If it's a file, start searching from the parent directory
+    let search_start = if target.is_file() {
+        target.parent().unwrap_or(&target).to_path_buf()
+    } else {
+        target.clone()
+    };
+
+    // Try to find a git repo root
+    match find_repo_root(&search_start) {
+        Some(repo_root) => {
+            // If the target is a file (or at least different from the repo root),
+            // compute the relative path from the repo root.
+            let focused_file = if target.is_file() {
+                target
+                    .strip_prefix(&repo_root)
+                    .ok()
+                    .map(|rel| rel.to_string_lossy().to_string())
+            } else {
+                None
+            };
+            Ok((repo_root.to_string_lossy().to_string(), focused_file))
+        }
+        None => Ok((target.to_string_lossy().to_string(), None)),
+    }
+}
+
+/// Run the CLI: dispatch to the appropriate subcommand.
 pub fn run(cli: Cli) -> Result<(), String> {
     let has_home_override = cli.home.is_some();
 
@@ -73,27 +122,53 @@ pub fn run(cli: Cli) -> Result<(), String> {
         std::env::set_var("REVIEW_HOME", &absolute);
     }
 
-    let repo_path = cli.get_repo_path()?;
-    let path = PathBuf::from(&repo_path);
+    match cli.command {
+        Some(Commands::Start {
+            repo,
+            spec,
+            old,
+            new,
+        }) => run_start(repo, spec, old, new, has_home_override),
+        None => run_open(cli.path, has_home_override),
+    }
+}
 
-    let comparison = if let Some(spec) = cli.spec {
-        // Positional spec takes priority: "base..head" or single ref
-        parse_comparison_spec(&path, &spec)?
-    } else {
-        // Use --old/--new if provided, otherwise auto-detect from branches
-        resolve_comparison(&path, cli.old, cli.new)?
-    };
-
-    storage::ensure_review_exists(&path, &comparison, None).map_err(|e| e.to_string())?;
-
-    open_app(&repo_path, &comparison.key)?;
-
+fn warn_home_override(has_home_override: bool) {
     if has_home_override {
         eprintln!(
             "Note: --home only takes effect on a fresh launch. If Review is already running, quit it first."
         );
     }
+}
 
+/// `review [path]` — open a path in the app without creating a review.
+fn run_open(path: Option<String>, has_home_override: bool) -> Result<(), String> {
+    let (repo_path, focused_file) = resolve_open_path(path)?;
+    open_app(&repo_path, None, focused_file.as_deref())?;
+    warn_home_override(has_home_override);
+    Ok(())
+}
+
+/// `review start [spec]` — resolve a comparison, persist review state, open the app.
+fn run_start(
+    repo: Option<String>,
+    spec: Option<String>,
+    old: Option<String>,
+    new: Option<String>,
+    has_home_override: bool,
+) -> Result<(), String> {
+    let repo_path = get_repo_path(&repo)?;
+    let path = PathBuf::from(&repo_path);
+
+    let comparison = if let Some(spec) = spec {
+        parse_comparison_spec(&path, &spec)?
+    } else {
+        resolve_comparison(&path, old, new)?
+    };
+
+    storage::ensure_review_exists(&path, &comparison, None).map_err(|e| e.to_string())?;
+    open_app(&repo_path, Some(&comparison.key), None)?;
+    warn_home_override(has_home_override);
     Ok(())
 }
 
@@ -137,19 +212,26 @@ fn open_request_path() -> PathBuf {
     PathBuf::from(tmp).join("review-open-request")
 }
 
-/// Launch the Review desktop app for the given repo and comparison.
-fn open_app(repo_path: &str, comparison_key: &str) -> Result<(), String> {
-    // Write a signal file with a timestamp, repo path, and comparison key.
+/// Launch the Review desktop app for the given repo, optionally with a comparison and/or focused file.
+fn open_app(
+    repo_path: &str,
+    comparison_key: Option<&str>,
+    focused_file: Option<&str>,
+) -> Result<(), String> {
+    // Write a signal file with a timestamp, repo path, optional comparison key, and optional focused file.
+    // Always write all 4 lines, using empty strings for missing optional values.
     // This is the reliable channel for the already-running case where
     // `open -a` activates the app but drops `--args`.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let _ = std::fs::write(
-        open_request_path(),
-        format!("{now}\n{repo_path}\n{comparison_key}"),
+    let signal_content = format!(
+        "{now}\n{repo_path}\n{}\n{}",
+        comparison_key.unwrap_or(""),
+        focused_file.unwrap_or("")
     );
+    let _ = std::fs::write(open_request_path(), signal_content);
 
     #[cfg(target_os = "macos")]
     {
@@ -172,15 +254,19 @@ fn open_app(repo_path: &str, comparison_key: &str) -> Result<(), String> {
                 cmd.env("REVIEW_HOME", review_home);
             }
 
-            let result = cmd
-                .arg("-a")
-                .arg(app_path)
-                .arg("--args")
-                .arg(repo_path)
-                .arg(comparison_key)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
+            cmd.arg("-a").arg(app_path).arg("--args").arg(repo_path);
+
+            // Only pass comparison key as an arg if present
+            if let Some(key) = comparison_key {
+                cmd.arg(key);
+            }
+
+            // Only pass focused file as an arg if present
+            if let Some(file) = focused_file {
+                cmd.arg(file);
+            }
+
+            let result = cmd.stdout(Stdio::null()).stderr(Stdio::null()).status();
 
             match result {
                 Ok(status) if status.success() => Some(()),

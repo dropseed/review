@@ -9,7 +9,6 @@ import type {
 } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
-import { makeComparison } from "../../types";
 import type { UndoEntry } from "./undoSlice";
 import { symbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
@@ -22,9 +21,6 @@ export function cancelPendingSaves(): void {
   debouncedSave.cancel();
   debouncedUndoSave.cancel();
 }
-
-// Default comparison: main..HEAD
-const defaultComparison: Comparison = makeComparison("main", "HEAD");
 
 // IMPORTANT: These patterns MUST stay in sync with the Rust implementation
 // in compare/src/filters.rs. A synchronous version is used here (instead of
@@ -67,7 +63,8 @@ export interface LoadingProgress {
 export interface FilesSlice {
   // Core state
   repoPath: string | null;
-  comparison: Comparison;
+  comparison: Comparison | null;
+  currentBranch: string | null;
   files: FileEntry[];
   allFiles: FileEntry[];
   allFilesLoading: boolean;
@@ -80,10 +77,12 @@ export interface FilesSlice {
   loadedGitIgnoredDirs: Set<string>;
   // Incremented on each refresh() to trigger re-fetches in components
   refreshGeneration: number;
+  // True when viewing a standalone file (not in a git repo)
+  isStandaloneFile: boolean;
 
   // Actions
   setRepoPath: (path: string | null) => void;
-  setComparison: (comparison: Comparison) => void;
+  setComparison: (comparison: Comparison | null) => void;
   /** Atomically set both repoPath and comparison in one update, preventing phantom review entries. */
   switchReview: (path: string, comparison: Comparison) => void;
   setFiles: (files: FileEntry[]) => void;
@@ -94,6 +93,10 @@ export interface FilesSlice {
   // Loading
   loadFiles: (isRefreshing?: boolean) => Promise<void>;
   loadAllFiles: (isRefreshing?: boolean) => Promise<void>;
+  /** Load all tracked files (no comparison needed, for browse mode) */
+  loadRepoFiles: () => Promise<void>;
+  /** Load the current branch name */
+  loadCurrentBranch: () => Promise<void>;
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
 }
@@ -131,8 +134,10 @@ const comparisonResetState = {
 
 /** Additional state reset only needed when switching repositories. */
 const repoResetState = {
+  currentBranch: null as string | null,
   loadedGitIgnoredDirs: new Set<string>(),
   refreshGeneration: 0,
+  isStandaloneFile: false,
   // Search
   searchQuery: "",
   searchResults: [] as SearchMatch[],
@@ -146,7 +151,8 @@ const repoResetState = {
 export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
   (client: ApiClient) => (set, get) => ({
     repoPath: null,
-    comparison: defaultComparison,
+    comparison: null,
+    currentBranch: null,
     files: [],
     allFiles: [],
     allFilesLoading: false,
@@ -156,6 +162,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     flatFileList: [],
     loadedGitIgnoredDirs: new Set<string>(),
     refreshGeneration: 0,
+    isStandaloneFile: false,
 
     setRepoPath: (path) => {
       const currentPath = get().repoPath;
@@ -242,12 +249,12 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         updateActivity,
         endActivity,
       } = get();
-      if (!repoPath) return;
+      if (!repoPath || !comparison) return;
 
       // Capture comparison key so we can detect if the user switched
       // comparisons while this async operation was in-flight.
       const comparisonKey = comparison.key;
-      const isStale = () => get().comparison.key !== comparisonKey;
+      const isStale = () => get().comparison?.key !== comparisonKey;
 
       // Clear symbols so they reload when the Symbols tab is next opened.
       // Skip during refresh to avoid a visual flash — symbols will update
@@ -464,7 +471,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
 
     loadAllFiles: async (isRefreshing = false) => {
       const { repoPath, comparison } = get();
-      if (!repoPath) return;
+      if (!repoPath || !comparison) return;
 
       const comparisonKey = comparison.key;
       if (!isRefreshing) {
@@ -472,7 +479,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       }
       try {
         const allFiles = await client.listAllFiles(repoPath, comparison);
-        if (get().comparison.key !== comparisonKey) {
+        if (get().comparison?.key !== comparisonKey) {
           set({ allFilesLoading: false });
           return;
         }
@@ -480,6 +487,38 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       } catch (err) {
         console.error("Failed to load all files:", err);
         set({ allFilesLoading: false });
+      }
+    },
+
+    loadRepoFiles: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+
+      set({ allFilesLoading: true });
+      try {
+        const allFiles = await client.listRepoFiles(repoPath);
+        // Don't update if repo changed while loading
+        if (get().repoPath !== repoPath) {
+          set({ allFilesLoading: false });
+          return;
+        }
+        set({ allFiles, allFilesLoading: false });
+      } catch (err) {
+        console.error("Failed to load repo files:", err);
+        set({ allFilesLoading: false });
+      }
+    },
+
+    loadCurrentBranch: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      try {
+        const branch = await client.getCurrentBranch(repoPath);
+        if (get().repoPath === repoPath) {
+          set({ currentBranch: branch });
+        }
+      } catch {
+        // Ignore — not critical
       }
     },
 

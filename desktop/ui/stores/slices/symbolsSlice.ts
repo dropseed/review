@@ -31,7 +31,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         startActivity,
         endActivity,
       } = get();
-      if (!repoPath || symbolsLoading) return;
+      if (!repoPath || !comparison || symbolsLoading) return;
 
       const comparisonKey = comparison.key;
       set({ symbolsLoading: true });
@@ -58,7 +58,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         );
 
         // Don't update state if comparison changed while awaiting
-        if (get().comparison.key !== comparisonKey) {
+        if (get().comparison?.key !== comparisonKey) {
           set({ symbolsLoading: false });
           return;
         }

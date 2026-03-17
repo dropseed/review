@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 
 /**
@@ -13,8 +14,61 @@ export function useComparisonLoader(
   setInitialLoading: (loading: boolean) => void,
 ): void {
   const repoPath = useReviewStore((s) => s.repoPath);
-  const comparisonKey = useReviewStore((s) => s.comparison.key);
+  const comparisonKey = useReviewStore((s) => s.comparison?.key);
+  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
 
+  // Browse mode (git repo): load repo files and current branch when no comparison is set
+  useEffect(() => {
+    if (!repoPath || comparisonKey || isStandaloneFile) return;
+
+    const { loadRepoFiles, loadCurrentBranch } = useReviewStore.getState();
+
+    let cancelled = false;
+
+    async function loadBrowseData(): Promise<void> {
+      try {
+        await Promise.all([loadRepoFiles(), loadCurrentBranch()]);
+      } catch (err) {
+        if (!cancelled) console.error("Failed to load browse data:", err);
+      } finally {
+        if (!cancelled) setInitialLoading(false);
+      }
+    }
+
+    loadBrowseData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath, comparisonKey, isStandaloneFile, setInitialLoading]);
+
+  // Standalone mode (non-git): load directory contents
+  useEffect(() => {
+    if (!repoPath || !isStandaloneFile) return;
+
+    let cancelled = false;
+
+    async function loadStandaloneData(): Promise<void> {
+      try {
+        const files = await getApiClient().listDirectoryPlain(repoPath!);
+        if (!cancelled) {
+          useReviewStore.setState({ allFiles: files, allFilesLoading: false });
+        }
+      } catch (err) {
+        if (!cancelled) console.error("Failed to load directory:", err);
+      } finally {
+        if (!cancelled) setInitialLoading(false);
+      }
+    }
+
+    loadStandaloneData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath, isStandaloneFile, setInitialLoading]);
+
+  // Review mode: load files and review state when comparison is ready
   useEffect(() => {
     if (!repoPath || !comparisonReady) return;
 

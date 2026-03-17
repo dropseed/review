@@ -273,7 +273,7 @@ export function useSymbolNavigation() {
 
       const { repoPath, hunks, symbolDiffs, comparison } =
         useReviewStore.getState();
-      if (!repoPath) return;
+      if (!repoPath || !comparison) return;
 
       setState({
         popoverOpen: true,

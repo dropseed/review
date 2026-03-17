@@ -174,7 +174,7 @@ interface AppContext {
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
-  handleSelectRepo: (path: string) => void;
+  handleSelectRepo: (path: string) => Promise<void>;
   handleNewReview: (
     path: string,
     comparison: Comparison,
@@ -302,6 +302,7 @@ export function AppRouter() {
         <Route element={<AppShell />}>
           <Route path="/" element={<EmptyTabState />} />
           <Route path="/new" element={<NewReviewRoute />} />
+          <Route path="/:owner/:repo/browse/*" element={<ReviewRoute />} />
           <Route
             path="/:owner/:repo/review/:comparisonKey/*"
             element={<ReviewRoute />}

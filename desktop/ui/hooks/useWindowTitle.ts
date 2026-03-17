@@ -9,7 +9,7 @@ import type { Comparison } from "../types";
  */
 export function useWindowTitle(
   repoPath: string | null,
-  comparison: Comparison,
+  comparison: Comparison | null,
   comparisonReady: number,
 ) {
   const location = useLocation();
@@ -21,7 +21,7 @@ export function useWindowTitle(
       platform.window.setTitle("Review").catch(console.error);
     } else {
       const repoName = repoPath.split("/").pop() || "Repository";
-      if (isReviewRoute && comparisonReady) {
+      if (isReviewRoute && comparisonReady && comparison) {
         const title = `${repoName} — ${comparison.base}..${comparison.head}`;
         platform.window.setTitle(title).catch(console.error);
       } else {

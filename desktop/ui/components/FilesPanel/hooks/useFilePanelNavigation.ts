@@ -97,6 +97,7 @@ export function useFilePanelNavigation({
   const comparison = useReviewStore((s) => s.comparison);
   const showGitTab =
     gitStatus !== null &&
+    comparison !== null &&
     comparison.head === gitStatus.currentBranch &&
     (gitStatus.staged.length > 0 ||
       gitStatus.unstaged.length > 0 ||

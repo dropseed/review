@@ -173,7 +173,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
 
   saveNavigationSnapshot: () => {
     const { repoPath, comparison, selectedFile, changesViewMode } = get();
-    if (!repoPath) return;
+    if (!repoPath || !comparison) return;
     const key = makeReviewKey(repoPath, comparison.key);
     set({
       navigationSnapshots: {
@@ -186,7 +186,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
   restoreNavigationSnapshot: () => {
     const state = get();
     const { repoPath, comparison, flatFileList } = state;
-    if (!repoPath) return;
+    if (!repoPath || !comparison) return;
     const key = makeReviewKey(repoPath, comparison.key);
     const snapshot = state.navigationSnapshots[key];
     if (!snapshot) return;

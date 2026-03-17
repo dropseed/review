@@ -258,6 +258,34 @@ pub fn list_all_files_sync(
 }
 
 #[tauri::command]
+pub async fn list_repo_files(repo_path: String) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || list_repo_files_sync(repo_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Synchronous implementation of `list_repo_files`, callable from blocking contexts.
+pub fn list_repo_files_sync(repo_path: String) -> Result<Vec<FileEntry>, String> {
+    let t0 = Instant::now();
+    debug!("[list_repo_files] repo_path={repo_path}");
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+        error!("[list_repo_files] ERROR creating source: {e}");
+        e.to_string()
+    })?;
+
+    let result = source.list_tracked_files().map_err(|e| {
+        error!("[list_repo_files] ERROR listing files: {e}");
+        e.to_string()
+    })?;
+    info!(
+        "[list_repo_files] SUCCESS: {} entries in {:?}",
+        result.len(),
+        t0.elapsed()
+    );
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn list_directory_contents(
     repo_path: String,
     dir_path: String,
@@ -1481,10 +1509,11 @@ pub fn stop_file_watcher(repo_path: String) {
 /// or `None` if there is no pending request.
 #[tauri::command]
 pub fn consume_cli_request() -> Option<CliOpenRequest> {
-    let (repo_path, comparison_key) = super::read_open_request()?;
+    let (repo_path, comparison_key, focused_file) = super::read_open_request()?;
     Some(CliOpenRequest {
         repo_path,
         comparison_key,
+        focused_file,
     })
 }
 
@@ -1494,6 +1523,8 @@ pub struct CliOpenRequest {
     pub repo_path: String,
     #[serde(rename = "comparisonKey")]
     pub comparison_key: Option<String>,
+    #[serde(rename = "focusedFile")]
+    pub focused_file: Option<String>,
 }
 
 // Multi-window support
@@ -2335,6 +2366,104 @@ pub fn is_git_repo(path: String) -> bool {
         .unwrap_or(false)
 }
 
+// --- Standalone file support ---
+
+#[tauri::command]
+pub fn path_is_file(path: String) -> bool {
+    std::path::Path::new(&path).is_file()
+}
+
+/// Convert raw file bytes into a FileContent struct, handling image/SVG/text detection.
+fn bytes_to_file_content(bytes: Vec<u8>, file_path: &str) -> Result<FileContent, String> {
+    let content_type = get_content_type(file_path);
+    let ext = file_path.rsplit('.').next().unwrap_or("");
+    let mime_type = get_image_mime_type(ext);
+
+    if content_type == "image" || content_type == "svg" {
+        let image_data_url = mime_type.map(|mt| bytes_to_data_url(&bytes, mt));
+        let content = if content_type == "svg" {
+            String::from_utf8_lossy(&bytes).to_string()
+        } else {
+            String::new()
+        };
+        return Ok(FileContent {
+            content,
+            old_content: None,
+            diff_patch: String::new(),
+            hunks: vec![],
+            content_type,
+            image_data_url,
+            old_image_data_url: None,
+        });
+    }
+
+    let content =
+        String::from_utf8(bytes).map_err(|_| format!("File is not valid UTF-8: {file_path}"))?;
+    Ok(FileContent {
+        content,
+        old_content: None,
+        diff_patch: String::new(),
+        hunks: vec![],
+        content_type,
+        image_data_url: None,
+        old_image_data_url: None,
+    })
+}
+
+#[tauri::command]
+pub async fn read_raw_file(path: String) -> Result<FileContent, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = Instant::now();
+        let file_path = std::path::Path::new(&path);
+
+        if !file_path.exists() {
+            return Err(format!("File not found: {path}"));
+        }
+        if !file_path.is_file() {
+            return Err(format!("Not a file: {path}"));
+        }
+
+        let bytes = std::fs::read(file_path).map_err(|e| e.to_string())?;
+        let result = bytes_to_file_content(bytes, &path)?;
+        info!("[read_raw_file] path={path} in {:?}", t0.elapsed());
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Get raw file content at HEAD from a git repo (no diff, no comparison needed).
+/// Used by browse mode to load file content without the overhead of a full diff.
+#[tauri::command]
+pub async fn get_file_raw_content(
+    repo_path: String,
+    file_path: String,
+) -> Result<FileContent, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = Instant::now();
+        debug!("[get_file_raw_content] repo_path={repo_path}, file_path={file_path}");
+
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
+            error!("[get_file_raw_content] ERROR creating source: {e}");
+            e.to_string()
+        })?;
+
+        let bytes = source.get_file_bytes(&file_path, "HEAD").map_err(|e| {
+            error!("[get_file_raw_content] ERROR getting file at HEAD: {e}");
+            e.to_string()
+        })?;
+
+        let result = bytes_to_file_content(bytes, &file_path)?;
+        info!(
+            "[get_file_raw_content] SUCCESS file={file_path} in {:?}",
+            t0.elapsed()
+        );
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // --- CLI sidecar install ---
 
 /// Well-known install location for the `review` CLI symlink.
@@ -2977,4 +3106,74 @@ pub fn set_window_background_color(
     window
         .set_background_color(Some(tauri::window::Color(r, g, b, 255)))
         .map_err(|e| e.to_string())
+}
+
+/// List files in a plain directory (no git needed). Returns a flat list of FileEntry items.
+/// Used for Layer 0 — browsing directories that are not git repositories.
+#[tauri::command]
+pub async fn list_directory_plain(dir_path: String) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = Instant::now();
+        let path = std::path::Path::new(&dir_path);
+        if !path.is_dir() {
+            return Err(format!("Not a directory: {dir_path}"));
+        }
+
+        let mut entries: Vec<FileEntry> = Vec::new();
+        let read_dir = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+
+        for entry in read_dir {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            // Skip hidden files
+            if file_name.starts_with('.') {
+                continue;
+            }
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            let metadata = entry.metadata().ok();
+            let entry_path = file_name.clone();
+
+            entries.push(FileEntry {
+                name: file_name,
+                path: entry_path,
+                is_directory: file_type.is_dir(),
+                children: if file_type.is_dir() {
+                    Some(vec![])
+                } else {
+                    None
+                },
+                status: None,
+                is_symlink: file_type.is_symlink(),
+                symlink_target: None,
+                renamed_from: None,
+                size: metadata.as_ref().map(|m| m.len()),
+                modified_at: metadata
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs()),
+            });
+        }
+
+        // Sort: directories first, then by name
+        entries.sort_by(|a, b| {
+            b.is_directory
+                .cmp(&a.is_directory)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        info!(
+            "[list_directory_plain] {} entries in {:?}",
+            entries.len(),
+            t0.elapsed()
+        );
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

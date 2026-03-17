@@ -188,6 +188,10 @@ export class TauriClient implements ApiClient {
     return invoke<FileEntry[]>("list_all_files", { repoPath, comparison });
   }
 
+  async listRepoFiles(repoPath: string): Promise<FileEntry[]> {
+    return invoke<FileEntry[]>("list_repo_files", { repoPath });
+  }
+
   async listDirectoryContents(
     repoPath: string,
     dirPath: string,
@@ -509,6 +513,7 @@ export class TauriClient implements ApiClient {
   async consumeCliRequest(): Promise<{
     repoPath: string;
     comparisonKey: string | null;
+    focusedFile: string | null;
   } | null> {
     return invoke("consume_cli_request");
   }
@@ -527,6 +532,25 @@ export class TauriClient implements ApiClient {
 
   async isGitRepo(path: string): Promise<boolean> {
     return invoke<boolean>("is_git_repo", { path });
+  }
+
+  async pathIsFile(path: string): Promise<boolean> {
+    return invoke<boolean>("path_is_file", { path });
+  }
+
+  async readRawFile(path: string): Promise<FileContent> {
+    return invoke<FileContent>("read_raw_file", { path });
+  }
+
+  async getFileRawContent(
+    repoPath: string,
+    filePath: string,
+  ): Promise<FileContent> {
+    return invoke<FileContent>("get_file_raw_content", { repoPath, filePath });
+  }
+
+  async listDirectoryPlain(dirPath: string): Promise<FileEntry[]> {
+    return invoke<FileEntry[]>("list_directory_plain", { dirPath });
   }
 
   // ----- VS Code theme -----

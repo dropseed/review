@@ -6,7 +6,7 @@ import { SimpleTooltip } from "./ui/tooltip";
 
 interface ReviewBreadcrumbProps {
   repoName: string;
-  comparison: Comparison;
+  comparison: Comparison | null;
 }
 
 function SidebarToggle(): ReactNode {
@@ -47,6 +47,7 @@ export function ReviewBreadcrumb({
 }: ReviewBreadcrumbProps): ReactNode {
   const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
   const gitStatus = useReviewStore((s) => s.gitStatus);
+  const currentBranch = useReviewStore((s) => s.currentBranch);
   const isPr = !!githubPr;
 
   const workingTreeChangeCount =
@@ -54,7 +55,9 @@ export function ReviewBreadcrumb({
     (gitStatus?.unstaged.length ?? 0) +
     (gitStatus?.untracked.length ?? 0);
   const showWorkingTree =
-    gitStatus?.currentBranch === comparison.head && workingTreeChangeCount > 0;
+    comparison !== null &&
+    gitStatus?.currentBranch === comparison.head &&
+    workingTreeChangeCount > 0;
 
   return (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -63,33 +66,46 @@ export function ReviewBreadcrumb({
         <span className="hidden @md:inline shrink-0 text-xs font-medium text-fg-secondary">
           {repoName}
         </span>
-        <span className="hidden @md:inline shrink-0 text-fg-faint text-xs">
-          /
-        </span>
-        <span
-          className={`shrink-0 text-xs text-fg-muted ${isPr ? "font-medium" : "font-mono"}`}
-        >
-          {getOverviewLabel(comparison, githubPr)}
-        </span>
-        {showWorkingTree && (
-          <SimpleTooltip content="Includes uncommitted working tree changes">
-            <button
-              type="button"
-              onClick={() => {
-                useReviewStore.setState({
-                  filesPanelCollapsed: false,
-                  requestedFilesPanelTab: "git",
-                });
-              }}
-              className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-surface-raised transition-colors"
+        {comparison ? (
+          <>
+            <span className="hidden @md:inline shrink-0 text-fg-faint text-xs">
+              /
+            </span>
+            <span
+              className={`shrink-0 text-xs text-fg-muted ${isPr ? "font-medium" : "font-mono"}`}
             >
-              <span className="text-xxs text-status-modified/70 font-medium">
-                <span className="@lg:hidden">+wt</span>
-                <span className="hidden @lg:inline">+ working tree</span>
-              </span>
-            </button>
-          </SimpleTooltip>
-        )}
+              {getOverviewLabel(comparison, githubPr)}
+            </span>
+            {showWorkingTree && (
+              <SimpleTooltip content="Includes uncommitted working tree changes">
+                <button
+                  type="button"
+                  onClick={() => {
+                    useReviewStore.setState({
+                      filesPanelCollapsed: false,
+                      requestedFilesPanelTab: "git",
+                    });
+                  }}
+                  className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-surface-raised transition-colors"
+                >
+                  <span className="text-xxs text-status-modified/70 font-medium">
+                    <span className="@lg:hidden">+wt</span>
+                    <span className="hidden @lg:inline">+ working tree</span>
+                  </span>
+                </button>
+              </SimpleTooltip>
+            )}
+          </>
+        ) : currentBranch ? (
+          <>
+            <span className="hidden @md:inline shrink-0 text-fg-faint text-xs">
+              /
+            </span>
+            <span className="shrink-0 text-xs text-fg-muted font-mono">
+              {currentBranch}
+            </span>
+          </>
+        ) : null}
       </div>
     </div>
   );

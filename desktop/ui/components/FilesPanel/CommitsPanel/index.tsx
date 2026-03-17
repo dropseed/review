@@ -61,7 +61,7 @@ export function CommitsPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
-  const range = getComparisonRange(comparison);
+  const range = comparison ? getComparisonRange(comparison) : undefined;
 
   // Memoize per-author badge styles for stable references
   const authorStyles = useMemo(() => {
@@ -157,10 +157,10 @@ export function CommitsPanel({
       {/* Comparison range header */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-edge bg-surface-panel px-3 py-1.5">
         <div className="flex items-center gap-1 text-xs min-w-0">
-          <span className="text-fg-muted truncate">{comparison.base}</span>
+          <span className="text-fg-muted truncate">{comparison?.base}</span>
           <span className="text-fg-faint flex-shrink-0">..</span>
           <span className={`${compareRefColor} truncate`}>
-            {comparison.head}
+            {comparison?.head}
           </span>
         </div>
         <span className="text-xxs text-fg-faint tabular-nums flex-shrink-0 ml-2">

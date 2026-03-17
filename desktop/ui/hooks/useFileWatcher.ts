@@ -16,6 +16,9 @@ export function useFileWatcher(comparisonReady: number) {
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const comparison = useReviewStore((s) => s.comparison);
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
+  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
+  const loadRepoFiles = useReviewStore((s) => s.loadRepoFiles);
+  const loadCurrentBranch = useReviewStore((s) => s.loadCurrentBranch);
 
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
@@ -25,7 +28,15 @@ export function useFileWatcher(comparisonReady: number) {
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
   const loadLocalActivityRef = useRef(loadLocalActivity);
   const comparisonReadyRef = useRef(comparisonReady);
+  const isStandaloneFileRef = useRef(isStandaloneFile);
+  const loadRepoFilesRef = useRef(loadRepoFiles);
+  const loadCurrentBranchRef = useRef(loadCurrentBranch);
   const gitChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const browseRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const browseRefreshInProgressRef = useRef(false);
+  const browseRefreshRequestedRef = useRef(false);
   const localActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -48,6 +59,9 @@ export function useFileWatcher(comparisonReady: number) {
     activeReviewKeyRef.current = activeReviewKey;
     comparisonRef.current = comparison;
     setActiveReviewKeyRef.current = setActiveReviewKey;
+    isStandaloneFileRef.current = isStandaloneFile;
+    loadRepoFilesRef.current = loadRepoFiles;
+    loadCurrentBranchRef.current = loadCurrentBranch;
   }, [
     repoPath,
     loadReviewState,
@@ -59,6 +73,9 @@ export function useFileWatcher(comparisonReady: number) {
     activeReviewKey,
     comparison,
     setActiveReviewKey,
+    isStandaloneFile,
+    loadRepoFiles,
+    loadCurrentBranch,
   ]);
 
   // Start file watcher when repo is loaded
@@ -193,20 +210,59 @@ export function useFileWatcher(comparisonReady: number) {
       }, 500);
     };
 
+    // Browse mode refresh: reload file tree and branch info on git changes.
+    // Debounce at 2s with same overlap guard as review-mode refresh.
+    const scheduleBrowseRefresh = () => {
+      clearTimeout(browseRefreshTimerRef.current!);
+      console.log("[watcher] Debouncing browse refresh (2s)...");
+      browseRefreshTimerRef.current = setTimeout(async () => {
+        browseRefreshTimerRef.current = null;
+        if (browseRefreshInProgressRef.current) {
+          console.log(
+            "[watcher] Browse refresh already in progress, deferring...",
+          );
+          browseRefreshRequestedRef.current = true;
+          return;
+        }
+        browseRefreshInProgressRef.current = true;
+        console.log("[watcher] Refreshing browse mode...");
+        try {
+          await Promise.all([
+            loadRepoFilesRef.current(),
+            loadCurrentBranchRef.current(),
+          ]);
+        } finally {
+          browseRefreshInProgressRef.current = false;
+          if (browseRefreshRequestedRef.current) {
+            browseRefreshRequestedRef.current = false;
+            console.log(
+              "[watcher] Deferred browse refresh requested, scheduling...",
+            );
+            scheduleBrowseRefresh();
+          }
+        }
+      }, 2000);
+    };
+
     unlistenFns.push(
       apiClient.onGitChanged((eventRepoPath) => {
         console.log("[watcher] Received git-changed event:", eventRepoPath);
         if (eventRepoPath === repoPathRef.current) {
-          // Only refresh if a comparison has been selected (not on start screen)
           if (!comparisonReadyRef.current) {
-            console.log("[watcher] Skipping refresh - no comparison selected");
-            return;
+            // Browse mode: refresh file tree and branch info
+            // (standalone files have no git, so skip)
+            if (!isStandaloneFileRef.current) {
+              scheduleBrowseRefresh();
+            }
+            scheduleLocalActivity();
+          } else {
+            // Review mode: full refresh
+            scheduleRefresh();
+            // Also refresh local activity so the sidebar shows the repo as
+            // soon as it becomes dirty (git-changed fires on working tree
+            // changes too, not just git state changes).
+            scheduleLocalActivity();
           }
-          scheduleRefresh();
-          // Also refresh local activity so the sidebar shows the repo as
-          // soon as it becomes dirty (git-changed fires on working tree
-          // changes too, not just git state changes).
-          scheduleLocalActivity();
         }
         // Always update sidebar freshness on git changes
         checkReviewsFreshnessRef.current();
@@ -225,12 +281,16 @@ export function useFileWatcher(comparisonReady: number) {
     return () => {
       clearTimeout(gitChangedTimerRef.current!);
       gitChangedTimerRef.current = null;
+      clearTimeout(browseRefreshTimerRef.current!);
+      browseRefreshTimerRef.current = null;
       if (localActivityTimerRef.current) {
         clearTimeout(localActivityTimerRef.current);
         localActivityTimerRef.current = null;
       }
       refreshInProgressRef.current = false;
       refreshRequestedRef.current = false;
+      browseRefreshInProgressRef.current = false;
+      browseRefreshRequestedRef.current = false;
       localActivityInProgressRef.current = false;
       localActivityRequestedRef.current = false;
       unlistenFns.forEach((fn) => fn());

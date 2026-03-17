@@ -111,7 +111,7 @@ interface UseRepositoryInitReturn {
   handleOpenRepo: () => Promise<void>;
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
-  handleSelectRepo: (path: string) => void;
+  handleSelectRepo: (path: string) => Promise<void>;
   handleActivateReview: (review: GlobalReviewSummary) => void;
   handleNewReview: (
     path: string,
@@ -158,6 +158,66 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
   // Guard to ensure init only runs once
   const hasInitializedRef = useRef(false);
+
+  /** Open a repo in browse mode (no comparison, no review created). */
+  const openBrowseModeRef = useRef(
+    async (
+      path: string,
+      options?: {
+        clearLogFile?: boolean;
+        replace?: boolean;
+        focusedFile?: string | null;
+      },
+    ): Promise<void> => {
+      setRepoPath(path);
+      if (options?.clearLogFile) clearLog();
+      setRepoStatus("found");
+      setRepoError(null);
+      addRecentRepository(path);
+      storeRepoPath(path);
+      setActiveReviewKey(null);
+
+      const { routePrefix } = await resolveRepoIdentity(path);
+      const browsePath = options?.focusedFile
+        ? `/${routePrefix}/browse/file/${options.focusedFile}`
+        : `/${routePrefix}/browse`;
+      navigateRef.current(browsePath, {
+        replace: options?.replace,
+      });
+      loadGlobalReviews();
+    },
+  );
+
+  /** Enter standalone mode for a non-git path (file or directory). */
+  async function enterStandaloneMode(
+    rawPath: string,
+    options?: { clearLogFile?: boolean; replace?: boolean },
+  ): Promise<void> {
+    const apiClient = getApiClient();
+    const isFile = await apiClient.pathIsFile(rawPath);
+
+    let displayRoot: string;
+    let route: string;
+
+    if (isFile) {
+      const lastSlash = rawPath.lastIndexOf("/");
+      displayRoot = lastSlash > 0 ? rawPath.slice(0, lastSlash) : rawPath;
+      const fileName = lastSlash >= 0 ? rawPath.slice(lastSlash + 1) : rawPath;
+      route = `/standalone/browse/file/${fileName}`;
+    } else {
+      displayRoot = rawPath;
+      route = `/standalone/browse`;
+    }
+
+    setRepoPath(displayRoot);
+    useReviewStore.setState({ isStandaloneFile: true });
+    if (options?.clearLogFile) clearLog();
+    setRepoStatus("found");
+    setRepoError(null);
+    storeRepoPath(displayRoot);
+    setActiveReviewKey(null);
+    navigateRef.current(route, { replace: options?.replace });
+  }
 
   // Initialize repo path from URL or API, then navigate to clean route.
   // Each branch determines the comparison FIRST, then calls switchReview().
@@ -213,16 +273,38 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       // On cold start the default window has no URL params, and the signal
       // file written by the CLI is the only way to know what to open.
       try {
-        const cliRequest = await getApiClient().consumeCliRequest();
+        const apiClient = getApiClient();
+        const cliRequest = await apiClient.consumeCliRequest();
         if (cliRequest) {
-          const comparison = await resolveComparison(
-            cliRequest.repoPath,
-            cliRequest.comparisonKey,
-          );
-          await initRepo(cliRequest.repoPath, comparison, {
-            clearLogFile: true,
-            storeInSession: true,
-          });
+          // Check if the path is a git repo. If not, it may be a standalone file.
+          const isRepo = await apiClient.isGitRepo(cliRequest.repoPath);
+
+          if (!isRepo) {
+            await enterStandaloneMode(cliRequest.repoPath, {
+              clearLogFile: true,
+              replace: true,
+            });
+            return;
+          }
+
+          if (cliRequest.comparisonKey) {
+            // review start <spec> — open with comparison
+            const comparison = await resolveComparison(
+              cliRequest.repoPath,
+              cliRequest.comparisonKey,
+            );
+            await initRepo(cliRequest.repoPath, comparison, {
+              clearLogFile: true,
+              storeInSession: true,
+            });
+          } else {
+            // review <path> — open in browse mode
+            await openBrowseModeRef.current(cliRequest.repoPath, {
+              clearLogFile: true,
+              replace: true,
+              focusedFile: cliRequest.focusedFile,
+            });
+          }
           return;
         }
       } catch {
@@ -237,6 +319,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       if (storedPath !== null) {
         if (storedPath === "") {
           setRepoStatus("welcome");
+          return;
+        }
+
+        // Check if we were in browse mode
+        if (window.location.pathname.includes("/browse")) {
+          await openBrowseModeRef.current(storedPath, { replace: true });
           return;
         }
 
@@ -326,14 +414,30 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         const data = payload as {
           repoPath?: string;
           comparisonKey?: string | null;
+          focusedFile?: string | null;
         } | null;
         const repoPath = data?.repoPath;
         if (!repoPath) return;
 
-        const comparison = await resolveComparison(
-          repoPath,
-          data?.comparisonKey ?? null,
-        );
+        const comparisonKey = data?.comparisonKey ?? null;
+
+        // Check if this is a non-git path (standalone file/directory)
+        const apiClient = getApiClient();
+        const isRepo = await apiClient.isGitRepo(repoPath);
+        if (!isRepo) {
+          await enterStandaloneMode(repoPath);
+          return;
+        }
+
+        if (!comparisonKey) {
+          // No comparison — open in browse mode
+          await openBrowseModeRef.current(repoPath, {
+            focusedFile: data?.focusedFile,
+          });
+          return;
+        }
+
+        const comparison = await resolveComparison(repoPath, comparisonKey);
 
         const state = useReviewStore.getState();
         const { routePrefix } = await resolveRepoIdentity(repoPath);
@@ -383,50 +487,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     navigateRef.current("/");
   }, [setRepoPath]);
 
-  // Shared logic: validate, activate, and navigate to a repo's working tree.
-  // Determines comparison BEFORE touching state, then uses switchReview().
-  const activateRepo = useCallback(
-    async (path: string) => {
-      if (!(await validateGitRepo(path))) return;
-
-      // Determine comparison BEFORE touching state
-      const { routePrefix } = await resolveRepoIdentity(path);
-      const { key, comparison } = await getDefaultComparison(path);
-
-      setActiveReviewKey({
-        repoPath: path,
-        comparisonKey: key,
-      });
-      await ensureReviewExists(path, comparison);
-
-      // Atomic switch — no intermediate state
-      switchReview(path, comparison);
-      setRepoStatus("found");
-      setRepoError(null);
-      addRecentRepository(path);
-      storeRepoPath(path);
-
-      setComparisonReady((c) => c + 1);
-      setInitialLoading(true);
-      navigateRef.current(`/${routePrefix}/review/${key}`);
-      loadGlobalReviews();
-    },
-    [
-      switchReview,
-      addRecentRepository,
-      setActiveReviewKey,
-      ensureReviewExists,
-      loadGlobalReviews,
-    ],
-  );
-
   // Handle selecting a repo (from welcome page recent list or tab rail)
-  const handleSelectRepo = useCallback(
-    (path: string) => activateRepo(path),
-    [activateRepo],
-  );
+  const handleSelectRepo = useCallback(async (path: string) => {
+    if (!(await validateGitRepo(path))) return;
+    await openBrowseModeRef.current(path);
+  }, []);
 
-  // Open a repository in the current window (standard Cmd+O behavior)
+  // Open a repository in browse mode (standard Cmd+O behavior)
   const handleOpenRepo = useCallback(async () => {
     const platform = getPlatformServices();
     try {
@@ -434,12 +501,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         title: "Open Repository",
       });
       if (selected) {
-        await activateRepo(selected);
+        if (!(await validateGitRepo(selected))) return;
+        await openBrowseModeRef.current(selected);
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
     }
-  }, [activateRepo]);
+  }, []);
 
   // Open a new window (Cmd+N behavior)
   const handleNewWindow = useCallback(async () => {
