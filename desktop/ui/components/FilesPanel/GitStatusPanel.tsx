@@ -164,6 +164,18 @@ export function GitStatusPanel({
   const unstageFile = useReviewStore((s) => s.unstageFile);
   const unstageAll = useReviewStore((s) => s.unstageAll);
   const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
+  const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
+
+  const displayModeMenuItems = useMemo(
+    () => [
+      {
+        label: gitDisplayMode === "tree" ? "Flat view" : "Tree view",
+        onClick: () =>
+          setGitDisplayMode(gitDisplayMode === "tree" ? "flat" : "tree"),
+      },
+    ],
+    [gitDisplayMode],
+  );
 
   const {
     togglePath,
@@ -301,6 +313,7 @@ export function GitStatusPanel({
                 label: "Unstage rejected",
                 onClick: () => alert("Unstage rejected — coming soon"),
               },
+              ...displayModeMenuItems,
             ]}
             onExpandAll={
               gitDisplayMode === "tree"
@@ -354,6 +367,7 @@ export function GitStatusPanel({
                 label: "Stage unstaged",
                 onClick: () => unstaged.forEach((e) => stageFile(e.path)),
               },
+              ...displayModeMenuItems,
             ]}
             onExpandAll={
               gitDisplayMode === "tree"
@@ -403,6 +417,7 @@ export function GitStatusPanel({
                 label: "Stage untracked",
                 onClick: () => untracked.forEach((p) => stageFile(p)),
               },
+              ...displayModeMenuItems,
             ]}
             onExpandAll={
               gitDisplayMode === "tree"

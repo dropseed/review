@@ -12,13 +12,13 @@ import type {
   FileSortOrder,
 } from "../../stores/slices/preferencesSlice";
 
-const SORT_LABELS: Record<FileSortOrder, string> = {
+export const SORT_LABELS: Record<FileSortOrder, string> = {
   name: "Name",
   size: "Size",
   modified: "Last modified",
 };
 
-const SELECTED_CHECK = (
+export const SELECTED_CHECK = (
   <svg
     className="h-3 w-3 text-fg-secondary"
     viewBox="0 0 24 24"

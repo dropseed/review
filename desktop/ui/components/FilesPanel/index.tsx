@@ -9,13 +9,13 @@ import {
 import { useReviewStore } from "../../stores";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
-import {
-  CollapsibleSection,
-  DisplayModeToggle,
-} from "../../components/ui/collapsible-section";
+import { CollapsibleSection } from "../../components/ui/collapsible-section";
 import {
   isHunkTrusted,
   type CommitEntry,
@@ -31,7 +31,7 @@ import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
-import { ViewOptionsMenu } from "./PanelToolbar";
+import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
 
 const TRUST_ICON = (
@@ -127,6 +127,7 @@ function SectionHeader({
   quickActions,
   onExpandAll,
   onCollapseAll,
+  additionalMenuContent,
   children,
 }: {
   title: string;
@@ -145,6 +146,7 @@ function SectionHeader({
   quickActions?: QuickActionItem[];
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
+  additionalMenuContent?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const badgeColors = {
@@ -155,11 +157,12 @@ function SectionHeader({
   };
 
   const hasExpandCollapse = onExpandAll || onCollapseAll;
-  const hasMenuItems =
+  const hasBaseMenuItems =
     (quickActions && quickActions.length > 0) ||
     onApproveAll ||
     onUnapproveAll ||
     hasExpandCollapse;
+  const hasMenuItems = hasBaseMenuItems || !!additionalMenuContent;
 
   const menuContent = hasMenuItems ? (
     <>
@@ -232,6 +235,14 @@ function SectionHeader({
           )}
         </>
       )}
+
+      {/* Additional menu content (e.g., view options) */}
+      {additionalMenuContent && (
+        <>
+          {hasBaseMenuItems && <DropdownMenuSeparator />}
+          {additionalMenuContent}
+        </>
+      )}
     </>
   ) : undefined;
 
@@ -264,6 +275,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   );
 
   // Section collapse state
+  const [browseFilesOpen, setBrowseFilesOpen] = useState(true);
   const [trustOpen, setTrustOpen] = useState(false);
   const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
   const [savedForLaterOpen, setSavedForLaterOpen] = useState(true);
@@ -323,10 +335,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Changes display mode (tree vs flat) — one toggle per panel
   const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
   const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
-
-  // Git display mode
-  const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
-  const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
 
   // File sort order (shared across Browse + Changes tabs)
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
@@ -667,6 +675,37 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Search state
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
 
+  // Sort menu items shared across Review and Browse tabs
+  const sortMenuItems = useMemo(
+    () =>
+      (["name", "size", "modified"] as const).map((order) => (
+        <DropdownMenuItem key={order} onClick={() => setFileSortOrder(order)}>
+          <span className="flex-1">{SORT_LABELS[order]}</span>
+          {fileSortOrder === order && SELECTED_CHECK}
+        </DropdownMenuItem>
+      )),
+    [fileSortOrder],
+  );
+
+  // View options menu content for Review tab section headers
+  const viewOptionsMenuContent = useMemo(
+    () => (
+      <>
+        {sortMenuItems}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setChangesDisplayMode("tree")}>
+          <span className="flex-1">Tree view</span>
+          {changesDisplayMode === "tree" && SELECTED_CHECK}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setChangesDisplayMode("flat")}>
+          <span className="flex-1">Flat view</span>
+          {changesDisplayMode === "flat" && SELECTED_CHECK}
+        </DropdownMenuItem>
+      </>
+    ),
+    [sortMenuItems, changesDisplayMode],
+  );
+
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
   const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
@@ -815,53 +854,69 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   <TabsTrigger value="changes">Review</TabsTrigger>
                 )}
                 <TabsTrigger value="browse">Browse</TabsTrigger>
-                {comparison && (
-                  <TabsTrigger value="commits">Commits</TabsTrigger>
-                )}
                 <TabsTrigger value="search" className="flex items-center gap-1">
-                  <svg
-                    aria-label="Search"
-                    className="h-3.5 w-3.5 flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
+                  Search
                   {searchResultCount > 0 && (
-                    <span className="ml-1 rounded-full bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-status-modified">
+                    <span className="rounded-full bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-status-modified">
                       {searchResultCount >= 100 ? "100+" : searchResultCount}
                     </span>
                   )}
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            {/* Contextual buttons based on active tab */}
-            {viewMode === "changes" && hasChanges && (
-              <ViewOptionsMenu
-                sortOrder={fileSortOrder}
-                onSortOrderChange={setFileSortOrder}
-                displayMode={changesDisplayMode}
-                onDisplayModeChange={setChangesDisplayMode}
-              />
-            )}
-            {viewMode === "browse" && allDirPaths.size > 0 && (
-              <ViewOptionsMenu
-                sortOrder={fileSortOrder}
-                onSortOrderChange={setFileSortOrder}
-                onExpandAll={() => expandAll(allDirPaths, renamedDirPaths)}
-                onCollapseAll={collapseAll}
-              />
-            )}
-            {viewMode === "git" && (
-              <DisplayModeToggle
-                mode={gitDisplayMode}
-                onChange={setGitDisplayMode}
-              />
+            {/* Overflow menu for secondary views */}
+            {comparison && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={`flex-shrink-0 flex items-center transition-colors ${
+                      viewMode === "commits"
+                        ? "gap-0.5 rounded bg-surface-hover px-2 py-1 text-xxs font-medium text-fg"
+                        : "p-1 rounded-md text-fg-muted hover:text-fg-secondary hover:bg-surface-hover"
+                    }`}
+                    title={viewMode !== "commits" ? "More views" : undefined}
+                  >
+                    {viewMode === "commits" ? (
+                      <>
+                        Commits
+                        <svg
+                          className="h-3 w-3 opacity-60"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </>
+                    ) : (
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="5" r="1" />
+                        <circle cx="12" cy="12" r="1" />
+                        <circle cx="12" cy="19" r="1" />
+                      </svg>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => setFilesPanelTab("commits")}
+                    className={viewMode === "commits" ? "bg-surface-hover" : ""}
+                  >
+                    Commits
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
 
@@ -925,6 +980,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   onCollapseAll={
                     changesDisplayMode === "tree" ? collapseAll : undefined
                   }
+                  additionalMenuContent={viewOptionsMenuContent}
                 >
                   <FileListSection
                     treeEntries={sectionedFiles.reviewed}
@@ -1022,29 +1078,50 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             )
           ) : (
             <div className="flex-1 overflow-y-auto scrollbar-thin">
-              {/* All Files tree */}
-              <div className="py-1">
-                {allFilesTree.length > 0 ? (
-                  allFilesTree.map((entry) => (
-                    <FileNode
-                      key={entry.path}
-                      entry={entry}
-                      depth={0}
-                      onToggle={togglePath}
-                      selectedFile={selectedFile}
-                      onSelectFile={handleSelectFileAndClearCommit}
-                      repoPath={repoPath}
-                      onOpenInSplit={openInSplit}
-                      registerRef={registerRef}
-                      showSizeBar
-                    />
-                  ))
-                ) : (
-                  <div className="py-4 text-center">
-                    <p className="text-xs text-fg-muted">No files</p>
-                  </div>
-                )}
-              </div>
+              <CollapsibleSection
+                title="Files"
+                isOpen={browseFilesOpen}
+                onToggle={() => setBrowseFilesOpen(!browseFilesOpen)}
+                menuContent={
+                  allDirPaths.size > 0 ? (
+                    <>
+                      {sortMenuItems}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => expandAll(allDirPaths, renamedDirPaths)}
+                      >
+                        Expand all
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={collapseAll}>
+                        Collapse all
+                      </DropdownMenuItem>
+                    </>
+                  ) : undefined
+                }
+              >
+                <div className="py-1">
+                  {allFilesTree.length > 0 ? (
+                    allFilesTree.map((entry) => (
+                      <FileNode
+                        key={entry.path}
+                        entry={entry}
+                        depth={0}
+                        onToggle={togglePath}
+                        selectedFile={selectedFile}
+                        onSelectFile={handleSelectFileAndClearCommit}
+                        repoPath={repoPath}
+                        onOpenInSplit={openInSplit}
+                        registerRef={registerRef}
+                        showSizeBar
+                      />
+                    ))
+                  ) : (
+                    <div className="py-4 text-center">
+                      <p className="text-xs text-fg-muted">No files</p>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
             </div>
           )}
         </div>
