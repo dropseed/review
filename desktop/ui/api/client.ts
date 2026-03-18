@@ -377,6 +377,9 @@ export interface ApiClient {
 
   /** Open the settings.json file in the system editor */
   openSettingsFile(): Promise<void>;
+
+  /** Resolve a route prefix (e.g., "owner/repo") to a local filesystem path */
+  resolveRepoPath?(routePrefix: string): Promise<string | null>;
 }
 
 /**

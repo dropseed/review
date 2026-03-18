@@ -5,6 +5,7 @@ import type { GlobalReviewSummary } from "../types";
 import { clearLog } from "../utils/logger";
 import { resolveRepoIdentity } from "../utils/repo-identity";
 import { getApiClient } from "../api";
+import { isTauriEnvironment } from "../api/client";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
 
@@ -31,6 +32,34 @@ function getUrlParams(): {
     repoPath: params.get("repo"),
     comparisonKey: params.get("comparison"),
   };
+}
+
+/** Try to resolve a repo from the URL path (browser mode only).
+ *  URL format: /:owner/:repo/... */
+async function resolveRepoFromUrl(): Promise<string | null> {
+  if (isTauriEnvironment()) return null;
+
+  const path = window.location.pathname;
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const routePrefix = `${parts[0]}/${parts[1]}`;
+  const api = getApiClient();
+
+  // Check if the API client supports repo resolution
+  if (
+    "resolveRepoPath" in api &&
+    typeof (api as { resolveRepoPath?: unknown }).resolveRepoPath === "function"
+  ) {
+    try {
+      return await (
+        api as { resolveRepoPath: (prefix: string) => Promise<string | null> }
+      ).resolveRepoPath(routePrefix);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 // Parse comparison key back into a Comparison object
@@ -254,6 +283,26 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     }
 
     const init = async () => {
+      // In browser mode, try to resolve a repo from the URL path (e.g. /owner/repo/...)
+      const urlRepoPath_ = await resolveRepoFromUrl();
+      if (urlRepoPath_) {
+        // Extract comparison key from URL if present (e.g. /owner/repo/review/main..feature)
+        const pathMatch = window.location.pathname.match(/\/review\/([^/]+)$/);
+        const urlKey = pathMatch?.[1] ?? null;
+
+        if (window.location.pathname.includes("/browse")) {
+          await openBrowseModeRef.current(urlRepoPath_, { replace: true });
+          return;
+        }
+
+        const comparison = await resolveComparison(urlRepoPath_, urlKey);
+        await initRepo(urlRepoPath_, comparison, {
+          clearLogFile: true,
+          storeInSession: true,
+        });
+        return;
+      }
+
       // Check URL for repo path first (Tauri bootstrap)
       const { repoPath: urlRepoPath, comparisonKey: urlComparisonKey } =
         getUrlParams();

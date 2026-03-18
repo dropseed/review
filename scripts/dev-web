@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+cleanup() {
+    kill $SERVER_PID $VITE_PID 2>/dev/null
+    wait $SERVER_PID $VITE_PID 2>/dev/null
+}
+trap cleanup EXIT
+
+echo "Starting review-server on :3421..."
+cargo run -p review --features server,symbols-dev --bin review-server &
+SERVER_PID=$!
+
+# Wait for the server to be ready before starting Vite
+for i in $(seq 1 60); do
+    if curl -s http://127.0.0.1:3421/api/activity/list > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+echo "Starting Vite dev server on :1420..."
+cd desktop && npx vite --port 1420 &
+VITE_PID=$!
+
+wait

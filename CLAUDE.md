@@ -15,6 +15,9 @@ scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
 # Desktop Development
 scripts/dev              # Run in development mode with hot reload
 
+# Web/Browser Development
+scripts/dev-web          # Run UI in browser (Axum backend + Vite) — no Tauri needed
+
 # Testing
 scripts/test             # TypeScript type check + Rust tests (fast, no API calls)
 
@@ -97,6 +100,10 @@ The project is organized as a Cargo workspace with three top-level directories:
 - **`desktop/`** — Desktop app. Contains `tauri/` (Rust Tauri crate) and `ui/` (React frontend).
 
 Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined in `desktop/tauri/src/desktop/commands.rs`. Data flows: Rust computes diffs/hunks → Zustand stores state → user actions invoke Rust → Rust persists to `~/.review/`.
+
+### Web Mode
+
+`scripts/dev-web` runs the UI in a regular browser (Chrome) with an Axum HTTP backend instead of Tauri. This is the preferred way to develop and test UI changes — you get full Chrome devtools, fast hot reload, and no Tauri rebuild cycle. The frontend uses an `HttpClient` (fetch-based) instead of `TauriClient` (invoke-based), both implementing the same `ApiClient` interface. Use web mode when working on the UI — open `localhost:1420` in Chrome to test.
 
 ## Key Concepts
 

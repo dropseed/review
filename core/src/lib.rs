@@ -21,9 +21,16 @@ pub mod sources;
 pub mod symbols;
 pub mod trust;
 
+// Service layer — shared business logic for Tauri and Axum
+pub mod service;
+
 // CLI module (feature-gated)
 #[cfg(feature = "cli")]
 pub mod cli;
+
+// HTTP server (feature-gated)
+#[cfg(feature = "server")]
+pub mod server;
 
 // Re-export commonly used types
 pub use sources::traits::Comparison;

@@ -1,11 +1,20 @@
 import * as Sentry from "@sentry/browser";
-import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
-import { arch, platform, version as osVersion } from "@tauri-apps/plugin-os";
+import { isTauriEnvironment } from "../api/client";
 
 let consentGiven = false;
 
 export async function initSentry(): Promise<void> {
+  if (!isTauriEnvironment()) return; // Skip in web mode
+
+  // Dynamic imports to avoid loading Tauri modules in browser
+  const { getVersion } = await import("@tauri-apps/api/app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  const {
+    arch,
+    platform,
+    version: osVersion,
+  } = await import("@tauri-apps/plugin-os");
+
   const [isDev, appVersion] = await Promise.all([
     invoke<boolean>("is_dev_mode"),
     getVersion(),

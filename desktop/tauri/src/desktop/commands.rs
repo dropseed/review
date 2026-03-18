@@ -9,16 +9,17 @@
     reason = "Tauri commands require owned parameters for IPC deserialization"
 )]
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use log::{debug, error, info};
 use review::ai::grouping::{GroupingInput, ModifiedSymbolEntry};
 use review::classify::{self, ClassifyResponse};
-use review::diff::parser::{
-    compute_content_hash, create_binary_hunk, create_untracked_hunk, detect_move_pairs, parse_diff,
-    parse_multi_file_diff, DiffHunk, MovePair,
-};
+use review::diff::parser::{detect_move_pairs, DiffHunk};
 use review::review::state::{HunkGroup, ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
+use review::service::{
+    CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
+    RepoFileSymbols, RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult,
+    VscodeThemeDetection,
+};
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
     DiffShortStat, LocalBranchInfo, LocalGitSource, RemoteInfo, SearchMatch, WorktreeInfo,
@@ -28,9 +29,9 @@ use review::sources::traits::{
 };
 use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // --- Window defaults ---
 
@@ -54,76 +55,7 @@ use std::time::Instant;
 /// loop to kill the Claude child process and return `Cancelled`.
 pub struct ActiveGroupings(pub std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>);
 
-// --- Types ---
-
-#[derive(Debug, Serialize)]
-pub struct FileContent {
-    pub content: String,
-    #[serde(rename = "oldContent")]
-    pub old_content: Option<String>,
-    #[serde(rename = "diffPatch")]
-    pub diff_patch: String,
-    pub hunks: Vec<DiffHunk>,
-    #[serde(rename = "contentType")]
-    pub content_type: String,
-    #[serde(rename = "imageDataUrl")]
-    pub image_data_url: Option<String>,
-    #[serde(rename = "oldImageDataUrl")]
-    pub old_image_data_url: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DetectMovePairsResponse {
-    pub pairs: Vec<MovePair>,
-    pub hunks: Vec<DiffHunk>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ExpandedContextResult {
-    pub lines: Vec<String>,
-    #[serde(rename = "startLine")]
-    pub start_line: u32,
-    #[serde(rename = "endLine")]
-    pub end_line: u32,
-}
-
-// --- Helper Functions ---
-
-fn get_image_mime_type(extension: &str) -> Option<&'static str> {
-    match extension.to_lowercase().as_str() {
-        "svg" => Some("image/svg+xml"),
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "avif" => Some("image/avif"),
-        "ico" => Some("image/x-icon"),
-        "icns" => Some("image/icns"),
-        "bmp" => Some("image/bmp"),
-        _ => None,
-    }
-}
-
-fn is_image_file(file_path: &str) -> bool {
-    let ext = file_path.rsplit('.').next().unwrap_or("");
-    get_image_mime_type(ext).is_some()
-}
-
-fn get_content_type(file_path: &str) -> String {
-    let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
-    if ext == "svg" {
-        "svg".to_owned()
-    } else if is_image_file(file_path) {
-        "image".to_owned()
-    } else {
-        "text".to_owned()
-    }
-}
-
-fn bytes_to_data_url(bytes: &[u8], mime_type: &str) -> String {
-    let base64_data = BASE64.encode(bytes);
-    format!("data:{mime_type};base64,{base64_data}")
-}
+// Types are now imported from review::service::{FileContent, DetectMovePairsResponse, ...}
 
 // --- Tauri Commands ---
 
@@ -187,40 +119,8 @@ pub fn list_files_sync(
     comparison: Comparison,
     github_pr: Option<GitHubPrRef>,
 ) -> Result<Vec<FileEntry>, String> {
-    let t0 = Instant::now();
-    debug!("[list_files] repo_path={repo_path}, comparison={comparison:?}");
-
-    // PR routing: use gh CLI to get file list
-    if let Some(ref pr) = github_pr {
-        let provider = GhCliProvider::new(PathBuf::from(&repo_path));
-        let files = provider
-            .get_pull_request_files(pr.number)
-            .map_err(|e| e.to_string())?;
-        let result = review::sources::github::pr_files_to_file_entries(files);
-        info!(
-            "[list_files] SUCCESS (PR #{}): {} entries in {:?}",
-            pr.number,
-            result.len(),
-            t0.elapsed()
-        );
-        return Ok(result);
-    }
-
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[list_files] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    let result = source.list_files(&comparison).map_err(|e| {
-        error!("[list_files] ERROR listing files: {e}");
-        e.to_string()
-    })?;
-    info!(
-        "[list_files] SUCCESS: {} entries in {:?}",
-        result.len(),
-        t0.elapsed()
-    );
-    Ok(result)
+    review::service::files::list_files(&PathBuf::from(&repo_path), &comparison, github_pr.as_ref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -238,23 +138,8 @@ pub fn list_all_files_sync(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<Vec<FileEntry>, String> {
-    let t0 = Instant::now();
-    debug!("[list_all_files] repo_path={repo_path}, comparison={comparison:?}");
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[list_all_files] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    let result = source.list_all_files(&comparison).map_err(|e| {
-        error!("[list_all_files] ERROR listing files: {e}");
-        e.to_string()
-    })?;
-    info!(
-        "[list_all_files] SUCCESS: {} entries in {:?}",
-        result.len(),
-        t0.elapsed()
-    );
-    Ok(result)
+    review::service::files::list_all_files(&PathBuf::from(&repo_path), &comparison)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -266,23 +151,7 @@ pub async fn list_repo_files(repo_path: String) -> Result<Vec<FileEntry>, String
 
 /// Synchronous implementation of `list_repo_files`, callable from blocking contexts.
 pub fn list_repo_files_sync(repo_path: String) -> Result<Vec<FileEntry>, String> {
-    let t0 = Instant::now();
-    debug!("[list_repo_files] repo_path={repo_path}");
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[list_repo_files] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    let result = source.list_tracked_files().map_err(|e| {
-        error!("[list_repo_files] ERROR listing files: {e}");
-        e.to_string()
-    })?;
-    info!(
-        "[list_repo_files] SUCCESS: {} entries in {:?}",
-        result.len(),
-        t0.elapsed()
-    );
-    Ok(result)
+    review::service::files::list_repo_files(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -300,21 +169,8 @@ pub fn list_directory_contents_sync(
     repo_path: String,
     dir_path: String,
 ) -> Result<Vec<FileEntry>, String> {
-    debug!("[list_directory_contents] repo_path={repo_path}, dir_path={dir_path}");
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[list_directory_contents] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    let result = source.list_directory_contents(&dir_path).map_err(|e| {
-        error!("[list_directory_contents] ERROR listing directory: {e}");
-        e.to_string()
-    })?;
-    info!(
-        "[list_directory_contents] SUCCESS: {} entries in {dir_path}",
-        result.len()
-    );
-    Ok(result)
+    review::service::files::list_directory_contents(&PathBuf::from(&repo_path), &dir_path)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -325,448 +181,19 @@ pub async fn get_file_content(
     github_pr: Option<GitHubPrRef>,
 ) -> Result<FileContent, String> {
     tokio::task::spawn_blocking(move || {
-        get_file_content_sync(repo_path, file_path, comparison, github_pr)
+        review::service::files::get_file_content(
+            &PathBuf::from(&repo_path),
+            &file_path,
+            &comparison,
+            github_pr.as_ref(),
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
-/// Synchronous implementation of `get_file_content`, callable from blocking contexts.
-pub fn get_file_content_sync(
-    repo_path: String,
-    file_path: String,
-    comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
-) -> Result<FileContent, String> {
-    let t0 = Instant::now();
-    debug!(
-        "[get_file_content] repo_path={repo_path}, file_path={file_path}, comparison={comparison:?}"
-    );
-
-    // PR routing: get diff from gh CLI and content from local git refs
-    if let Some(ref pr) = github_pr {
-        return get_file_content_for_pr(&repo_path, &file_path, pr);
-    }
-
-    let repo_path_buf = PathBuf::from(&repo_path);
-    let full_path = repo_path_buf.join(&file_path);
-    let file_exists = full_path.exists();
-
-    debug!(
-        "[get_file_content] full_path={}, exists={}",
-        full_path.display(),
-        file_exists
-    );
-
-    // Validate the logical path doesn't escape the repo.
-    // We check the un-canonicalized relative path for traversal rather than
-    // canonicalizing, because symlinks inside the repo may resolve to targets
-    // outside it (e.g., .claude/skills/my-skill -> /other/repo/skill).
-    // Those are safe to read as long as the relative path itself is clean.
-    if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
-        return Err("Path traversal detected: file path escapes repository".to_owned());
-    }
-
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_file_content] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    if !file_exists {
-        debug!("[get_file_content] handling file not on disk");
-        let diff_output = source
-            .get_diff(&comparison, Some(&file_path))
-            .map_err(|e| {
-                error!("[get_file_content] ERROR getting diff: {e}");
-                e.to_string()
-            })?;
-
-        let hunks = if diff_output.is_empty() {
-            vec![]
-        } else {
-            parse_diff(&diff_output, &file_path)
-        };
-
-        let old_ref = &comparison.base;
-        let old_content = match source.get_file_bytes(&file_path, old_ref) {
-            Ok(bytes) => String::from_utf8(bytes).ok(),
-            Err(_) => None,
-        };
-
-        // For committed comparisons, the file may exist on the head ref even
-        // though it's not on disk (e.g. new file on a branch we don't have
-        // checked out).  Fetch content from the head ref so the diff renders.
-        let content = if !source.include_working_tree(&comparison) {
-            match source.get_file_bytes(&file_path, &comparison.head) {
-                Ok(bytes) => {
-                    debug!(
-                        "[get_file_content] got content from head ref {}: {} bytes",
-                        comparison.head,
-                        bytes.len()
-                    );
-                    String::from_utf8(bytes).unwrap_or_default()
-                }
-                Err(e) => {
-                    debug!(
-                        "[get_file_content] no content at head ref {}: {e}",
-                        comparison.head
-                    );
-                    String::new()
-                }
-            }
-        } else {
-            String::new()
-        };
-
-        return Ok(FileContent {
-            content,
-            old_content,
-            diff_patch: diff_output,
-            hunks,
-            content_type: "text".to_owned(),
-            image_data_url: None,
-            old_image_data_url: None,
-        });
-    }
-
-    // Symlink directories: return the link target as content (like git stores them)
-    if full_path.is_dir() {
-        let is_symlink = full_path
-            .symlink_metadata()
-            .is_ok_and(|m| m.file_type().is_symlink());
-
-        if !is_symlink {
-            return Err(format!("Path is a directory: {file_path}"));
-        }
-
-        let target = std::fs::read_link(&full_path)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let content = format!("{target}\n");
-        let content_hash = compute_content_hash(content.as_bytes());
-        let hunks = vec![create_untracked_hunk(
-            &file_path,
-            &content_hash,
-            Some(&content),
-        )];
-
-        return Ok(FileContent {
-            content,
-            old_content: None,
-            diff_patch: String::new(),
-            hunks,
-            content_type: "text".to_owned(),
-            image_data_url: None,
-            old_image_data_url: None,
-        });
-    }
-
-    let content_type = get_content_type(&file_path);
-    let ext = file_path.rsplit('.').next().unwrap_or("");
-    let mime_type = get_image_mime_type(ext);
-
-    if content_type == "image" || content_type == "svg" {
-        debug!("[get_file_content] handling as image/svg: {content_type}");
-
-        let current_bytes = std::fs::read(&full_path).map_err(|e| {
-            error!("[get_file_content] ERROR reading file bytes: {e}");
-            format!("{}: {}", full_path.display(), e)
-        })?;
-
-        let image_data_url = mime_type.map(|mt| bytes_to_data_url(&current_bytes, mt));
-
-        let content = if content_type == "svg" {
-            String::from_utf8_lossy(&current_bytes).to_string()
-        } else {
-            String::new()
-        };
-
-        let diff_output = source
-            .get_diff(&comparison, Some(&file_path))
-            .map_err(|e| {
-                error!("[get_file_content] ERROR getting diff: {e}");
-                e.to_string()
-            })?;
-
-        let old_image_data_url = if diff_output.is_empty() {
-            None
-        } else {
-            let old_ref = if source.include_working_tree(&comparison) {
-                "HEAD".to_owned()
-            } else {
-                comparison.base.clone()
-            };
-
-            match source.get_file_bytes(&file_path, &old_ref) {
-                Ok(old_bytes) => {
-                    debug!(
-                        "[get_file_content] got old image bytes: {} bytes",
-                        old_bytes.len()
-                    );
-                    mime_type.map(|mt| bytes_to_data_url(&old_bytes, mt))
-                }
-                Err(e) => {
-                    debug!("[get_file_content] no old version available: {e}");
-                    None
-                }
-            }
-        };
-
-        let hunks = if diff_output.is_empty() {
-            let content_hash = compute_content_hash(&current_bytes);
-            vec![create_untracked_hunk(&file_path, &content_hash, None)]
-        } else if content_type == "svg" {
-            parse_diff(&diff_output, &file_path)
-        } else {
-            vec![create_binary_hunk(&file_path)]
-        };
-
-        info!("[get_file_content] SUCCESS (image)");
-        return Ok(FileContent {
-            content,
-            old_content: None,
-            diff_patch: diff_output,
-            hunks,
-            content_type,
-            image_data_url,
-            old_image_data_url,
-        });
-    }
-
-    let content = std::fs::read_to_string(&full_path).map_err(|e| {
-        error!("[get_file_content] ERROR reading file: {e}");
-        format!("{}: {}", full_path.display(), e)
-    })?;
-    debug!(
-        "[get_file_content] file content length: {} bytes",
-        content.len()
-    );
-
-    let diff_output = source
-        .get_diff(&comparison, Some(&file_path))
-        .map_err(|e| {
-            error!("[get_file_content] ERROR getting diff: {e}");
-            e.to_string()
-        })?;
-    debug!(
-        "[get_file_content] diff output length: {} bytes",
-        diff_output.len()
-    );
-
-    let hunks = if diff_output.is_empty() {
-        let is_tracked = source.is_file_tracked(&file_path).unwrap_or(false);
-        if is_tracked {
-            debug!("[get_file_content] no diff, file is tracked (unchanged)");
-            vec![]
-        } else {
-            debug!("[get_file_content] no diff, file is untracked (new)");
-            let content_hash = compute_content_hash(content.as_bytes());
-            vec![create_untracked_hunk(
-                &file_path,
-                &content_hash,
-                Some(&content),
-            )]
-        }
-    } else {
-        debug!("[get_file_content] parsing diff...");
-        let parsed = parse_diff(&diff_output, &file_path);
-        debug!("[get_file_content] parsed {} hunks", parsed.len());
-        parsed
-    };
-
-    let (old_content, final_content) = if diff_output.is_empty() {
-        (None, content)
-    } else if source.include_working_tree(&comparison) {
-        // Use comparison.base (the base ref) for old content, not HEAD.
-        // When comparing e.g. main..feature+working-tree, HEAD points to the
-        // feature branch, so using HEAD would make old == new (both from feature),
-        // causing MultiFileDiff to show zero changes.
-        let old_ref = &comparison.base;
-        let old = match source.get_file_bytes(&file_path, old_ref) {
-            Ok(bytes) => {
-                debug!(
-                    "[get_file_content] got old content from {old_ref}: {} bytes",
-                    bytes.len()
-                );
-                String::from_utf8(bytes).ok()
-            }
-            Err(e) => {
-                debug!("[get_file_content] no old version available from {old_ref}: {e}");
-                None
-            }
-        };
-        (old, content)
-    } else {
-        let old = match source.get_file_bytes(&file_path, &comparison.base) {
-            Ok(bytes) => {
-                debug!(
-                    "[get_file_content] got old content from {}: {} bytes",
-                    comparison.base,
-                    bytes.len()
-                );
-                String::from_utf8(bytes).ok()
-            }
-            Err(e) => {
-                debug!(
-                    "[get_file_content] no old version at {}: {}",
-                    comparison.base, e
-                );
-                None
-            }
-        };
-        let new = match source.get_file_bytes(&file_path, &comparison.head) {
-            Ok(bytes) => {
-                debug!(
-                    "[get_file_content] got new content from {}: {} bytes",
-                    comparison.head,
-                    bytes.len()
-                );
-                String::from_utf8(bytes).ok()
-            }
-            Err(e) => {
-                debug!(
-                    "[get_file_content] no new version at {}: {}",
-                    comparison.head, e
-                );
-                None
-            }
-        };
-        (old, new.unwrap_or_default())
-    };
-
-    let result = FileContent {
-        content: final_content,
-        old_content,
-        diff_patch: diff_output,
-        hunks,
-        content_type,
-        image_data_url: None,
-        old_image_data_url: None,
-    };
-    let payload_estimate = result.content.len()
-        + result.old_content.as_ref().map_or(0, |s| s.len())
-        + result.diff_patch.len();
-    info!(
-        "[get_file_content] SUCCESS file={file_path} hunks={} payload≈{}KB in {:?}",
-        result.hunks.len(),
-        payload_estimate / 1024,
-        t0.elapsed()
-    );
-    Ok(result)
-}
-
-/// Get file content for a PR by extracting the file's diff from `gh pr diff`
-/// and resolving old/new content from local git refs.
-fn get_file_content_for_pr(
-    repo_path: &str,
-    file_path: &str,
-    pr: &review::sources::github::GitHubPrRef,
-) -> Result<FileContent, String> {
-    let repo_path_buf = PathBuf::from(repo_path);
-    let provider = GhCliProvider::new(repo_path_buf.clone());
-
-    // Get the full PR diff and extract this file's portion
-    let full_diff = provider
-        .get_pull_request_diff(pr.number)
-        .map_err(|e| e.to_string())?;
-
-    // Extract the diff section for this specific file
-    let file_diff = extract_file_diff(&full_diff, file_path);
-
-    let hunks = if file_diff.is_empty() {
-        vec![]
-    } else {
-        parse_diff(&file_diff, file_path)
-    };
-
-    let content_type = get_content_type(file_path);
-
-    // For images, just return minimal info with the diff
-    if content_type == "image" {
-        return Ok(FileContent {
-            content: String::new(),
-            old_content: None,
-            diff_patch: file_diff,
-            hunks,
-            content_type,
-            image_data_url: None,
-            old_image_data_url: None,
-        });
-    }
-
-    // Try to get old/new content from local git refs
-    let source = LocalGitSource::new(repo_path_buf.clone()).map_err(|e| e.to_string())?;
-
-    let old_content = source
-        .get_file_bytes(file_path, &pr.base_ref_name)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok());
-
-    // Try the head ref first; if not available locally, try fetching
-    let new_content = source
-        .get_file_bytes(file_path, &pr.head_ref_name)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .or_else(|| {
-            // Try fetching the PR head ref
-            let fetch_ref = format!("pull/{}/head:refs/pr/{}", pr.number, pr.number);
-            let _ = std::process::Command::new("git")
-                .args(["fetch", "origin", &fetch_ref])
-                .current_dir(repo_path)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-
-            let pr_ref = format!("refs/pr/{}", pr.number);
-            source
-                .get_file_bytes(file_path, &pr_ref)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-        });
-
-    let content = new_content.unwrap_or_default();
-
-    Ok(FileContent {
-        content,
-        old_content,
-        diff_patch: file_diff,
-        hunks,
-        content_type,
-        image_data_url: None,
-        old_image_data_url: None,
-    })
-}
-
-/// Extract the diff section for a specific file from a multi-file diff output.
-fn extract_file_diff(full_diff: &str, target_path: &str) -> String {
-    let mut result = String::new();
-    let mut capturing = false;
-
-    for line in full_diff.lines() {
-        if line.starts_with("diff --git ") {
-            if capturing {
-                break; // We've hit the next file's diff
-            }
-            // Check if this diff section is for our target file
-            // Format: "diff --git a/path b/path"
-            if line.contains(&format!(" b/{target_path}")) {
-                capturing = true;
-            }
-        }
-        if capturing {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    result
-}
-
 /// Batch-load all hunks for multiple files in a single IPC call.
-///
-/// Instead of calling `get_file_content` N times (one per changed file),
-/// this command runs a single `git diff` for all files, parses all hunks,
-/// and handles untracked files—returning every hunk in one response.
 #[tauri::command]
 pub async fn get_all_hunks(
     repo_path: String,
@@ -784,88 +211,8 @@ pub fn get_all_hunks_sync(
     comparison: Comparison,
     file_paths: Vec<String>,
 ) -> Result<Vec<DiffHunk>, String> {
-    let t0 = Instant::now();
-    debug!(
-        "[get_all_hunks] repo_path={repo_path}, {} files",
-        file_paths.len()
-    );
-
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[get_all_hunks] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    // Single git diff call for all files at once
-    let diff_start = Instant::now();
-    let full_diff = source.get_diff(&comparison, None).map_err(|e| {
-        error!("[get_all_hunks] ERROR getting diff: {e}");
-        e.to_string()
-    })?;
-    debug!(
-        "[get_all_hunks] git diff: {}KB in {:?}",
-        full_diff.len() / 1024,
-        diff_start.elapsed()
-    );
-
-    // Try hunk cache before parsing
-    let repo_path_buf = PathBuf::from(&repo_path);
-    let diff_hash = review::diff::cache::compute_hash(&full_diff);
-    let mut all_hunks = if let Ok(Some(cached)) =
-        review::diff::cache::load(&repo_path_buf, &comparison, &diff_hash)
-    {
-        debug!("[get_all_hunks] hunk cache HIT");
-        cached
-    } else {
-        let parse_start = Instant::now();
-        let parsed = parse_multi_file_diff(&full_diff);
-        debug!(
-            "[get_all_hunks] parsed {} hunks in {:?}",
-            parsed.len(),
-            parse_start.elapsed()
-        );
-        // Save to cache (best-effort)
-        let _ = review::diff::cache::save(&repo_path_buf, &comparison, &diff_hash, &parsed);
-        parsed
-    };
-    drop(full_diff);
-
-    // Build a set of file paths that got hunks from the diff
-    let files_with_hunks: HashSet<String> = all_hunks.iter().map(|h| h.file_path.clone()).collect();
-
-    // For requested files that have no diff hunks, check if they're
-    // untracked (new) and create untracked hunks for them
-    for file_path in &file_paths {
-        if !files_with_hunks.contains(file_path.as_str()) {
-            let is_tracked = source.is_file_tracked(file_path).unwrap_or(false);
-            if !is_tracked {
-                let full_path = repo_path_buf.join(file_path);
-                let (content_hash, text_content) = std::fs::read(&full_path)
-                    .map(|bytes| {
-                        let hash = compute_content_hash(&bytes);
-                        let text = String::from_utf8(bytes).ok();
-                        (hash, text)
-                    })
-                    .unwrap_or_else(|_| ("00000000".to_owned(), None));
-                all_hunks.push(create_untracked_hunk(
-                    file_path,
-                    &content_hash,
-                    text_content.as_deref(),
-                ));
-            }
-        }
-    }
-
-    // Filter to only include hunks for the requested files
-    let requested: HashSet<&str> = file_paths.iter().map(|s| s.as_str()).collect();
-    all_hunks.retain(|h| requested.contains(h.file_path.as_str()));
-
-    info!(
-        "[get_all_hunks] SUCCESS: {} hunks from {} files in {:?}",
-        all_hunks.len(),
-        file_paths.len(),
-        t0.elapsed()
-    );
-    Ok(all_hunks)
+    review::service::files::get_all_hunks(&PathBuf::from(&repo_path), &comparison, &file_paths)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -974,16 +321,6 @@ pub fn get_default_branch(repo_path: String) -> Result<String, String> {
     source.get_default_branch().map_err(|e| e.to_string())
 }
 
-/// Combined local activity data for a single registered repository.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RepoLocalActivity {
-    pub repo_path: String,
-    pub repo_name: String,
-    pub default_branch: String,
-    pub branches: Vec<LocalBranchInfo>,
-}
-
 #[tauri::command]
 pub fn list_local_branches(
     repo_path: String,
@@ -1010,52 +347,7 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
 
 #[tauri::command]
 pub fn list_all_local_activity() -> Result<Vec<RepoLocalActivity>, String> {
-    let t0 = Instant::now();
-    let repos = review::review::central::list_registered_repos().map_err(|e| e.to_string())?;
-    let mut result = Vec::new();
-
-    std::thread::scope(|s| {
-        let handles: Vec<_> = repos
-            .iter()
-            .map(|repo_entry| {
-                s.spawn(|| {
-                    let repo_path = PathBuf::from(&repo_entry.path);
-                    let source = match LocalGitSource::new(repo_path) {
-                        Ok(s) => s,
-                        Err(_) => return None, // Skip repos that no longer exist
-                    };
-
-                    let default_branch = source
-                        .get_default_branch()
-                        .unwrap_or_else(|_| "main".to_owned());
-                    let branches = source
-                        .list_branches_ahead(&default_branch)
-                        .unwrap_or_default();
-
-                    Some(RepoLocalActivity {
-                        repo_path: repo_entry.path.clone(),
-                        repo_name: repo_entry.name.clone(),
-                        default_branch,
-                        branches,
-                    })
-                })
-            })
-            .collect();
-
-        for handle in handles {
-            if let Ok(Some(activity)) = handle.join() {
-                result.push(activity);
-            }
-        }
-    });
-
-    info!(
-        "[list_all_local_activity] {} repos, {} total branches in {:?}",
-        result.len(),
-        result.iter().map(|r| r.branches.len()).sum::<usize>(),
-        t0.elapsed()
-    );
-    Ok(result)
+    review::service::activity::list_all_local_activity().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1123,52 +415,6 @@ pub fn unstage_hunks(
         .map_err(|e| e.to_string())
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CommitStream {
-    Stdout,
-    Stderr,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitOutputLine {
-    pub text: String,
-    pub stream: CommitStream,
-    pub seq: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitResult {
-    pub success: bool,
-    pub commit_hash: Option<String>,
-    pub summary: String,
-}
-
-/// Spawn a thread that reads lines from a pipe and sends them as `CommitOutputLine` messages.
-fn spawn_stream_reader(
-    pipe: Option<impl std::io::Read + Send + 'static>,
-    stream: CommitStream,
-    tx: tokio::sync::mpsc::Sender<CommitOutputLine>,
-    seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
-) -> std::thread::JoinHandle<()> {
-    use std::io::BufRead;
-
-    std::thread::spawn(move || {
-        let Some(pipe) = pipe else { return };
-        let reader = std::io::BufReader::new(pipe);
-        for line in reader.lines().flatten() {
-            let s = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let _ = tx.blocking_send(CommitOutputLine {
-                text: line,
-                stream,
-                seq: s,
-            });
-        }
-    })
-}
-
 #[tauri::command]
 pub async fn git_commit(
     app: tauri::AppHandle,
@@ -1176,7 +422,6 @@ pub async fn git_commit(
     message: String,
     request_id: String,
 ) -> Result<CommitResult, String> {
-    use std::sync::atomic::AtomicU64;
     use tauri::Emitter;
 
     let t0 = Instant::now();
@@ -1196,39 +441,14 @@ pub async fn git_commit(
     });
 
     let result = tokio::task::spawn_blocking(move || {
-        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-        let mut child = source.spawn_commit(&message).map_err(|e| e.to_string())?;
-
-        let seq = std::sync::Arc::new(AtomicU64::new(0));
-
-        let stdout_thread = spawn_stream_reader(
-            child.stdout.take(),
-            CommitStream::Stdout,
-            tx.clone(),
-            seq.clone(),
-        );
-        let stderr_thread = spawn_stream_reader(child.stderr.take(), CommitStream::Stderr, tx, seq);
-
-        let status = child.wait().map_err(|e| e.to_string())?;
-
-        let _ = stdout_thread.join();
-        let _ = stderr_thread.join();
-
-        if status.success() {
-            let commit_hash = source.get_head_short_hash().ok();
-            Ok(CommitResult {
-                success: true,
-                commit_hash,
-                summary: "Commit created successfully".to_owned(),
-            })
-        } else {
-            let code = status.code().unwrap_or(-1);
-            Ok(CommitResult {
-                success: false,
-                commit_hash: None,
-                summary: format!("git commit exited with code {code}"),
-            })
-        }
+        review::service::commit::git_commit_streaming(
+            &PathBuf::from(&repo_path),
+            &message,
+            move |line| {
+                let _ = tx.blocking_send(line);
+            },
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -1257,61 +477,12 @@ pub fn get_working_tree_file_content(
     file_path: String,
     cached: bool,
 ) -> Result<FileContent, String> {
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-    let raw_diff = source
-        .get_raw_file_diff(&file_path, cached)
-        .map_err(|e| e.to_string())?;
-
-    let hunks = if raw_diff.is_empty() {
-        vec![]
-    } else {
-        parse_diff(&raw_diff, &file_path)
-    };
-
-    let old_content = if cached {
-        // Staged diff: old side is HEAD
-        source
-            .get_file_bytes(&file_path, "HEAD")
-            .ok()
-            .and_then(|b| String::from_utf8(b).ok())
-    } else {
-        // Unstaged diff: old side is the index, falling back to HEAD
-        source
-            .get_file_bytes(&file_path, ":0")
-            .ok()
-            .and_then(|b| String::from_utf8(b).ok())
-            .or_else(|| {
-                source
-                    .get_file_bytes(&file_path, "HEAD")
-                    .ok()
-                    .and_then(|b| String::from_utf8(b).ok())
-            })
-    };
-
-    let content = if cached {
-        // Staged diff: new side is the index
-        source
-            .get_file_bytes(&file_path, ":0")
-            .ok()
-            .and_then(|b| String::from_utf8(b).ok())
-            .unwrap_or_default()
-    } else {
-        // Unstaged diff: new side is the working tree
-        let full_path = PathBuf::from(&repo_path).join(&file_path);
-        std::fs::read_to_string(&full_path).unwrap_or_default()
-    };
-
-    let content_type = get_content_type(&file_path);
-
-    Ok(FileContent {
-        content,
-        old_content,
-        diff_patch: raw_diff,
-        hunks,
-        content_type,
-        image_data_url: None,
-        old_image_data_url: None,
-    })
+    review::service::files::get_working_tree_file_content(
+        &PathBuf::from(&repo_path),
+        &file_path,
+        cached,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1379,37 +550,12 @@ pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsRespo
         t0.elapsed()
     );
 
-    DetectMovePairsResponse { pairs, hunks }
+    review::service::DetectMovePairsResponse { pairs, hunks }
 }
 
 /// Validate that a path is within .git/review/ or ~/.review/ for security
 fn validate_review_path(path: &str) -> Result<PathBuf, String> {
-    let path_buf = PathBuf::from(path);
-
-    // Reject paths with ".." components to prevent traversal
-    if path.contains("..") {
-        return Err("Path traversal detected: path contains '..'".to_owned());
-    }
-
-    let path_str = path.replace('\\', "/");
-
-    // Allow writes to .git/review/ (legacy log path)
-    if path_str.contains("/.git/review/") || path_str.contains(".git/review/") {
-        return Ok(path_buf);
-    }
-
-    // Allow writes to the central ~/.review/ directory
-    if let Ok(root) = review::review::central::get_central_root() {
-        let root_str = root.to_string_lossy().replace('\\', "/");
-        if path_str.starts_with(&root_str) {
-            return Ok(path_buf);
-        }
-    }
-
-    Err(
-        "Security error: writes are only allowed to .git/review/ or ~/.review/ directory"
-            .to_owned(),
-    )
+    review::service::util::validate_review_path(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1450,32 +596,15 @@ pub fn get_expanded_context(
     end_line: u32,
     github_pr: Option<GitHubPrRef>,
 ) -> Result<ExpandedContextResult, String> {
-    debug!(
-        "[get_expanded_context] file={file_path}, lines {start_line}-{end_line}, comparison={comparison:?}"
-    );
-
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-
-    // For PRs, use the head ref name (best-effort)
-    let git_ref = if let Some(ref pr) = github_pr {
-        pr.head_ref_name.clone()
-    } else if source.include_working_tree(&comparison) {
-        "HEAD".to_owned()
-    } else {
-        comparison.head.clone()
-    };
-
-    let lines = source
-        .get_file_lines(&file_path, &git_ref, start_line, end_line)
-        .map_err(|e| e.to_string())?;
-
-    info!("[get_expanded_context] SUCCESS: {} lines", lines.len());
-
-    Ok(ExpandedContextResult {
-        lines,
+    review::service::files::get_expanded_context(
+        &PathBuf::from(&repo_path),
+        &file_path,
+        &comparison,
         start_line,
         end_line,
-    })
+        github_pr.as_ref(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1643,242 +772,13 @@ pub async fn get_file_symbol_diffs(
     file_paths: Vec<String>,
     comparison: Comparison,
 ) -> Result<Vec<FileSymbolDiff>, String> {
-    debug!(
-        "[get_file_symbol_diffs] repo_path={}, files={}",
-        repo_path,
-        file_paths.len()
-    );
-
     tokio::task::spawn_blocking(move || {
-        let t0 = Instant::now();
-        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-            error!("[get_file_symbol_diffs] ERROR creating source: {e}");
-            e.to_string()
-        })?;
-
-        // Determine the git refs for old and new sides
-        let old_ref = if source.include_working_tree(&comparison) {
-            "HEAD".to_owned()
-        } else {
-            comparison.base.clone()
-        };
-
-        // Single git diff call for all files instead of one per file
-        let full_diff = source.get_diff(&comparison, None).unwrap_or_default();
-
-        // Check the disk cache before doing expensive tree-sitter work
-        let repo_path_buf = PathBuf::from(&repo_path);
-        let diff_hash = symbols::cache::compute_hash(&full_diff);
-        if let Ok(Some(cached)) = symbols::cache::load(&repo_path_buf, &comparison, &diff_hash) {
-            info!(
-                "[get_file_symbol_diffs] CACHE HIT: {} files from cache in {:?}",
-                cached.len(),
-                t0.elapsed()
-            );
-            return Ok(cached);
-        }
-
-        let all_hunks = parse_multi_file_diff(&full_diff);
-        let rename_map = review::diff::parser::extract_rename_map(&full_diff);
-
-        // Pass 1: compute FileSymbolDiff per file (parallel), also return file contents for reuse
-        let pass1_results: Vec<(
-            FileSymbolDiff,
-            Option<String>,
-            Option<String>,
-            Vec<DiffHunk>,
-        )> = std::thread::scope(|s| {
-            let handles: Vec<_> = file_paths
-                .iter()
-                .map(|file_path| {
-                    let source = &source;
-                    let all_hunks = &all_hunks;
-                    let old_ref = old_ref.as_str();
-                    let comparison = &comparison;
-                    let repo_path = repo_path.as_str();
-                    let rename_map = &rename_map;
-                    s.spawn(move || {
-                        // Get old content (use old path for renamed files)
-                        let old_path = rename_map
-                            .get(file_path.as_str())
-                            .map(|s| s.as_str())
-                            .unwrap_or(file_path);
-                        let old_content = source
-                            .get_file_bytes(old_path, old_ref)
-                            .ok()
-                            .and_then(|bytes| String::from_utf8(bytes).ok());
-
-                        // Get new content
-                        let new_content = if source.include_working_tree(&comparison) {
-                            let full_path = PathBuf::from(repo_path).join(file_path);
-                            std::fs::read_to_string(&full_path).ok()
-                        } else {
-                            source
-                                .get_file_bytes(file_path, &comparison.head)
-                                .ok()
-                                .and_then(|bytes| String::from_utf8(bytes).ok())
-                        };
-
-                        let file_hunks: Vec<_> = all_hunks
-                            .iter()
-                            .filter(|h| h.file_path == *file_path)
-                            .cloned()
-                            .collect();
-
-                        let diff = symbols::extractor::compute_file_symbol_diff(
-                            old_content.as_deref(),
-                            new_content.as_deref(),
-                            file_path,
-                            &file_hunks,
-                        );
-
-                        (diff, old_content, new_content, file_hunks)
-                    })
-                })
-                .collect();
-            handles.into_iter().filter_map(|h| h.join().ok()).collect()
-        });
-
-        // Collect modified symbol names across all files (from SymbolDiff trees)
-        let mut modified_symbols: HashSet<String> = HashSet::new();
-        // Track definition ranges per file: file_path -> (symbol_name -> (start, end))
-        let mut definition_ranges_by_file: HashMap<String, HashMap<String, (u32, u32)>> =
-            HashMap::new();
-
-        fn collect_modified_names(
-            symbols: &[review::symbols::SymbolDiff],
-            file_path: &str,
-            modified: &mut HashSet<String>,
-            def_ranges: &mut HashMap<String, HashMap<String, (u32, u32)>>,
-        ) {
-            for sym in symbols {
-                modified.insert(sym.name.clone());
-                // Track definition range for this symbol in this file
-                if let Some(ref range) = sym.new_range {
-                    def_ranges
-                        .entry(file_path.to_owned())
-                        .or_default()
-                        .insert(sym.name.clone(), (range.start_line, range.end_line));
-                } else if let Some(ref range) = sym.old_range {
-                    def_ranges
-                        .entry(file_path.to_owned())
-                        .or_default()
-                        .insert(sym.name.clone(), (range.start_line, range.end_line));
-                }
-                collect_modified_names(&sym.children, file_path, modified, def_ranges);
-            }
-        }
-
-        for (diff, _, _, _) in &pass1_results {
-            collect_modified_names(
-                &diff.symbols,
-                &diff.file_path,
-                &mut modified_symbols,
-                &mut definition_ranges_by_file,
-            );
-        }
-
-        // Extract per-file imported names for scoping symbol reference search
-        let import_maps: Vec<Option<HashSet<String>>> = pass1_results
-            .iter()
-            .map(|(diff, _, new_content, _)| {
-                new_content
-                    .as_deref()
-                    .and_then(|c| symbols::extractor::extract_imported_names(c, &diff.file_path))
-            })
-            .collect();
-
-        // Pass 2: find references to modified symbols in each file (parallel)
-        let results: Vec<FileSymbolDiff> = std::thread::scope(|s| {
-            let handles: Vec<_> = pass1_results
-                .into_iter()
-                .zip(import_maps)
-                .map(
-                    |((mut diff, old_content, new_content, file_hunks), file_imports)| {
-                        let modified_symbols = &modified_symbols;
-                        let definition_ranges_by_file = &definition_ranges_by_file;
-                        s.spawn(move || {
-                            if diff.has_grammar {
-                                let file_path = &diff.file_path;
-                                let def_ranges = definition_ranges_by_file
-                                    .get(file_path)
-                                    .cloned()
-                                    .unwrap_or_default();
-
-                                // Scope target symbols: intersect with file's imports
-                                // if import extraction succeeded. Symbols defined in this
-                                // file are always included (they don't need to be imported).
-                                let scoped_symbols: HashSet<String>;
-                                let target_symbols = match &file_imports {
-                                    Some(imports) => {
-                                        let defined_in_file: HashSet<&String> =
-                                            def_ranges.keys().collect();
-                                        scoped_symbols = modified_symbols
-                                            .iter()
-                                            .filter(|sym| {
-                                                imports.contains(sym.as_str())
-                                                    || defined_in_file.contains(sym)
-                                            })
-                                            .cloned()
-                                            .collect();
-                                        &scoped_symbols
-                                    }
-                                    None => modified_symbols,
-                                };
-
-                                // Find references in new content
-                                if let Some(ref content) = new_content {
-                                    let mut refs = symbols::extractor::find_symbol_references(
-                                        content,
-                                        file_path,
-                                        &file_hunks,
-                                        target_symbols,
-                                        &def_ranges,
-                                        true,
-                                    );
-                                    diff.symbol_references.append(&mut refs);
-                                }
-
-                                // Find references in old content (for deletion-only hunks)
-                                if let Some(ref content) = old_content {
-                                    let mut refs = symbols::extractor::find_symbol_references(
-                                        content,
-                                        file_path,
-                                        &file_hunks,
-                                        target_symbols,
-                                        &def_ranges,
-                                        false,
-                                    );
-                                    // Deduplicate: only add refs for hunk IDs not already present
-                                    let existing: HashSet<(&str, &str)> = diff
-                                        .symbol_references
-                                        .iter()
-                                        .map(|r| (r.symbol_name.as_str(), r.hunk_id.as_str()))
-                                        .collect();
-                                    refs.retain(|r| {
-                                        !existing
-                                            .contains(&(r.symbol_name.as_str(), r.hunk_id.as_str()))
-                                    });
-                                    diff.symbol_references.append(&mut refs);
-                                }
-                            }
-                            diff
-                        })
-                    },
-                )
-                .collect();
-            handles.into_iter().filter_map(|h| h.join().ok()).collect()
-        });
-
-        // Save to disk cache for next time
-        let _ = symbols::cache::save(&repo_path_buf, &comparison, &diff_hash, &results);
-
-        info!(
-            "[get_file_symbol_diffs] SUCCESS: {} files processed in {:?}",
-            results.len(),
-            t0.elapsed()
-        );
-        Ok(results)
+        review::service::symbols::get_file_symbol_diffs(
+            &PathBuf::from(&repo_path),
+            &file_paths,
+            &comparison,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1894,50 +794,11 @@ pub async fn get_dependency_graph(
     Ok(symbols::graph::build_dependency_graph(&symbol_diffs))
 }
 
-#[derive(Serialize)]
-pub struct RepoFileSymbols {
-    #[serde(rename = "filePath")]
-    pub file_path: String,
-    pub symbols: Vec<Symbol>,
-}
-
 #[tauri::command]
 pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>, String> {
-    debug!("[get_repo_symbols] repo_path={}", repo_path);
-
     tokio::task::spawn_blocking(move || {
-        let t0 = Instant::now();
-        let repo_path_buf = PathBuf::from(&repo_path);
-        let source = LocalGitSource::new(repo_path_buf.clone()).map_err(|e| e.to_string())?;
-        let tracked_files = source.get_tracked_files().map_err(|e| e.to_string())?;
-
-        let mut results = Vec::new();
-        for file_path in &tracked_files {
-            if symbols::extractor::get_language_for_file(file_path).is_none() {
-                continue;
-            }
-            let full_path = repo_path_buf.join(file_path);
-            let syms = std::fs::read_to_string(&full_path)
-                .ok()
-                .and_then(|content| symbols::extractor::extract_symbols(&content, file_path))
-                .unwrap_or_default();
-            if syms.is_empty() {
-                continue;
-            }
-            results.push(RepoFileSymbols {
-                file_path: file_path.clone(),
-                symbols: syms,
-            });
-        }
-
-        results.sort_by(|a, b| a.file_path.cmp(&b.file_path));
-        info!(
-            "[get_repo_symbols] SUCCESS: {} files with symbols (from {} tracked) in {:?}",
-            results.len(),
-            tracked_files.len(),
-            t0.elapsed()
-        );
-        Ok(results)
+        review::service::symbols::get_repo_symbols(&PathBuf::from(&repo_path))
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1949,29 +810,13 @@ pub async fn get_file_symbols(
     file_path: String,
     git_ref: Option<String>,
 ) -> Result<Option<Vec<Symbol>>, String> {
-    debug!(
-        "[get_file_symbols] repo_path={}, file_path={}, ref={:?}",
-        repo_path, file_path, git_ref
-    );
-
     tokio::task::spawn_blocking(move || {
-        let content = if let Some(r) = &git_ref {
-            let source = LocalGitSource::new(std::path::PathBuf::from(&repo_path))
-                .map_err(|e| e.to_string())?;
-            source
-                .get_file_bytes(&file_path, r)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-        } else {
-            let full_path = std::path::PathBuf::from(&repo_path).join(&file_path);
-            std::fs::read_to_string(&full_path).ok()
-        };
-
-        let Some(content) = content else {
-            return Ok(None);
-        };
-
-        Ok(symbols::extractor::extract_symbols(&content, &file_path))
+        review::service::symbols::get_file_symbols(
+            &PathBuf::from(&repo_path),
+            &file_path,
+            git_ref.as_deref(),
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1983,101 +828,13 @@ pub async fn find_symbol_definitions(
     symbol_name: String,
     git_ref: Option<String>,
 ) -> Result<Vec<symbols::SymbolDefinition>, String> {
-    debug!(
-        "[find_symbol_definitions] repo_path={}, symbol_name={}, git_ref={:?}",
-        repo_path, symbol_name, git_ref
-    );
-
     tokio::task::spawn_blocking(move || {
-        // Use git grep to find candidate files containing the symbol name.
-        // When a git_ref is provided, search that tree instead of the working tree.
-        let mut cmd = std::process::Command::new("git");
-        cmd.args(["grep", "-l", "-F", "--", &symbol_name]);
-        if let Some(ref r) = git_ref {
-            cmd.arg(r);
-        }
-        let output = cmd
-            .current_dir(&repo_path)
-            .output()
-            .map_err(|e| format!("Failed to run git grep: {e}"))?;
-
-        let candidate_files: Vec<String> = if output.status.success() {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(|l| {
-                    // When searching a ref, git grep outputs "ref:path" — strip the ref prefix
-                    if git_ref.is_some() {
-                        l.splitn(2, ':').nth(1).unwrap_or(l).to_string()
-                    } else {
-                        l.to_string()
-                    }
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        // Filter to files with tree-sitter grammar support, cap at 50
-        // to keep response times reasonable for common symbol names
-        let supported_files: Vec<&String> = candidate_files
-            .iter()
-            .filter(|f| symbols::extractor::get_language_for_file(f).is_some())
-            .take(50)
-            .collect();
-
-        info!(
-            "[find_symbol_definitions] {} candidates, {} with grammar support (capped at 50)",
-            candidate_files.len(),
-            supported_files.len()
-        );
-
-        // Process candidates in parallel using scoped threads
-        let mut all_defs = Vec::new();
-        std::thread::scope(|scope| {
-            let handles: Vec<_> = supported_files
-                .iter()
-                .map(|file_path| {
-                    let repo = &repo_path;
-                    let name = &symbol_name;
-                    let fp = file_path.as_str();
-                    let r = &git_ref;
-                    scope.spawn(move || {
-                        let content = if let Some(ref git_r) = r {
-                            // Read file content from the git ref
-                            let show_output = std::process::Command::new("git")
-                                .args(["show", &format!("{git_r}:{fp}")])
-                                .current_dir(repo)
-                                .output();
-                            match show_output {
-                                Ok(o) if o.status.success() => {
-                                    String::from_utf8_lossy(&o.stdout).to_string()
-                                }
-                                _ => return Vec::new(),
-                            }
-                        } else {
-                            let full_path = std::path::PathBuf::from(repo).join(fp);
-                            match std::fs::read_to_string(&full_path) {
-                                Ok(c) => c,
-                                Err(_) => return Vec::new(),
-                            }
-                        };
-                        symbols::extractor::find_definitions(&content, fp, name)
-                    })
-                })
-                .collect();
-
-            for handle in handles {
-                if let Ok(defs) = handle.join() {
-                    all_defs.extend(defs);
-                }
-            }
-        });
-
-        info!(
-            "[find_symbol_definitions] SUCCESS: {} definitions found",
-            all_defs.len()
-        );
-        Ok(all_defs)
+        review::service::symbols::find_symbol_definitions(
+            &PathBuf::from(&repo_path),
+            &symbol_name,
+            git_ref.as_deref(),
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2090,258 +847,22 @@ pub fn search_file_contents(
     case_sensitive: bool,
     max_results: usize,
 ) -> Result<Vec<SearchMatch>, String> {
-    let t0 = Instant::now();
-    debug!(
-        "[search_file_contents] repo_path={repo_path}, query={query}, case_sensitive={case_sensitive}, max_results={max_results}"
-    );
-
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-        error!("[search_file_contents] ERROR creating source: {e}");
-        e.to_string()
-    })?;
-
-    let results = source
-        .search_contents(&query, case_sensitive, max_results)
-        .map_err(|e| {
-            error!("[search_file_contents] ERROR searching: {e}");
-            e.to_string()
-        })?;
-
-    info!(
-        "[search_file_contents] SUCCESS: {} matches in {:?}",
-        results.len(),
-        t0.elapsed()
-    );
-    Ok(results)
+    review::service::files::search_file_contents(
+        &PathBuf::from(&repo_path),
+        &query,
+        case_sensitive,
+        max_results,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // --- Review freshness checking ---
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewFreshnessInput {
-    pub repo_path: String,
-    pub comparison: Comparison,
-    pub github_pr: Option<GitHubPrRef>,
-    pub cached_old_sha: Option<String>,
-    pub cached_new_sha: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewFreshnessResult {
-    pub key: String,
-    pub is_active: bool,
-    pub old_sha: Option<String>,
-    pub new_sha: Option<String>,
-    pub diff_stats: Option<DiffShortStat>,
-    /// Refs from the comparison that no longer exist (e.g. deleted branch).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub missing_refs: Vec<String>,
-}
-
-static FRESHNESS_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(6);
 
 #[tauri::command]
 pub async fn check_reviews_freshness(
     reviews: Vec<ReviewFreshnessInput>,
 ) -> Vec<ReviewFreshnessResult> {
-    let handles: Vec<_> = reviews
-        .into_iter()
-        .map(|input| {
-            tokio::spawn(async move {
-                let _permit = FRESHNESS_SEMAPHORE.acquire().await.unwrap();
-                tokio::task::spawn_blocking(move || check_single_review_freshness(input)).await
-            })
-        })
-        .collect();
-
-    let mut results = Vec::new();
-    for handle in handles {
-        match handle.await {
-            Ok(Ok(result)) => results.push(result),
-            Ok(Err(e)) => error!("[check_reviews_freshness] task panicked: {e}"),
-            Err(e) => error!("[check_reviews_freshness] join error: {e}"),
-        }
-    }
-    results
-}
-
-/// A diff is considered active when it has any changed files, additions, or deletions.
-fn is_diff_active(stats: &Option<DiffShortStat>) -> bool {
-    stats
-        .as_ref()
-        .is_some_and(|s| s.file_count > 0 || s.additions > 0 || s.deletions > 0)
-}
-
-/// Detect missing refs by checking if a non-empty ref resolved to the empty tree.
-/// This avoids extra git processes since we reuse the already-resolved SHAs.
-fn missing_refs_from_resolved(
-    comparison: &Comparison,
-    resolved_old: &str,
-    resolved_new: &str,
-) -> Vec<String> {
-    let mut missing = Vec::new();
-    if !comparison.base.is_empty() && resolved_old == LocalGitSource::EMPTY_TREE {
-        missing.push(comparison.base.clone());
-    }
-    if !comparison.head.is_empty() && resolved_new == LocalGitSource::EMPTY_TREE {
-        missing.push(comparison.head.clone());
-    }
-    missing
-}
-
-fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshnessResult {
-    let key = format!("{}:{}", input.repo_path, input.comparison.key);
-
-    // PR comparisons: check state via gh CLI
-    if let Some(ref pr) = input.github_pr {
-        let provider = GhCliProvider::new(PathBuf::from(&input.repo_path));
-        match provider.get_pr_status(pr.number) {
-            Ok(status) => {
-                let is_merged_or_closed = status.state == "MERGED" || status.state == "CLOSED";
-                if is_merged_or_closed {
-                    return ReviewFreshnessResult {
-                        key,
-                        is_active: false,
-                        old_sha: None,
-                        new_sha: Some(status.head_ref_oid),
-                        diff_stats: None,
-                        missing_refs: vec![],
-                    };
-                }
-                // PR is open — check if head SHA changed
-                let sha_unchanged = input
-                    .cached_new_sha
-                    .as_deref()
-                    .is_some_and(|cached| cached == status.head_ref_oid);
-                if sha_unchanged {
-                    // No change, keep previous state (assume active since PR is open)
-                    return ReviewFreshnessResult {
-                        key,
-                        is_active: true,
-                        old_sha: input.cached_old_sha,
-                        new_sha: Some(status.head_ref_oid),
-                        diff_stats: None,
-                        missing_refs: vec![],
-                    };
-                }
-                // Head changed — re-check diff stats
-                let source = match LocalGitSource::new(PathBuf::from(&input.repo_path)) {
-                    Ok(s) => s,
-                    Err(_) => {
-                        return ReviewFreshnessResult {
-                            key,
-                            is_active: true, // PR is open, assume active
-                            old_sha: None,
-                            new_sha: Some(status.head_ref_oid),
-                            diff_stats: None,
-                            missing_refs: vec![],
-                        };
-                    }
-                };
-                let stats = source.get_diff_shortstat(&input.comparison).ok();
-                return ReviewFreshnessResult {
-                    key,
-                    is_active: is_diff_active(&stats),
-                    old_sha: None,
-                    new_sha: Some(status.head_ref_oid),
-                    diff_stats: stats,
-                    missing_refs: vec![],
-                };
-            }
-            Err(_) => {
-                // gh unavailable — default to inactive
-                return ReviewFreshnessResult {
-                    key,
-                    is_active: false,
-                    old_sha: None,
-                    new_sha: None,
-                    diff_stats: None,
-                    missing_refs: vec![],
-                };
-            }
-        }
-    }
-
-    // Local comparisons: resolve SHAs and compare with cache
-    let source = match LocalGitSource::new(PathBuf::from(&input.repo_path)) {
-        Ok(s) => s,
-        Err(_) => {
-            return ReviewFreshnessResult {
-                key,
-                is_active: false,
-                old_sha: None,
-                new_sha: None,
-                diff_stats: None,
-                missing_refs: vec![],
-            };
-        }
-    };
-
-    // Working tree comparisons always need re-check (can't fingerprint cheaply)
-    if source.include_working_tree(&input.comparison) {
-        let stats = source.get_diff_shortstat(&input.comparison).ok();
-        return ReviewFreshnessResult {
-            key,
-            is_active: is_diff_active(&stats),
-            old_sha: None,
-            new_sha: None,
-            diff_stats: stats,
-            missing_refs: vec![],
-        };
-    }
-
-    // Non-working-tree local comparisons: resolve SHAs (also detects missing refs)
-    let resolved_old = source.resolve_ref_or_empty_tree(&input.comparison.base);
-    let resolved_new = source.resolve_ref_or_empty_tree(&input.comparison.head);
-
-    // Detect missing refs: a non-empty ref that resolved to EMPTY_TREE means the branch is gone
-    let missing_refs = missing_refs_from_resolved(&input.comparison, &resolved_old, &resolved_new);
-    if !missing_refs.is_empty() {
-        return ReviewFreshnessResult {
-            key,
-            is_active: false,
-            old_sha: None,
-            new_sha: None,
-            diff_stats: None,
-            missing_refs,
-        };
-    }
-
-    let old_unchanged = input
-        .cached_old_sha
-        .as_deref()
-        .is_some_and(|cached| cached == resolved_old);
-    let new_unchanged = input
-        .cached_new_sha
-        .as_deref()
-        .is_some_and(|cached| cached == resolved_new);
-
-    if old_unchanged && new_unchanged {
-        // SHAs haven't changed — skip re-check, keep previous state
-        // We don't know previous is_active, but the frontend tracks that separately
-        // Return with no diff_stats to signal "no change"
-        return ReviewFreshnessResult {
-            key,
-            is_active: resolved_old != resolved_new, // same SHA = empty diff = inactive
-            old_sha: Some(resolved_old),
-            new_sha: Some(resolved_new),
-            diff_stats: None,
-            missing_refs: vec![],
-        };
-    }
-
-    // SHAs changed — re-check diff stats
-    let stats = source.get_diff_shortstat(&input.comparison).ok();
-    ReviewFreshnessResult {
-        key,
-        is_active: is_diff_active(&stats),
-        old_sha: Some(resolved_old),
-        new_sha: Some(resolved_new),
-        diff_stats: stats,
-        missing_refs: vec![],
-    }
+    review::service::freshness::check_reviews_freshness(reviews).await
 }
 
 // --- Dev mode detection ---
@@ -2373,92 +894,25 @@ pub fn path_is_file(path: String) -> bool {
     std::path::Path::new(&path).is_file()
 }
 
-/// Convert raw file bytes into a FileContent struct, handling image/SVG/text detection.
-fn bytes_to_file_content(bytes: Vec<u8>, file_path: &str) -> Result<FileContent, String> {
-    let content_type = get_content_type(file_path);
-    let ext = file_path.rsplit('.').next().unwrap_or("");
-    let mime_type = get_image_mime_type(ext);
-
-    if content_type == "image" || content_type == "svg" {
-        let image_data_url = mime_type.map(|mt| bytes_to_data_url(&bytes, mt));
-        let content = if content_type == "svg" {
-            String::from_utf8_lossy(&bytes).to_string()
-        } else {
-            String::new()
-        };
-        return Ok(FileContent {
-            content,
-            old_content: None,
-            diff_patch: String::new(),
-            hunks: vec![],
-            content_type,
-            image_data_url,
-            old_image_data_url: None,
-        });
-    }
-
-    let content =
-        String::from_utf8(bytes).map_err(|_| format!("File is not valid UTF-8: {file_path}"))?;
-    Ok(FileContent {
-        content,
-        old_content: None,
-        diff_patch: String::new(),
-        hunks: vec![],
-        content_type,
-        image_data_url: None,
-        old_image_data_url: None,
-    })
-}
-
 #[tauri::command]
 pub async fn read_raw_file(path: String) -> Result<FileContent, String> {
     tokio::task::spawn_blocking(move || {
-        let t0 = Instant::now();
-        let file_path = std::path::Path::new(&path);
-
-        if !file_path.exists() {
-            return Err(format!("File not found: {path}"));
-        }
-        if !file_path.is_file() {
-            return Err(format!("Not a file: {path}"));
-        }
-
-        let bytes = std::fs::read(file_path).map_err(|e| e.to_string())?;
-        let result = bytes_to_file_content(bytes, &path)?;
-        info!("[read_raw_file] path={path} in {:?}", t0.elapsed());
-        Ok(result)
+        review::service::files::read_raw_file(std::path::Path::new(&path))
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 /// Get raw file content at HEAD from a git repo (no diff, no comparison needed).
-/// Used by browse mode to load file content without the overhead of a full diff.
 #[tauri::command]
 pub async fn get_file_raw_content(
     repo_path: String,
     file_path: String,
 ) -> Result<FileContent, String> {
     tokio::task::spawn_blocking(move || {
-        let t0 = Instant::now();
-        debug!("[get_file_raw_content] repo_path={repo_path}, file_path={file_path}");
-
-        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| {
-            error!("[get_file_raw_content] ERROR creating source: {e}");
-            e.to_string()
-        })?;
-
-        let bytes = source.get_file_bytes(&file_path, "HEAD").map_err(|e| {
-            error!("[get_file_raw_content] ERROR getting file at HEAD: {e}");
-            e.to_string()
-        })?;
-
-        let result = bytes_to_file_content(bytes, &file_path)?;
-        info!(
-            "[get_file_raw_content] SUCCESS file={file_path} in {:?}",
-            t0.elapsed()
-        );
-        Ok(result)
+        review::service::files::get_file_raw_content(&PathBuf::from(&repo_path), &file_path)
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2856,241 +1310,10 @@ pub fn open_settings_file(app: tauri::AppHandle) -> Result<(), String> {
 
 // --- VS Code theme detection ---
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VscodeThemeDetection {
-    pub name: String,
-    pub theme_type: String,
-    pub colors: HashMap<String, String>,
-    /// Raw tokenColors array from the VS Code theme JSON (for Shiki)
-    pub token_colors: Vec<serde_json::Value>,
-}
-
 /// Detect the active VS Code theme by reading VS Code settings and extension files.
 #[tauri::command]
 pub fn detect_vscode_theme() -> Result<VscodeThemeDetection, String> {
-    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-
-    // Try VS Code, then VS Code Insiders
-    let settings_path = [
-        home.join("Library/Application Support/Code/User/settings.json"),
-        home.join("Library/Application Support/Code - Insiders/User/settings.json"),
-    ]
-    .into_iter()
-    .find(|p| p.exists())
-    .ok_or("VS Code settings.json not found")?;
-
-    let settings_str = std::fs::read_to_string(&settings_path)
-        .map_err(|e| format!("Failed to read settings: {e}"))?;
-
-    let stripped = strip_jsonc_comments(&settings_str);
-
-    let settings: serde_json::Value =
-        serde_json::from_str(&stripped).map_err(|e| format!("Failed to parse settings: {e}"))?;
-
-    let theme_name = settings
-        .get("workbench.colorTheme")
-        .and_then(|v| v.as_str())
-        .ok_or("workbench.colorTheme not set in VS Code settings")?
-        .to_owned();
-
-    debug!("[detect_vscode_theme] Active theme: {theme_name}");
-
-    // Search user-installed extensions first, then built-in themes in the app bundle
-    let search_dirs = [
-        home.join(".vscode/extensions"),
-        home.join(".vscode-insiders/extensions"),
-        PathBuf::from("/Applications/Visual Studio Code.app/Contents/Resources/app/extensions"),
-        PathBuf::from(
-            "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/extensions",
-        ),
-    ];
-
-    for dir in &search_dirs {
-        if let Some(detection) = search_extensions_for_theme(dir, &theme_name) {
-            return Ok(detection);
-        }
-    }
-
-    Err(format!(
-        "Theme '{theme_name}' not found in VS Code extensions"
-    ))
-}
-
-/// Search an extensions directory for a theme matching `theme_name`.
-fn search_extensions_for_theme(
-    ext_dir: &std::path::Path,
-    theme_name: &str,
-) -> Option<VscodeThemeDetection> {
-    let entries = std::fs::read_dir(ext_dir).ok()?;
-
-    for entry in entries.flatten() {
-        let ext_path = entry.path();
-        let pkg_path = ext_path.join("package.json");
-        let Ok(pkg_str) = std::fs::read_to_string(&pkg_path) else {
-            continue;
-        };
-        let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_str) else {
-            continue;
-        };
-
-        let Some(themes) = pkg
-            .get("contributes")
-            .and_then(|c| c.get("themes"))
-            .and_then(|t| t.as_array())
-        else {
-            continue;
-        };
-
-        for theme in themes {
-            let label = theme.get("label").and_then(|v| v.as_str()).unwrap_or("");
-            let id = theme.get("id").and_then(|v| v.as_str()).unwrap_or("");
-
-            let matched = label == theme_name
-                || id == theme_name
-                || (label.starts_with('%') && matches_localized_theme(&ext_path, id, theme_name));
-
-            if !matched {
-                continue;
-            }
-
-            let Some(rel_path) = theme.get("path").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let theme_path = ext_path.join(rel_path);
-            let Ok(theme_str) = std::fs::read_to_string(&theme_path) else {
-                continue;
-            };
-
-            let theme_stripped = strip_jsonc_comments(&theme_str);
-            let Ok(theme_json) = serde_json::from_str::<serde_json::Value>(&theme_stripped) else {
-                continue;
-            };
-
-            let theme_type = resolve_theme_type(theme, &theme_json);
-
-            let colors: HashMap<String, String> = theme_json
-                .get("colors")
-                .and_then(|c| c.as_object())
-                .map(|obj| {
-                    obj.iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_owned())))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let token_colors = theme_json
-                .get("tokenColors")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
-
-            info!(
-                "[detect_vscode_theme] Found theme '{}' ({}) with {} colors, {} tokenColors",
-                theme_name,
-                theme_type,
-                colors.len(),
-                token_colors.len()
-            );
-
-            return Some(VscodeThemeDetection {
-                name: theme_name.to_owned(),
-                theme_type,
-                colors,
-                token_colors,
-            });
-        }
-    }
-
-    None
-}
-
-/// Resolve the theme type (light/dark/hc) from the package.json `uiTheme` field,
-/// falling back to the theme JSON's `type` field, defaulting to "dark".
-fn resolve_theme_type(package_theme: &serde_json::Value, theme_json: &serde_json::Value) -> String {
-    package_theme
-        .get("uiTheme")
-        .and_then(|v| v.as_str())
-        .map(|ui| match ui {
-            "vs" => "light",
-            "hc-black" | "hc-light" => "hc",
-            _ => "dark",
-        })
-        .or_else(|| theme_json.get("type").and_then(|v| v.as_str()))
-        .unwrap_or("dark")
-        .to_owned()
-}
-
-/// For built-in themes with localized labels (e.g., "%colorTheme.label%"),
-/// match by theme id (case-insensitive) or extension directory name.
-fn matches_localized_theme(ext_path: &std::path::Path, id: &str, theme_name: &str) -> bool {
-    if id.eq_ignore_ascii_case(theme_name) {
-        return true;
-    }
-
-    // Fall back to matching the extension directory name (e.g., "theme-solarized-dark")
-    let Some(ext_name) = ext_path.file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    let normalized = theme_name.to_lowercase().replace(' ', "-");
-    ext_name.to_lowercase().contains(&normalized)
-}
-
-/// Strip single-line `//` and block `/* */` comments from JSONC text.
-fn strip_jsonc_comments(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut in_string = false;
-    let mut escape_next = false;
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if escape_next {
-            result.push(c);
-            escape_next = false;
-            continue;
-        }
-
-        if c == '\\' && in_string {
-            result.push(c);
-            escape_next = true;
-            continue;
-        }
-
-        if c == '"' {
-            in_string = !in_string;
-            result.push(c);
-            continue;
-        }
-
-        if !in_string && c == '/' {
-            if chars.peek() == Some(&'/') {
-                // Line comment — skip to end of line
-                for ch in chars.by_ref() {
-                    if ch == '\n' {
-                        result.push('\n');
-                        break;
-                    }
-                }
-                continue;
-            }
-            if chars.peek() == Some(&'*') {
-                // Block comment — skip to */
-                chars.next(); // consume *
-                let mut prev = ' ';
-                for ch in chars.by_ref() {
-                    if prev == '*' && ch == '/' {
-                        break;
-                    }
-                    prev = ch;
-                }
-                continue;
-            }
-        }
-
-        result.push(c);
-    }
-
-    result
+    review::service::vscode::detect_vscode_theme().map_err(|e| e.to_string())
 }
 
 // --- Window background color ---
@@ -3108,71 +1331,12 @@ pub fn set_window_background_color(
         .map_err(|e| e.to_string())
 }
 
-/// List files in a plain directory (no git needed). Returns a flat list of FileEntry items.
-/// Used for Layer 0 — browsing directories that are not git repositories.
+/// List files in a plain directory (no git needed).
 #[tauri::command]
 pub async fn list_directory_plain(dir_path: String) -> Result<Vec<FileEntry>, String> {
     tokio::task::spawn_blocking(move || {
-        let t0 = Instant::now();
-        let path = std::path::Path::new(&dir_path);
-        if !path.is_dir() {
-            return Err(format!("Not a directory: {dir_path}"));
-        }
-
-        let mut entries: Vec<FileEntry> = Vec::new();
-        let read_dir = std::fs::read_dir(path).map_err(|e| e.to_string())?;
-
-        for entry in read_dir {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            // Skip hidden files
-            if file_name.starts_with('.') {
-                continue;
-            }
-            let file_type = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(_) => continue,
-            };
-            let metadata = entry.metadata().ok();
-            let entry_path = file_name.clone();
-
-            entries.push(FileEntry {
-                name: file_name,
-                path: entry_path,
-                is_directory: file_type.is_dir(),
-                children: if file_type.is_dir() {
-                    Some(vec![])
-                } else {
-                    None
-                },
-                status: None,
-                is_symlink: file_type.is_symlink(),
-                symlink_target: None,
-                renamed_from: None,
-                size: metadata.as_ref().map(|m| m.len()),
-                modified_at: metadata
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs()),
-            });
-        }
-
-        // Sort: directories first, then by name
-        entries.sort_by(|a, b| {
-            b.is_directory
-                .cmp(&a.is_directory)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-
-        info!(
-            "[list_directory_plain] {} entries in {:?}",
-            entries.len(),
-            t0.elapsed()
-        );
-        Ok(entries)
+        review::service::files::list_directory_plain(std::path::Path::new(&dir_path))
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

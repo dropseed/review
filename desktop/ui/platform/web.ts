@@ -70,11 +70,8 @@ class WebNotificationService implements NotificationService {
 
 class WebDialogService implements DialogService {
   async openDirectory(_options?: { title?: string }): Promise<string | null> {
-    // Web doesn't have native directory picker that returns a path
-    // In a real web app, this would use the File System Access API
-    // For now, just log and return null
-    console.warn("[WebDialogService] openDirectory not available in browser");
-    return null;
+    // Use prompt for dev workflow — sufficient for a dev tool
+    return window.prompt("Enter the full path to a git repository:") || null;
   }
 
   async confirm(message: string, _title?: string): Promise<boolean> {
