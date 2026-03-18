@@ -23,6 +23,7 @@ import {
   useScrollHunkTracking,
   useScrollAnchor,
   useSymbolNavigation,
+  useWordHighlight,
 } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
@@ -129,6 +130,8 @@ export function FileViewer({
     navigateToDefinition,
     navigateToReference,
   } = useSymbolNavigation();
+
+  useWordHighlight(scrollNode);
 
   // Cmd+hover CSS injection and Cmd+Click handling — entirely imperative to
   // avoid re-rendering FileViewer on every Cmd press/release (rerender-use-ref-transient-values).

@@ -31,3 +31,4 @@ export {
   suppressScrollCorrection,
 } from "./scrollState";
 export { useAutoStartGuide } from "./useAutoStartGuide";
+export { useWordHighlight } from "./useWordHighlight";
