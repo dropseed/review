@@ -31,7 +31,7 @@ import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
-import { ViewOptionsMenu, SearchButton } from "./PanelToolbar";
+import { ViewOptionsMenu } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
 
 const TRUST_ICON = (
@@ -665,7 +665,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   ]);
 
   // Search state
-  const searchActive = useReviewStore((s) => s.searchActive);
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
 
   // Context menu support
@@ -819,41 +818,29 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 {comparison && (
                   <TabsTrigger value="commits">Commits</TabsTrigger>
                 )}
-                {searchActive && (
-                  <TabsTrigger
-                    value="search"
-                    className="flex items-center gap-1"
+                <TabsTrigger value="search" className="flex items-center gap-1">
+                  <svg
+                    aria-label="Search"
+                    className="h-3.5 w-3.5 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      aria-label="Search"
-                      className="h-3.5 w-3.5 flex-shrink-0"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="11" cy="11" r="8" />
-                      <path d="m21 21-4.3-4.3" />
-                    </svg>
-                    {searchResultCount > 0 && (
-                      <span className="ml-1 rounded-full bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-status-modified">
-                        {searchResultCount >= 100 ? "100+" : searchResultCount}
-                      </span>
-                    )}
-                  </TabsTrigger>
-                )}
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  {searchResultCount > 0 && (
+                    <span className="ml-1 rounded-full bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-status-modified">
+                      {searchResultCount >= 100 ? "100+" : searchResultCount}
+                    </span>
+                  )}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
             {/* Contextual buttons based on active tab */}
-            {viewMode === "browse" && allDirPaths.size > 0 && (
-              <SearchButton
-                onClick={() =>
-                  useReviewStore.getState().setContentSearchOpen(true)
-                }
-              />
-            )}
             {viewMode === "changes" && hasChanges && (
               <ViewOptionsMenu
                 sortOrder={fileSortOrder}

@@ -1,5 +1,5 @@
 import type { ApiClient } from "../../api";
-import type { FileSymbolDiff } from "../../types";
+import type { FileSymbolDiff, RepoFileSymbols } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFilesWithStatus } from "../types";
 
@@ -9,6 +9,12 @@ export interface SymbolsSlice {
   symbolsLoaded: boolean;
   loadSymbols: () => Promise<void>;
   clearSymbols: () => void;
+
+  // Repo-wide symbols for symbol search
+  repoSymbols: RepoFileSymbols[];
+  repoSymbolsLoading: boolean;
+  repoSymbolsLoaded: boolean;
+  loadRepoSymbols: () => Promise<void>;
 }
 
 /** State that must be cleared when switching comparisons. */
@@ -21,6 +27,11 @@ export const symbolsResetState = {
 export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
   (client: ApiClient) => (set, get) => ({
     ...symbolsResetState,
+
+    // Repo-wide symbols (not reset on comparison change)
+    repoSymbols: [],
+    repoSymbolsLoading: false,
+    repoSymbolsLoaded: false,
 
     loadSymbols: async () => {
       const {
@@ -85,5 +96,28 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         symbolDiffs: [],
         symbolsLoaded: false,
       });
+    },
+
+    loadRepoSymbols: async () => {
+      const { repoPath, repoSymbolsLoading, repoSymbolsLoaded } = get();
+      if (!repoPath || repoSymbolsLoading || repoSymbolsLoaded) return;
+
+      set({ repoSymbolsLoading: true });
+
+      try {
+        const results = await client.getRepoSymbols(repoPath);
+        set({
+          repoSymbols: results,
+          repoSymbolsLoading: false,
+          repoSymbolsLoaded: true,
+        });
+      } catch (err) {
+        console.error("Failed to load repo symbols:", err);
+        set({
+          repoSymbols: [],
+          repoSymbolsLoading: false,
+          repoSymbolsLoaded: true,
+        });
+      }
     },
   });

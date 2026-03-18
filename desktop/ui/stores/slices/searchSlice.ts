@@ -2,18 +2,21 @@ import type { SliceCreatorWithClient } from "../types";
 import type { ApiClient } from "../../api";
 import type { SearchMatch } from "../../types";
 
+export type SearchMode = "text" | "symbols";
+
 export interface SearchSlice {
   // Search state
   searchQuery: string;
   searchResults: SearchMatch[];
   searchLoading: boolean;
   searchError: string | null;
-  searchActive: boolean;
   searchCaseSensitive: boolean;
+  searchMode: SearchMode;
 
   // Actions
   setSearchQuery: (query: string) => void;
   setSearchCaseSensitive: (value: boolean) => void;
+  setSearchMode: (mode: SearchMode) => void;
   performSearch: (query: string) => Promise<void>;
   clearSearch: () => void;
   clearSearchResults: () => void;
@@ -26,11 +29,12 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     searchResults: [],
     searchLoading: false,
     searchError: null,
-    searchActive: false,
     searchCaseSensitive: false,
+    searchMode: "text",
 
     setSearchQuery: (query) => set({ searchQuery: query }),
     setSearchCaseSensitive: (value) => set({ searchCaseSensitive: value }),
+    setSearchMode: (mode) => set({ searchMode: mode }),
 
     performSearch: async (query) => {
       const { repoPath, searchCaseSensitive } = get();
@@ -51,7 +55,6 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         set({
           searchResults: results,
           searchLoading: false,
-          searchActive: true,
         });
       } catch (error) {
         console.error("Search error:", error);
@@ -69,7 +72,6 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         searchResults: [],
         searchLoading: false,
         searchError: null,
-        searchActive: false,
       }),
 
     clearSearchResults: () =>
