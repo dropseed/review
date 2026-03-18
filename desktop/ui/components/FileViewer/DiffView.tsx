@@ -25,7 +25,6 @@ import {
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
-import { SimpleTooltip } from "../../components/ui/tooltip";
 import {
   NewAnnotationEditor,
   UserAnnotationDisplay,
@@ -564,7 +563,9 @@ export function DiffView({
     // Auto-advance if this comment was attached to a rejected hunk
     // (skip for hover/selection comments which aren't hunk-specific)
     const isHunkComment =
-      commentHunkId !== "hover" && commentHunkId !== "selection";
+      commentHunkId !== "hover" &&
+      commentHunkId !== "selection" &&
+      commentHunkId !== "gutter";
     if (
       isHunkComment &&
       reviewState?.hunks[commentHunkId]?.status === "rejected"
@@ -919,6 +920,26 @@ export function DiffView({
     [],
   );
 
+  // Handle gutter utility button clicks (single-click or drag-to-select range).
+  // Uses the library's built-in button + pointer handling which properly
+  // coexists with enableLineSelection.
+  const handleGutterUtilityClick = useCallback(
+    (range: { start: number; end: number; side?: string }) => {
+      const start = Math.min(range.start, range.end);
+      const end = Math.max(range.start, range.end);
+
+      if (!isValidLineNumber(start) || !isValidLineNumber(end)) return;
+
+      setNewAnnotationLine({
+        lineNumber: start,
+        endLineNumber: start !== end ? end : undefined,
+        side: range.side === "deletions" ? "old" : "new",
+        hunkId: "gutter",
+      });
+    },
+    [],
+  );
+
   // Define diff options type inline to avoid type mismatch between FileOptions and FileDiffOptions
   type DiffOptionsType = {
     diffStyle: "unified" | "split";
@@ -928,6 +949,7 @@ export function DiffView({
     disableBackground: boolean;
     enableGutterUtility: boolean;
     enableLineSelection: boolean;
+    onGutterUtilityClick: typeof handleGutterUtilityClick;
     onLineSelectionEnd: typeof handleLineSelectionEnd;
     unsafeCSS: string;
     expandUnchanged: boolean;
@@ -953,6 +975,7 @@ export function DiffView({
       disableBackground: false,
       enableGutterUtility: true,
       enableLineSelection: true,
+      onGutterUtilityClick: handleGutterUtilityClick,
       onLineSelectionEnd: handleLineSelectionEnd,
       unsafeCSS: fontCSS + annotationHighlightCSS,
       expandUnchanged: expandUnchangedProp,
@@ -980,57 +1003,10 @@ export function DiffView({
     annotationHighlightCSS,
     lineDiffType,
     diffOverflow,
+    handleGutterUtilityClick,
     handleLineSelectionEnd,
     expandUnchangedProp,
   ]);
-
-  // Stable renderGutterUtility using ref pattern to avoid re-renders
-  const setNewAnnotationLineRef = useRef(setNewAnnotationLine);
-  setNewAnnotationLineRef.current = setNewAnnotationLine;
-
-  const renderGutterUtility = useCallback(
-    (
-      getHoveredLine: () =>
-        | { lineNumber: number; side: "additions" | "deletions" }
-        | undefined,
-    ) => {
-      // Always render the button — the shadow DOM controls visibility by
-      // moving the slot container to the hovered line. Call getHoveredLine()
-      // at click time (not render time) to get the current line.
-      return (
-        <SimpleTooltip content="Add comment">
-          <button
-            className="flex h-5 w-5 items-center justify-center rounded bg-status-renamed/80 text-surface shadow-lg transition-colors hover:bg-status-renamed hover:scale-110"
-            onClick={() => {
-              const hoveredLine = getHoveredLine();
-              if (!hoveredLine) return;
-              setNewAnnotationLineRef.current({
-                lineNumber: hoveredLine.lineNumber,
-                side: hoveredLine.side === "additions" ? "new" : "old",
-                hunkId: "hover",
-              });
-            }}
-            aria-label="Add comment"
-          >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4.5v15m7.5-7.5h-15"
-              />
-            </svg>
-          </button>
-        </SimpleTooltip>
-      );
-    },
-    [],
-  );
 
   return (
     <div className="diff-container relative" ref={diffContainerRef}>
@@ -1062,7 +1038,6 @@ export function DiffView({
             newFile={newFile}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
-            renderGutterUtility={renderGutterUtility}
             options={diffOptions}
           />
         ) : (
@@ -1070,7 +1045,6 @@ export function DiffView({
             fileDiff={parsedFileDiff!}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
-            renderGutterUtility={renderGutterUtility}
             options={diffOptions}
           />
         )}
