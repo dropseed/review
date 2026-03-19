@@ -336,6 +336,46 @@ fn check_block_comment_line(
     }
 }
 
+/// Strip a trailing inline comment from a line, respecting string literals.
+/// Returns the line content without the trailing comment, trimmed.
+fn strip_inline_comment(line: &str, prefixes: &[&str]) -> String {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let mut in_string: Option<char> = None;
+
+    for (byte_idx, ch) in trimmed.char_indices() {
+        match in_string {
+            Some(delim) if ch == delim => {
+                let prev = if byte_idx > 0 {
+                    trimmed.as_bytes()[byte_idx - 1]
+                } else {
+                    0
+                };
+                if prev != b'\\' {
+                    in_string = None;
+                }
+            }
+            Some(_) => {}
+            None if ch == '"' || ch == '\'' => {
+                in_string = Some(ch);
+            }
+            None => {
+                let rest = &trimmed[byte_idx..];
+                for prefix in prefixes {
+                    if rest.starts_with(prefix) {
+                        return trimmed[..byte_idx].trim_end().to_owned();
+                    }
+                }
+            }
+        }
+    }
+
+    trimmed.to_owned()
+}
+
 fn classify_comments(hunk: &DiffHunk) -> Option<ClassificationResult> {
     let ext = hunk.file_path.rsplit('.').next()?;
     let line_prefixes = comment_prefixes(ext);
@@ -387,6 +427,63 @@ fn classify_comments(hunk: &DiffHunk) -> Option<ClassificationResult> {
     });
 
     if !all_comments {
+        // Fallback: check for inline comment changes.
+        // If stripping trailing comments from paired lines leaves identical code,
+        // the only change was in inline comments.
+        if let Some(prefixes) = line_prefixes {
+            let removed_lines: Vec<&str> = changed_lines
+                .iter()
+                .filter(|l| l.line_type == LineType::Removed)
+                .map(|l| l.content.as_str())
+                .collect();
+            let added_lines: Vec<&str> = changed_lines
+                .iter()
+                .filter(|l| l.line_type == LineType::Added)
+                .map(|l| l.content.as_str())
+                .collect();
+
+            if !removed_lines.is_empty()
+                && !added_lines.is_empty()
+                && removed_lines.len() == added_lines.len()
+            {
+                let stripped: Vec<(String, String)> = removed_lines
+                    .iter()
+                    .zip(added_lines.iter())
+                    .map(|(r, a)| {
+                        (
+                            strip_inline_comment(r, prefixes),
+                            strip_inline_comment(a, prefixes),
+                        )
+                    })
+                    .collect();
+
+                let all_match = stripped.iter().all(|(rs, as_)| rs == as_ && !rs.is_empty());
+
+                if all_match {
+                    let old_had_comments = removed_lines
+                        .iter()
+                        .zip(stripped.iter())
+                        .any(|(l, (s, _))| s != l.trim());
+                    let new_has_comments = added_lines
+                        .iter()
+                        .zip(stripped.iter())
+                        .any(|(l, (_, s))| s != l.trim());
+
+                    let label = match (new_has_comments, old_had_comments) {
+                        (false, true) => "comments:removed",
+                        (true, false) => "comments:added",
+                        (true, true) => "comments:modified",
+                        (false, false) => return None,
+                    };
+
+                    return Some(ClassificationResult {
+                        label: vec![label.to_owned()],
+                        reasoning: "Only inline comments changed; code is identical".to_owned(),
+                    });
+                }
+            }
+        }
+
         return None;
     }
 
@@ -1350,6 +1447,78 @@ mod tests {
         let hunk = make_hunk(
             "app.js",
             vec![added("/* comment */"), added("const x = 1;")],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_none());
+    }
+
+    // --- Inline comment tests ---
+
+    #[test]
+    fn test_inline_comment_removed_python() {
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("    with session.guarded():  # type: ignore[unresolved-attribute]"),
+                added("    with session.guarded():"),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:removed"]);
+    }
+
+    #[test]
+    fn test_inline_comment_added_python() {
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("    x = get_value()"),
+                added("    x = get_value()  # TODO: handle None"),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:added"]);
+    }
+
+    #[test]
+    fn test_inline_comment_modified_js() {
+        let hunk = make_hunk(
+            "app.js",
+            vec![
+                removed("const x = 1; // old reason"),
+                added("const x = 1; // new reason"),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().label, vec!["comments:modified"]);
+    }
+
+    #[test]
+    fn test_inline_comment_in_string_not_stripped() {
+        // A # inside a string should not be treated as a comment
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("    x = \"foo # bar\""),
+                added("    x = \"foo # baz\""),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_inline_comment_code_also_changed() {
+        // Both code and comment changed — should NOT match
+        let hunk = make_hunk(
+            "app.py",
+            vec![
+                removed("    x = old_value()  # comment"),
+                added("    x = new_value()"),
+            ],
         );
         let result = classify_comments(&hunk);
         assert!(result.is_none());
