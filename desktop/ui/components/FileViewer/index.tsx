@@ -848,8 +848,10 @@ export function FileViewer({
             }`}
           >
             {/* Virtualizer.setup() uses root.firstElementChild as the content
-                container for resize observation. Do not remove this wrapper. */}
-            <div>
+                container for resize observation. Do not remove this wrapper.
+                Bottom padding gives the virtualizer extra scroll room so
+                annotation panels at the end of a file don't clip trailing lines. */}
+            <div className="pb-16">
               <FileContentRenderer
                 filePath={filePath}
                 fileContent={fileContent}

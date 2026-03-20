@@ -1038,6 +1038,15 @@ export function DiffView({
             newFile={newFile}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
+            selectedLines={
+              highlightLine
+                ? {
+                    start: highlightLine,
+                    end: highlightLine,
+                    side: "additions",
+                  }
+                : null
+            }
             options={diffOptions}
           />
         ) : (
@@ -1045,6 +1054,15 @@ export function DiffView({
             fileDiff={parsedFileDiff!}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
+            selectedLines={
+              highlightLine
+                ? {
+                    start: highlightLine,
+                    end: highlightLine,
+                    side: "additions",
+                  }
+                : null
+            }
             options={diffOptions}
           />
         )}

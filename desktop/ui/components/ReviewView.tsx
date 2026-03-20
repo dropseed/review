@@ -141,9 +141,8 @@ export function ReviewView({
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
       useReviewStore.getState().setClassificationsModalOpen(false);
-      useReviewStore.getState().navigateToBrowse(filePath);
+      useReviewStore.getState().navigateToBrowse(filePath, { hunkId });
       useReviewStore.setState({
-        focusedHunkId: hunkId,
         scrollTarget: { type: "hunk", hunkId },
       });
     },

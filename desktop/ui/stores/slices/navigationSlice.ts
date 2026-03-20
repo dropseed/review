@@ -39,7 +39,7 @@ export interface NavigationSlice {
   prevHunk: () => void;
 
   // Navigation actions
-  navigateToBrowse: (filePath?: string) => void;
+  navigateToBrowse: (filePath?: string, scrollTo?: { hunkId: string }) => void;
   revealInBrowse: (filePath: string) => void;
 
   // Split view actions
@@ -352,14 +352,27 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Changes view mode
   setChangesViewMode: (mode) => set({ changesViewMode: mode }),
 
-  navigateToBrowse: (filePath?) => {
+  navigateToBrowse: (filePath?, scrollTo?) => {
     if (filePath === undefined) {
       set({ guideContentMode: null, viewingCommitHash: null });
       return;
     }
 
-    const state = get();
-    const hunkId = findFirstUnreviewedHunkId(filePath, state);
+    if (scrollTo) {
+      // Caller provides a specific hunk — set focusedHunkId but let the
+      // caller control scrollTarget (e.g. type "line" for a highlight).
+      set({
+        guideContentMode: null,
+        viewingCommitHash: null,
+        selectedFile: filePath,
+        filesPanelCollapsed: false,
+        focusedHunkId: scrollTo.hunkId,
+      });
+      return;
+    }
+
+    // Default: auto-scroll to the first unreviewed hunk.
+    const hunkId = findFirstUnreviewedHunkId(filePath, get());
 
     set({
       guideContentMode: null,

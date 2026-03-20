@@ -201,14 +201,11 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
     (symbol: FlatSymbol) => {
       if (!selectedFile) return;
 
-      navigateToBrowse(selectedFile);
+      // Determine which hunk to scroll to
+      let targetHunkId: string | undefined;
 
       if (symbol.hunkIds.length > 0) {
-        const firstHunkId = symbol.hunkIds[0];
-        useReviewStore.setState({
-          focusedHunkId: firstHunkId,
-          scrollTarget: { type: "hunk", hunkId: firstHunkId },
-        });
+        targetHunkId = symbol.hunkIds[0];
       } else {
         // No hunks (unchanged symbol) — find the nearest hunk by line number
         const fileHunks = hunks.filter((h) => h.filePath === selectedFile);
@@ -225,11 +222,26 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
               closestDist = dist;
             }
           }
-          useReviewStore.setState({
-            focusedHunkId: closest.id,
-            scrollTarget: { type: "hunk", hunkId: closest.id },
-          });
+          targetHunkId = closest.id;
         }
+      }
+
+      // navigateToBrowse with scrollTo sets focusedHunkId without setting
+      // scrollTarget, so we can follow up with a "line" scrollTarget that
+      // both scrolls AND briefly highlights the symbol's line.
+      navigateToBrowse(
+        selectedFile,
+        targetHunkId ? { hunkId: targetHunkId } : undefined,
+      );
+
+      if (symbol.sortKey > 0) {
+        useReviewStore.setState({
+          scrollTarget: {
+            type: "line",
+            filePath: selectedFile,
+            lineNumber: symbol.sortKey,
+          },
+        });
       }
 
       onClose();
