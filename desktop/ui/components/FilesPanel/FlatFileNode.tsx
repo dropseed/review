@@ -7,6 +7,7 @@ import {
   WorkingTreeDot,
   fileNameColor,
 } from "../tree";
+import { useFileDrag } from "../../hooks/useFileDrag";
 import type { FileHunkStatus } from "./types";
 import { ApprovalButtons, StageButtons, type HunkContext } from "./FileNode";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
@@ -47,7 +48,10 @@ export const FlatFileNode = memo(function FlatFileNode({
   isSymlink,
   symlinkTarget,
 }: FlatFileNodeProps) {
-  const { grayscaleIcons, showRevealInBrowse } = useFilesPanelContext();
+  const { grayscaleIcons, showRevealInBrowse, repoPath } =
+    useFilesPanelContext();
+  const absolutePath = repoPath ? `${repoPath}/${filePath}` : null;
+  const dragProps = useFileDrag(absolutePath);
 
   const isSelected = selectedFile === filePath;
   const hasReviewableContent = hunkStatus.total > 0;
@@ -71,6 +75,7 @@ export const FlatFileNode = memo(function FlatFileNode({
             ? "bg-focus-ring/15 border-l-2 border-l-focus-ring"
             : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
         }
+        {...dragProps}
       >
         <TreeFileIcon
           name={fileName}

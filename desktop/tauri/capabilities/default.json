@@ -23,6 +23,7 @@
     "log:default",
     "window-state:default",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "drag:default"
   ]
 }

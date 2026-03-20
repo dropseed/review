@@ -22,6 +22,7 @@
     "desktop": "tauri dev --no-dev-server"
   },
   "dependencies": {
+    "@crabnebula/tauri-plugin-drag": "^2.1.0",
     "@pierre/diffs": "1.1.0",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-collapsible": "^1.1.12",

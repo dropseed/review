@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
 import { useReviewStore } from "../../stores";
 import { REVEAL_LABEL } from "../../hooks/useRevealLabel";
+import { useFileDrag } from "../../hooks/useFileDrag";
 import { getPlatformServices } from "../../platform";
 import {
   ContextMenu,
@@ -236,6 +237,10 @@ export const FileNode = memo(
   }: FileNodeProps) {
     const { expandedPaths, grayscaleIcons, showRevealInBrowse } =
       useFilesPanelContext();
+    const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
+    const dragProps = useFileDrag(
+      !entry.isDirectory && repoPath ? fullPath : null,
+    );
     if (!entry.matchesFilter) {
       return null;
     }
@@ -376,7 +381,6 @@ export const FileNode = memo(
     const hasReviewActions = !!(onApproveAll && onUnapproveAll && onRejectAll);
     const hasHoverActions =
       (hasReviewActions && hasReviewableContent) || !!onStage || !!onUnstage;
-    const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
 
     return (
       <ContextMenu>
@@ -393,6 +397,7 @@ export const FileNode = memo(
                   ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
                   : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
             }
+            {...dragProps}
           >
             <TreeRowButton
               onClick={() => onSelectFile(entry.path)}

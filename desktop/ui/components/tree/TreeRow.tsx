@@ -17,18 +17,24 @@ export function TreeRow({
   style,
   children,
   ref,
+  draggable,
+  onDragStart,
 }: {
   depth: number;
   className?: string;
   style?: React.CSSProperties;
   children: ReactNode;
   ref?: React.Ref<HTMLDivElement>;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
 }): ReactNode {
   return (
     <div
       ref={ref}
       className={`group flex w-full min-h-6 items-center gap-1.5 pr-2 transition-colors ${className}`}
       style={{ paddingLeft: treeIndent(depth), ...style }}
+      draggable={draggable}
+      onDragStart={onDragStart}
     >
       {children}
     </div>
