@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
 import {
@@ -149,6 +150,22 @@ export function useMenuEvents({
           const selectedFile = useReviewStore.getState().selectedFile;
           if (selectedFile) {
             useReviewStore.getState().revealInBrowse(selectedFile);
+          }
+        },
+      ],
+      [
+        "menu:restart-lsp",
+        async () => {
+          const repoPath = useReviewStore.getState().repoPath;
+          if (!repoPath) return;
+          const api = getApiClient();
+          try {
+            await api.stopAllLspServers(repoPath);
+            const statuses = await api.initLspServers(repoPath);
+            useReviewStore.getState().setLspServerStatuses(statuses);
+            console.log("[menu] Restarted LSP servers:", statuses);
+          } catch (e) {
+            console.error("[menu] Failed to restart LSP servers:", e);
           }
         },
       ],

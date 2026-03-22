@@ -32,6 +32,7 @@ import type {
   RepoFileSymbols,
   FileSymbolDiff,
   SymbolDefinition,
+  LspServerStatus,
   RemoteInfo,
   GroupingInput,
   HunkGroup,
@@ -361,6 +362,47 @@ export interface ApiClient {
 
   /** List files in a plain directory (no git needed, for Layer 0 browsing) */
   listDirectoryPlain(dirPath: string): Promise<FileEntry[]>;
+
+  // ----- LSP -----
+
+  /** Auto-discover and start all relevant LSP servers for a repo */
+  initLspServers(repoPath: string): Promise<LspServerStatus[]>;
+
+  /** Stop all LSP servers for a repo */
+  stopAllLspServers(repoPath: string): Promise<void>;
+
+  /** Restart a specific LSP server by language */
+  restartLspServer(
+    repoPath: string,
+    language: string,
+  ): Promise<LspServerStatus>;
+
+  /** Discover available LSP servers for a repo (without starting them) */
+  discoverLspServers(repoPath: string): Promise<LspServerStatus[]>;
+
+  /** Go to definition via LSP */
+  lspGotoDefinition(
+    repoPath: string,
+    filePath: string,
+    line: number,
+    character: number,
+  ): Promise<SymbolDefinition[]>;
+
+  /** Get hover info via LSP */
+  lspHover(
+    repoPath: string,
+    filePath: string,
+    line: number,
+    character: number,
+  ): Promise<unknown | null>;
+
+  /** Find references via LSP */
+  lspFindReferences(
+    repoPath: string,
+    filePath: string,
+    line: number,
+    character: number,
+  ): Promise<SymbolDefinition[]>;
 
   // ----- VS Code theme -----
 

@@ -17,6 +17,7 @@ import { createUndoSlice } from "./slices/undoSlice";
 import { createGlobalReviewsSlice } from "./slices/tabRailSlice";
 import { createActivitySlice } from "./slices/activitySlice";
 import { createLocalActivitySlice } from "./slices/localActivitySlice";
+import { createLspSlice } from "./slices/lspSlice";
 
 // Get dependencies
 const apiClient = getApiClient();
@@ -38,4 +39,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createGlobalReviewsSlice(apiClient)(...args),
   ...createActivitySlice(...args),
   ...createLocalActivitySlice(apiClient, platform.storage)(...args),
+  ...createLspSlice(...args),
 }));

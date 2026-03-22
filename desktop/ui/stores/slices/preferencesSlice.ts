@@ -145,6 +145,7 @@ const defaults = {
   matchVscodeTheme: false,
   autoStartDelay: AUTO_START_DELAY_DEFAULT,
   showOutline: false,
+  lspDisabledLanguages: [] as string[],
 };
 
 export interface PreferencesSlice {
@@ -203,6 +204,9 @@ export interface PreferencesSlice {
 
   // Symbol outline panel
   showOutline: boolean;
+
+  // LSP disabled languages
+  lspDisabledLanguages: string[];
 
   /** True once loadPreferences() has completed (theme, fonts, etc. are ready) */
   preferencesLoaded: boolean;
@@ -263,6 +267,9 @@ export interface PreferencesSlice {
   // Symbol outline actions
   setShowOutline: (show: boolean) => void;
   toggleOutline: () => void;
+
+  // LSP disabled languages actions
+  setLspDisabledLanguages: (languages: string[]) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -550,6 +557,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         codeTheme: resolved.codeTheme,
       });
       applyResolvedVscodeTheme(resolved, storage);
+    },
+
+    setLspDisabledLanguages: (languages) => {
+      set({ lspDisabledLanguages: languages });
+      storage.set("lspDisabledLanguages", languages);
     },
   };
 };

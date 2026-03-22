@@ -41,7 +41,7 @@ pub struct Symbol {
 }
 
 /// A symbol definition found via name lookup (includes file path).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolDefinition {
     #[serde(rename = "filePath")]
     pub file_path: String,
@@ -51,6 +51,13 @@ pub struct SymbolDefinition {
     pub start_line: u32,
     #[serde(rename = "endLine")]
     pub end_line: u32,
+    /// Whether this definition is in an external file (outside the repo).
+    #[serde(
+        rename = "isExternal",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub is_external: bool,
 }
 
 /// Whether a symbol was added, removed, or modified.

@@ -66,6 +66,63 @@ export function getClickedSpan(event: MouseEvent): HTMLElement | null {
 }
 
 /**
+ * Get the character offset of a span within a line container by walking text nodes.
+ * Returns the offset to the first non-whitespace character inside the span.
+ */
+export function getSpanCharOffset(
+  lineContainer: HTMLElement,
+  targetSpan: HTMLElement,
+): number {
+  const walker = document.createTreeWalker(lineContainer, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  let textNode: Text | null;
+  while ((textNode = walker.nextNode() as Text | null)) {
+    if (textNode.parentElement === targetSpan) {
+      const text = textNode.textContent || "";
+      const trimmedStart = text.length - text.trimStart().length;
+      return offset + trimmedStart + 1;
+    }
+    offset += textNode.length;
+  }
+  return offset;
+}
+
+/**
+ * Extract file path, line number (0-based), and character offset from an event.
+ * Works across shadow DOM boundaries via composedPath().
+ *
+ * @param event - The mouse event to extract position from
+ * @param filePath - The file path (caller provides from store)
+ * @param targetSpan - Optional pre-resolved span element; if omitted, uses getClickedSpan
+ */
+export function getPositionFromEvent(
+  event: MouseEvent,
+  filePath: string,
+  targetSpan?: HTMLElement | null,
+): { filePath: string; line: number; character: number } | null {
+  // Walk composedPath to find element with data-line
+  let lineEl: HTMLElement | null = null;
+  for (const el of event.composedPath()) {
+    if (el instanceof HTMLElement && el.dataset.line) {
+      lineEl = el;
+      break;
+    }
+  }
+  if (!lineEl?.dataset.line) return null;
+
+  const line = parseInt(lineEl.dataset.line, 10) - 1; // 0-based for LSP
+  if (isNaN(line) || line < 0) return null;
+
+  const span = targetSpan ?? getClickedSpan(event);
+  const lineContent = lineEl.querySelector("[data-line-content]") || lineEl;
+  const character = span
+    ? getSpanCharOffset(lineContent as HTMLElement, span)
+    : 0;
+
+  return { filePath, line, character };
+}
+
+/**
  * Given a click event inside Shiki-highlighted code, return the URL
  * at the click position, or null if none.
  */

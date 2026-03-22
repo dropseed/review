@@ -107,8 +107,16 @@ export function SettingsModal({
   );
   const autoStartDelay = useReviewStore((s) => s.autoStartDelay);
   const setAutoStartDelay = useReviewStore((s) => s.setAutoStartDelay);
+  const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
+  const setLspDisabledLanguages = useReviewStore(
+    (s) => s.setLspDisabledLanguages,
+  );
+  const repoPath = useReviewStore((s) => s.repoPath);
 
   const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
+  const [discoveredServers, setDiscoveredServers] = useState<
+    { name: string; language: string }[]
+  >([]);
 
   useEffect(() => {
     if (isOpen) setFontFamilyDraft(codeFontFamily);
@@ -143,6 +151,15 @@ export function SettingsModal({
       refreshCliStatus();
     }
   }, [isOpen, refreshCliStatus]);
+
+  useEffect(() => {
+    if (isOpen && repoPath) {
+      getApiClient()
+        .discoverLspServers(repoPath)
+        .then(setDiscoveredServers)
+        .catch(() => {});
+    }
+  }, [isOpen, repoPath]);
 
   async function handleCliAction(command: "install_cli" | "uninstall_cli") {
     setCliLoading(true);
@@ -601,6 +618,47 @@ export function SettingsModal({
               {cliError && (
                 <ErrorBanner message={cliError} preserveWhitespace />
               )}
+            </div>
+          )}
+
+          {/* Language Servers */}
+          {discoveredServers.length > 0 && (
+            <div className="px-5 py-4">
+              <SectionHeader
+                label="Language Servers"
+                icon={
+                  <>
+                    <path d="M5 12h14" />
+                    <path d="M12 5v14" />
+                  </>
+                }
+              />
+              <div className="space-y-2">
+                {discoveredServers.map((server) => {
+                  const enabled = !lspDisabledLanguages.includes(
+                    server.language,
+                  );
+                  return (
+                    <ToggleRow
+                      key={server.language}
+                      label={`${server.name} (${server.language})`}
+                      checked={enabled}
+                      onCheckedChange={(checked) => {
+                        const updated = checked
+                          ? lspDisabledLanguages.filter(
+                              (l) => l !== server.language,
+                            )
+                          : [...lspDisabledLanguages, server.language];
+                        setLspDisabledLanguages(updated);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
+                Disabled servers will not start automatically. Restart the app
+                for changes to take effect.
+              </p>
             </div>
           )}
         </div>

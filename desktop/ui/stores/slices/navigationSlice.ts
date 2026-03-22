@@ -18,6 +18,14 @@ export interface NavigationSlice {
   scrollTarget: ScrollTarget | null;
   clearScrollTarget: () => void;
 
+  /** Absolute path to an external file (outside the repo) being viewed read-only. */
+  externalFilePath: string | null;
+  setExternalFile: (path: string | null, lineNumber?: number) => void;
+
+  /** History stack for external file navigation (back button). */
+  externalFileHistory: Array<{ path: string; line?: number }>;
+  goBackExternalFile: () => void;
+
   // Guide content mode: what ContentArea shows when guide content is active
   guideContentMode: GuideContentMode;
   setGuideContentMode: (mode: GuideContentMode) => void;
@@ -201,6 +209,45 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   scrollTarget: null,
   clearScrollTarget: () => set({ scrollTarget: null }),
 
+  externalFilePath: null,
+  externalFileHistory: [],
+  setExternalFile: (path, lineNumber) => {
+    if (path) {
+      const { externalFilePath, externalFileHistory } = get();
+      // Push current external file onto history stack (if one is open)
+      const nextHistory =
+        externalFilePath !== null
+          ? [...externalFileHistory, { path: externalFilePath }]
+          : externalFileHistory;
+      set({
+        externalFilePath: path,
+        externalFileHistory: nextHistory,
+        // Don't clear selectedFile — we'll restore it when the user navigates back
+        scrollTarget: lineNumber
+          ? { type: "line", filePath: path, lineNumber }
+          : null,
+      });
+    } else {
+      set({ externalFilePath: null, externalFileHistory: [] });
+    }
+  },
+
+  goBackExternalFile: () => {
+    const { externalFileHistory } = get();
+    if (externalFileHistory.length === 0) {
+      set({ externalFilePath: null });
+      return;
+    }
+    const entry = externalFileHistory[externalFileHistory.length - 1];
+    set({
+      externalFilePath: entry.path,
+      externalFileHistory: externalFileHistory.slice(0, -1),
+      scrollTarget: entry.line
+        ? { type: "line", filePath: entry.path, lineNumber: entry.line }
+        : null,
+    });
+  },
+
   // Guide content mode
   guideContentMode: null,
 
@@ -223,6 +270,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       workingTreeDiffFile: null as string | null,
       workingTreeDiffMode: null as "staged" | "unstaged" | null,
       viewingCommitHash: null as string | null,
+      externalFilePath: null as string | null,
     };
 
     const hunkNav = targetHunkId

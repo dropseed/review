@@ -24,6 +24,10 @@ pub mod trust;
 // Service layer — shared business logic for Tauri and Axum
 pub mod service;
 
+// LSP client (feature-gated)
+#[cfg(feature = "lsp")]
+pub mod lsp;
+
 // CLI module (feature-gated)
 #[cfg(feature = "cli")]
 pub mod cli;

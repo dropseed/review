@@ -11,7 +11,7 @@ import {
   findSymbolReferencesInDiff,
   type SymbolReferenceInDiff,
 } from "../utils/findSymbolReferencesInDiff";
-import { getClickedSpan } from "../utils/getUrlAtClick";
+import { getClickedSpan, getPositionFromEvent } from "../utils/getUrlAtClick";
 
 // Language keywords to filter out (combined across JS/TS, Rust, Python, Go)
 const KEYWORDS = new Set([
@@ -248,7 +248,12 @@ export function useSymbolNavigation() {
 
   const navigateToDefinition = useCallback(
     (def: SymbolDefinition) => {
-      navigateToFileAndLine(def.filePath, def.startLine);
+      if (def.isExternal) {
+        // External file: open via read-only external viewer
+        useReviewStore.getState().setExternalFile(def.filePath, def.startLine);
+      } else {
+        navigateToFileAndLine(def.filePath, def.startLine);
+      }
       closePopover();
     },
     [closePopover],
@@ -286,11 +291,39 @@ export function useSymbolNavigation() {
 
       try {
         const references = findSymbolReferencesInDiff(word, hunks);
-        const backendDefs = await getApiClient().findSymbolDefinitions(
+
+        // Try both tree-sitter and LSP definition lookups in parallel
+        const api = getApiClient();
+        const treeSitterPromise = api.findSymbolDefinitions(
           repoPath,
           word,
           comparison.head,
         );
+
+        // Extract line and character from the click target for LSP
+        const { selectedFile, externalFilePath } = useReviewStore.getState();
+        const currentFile = externalFilePath ?? selectedFile;
+        const clickInfo = currentFile
+          ? getPositionFromEvent(event, currentFile)
+          : null;
+        const lspPromise = clickInfo
+          ? api
+              .lspGotoDefinition(
+                repoPath,
+                clickInfo.filePath,
+                clickInfo.line,
+                clickInfo.character,
+              )
+              .catch((err: unknown) => {
+                console.error("[lsp] goto_definition failed:", err);
+                return [] as SymbolDefinition[];
+              })
+          : Promise.resolve([] as SymbolDefinition[]);
+
+        const [backendDefs, lspDefs] = await Promise.all([
+          treeSitterPromise,
+          lspPromise,
+        ]);
 
         if (controller.signal.aborted) return;
 
@@ -300,11 +333,20 @@ export function useSymbolNavigation() {
         const seen = new Set(
           backendDefs.map((d) => `${d.filePath}:${d.startLine}`),
         );
+        // Merge: tree-sitter first, then LSP (deduped), then symbolDiffs
+        const mergedBackend: EnrichedDefinition[] = backendDefs.map((d) => ({
+          ...d,
+          changeType: findChangeType(d, symbolDiffs),
+        }));
+        for (const lspDef of lspDefs) {
+          const key = `${lspDef.filePath}:${lspDef.startLine}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            mergedBackend.push({ ...lspDef });
+          }
+        }
         const definitions: EnrichedDefinition[] = [
-          ...backendDefs.map((d) => ({
-            ...d,
-            changeType: findChangeType(d, symbolDiffs),
-          })),
+          ...mergedBackend,
           ...diffDefs.filter((d) => !seen.has(`${d.filePath}:${d.startLine}`)),
         ];
 

@@ -497,6 +497,8 @@ export interface SymbolDefinition {
   kind: SymbolKind;
   startLine: number;
   endLine: number;
+  /** Whether this definition is in an external file (outside the repo). */
+  isExternal?: boolean;
 }
 
 export interface FileSymbolDiff {
@@ -617,4 +619,14 @@ export interface RepoLocalActivity {
   repoName: string;
   defaultBranch: string;
   branches: LocalBranchInfo[];
+}
+
+// --- LSP types ---
+
+export type LspServerState = "starting" | "ready" | "error" | "stopped";
+
+export interface LspServerStatus {
+  name: string;
+  language: string;
+  state: LspServerState;
 }

@@ -418,3 +418,36 @@ pub fn find_symbol_definitions(
     );
     Ok(all_defs)
 }
+
+/// Find symbol definitions via LSP (language server).
+///
+/// Converts LSP `Location` results to `SymbolDefinition`, marking locations
+/// outside the repo as external.
+#[cfg(feature = "lsp")]
+pub async fn find_definitions_via_lsp(
+    client: &crate::lsp::client::LspClient,
+    repo_path: &Path,
+    file_path: &str,
+    line: u32,
+    character: u32,
+) -> anyhow::Result<Vec<SymbolDefinition>> {
+    let t0 = Instant::now();
+    info!("[find_definitions_via_lsp] file={file_path} line={line} char={character}");
+    let abs_file = if std::path::Path::new(file_path).is_absolute() {
+        std::path::PathBuf::from(file_path)
+    } else {
+        repo_path.join(file_path)
+    };
+
+    let locations = client.goto_definition(&abs_file, line, character).await?;
+
+    let defs = crate::lsp::client::locations_to_definitions(&locations, repo_path);
+
+    info!(
+        "[find_definitions_via_lsp] {} definitions found in {:?}",
+        defs.len(),
+        t0.elapsed()
+    );
+
+    Ok(defs)
+}

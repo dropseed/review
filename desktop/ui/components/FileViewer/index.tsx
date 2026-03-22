@@ -24,6 +24,7 @@ import {
   useScrollAnchor,
   useSymbolNavigation,
   useWordHighlight,
+  useHoverInfo,
 } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
 import {
@@ -39,6 +40,7 @@ import {
   AnnotationDisplay,
 } from "./annotations/AnnotationEditor";
 import { SymbolPopover } from "./SymbolPopover";
+import { HoverTooltip } from "./HoverTooltip";
 import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
@@ -91,6 +93,9 @@ export function FileViewer({
     gitStatus,
   } = useFileViewerState();
 
+  const externalFilePath = useReviewStore((s) => s.externalFilePath);
+  const isExternalFile = externalFilePath !== null;
+
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
@@ -133,12 +138,21 @@ export function FileViewer({
 
   useWordHighlight(scrollNode);
 
+  // LSP hover tooltips (Cmd+hover)
+  const {
+    hoverContent,
+    hoverPosition: hoverPos,
+    dismissHover,
+  } = useHoverInfo(scrollNode);
+
   // Cmd+hover CSS injection and Cmd+Click handling — entirely imperative to
   // avoid re-rendering FileViewer on every Cmd press/release (rerender-use-ref-transient-values).
   const handleSymbolClickRef = useRef(handleSymbolClick);
   handleSymbolClickRef.current = handleSymbolClick;
   const closePopoverRef = useRef(closePopover);
   closePopoverRef.current = closePopover;
+  const dismissHoverRef = useRef(dismissHover);
+  dismissHoverRef.current = dismissHover;
 
   useEffect(() => {
     const node = scrollNode;
@@ -219,6 +233,7 @@ export function FileViewer({
 
     const handleClick = (e: MouseEvent) => {
       if (e.metaKey) {
+        dismissHoverRef.current();
         const url = getUrlAtClick(e);
         if (url) {
           e.preventDefault();
@@ -485,7 +500,10 @@ export function FileViewer({
 
     // Build the content promise based on the mode
     let contentPromise: Promise<FileContent>;
-    if (isStandaloneFile) {
+    if (isExternalFile) {
+      // External file from LSP go-to-definition: read by absolute path
+      contentPromise = api.readRawFile(externalFilePath);
+    } else if (isStandaloneFile) {
       // Standalone file mode: read raw file from disk (no git needed)
       const absolutePath = repoPath + "/" + filePath;
       contentPromise = api.readRawFile(absolutePath);
@@ -536,8 +554,8 @@ export function FileViewer({
         setLoading(false);
         // Sync store hunks with fresh per-file data so the sidebar
         // stays consistent with what the diff view actually renders.
-        // Skip sync for working tree diffs and standalone files — these aren't review hunks.
-        if (!isWorkingTreeMode && !isStandaloneFile) {
+        // Skip sync for working tree diffs, standalone files, and external files.
+        if (!isWorkingTreeMode && !isStandaloneFile && !isExternalFile) {
           useReviewStore.getState().syncFileHunks(filePath, result.hunks);
         }
       })
@@ -560,6 +578,8 @@ export function FileViewer({
     workingTreeDiffMode,
     gitStatus,
     isStandaloneFile,
+    isExternalFile,
+    externalFilePath,
   ]);
 
   // Minimap hooks — must be before early returns
@@ -779,6 +799,12 @@ export function FileViewer({
           isWorkingTreeMode ? handleExitWorkingTreeMode : undefined
         }
         hasSymbols={hasSymbols}
+        isExternalFile={isExternalFile}
+        onCloseExternalFile={
+          isExternalFile
+            ? () => useReviewStore.getState().goBackExternalFile()
+            : undefined
+        }
       />
 
       {/* File-level annotations */}
@@ -890,6 +916,12 @@ export function FileViewer({
         onClose={closePopover}
         onNavigateToDefinition={navigateToDefinition}
         onNavigateToReference={navigateToReference}
+      />
+
+      <HoverTooltip
+        content={popoverOpen ? null : hoverContent}
+        position={hoverPos}
+        onDismiss={dismissHover}
       />
     </div>
   );

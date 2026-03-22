@@ -148,6 +148,9 @@ pub fn run() {
         .manage(commands::ActiveGroupings(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
+        .manage(commands::LspServers(tokio::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -268,6 +271,10 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+Shift+D")
                 .build(app)?;
 
+            let restart_lsp = MenuItemBuilder::new("Restart Language Servers")
+                .id("restart_lsp")
+                .build(app)?;
+
             let check_for_updates = MenuItemBuilder::new("Check for Updates...")
                 .id("check_for_updates")
                 .build(app)?;
@@ -370,6 +377,7 @@ pub fn run() {
                 .item(&zoom_out)
                 .separator()
                 .item(&show_debug)
+                .item(&restart_lsp)
                 .build()?;
 
             let window_menu = SubmenuBuilder::new(app, "Window")
@@ -455,6 +463,9 @@ pub fn run() {
                 }
                 "show_debug" => {
                     let _: Result<(), _> = app.emit("menu:show-debug", ());
+                }
+                "restart_lsp" => {
+                    let _: Result<(), _> = app.emit("menu:restart-lsp", ());
                 }
                 "settings" => {
                     let _: Result<(), _> = app.emit("menu:open-settings", ());
@@ -591,6 +602,13 @@ pub fn run() {
             commands::read_raw_file,
             commands::get_file_raw_content,
             commands::list_directory_plain,
+            commands::init_lsp_servers,
+            commands::stop_all_lsp_servers,
+            commands::restart_lsp_server,
+            commands::discover_lsp_servers,
+            commands::lsp_goto_definition,
+            commands::lsp_hover,
+            commands::lsp_find_references,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

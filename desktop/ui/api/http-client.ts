@@ -39,6 +39,7 @@ import type {
   GlobalReviewSummary,
   SearchMatch,
   SymbolDefinition,
+  LspServerStatus,
   TrustCategory,
 } from "../types";
 
@@ -670,6 +671,34 @@ export class HttpClient implements ApiClient {
 
   async listDirectoryPlain(dirPath: string): Promise<FileEntry[]> {
     return this.post("/api/files/directory-plain", { dirPath });
+  }
+
+  // ----- LSP (desktop-only) -----
+
+  async initLspServers(): Promise<LspServerStatus[]> {
+    return [];
+  }
+
+  async stopAllLspServers(): Promise<void> {}
+
+  async restartLspServer(): Promise<LspServerStatus> {
+    throw new Error("LSP not available in web mode");
+  }
+
+  async discoverLspServers(): Promise<LspServerStatus[]> {
+    return [];
+  }
+
+  async lspGotoDefinition(): Promise<SymbolDefinition[]> {
+    return [];
+  }
+
+  async lspHover(): Promise<unknown | null> {
+    return null;
+  }
+
+  async lspFindReferences(): Promise<SymbolDefinition[]> {
+    return [];
   }
 
   // ----- VS Code theme -----

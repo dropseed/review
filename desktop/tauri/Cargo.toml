@@ -15,7 +15,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Core library
-review = { path = "../../core", features = ["symbols-dev"] }
+review = { path = "../../core", features = ["symbols-dev", "lsp"] }
 
 # Tauri and plugins
 tauri = { version = "2.10", features = ["devtools"] }

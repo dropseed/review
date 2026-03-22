@@ -42,6 +42,7 @@ import type {
   GlobalReviewSummary,
   SearchMatch,
   SymbolDefinition,
+  LspServerStatus,
   TrustCategory,
 } from "../types";
 
@@ -551,6 +552,67 @@ export class TauriClient implements ApiClient {
 
   async listDirectoryPlain(dirPath: string): Promise<FileEntry[]> {
     return invoke<FileEntry[]>("list_directory_plain", { dirPath });
+  }
+
+  // ----- LSP -----
+
+  async initLspServers(repoPath: string): Promise<LspServerStatus[]> {
+    return invoke<LspServerStatus[]>("init_lsp_servers", { repoPath });
+  }
+
+  async stopAllLspServers(repoPath: string): Promise<void> {
+    await invoke("stop_all_lsp_servers", { repoPath });
+  }
+
+  async restartLspServer(
+    repoPath: string,
+    language: string,
+  ): Promise<LspServerStatus> {
+    return invoke<LspServerStatus>("restart_lsp_server", {
+      repoPath,
+      language,
+    });
+  }
+
+  async discoverLspServers(repoPath: string): Promise<LspServerStatus[]> {
+    return invoke<LspServerStatus[]>("discover_lsp_servers", { repoPath });
+  }
+
+  async lspGotoDefinition(
+    repoPath: string,
+    filePath: string,
+    line: number,
+    character: number,
+  ): Promise<SymbolDefinition[]> {
+    return invoke<SymbolDefinition[]>("lsp_goto_definition", {
+      repoPath,
+      filePath,
+      line,
+      character,
+    });
+  }
+
+  async lspHover(
+    repoPath: string,
+    filePath: string,
+    line: number,
+    character: number,
+  ): Promise<unknown | null> {
+    return invoke("lsp_hover", { repoPath, filePath, line, character });
+  }
+
+  async lspFindReferences(
+    repoPath: string,
+    filePath: string,
+    line: number,
+    character: number,
+  ): Promise<SymbolDefinition[]> {
+    return invoke<SymbolDefinition[]>("lsp_find_references", {
+      repoPath,
+      filePath,
+      line,
+      character,
+    });
   }
 
   // ----- VS Code theme -----

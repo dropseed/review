@@ -22,6 +22,36 @@ import type { ContentMode } from "./content-mode";
 const EMPTY_HUNK_STATES: Record<string, never> = {};
 const EMPTY_TRUST_LIST: string[] = [];
 
+/** Known path segments that indicate a meaningful boundary in external paths. */
+const EXTERNAL_PATH_MARKERS = [
+  ".venv/",
+  "site-packages/",
+  "node_modules/",
+  ".local/share/",
+  "target/debug/",
+  "target/release/",
+];
+
+/**
+ * Shorten an absolute external file path to show only the meaningful suffix.
+ * E.g. `/Users/dave/.local/share/uv/python/.../functools.py` → `…/functools.py`
+ */
+function shortenExternalPath(path: string): string {
+  for (const marker of EXTERNAL_PATH_MARKERS) {
+    const idx = path.indexOf(marker);
+    if (idx !== -1) {
+      const suffix = path.slice(idx + marker.length);
+      return "…/" + suffix;
+    }
+  }
+  // Fallback: last 3 path segments
+  const parts = path.split("/");
+  if (parts.length > 3) {
+    return "…/" + parts.slice(-3).join("/");
+  }
+  return path;
+}
+
 /**
  * Isolates the heavy `hunks` + `reviewState` subscriptions needed to check
  * whether similar files exist.  By keeping these in a leaf component the
@@ -178,6 +208,8 @@ interface FileViewerToolbarProps {
   isWorkingTreeMode?: boolean;
   onExitWorkingTreeMode?: () => void;
   hasSymbols?: boolean;
+  isExternalFile?: boolean;
+  onCloseExternalFile?: () => void;
 }
 
 export const FileViewerToolbar = memo(function FileViewerToolbar({
@@ -206,6 +238,8 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   isWorkingTreeMode,
   onExitWorkingTreeMode,
   hasSymbols,
+  isExternalFile,
+  onCloseExternalFile,
 }: FileViewerToolbarProps) {
   const routerNavigate = useNavigate();
   const canGoBack = useReviewStore((s) => s.canGoBack);
@@ -242,6 +276,36 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   };
 
   function renderFileStatusBadge(): JSX.Element | null {
+    if (isExternalFile) {
+      return (
+        <span className="flex items-center gap-1 rounded bg-fg-muted/15 px-1.5 py-0.5 text-xxs font-medium text-fg-muted">
+          External
+          {onCloseExternalFile && (
+            <button
+              type="button"
+              onClick={onCloseExternalFile}
+              className="ml-0.5 rounded hover:bg-fg-muted/20 transition-colors"
+              aria-label="Close external file"
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          )}
+        </span>
+      );
+    }
+
     if (isWorkingTreeMode) {
       return (
         <span className="flex items-center gap-1 rounded bg-status-renamed/15 px-1.5 py-0.5 text-xxs font-medium text-status-renamed">
@@ -358,8 +422,10 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           </SimpleTooltip>
         )}
         <Breadcrumbs
-          filePath={filePath}
-          onNavigateToDirectory={revealDirectoryInTree}
+          filePath={isExternalFile ? shortenExternalPath(filePath) : filePath}
+          onNavigateToDirectory={
+            isExternalFile ? undefined : revealDirectoryInTree
+          }
         />
         <div className="flex shrink-0 items-center gap-2">
           {contentMode.type === "plain" && (

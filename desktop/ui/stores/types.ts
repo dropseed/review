@@ -18,6 +18,7 @@ import type { UndoSlice } from "./slices/undoSlice";
 import type { GlobalReviewsSlice } from "./slices/tabRailSlice";
 import type { ActivitySlice } from "./slices/activitySlice";
 import type { LocalActivitySlice } from "./slices/localActivitySlice";
+import type { LspSlice } from "./slices/lspSlice";
 
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -33,7 +34,8 @@ export type ReviewStore = PreferencesSlice &
   UndoSlice &
   GlobalReviewsSlice &
   ActivitySlice &
-  LocalActivitySlice;
+  LocalActivitySlice &
+  LspSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

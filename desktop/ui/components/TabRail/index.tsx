@@ -22,6 +22,7 @@ import {
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { SidebarPanelIcon } from "../ui/icons";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
+import { LspStatusIndicator } from "../LspStatusIndicator";
 import { SortMenu } from "../FilesPanel/SortMenu";
 import { LocalBranchItem } from "./LocalBranchItem";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
@@ -746,6 +747,7 @@ export const TabRail = memo(function TabRail({
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
                 </button>
+                <LspStatusIndicator />
               </div>
               <FooterVersionInfo
                 updateAvailable={updateAvailable}

@@ -18,6 +18,7 @@ import {
   useReviewProgress,
   useCelebration,
   useAutoStartGuide,
+  useLspClient,
 } from "../hooks";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
@@ -167,6 +168,7 @@ export function ReviewView({
   });
 
   useFileWatcher(comparisonReady);
+  useLspClient();
 
   // Review progress
   const {

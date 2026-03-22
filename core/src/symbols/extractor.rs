@@ -87,6 +87,7 @@ fn collect_matching_definitions(
                 kind: symbol.kind.clone(),
                 start_line: symbol.start_line,
                 end_line: symbol.end_line,
+                is_external: false,
             });
         }
         // Recurse into children (e.g., methods inside a class/impl)

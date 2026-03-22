@@ -219,6 +219,11 @@ export const SymbolPopover = memo(function SymbolPopover({
                       {def.changeType}
                     </span>
                   )}
+                  {def.isExternal && (
+                    <span className="shrink-0 rounded px-1 py-0.5 text-[10px] font-medium leading-none bg-fg-muted/15 text-fg-muted">
+                      external
+                    </span>
+                  )}
                 </button>
               ))
             )}

@@ -13,6 +13,8 @@ use log::{debug, error, info};
 use review::ai::grouping::{GroupingInput, ModifiedSymbolEntry};
 use review::classify::{self, ClassifyResponse};
 use review::diff::parser::{detect_move_pairs, DiffHunk};
+use review::lsp::client::LspClient;
+use review::lsp::registry;
 use review::review::state::{HunkGroup, ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
 use review::service::{
@@ -32,6 +34,7 @@ use review::trust::patterns::TrustCategory;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use tokio::sync::Mutex as TokioMutex;
 
 // --- Window defaults ---
 
@@ -54,6 +57,41 @@ use std::time::Instant;
 /// keyed by request ID. Setting the flag to `true` signals the streaming
 /// loop to kill the Claude child process and return `Cancelled`.
 pub struct ActiveGroupings(pub std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+/// Server status for LSP servers.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspServerStatus {
+    pub name: String,
+    pub language: String,
+    pub state: LspServerState,
+}
+
+/// Possible states for an LSP server.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LspServerState {
+    Starting,
+    Ready,
+    Error,
+    Stopped,
+}
+
+/// Key for the LSP server map: (repo_path, language).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct LspServerKey {
+    repo_path: String,
+    language: String,
+}
+
+/// Managed state for LSP server handles.
+pub struct LspServers(pub TokioMutex<HashMap<LspServerKey, LspServerHandle>>);
+
+pub(crate) struct LspServerHandle {
+    client: std::sync::Arc<LspClient>,
+    name: String,
+    language: String,
+}
 
 // Types are now imported from review::service::{FileContent, DetectMovePairsResponse, ...}
 
@@ -1340,4 +1378,320 @@ pub async fn list_directory_plain(dir_path: String) -> Result<Vec<FileEntry>, St
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// --- LSP Commands ---
+
+/// Get the LSP client for a given key.
+async fn get_lsp_client(
+    state: &tauri::State<'_, LspServers>,
+    key: &LspServerKey,
+) -> Result<std::sync::Arc<LspClient>, String> {
+    let servers = state.0.lock().await;
+    servers
+        .get(key)
+        .map(|h| h.client.clone())
+        .ok_or_else(|| "No LSP server running for this file".to_owned())
+}
+
+/// Resolve a file path to absolute, joining with repo_path if relative.
+fn resolve_file_path(repo_path: &str, file_path: &str) -> PathBuf {
+    if std::path::Path::new(file_path).is_absolute() {
+        PathBuf::from(file_path)
+    } else {
+        PathBuf::from(repo_path).join(file_path)
+    }
+}
+
+#[tauri::command]
+pub async fn lsp_goto_definition(
+    state: tauri::State<'_, LspServers>,
+    repo_path: String,
+    file_path: String,
+    line: u32,
+    character: u32,
+) -> Result<Vec<review::symbols::SymbolDefinition>, String> {
+    let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
+    let client = get_lsp_client(&state, &key).await?;
+
+    review::service::symbols::find_definitions_via_lsp(
+        &client,
+        &PathBuf::from(&repo_path),
+        &file_path,
+        line,
+        character,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn lsp_hover(
+    state: tauri::State<'_, LspServers>,
+    repo_path: String,
+    file_path: String,
+    line: u32,
+    character: u32,
+) -> Result<Option<serde_json::Value>, String> {
+    let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
+    let client = get_lsp_client(&state, &key).await?;
+
+    let abs_file = resolve_file_path(&repo_path, &file_path);
+
+    let hover = client
+        .hover(&abs_file, line, character)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    match hover {
+        Some(h) => serde_json::to_value(h).map(Some).map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn lsp_find_references(
+    state: tauri::State<'_, LspServers>,
+    repo_path: String,
+    file_path: String,
+    line: u32,
+    character: u32,
+) -> Result<Vec<review::symbols::SymbolDefinition>, String> {
+    let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
+    let client = get_lsp_client(&state, &key).await?;
+
+    let abs_file = resolve_file_path(&repo_path, &file_path);
+    let repo = PathBuf::from(&repo_path);
+
+    let locations = client
+        .references(&abs_file, line, character)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(review::lsp::client::locations_to_definitions(
+        &locations, &repo,
+    ))
+}
+
+#[tauri::command]
+pub async fn init_lsp_servers(
+    state: tauri::State<'_, LspServers>,
+    repo_path: String,
+) -> Result<Vec<LspServerStatus>, String> {
+    let t0 = Instant::now();
+    let repo = PathBuf::from(&repo_path);
+    let discovered = registry::discover_servers(&repo);
+
+    let mut statuses = Vec::new();
+
+    for config in discovered {
+        let key = LspServerKey {
+            repo_path: repo_path.clone(),
+            language: config.language.clone(),
+        };
+
+        // Skip if already running
+        {
+            let servers = state.0.lock().await;
+            if servers.contains_key(&key) {
+                statuses.push(LspServerStatus {
+                    name: config.name.clone(),
+                    language: config.language.clone(),
+                    state: LspServerState::Ready,
+                });
+                continue;
+            }
+        }
+
+        match start_and_register_server(&state, &repo_path, &config.language).await {
+            Ok(status) => {
+                info!(
+                    "[init_lsp_servers] started {} for {}",
+                    status.name, status.language
+                );
+                statuses.push(status);
+            }
+            Err(e) => {
+                error!(
+                    "[init_lsp_servers] failed to start {} for {}: {e}",
+                    config.name, config.language
+                );
+                statuses.push(LspServerStatus {
+                    name: config.name.clone(),
+                    language: config.language.clone(),
+                    state: LspServerState::Error,
+                });
+            }
+        }
+    }
+
+    info!(
+        "[init_lsp_servers] {} servers for {} in {:?}",
+        statuses.len(),
+        repo_path,
+        t0.elapsed()
+    );
+
+    Ok(statuses)
+}
+
+#[tauri::command]
+pub async fn stop_all_lsp_servers(
+    state: tauri::State<'_, LspServers>,
+    repo_path: String,
+) -> Result<(), String> {
+    let handles: Vec<LspServerHandle> = {
+        let mut servers = state.0.lock().await;
+        let keys: Vec<LspServerKey> = servers
+            .keys()
+            .filter(|k| k.repo_path == repo_path)
+            .cloned()
+            .collect();
+        keys.into_iter()
+            .filter_map(|k| servers.remove(&k))
+            .collect()
+    };
+    for handle in handles {
+        let _ = handle.client.shutdown().await;
+        info!(
+            "[stop_all_lsp_servers] stopped {} for {}",
+            handle.name, handle.language
+        );
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn restart_lsp_server(
+    state: tauri::State<'_, LspServers>,
+    repo_path: String,
+    language: String,
+) -> Result<LspServerStatus, String> {
+    let key = LspServerKey {
+        repo_path: repo_path.clone(),
+        language: language.clone(),
+    };
+
+    // Remove existing server for this language
+    let old = {
+        let mut servers = state.0.lock().await;
+        servers.remove(&key)
+    };
+    if let Some(handle) = old {
+        let _ = handle.client.shutdown().await;
+        info!(
+            "[restart_lsp_server] shut down old {} for {}",
+            handle.name, handle.language
+        );
+    }
+
+    // Re-discover and start
+    let status = start_and_register_server(&state, &repo_path, &language).await?;
+
+    info!(
+        "[restart_lsp_server] restarted {} for {}",
+        status.name, language
+    );
+
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn discover_lsp_servers(repo_path: String) -> Result<Vec<LspServerStatus>, String> {
+    let repo = PathBuf::from(&repo_path);
+    let discovered = registry::discover_servers(&repo);
+    Ok(discovered
+        .iter()
+        .map(|s| LspServerStatus {
+            name: s.name.to_owned(),
+            language: s.language.to_owned(),
+            state: LspServerState::Stopped,
+        })
+        .collect())
+}
+
+/// Discover, start, and register an LSP server for a given language.
+///
+/// Looks up the server configuration via `discover_servers`, starts the
+/// process, wraps it in an `Arc`, and inserts it into the managed map.
+async fn start_and_register_server(
+    state: &tauri::State<'_, LspServers>,
+    repo_path: &str,
+    language: &str,
+) -> Result<LspServerStatus, String> {
+    let repo = PathBuf::from(repo_path);
+    let discovered = registry::discover_servers(&repo);
+    let config = discovered
+        .into_iter()
+        .find(|s| s.language == language)
+        .ok_or_else(|| format!("No LSP server found for {language}"))?;
+
+    let args: Vec<&str> = config.args.iter().map(|s| s.as_str()).collect();
+    let client = LspClient::start(&config.command, &args, &repo)
+        .await
+        .map_err(|e| format!("Failed to start LSP server: {e}"))?;
+
+    let key = LspServerKey {
+        repo_path: repo_path.to_owned(),
+        language: language.to_owned(),
+    };
+    let handle = LspServerHandle {
+        client: std::sync::Arc::new(client),
+        name: config.name.to_owned(),
+        language: language.to_owned(),
+    };
+    let mut servers = state.0.lock().await;
+    servers.insert(key, handle);
+
+    Ok(LspServerStatus {
+        name: config.name.to_owned(),
+        language: language.to_owned(),
+        state: LspServerState::Ready,
+    })
+}
+
+/// Find (or restart) the LSP server for a file.
+///
+/// If the server exists but has died, removes it and attempts a restart.
+async fn find_lsp_key_for_file(
+    state: &tauri::State<'_, LspServers>,
+    repo_path: &str,
+    file_path: &str,
+) -> Result<LspServerKey, String> {
+    let ext = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    let language = registry::language_for_extension(ext)
+        .ok_or_else(|| format!("No LSP support for .{ext} files"))?;
+
+    let key = LspServerKey {
+        repo_path: repo_path.to_owned(),
+        language: language.to_owned(),
+    };
+
+    // Check if server exists and is alive; remove dead entries atomically
+    {
+        let mut servers = state.0.lock().await;
+        if let Some(handle) = servers.get(&key) {
+            if handle.client.is_alive() {
+                return Ok(key);
+            }
+            info!(
+                "[lsp] server {} for {} died, will restart",
+                handle.name, handle.language
+            );
+        }
+        servers.remove(&key);
+    }
+
+    let status = start_and_register_server(state, repo_path, language).await?;
+
+    info!(
+        "[lsp] restarted {} for {} (auto-recovery)",
+        status.name, language
+    );
+
+    Ok(key)
 }

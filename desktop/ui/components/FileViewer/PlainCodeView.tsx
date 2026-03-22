@@ -63,14 +63,55 @@ export function PlainCodeView({
     null,
   );
 
-  // Scroll to highlighted line when it changes
+  // Scroll to highlighted line inside the shadow DOM.
+  // Same two-step approach as DiffView: approximate scroll first to get
+  // the virtualizer to render the target range, then find the actual element.
   useEffect(() => {
-    if (highlightLine && containerRef.current) {
-      const frame = requestAnimationFrame(() => {
-        scrollToLinePosition(containerRef.current, highlightLine, lineHeight);
-      });
-      return () => cancelAnimationFrame(frame);
-    }
+    if (!highlightLine || !containerRef.current) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const frame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const shadow =
+        containerRef.current?.querySelector("diffs-container")?.shadowRoot;
+      if (!shadow) return;
+
+      const lineEl = shadow.querySelector(`[data-line="${highlightLine}"]`);
+      if (lineEl) {
+        (lineEl as HTMLElement).scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+        return;
+      }
+
+      // Approximate scroll to get the virtualizer to render the target range
+      scrollToLinePosition(containerRef.current, highlightLine, lineHeight);
+
+      // Retry after the virtualizer catches up
+      retryTimer = setTimeout(() => {
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          const retryEl = shadow.querySelector(
+            `[data-line="${highlightLine}"]`,
+          );
+          if (retryEl) {
+            (retryEl as HTMLElement).scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+          }
+        });
+      }, 400);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(retryTimer);
+    };
   }, [highlightLine, lineHeight]);
 
   // Filter annotations that are for file view (side === "file")
