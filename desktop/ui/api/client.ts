@@ -41,6 +41,7 @@ import type {
   RepoLocalActivity,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
+  WorktreeInfo,
 } from "../types";
 
 export interface ApiClient {
@@ -121,6 +122,31 @@ export interface ApiClient {
 
   /** List open pull requests for the repository */
   listPullRequests(repoPath: string): Promise<PullRequest[]>;
+
+  // ----- Worktree operations -----
+
+  /** Create a review-managed worktree for the given git ref */
+  createReviewWorktree(
+    repoPath: string,
+    name: string,
+    gitRef: string,
+  ): Promise<WorktreeInfo>;
+
+  /** Remove a review-managed worktree */
+  removeReviewWorktree(repoPath: string, worktreePath: string): Promise<void>;
+
+  /** Resolve a git ref to a commit SHA */
+  resolveRef(repoPath: string, gitRef: string): Promise<string>;
+
+  /** Check if a worktree has uncommitted changes */
+  hasWorktreeChanges(repoPath: string, worktreePath: string): Promise<boolean>;
+
+  /** Update a worktree's HEAD to a new commit SHA */
+  updateWorktreeHead(
+    repoPath: string,
+    worktreePath: string,
+    commitSha: string,
+  ): Promise<void>;
 
   // ----- File operations -----
 

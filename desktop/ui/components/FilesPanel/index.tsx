@@ -7,6 +7,7 @@ import {
   useFilePanelApproval,
 } from "./hooks";
 import { useReviewStore } from "../../stores";
+import { Spinner } from "../ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
   DropdownMenu,
@@ -828,7 +829,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     return (
       <div className="flex h-40 items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-6 w-6 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <Spinner className="h-6 w-6 border-2 border-edge-default border-t-status-modified" />
           <span className="text-sm text-fg-muted">Loading files...</span>
         </div>
       </div>

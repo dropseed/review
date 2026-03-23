@@ -34,15 +34,10 @@ pub fn compute_hash(input: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Sanitize a comparison key for use as a filename.
-fn sanitize_key(key: &str) -> String {
-    key.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
-}
-
 /// Return the cache file path for a given repo + comparison.
 fn cache_path(repo_path: &Path, comparison: &Comparison) -> Result<PathBuf> {
     let repo_dir = central::get_repo_storage_dir(repo_path)?;
-    let filename = format!("{}.json", sanitize_key(&comparison.key));
+    let filename = format!("{}.json", central::sanitize_path_component(&comparison.key));
     Ok(repo_dir.join("hunk-cache").join(filename))
 }
 

@@ -77,6 +77,7 @@ function AppShell() {
     handleActivateReview,
     handleActivateLocalBranch,
     handleNewReview,
+    handleStartReview,
   } = useRepositoryInit();
 
   // Stable ref so the effect doesn't re-register on every render
@@ -149,6 +150,7 @@ function AppShell() {
               handleCloseRepo,
               handleSelectRepo,
               handleNewReview,
+              handleStartReview,
             }}
           />
         </div>
@@ -177,6 +179,11 @@ interface AppContext {
   handleSelectRepo: (path: string) => Promise<void>;
   handleNewReview: (
     path: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
+  handleStartReview: (
+    repoPath: string,
     comparison: Comparison,
     githubPr?: GitHubPrRef,
   ) => Promise<void>;
@@ -278,7 +285,8 @@ function NewReviewRoute() {
 
 /** Review UI — shown at /:owner/:repo/review/:comparisonKey */
 function ReviewRoute() {
-  const { repoPath, comparisonReady, handleNewWindow } = useAppContext();
+  const { repoPath, comparisonReady, handleNewWindow, handleStartReview } =
+    useAppContext();
 
   useFileRouteSync();
 
@@ -290,6 +298,7 @@ function ReviewRoute() {
     <ReviewView
       onNewWindow={handleNewWindow}
       comparisonReady={comparisonReady}
+      onStartReview={handleStartReview}
     />
   );
 }

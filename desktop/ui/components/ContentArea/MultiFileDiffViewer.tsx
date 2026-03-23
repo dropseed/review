@@ -2,6 +2,7 @@ import { type ReactNode, useCallback } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
+import { Spinner } from "../ui/spinner";
 
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
@@ -31,7 +32,7 @@ export function MultiFileDiffViewer(): ReactNode {
       <div className="flex-1 flex items-center justify-center">
         <div className="max-w-md w-full text-center space-y-4">
           <div className="flex items-center justify-center">
-            <div className="h-8 w-8 rounded-full border-2 border-edge-default border-t-guide animate-spin" />
+            <Spinner className="h-8 w-8 border-2 border-edge-default border-t-guide" />
           </div>
           <h2 className="text-lg font-semibold text-fg-secondary">
             Analyzing changes...

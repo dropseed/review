@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useReviewStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { HighlightedLine } from "../ui/HighlightedLine";
+import { Spinner } from "../ui/spinner";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { groupSearchResultsByFile } from "../../utils/search";
@@ -123,7 +124,7 @@ export function SearchResultsPanel(): ReactNode {
             </SimpleTooltip>
           )}
           {searchMode === "text" && searchLoading && (
-            <div className="h-3.5 w-3.5 rounded-full border-2 border-surface-active border-t-fg-secondary animate-spin flex-shrink-0" />
+            <Spinner className="h-3.5 w-3.5 border-2 border-surface-active border-t-fg-secondary flex-shrink-0" />
           )}
           {query && !(searchMode === "text" && searchLoading) && (
             <button

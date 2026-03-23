@@ -12,6 +12,7 @@ import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { FileContent, FileEntry } from "../../types";
+import { Spinner } from "../ui/spinner";
 import { isHunkReviewed, makeComparison } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
 import {
@@ -727,7 +728,7 @@ export function FileViewer({
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="flex flex-col items-center gap-3 animate-fade-in">
-          <div className="h-8 w-8 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <Spinner className="h-8 w-8 border-2 border-edge-default border-t-status-modified" />
           <span className="text-fg-muted">Loading file…</span>
         </div>
       </div>

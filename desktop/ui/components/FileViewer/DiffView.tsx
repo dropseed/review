@@ -202,6 +202,7 @@ export function DiffView({
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
+  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
 
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
@@ -593,6 +594,7 @@ export function DiffView({
     newAnnotationLine: typeof newAnnotationLine;
     workingTreeDiffMode: typeof workingTreeDiffMode;
     isWorkingTreeFile: boolean;
+    readOnlyPreview: boolean;
   }>(null!);
   renderAnnotationDepsRef.current = {
     handleSaveNewAnnotation,
@@ -610,6 +612,7 @@ export function DiffView({
     newAnnotationLine,
     workingTreeDiffMode,
     isWorkingTreeFile: workingTreeDiffFile === fileName,
+    readOnlyPreview,
   };
 
   const renderAnnotation = useCallback(
@@ -653,6 +656,11 @@ export function DiffView({
         case "hunk": {
           const { hunk, hunkState, pairedHunk, isSource } = meta.data;
           const hunkIndex = deps.hunks.findIndex((h) => h.id === hunk.id);
+
+          // Read-only preview: skip hunk action panels entirely
+          if (deps.readOnlyPreview) {
+            return null;
+          }
 
           // Working tree mode: render lightweight stage/unstage panel
           if (deps.isWorkingTreeFile && deps.workingTreeDiffMode) {

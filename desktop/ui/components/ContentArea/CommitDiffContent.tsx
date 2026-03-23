@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import type { CommitDetail } from "../../types";
+import { Spinner } from "../ui/spinner";
 
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
@@ -162,7 +163,7 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
       {loading && (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
-            <div className="h-6 w-6 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+            <Spinner className="h-6 w-6 border-2 border-edge-default border-t-status-modified" />
             <span className="text-xs text-fg-muted">Loading commit...</span>
           </div>
         </div>

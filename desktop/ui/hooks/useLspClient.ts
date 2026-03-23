@@ -1,37 +1,56 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
 import { useReviewStore } from "../stores";
 
 /**
  * Auto-discovers and starts LSP servers when a repo is loaded.
- * Servers are shared across tabs (managed by the backend) and cleaned up on app exit.
- * Respects lspDisabledLanguages preference to skip disabled servers.
+ * Uses worktree path as workspace root when available (real files on disk).
+ * Stops old servers when the root changes to avoid orphaned processes.
  */
 export function useLspClient() {
   const repoPath = useReviewStore((s) => s.repoPath);
+  const worktreePath = useReviewStore((s) => s.worktreePath);
   const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
+  const prevRootRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!repoPath || !isTauriEnvironment()) return;
 
     const api = getApiClient();
+    const lspRoot = worktreePath ?? repoPath;
+    let cancelled = false;
 
-    api
-      .initLspServers(repoPath)
-      .then((statuses) => {
+    // Stop previous servers if root changed, then start new ones
+    const prevRoot = prevRootRef.current;
+    prevRootRef.current = lspRoot;
+
+    (async () => {
+      if (prevRoot && prevRoot !== lspRoot) {
+        await api.stopAllLspServers(prevRoot).catch(() => {});
+      }
+      if (cancelled) return;
+
+      try {
+        const statuses = await api.initLspServers(lspRoot);
+        if (cancelled) return;
         const disabled = useReviewStore.getState().lspDisabledLanguages;
         const filtered = statuses.filter((s) => !disabled.includes(s.language));
         for (const s of filtered) {
           console.log(`[lsp] ${s.name} (${s.language}): ${s.state}`);
         }
         useReviewStore.getState().setLspServerStatuses(filtered);
-      })
-      .catch((err: unknown) => {
-        console.error("[lsp] Failed to init LSP servers:", err);
-      });
+      } catch (err: unknown) {
+        if (!cancelled) {
+          console.error("[lsp] Failed to init LSP servers:", err);
+        }
+      }
+    })();
 
-    // No cleanup: servers are shared app-level state (multiple tabs may use
-    // the same server). They are cleaned up on process exit via kill_on_drop.
-  }, [repoPath, lspDisabledLanguages]);
+    return () => {
+      cancelled = true;
+      // Stop servers on unmount
+      api.stopAllLspServers(lspRoot).catch(() => {});
+    };
+  }, [repoPath, worktreePath, lspDisabledLanguages]);
 }

@@ -8,6 +8,7 @@ import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
+import { makeReviewKey } from "../stores/slices/groupingSlice";
 
 // Session storage key for the local repo path
 const REPO_PATH_KEY = "repoPath";
@@ -144,6 +145,11 @@ interface UseRepositoryInitReturn {
   handleActivateReview: (review: GlobalReviewSummary) => void;
   handleNewReview: (
     path: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
+  handleStartReview: (
+    repoPath: string,
     comparison: Comparison,
     githubPr?: GitHubPrRef,
   ) => Promise<void>;
@@ -599,7 +605,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         setComparison(review.comparison);
       }
 
-      // Mark ready so useComparisonLoader fires
+      useReviewStore.getState().setReadOnlyPreview(false);
+
       setComparisonReady((c) => c + 1);
       setInitialLoading(true);
 
@@ -649,7 +656,22 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     ],
   );
 
-  // Activate a local branch (ephemeral, no review file created)
+  // Start a review: delegates to handleNewReview and clears read-only mode.
+  const handleStartReview = useCallback(
+    async (
+      repoPath: string,
+      comparison: Comparison,
+      githubPr?: GitHubPrRef,
+    ) => {
+      await handleNewReview(repoPath, comparison, githubPr);
+      useReviewStore.getState().setReadOnlyPreview(false);
+    },
+    [handleNewReview],
+  );
+
+  // Activate a local branch (ephemeral, no review file created).
+  // If the branch is not the current branch and has no worktree,
+  // enter read-only preview mode.
   const handleActivateLocalBranch = useCallback(
     (repoPath: string, branch: string, defaultBranch: string) => {
       const nav = navigateRef.current;
@@ -667,6 +689,16 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         state.markDiffSeen(repoPath, branch, branchInfo.workingTreeStats);
       }
 
+      // Determine if this is a read-only preview:
+      // not the current branch and no existing worktree (either branch-level or review-managed)
+      const isCurrent = branchInfo?.isCurrent ?? false;
+      const hasWorktree = !!branchInfo?.worktreePath;
+      // Also check global reviews for an existing review-managed worktree
+      const reviewKey = makeReviewKey(repoPath, comparison.key);
+      const existingReview = state.globalReviewsByKey[reviewKey];
+      const hasReviewWorktree = !!existingReview?.worktreePath;
+      const isReadOnly = !isCurrent && !hasWorktree && !hasReviewWorktree;
+
       setActiveReviewKey({
         repoPath,
         comparisonKey: comparison.key,
@@ -677,6 +709,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       } else {
         setComparison(comparison);
       }
+
+      // Set read-only preview and worktree path in store
+      const storeActions = useReviewStore.getState();
+      storeActions.setReadOnlyPreview(isReadOnly);
+      storeActions.setWorktreePath(
+        branchInfo?.worktreePath ?? existingReview?.worktreePath ?? null,
+      );
 
       setComparisonReady((c) => c + 1);
       setInitialLoading(true);
@@ -701,6 +740,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     handleSelectRepo,
     handleActivateReview,
     handleNewReview,
+    handleStartReview,
     handleActivateLocalBranch,
   };
 }

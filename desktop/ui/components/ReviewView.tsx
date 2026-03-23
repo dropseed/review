@@ -10,6 +10,8 @@ import { useReviewStore } from "../stores";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
+import type { Comparison, GitHubPrRef } from "../types";
+import { Spinner } from "./ui/spinner";
 import {
   useSidebarResize,
   useMenuEvents,
@@ -20,11 +22,13 @@ import {
   useAutoStartGuide,
   useLspClient,
 } from "../hooks";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
+import { WarningIcon } from "./ui/icons";
 import { Switch } from "./ui/switch";
 import { ActivityBar } from "./ActivityBar";
 import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
@@ -50,11 +54,17 @@ const ClassificationsModal = lazy(() =>
 interface ReviewViewProps {
   onNewWindow: () => Promise<void>;
   comparisonReady: number;
+  onStartReview?: (
+    repoPath: string,
+    comparison: Comparison,
+    githubPr?: GitHubPrRef,
+  ) => Promise<void>;
 }
 
 export function ReviewView({
   onNewWindow,
   comparisonReady,
+  onStartReview,
 }: ReviewViewProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
@@ -67,6 +77,46 @@ export function ReviewView({
 
   const contentSearchOpen = useReviewStore((s) => s.contentSearchOpen);
   const setContentSearchOpen = useReviewStore((s) => s.setContentSearchOpen);
+
+  // Read-only preview mode
+  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
+  const worktreeStale = useReviewStore((s) => s.worktreeStale);
+  const worktreePath = useReviewStore((s) => s.worktreePath);
+  const updateWorktreeAction = useCallback(async () => {
+    if (!repoPath || !comparison || !worktreePath) return;
+    const client = getApiClient();
+    const newSha = await client.resolveRef(repoPath, comparison.head);
+    await client.updateWorktreeHead(repoPath, worktreePath, newSha);
+    useReviewStore.getState().setWorktreeStale(false);
+    const { loadFiles, loadAllFiles, syncTotalDiffHunks, classifyStaticHunks } =
+      useReviewStore.getState();
+    await Promise.all([loadFiles(), loadAllFiles()]);
+    syncTotalDiffHunks();
+    classifyStaticHunks();
+  }, [repoPath, comparison, worktreePath]);
+  const [handleUpdateWorktree, updatingWorktree] = useAsyncAction(
+    updateWorktreeAction,
+    "update worktree",
+  );
+
+  const startReviewAction = useCallback(async () => {
+    if (!repoPath || !comparison || !onStartReview) return;
+    await onStartReview(repoPath, comparison);
+  }, [repoPath, comparison, onStartReview]);
+  const [handleStartReviewClick, startingReview] = useAsyncAction(
+    startReviewAction,
+    "start review",
+  );
+
+  const checkoutWorktree = useReviewStore((s) => s.checkoutWorktree);
+  const checkoutAction = useCallback(async () => {
+    if (!repoPath || !comparison) return;
+    await checkoutWorktree(repoPath, comparison);
+  }, [repoPath, comparison, checkoutWorktree]);
+  const [handleCheckoutClick, checkingOut] = useAsyncAction(
+    checkoutAction,
+    "checkout worktree",
+  );
 
   // Guide button state
   const changesViewMode = useReviewStore((s) => s.changesViewMode);
@@ -210,8 +260,8 @@ export function ReviewView({
             {/* Center: activity island (floating) */}
             {comparison && <ActivityBar />}
 
-            {/* Right: guide button + review progress */}
-            {comparison && (
+            {/* Right: guide button + review progress (hidden in read-only preview) */}
+            {comparison && !readOnlyPreview && (
               <div className="flex shrink-0 items-center gap-3">
                 {showStartGuide && (
                   <button
@@ -226,7 +276,7 @@ export function ReviewView({
                              disabled:opacity-50"
                   >
                     {guideBusy ? (
-                      <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-guide/30 border-t-guide animate-spin" />
+                      <Spinner className="h-3.5 w-3.5 shrink-0 border-[1.5px] border-guide/30 border-t-guide" />
                     ) : (
                       <svg
                         className="h-3.5 w-3.5 @lg:hidden"
@@ -339,6 +389,65 @@ export function ReviewView({
           </div>
           {selectedFile && <ReviewTitle />}
         </header>
+
+        {/* Read-only preview banner */}
+        {readOnlyPreview && (
+          <div className="flex items-center justify-between gap-3 border-b border-edge bg-surface-raised/50 px-4 py-2">
+            <span className="text-xs text-fg-muted">
+              Read-only preview — approvals are disabled
+            </span>
+            {onStartReview && (
+              <button
+                type="button"
+                onClick={handleStartReviewClick}
+                disabled={startingReview}
+                className="shrink-0 rounded-lg bg-sage-500 px-3 py-1.5 text-xs font-semibold text-surface
+                         hover:bg-sage-400 transition-colors duration-150
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {startingReview ? "Starting..." : "Start Review"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Stale worktree indicator */}
+        {worktreeStale && worktreePath && !readOnlyPreview && (
+          <div className="flex items-center gap-2 border-b border-edge bg-amber-500/5 px-4 py-1.5">
+            <WarningIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span className="text-xs text-fg-muted flex-1">
+              Worktree is behind branch tip — review may not reflect latest
+              changes
+            </span>
+            <button
+              type="button"
+              onClick={handleUpdateWorktree}
+              disabled={updatingWorktree}
+              className="text-xs font-medium text-amber-600 hover:text-amber-500
+                         disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            >
+              {updatingWorktree ? "Updating..." : "Update"}
+            </button>
+          </div>
+        )}
+
+        {/* Checkout prompt — shown for reviews without a worktree */}
+        {!readOnlyPreview && !worktreePath && (
+          <div className="flex items-center gap-2 border-b border-edge px-4 py-1.5">
+            <span className="text-xs text-fg-faint flex-1">
+              Check out to enable LSP features (hover, go-to-definition)
+            </span>
+            <button
+              type="button"
+              onClick={handleCheckoutClick}
+              disabled={checkingOut}
+              className="text-xs font-medium text-fg-muted hover:text-fg-secondary
+                         disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            >
+              {checkingOut ? "Checking out..." : "Check out"}
+            </button>
+          </div>
+        )}
 
         {/* Main content */}
         <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">

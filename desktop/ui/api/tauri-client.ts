@@ -44,6 +44,7 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   TrustCategory,
+  WorktreeInfo,
 } from "../types";
 
 /** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
@@ -166,6 +167,50 @@ export class TauriClient implements ApiClient {
 
   async listPullRequests(repoPath: string): Promise<PullRequest[]> {
     return invoke<PullRequest[]>("list_pull_requests", { repoPath });
+  }
+
+  // ----- Worktree operations -----
+
+  async createReviewWorktree(
+    repoPath: string,
+    name: string,
+    gitRef: string,
+  ): Promise<WorktreeInfo> {
+    return invoke<WorktreeInfo>("create_review_worktree", {
+      repoPath,
+      name,
+      gitRef,
+    });
+  }
+
+  async removeReviewWorktree(
+    repoPath: string,
+    worktreePath: string,
+  ): Promise<void> {
+    return invoke<void>("remove_review_worktree", { repoPath, worktreePath });
+  }
+
+  async resolveRef(repoPath: string, gitRef: string): Promise<string> {
+    return invoke<string>("resolve_ref", { repoPath, gitRef });
+  }
+
+  async hasWorktreeChanges(
+    repoPath: string,
+    worktreePath: string,
+  ): Promise<boolean> {
+    return invoke<boolean>("has_worktree_changes", { repoPath, worktreePath });
+  }
+
+  async updateWorktreeHead(
+    repoPath: string,
+    worktreePath: string,
+    commitSha: string,
+  ): Promise<void> {
+    return invoke<void>("update_worktree_head", {
+      repoPath,
+      worktreePath,
+      commitSha,
+    });
   }
 
   // ----- File operations -----

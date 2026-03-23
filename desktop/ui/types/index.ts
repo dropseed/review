@@ -403,6 +403,7 @@ export interface ReviewState {
   guide?: Guide; // Guide config + AI-generated state (grouping)
   totalDiffHunks: number; // Total diff hunks (including unclassified) for accurate progress
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
+  worktreePath?: string; // Path to review-managed worktree, if created
 }
 
 // Summary of a saved review tagged with repo info (for cross-repo listing)
@@ -424,6 +425,17 @@ export interface ReviewSummary {
   state: "approved" | "changes_requested" | null;
   updatedAt: string;
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
+  worktreePath?: string; // Path to review-managed worktree, if created
+}
+
+// Information about a git worktree
+export interface WorktreeInfo {
+  path: string;
+  branch: string | null;
+  isMain: boolean;
+  commitHash: string;
+  isDetached: boolean;
+  isReviewManaged: boolean;
 }
 
 // Trust patterns

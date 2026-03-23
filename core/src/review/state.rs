@@ -113,6 +113,13 @@ pub struct ReviewState {
     /// Optional GitHub PR reference (moved from Comparison).
     #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
     pub github_pr: Option<crate::sources::github::GitHubPrRef>,
+    /// Path to the review-managed worktree, if one was created.
+    #[serde(
+        rename = "worktreePath",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub worktree_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +169,7 @@ impl ReviewState {
             guide: None,
             total_diff_hunks: 0,
             github_pr: None,
+            worktree_path: None,
         }
     }
 
@@ -220,6 +228,7 @@ impl ReviewState {
             state,
             updated_at: self.updated_at.clone(),
             github_pr: self.github_pr.clone(),
+            worktree_path: self.worktree_path.clone(),
         }
     }
 }
@@ -300,6 +309,13 @@ pub struct ReviewSummary {
     /// Optional GitHub PR reference
     #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
     pub github_pr: Option<crate::sources::github::GitHubPrRef>,
+    /// Path to the review-managed worktree, if one was created.
+    #[serde(
+        rename = "worktreePath",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub worktree_path: Option<String>,
 }
 
 #[cfg(test)]

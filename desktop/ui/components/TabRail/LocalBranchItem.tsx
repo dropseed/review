@@ -2,37 +2,20 @@ import { memo, useCallback } from "react";
 import { useReviewStore } from "../../stores";
 import type { LocalBranchInfo } from "../../types";
 import { makeComparison } from "../../types";
-import { formatAge, compactNum } from "../../utils/format-age";
-import { makeReviewKey } from "../../stores/slices/groupingSlice";
-import {
-  makeBranchKey,
-  statsHash,
-} from "../../stores/slices/localActivitySlice";
-import { CircleProgress } from "../ui/circle-progress";
-import { computeReviewProgress } from "../../hooks/useReviewProgress";
+import type { SidebarItemKind } from "../../utils/sidebar-ordering";
+import { XIcon } from "../ui/icons";
+import { Spinner } from "../ui/spinner";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { getApiClient } from "../../api";
+import { getPlatformServices } from "../../platform";
 
 interface LocalBranchItemProps {
   branch: LocalBranchInfo;
   repoPath: string;
   repoName?: string;
   defaultBranch: string;
-  /** "changes" = Working Changes view, "all" = All Branches view */
-  viewMode: "changes" | "all";
+  itemKind: SidebarItemKind;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
-}
-
-/** Branch icon (git-branch from Octicons). */
-function BranchIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
-    </svg>
-  );
 }
 
 export const LocalBranchItem = memo(function LocalBranchItem({
@@ -40,7 +23,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   repoPath,
   repoName,
   defaultBranch,
-  viewMode,
+  itemKind,
   onActivate,
 }: LocalBranchItemProps) {
   const comparisonKey = makeComparison(defaultBranch, branch.name).key;
@@ -51,35 +34,13 @@ export const LocalBranchItem = memo(function LocalBranchItem({
       s.activeReviewKey?.comparisonKey === comparisonKey,
   );
 
-  // Look up review progress percent (primitive for stable Zustand equality).
-  // For the active review, derive from live hunks/reviewState to avoid stale summary data.
-  const reviewPercent = useReviewStore((s) => {
-    const active =
+  // Show stale badge only for the active worktree review
+  const isWorktreeStale = useReviewStore(
+    (s) =>
       s.activeReviewKey?.repoPath === repoPath &&
-      s.activeReviewKey?.comparisonKey === comparisonKey;
-    if (active && s.hunks.length > 0) {
-      const progress = computeReviewProgress(s.hunks, s.reviewState);
-      return progress.totalHunks > 0 ? progress.reviewedPercent : -1;
-    }
-    const key = makeReviewKey(repoPath, comparisonKey);
-    const review = s.globalReviewsByKey[key];
-    if (!review || review.totalHunks === 0) return -1;
-    return Math.round((review.reviewedHunks / review.totalHunks) * 100);
-  });
-  const hasReviewProgress = reviewPercent >= 0;
-
-  // Check if the working tree diff has changed since the user last viewed this branch.
-  // Reads activeReviewKey from store state directly to avoid stale closure issues.
-  const isUnseen = useReviewStore((s) => {
-    const active =
-      s.activeReviewKey?.repoPath === repoPath &&
-      s.activeReviewKey?.comparisonKey === comparisonKey;
-    if (active) return false;
-    const key = makeBranchKey(repoPath, branch.name);
-    const seen = s.lastSeenDiffStats[key];
-    if (seen === undefined) return true;
-    return seen !== statsHash(branch.workingTreeStats);
-  });
+      s.activeReviewKey?.comparisonKey === comparisonKey &&
+      s.worktreeStale,
+  );
 
   const handleClick = useCallback(() => {
     onActivate(repoPath, branch.name, defaultBranch);
@@ -95,16 +56,66 @@ export const LocalBranchItem = memo(function LocalBranchItem({
     [handleClick],
   );
 
-  const age = formatAge(branch.lastCommitDate);
-  const isCheckedOut = branch.isCurrent || branch.worktreePath != null;
-  const stats = branch.workingTreeStats;
+  const removeWorktreeAction = useCallback(async () => {
+    if (!branch.worktreePath) return;
 
-  // In "all" mode, the leading icon distinguishes checked-out vs not.
-  // In "changes" mode, everything shown is checked out (implied), so use a uniform style.
-  const branchIconClass =
-    viewMode === "all" && isCheckedOut
-      ? "h-3 w-3 shrink-0 text-fg-secondary"
-      : "h-3 w-3 shrink-0 text-fg-faint";
+    const client = getApiClient();
+    const { dialogs } = getPlatformServices();
+
+    try {
+      const hasChanges = await client.hasWorktreeChanges(
+        repoPath,
+        branch.worktreePath,
+      );
+      if (hasChanges) {
+        const confirmed = await dialogs.confirm(
+          `The worktree for "${branch.name}" has uncommitted changes. Remove it anyway?`,
+        );
+        if (!confirmed) return;
+      }
+    } catch {
+      const confirmed = await dialogs.confirm(
+        `Remove the worktree for "${branch.name}"?`,
+      );
+      if (!confirmed) return;
+    }
+
+    await client.removeReviewWorktree(repoPath, branch.worktreePath);
+
+    const state = useReviewStore.getState();
+    if (
+      state.reviewState &&
+      state.activeReviewKey?.repoPath === repoPath &&
+      state.activeReviewKey?.comparisonKey === comparisonKey
+    ) {
+      const updatedState = { ...state.reviewState, worktreePath: undefined };
+      state.setReviewState(updatedState);
+      await state.saveReviewState();
+    }
+
+    await Promise.all([state.loadLocalActivity(), state.loadGlobalReviews()]);
+  }, [branch.worktreePath, branch.name, repoPath, comparisonKey]);
+  const [handleRemoveWorktreeClick, removing] = useAsyncAction(
+    removeWorktreeAction,
+    "remove worktree",
+  );
+
+  const handleRemoveWorktree = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      handleRemoveWorktreeClick();
+    },
+    [handleRemoveWorktreeClick],
+  );
+
+  const isCheckedOut = itemKind === "working-tree" || itemKind === "worktree";
+  const nameClass = isActive
+    ? "text-fg font-medium"
+    : itemKind === "working-tree"
+      ? "text-fg-secondary/90 font-medium"
+      : itemKind === "worktree"
+        ? "text-fg-secondary/70 group-hover:text-fg-secondary"
+        : "text-fg-secondary/35 group-hover:text-fg-secondary/55";
 
   return (
     <div
@@ -112,79 +123,67 @@ export const LocalBranchItem = memo(function LocalBranchItem({
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className={`group relative w-full text-left px-2.5 py-2 rounded-md mb-0.5 cursor-default
+      className={`group relative w-full text-left pl-4 pr-2.5 py-1 rounded cursor-default
                   transition-colors duration-100
-                  ${isActive ? "bg-fg/[0.08]" : "hover:bg-fg/[0.05]"}`}
+                  ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
       aria-current={isActive ? "true" : undefined}
       title={`${branch.name}${branch.worktreePath ? ` (worktree: ${branch.worktreePath})` : ""} — ${branch.commitsAhead} commit${branch.commitsAhead !== 1 ? "s" : ""} ahead of ${defaultBranch}`}
     >
-      {/* Active indicator bar */}
       {isActive && (
-        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-status-modified/80" />
+        <span className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full bg-fg/30" />
       )}
 
       <div className="flex items-center gap-1.5 min-w-0">
-        {/* Leading icon */}
-        {viewMode === "changes" ? (
-          // Changes view: pulsing unseen dot, or progress circle when seen/active
-          isUnseen ? (
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-              <span className="h-2 w-2 rounded-full bg-[var(--color-focus-ring)] animate-pulse" />
-            </span>
-          ) : (
-            <CircleProgress percent={hasReviewProgress ? reviewPercent : 0} />
-          )
-        ) : // All view: progress circle if reviewed, branch icon otherwise
-        hasReviewProgress ? (
-          <CircleProgress percent={reviewPercent} />
-        ) : (
-          <BranchIcon className={branchIconClass} />
-        )}
-
-        {/* Branch name (with optional repo prefix for Working Changes) */}
-        <span
-          className={`text-xs truncate flex-1 min-w-0 ${
-            isActive
-              ? "text-fg font-medium"
-              : "text-fg-secondary group-hover:text-fg-secondary"
-          }`}
-        >
+        <span className={`text-xs truncate flex-1 min-w-0 ${nameClass}`}>
           {repoName && <span className="text-fg-muted">{repoName} / </span>}
           {branch.name}
         </span>
 
-        {/* Right side */}
-        <span className="flex items-center gap-1.5 shrink-0">
-          {viewMode === "changes" && stats && (
-            <span className="text-2xs tabular-nums">
-              {stats.additions > 0 || stats.deletions > 0 ? (
-                <>
-                  <span className="text-[var(--color-diff-added)]">
-                    +{compactNum(stats.additions)}
-                  </span>{" "}
-                  <span className="text-[var(--color-diff-removed)]">
-                    -{compactNum(stats.deletions)}
-                  </span>
-                </>
+        <span className="relative grid shrink-0 justify-items-end items-center">
+          <span
+            className={`col-start-1 row-start-1 flex items-center gap-1.5
+                        transition-opacity duration-100 ${
+                          itemKind === "worktree"
+                            ? "group-hover:opacity-0 group-hover:pointer-events-none"
+                            : ""
+                        }`}
+          >
+            {isCheckedOut && (
+              <span className="text-[9px] rounded-full bg-fg/[0.08] text-fg-faint px-1.5 py-px">
+                {itemKind === "working-tree" ? "local" : "worktree"}
+              </span>
+            )}
+            {branch.hasWorkingTreeChanges && (
+              <span className="text-2xs text-status-modified">M</span>
+            )}
+            {isActive && isWorktreeStale && (
+              <span
+                className="text-2xs text-amber-500"
+                title="Worktree is behind branch tip"
+              >
+                stale
+              </span>
+            )}
+          </span>
+          {itemKind === "worktree" && branch.worktreePath && (
+            <button
+              type="button"
+              onClick={handleRemoveWorktree}
+              disabled={removing}
+              className="col-start-1 row-start-1 flex items-center justify-center
+                         h-5 w-5 rounded text-fg-muted hover:text-status-rejected
+                         hover:bg-fg/[0.08] opacity-0 pointer-events-none
+                         group-hover:opacity-100 group-hover:pointer-events-auto
+                         transition-opacity duration-100 disabled:opacity-50"
+              aria-label="Remove worktree"
+              title="Remove worktree"
+            >
+              {removing ? (
+                <Spinner className="h-3 w-3 border-[1.5px] border-edge-strong border-t-fg-muted" />
               ) : (
-                <span className="text-fg-faint">
-                  {stats.fileCount} file{stats.fileCount !== 1 ? "s" : ""}
-                </span>
+                <XIcon className="h-3 w-3" />
               )}
-            </span>
-          )}
-          {viewMode === "all" && (
-            <>
-              <span className="text-2xs tabular-nums text-fg-faint">{age}</span>
-              {branch.hasWorkingTreeChanges && (
-                <span className="text-2xs text-status-modified">M</span>
-              )}
-              {branch.commitsAhead > 0 && (
-                <span className="text-2xs tabular-nums text-fg-faint bg-fg/[0.06] rounded px-1">
-                  {branch.commitsAhead}
-                </span>
-              )}
-            </>
+            </button>
           )}
         </span>
       </div>

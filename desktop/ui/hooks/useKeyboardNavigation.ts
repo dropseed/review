@@ -1,14 +1,12 @@
 import { useEffect } from "react";
 import { useReviewStore } from "../stores";
-import {
-  makeComparison,
-  type Comparison,
-  type RepoLocalActivity,
-  type GlobalReviewSummary,
-} from "../types";
+import type { Comparison } from "../types";
 import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
-import { makeReviewKey } from "../stores/slices/groupingSlice";
-import { LOCAL_REPO_DEFAULT_COLLAPSED } from "../stores/slices/localActivitySlice";
+import {
+  buildRepoGroups,
+  flattenRepoGroups,
+  type SidebarEntry,
+} from "../utils/sidebar-ordering";
 
 interface SidebarItem {
   key: string;
@@ -16,50 +14,27 @@ interface SidebarItem {
   comparison: Comparison;
 }
 
-/** Build a flat list of all sidebar items (local branches first, then reviews). */
-function buildSidebarItemList(state: {
-  localActivity: RepoLocalActivity[];
-  globalReviews: GlobalReviewSummary[];
-  localRepoCollapsed: Record<string, boolean>;
-  localViewMode: "changes" | "all";
-}): SidebarItem[] {
-  const items: SidebarItem[] = [];
-
-  // Local branches first (filter by view mode and skip collapsed repos in "all" mode)
-  for (const repo of state.localActivity) {
-    if (
-      state.localViewMode === "all" &&
-      (state.localRepoCollapsed[repo.repoPath] ?? LOCAL_REPO_DEFAULT_COLLAPSED)
-    )
-      continue;
-    for (const branch of repo.branches) {
-      if (state.localViewMode === "changes" && !branch.hasWorkingTreeChanges)
-        continue;
-      const comparison = makeComparison(repo.defaultBranch, branch.name);
-      items.push({
-        key: makeReviewKey(repo.repoPath, comparison.key),
+function entriesToItems(entries: SidebarEntry[]): SidebarItem[] {
+  return entries.map((entry) => {
+    if (entry.kind === "review") {
+      return {
+        key: entry.reviewKey,
         reviewKey: {
-          repoPath: repo.repoPath,
-          comparisonKey: comparison.key,
+          repoPath: entry.review.repoPath,
+          comparisonKey: entry.review.comparison.key,
         },
-        comparison,
-      });
+        comparison: entry.review.comparison,
+      };
     }
-  }
-
-  // Then reviews
-  for (const review of state.globalReviews) {
-    items.push({
-      key: makeReviewKey(review.repoPath, review.comparison.key),
+    return {
+      key: entry.reviewKey,
       reviewKey: {
-        repoPath: review.repoPath,
-        comparisonKey: review.comparison.key,
+        repoPath: entry.repo.repoPath,
+        comparisonKey: entry.comparison.key,
       },
-      comparison: review.comparison,
-    });
-  }
-
-  return items;
+      comparison: entry.comparison,
+    };
+  });
 }
 
 /** Activate a sidebar item: save snapshot, switch review/comparison. */
@@ -157,7 +132,17 @@ export function useKeyboardNavigation() {
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           event.preventDefault();
-          const items = buildSidebarItemList(state);
+          const items = entriesToItems(
+            flattenRepoGroups(
+              buildRepoGroups(
+                state.localActivity,
+                state.globalReviews,
+                state.globalReviewsByKey,
+                state.reviewSortOrder,
+                state.reviewDiffStats,
+              ),
+            ),
+          );
           const target = items[digit - 1];
           if (target) activateSidebarItem(state, target);
           return;

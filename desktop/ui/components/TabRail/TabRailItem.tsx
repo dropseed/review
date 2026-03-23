@@ -1,16 +1,10 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
-import type {
-  Comparison,
-  DiffShortStat,
-  GlobalReviewSummary,
-} from "../../types";
-import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
+import type { Comparison, GlobalReviewSummary } from "../../types";
 import { useReviewStore } from "../../stores";
-import { CircleProgress } from "../ui/circle-progress";
-import { formatAge, compactNum } from "../../utils/format-age";
+import { Spinner } from "../ui/spinner";
+import { WarningIcon } from "../ui/icons";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
-import { computeReviewProgress } from "../../hooks/useReviewProgress";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -44,9 +38,6 @@ interface TabRailItemProps {
   review: GlobalReviewSummary;
   repoName: string;
   defaultBranch?: string;
-  avatarUrl?: string | null;
-  sortOrder?: ReviewSortOrder;
-  diffStats?: DiffShortStat;
   missingRefs?: string[];
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
@@ -68,10 +59,6 @@ function arePropsEqual(
   if (prev.review.githubPr?.title !== next.review.githubPr?.title) return false;
   if (prev.repoName !== next.repoName) return false;
   if (prev.defaultBranch !== next.defaultBranch) return false;
-  if (prev.avatarUrl !== next.avatarUrl) return false;
-  if (prev.sortOrder !== next.sortOrder) return false;
-  if (prev.diffStats?.additions !== next.diffStats?.additions) return false;
-  if (prev.diffStats?.deletions !== next.diffStats?.deletions) return false;
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
@@ -82,9 +69,6 @@ export const TabRailItem = memo(function TabRailItem({
   review,
   repoName,
   defaultBranch,
-  avatarUrl,
-  sortOrder,
-  diffStats,
   missingRefs,
   onActivate,
   onDelete,
@@ -134,24 +118,6 @@ export const TabRailItem = memo(function TabRailItem({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showContextMenu]);
 
-  // For the active review, derive progress from live hunks to avoid stale summary data.
-  const livePercent = useReviewStore((s) => {
-    if (!isActive || s.hunks.length === 0) return null;
-    const progress = computeReviewProgress(s.hunks, s.reviewState);
-    return progress.totalHunks > 0 ? progress.reviewedPercent : 0;
-  });
-
-  const reviewedPercent =
-    livePercent !== null
-      ? livePercent
-      : review.totalHunks > 0
-        ? Math.round((review.reviewedHunks / review.totalHunks) * 100)
-        : 0;
-
-  const showProgress = livePercent !== null ? true : review.totalHunks > 0;
-
-  const age = formatAge(review.updatedAt);
-
   // Line 1: the most identifying info
   const primaryLabel = isPr
     ? pr.title || `PR #${pr.number}`
@@ -176,59 +142,24 @@ export const TabRailItem = memo(function TabRailItem({
           }
         }}
         onContextMenu={handleContextMenu}
-        className={`group relative w-full text-left px-2.5 py-2 rounded-md mb-0.5 cursor-default
+        className={`group relative w-full text-left px-2.5 py-1 rounded cursor-default
                     transition-colors duration-100
-                    ${isActive ? "bg-fg/[0.08]" : "hover:bg-fg/[0.05]"}`}
+                    ${isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]"}`}
         aria-current={isActive ? "true" : undefined}
         title={titleText}
       >
-        {/* Active indicator bar */}
-        {isActive && (
-          <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-status-modified/80" />
-        )}
-
         <div className="flex items-center gap-1.5 min-w-0">
           {isBusy && (
-            <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-edge-strong border-t-status-modified animate-spin" />
+            <Spinner className="h-3 w-3 shrink-0 border-[1.5px] border-edge-strong border-t-status-modified" />
           )}
-          {!isBusy && hasMissingRefs && (
-            <svg
-              className="h-3.5 w-3.5 shrink-0 text-status-rejected"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-          )}
-          {!isBusy && !hasMissingRefs && showProgress && (
-            <CircleProgress percent={reviewedPercent} />
-          )}
-          {!isBusy && !hasMissingRefs && !showProgress && avatarUrl && (
-            <img
-              src={avatarUrl}
-              alt=""
-              className="h-3 w-3 shrink-0 rounded-sm"
-            />
-          )}
-          <span className="text-xs text-fg-muted truncate min-w-0">
-            {review.repoName}
-          </span>
-          <span className="text-xs text-fg-muted shrink-0 -mx-0.5">/</span>
-          {isPr && (
+          {isPr && !isBusy && (
             <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
           )}
           <span
             className={`text-xs truncate flex-1 min-w-0 ${
               isActive
                 ? "text-fg font-medium"
-                : "text-fg-secondary group-hover:text-fg-secondary"
+                : "text-fg-secondary/50 group-hover:text-fg-secondary/70"
             }`}
           >
             {primaryLabel}
@@ -240,19 +171,8 @@ export const TabRailItem = memo(function TabRailItem({
               className="col-start-1 row-start-1 flex items-center gap-1.5
                              transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
             >
-              {sortOrder === "size" && diffStats ? (
-                <span className="text-2xs tabular-nums">
-                  <span className="text-[var(--color-diff-added)]">
-                    +{compactNum(diffStats.additions)}
-                  </span>{" "}
-                  <span className="text-[var(--color-diff-removed)]">
-                    -{compactNum(diffStats.deletions)}
-                  </span>
-                </span>
-              ) : (
-                <span className="text-2xs tabular-nums text-fg-faint">
-                  {age}
-                </span>
+              {hasMissingRefs && (
+                <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />
               )}
             </span>
             <button

@@ -154,6 +154,7 @@ function patchGlobalReviewProgress(
 
 interface HunkStatusGetter {
   reviewState: ReviewState | null;
+  readOnlyPreview: boolean;
   saveReviewState: () => Promise<void>;
 }
 
@@ -172,7 +173,8 @@ function updateHunkStatuses(
     skipMissing?: boolean;
   },
 ): void {
-  const { reviewState, saveReviewState } = get();
+  const { reviewState, readOnlyPreview, saveReviewState } = get();
+  if (readOnlyPreview) return;
   if (!reviewState || hunkIds.length === 0) return;
 
   const newHunks = { ...reviewState.hunks };
@@ -334,7 +336,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      let { repoPath, reviewState, hunks, comparison } = get();
+      let { repoPath, reviewState, hunks, comparison, readOnlyPreview } = get();
+      if (readOnlyPreview) return;
       if (!repoPath || !reviewState || !comparison) return;
 
       // Skip saving if the review file hasn't been created yet and the state

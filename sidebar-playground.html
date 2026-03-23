@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sidebar Visual Hierarchy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a1a;
+    color: #d6d3d1;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .controls {
+    background: #141414;
+    border-right: 1px solid rgba(168,162,158,0.15);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .controls h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #918d89;
+    margin-bottom: 6px;
+  }
+  .control-group { display: flex; flex-direction: column; gap: 8px; }
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .control-row label { font-size: 12px; color: #a19d99; white-space: nowrap; }
+  .control-row input[type="range"] { flex: 1; max-width: 110px; accent-color: #78716c; }
+  .control-row .val { font-size: 11px; color: #918d89; font-family: monospace; min-width: 30px; text-align: right; }
+  select { background: #222; border: 1px solid rgba(168,162,158,0.25); color: #d6d3d1; border-radius: 4px; padding: 3px 6px; font-size: 11px; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; }
+  .toggle-row input[type="checkbox"] { accent-color: #78716c; }
+  .toggle-row label { font-size: 12px; color: #a19d99; }
+  .presets { display: flex; gap: 5px; flex-wrap: wrap; }
+  .presets button {
+    background: #222; border: 1px solid rgba(168,162,158,0.2); color: #a19d99;
+    border-radius: 4px; padding: 3px 8px; font-size: 10px; cursor: pointer; transition: all 0.15s;
+  }
+  .presets button:hover { background: #2a2a2a; color: #d6d3d1; }
+  .presets button.active { background: #333; color: #fafaf9; border-color: rgba(168,162,158,0.5); }
+
+  .right { display: flex; flex-direction: column; overflow: hidden; }
+  .preview-area { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 32px; overflow-y: auto; background: #1c1917; }
+
+  .sidebar-mock { width: 300px; background: #1c1917; border: 1px solid rgba(168,162,158,0.15); border-radius: 8px; padding: 4px 0; }
+
+  .section-header {
+    display: flex; align-items: center; padding: 6px 12px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #918d89;
+  }
+
+  .repo-header {
+    display: flex; align-items: center; cursor: default; transition: background 0.1s;
+  }
+  .repo-header:hover { background: rgba(250,250,249,0.02); }
+  .repo-header .avatar { border-radius: 3px; background: #78716c; opacity: 0.5; flex-shrink: 0; }
+  .repo-header .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .repo-header .badge { font-size: 10px; color: #918d89; }
+
+  .item {
+    display: flex; align-items: center; cursor: default; position: relative; transition: all 0.1s;
+  }
+  .item:hover { background: rgba(250,250,249,0.03); }
+  .item.active { background: rgba(250,250,249,0.05); }
+  .item .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .item .pill { font-size: 9px; border-radius: 9px; padding: 1px 6px; background: rgba(250,250,249,0.06); color: #918d89; }
+  .item .modified { font-size: 10px; color: #d97706; }
+
+  .prompt-area { border-top: 1px solid rgba(168,162,158,0.15); padding: 14px 18px; background: #141414; }
+  .prompt-area h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #918d89; margin-bottom: 6px; }
+  .prompt-text { font-size: 11px; line-height: 1.6; color: #d6d3d1; font-family: monospace; white-space: pre-wrap; max-height: 100px; overflow-y: auto; margin-bottom: 8px; }
+  .copy-btn { background: #333; border: 1px solid rgba(168,162,158,0.3); color: #d6d3d1; border-radius: 4px; padding: 5px 12px; font-size: 11px; cursor: pointer; }
+  .copy-btn:hover { background: #444; }
+  .separator { height: 1px; background: rgba(168,162,158,0.12); margin: 2px 0; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <div>
+    <h2>Presets</h2>
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div>
+    <h2>Repo Header</h2>
+    <div class="control-group">
+      <div class="control-row"><label>Font size</label><input type="range" id="rh-font" min="9" max="13" step="0.5" value="11"><span class="val" id="rh-font-val"></span></div>
+      <div class="control-row"><label>Padding Y</label><input type="range" id="rh-py" min="2" max="10" step="1" value="4"><span class="val" id="rh-py-val"></span></div>
+      <div class="control-row"><label>Padding X</label><input type="range" id="rh-px" min="6" max="16" step="1" value="10"><span class="val" id="rh-px-val"></span></div>
+      <div class="control-row"><label>Avatar size</label><input type="range" id="rh-avatar" min="0" max="20" step="1" value="16"><span class="val" id="rh-avatar-val"></span></div>
+      <div class="control-row"><label>Gap</label><input type="range" id="rh-gap" min="4" max="12" step="1" value="8"><span class="val" id="rh-gap-val"></span></div>
+      <div class="control-row"><label>Text opacity</label><input type="range" id="rh-opacity" min="0.3" max="1" step="0.05" value="0.6"><span class="val" id="rh-opacity-val"></span></div>
+      <div class="control-row"><label>Weight</label><select id="rh-weight"><option value="400">400</option><option value="500" selected>500</option><option value="600">600</option></select></div>
+      <div class="control-row"><label>Letter spacing</label><input type="range" id="rh-tracking" min="0" max="0.1" step="0.01" value="0.02"><span class="val" id="rh-tracking-val"></span></div>
+      <div class="toggle-row"><input type="checkbox" id="rh-uppercase"><label for="rh-uppercase">Uppercase</label></div>
+      <div class="toggle-row"><input type="checkbox" id="rh-separator" checked><label for="rh-separator">Separator between repos</label></div>
+      <div class="control-row"><label>Top margin</label><input type="range" id="rh-mt" min="0" max="12" step="1" value="4"><span class="val" id="rh-mt-val"></span></div>
+    </div>
+  </div>
+
+  <div>
+    <h2>Branch Items</h2>
+    <div class="control-group">
+      <div class="control-row"><label>Font size</label><input type="range" id="bi-font" min="10" max="14" step="0.5" value="12"><span class="val" id="bi-font-val"></span></div>
+      <div class="control-row"><label>Padding Y</label><input type="range" id="bi-py" min="2" max="10" step="1" value="4"><span class="val" id="bi-py-val"></span></div>
+      <div class="control-row"><label>Padding X</label><input type="range" id="bi-px" min="6" max="20" step="1" value="10"><span class="val" id="bi-px-val"></span></div>
+      <div class="control-row"><label>Left indent</label><input type="range" id="bi-indent" min="0" max="16" step="1" value="0"><span class="val" id="bi-indent-val"></span></div>
+      <div class="control-row"><label>Main opacity</label><input type="range" id="bi-main-op" min="0.5" max="1" step="0.05" value="0.85"><span class="val" id="bi-main-op-val"></span></div>
+      <div class="control-row"><label>Worktree opacity</label><input type="range" id="bi-wt-op" min="0.3" max="1" step="0.05" value="0.7"><span class="val" id="bi-wt-op-val"></span></div>
+      <div class="control-row"><label>Branch opacity</label><input type="range" id="bi-br-op" min="0.2" max="0.8" step="0.05" value="0.4"><span class="val" id="bi-br-op-val"></span></div>
+      <div class="control-row"><label>Main weight</label><select id="bi-main-wt"><option value="400">400</option><option value="500" selected>500</option><option value="600">600</option></select></div>
+      <div class="toggle-row"><input type="checkbox" id="bi-pills" checked><label for="bi-pills">Show type pills</label></div>
+      <div class="toggle-row"><input type="checkbox" id="bi-show-m" checked><label for="bi-show-m">Show M indicator</label></div>
+    </div>
+  </div>
+
+  <div>
+    <h2>Active State</h2>
+    <div class="control-group">
+      <div class="control-row"><label>Background</label><input type="range" id="act-bg" min="0" max="0.12" step="0.01" value="0.05"><span class="val" id="act-bg-val"></span></div>
+      <div class="toggle-row"><input type="checkbox" id="act-bar"><label for="act-bar">Left accent bar</label></div>
+      <div class="control-row"><label>Bar width</label><input type="range" id="act-bar-w" min="1" max="3" step="0.5" value="2"><span class="val" id="act-bar-w-val"></span></div>
+      <div class="control-row"><label>Bar color</label><select id="act-bar-color">
+        <option value="rgba(250,250,249,0.3)">White subtle</option>
+        <option value="rgba(34,197,94,0.5)">Green</option>
+        <option value="rgba(59,130,246,0.5)">Blue</option>
+        <option value="rgba(217,119,6,0.6)">Amber</option>
+      </select></div>
+      <div class="toggle-row"><input type="checkbox" id="act-bold" checked><label for="act-bold">Bold active text</label></div>
+    </div>
+  </div>
+</div>
+
+<div class="right">
+  <div class="preview-area">
+    <div class="sidebar-mock" id="preview"></div>
+  </div>
+  <div class="prompt-area">
+    <h3>Prompt Output</h3>
+    <div class="prompt-text" id="prompt"></div>
+    <button class="copy-btn" id="copy-btn">Copy Prompt</button>
+  </div>
+</div>
+
+<script>
+const state = {};
+
+const repos = [
+  { name: 'dropseed/review', avatar: true, items: [
+    { name: 'master', kind: 'working-tree', modified: true, active: true },
+    { name: 'probes/server', kind: 'worktree', modified: false },
+    { name: 'memory-leaks-command', kind: 'branch', modified: false },
+    { name: 'websockets-v2', kind: 'branch', modified: false },
+  ]},
+  { name: 'dropseed/plain', avatar: true, items: [
+    { name: 'master', kind: 'working-tree', modified: true },
+    { name: 'probes/server', kind: 'worktree', modified: false },
+  ]},
+  { name: 'dropseed/pullapprove5', avatar: true, items: [
+    { name: 'master', kind: 'working-tree', modified: false },
+  ]},
+  { name: 'davegaeddert/dotfiles', avatar: true, items: [
+    { name: 'main', kind: 'working-tree', modified: false },
+  ]},
+];
+
+const PRESETS = {
+  'Current': {
+    rhFont: 11, rhPy: 4, rhPx: 10, rhAvatar: 16, rhGap: 8, rhOpacity: 0.6,
+    rhWeight: '500', rhTracking: 0.02, rhUppercase: false, rhSeparator: true, rhMt: 4,
+    biFont: 12, biPy: 4, biPx: 10, biIndent: 0, biMainOp: 0.85, biWtOp: 0.7, biBrOp: 0.4,
+    biMainWt: '500', biPills: true, biShowM: true,
+    actBg: 0.05, actBar: false, actBarW: 2, actBarColor: 'rgba(250,250,249,0.3)', actBold: true,
+  },
+  'Indented': {
+    rhFont: 10, rhPy: 5, rhPx: 10, rhAvatar: 14, rhGap: 6, rhOpacity: 0.5,
+    rhWeight: '600', rhTracking: 0.06, rhUppercase: true, rhSeparator: true, rhMt: 6,
+    biFont: 12, biPy: 4, biPx: 10, biIndent: 8, biMainOp: 0.9, biWtOp: 0.7, biBrOp: 0.35,
+    biMainWt: '500', biPills: true, biShowM: true,
+    actBg: 0.04, actBar: true, actBarW: 2, actBarColor: 'rgba(250,250,249,0.3)', actBold: true,
+  },
+  'Tight': {
+    rhFont: 10, rhPy: 3, rhPx: 8, rhAvatar: 12, rhGap: 6, rhOpacity: 0.45,
+    rhWeight: '500', rhTracking: 0.03, rhUppercase: false, rhSeparator: true, rhMt: 2,
+    biFont: 11.5, biPy: 3, biPx: 8, biIndent: 0, biMainOp: 0.85, biWtOp: 0.65, biBrOp: 0.35,
+    biMainWt: '500', biPills: true, biShowM: true,
+    actBg: 0.04, actBar: false, actBarW: 2, actBarColor: 'rgba(250,250,249,0.3)', actBold: true,
+  },
+  'Prominent Headers': {
+    rhFont: 11.5, rhPy: 5, rhPx: 10, rhAvatar: 16, rhGap: 8, rhOpacity: 0.75,
+    rhWeight: '500', rhTracking: 0.01, rhUppercase: false, rhSeparator: true, rhMt: 6,
+    biFont: 11.5, biPy: 3, biPx: 10, biIndent: 4, biMainOp: 0.8, biWtOp: 0.6, biBrOp: 0.35,
+    biMainWt: '400', biPills: false, biShowM: true,
+    actBg: 0.06, actBar: true, actBarW: 2, actBarColor: 'rgba(59,130,246,0.5)', actBold: true,
+  },
+  'No Pills': {
+    rhFont: 11, rhPy: 4, rhPx: 10, rhAvatar: 14, rhGap: 7, rhOpacity: 0.55,
+    rhWeight: '500', rhTracking: 0.02, rhUppercase: false, rhSeparator: true, rhMt: 4,
+    biFont: 12, biPy: 4, biPx: 10, biIndent: 0, biMainOp: 0.9, biWtOp: 0.65, biBrOp: 0.35,
+    biMainWt: '500', biPills: false, biShowM: true,
+    actBg: 0.05, actBar: true, actBarW: 1.5, actBarColor: 'rgba(250,250,249,0.3)', actBold: true,
+  },
+};
+
+function read() {
+  state.rhFont = parseFloat(document.getElementById('rh-font').value);
+  state.rhPy = parseInt(document.getElementById('rh-py').value);
+  state.rhPx = parseInt(document.getElementById('rh-px').value);
+  state.rhAvatar = parseInt(document.getElementById('rh-avatar').value);
+  state.rhGap = parseInt(document.getElementById('rh-gap').value);
+  state.rhOpacity = parseFloat(document.getElementById('rh-opacity').value);
+  state.rhWeight = document.getElementById('rh-weight').value;
+  state.rhTracking = parseFloat(document.getElementById('rh-tracking').value);
+  state.rhUppercase = document.getElementById('rh-uppercase').checked;
+  state.rhSeparator = document.getElementById('rh-separator').checked;
+  state.rhMt = parseInt(document.getElementById('rh-mt').value);
+  state.biFont = parseFloat(document.getElementById('bi-font').value);
+  state.biPy = parseInt(document.getElementById('bi-py').value);
+  state.biPx = parseInt(document.getElementById('bi-px').value);
+  state.biIndent = parseInt(document.getElementById('bi-indent').value);
+  state.biMainOp = parseFloat(document.getElementById('bi-main-op').value);
+  state.biWtOp = parseFloat(document.getElementById('bi-wt-op').value);
+  state.biBrOp = parseFloat(document.getElementById('bi-br-op').value);
+  state.biMainWt = document.getElementById('bi-main-wt').value;
+  state.biPills = document.getElementById('bi-pills').checked;
+  state.biShowM = document.getElementById('bi-show-m').checked;
+  state.actBg = parseFloat(document.getElementById('act-bg').value);
+  state.actBar = document.getElementById('act-bar').checked;
+  state.actBarW = parseFloat(document.getElementById('act-bar-w').value);
+  state.actBarColor = document.getElementById('act-bar-color').value;
+  state.actBold = document.getElementById('act-bold').checked;
+}
+
+function write() {
+  document.getElementById('rh-font').value = state.rhFont;
+  document.getElementById('rh-py').value = state.rhPy;
+  document.getElementById('rh-px').value = state.rhPx;
+  document.getElementById('rh-avatar').value = state.rhAvatar;
+  document.getElementById('rh-gap').value = state.rhGap;
+  document.getElementById('rh-opacity').value = state.rhOpacity;
+  document.getElementById('rh-weight').value = state.rhWeight;
+  document.getElementById('rh-tracking').value = state.rhTracking;
+  document.getElementById('rh-uppercase').checked = state.rhUppercase;
+  document.getElementById('rh-separator').checked = state.rhSeparator;
+  document.getElementById('rh-mt').value = state.rhMt;
+  document.getElementById('bi-font').value = state.biFont;
+  document.getElementById('bi-py').value = state.biPy;
+  document.getElementById('bi-px').value = state.biPx;
+  document.getElementById('bi-indent').value = state.biIndent;
+  document.getElementById('bi-main-op').value = state.biMainOp;
+  document.getElementById('bi-wt-op').value = state.biWtOp;
+  document.getElementById('bi-br-op').value = state.biBrOp;
+  document.getElementById('bi-main-wt').value = state.biMainWt;
+  document.getElementById('bi-pills').checked = state.biPills;
+  document.getElementById('bi-show-m').checked = state.biShowM;
+  document.getElementById('act-bg').value = state.actBg;
+  document.getElementById('act-bar').checked = state.actBar;
+  document.getElementById('act-bar-w').value = state.actBarW;
+  document.getElementById('act-bar-color').value = state.actBarColor;
+  document.getElementById('act-bold').checked = state.actBold;
+}
+
+function render() {
+  const p = document.getElementById('preview');
+  let html = '';
+
+  repos.forEach((repo, ri) => {
+    const sep = state.rhSeparator && ri > 0 ? `<div class="separator"></div>` : '';
+    const mt = ri > 0 ? state.rhMt : 0;
+    const avatarHtml = state.rhAvatar > 0
+      ? `<div class="avatar" style="width:${state.rhAvatar}px;height:${state.rhAvatar}px"></div>`
+      : '';
+    const nameText = state.rhUppercase ? repo.name.toUpperCase() : repo.name;
+
+    html += `${sep}<div style="margin-top:${mt}px">
+      <div class="repo-header" style="padding:${state.rhPy}px ${state.rhPx}px;gap:${state.rhGap}px">
+        ${avatarHtml}
+        <span class="name" style="font-size:${state.rhFont}px;font-weight:${state.rhWeight};opacity:${state.rhOpacity};letter-spacing:${state.rhTracking}em">${nameText}</span>
+        ${repo.items.filter(i => i.kind === 'branch').length > 0 ? `<span class="badge">+${repo.items.filter(i => i.kind === 'branch').length}</span>` : ''}
+      </div>`;
+
+    repo.items.forEach(item => {
+      if (item.kind === 'branch') return; // hidden by default in this preview
+
+      const isMain = item.kind === 'working-tree';
+      const isWt = item.kind === 'worktree';
+      const isActive = item.active;
+      const op = isMain ? state.biMainOp : isWt ? state.biWtOp : state.biBrOp;
+      const fw = isMain ? state.biMainWt : '400';
+      const bg = isActive ? `rgba(250,250,249,${state.actBg})` : 'transparent';
+      const indent = state.biIndent;
+      const barHtml = isActive && state.actBar
+        ? `<span style="position:absolute;left:0;top:4px;bottom:4px;width:${state.actBarW}px;border-radius:1px;background:${state.actBarColor}"></span>`
+        : '';
+      const activeFw = isActive && state.actBold ? '500' : fw;
+      const activeOp = isActive ? 1 : op;
+
+      let metaHtml = '';
+      if (state.biPills && (isMain || isWt)) {
+        metaHtml += `<span class="pill">${isMain ? 'local' : 'worktree'}</span>`;
+      }
+      if (state.biShowM && item.modified) {
+        metaHtml += `<span class="modified">M</span>`;
+      }
+
+      html += `<div class="item ${isActive ? 'active' : ''}" style="padding:${state.biPy}px ${state.biPx}px;padding-left:${state.biPx + indent}px;background:${bg};border-radius:4px;margin:0 4px">
+        ${barHtml}
+        <span class="name" style="font-size:${state.biFont}px;font-weight:${activeFw};color:rgba(214,211,209,${activeOp})">${item.name}</span>
+        <span class="meta">${metaHtml}</span>
+      </div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  p.innerHTML = html;
+
+  // Update value displays
+  document.querySelectorAll('.control-row').forEach(row => {
+    const input = row.querySelector('input[type="range"]');
+    const val = row.querySelector('.val');
+    if (input && val) val.textContent = input.value;
+  });
+}
+
+function prompt() {
+  const parts = [];
+
+  parts.push(`Repo headers: ${state.rhFont}px, weight ${state.rhWeight}, opacity ${state.rhOpacity}, ${state.rhPy}px vertical padding, ${state.rhPx}px horizontal padding${state.rhUppercase ? ', uppercase' : ''}, letter-spacing ${state.rhTracking}em, avatar ${state.rhAvatar}px.`);
+  parts.push(`Branch items: ${state.biFont}px, ${state.biPy}px vertical padding, ${state.biPx}px horizontal padding${state.biIndent > 0 ? `, ${state.biIndent}px left indent` : ''}.`);
+  parts.push(`Text opacity: main checkout ${state.biMainOp}, worktrees ${state.biWtOp}, branches ${state.biBrOp}. Main weight ${state.biMainWt}.`);
+  if (state.biPills) parts.push(`Show pill type tags on checked-out items.`);
+  if (state.biShowM) parts.push(`Show M indicator for modified items.`);
+  parts.push(`Active state: background opacity ${state.actBg}${state.actBar ? `, ${state.actBarW}px left accent bar` : ''}${state.actBold ? ', bold text' : ''}.`);
+  if (state.rhSeparator) parts.push(`Thin separator line between repo groups, ${state.rhMt}px top margin.`);
+
+  document.getElementById('prompt').textContent = parts.join('\n');
+}
+
+function updateAll() { read(); render(); prompt(); }
+
+// Presets
+const presetsEl = document.getElementById('presets');
+for (const [name, preset] of Object.entries(PRESETS)) {
+  const btn = document.createElement('button');
+  btn.textContent = name;
+  btn.onclick = () => {
+    Object.assign(state, preset);
+    write();
+    updateAll();
+    document.querySelectorAll('.presets button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  };
+  presetsEl.appendChild(btn);
+}
+
+document.querySelectorAll('.controls input, .controls select').forEach(el => {
+  el.addEventListener('input', () => {
+    document.querySelectorAll('.presets button').forEach(b => b.classList.remove('active'));
+    updateAll();
+  });
+});
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(document.getElementById('prompt').textContent);
+  const btn = document.getElementById('copy-btn');
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy Prompt', 1500);
+});
+
+// Init with "Current" preset
+Object.assign(state, PRESETS['Current']);
+write();
+updateAll();
+document.querySelector('.presets button').classList.add('active');
+</script>
+</body>
+</html>

@@ -18,7 +18,9 @@ use crate::review::state::{ReviewState, ReviewSummary};
 use crate::review::storage::{self, GlobalReviewSummary};
 use crate::service::*;
 use crate::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
-use crate::sources::local_git::{DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch};
+use crate::sources::local_git::{
+    DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch, WorktreeInfo,
+};
 use crate::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
 };
@@ -68,6 +70,13 @@ pub fn build_api_router(state: AppState) -> Router {
             "/api/git/working-tree-file-content",
             post(git_working_tree_file_content),
         )
+        // Worktrees
+        .route("/api/worktree/create", post(worktree_create))
+        .route("/api/worktree/remove", post(worktree_remove))
+        .route("/api/worktree/has-changes", post(worktree_has_changes))
+        .route("/api/worktree/update-head", post(worktree_update_head))
+        // Git (continued)
+        .route("/api/git/resolve-ref", post(git_resolve_ref))
         // GitHub
         .route("/api/github/available", post(github_available))
         .route("/api/github/pull-requests", post(github_pull_requests))
@@ -373,6 +382,36 @@ struct EventsQuery {
     repo_path: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorktreeCreateRequest {
+    repo_path: String,
+    name: String,
+    git_ref: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorktreePathRequest {
+    repo_path: String,
+    worktree_path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorktreeUpdateHeadRequest {
+    repo_path: String,
+    worktree_path: String,
+    commit_sha: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveRefRequest {
+    repo_path: String,
+    git_ref: String,
+}
+
 // ============================================================
 // Git handlers
 // ============================================================
@@ -539,6 +578,58 @@ async fn git_working_tree_file_content(
             &req.file_path,
             req.cached,
         )
+    })
+    .await
+}
+
+// ============================================================
+// Worktree handlers
+// ============================================================
+
+async fn worktree_create(Json(req): Json<WorktreeCreateRequest>) -> ApiResult<WorktreeInfo> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source
+            .create_review_worktree(&req.name, &req.git_ref)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+async fn worktree_remove(Json(req): Json<WorktreePathRequest>) -> ApiResult<()> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source
+            .remove_review_worktree(&req.worktree_path)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+async fn worktree_has_changes(Json(req): Json<WorktreePathRequest>) -> ApiResult<bool> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source
+            .has_worktree_changes(&req.worktree_path)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+async fn worktree_update_head(Json(req): Json<WorktreeUpdateHeadRequest>) -> ApiResult<()> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source
+            .update_worktree_head(&req.worktree_path, &req.commit_sha)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+async fn git_resolve_ref(Json(req): Json<ResolveRefRequest>) -> ApiResult<String> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        Ok(source.resolve_ref_or_empty_tree(&req.git_ref))
     })
     .await
 }

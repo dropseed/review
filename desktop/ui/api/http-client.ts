@@ -41,6 +41,7 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   TrustCategory,
+  WorktreeInfo,
 } from "../types";
 
 export class HttpClient implements ApiClient {
@@ -244,6 +245,46 @@ export class HttpClient implements ApiClient {
 
   async listPullRequests(repoPath: string): Promise<PullRequest[]> {
     return this.post("/api/github/pull-requests", { repoPath });
+  }
+
+  // ----- Worktree operations -----
+
+  async createReviewWorktree(
+    repoPath: string,
+    name: string,
+    gitRef: string,
+  ): Promise<WorktreeInfo> {
+    return this.post("/api/worktree/create", { repoPath, name, gitRef });
+  }
+
+  async removeReviewWorktree(
+    repoPath: string,
+    worktreePath: string,
+  ): Promise<void> {
+    return this.post("/api/worktree/remove", { repoPath, worktreePath });
+  }
+
+  async resolveRef(repoPath: string, gitRef: string): Promise<string> {
+    return this.post("/api/git/resolve-ref", { repoPath, gitRef });
+  }
+
+  async hasWorktreeChanges(
+    repoPath: string,
+    worktreePath: string,
+  ): Promise<boolean> {
+    return this.post("/api/worktree/has-changes", { repoPath, worktreePath });
+  }
+
+  async updateWorktreeHead(
+    repoPath: string,
+    worktreePath: string,
+    commitSha: string,
+  ): Promise<void> {
+    return this.post("/api/worktree/update-head", {
+      repoPath,
+      worktreePath,
+      commitSha,
+    });
   }
 
   // ----- File operations -----

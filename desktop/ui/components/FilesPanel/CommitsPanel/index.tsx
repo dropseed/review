@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef, useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { getComparisonRange } from "../../../types";
+import { Spinner } from "../../ui/spinner";
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
@@ -117,7 +118,7 @@ export function CommitsPanel({
     return (
       <div className="flex h-40 items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-5 w-5 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <Spinner className="h-5 w-5 border-2 border-edge-default border-t-status-modified" />
           <span className="text-xs text-fg-muted">Loading commits...</span>
         </div>
       </div>

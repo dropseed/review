@@ -106,6 +106,47 @@ export function useComparisonLoader(
         ]);
         if (cancelled) return;
 
+        // Sync worktreePath from loaded review state into the store,
+        // validating that the directory still exists on disk.
+        const currentRepoPath = repoPath!; // guaranteed non-null by guard above
+        const {
+          reviewState: loadedReviewState,
+          worktreePath: currentWorktreePath,
+          comparison,
+        } = useReviewStore.getState();
+        if (loadedReviewState?.worktreePath && !currentWorktreePath) {
+          const client = getApiClient();
+          const wtPath = loadedReviewState.worktreePath;
+
+          // Validate worktree exists + check freshness in parallel
+          try {
+            const [worktreeSha, branchTipSha] = await Promise.all([
+              client.resolveRef(wtPath, "HEAD"),
+              comparison
+                ? client.resolveRef(currentRepoPath, comparison.head)
+                : Promise.resolve(""),
+            ]);
+            if (cancelled) return;
+            const { setWorktreePath, setWorktreeStale } =
+              useReviewStore.getState();
+            setWorktreePath(wtPath);
+            setWorktreeStale(!!branchTipSha && worktreeSha !== branchTipSha);
+          } catch {
+            // resolveRef failed — worktree directory is missing
+            console.warn(`Worktree directory missing: ${wtPath}`);
+            useReviewStore.getState().setWorktreePath(null);
+            if (comparison) {
+              client
+                .saveReviewState(currentRepoPath, {
+                  ...loadedReviewState,
+                  worktreePath: undefined,
+                  updatedAt: new Date().toISOString(),
+                })
+                .catch(() => {}); // Non-fatal
+            }
+          }
+        }
+
         // Sync total diff hunk count into review state for accurate sidebar progress
         syncTotalDiffHunks();
         // Run static (rule-based) classification only -- no AI on load

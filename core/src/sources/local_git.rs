@@ -3,6 +3,7 @@ use super::traits::{
     StatusEntry,
 };
 use crate::diff::parser::parse_diff;
+use crate::review::central;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -69,12 +70,18 @@ pub struct WorktreeInfo {
     pub branch: Option<String>,
     pub is_main: bool,
     pub commit_hash: String,
+    /// True when the worktree is in detached HEAD state (no branch).
+    pub is_detached: bool,
+    /// True when the worktree path is under `~/.review/worktrees/` (managed by Review).
+    pub is_review_managed: bool,
 }
 
 #[derive(Error, Debug)]
 pub enum LocalGitError {
     #[error("Git error: {0}")]
     Git(String),
+    #[error("WORKTREE_EXISTS:{0}")]
+    WorktreeExists(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Not a git repository")]
@@ -350,12 +357,27 @@ impl LocalGitSource {
             (None, None)
         };
 
-        // Get worktree info for cross-referencing
+        // Build branch→worktree_path map from two sources:
+        // 1. Git worktrees (non-detached, have a branch name)
+        // 2. Review-managed worktrees (detached HEAD, matched via saved review state)
         let worktrees = self.list_worktrees().unwrap_or_default();
-        let worktree_map: HashMap<String, String> = worktrees
+        let mut worktree_map: HashMap<String, String> = worktrees
             .iter()
             .filter_map(|wt| wt.branch.as_ref().map(|b| (b.clone(), wt.path.clone())))
             .collect();
+
+        // Add review-managed worktrees (detached HEAD, not in git's branch map)
+        if let Ok(reviews) = crate::review::storage::list_saved_reviews(&self.repo_path) {
+            for r in reviews {
+                if let Some(wt_path) = r.worktree_path {
+                    if !worktree_map.contains_key(&r.comparison.head)
+                        && std::path::Path::new(&wt_path).exists()
+                    {
+                        worktree_map.insert(r.comparison.head, wt_path);
+                    }
+                }
+            }
+        }
 
         // Try batch approach first using %(ahead-behind:<ref>) (Git 2.36+)
         // This gets all ahead counts in a single git call instead of N+1
@@ -389,10 +411,8 @@ impl LocalGitSource {
             }
         };
 
-        // Ensure the current branch with working tree changes is sorted first
-        // (it's the most relevant item for local work)
+        // Current branch with working tree changes first, then by recency
         branches.sort_by(|a, b| {
-            // Current branch with working tree changes always first
             let a_wt = a.is_current && a.has_working_tree_changes;
             let b_wt = b.is_current && b.has_working_tree_changes;
             b_wt.cmp(&a_wt)
@@ -447,21 +467,56 @@ impl LocalGitSource {
             let last_commit_date = parts.get(2).unwrap_or(&"").trim().to_owned();
             let last_commit_message = parts.get(3).unwrap_or(&"").trim().to_owned();
 
-            let is_wt = is_current && has_wt_changes;
-            branches.push(LocalBranchInfo {
-                is_current,
-                has_working_tree_changes: is_wt,
-                worktree_path: worktree_map.get(&name).cloned(),
+            branches.push(self.build_branch_info(
                 name,
+                is_current,
                 commits_ahead,
                 last_commit_date,
                 last_commit_message,
-                last_modified_at: if is_wt { *wt_last_modified } else { None },
-                working_tree_stats: if is_wt { wt_stats.clone() } else { None },
-            });
+                has_wt_changes,
+                wt_stats,
+                wt_last_modified,
+                worktree_map,
+            ));
         }
 
         branches
+    }
+
+    /// Build a `LocalBranchInfo` for a single branch, resolving worktree change status.
+    fn build_branch_info(
+        &self,
+        name: String,
+        is_current: bool,
+        commits_ahead: u32,
+        last_commit_date: String,
+        last_commit_message: String,
+        has_wt_changes: bool,
+        wt_stats: &Option<DiffShortStat>,
+        wt_last_modified: &Option<u64>,
+        worktree_map: &HashMap<String, String>,
+    ) -> LocalBranchInfo {
+        let wt_path = worktree_map.get(&name);
+        let (has_changes, last_mod, stats) = if is_current {
+            (has_wt_changes, *wt_last_modified, wt_stats.clone())
+        } else if let Some(path) = wt_path {
+            let changed = self.has_worktree_changes(path).unwrap_or(false);
+            (changed, None, None)
+        } else {
+            (false, None, None)
+        };
+
+        LocalBranchInfo {
+            is_current,
+            has_working_tree_changes: has_changes,
+            worktree_path: wt_path.cloned(),
+            name,
+            commits_ahead,
+            last_commit_date,
+            last_commit_message,
+            last_modified_at: last_mod,
+            working_tree_stats: stats,
+        }
     }
 
     /// Fallback for Git < 2.36 that doesn't support `%(ahead-behind:)`.
@@ -517,17 +572,26 @@ impl LocalGitSource {
                 continue;
             }
 
-            let is_wt = is_current && has_wt_changes;
+            let wt_path = worktree_map.get(&name);
+            let (has_changes, last_mod, stats) = if is_current {
+                (has_wt_changes, *wt_last_modified, wt_stats.clone())
+            } else if let Some(path) = wt_path {
+                let changed = self.has_worktree_changes(path).unwrap_or(false);
+                (changed, None, None)
+            } else {
+                (false, None, None)
+            };
+
             branches.push(LocalBranchInfo {
                 is_current,
-                has_working_tree_changes: is_wt,
-                worktree_path: worktree_map.get(&name).cloned(),
+                has_working_tree_changes: has_changes,
+                worktree_path: wt_path.cloned(),
                 name,
                 commits_ahead,
                 last_commit_date,
                 last_commit_message,
-                last_modified_at: if is_wt { *wt_last_modified } else { None },
-                working_tree_stats: if is_wt { wt_stats.clone() } else { None },
+                last_modified_at: last_mod,
+                working_tree_stats: stats,
             });
         }
 
@@ -570,30 +634,65 @@ impl LocalGitSource {
     /// Parses `git worktree list --porcelain` output.
     pub fn list_worktrees(&self) -> Result<Vec<WorktreeInfo>, LocalGitError> {
         let output = self.run_git(&["worktree", "list", "--porcelain"])?;
+
+        // Compute the review-managed worktree prefix for detection.
+        // Any worktree under <central-root>/worktrees/ is review-managed.
+        // Canonicalize the root to handle symlinks (e.g., /var -> /private/var on macOS).
+        let review_worktree_prefix = central::get_central_root().ok().map(|root| {
+            // Canonicalize the root (which exists), then append "worktrees".
+            // The worktrees dir itself may not exist yet, so we can't canonicalize it directly.
+            let canonical_root = root.canonicalize().unwrap_or(root);
+            canonical_root
+                .join("worktrees")
+                .to_string_lossy()
+                .to_string()
+        });
+
         let mut worktrees = Vec::new();
 
         let mut current_path: Option<String> = None;
         let mut current_hash = String::new();
         let mut current_branch: Option<String> = None;
         let mut is_bare = false;
+        let mut is_detached = false;
+
+        let flush = |worktrees: &mut Vec<WorktreeInfo>,
+                     path: String,
+                     branch: Option<String>,
+                     hash: String,
+                     detached: bool| {
+            let is_review_managed = review_worktree_prefix
+                .as_ref()
+                .is_some_and(|prefix| path.starts_with(prefix));
+            worktrees.push(WorktreeInfo {
+                path,
+                branch,
+                is_main: worktrees.is_empty(),
+                commit_hash: hash,
+                is_detached: detached,
+                is_review_managed,
+            });
+        };
 
         for line in output.lines() {
             if let Some(path) = line.strip_prefix("worktree ") {
                 // Save previous worktree if any
-                if let Some(path) = current_path.take() {
+                if let Some(prev_path) = current_path.take() {
                     if !is_bare {
-                        worktrees.push(WorktreeInfo {
-                            path,
-                            branch: current_branch.take(),
-                            is_main: worktrees.is_empty(), // First worktree is main
-                            commit_hash: std::mem::take(&mut current_hash),
-                        });
+                        flush(
+                            &mut worktrees,
+                            prev_path,
+                            current_branch.take(),
+                            std::mem::take(&mut current_hash),
+                            is_detached,
+                        );
                     }
                 }
                 current_path = Some(path.to_owned());
                 current_hash = String::new();
                 current_branch = None;
                 is_bare = false;
+                is_detached = false;
             } else if let Some(hash) = line.strip_prefix("HEAD ") {
                 current_hash = hash.trim().to_owned();
             } else if let Some(branch_ref) = line.strip_prefix("branch ") {
@@ -603,22 +702,122 @@ impl LocalGitSource {
                     .or_else(|| Some(branch_ref.to_owned()));
             } else if line == "bare" {
                 is_bare = true;
+            } else if line == "detached" {
+                is_detached = true;
             }
         }
 
         // Don't forget the last entry
         if let Some(path) = current_path {
             if !is_bare {
-                worktrees.push(WorktreeInfo {
+                flush(
+                    &mut worktrees,
                     path,
-                    branch: current_branch,
-                    is_main: worktrees.is_empty(),
-                    commit_hash: current_hash,
-                });
+                    current_branch,
+                    current_hash,
+                    is_detached,
+                );
             }
         }
 
         Ok(worktrees)
+    }
+
+    /// Create a review-managed worktree at `~/.review/worktrees/<repo-hash>/<name>/`.
+    ///
+    /// Uses `--detach` to avoid "branch already checked out" conflicts.
+    /// The ref is resolved internally to a commit SHA, eliminating TOCTOU races.
+    pub fn create_review_worktree(
+        &self,
+        name: &str,
+        git_ref: &str,
+    ) -> Result<WorktreeInfo, LocalGitError> {
+        // Resolve the ref to a commit SHA atomically
+        let commit_sha = self.resolve_ref_or_empty_tree(git_ref);
+
+        let base_dir = central::get_worktree_base_dir(&self.repo_path)
+            .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
+
+        // Ensure the parent directory exists
+        std::fs::create_dir_all(&base_dir)?;
+
+        let sanitized = central::sanitize_path_component(name);
+        let worktree_path = base_dir.join(&sanitized);
+        let path_str = worktree_path.to_string_lossy();
+        self.run_git(&["worktree", "add", "--detach", &path_str, &commit_sha])
+            .map_err(|e| match &e {
+                LocalGitError::Git(msg) if msg.contains("already exists") => {
+                    LocalGitError::WorktreeExists(path_str.to_string())
+                }
+                _ => e,
+            })?;
+
+        // Canonicalize the path after creation so it matches what git reports
+        let canonical_path = worktree_path
+            .canonicalize()
+            .unwrap_or(worktree_path)
+            .to_string_lossy()
+            .to_string();
+
+        Ok(WorktreeInfo {
+            path: canonical_path,
+            branch: None,
+            is_main: false,
+            commit_hash: commit_sha,
+            is_detached: true,
+            is_review_managed: true,
+        })
+    }
+
+    /// Remove a review-managed worktree.
+    ///
+    /// Runs `git worktree prune` first to clean up stale references,
+    /// then `git worktree remove --force` to remove the worktree.
+    /// Validate that a worktree path is under the review-managed directory.
+    fn validate_review_worktree_path(&self, worktree_path: &str) -> Result<(), LocalGitError> {
+        let base_dir = central::get_worktree_base_dir(&self.repo_path)
+            .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
+        let canonical_base = base_dir.canonicalize().unwrap_or(base_dir);
+        let canonical_wt = std::path::Path::new(worktree_path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(worktree_path));
+        if !canonical_wt.starts_with(&canonical_base) {
+            return Err(LocalGitError::Git(format!(
+                "Path is not a review-managed worktree: {worktree_path}"
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn remove_review_worktree(&self, worktree_path: &str) -> Result<(), LocalGitError> {
+        self.validate_review_worktree_path(worktree_path)?;
+        let _ = self.run_git(&["worktree", "prune"]);
+        self.run_git(&["worktree", "remove", "--force", worktree_path])?;
+        Ok(())
+    }
+
+    /// Check if a worktree has uncommitted changes.
+    pub fn has_worktree_changes(&self, worktree_path: &str) -> Result<bool, LocalGitError> {
+        self.validate_review_worktree_path(worktree_path)?;
+        let output = self.run_git_in(
+            std::path::Path::new(worktree_path),
+            &["status", "--porcelain"],
+        )?;
+        Ok(!output.is_empty())
+    }
+
+    /// Update a worktree's HEAD to a new commit (detached).
+    pub fn update_worktree_head(
+        &self,
+        worktree_path: &str,
+        commit_sha: &str,
+    ) -> Result<(), LocalGitError> {
+        self.validate_review_worktree_path(worktree_path)?;
+        self.run_git_in(
+            std::path::Path::new(worktree_path),
+            &["checkout", "--detach", commit_sha],
+        )?;
+        Ok(())
     }
 
     /// Get structured git status (staged, unstaged, untracked)
@@ -862,18 +1061,12 @@ impl LocalGitSource {
     }
 
     fn run_git(&self, args: &[&str]) -> Result<String, LocalGitError> {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.repo_path)
-            .output()?;
+        run_git_cmd(&self.repo_path, args)
+    }
 
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        } else {
-            Err(LocalGitError::Git(
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            ))
-        }
+    /// Run a git command in a directory other than `self.repo_path`.
+    fn run_git_in(&self, dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitError> {
+        run_git_cmd(dir, args)
     }
 
     fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, LocalGitError> {
@@ -1781,6 +1974,19 @@ impl DiffSource for LocalGitSource {
     }
 }
 
+/// Run a git command in the given directory, returning stdout or a `LocalGitError`.
+fn run_git_cmd(dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitError> {
+    let output = Command::new("git").args(args).current_dir(dir).output()?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(LocalGitError::Git(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
+    }
+}
+
 /// Parse a git remote URL into a `RemoteInfo` with org/repo name and browse URL.
 ///
 /// Supported formats:
@@ -1945,4 +2151,74 @@ fn build_selective_patch(
     }
 
     Ok(patch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::review::central::tests::{setup_test, EnvGuard};
+
+    /// Set up a temp git repo with REVIEW_HOME for worktree tests.
+    /// Returns (env_guard, review_home, repo_dir, source, head_sha). Caller must hold ENV_LOCK.
+    fn setup_worktree_test() -> (
+        EnvGuard,
+        tempfile::TempDir,
+        tempfile::TempDir,
+        LocalGitSource,
+        String,
+    ) {
+        let (env, review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+        run_git_cmd(repo_path, &["init"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]).unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let head_sha = source.resolve_ref_or_empty_tree("HEAD");
+        (env, review_home, repo_dir, source, head_sha)
+    }
+
+    #[test]
+    fn test_worktree_create_and_remove() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, _repo_dir, source, _head_sha) = setup_worktree_test();
+
+        let wt = source
+            .create_review_worktree("test-branch", "HEAD")
+            .unwrap();
+        assert!(wt.is_review_managed);
+        assert!(wt.is_detached);
+        assert!(std::path::Path::new(&wt.path).exists());
+
+        let worktrees = source.list_worktrees().unwrap();
+        assert!(worktrees.len() >= 2);
+        let review_wts: Vec<_> = worktrees.iter().filter(|w| w.is_review_managed).collect();
+        assert_eq!(review_wts.len(), 1);
+        assert_eq!(review_wts[0].path, wt.path);
+
+        source.remove_review_worktree(&wt.path).unwrap();
+        assert!(!std::path::Path::new(&wt.path).exists());
+
+        let worktrees = source.list_worktrees().unwrap();
+        let review_wts: Vec<_> = worktrees.iter().filter(|w| w.is_review_managed).collect();
+        assert_eq!(review_wts.len(), 0);
+    }
+
+    #[test]
+    fn test_worktree_create_duplicate_errors() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, _repo_dir, source, _head_sha) = setup_worktree_test();
+
+        source.create_review_worktree("dup-test", "HEAD").unwrap();
+
+        let result = source.create_review_worktree("dup-test", "HEAD");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .starts_with("WORKTREE_EXISTS:"));
+    }
 }

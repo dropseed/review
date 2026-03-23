@@ -250,6 +250,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const revealInBrowse = useReviewStore((s) => s.revealInBrowse);
+  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
 
   const revealLabel = REVEAL_LABEL;
 
@@ -336,7 +337,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
       );
     }
 
-    if (!hasChanges || !reviewProgress) {
+    if (!hasChanges || !reviewProgress || readOnlyPreview) {
       return null;
     }
 

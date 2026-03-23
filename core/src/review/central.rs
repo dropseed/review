@@ -47,6 +47,12 @@ pub struct RepoIndex {
     pub repos: HashMap<String, RepoIndexEntry>,
 }
 
+/// Sanitize a string for use as a filename or directory name.
+/// Replaces characters that are problematic in file paths: `/\:*?"<>|` → `_`.
+pub fn sanitize_path_component(name: &str) -> String {
+    name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+}
+
 /// Return the central storage root.
 ///
 /// Uses `$REVIEW_HOME` if set, otherwise `~/.review/`.
@@ -66,7 +72,7 @@ fn canonical_path(repo_path: &Path) -> PathBuf {
 }
 
 /// Compute a 16-character hex repo ID from the canonical path.
-fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
+pub(crate) fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
     let canonical = canonical_path(repo_path);
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
@@ -79,6 +85,15 @@ pub fn get_repo_storage_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
     let root = get_central_root()?;
     let repo_id = compute_repo_id(repo_path)?;
     Ok(root.join("repos").join(repo_id))
+}
+
+/// Get the base directory for review-managed worktrees for a given repo.
+///
+/// Returns `~/.review/worktrees/<repo-hash>/`.
+pub fn get_worktree_base_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
+    let root = get_central_root()?;
+    let repo_id = compute_repo_id(repo_path)?;
+    Ok(root.join("worktrees").join(repo_id))
 }
 
 /// Load the global repo index.
@@ -180,17 +195,25 @@ pub(crate) mod tests {
     use tempfile::TempDir;
 
     /// Mutex to serialize tests that modify REVIEW_HOME env var.
-    /// Also used by storage::tests.
+    /// Also used by storage::tests and local_git::tests.
     pub static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Guard that restores REVIEW_HOME on drop (even on panic).
+    pub struct EnvGuard;
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var("REVIEW_HOME");
+        }
+    }
+
     /// Create a REVIEW_HOME temp dir and a fake repo temp dir.
-    /// Returns (review_home, repo_dir) — both TempDirs kept alive.
+    /// Returns (env_guard, review_home, repo_dir) — all kept alive.
     /// Caller MUST hold ENV_LOCK.
-    fn setup_test() -> (TempDir, TempDir) {
+    pub fn setup_test() -> (EnvGuard, TempDir, TempDir) {
         let review_home = TempDir::new().unwrap();
         std::env::set_var("REVIEW_HOME", review_home.path());
         let repo_dir = TempDir::new().unwrap();
-        (review_home, repo_dir)
+        (EnvGuard, review_home, repo_dir)
     }
 
     #[test]
@@ -214,7 +237,7 @@ pub(crate) mod tests {
     #[test]
     fn test_register_and_list_repos() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_review_home, repo_dir) = setup_test();
+        let (_env, _review_home, repo_dir) = setup_test();
         register_repo(repo_dir.path()).unwrap();
 
         let repos = list_registered_repos().unwrap();
@@ -224,7 +247,7 @@ pub(crate) mod tests {
     #[test]
     fn test_empty_index() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_review_home, _repo_dir) = setup_test();
+        let (_env, _review_home, _repo_dir) = setup_test();
         let repos = list_registered_repos().unwrap();
         assert!(repos.is_empty());
     }
@@ -232,7 +255,7 @@ pub(crate) mod tests {
     #[test]
     fn test_repo_storage_dir_structure() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_review_home, repo_dir) = setup_test();
+        let (_env, _review_home, repo_dir) = setup_test();
         register_repo(repo_dir.path()).unwrap();
 
         let storage_dir = get_repo_storage_dir(repo_dir.path()).unwrap();
@@ -240,5 +263,31 @@ pub(crate) mod tests {
         assert!(storage_dir.starts_with(&central_root));
         assert!(storage_dir.join("reviews").exists());
         assert!(storage_dir.join("repo.json").exists());
+    }
+
+    #[test]
+    fn test_sanitize_path_component_basic() {
+        assert_eq!(
+            sanitize_path_component("feature/my-branch"),
+            "feature_my-branch"
+        );
+        assert_eq!(
+            sanitize_path_component("main..feature/x"),
+            "main..feature_x"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_path_component_special_chars() {
+        assert_eq!(
+            sanitize_path_component(r#"a\b:c*d?"e<f>g|h"#),
+            "a_b_c_d__e_f_g_h"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_path_component_no_change() {
+        assert_eq!(sanitize_path_component("simple-name"), "simple-name");
+        assert_eq!(sanitize_path_component("main..feature"), "main..feature");
     }
 }

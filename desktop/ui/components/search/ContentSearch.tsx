@@ -5,6 +5,7 @@ import { useDebounce } from "../../hooks/useDebounce";
 import { HighlightedLine } from "../ui/HighlightedLine";
 import { groupSearchResultsByFile } from "../../utils/search";
 import { SimpleTooltip } from "../ui/tooltip";
+import { Spinner } from "../ui/spinner";
 import { Dialog, DialogOverlay, DialogPortal } from "../ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
@@ -200,7 +201,7 @@ export function ContentSearch({
                     </button>
                   </SimpleTooltip>
                   {searchLoading && (
-                    <div className="h-4 w-4 rounded-full border-2 border-edge-strong border-t-fg-secondary animate-spin" />
+                    <Spinner className="h-4 w-4 border-2 border-edge-strong border-t-fg-secondary" />
                   )}
                   {query && !searchLoading && (
                     <button

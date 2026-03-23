@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { SymbolKind } from "../../types";
 import type { EnrichedDefinition } from "../../hooks/useSymbolNavigation";
 import type { SymbolReferenceInDiff } from "../../utils/findSymbolReferencesInDiff";
+import { Spinner } from "../ui/spinner";
 
 interface SymbolPopoverProps {
   open: boolean;
@@ -184,7 +185,7 @@ export const SymbolPopover = memo(function SymbolPopover({
 
       {loading ? (
         <div className="flex items-center justify-center py-6">
-          <div className="h-5 w-5 rounded-full border-2 border-edge-default border-t-status-modified animate-spin" />
+          <Spinner className="h-5 w-5 border-2 border-edge-default border-t-status-modified" />
         </div>
       ) : (
         <>

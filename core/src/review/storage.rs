@@ -83,15 +83,9 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
     Ok(all)
 }
 
-/// Sanitize a comparison key for use as a filename
-/// Replaces characters that are problematic in filenames
-fn sanitize_key(key: &str) -> String {
-    key.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
-}
-
 /// Generate a filename for a comparison based on its key
 fn comparison_filename(comparison: &Comparison) -> String {
-    format!("{}.json", sanitize_key(&comparison.key))
+    format!("{}.json", central::sanitize_path_component(&comparison.key))
 }
 
 /// Load review state for a comparison
@@ -265,13 +259,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_key() {
-        assert_eq!(sanitize_key("main..HEAD"), "main..HEAD");
-        assert_eq!(sanitize_key("origin/main..HEAD"), "origin_main..HEAD");
-        assert_eq!(sanitize_key("main..HEAD"), "main..HEAD");
-        assert_eq!(sanitize_key("a:b*c?d"), "a_b_c_d");
-    }
-
     #[test]
     fn test_comparison_filename() {
         let comparison = create_test_comparison();

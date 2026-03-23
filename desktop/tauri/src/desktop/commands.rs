@@ -384,6 +384,76 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
 }
 
 #[tauri::command]
+pub fn create_review_worktree(
+    repo_path: String,
+    name: String,
+    git_ref: String,
+) -> Result<WorktreeInfo, String> {
+    let t0 = std::time::Instant::now();
+    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
+    let result = source
+        .create_review_worktree(&name, &git_ref)
+        .map_err(|e| e.to_string())?;
+    info!(
+        "create_review_worktree name={} ref={} path={} in {:?}",
+        name,
+        git_ref,
+        result.path,
+        t0.elapsed()
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn remove_review_worktree(repo_path: String, worktree_path: String) -> Result<(), String> {
+    let t0 = std::time::Instant::now();
+    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
+    source
+        .remove_review_worktree(&worktree_path)
+        .map_err(|e| e.to_string())?;
+    info!(
+        "remove_review_worktree path={} in {:?}",
+        worktree_path,
+        t0.elapsed()
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn resolve_ref(repo_path: String, git_ref: String) -> Result<String, String> {
+    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
+    Ok(source.resolve_ref_or_empty_tree(&git_ref))
+}
+
+#[tauri::command]
+pub fn has_worktree_changes(repo_path: String, worktree_path: String) -> Result<bool, String> {
+    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
+    source
+        .has_worktree_changes(&worktree_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_worktree_head(
+    repo_path: String,
+    worktree_path: String,
+    commit_sha: String,
+) -> Result<(), String> {
+    let t0 = std::time::Instant::now();
+    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
+    source
+        .update_worktree_head(&worktree_path, &commit_sha)
+        .map_err(|e| e.to_string())?;
+    info!(
+        "update_worktree_head path={} sha={} in {:?}",
+        worktree_path,
+        &commit_sha[..8.min(commit_sha.len())],
+        t0.elapsed()
+    );
+    Ok(())
+}
+
+#[tauri::command]
 pub fn list_all_local_activity() -> Result<Vec<RepoLocalActivity>, String> {
     review::service::activity::list_all_local_activity().map_err(|e| e.to_string())
 }

@@ -127,6 +127,10 @@ const comparisonResetState = {
   // History
   commits: [] as CommitEntry[],
   commitsLoaded: false,
+  // Worktree
+  worktreePath: null as string | null,
+  worktreeStale: false,
+  readOnlyPreview: false,
   // Other slices
   ...symbolsResetState,
   ...classificationResetState,
@@ -163,6 +167,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     loadedGitIgnoredDirs: new Set<string>(),
     refreshGeneration: 0,
     isStandaloneFile: false,
+    worktreePath: null,
+    worktreeStale: false,
 
     setRepoPath: (path) => {
       const currentPath = get().repoPath;

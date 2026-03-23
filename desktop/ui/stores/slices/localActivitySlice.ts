@@ -4,9 +4,6 @@ import type { SliceCreatorWithClientAndStorage } from "../types";
 import type { StorageService } from "../../platform";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 
-/** Default collapsed state for repos in the All view. */
-export const LOCAL_REPO_DEFAULT_COLLAPSED = true;
-
 /** Build a composite key for a branch within a repo. */
 export function makeBranchKey(repoPath: string, branch: string): string {
   return `${repoPath}:${branch}`;
@@ -21,10 +18,6 @@ export function statsHash(stats: DiffShortStat | null | undefined): string {
 export interface LocalActivitySlice {
   localActivity: RepoLocalActivity[];
   localActivityLoading: boolean;
-  /** Per-repo collapsed state in the Local section */
-  localRepoCollapsed: Record<string, boolean>;
-  /** Whether the Local section shows only branches with working tree changes or all branches */
-  localViewMode: "changes" | "all";
   /** "repoPath:branch" -> stats hash when the user last viewed this branch */
   lastSeenDiffStats: Record<string, string>;
 
@@ -35,8 +28,6 @@ export interface LocalActivitySlice {
     stats: DiffShortStat | null,
   ) => void;
   unregisterRepo: (repoPath: string) => Promise<void>;
-  toggleLocalRepoCollapsed: (repoPath: string) => void;
-  setLocalViewMode: (mode: "changes" | "all") => void;
 }
 
 export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
@@ -47,8 +38,6 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
   return {
     localActivity: [],
     localActivityLoading: false,
-    localRepoCollapsed: {},
-    localViewMode: "changes",
     lastSeenDiffStats: {},
 
     loadLocalActivity: async () => {
@@ -127,21 +116,6 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
     unregisterRepo: async (repoPath) => {
       await client.unregisterRepo(repoPath);
       get().loadLocalActivity();
-    },
-
-    toggleLocalRepoCollapsed: (repoPath) => {
-      const current =
-        get().localRepoCollapsed[repoPath] ?? LOCAL_REPO_DEFAULT_COLLAPSED;
-      set({
-        localRepoCollapsed: {
-          ...get().localRepoCollapsed,
-          [repoPath]: !current,
-        },
-      });
-    },
-
-    setLocalViewMode: (mode) => {
-      set({ localViewMode: mode });
     },
   };
 };
