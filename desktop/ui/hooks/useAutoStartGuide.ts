@@ -107,9 +107,12 @@ export function useAutoStartGuide(): void {
       } else if (hasGroups && !stale) {
         // Groups exist and are fresh — nothing to do
         console.log("[auto-guide] Skipped: groups exist and are fresh");
-      } else if (state.changesViewMode === "guide") {
-        // Guide already active with no groups — skip (startGuide handles this)
-        console.log("[auto-guide] Skipped: guide already active");
+      } else if (
+        state.getActiveGroupingEntry().guideLoading ||
+        state.getActiveGroupingEntry().groupingLoading
+      ) {
+        // Guide already loading with no groups — skip (startGuide handles this)
+        console.log("[auto-guide] Skipped: guide already loading");
       } else {
         // No groups yet — first-time auto-start
         console.log("[auto-guide] Auto-starting generation for", reviewKey);

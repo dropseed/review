@@ -8,7 +8,7 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
-import { GuideSideNav } from "./components/GuideSideNav";
+import { AgentPanel } from "./components/Agent/AgentPanel";
 import { SidebarPanelIcon } from "./components/ui/icons";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
@@ -39,8 +39,6 @@ const SettingsModal = lazy(() =>
 function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
-  const changesViewMode = useReviewStore((s) => s.changesViewMode);
-
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
@@ -121,23 +119,21 @@ function AppShell() {
 
   useWindowTitle(repoPath, comparison, comparisonReady);
 
-  const guideActive = changesViewMode === "guide";
+  const agentPanelOpen = useReviewStore((s) => s.agentPanelOpen);
 
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen">
-        {/* Left sidebar: TabRail (normal) or GuideSideNav (guide mode) */}
-        {guideActive ? (
-          <div className="flex shrink-0 p-2">
-            <GuideSideNav />
-          </div>
-        ) : (
-          <TabRail
-            onActivateReview={handleActivateReview}
-            onActivateLocalBranch={handleActivateLocalBranch}
-            onOpenSettings={() => setShowSettings(true)}
-          />
-        )}
+        {/* Left sidebar */}
+        <TabRail
+          onActivateReview={handleActivateReview}
+          onActivateLocalBranch={handleActivateLocalBranch}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+
+        {/* Agent chat panel (collapsible) */}
+        {agentPanelOpen && <AgentPanel />}
+
         <div className="flex flex-1 flex-col overflow-hidden bg-surface">
           <Outlet
             context={{

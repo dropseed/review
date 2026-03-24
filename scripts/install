@@ -19,6 +19,7 @@ ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 
 # Install npm dependencies
 (cd desktop && npm install)
+(cd desktop/agent && npm install)
 
 # Build core Rust crate (desktop crate requires sidecar binary, built separately)
 cargo build -p review

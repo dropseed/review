@@ -12,9 +12,8 @@ interface ReviewBreadcrumbProps {
 function SidebarToggle(): ReactNode {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
-  const changesViewMode = useReviewStore((s) => s.changesViewMode);
 
-  if (!collapsed || changesViewMode === "guide") return null;
+  if (!collapsed) return null;
 
   return (
     <SimpleTooltip content="Show sidebar (\u2318B)">
@@ -46,18 +45,8 @@ export function ReviewBreadcrumb({
   comparison,
 }: ReviewBreadcrumbProps): ReactNode {
   const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
-  const gitStatus = useReviewStore((s) => s.gitStatus);
   const currentBranch = useReviewStore((s) => s.currentBranch);
   const isPr = !!githubPr;
-
-  const workingTreeChangeCount =
-    (gitStatus?.staged.length ?? 0) +
-    (gitStatus?.unstaged.length ?? 0) +
-    (gitStatus?.untracked.length ?? 0);
-  const showWorkingTree =
-    comparison !== null &&
-    gitStatus?.currentBranch === comparison.head &&
-    workingTreeChangeCount > 0;
 
   return (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -76,25 +65,6 @@ export function ReviewBreadcrumb({
             >
               {getOverviewLabel(comparison, githubPr)}
             </span>
-            {showWorkingTree && (
-              <SimpleTooltip content="Includes uncommitted working tree changes">
-                <button
-                  type="button"
-                  onClick={() => {
-                    useReviewStore.setState({
-                      filesPanelCollapsed: false,
-                      requestedFilesPanelTab: "git",
-                    });
-                  }}
-                  className="flex items-center gap-1 ml-0.5 rounded px-1 py-0.5 hover:bg-surface-raised transition-colors"
-                >
-                  <span className="text-xxs text-status-modified/70 font-medium">
-                    <span className="@lg:hidden">+wt</span>
-                    <span className="hidden @lg:inline">+ working tree</span>
-                  </span>
-                </button>
-              </SimpleTooltip>
-            )}
           </>
         ) : currentBranch ? (
           <>

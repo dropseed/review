@@ -17,6 +17,7 @@ interface CollapsibleSectionProps {
   icon?: ReactNode;
   badge?: number | string;
   badgeColor?: string;
+  statusBadge?: ReactNode;
   isOpen: boolean;
   onToggle: () => void;
   actionContent?: ReactNode;
@@ -29,6 +30,7 @@ export function CollapsibleSection({
   icon,
   badge,
   badgeColor = "bg-status-modified/20 text-status-modified",
+  statusBadge,
   isOpen,
   onToggle,
   actionContent,
@@ -44,7 +46,10 @@ export function CollapsibleSection({
           <CollapsibleTrigger asChild>
             <button className="flex flex-1 items-center gap-2 pl-3 pr-2 py-2 text-left text-xs font-medium text-fg-secondary hover:bg-surface-raised/50 focus-visible:outline-hidden focus-visible:inset-ring-2 focus-visible:inset-ring-focus-ring/50">
               {icon}
-              <span className="flex-1">{title}</span>
+              <span className="flex-1 flex items-center gap-1.5">
+                {title}
+                {statusBadge}
+              </span>
               {badge !== undefined && badge !== 0 && (
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${badgeColor}`}

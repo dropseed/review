@@ -30,6 +30,8 @@ import { GitStatusPanel } from "./GitStatusPanel";
 import { ReviewNotesPanel } from "./ReviewNotesPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
+import { GuideGroupList, useGuideGroupState } from "./GuideGroupList";
+import { XIcon } from "../ui/icons";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
@@ -93,6 +95,16 @@ const REVIEWED_ICON = (
   </svg>
 );
 
+const GUIDE_ICON = (
+  <svg
+    className="h-3.5 w-3.5 text-guide"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+  >
+    <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+  </svg>
+);
+
 /** Collect all directory paths from a processed tree (for expand/collapse) */
 function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
   const paths = new Set<string>();
@@ -129,6 +141,8 @@ function SectionHeader({
   onExpandAll,
   onCollapseAll,
   additionalMenuContent,
+  actionContent,
+  statusBadge,
   children,
 }: {
   title: string;
@@ -138,7 +152,8 @@ function SectionHeader({
     | "status-modified"
     | "status-approved"
     | "status-trusted"
-    | "status-pending";
+    | "status-pending"
+    | "guide";
   isOpen: boolean;
   onToggle: () => void;
   onApproveAll?: () => void;
@@ -148,6 +163,8 @@ function SectionHeader({
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   additionalMenuContent?: React.ReactNode;
+  actionContent?: React.ReactNode;
+  statusBadge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const badgeColors = {
@@ -155,6 +172,7 @@ function SectionHeader({
     "status-approved": "bg-status-approved/20 text-status-approved",
     "status-trusted": "bg-status-trusted/20 text-status-trusted",
     "status-pending": "bg-status-pending/20 text-status-pending",
+    guide: "bg-guide/15 text-guide",
   };
 
   const hasExpandCollapse = onExpandAll || onCollapseAll;
@@ -253,8 +271,10 @@ function SectionHeader({
       icon={icon}
       badge={badge}
       badgeColor={badgeColors[badgeColor]}
+      statusBadge={statusBadge}
       isOpen={isOpen}
       onToggle={onToggle}
+      actionContent={actionContent}
       menuContent={menuContent}
     >
       {children}
@@ -332,6 +352,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   // Approval actions
   const { handleApproveAll, handleUnapproveAll, handleRejectAll } =
     useFilePanelApproval();
+
+  // Guided review state
+  const { guideActive } = useGuideGroupState();
+  const startGuide = useReviewStore((s) => s.startGuide);
+  const exitGuide = useReviewStore((s) => s.exitGuide);
+  const generateGrouping = useReviewStore((s) => s.generateGrouping);
+  const clearGrouping = useReviewStore((s) => s.clearGrouping);
+  const groupingLoading = useReviewStore(
+    (s) => s.getActiveGroupingEntry().groupingLoading,
+  );
 
   // Changes display mode (tree vs flat) — one toggle per panel
   const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
@@ -998,6 +1028,20 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                   icon={NEEDS_REVIEW_ICON}
                   badge={stats.pending}
                   badgeColor="status-pending"
+                  statusBadge={
+                    guideActive ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-guide/10 px-1.5 py-0.5 text-xxs font-medium text-guide">
+                        <svg
+                          className="h-2.5 w-2.5"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
+                          <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                        </svg>
+                        Guided
+                      </span>
+                    ) : undefined
+                  }
                   isOpen={needsReviewOpen}
                   onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
                   onApproveAll={
@@ -1005,24 +1049,73 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       ? handleApproveAllHunks
                       : undefined
                   }
-                  quickActions={needsReviewQuickActions}
+                  quickActions={
+                    guideActive ? undefined : needsReviewQuickActions
+                  }
                   onExpandAll={
-                    changesDisplayMode === "tree"
+                    !guideActive && changesDisplayMode === "tree"
                       ? () => expandAll(needsReviewDirPaths, renamedDirPaths)
                       : undefined
                   }
                   onCollapseAll={
-                    changesDisplayMode === "tree" ? collapseAll : undefined
+                    !guideActive && changesDisplayMode === "tree"
+                      ? collapseAll
+                      : undefined
+                  }
+                  actionContent={
+                    guideActive ? (
+                      <button
+                        type="button"
+                        onClick={exitGuide}
+                        className="flex items-center justify-center w-6 h-6 rounded
+                                   text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+                        aria-label="Exit guided review"
+                      >
+                        <XIcon className="w-3.5 h-3.5" />
+                      </button>
+                    ) : pendingHunkIds.length >= 4 ? (
+                      <button
+                        type="button"
+                        onClick={() => startGuide()}
+                        className="flex items-center justify-center w-6 h-6 rounded
+                                   text-guide hover:bg-guide/10 transition-colors"
+                        aria-label="Start guided review"
+                      >
+                        {GUIDE_ICON}
+                      </button>
+                    ) : undefined
+                  }
+                  additionalMenuContent={
+                    guideActive ? (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => generateGrouping()}
+                          disabled={groupingLoading}
+                        >
+                          Regenerate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={clearGrouping}
+                          disabled={groupingLoading}
+                        >
+                          Clear grouping
+                        </DropdownMenuItem>
+                      </>
+                    ) : undefined
                   }
                 >
-                  <FileListSection
-                    treeEntries={sectionedFiles.needsReview}
-                    flatFilePaths={flatSectionedFiles.needsReview}
-                    displayMode={changesDisplayMode}
-                    hunkContext="needs-review"
-                    emptyIcon={CHECK_ICON}
-                    emptyMessage="No files need review"
-                  />
+                  {guideActive ? (
+                    <GuideGroupList />
+                  ) : (
+                    <FileListSection
+                      treeEntries={sectionedFiles.needsReview}
+                      flatFilePaths={flatSectionedFiles.needsReview}
+                      displayMode={changesDisplayMode}
+                      hunkContext="needs-review"
+                      emptyIcon={CHECK_ICON}
+                      emptyMessage="No files need review"
+                    />
+                  )}
                 </SectionHeader>
 
                 {/* Saved for Later section */}
