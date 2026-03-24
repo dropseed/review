@@ -8,7 +8,6 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
-import { AgentPanel } from "./components/Agent/AgentPanel";
 import { SidebarPanelIcon } from "./components/ui/icons";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
@@ -119,8 +118,6 @@ function AppShell() {
 
   useWindowTitle(repoPath, comparison, comparisonReady);
 
-  const agentPanelOpen = useReviewStore((s) => s.agentPanelOpen);
-
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen">
@@ -130,9 +127,6 @@ function AppShell() {
           onActivateLocalBranch={handleActivateLocalBranch}
           onOpenSettings={() => setShowSettings(true)}
         />
-
-        {/* Agent chat panel (collapsible) */}
-        {agentPanelOpen && <AgentPanel />}
 
         <div className="flex flex-1 flex-col overflow-hidden bg-surface">
           <Outlet

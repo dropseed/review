@@ -777,20 +777,6 @@ export class HttpClient implements ApiClient {
     // No-op in browser
   }
 
-  // ----- Agent -----
-
-  async agentSendMessage(): Promise<never> {
-    throw new Error("Agent not supported in web mode");
-  }
-
-  onAgentEvent(): () => void {
-    return () => {};
-  }
-
-  async agentCancel(): Promise<void> {
-    // No-op in web mode
-  }
-
   // ----- Web-only methods -----
 
   async resolveRepoPath(routePrefix: string): Promise<string | null> {

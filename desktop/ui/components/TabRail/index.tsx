@@ -478,39 +478,6 @@ function SidebarSection({
   );
 }
 
-function AgentToggleButton(): ReactNode {
-  const agentPanelOpen = useReviewStore((s) => s.agentPanelOpen);
-  const toggleAgentPanel = useReviewStore((s) => s.toggleAgentPanel);
-
-  return (
-    <button
-      type="button"
-      onClick={toggleAgentPanel}
-      className={`p-1.5 rounded transition-colors duration-100 ${
-        agentPanelOpen
-          ? "text-fg-secondary bg-fg/[0.08]"
-          : "text-fg-faint hover:text-fg-muted hover:bg-fg/[0.06]"
-      }`}
-      aria-label={agentPanelOpen ? "Close agent panel" : "Open agent panel"}
-    >
-      <svg
-        className="h-3.5 w-3.5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 14 23h-4a7 7 0 0 1-6.73-4H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-        <circle cx="10" cy="16" r="1" fill="currentColor" />
-        <circle cx="14" cy="16" r="1" fill="currentColor" />
-      </svg>
-    </button>
-  );
-}
-
 interface TabRailProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
   onActivateLocalBranch: (
@@ -635,7 +602,6 @@ export const TabRail = memo(function TabRail({
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
                 </button>
-                <AgentToggleButton />
                 <LspStatusIndicator />
               </div>
               <FooterVersionInfo

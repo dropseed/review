@@ -151,9 +151,6 @@ pub fn run() {
         .manage(commands::LspServers(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
-        .manage(commands::AgentState(tokio::sync::Mutex::new(
-            commands::AgentSidecar::new(),
-        )))
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -618,8 +615,6 @@ pub fn run() {
             commands::lsp_goto_definition,
             commands::lsp_hover,
             commands::lsp_find_references,
-            commands::agent_send_message,
-            commands::agent_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

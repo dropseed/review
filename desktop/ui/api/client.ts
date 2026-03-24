@@ -42,8 +42,6 @@ import type {
   ReviewFreshnessInput,
   ReviewFreshnessResult,
   WorktreeInfo,
-  AgentEvent,
-  AgentResult,
 } from "../types";
 
 export interface ApiClient {
@@ -457,25 +455,6 @@ export interface ApiClient {
 
   /** Resolve a route prefix (e.g., "owner/repo") to a local filesystem path */
   resolveRepoPath?(routePrefix: string): Promise<string | null>;
-
-  // ----- Agent -----
-
-  /** Send a message to the Claude agent, returns the final result */
-  agentSendMessage(
-    repoPath: string,
-    message: string,
-    requestId: string,
-    sessionId?: string,
-  ): Promise<AgentResult>;
-
-  /** Listen for streaming agent events (returns unsubscribe fn) */
-  onAgentEvent(
-    requestId: string,
-    callback: (event: AgentEvent) => void,
-  ): () => void;
-
-  /** Cancel an in-flight agent request */
-  agentCancel(requestId: string): Promise<void>;
 }
 
 /**
