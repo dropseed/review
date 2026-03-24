@@ -8,7 +8,10 @@ interface MarkdownViewerProps {
   /** Repo-relative path of the file being rendered (for resolving relative links). */
   filePath?: string;
   /** Called when a relative file link is clicked (resolved repo-relative path). */
-  onNavigateToFile?: (repoRelativePath: string) => void;
+  onNavigateToFile?: (
+    repoRelativePath: string,
+    options?: { openInSplit?: boolean },
+  ) => void;
 }
 
 export function MarkdownViewer({

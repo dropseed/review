@@ -28,7 +28,10 @@ interface FileContentRendererProps {
   ) => void;
   updateAnnotation: (id: string, content: string) => void;
   deleteAnnotation: (id: string) => void;
-  onNavigateToFile?: (repoRelativePath: string) => void;
+  onNavigateToFile?: (
+    repoRelativePath: string,
+    options?: { openInSplit?: boolean },
+  ) => void;
 }
 
 export const FileContentRenderer = memo(function FileContentRenderer({

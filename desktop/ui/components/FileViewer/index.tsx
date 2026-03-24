@@ -395,15 +395,18 @@ export function FileViewer({
     [addAnnotation, filePath],
   );
 
-  // Navigate to a file linked from markdown preview
+  // Navigate to a file linked from markdown preview.
+  // Cmd+Click opens in split view; plain click navigates the current pane.
   const handleNavigateToFile = useCallback(
-    (repoRelativePath: string) => {
+    (repoRelativePath: string, options?: { openInSplit?: boolean }) => {
       const state = useReviewStore.getState();
-      if (state.flatFileList.includes(repoRelativePath)) {
-        // File is in the diff — navigate to it
+      const inDiff = state.flatFileList.includes(repoRelativePath);
+
+      if (options?.openInSplit && inDiff) {
+        state.openInSplit(repoRelativePath);
+      } else if (inDiff) {
         state.setSelectedFile(repoRelativePath);
       } else if (repoPath) {
-        // File isn't in the diff — open as external read-only file
         state.setExternalFile(repoPath + "/" + repoRelativePath);
       }
     },

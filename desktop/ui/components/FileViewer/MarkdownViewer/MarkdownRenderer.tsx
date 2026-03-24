@@ -27,7 +27,10 @@ interface MarkdownRendererProps {
   /** Repo-relative path of the file being rendered (for resolving relative links). */
   filePath?: string;
   /** Called when a relative file link is clicked (resolved repo-relative path). */
-  onNavigateToFile?: (repoRelativePath: string) => void;
+  onNavigateToFile?: (
+    repoRelativePath: string,
+    options?: { openInSplit?: boolean },
+  ) => void;
 }
 
 export function MarkdownRenderer({
@@ -90,7 +93,7 @@ export function MarkdownRenderer({
             href={href}
             onClick={(e) => {
               e.preventDefault();
-              onNavigateToFile(resolved);
+              onNavigateToFile(resolved, { openInSplit: e.metaKey });
             }}
           >
             {children}
