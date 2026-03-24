@@ -78,6 +78,7 @@ export interface GroupingSlice {
   getActiveGroupingEntry: () => GroupingEntry;
   isReviewBusy: (reviewKey: string) => boolean;
   removeGroupingEntry: (reviewKey: string) => void;
+  migrateGroupingEntry: (oldKey: string, newKey: string) => void;
 
   isGroupingStale: () => boolean;
   getGroupingStaleness: () => GroupingStaleness;
@@ -94,6 +95,7 @@ export interface GroupingSlice {
   setAutoStartSecondsRemaining: (value: number | null) => void;
 
   // Guide state
+  guideExpanded: boolean;
   startGuide: () => Promise<void>;
   exitGuide: () => void;
   isGuideStale: () => boolean;
@@ -288,6 +290,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     setAutoStartSecondsRemaining: (value: number | null) =>
       set({ autoStartSecondsRemaining: value }),
 
+    guideExpanded: false,
+
     getActiveGroupingEntry: () => {
       const { repoPath, comparison, groupingStates } = get();
       if (!repoPath || !comparison) return EMPTY_ENTRY;
@@ -305,6 +309,17 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         if (!prev.groupingStates.has(reviewKey)) return prev;
         const next = new Map(prev.groupingStates);
         next.delete(reviewKey);
+        return { groupingStates: next };
+      });
+    },
+
+    migrateGroupingEntry: (oldKey: string, newKey: string) => {
+      set((prev) => {
+        const entry = prev.groupingStates.get(oldKey);
+        if (!entry) return prev;
+        const next = new Map(prev.groupingStates);
+        next.delete(oldKey);
+        next.set(newKey, entry);
         return { groupingStates: next };
       });
     },
@@ -367,8 +382,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         ? "loading"
         : "done";
       set((prev) => ({
-        changesViewMode: "guide",
-        selectedFile: null,
+        guideExpanded: true,
         guideContentMode: null,
         groupingStates: updateGroupingEntry(
           prev.groupingStates,
@@ -427,7 +441,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     exitGuide: () => {
       const { repoPath, comparison } = get();
-      set({ changesViewMode: "files", guideContentMode: null });
+      set({ guideExpanded: false, guideContentMode: null });
       // Clear guideLoading so the button isn't stuck in "Starting…" state
       // if the user exits while startGuide is still awaiting tasks.
       if (repoPath && comparison) {

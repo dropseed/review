@@ -394,6 +394,18 @@ export class HttpClient implements ApiClient {
     return this.post("/api/review/list", { repoPath });
   }
 
+  async changeReviewBase(
+    repoPath: string,
+    oldComparison: Comparison,
+    newBase: string,
+  ): Promise<Comparison> {
+    return this.post("/api/review/change-base", {
+      repoPath,
+      oldComparison,
+      newBase,
+    });
+  }
+
   async deleteReview(repoPath: string, comparison: Comparison): Promise<void> {
     await this.post("/api/review/delete", { repoPath, comparison });
   }
@@ -763,6 +775,20 @@ export class HttpClient implements ApiClient {
 
   async openSettingsFile(): Promise<void> {
     // No-op in browser
+  }
+
+  // ----- Agent -----
+
+  async agentSendMessage(): Promise<never> {
+    throw new Error("Agent not supported in web mode");
+  }
+
+  onAgentEvent(): () => void {
+    return () => {};
+  }
+
+  async agentCancel(): Promise<void> {
+    // No-op in web mode
   }
 
   // ----- Web-only methods -----

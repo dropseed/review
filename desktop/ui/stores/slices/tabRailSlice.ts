@@ -9,15 +9,11 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { makeReviewKey } from "./groupingSlice";
-import {
-  type ChangesViewMode,
-  findFirstUnreviewedHunkId,
-} from "./navigationSlice";
+import { findFirstUnreviewedHunkId } from "./navigationSlice";
 
 /** Snapshot of navigation state saved when switching away from a review. */
 export interface NavigationSnapshot {
   selectedFile: string | null;
-  changesViewMode: ChangesViewMode;
 }
 
 /** A diff is considered active when it has any changed files, additions, or deletions. */
@@ -64,6 +60,11 @@ export interface GlobalReviewsSlice {
     repoPath: string,
     comparison: Comparison,
   ) => Promise<void>;
+  changeReviewBase: (
+    repoPath: string,
+    oldComparison: Comparison,
+    newBase: string,
+  ) => Promise<Comparison | null>;
   checkReviewsFreshness: () => Promise<void>;
   /** Save current navigation state before switching away from a review. */
   saveNavigationSnapshot: () => void;
@@ -171,14 +172,63 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     }
   },
 
+  changeReviewBase: async (repoPath, oldComparison, newBase) => {
+    try {
+      // Ensure the review file exists (for local branches that haven't been opened yet)
+      await client.ensureReviewExists(repoPath, oldComparison);
+
+      const newComparison = await client.changeReviewBase(
+        repoPath,
+        oldComparison,
+        newBase,
+      );
+
+      const oldKey = makeReviewKey(repoPath, oldComparison.key);
+      const newKey = makeReviewKey(repoPath, newComparison.key);
+
+      // Migrate grouping entry
+      get().migrateGroupingEntry(oldKey, newKey);
+
+      // Migrate navigation snapshot
+      const snapshots = { ...get().navigationSnapshots };
+      if (snapshots[oldKey]) {
+        snapshots[newKey] = snapshots[oldKey];
+        delete snapshots[oldKey];
+      }
+      set({ navigationSnapshots: snapshots });
+
+      // Update active review key if this was the active review
+      const { activeReviewKey } = get();
+      if (
+        activeReviewKey?.repoPath === repoPath &&
+        activeReviewKey?.comparisonKey === oldComparison.key
+      ) {
+        set({
+          activeReviewKey: {
+            repoPath,
+            comparisonKey: newComparison.key,
+          },
+        });
+      }
+
+      // Refresh sidebar
+      await get().loadGlobalReviews();
+
+      return newComparison;
+    } catch (err) {
+      console.error("Failed to change review base:", err);
+      return null;
+    }
+  },
+
   saveNavigationSnapshot: () => {
-    const { repoPath, comparison, selectedFile, changesViewMode } = get();
+    const { repoPath, comparison, selectedFile } = get();
     if (!repoPath || !comparison) return;
     const key = makeReviewKey(repoPath, comparison.key);
     set({
       navigationSnapshots: {
         ...get().navigationSnapshots,
-        [key]: { selectedFile, changesViewMode },
+        [key]: { selectedFile },
       },
     });
   },
@@ -195,14 +245,11 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     if (snapshot.selectedFile && flatFileList.includes(snapshot.selectedFile)) {
       const hunkId = findFirstUnreviewedHunkId(snapshot.selectedFile, state);
       set({
-        changesViewMode: snapshot.changesViewMode,
         selectedFile: snapshot.selectedFile,
         guideContentMode: null,
         focusedHunkId: hunkId,
         scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
       });
-    } else {
-      set({ changesViewMode: snapshot.changesViewMode });
     }
   },
 

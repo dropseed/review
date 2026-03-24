@@ -99,6 +99,7 @@ pub fn build_api_router(state: AppState) -> Router {
         .route("/api/review/load", post(review_load))
         .route("/api/review/save", post(review_save))
         .route("/api/review/list", post(review_list))
+        .route("/api/review/change-base", post(review_change_base))
         .route("/api/review/delete", post(review_delete))
         .route("/api/review/exists", post(review_exists))
         .route("/api/review/ensure-exists", post(review_ensure_exists))
@@ -240,6 +241,14 @@ struct ReviewLoadRequest {
 struct ReviewSaveRequest {
     repo_path: String,
     state: ReviewState,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewChangeBaseRequest {
+    repo_path: String,
+    old_comparison: Comparison,
+    new_base: String,
 }
 
 #[derive(Deserialize)]
@@ -781,6 +790,18 @@ async fn review_save(Json(req): Json<ReviewSaveRequest>) -> ApiResult<u64> {
 async fn review_list(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec<ReviewSummary>> {
     blocking(move || {
         storage::list_saved_reviews(&PathBuf::from(&req.repo_path)).map_err(Into::into)
+    })
+    .await
+}
+
+async fn review_change_base(Json(req): Json<ReviewChangeBaseRequest>) -> ApiResult<Comparison> {
+    blocking(move || {
+        storage::change_review_base(
+            &PathBuf::from(&req.repo_path),
+            &req.old_comparison,
+            &req.new_base,
+        )
+        .map_err(Into::into)
     })
     .await
 }

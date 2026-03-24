@@ -42,6 +42,8 @@ import type {
   ReviewFreshnessInput,
   ReviewFreshnessResult,
   WorktreeInfo,
+  AgentEvent,
+  AgentResult,
 } from "../types";
 
 export interface ApiClient {
@@ -215,6 +217,13 @@ export interface ApiClient {
 
   /** List all saved reviews for a repository */
   listSavedReviews(repoPath: string): Promise<ReviewSummary[]>;
+
+  /** Change the base ref of an existing review (returns the new comparison) */
+  changeReviewBase(
+    repoPath: string,
+    oldComparison: Comparison,
+    newBase: string,
+  ): Promise<Comparison>;
 
   /** Delete a saved review */
   deleteReview(repoPath: string, comparison: Comparison): Promise<void>;
@@ -448,6 +457,25 @@ export interface ApiClient {
 
   /** Resolve a route prefix (e.g., "owner/repo") to a local filesystem path */
   resolveRepoPath?(routePrefix: string): Promise<string | null>;
+
+  // ----- Agent -----
+
+  /** Send a message to the Claude agent, returns the final result */
+  agentSendMessage(
+    repoPath: string,
+    message: string,
+    requestId: string,
+    sessionId?: string,
+  ): Promise<AgentResult>;
+
+  /** Listen for streaming agent events (returns unsubscribe fn) */
+  onAgentEvent(
+    requestId: string,
+    callback: (event: AgentEvent) => void,
+  ): () => void;
+
+  /** Cancel an in-flight agent request */
+  agentCancel(requestId: string): Promise<void>;
 }
 
 /**

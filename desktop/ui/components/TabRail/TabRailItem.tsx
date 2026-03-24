@@ -5,6 +5,7 @@ import { useReviewStore } from "../../stores";
 import { Spinner } from "../ui/spinner";
 import { WarningIcon } from "../ui/icons";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
+import { ChangeBaseMenu } from "./ChangeBaseMenu";
 
 /** Format a branch comparison for display. */
 function formatBranchComparison(
@@ -83,6 +84,7 @@ export const TabRailItem = memo(function TabRailItem({
     useCallback((s) => s.isReviewBusy(reviewKey), [reviewKey]),
   );
   const [showContextMenu, setShowContextMenu] = useState(false);
+  const [showChangeBase, setShowChangeBase] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
@@ -94,6 +96,7 @@ export const TabRailItem = memo(function TabRailItem({
     e.preventDefault();
     setContextMenuPos({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
+    setShowChangeBase(false);
   }, []);
 
   const handleOverflowClick = useCallback((e: React.MouseEvent) => {
@@ -101,6 +104,7 @@ export const TabRailItem = memo(function TabRailItem({
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setContextMenuPos({ x: rect.left, y: rect.bottom + 2 });
     setShowContextMenu(true);
+    setShowChangeBase(false);
   }, []);
 
   // Close context menu on outside click
@@ -112,6 +116,7 @@ export const TabRailItem = memo(function TabRailItem({
         !contextMenuRef.current.contains(e.target as Node)
       ) {
         setShowContextMenu(false);
+        setShowChangeBase(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
@@ -158,8 +163,8 @@ export const TabRailItem = memo(function TabRailItem({
           <span
             className={`text-xs truncate flex-1 min-w-0 ${
               isActive
-                ? "text-fg font-medium"
-                : "text-fg-secondary/50 group-hover:text-fg-secondary/70"
+                ? "text-fg-secondary font-medium"
+                : "text-fg-muted/70 group-hover:text-fg-muted"
             }`}
           >
             {primaryLabel}
@@ -208,16 +213,40 @@ export const TabRailItem = memo(function TabRailItem({
             className="fixed z-50 min-w-[160px] rounded-lg border border-edge-default bg-surface-raised/90 backdrop-blur-xl py-1 shadow-xl"
             style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
           >
-            <button
-              type="button"
-              onClick={() => {
-                setShowContextMenu(false);
-                onDelete(review);
-              }}
-              className="w-full px-3 py-1.5 text-left text-xs text-status-rejected hover:bg-fg/[0.08] transition-colors"
-            >
-              Delete Review
-            </button>
+            {showChangeBase ? (
+              <ChangeBaseMenu
+                repoPath={review.repoPath}
+                comparison={review.comparison}
+                onClose={() => {
+                  setShowContextMenu(false);
+                  setShowChangeBase(false);
+                }}
+              />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowChangeBase(true)}
+                  className="w-full px-3 py-1.5 text-left text-xs text-fg-secondary hover:bg-fg/[0.08] transition-colors flex items-center justify-between"
+                >
+                  <span>Change Base…</span>
+                  <span className="text-[10px] text-fg-faint ml-3 truncate max-w-[80px]">
+                    {review.comparison.base}
+                  </span>
+                </button>
+                <div className="my-1 border-t border-edge/30" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContextMenu(false);
+                    onDelete(review);
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-xs text-status-rejected hover:bg-fg/[0.08] transition-colors"
+                >
+                  Delete Review
+                </button>
+              </>
+            )}
           </div>,
           document.body,
         )}

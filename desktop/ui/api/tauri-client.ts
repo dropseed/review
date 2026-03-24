@@ -45,6 +45,8 @@ import type {
   LspServerStatus,
   TrustCategory,
   WorktreeInfo,
+  AgentEvent,
+  AgentResult,
 } from "../types";
 
 /** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
@@ -321,6 +323,18 @@ export class TauriClient implements ApiClient {
 
   async listSavedReviews(repoPath: string): Promise<ReviewSummary[]> {
     return invoke<ReviewSummary[]>("list_saved_reviews", { repoPath });
+  }
+
+  async changeReviewBase(
+    repoPath: string,
+    oldComparison: Comparison,
+    newBase: string,
+  ): Promise<Comparison> {
+    return invoke<Comparison>("change_review_base", {
+      repoPath,
+      oldComparison,
+      newBase,
+    });
   }
 
   async deleteReview(repoPath: string, comparison: Comparison): Promise<void> {
@@ -681,5 +695,32 @@ export class TauriClient implements ApiClient {
 
   async openSettingsFile(): Promise<void> {
     await invoke("open_settings_file");
+  }
+
+  // ----- Agent -----
+
+  async agentSendMessage(
+    repoPath: string,
+    message: string,
+    requestId: string,
+    sessionId?: string,
+  ): Promise<AgentResult> {
+    return invoke<AgentResult>("agent_send_message", {
+      repoPath,
+      message,
+      requestId,
+      sessionId: sessionId ?? null,
+    });
+  }
+
+  onAgentEvent(
+    requestId: string,
+    callback: (event: AgentEvent) => void,
+  ): () => void {
+    return this.listenForEvent(`agent:event:${requestId}`, callback);
+  }
+
+  async agentCancel(requestId: string): Promise<void> {
+    await invoke("agent_cancel", { requestId });
   }
 }

@@ -303,6 +303,16 @@ pub fn list_saved_reviews(repo_path: String) -> Result<Vec<ReviewSummary>, Strin
 }
 
 #[tauri::command]
+pub fn change_review_base(
+    repo_path: String,
+    old_comparison: Comparison,
+    new_base: String,
+) -> Result<Comparison, String> {
+    storage::change_review_base(&PathBuf::from(&repo_path), &old_comparison, &new_base)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), String> {
     storage::delete_review(&PathBuf::from(&repo_path), &comparison).map_err(|e| e.to_string())
 }
@@ -1764,4 +1774,318 @@ async fn find_lsp_key_for_file(
     );
 
     Ok(key)
+}
+
+// ---------------------------------------------------------------------------
+// Agent sidecar
+// ---------------------------------------------------------------------------
+
+/// Managed state for the agent sidecar process.
+pub struct AgentState(pub TokioMutex<AgentSidecar>);
+
+pub struct AgentSidecar {
+    child: Option<tokio::process::Child>,
+    stdin: Option<tokio::io::BufWriter<tokio::process::ChildStdin>>,
+    /// Oneshot senders waiting for result/error events, keyed by requestId.
+    pending: HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>,
+}
+
+impl AgentSidecar {
+    pub fn new() -> Self {
+        Self {
+            child: None,
+            stdin: None,
+            pending: HashMap::new(),
+        }
+    }
+}
+
+/// Find the node executable (similar to find_claude_executable).
+fn find_node_executable() -> Option<String> {
+    // Try `which node`
+    if let Ok(output) = std::process::Command::new("which").arg("node").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_owned();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
+
+    // Fallback: common locations
+    for candidate in &["/usr/local/bin/node", "/opt/homebrew/bin/node"] {
+        if std::path::Path::new(candidate).is_file() {
+            return Some((*candidate).to_owned());
+        }
+    }
+
+    // Try nvm default
+    if let Some(home) = std::env::var_os("HOME") {
+        let nvm_default = std::path::PathBuf::from(home).join(".nvm/versions/node");
+        if nvm_default.is_dir() {
+            // Find the latest version
+            if let Ok(entries) = std::fs::read_dir(&nvm_default) {
+                let mut versions: Vec<_> =
+                    entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+                versions.sort();
+                if let Some(latest) = versions.last() {
+                    let node_path = latest.join("bin/node");
+                    if node_path.is_file() {
+                        return Some(node_path.to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Ensure the agent sidecar is spawned, returning a mutable reference to the
+/// `AgentSidecar`. Spawns a background task to read stdout and emit Tauri events.
+async fn ensure_sidecar(sidecar: &mut AgentSidecar, app: &tauri::AppHandle) -> Result<(), String> {
+    // Already running?
+    if let Some(ref mut child) = sidecar.child {
+        // Check if still alive
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                // Process exited — clean up and re-spawn below
+                sidecar.child = None;
+                sidecar.stdin = None;
+            }
+            Ok(None) => return Ok(()), // Still running
+            Err(e) => {
+                error!("[agent] Failed to check sidecar status: {e}");
+                sidecar.child = None;
+                sidecar.stdin = None;
+            }
+        }
+    }
+
+    let node_path = find_node_executable()
+        .ok_or_else(|| "Node.js not found. Install Node.js to use the agent.".to_owned())?;
+
+    // Determine the sidecar script path
+    let sidecar_script = if cfg!(debug_assertions) {
+        // Dev mode: run from source
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        PathBuf::from(manifest_dir)
+            .join("../agent/src/main.ts")
+            .canonicalize()
+            .map_err(|e| format!("Agent script not found: {e}"))?
+    } else {
+        // Release: bundled alongside the binary
+        use tauri::Manager;
+        app.path()
+            .resource_dir()
+            .map_err(|e| format!("Failed to get resource dir: {e}"))?
+            .join("agent/main.ts")
+    };
+
+    // In dev mode, use tsx to run TypeScript directly
+    let (program, args) = if cfg!(debug_assertions) {
+        // Find npx
+        let npx = sidecar_script
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|agent_dir| agent_dir.join("node_modules/.bin/tsx"))
+            .filter(|p| p.is_file())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "npx".to_owned());
+
+        if npx.ends_with("tsx") {
+            (npx, vec![sidecar_script.to_string_lossy().into_owned()])
+        } else {
+            (
+                npx,
+                vec![
+                    "tsx".to_owned(),
+                    sidecar_script.to_string_lossy().into_owned(),
+                ],
+            )
+        }
+    } else {
+        (
+            node_path,
+            vec![sidecar_script.to_string_lossy().into_owned()],
+        )
+    };
+
+    info!("[agent] Spawning sidecar: {program} {}", args.join(" "));
+
+    let mut child = tokio::process::Command::new(&program)
+        .args(&args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .env_remove("CLAUDECODE")
+        .spawn()
+        .map_err(|e| format!("Failed to spawn agent sidecar: {e}"))?;
+
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Failed to capture agent stdin".to_owned())?;
+    sidecar.stdin = Some(tokio::io::BufWriter::new(stdin));
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture agent stdout".to_owned())?;
+
+    // Drain stderr in background
+    let stderr = child.stderr.take();
+    tokio::spawn(async move {
+        if let Some(stderr) = stderr {
+            use tokio::io::AsyncBufReadExt;
+            let reader = tokio::io::BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                info!("[agent:stderr] {line}");
+            }
+        }
+    });
+
+    // Read stdout lines and dispatch events
+    let app_handle = app.clone();
+    tokio::spawn(async move {
+        use tokio::io::AsyncBufReadExt;
+        let reader = tokio::io::BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let value: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let request_id = value
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            let event_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+            // Emit all events for the frontend to consume
+            use tauri::Emitter;
+            let event_name = format!("agent:event:{request_id}");
+            let _ = app_handle.emit(&event_name, &value);
+
+            // If it's a result or error, resolve the pending oneshot
+            if event_type == "result" || event_type == "error" {
+                // We need to access the AgentState to send to the pending channel.
+                // Use app state for this.
+                use tauri::Manager;
+                let state: tauri::State<'_, AgentState> = app_handle.state();
+                let mut sidecar = state.0.lock().await;
+                if let Some(sender) = sidecar.pending.remove(&request_id) {
+                    let _ = sender.send(value);
+                }
+            }
+        }
+        info!("[agent] Stdout reader exited");
+    });
+
+    sidecar.child = Some(child);
+    info!("[agent] Sidecar started");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn agent_send_message(
+    app: tauri::AppHandle,
+    repo_path: String,
+    message: String,
+    request_id: String,
+    session_id: Option<String>,
+    agent_state: tauri::State<'_, AgentState>,
+) -> Result<serde_json::Value, String> {
+    let t0 = Instant::now();
+
+    // Ensure sidecar is running
+    {
+        let mut sidecar = agent_state.0.lock().await;
+        ensure_sidecar(&mut sidecar, &app).await?;
+    }
+
+    // Register a oneshot channel for the result
+    let rx = {
+        let mut sidecar = agent_state.0.lock().await;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        sidecar.pending.insert(request_id.clone(), tx);
+
+        // Write the send message to stdin
+        let msg = serde_json::json!({
+            "type": "send",
+            "requestId": request_id,
+            "message": message,
+            "cwd": repo_path,
+            "sessionId": session_id,
+        });
+
+        let stdin = sidecar
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "Agent stdin not available".to_owned())?;
+
+        use tokio::io::AsyncWriteExt;
+        let line = format!("{}\n", serde_json::to_string(&msg).unwrap());
+        stdin
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write to agent: {e}"))?;
+        stdin
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush agent stdin: {e}"))?;
+
+        rx
+    };
+
+    // Wait for the result
+    let result = rx
+        .await
+        .map_err(|_| "Agent sidecar closed before sending a result".to_owned())?;
+
+    // Check if it's an error
+    if result.get("type").and_then(|v| v.as_str()) == Some("error") {
+        let err_msg = result
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown agent error");
+        return Err(err_msg.to_owned());
+    }
+
+    info!(
+        "[agent] agent_send_message completed in {:.1}s",
+        t0.elapsed().as_secs_f64()
+    );
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn agent_cancel(
+    request_id: String,
+    agent_state: tauri::State<'_, AgentState>,
+) -> Result<(), String> {
+    let mut sidecar = agent_state.0.lock().await;
+
+    let msg = serde_json::json!({
+        "type": "cancel",
+        "requestId": request_id,
+    });
+
+    if let Some(stdin) = sidecar.stdin.as_mut() {
+        use tokio::io::AsyncWriteExt;
+        let line = format!("{}\n", serde_json::to_string(&msg).unwrap());
+        let _ = stdin.write_all(line.as_bytes()).await;
+        let _ = stdin.flush().await;
+    }
+
+    Ok(())
 }

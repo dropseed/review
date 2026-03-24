@@ -221,6 +221,64 @@ pub fn review_exists(repo_path: &Path, comparison: &Comparison) -> Result<bool, 
     Ok(storage_dir.join(&filename).exists())
 }
 
+/// Change the base ref of an existing review, atomically renaming the file.
+///
+/// Loads the review for `old_comparison`, creates a new comparison with `new_base`
+/// and the same head, saves under the new filename, and deletes the old file.
+/// Returns the new comparison.
+pub fn change_review_base(
+    repo_path: &Path,
+    old_comparison: &Comparison,
+    new_base: &str,
+) -> Result<Comparison, StorageError> {
+    let new_comparison = Comparison::new(new_base, &old_comparison.head);
+
+    // Don't allow no-op
+    if new_comparison.key == old_comparison.key {
+        return Ok(new_comparison);
+    }
+
+    // Check target doesn't already exist
+    if review_exists(repo_path, &new_comparison)? {
+        return Err(StorageError::Io(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("A review for {} already exists", new_comparison.key),
+        )));
+    }
+
+    // Load existing state
+    let storage_dir = get_storage_dir(repo_path)?;
+    let old_filename = comparison_filename(old_comparison);
+    let old_path = storage_dir.join(&old_filename);
+
+    let mut state = if old_path.exists() {
+        let content = fs::read_to_string(&old_path)?;
+        serde_json::from_str::<ReviewState>(&content)?
+    } else {
+        ReviewState::new(old_comparison.clone())
+    };
+
+    // Update comparison in state
+    state.comparison = new_comparison.clone();
+    state.version = 0; // Fresh save, no conflict check
+    state.updated_at = super::state::now_iso8601();
+
+    // Update GitHub PR base if present
+    if let Some(ref mut pr) = state.github_pr {
+        pr.base_ref_name = new_base.to_string();
+    }
+
+    // Save under new filename
+    save_review_state(repo_path, &state)?;
+
+    // Delete old file
+    if old_path.exists() {
+        fs::remove_file(&old_path)?;
+    }
+
+    Ok(new_comparison)
+}
+
 /// Delete a saved review
 pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;

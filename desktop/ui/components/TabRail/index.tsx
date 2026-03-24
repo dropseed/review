@@ -90,6 +90,7 @@ import {
   buildRepoGroups,
   type SidebarEntry,
   type RepoGroup,
+  type BaseGroup,
 } from "../../utils/sidebar-ordering";
 
 interface SidebarListProps {
@@ -99,13 +100,11 @@ interface SidebarListProps {
     branch: string,
     defaultBranch: string,
   ) => void;
-  onNewReview: () => void;
 }
 
 function SidebarList({
   onActivateReview,
   onActivateLocalBranch,
-  onNewReview,
 }: SidebarListProps): ReactNode {
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
@@ -235,96 +234,88 @@ function SidebarList({
       : reposWithChanges;
 
   return (
-    <div role="tablist">
-      <SidebarSection
-        label="Reviews"
-        actions={
-          <>
-            {globalReviews.length > 0 && (
-              <SortMenu
-                options={SORT_OPTIONS}
-                value={reviewSortOrder}
-                onChange={setReviewSortOrder}
-                ariaLabel="Sort reviews"
-              />
-            )}
-            <button
-              type="button"
-              onClick={onNewReview}
-              className="flex items-center justify-center w-6 h-6 rounded
-                         text-fg-muted hover:text-fg-secondary hover:bg-surface-raised
-                         transition-colors"
-              aria-label="New review"
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-          </>
-        }
-      >
-        {isLoading && (
-          <div className="space-y-2 px-2 py-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse space-y-1">
-                <div className="h-2.5 w-16 rounded bg-fg/[0.06]" />
-                <div className="h-8 rounded bg-fg/[0.04]" />
-              </div>
-            ))}
-          </div>
+    <div role="tablist" className="pb-1">
+      {isLoading && (
+        <div className="space-y-2 px-2 py-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="animate-pulse space-y-1">
+              <div className="h-2.5 w-16 rounded bg-fg/[0.06]" />
+              <div className="h-8 rounded bg-fg/[0.04]" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {visibleRepos.map((group) => {
+        const meta = repoMetadata[group.repoPath];
+        return (
+          <RepoGroupHeader
+            key={group.repoPath}
+            group={group}
+            avatarUrl={meta?.avatarUrl}
+            displayName={meta?.routePrefix ?? group.repoName}
+            renderEntry={renderEntry}
+          />
+        );
+      })}
+
+      {/* Show "+N repos" button when clean repos are hidden */}
+      {!showCleanRepos &&
+        hiddenRepoCount > 0 &&
+        reposWithChanges.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowCleanRepos(true)}
+            className="w-full text-center py-1.5 text-[10px] font-medium text-fg-faint
+                     hover:text-fg-secondary transition-colors"
+          >
+            +{hiddenRepoCount} repo{hiddenRepoCount !== 1 ? "s" : ""}
+          </button>
         )}
 
-        {visibleRepos.map((group) => {
-          const meta = repoMetadata[group.repoPath];
-          return (
-            <RepoGroupHeader
-              key={group.repoPath}
-              group={group}
-              avatarUrl={meta?.avatarUrl}
-              displayName={meta?.routePrefix ?? group.repoName}
-              renderEntry={renderEntry}
-            />
-          );
-        })}
+      {/* Show "changes only" toggle when clean repos are visible */}
+      {showCleanRepos && hiddenRepoCount > 0 && reposWithChanges.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowCleanRepos(false)}
+          className="w-full text-center py-1.5 text-[10px] font-medium text-fg-faint
+                     hover:text-fg-secondary transition-colors"
+        >
+          changes only
+        </button>
+      )}
+    </div>
+  );
+}
 
-        {/* Show "+N repos" button when clean repos are hidden */}
-        {!showCleanRepos &&
-          hiddenRepoCount > 0 &&
-          reposWithChanges.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowCleanRepos(true)}
-              className="w-full text-center py-1.5 text-[10px] font-medium text-fg-faint
-                       hover:text-fg-secondary transition-colors"
-            >
-              +{hiddenRepoCount} repo{hiddenRepoCount !== 1 ? "s" : ""}
-            </button>
-          )}
+/** Render a base group with a subtle label and tree-line connector. */
+function BaseGroupSection({
+  baseGroup,
+  renderEntry,
+  showAll,
+}: {
+  baseGroup: BaseGroup;
+  renderEntry: (entry: SidebarEntry) => ReactNode;
+  showAll: boolean;
+}) {
+  const visibleItems = showAll
+    ? baseGroup.items
+    : baseGroup.items.filter((e) => e.kind !== "branch");
 
-        {/* Show "changes only" toggle when clean repos are visible */}
-        {showCleanRepos &&
-          hiddenRepoCount > 0 &&
-          reposWithChanges.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowCleanRepos(false)}
-              className="w-full text-center py-1.5 text-[10px] font-medium text-fg-faint
-                       hover:text-fg-secondary transition-colors"
-            >
-              changes only
-            </button>
-          )}
-      </SidebarSection>
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div className="mt-1.5">
+      <div className="px-3 py-0.5 flex items-center gap-1.5">
+        <span className="h-px flex-1 bg-edge/20" />
+        <span className="text-[9px] text-fg-faint/50 tracking-wider shrink-0">
+          {baseGroup.base}
+        </span>
+        <span className="h-px flex-1 bg-edge/20" />
+      </div>
+      <div className="ml-3 border-l border-l-fg/[0.06] pl-0.5">
+        {visibleItems.map(renderEntry)}
+      </div>
     </div>
   );
 }
@@ -344,29 +335,26 @@ function RepoGroupHeader({
   const [collapsed, setCollapsed] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const activeItems = group.items.filter((e) => e.kind !== "branch");
-  const branchItems = group.items.filter((e) => e.kind === "branch");
-  const visibleItems = showAll ? group.items : activeItems;
-  const hiddenCount = branchItems.length;
+  const hiddenCount = group.items.filter((e) => e.kind === "branch").length;
 
   return (
     <div className="mt-1.5 first:mt-0 border-t border-t-edge/30 first:border-t-0 pt-1.5">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="flex items-center gap-1.5 w-full text-left px-2.5 py-1 mb-0.5
-                   hover:bg-fg/[0.03] transition-colors duration-100 rounded-sm"
+        className="flex items-center gap-1.5 w-full text-left px-2.5 py-1.5 mb-0.5
+                   hover:bg-fg/[0.04] transition-colors duration-100 rounded-sm"
       >
         {avatarUrl ? (
           <img
             src={avatarUrl}
             alt=""
-            className="h-3.5 w-3.5 rounded-sm shrink-0 opacity-50"
+            className="h-4 w-4 rounded-sm shrink-0 opacity-70"
           />
         ) : (
-          <span className="h-3.5 w-3.5 rounded-sm shrink-0 bg-fg/[0.06]" />
+          <span className="h-4 w-4 rounded-sm shrink-0 bg-fg/[0.10]" />
         )}
-        <span className="flex-1 text-[11px] font-medium tracking-wide text-fg-muted truncate">
+        <span className="flex-1 text-[11px] font-semibold text-fg-secondary truncate">
           {displayName}
         </span>
         {hiddenCount > 0 && !collapsed && (
@@ -383,7 +371,84 @@ function RepoGroupHeader({
           </span>
         )}
       </button>
-      {!collapsed && <div>{visibleItems.map(renderEntry)}</div>}
+      {!collapsed && (
+        <div>
+          {group.baseGroups.length > 1
+            ? group.baseGroups.map((bg) => (
+                <BaseGroupSection
+                  key={bg.base}
+                  baseGroup={bg}
+                  renderEntry={renderEntry}
+                  showAll={showAll}
+                />
+              ))
+            : (showAll
+                ? group.items
+                : group.items.filter((e) => e.kind !== "branch")
+              ).map(renderEntry)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Top header bar: "Reviews" label + sort/add actions + sidebar toggle. */
+function SidebarHeader({
+  onToggle,
+  onNewReview,
+}: {
+  onToggle: () => void;
+  onNewReview: () => void;
+}): ReactNode {
+  const globalReviews = useReviewStore((s) => s.globalReviews);
+  const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
+  const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
+
+  return (
+    <div className="shrink-0 px-2 py-2 flex items-center gap-1">
+      <span className="flex-1 pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
+        Reviews
+      </span>
+      {globalReviews.length > 0 && (
+        <SortMenu
+          options={SORT_OPTIONS}
+          value={reviewSortOrder}
+          onChange={setReviewSortOrder}
+          ariaLabel="Sort reviews"
+        />
+      )}
+      <button
+        type="button"
+        onClick={onNewReview}
+        className="flex items-center justify-center w-6 h-6 rounded
+                   text-fg-muted hover:text-fg-secondary hover:bg-surface-raised
+                   transition-colors"
+        aria-label="New review"
+      >
+        <svg
+          className="h-3 w-3"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center justify-center w-6 h-6 shrink-0 rounded
+                   hover:bg-fg/[0.08] transition-colors duration-100
+                   text-fg-muted hover:text-fg-secondary"
+        aria-label="Hide sidebar"
+      >
+        <SidebarPanelIcon className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }
@@ -410,6 +475,39 @@ function SidebarSection({
       </div>
       <div className="pb-1">{children}</div>
     </div>
+  );
+}
+
+function AgentToggleButton(): ReactNode {
+  const agentPanelOpen = useReviewStore((s) => s.agentPanelOpen);
+  const toggleAgentPanel = useReviewStore((s) => s.toggleAgentPanel);
+
+  return (
+    <button
+      type="button"
+      onClick={toggleAgentPanel}
+      className={`p-1.5 rounded transition-colors duration-100 ${
+        agentPanelOpen
+          ? "text-fg-secondary bg-fg/[0.08]"
+          : "text-fg-faint hover:text-fg-muted hover:bg-fg/[0.06]"
+      }`}
+      aria-label={agentPanelOpen ? "Close agent panel" : "Open agent panel"}
+    >
+      <svg
+        className="h-3.5 w-3.5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 14 23h-4a7 7 0 0 1-6.73-4H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
+        <circle cx="10" cy="16" r="1" fill="currentColor" />
+        <circle cx="14" cy="16" r="1" fill="currentColor" />
+      </svg>
+    </button>
   );
 }
 
@@ -481,24 +579,15 @@ export const TabRail = memo(function TabRail({
           className="flex flex-col h-full min-w-0"
           style={{ width: `${sidebarWidth}rem` }}
         >
-          <div className="shrink-0 px-2 py-2 flex items-center justify-end">
-            <button
-              type="button"
-              onClick={toggleTabRail}
-              className="flex items-center justify-center w-7 h-7 shrink-0 rounded-md
-                         hover:bg-fg/[0.08] transition-colors duration-100
-                         text-fg-muted hover:text-fg-secondary"
-              aria-label="Hide sidebar"
-            >
-              <SidebarPanelIcon className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <SidebarHeader
+            onToggle={toggleTabRail}
+            onNewReview={handleAddReview}
+          />
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
             <SidebarList
               onActivateReview={onActivateReview}
               onActivateLocalBranch={onActivateLocalBranch}
-              onNewReview={handleAddReview}
             />
           </div>
 
@@ -546,6 +635,7 @@ export const TabRail = memo(function TabRail({
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
                 </button>
+                <AgentToggleButton />
                 <LspStatusIndicator />
               </div>
               <FooterVersionInfo

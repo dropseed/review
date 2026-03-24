@@ -44,12 +44,21 @@ export interface SidebarReviewEntry {
 
 export type SidebarEntry = SidebarBranchEntry | SidebarReviewEntry;
 
+/** Sub-group of entries sharing the same merge target (comparison.base). */
+export interface BaseGroup {
+  base: string;
+  isDefault: boolean;
+  items: SidebarEntry[];
+}
+
 export interface RepoGroup {
   repoPath: string;
   repoName: string;
   defaultBranch: string;
   /** All items in this repo, ordered: checked-out first, then reviews, then branches */
   items: SidebarEntry[];
+  /** Items grouped by their merge target */
+  baseGroups: BaseGroup[];
   /** Whether any item in this repo has uncommitted changes */
   hasChanges: boolean;
 }
@@ -250,6 +259,7 @@ export function buildRepoGroups(
       repoName: bucket.repoName,
       defaultBranch: bucket.defaultBranch,
       items,
+      baseGroups: groupByBase(items, bucket.defaultBranch),
       hasChanges: bucket.hasChanges,
     });
   }
@@ -269,6 +279,49 @@ export function buildRepoGroups(
 
     // Neither has changes — sort by most recent commit
     return bucketB.latestCommitDate - bucketA.latestCommitDate;
+  });
+
+  return groups;
+}
+
+/** Get the comparison base ref from a sidebar entry. */
+function getEntryBase(entry: SidebarEntry): string {
+  return entry.kind === "review"
+    ? entry.review.comparison.base
+    : entry.comparison.base;
+}
+
+/** Group entries by their merge target (comparison.base). */
+function groupByBase(
+  items: SidebarEntry[],
+  defaultBranch: string,
+): BaseGroup[] {
+  const map = new Map<string, SidebarEntry[]>();
+
+  for (const item of items) {
+    const base = getEntryBase(item);
+    let list = map.get(base);
+    if (!list) {
+      list = [];
+      map.set(base, list);
+    }
+    list.push(item);
+  }
+
+  const groups: BaseGroup[] = [];
+  for (const [base, entries] of map) {
+    groups.push({
+      base,
+      isDefault: base === defaultBranch,
+      items: entries,
+    });
+  }
+
+  // Default branch group first, then alphabetical
+  groups.sort((a, b) => {
+    if (a.isDefault && !b.isDefault) return -1;
+    if (!a.isDefault && b.isDefault) return 1;
+    return a.base.localeCompare(b.base);
   });
 
   return groups;
