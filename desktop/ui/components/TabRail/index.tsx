@@ -118,7 +118,6 @@ function SidebarList({
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
-  const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
   const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
 
@@ -449,31 +448,6 @@ function SidebarHeader({
       >
         <SidebarPanelIcon className="w-3.5 h-3.5" />
       </button>
-    </div>
-  );
-}
-
-/** Lightweight section header with optional trailing actions. */
-function SidebarSection({
-  label,
-  actions,
-  children,
-}: {
-  label: string;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="border-t border-t-edge/40">
-      <div className="flex items-center">
-        <span className="flex-1 pl-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
-          {label}
-        </span>
-        {actions && (
-          <div className="flex items-center gap-0.5 pr-1">{actions}</div>
-        )}
-      </div>
-      <div className="pb-1">{children}</div>
     </div>
   );
 }
