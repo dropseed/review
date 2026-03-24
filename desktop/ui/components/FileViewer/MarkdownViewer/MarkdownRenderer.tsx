@@ -7,11 +7,34 @@ import type { Components } from "react-markdown";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { getPlatformServices } from "../../../platform";
 
-interface MarkdownRendererProps {
-  content: string;
+/** Resolve a relative href against the directory of the current file. */
+function resolveRelativePath(basePath: string, href: string): string {
+  const [pathPart] = href.split("#");
+  const base = new URL(basePath, "file:///");
+  const resolved = new URL(pathPart, base);
+  return resolved.pathname.slice(1); // strip leading /
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+/** Returns true for hrefs that are absolute URLs (http:, mailto:, etc.). */
+function isAbsoluteUrl(href: string): boolean {
+  return ABSOLUTE_URL_RE.test(href);
+}
+
+interface MarkdownRendererProps {
+  content: string;
+  /** Repo-relative path of the file being rendered (for resolving relative links). */
+  filePath?: string;
+  /** Called when a relative file link is clicked (resolved repo-relative path). */
+  onNavigateToFile?: (repoRelativePath: string) => void;
+}
+
+export function MarkdownRenderer({
+  content,
+  filePath,
+  onNavigateToFile,
+}: MarkdownRendererProps) {
   const components: Components = {
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || "");
@@ -51,17 +74,36 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     pre({ children }) {
       return <pre className="my-4 overflow-hidden rounded-lg">{children}</pre>;
     },
-    // Open external links in system browser instead of navigating the webview
+    // Handle links: anchor links stay in-page, relative file links navigate
+    // within the app, and external URLs open in the system browser.
     a({ href, children }: { href?: string; children?: ReactNode }) {
-      if (href?.startsWith("#")) {
+      if (!href) return <a>{children}</a>;
+
+      if (href.startsWith("#")) {
         return <a href={href}>{children}</a>;
       }
+
+      if (!isAbsoluteUrl(href) && filePath && onNavigateToFile) {
+        const resolved = resolveRelativePath(filePath, href);
+        return (
+          <a
+            href={href}
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigateToFile(resolved);
+            }}
+          >
+            {children}
+          </a>
+        );
+      }
+
       return (
         <a
           href={href}
           onClick={(e) => {
             e.preventDefault();
-            if (href) getPlatformServices().opener.openUrl(href);
+            getPlatformServices().opener.openUrl(href);
           }}
           rel="noopener noreferrer"
         >

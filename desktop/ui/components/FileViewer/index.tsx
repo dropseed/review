@@ -395,6 +395,21 @@ export function FileViewer({
     [addAnnotation, filePath],
   );
 
+  // Navigate to a file linked from markdown preview
+  const handleNavigateToFile = useCallback(
+    (repoRelativePath: string) => {
+      const state = useReviewStore.getState();
+      if (state.flatFileList.includes(repoRelativePath)) {
+        // File is in the diff — navigate to it
+        state.setSelectedFile(repoRelativePath);
+      } else if (repoPath) {
+        // File isn't in the diff — open as external read-only file
+        state.setExternalFile(repoPath + "/" + repoRelativePath);
+      }
+    },
+    [repoPath],
+  );
+
   // Reset transient UI state when file changes
   useEffect(() => {
     setFileCommentEditorOpen(false);
@@ -894,6 +909,7 @@ export function FileViewer({
                 addAnnotation={addAnnotation}
                 updateAnnotation={updateAnnotation}
                 deleteAnnotation={deleteAnnotation}
+                onNavigateToFile={handleNavigateToFile}
               />
             </div>
           </div>

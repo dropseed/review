@@ -28,6 +28,7 @@ interface FileContentRendererProps {
   ) => void;
   updateAnnotation: (id: string, content: string) => void;
   deleteAnnotation: (id: string) => void;
+  onNavigateToFile?: (repoRelativePath: string) => void;
 }
 
 export const FileContentRenderer = memo(function FileContentRenderer({
@@ -45,10 +46,17 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   addAnnotation,
   updateAnnotation,
   deleteAnnotation,
+  onNavigateToFile,
 }: FileContentRendererProps) {
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
-    return <MarkdownViewer content={fileContent.content} />;
+    return (
+      <MarkdownViewer
+        content={fileContent.content}
+        filePath={filePath}
+        onNavigateToFile={onNavigateToFile}
+      />
+    );
   }
 
   switch (contentMode.type) {
