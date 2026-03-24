@@ -18,10 +18,7 @@ import {
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { stringHash } from "../../utils/string-hash";
-import {
-  suppressScrollTracking,
-  suppressScrollCorrection,
-} from "../../hooks/scrollState";
+import { suppressScrollForNav } from "../../hooks/scrollState";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -207,6 +204,15 @@ export function DiffView({
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
 
+  // Pending scroll target for onPostRender refinement.
+  // Set when we do an approximate scroll and need pierre to render
+  // the target area before we can do a precise scrollIntoView.
+  const pendingScrollRef = useRef<{
+    type: "hunk" | "line";
+    lineNumber?: number;
+    timeoutId?: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
   // Hash file contents once for use in cache keys and content-change detection.
   const oldContentHash = useMemo(
     () => stringHash(oldContent ?? ""),
@@ -224,6 +230,56 @@ export function DiffView({
   const contentKey = `${fileName}:${oldContentHash}:${newContentHash}`;
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, contentKey);
 
+  // New-side line count for proportion-based scroll (handles word wrap).
+  // Scroll targets use new-file line numbers, so this is the correct denominator.
+  const newLineCount = useMemo(() => countLines(newContent), [newContent]);
+
+  /** Set a pending scroll target for onPostRender to refine. */
+  function setPendingScroll(type: "hunk" | "line", lineNumber?: number): void {
+    clearTimeout(pendingScrollRef.current?.timeoutId);
+    pendingScrollRef.current = {
+      type,
+      lineNumber,
+      timeoutId: setTimeout(() => {
+        pendingScrollRef.current = null;
+      }, 2000),
+    };
+  }
+
+  // Called by @pierre/diffs after every shadow DOM render. When a pending
+  // scroll target exists, finds the target element and does a precise
+  // scrollIntoView.
+  const handlePostRender = useCallback((node: HTMLElement) => {
+    const pending = pendingScrollRef.current;
+    if (!pending) return;
+
+    if (pending.type === "hunk") {
+      const el = focusedHunkRef.current;
+      if (el && el.getBoundingClientRect().height > 0) {
+        suppressScrollForNav();
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        clearTimeout(pending.timeoutId);
+        pendingScrollRef.current = null;
+      }
+    } else if (pending.type === "line" && pending.lineNumber) {
+      const shadow =
+        node.querySelector("diffs-container")?.shadowRoot ?? node.shadowRoot;
+      const lineEl =
+        shadow?.querySelector(
+          `[data-line="${pending.lineNumber}"]:not([data-line-type="removed"])`,
+        ) ?? shadow?.querySelector(`[data-line="${pending.lineNumber}"]`);
+      if (lineEl) {
+        suppressScrollForNav();
+        (lineEl as HTMLElement).scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+        clearTimeout(pending.timeoutId);
+        pendingScrollRef.current = null;
+      }
+    }
+  }, []);
+
   // Scroll to focused hunk when scrollTarget changes (type "hunk").
   // Uses store.subscribe to avoid re-rendering on every scrollTarget change.
   // Deferred via rAF so React has time to render and assign focusedHunkRef.
@@ -234,13 +290,14 @@ export function DiffView({
   // elements for off-screen hunks have no layout (their shadow-DOM slot
   // doesn't exist). When that happens we use the standard virtualization
   // scroll-to pattern: compute approximate offset → scroll container →
-  // virtualizer renders target area → precise scrollIntoView.
-  const scrollFallbackRef = useRef({ hunks, lineHeight });
-  scrollFallbackRef.current = { hunks, lineHeight };
+  // virtualizer renders target area → onPostRender refines with scrollIntoView.
+
+  const scrollFallbackRef = useRef({ hunks, lineHeight, newLineCount });
+  scrollFallbackRef.current = { hunks, lineHeight, newLineCount };
 
   useEffect(() => {
+    // Guards against the initial rAF firing after unmount cleanup.
     let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     function handleScrollTarget(): void {
       if (cancelled) return;
@@ -248,8 +305,7 @@ export function DiffView({
       if (!scrollTarget || scrollTarget.type !== "hunk") return;
       const targetHunkId = scrollTarget.hunkId;
       useReviewStore.getState().clearScrollTarget();
-      suppressScrollTracking(600);
-      suppressScrollCorrection(600);
+      suppressScrollForNav();
 
       // Fast path: annotation is within the render range and has layout.
       const el = focusedHunkRef.current;
@@ -258,28 +314,24 @@ export function DiffView({
         return;
       }
 
-      // Standard virtualization scroll-to: approximate position first,
-      // then refine after the virtualizer renders the target area.
-      const { hunks: h, lineHeight: lh } = scrollFallbackRef.current;
+      // Approximate scroll — onPostRender refines with scrollIntoView.
+      const {
+        hunks: h,
+        lineHeight: lh,
+        newLineCount: nl,
+      } = scrollFallbackRef.current;
       const hunk = h.find((x) => x.id === targetHunkId);
       if (!hunk) return;
-      scrollToLinePosition(diffContainerRef.current, hunk.newStart, lh);
-
-      retryTimer = setTimeout(() => {
-        if (cancelled) return;
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          const refined = focusedHunkRef.current;
-          if (refined && refined.getBoundingClientRect().height > 0) {
-            suppressScrollTracking(600);
-            suppressScrollCorrection(600);
-            refined.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        });
-      }, 400);
+      scrollToLinePosition(
+        diffContainerRef.current,
+        hunk.newStart,
+        lh,
+        "smooth",
+        nl,
+      );
+      setPendingScroll("hunk");
     }
 
-    // Initial scroll on mount (scrollTarget may already be set)
     requestAnimationFrame(handleScrollTarget);
 
     const unsubscribe = useReviewStore.subscribe((state, prevState) => {
@@ -293,29 +345,29 @@ export function DiffView({
 
     return () => {
       cancelled = true;
-      clearTimeout(retryTimer);
+      clearTimeout(pendingScrollRef.current?.timeoutId);
+      pendingScrollRef.current = null;
       unsubscribe();
     };
   }, []);
 
   // Scroll to highlighted line (from in-file search) inside shadow DOM.
-  // Same virtualization fallback as scroll-to-hunk above.
   useEffect(() => {
     if (!highlightLine || !diffContainerRef.current) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     const frame = requestAnimationFrame(() => {
-      if (cancelled) return;
       const shadow =
         diffContainerRef.current?.querySelector("diffs-container")?.shadowRoot;
       if (!shadow) return;
 
       // Fast path: line element exists in the render range.
-      const lineEl = shadow.querySelector(`[data-line="${highlightLine}"]`);
+      // Prefer new-side lines since search matches new file content.
+      const lineEl =
+        shadow.querySelector(
+          `[data-line="${highlightLine}"]:not([data-line-type="removed"])`,
+        ) ?? shadow.querySelector(`[data-line="${highlightLine}"]`);
       if (lineEl) {
-        suppressScrollTracking(600);
-        suppressScrollCorrection(600);
+        suppressScrollForNav();
         (lineEl as HTMLElement).scrollIntoView({
           behavior: "smooth",
           block: "center",
@@ -323,36 +375,24 @@ export function DiffView({
         return;
       }
 
-      // Approximate scroll, then retry after virtualizer renders.
-      suppressScrollTracking(600);
-      suppressScrollCorrection(600);
-      scrollToLinePosition(diffContainerRef.current, highlightLine, lineHeight);
-
-      retryTimer = setTimeout(() => {
-        if (cancelled) return;
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          const retryEl = shadow.querySelector(
-            `[data-line="${highlightLine}"]`,
-          );
-          if (retryEl) {
-            suppressScrollTracking(600);
-            suppressScrollCorrection(600);
-            (retryEl as HTMLElement).scrollIntoView({
-              behavior: "smooth",
-              block: "center",
-            });
-          }
-        });
-      }, 400);
+      // Approximate scroll — onPostRender refines.
+      suppressScrollForNav();
+      scrollToLinePosition(
+        diffContainerRef.current,
+        highlightLine,
+        lineHeight,
+        "smooth",
+        newLineCount,
+      );
+      setPendingScroll("line", highlightLine);
     });
 
     return () => {
-      cancelled = true;
       cancelAnimationFrame(frame);
-      clearTimeout(retryTimer);
+      clearTimeout(pendingScrollRef.current?.timeoutId);
+      pendingScrollRef.current = null;
     };
-  }, [highlightLine, lineHeight]);
+  }, [highlightLine, lineHeight, newLineCount]);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
@@ -959,6 +999,7 @@ export function DiffView({
     enableLineSelection: boolean;
     onGutterUtilityClick: typeof handleGutterUtilityClick;
     onLineSelectionEnd: typeof handleLineSelectionEnd;
+    onPostRender: typeof handlePostRender;
     unsafeCSS: string;
     expandUnchanged: boolean;
     expansionLineCount: number;
@@ -985,6 +1026,7 @@ export function DiffView({
       enableLineSelection: true,
       onGutterUtilityClick: handleGutterUtilityClick,
       onLineSelectionEnd: handleLineSelectionEnd,
+      onPostRender: handlePostRender,
       unsafeCSS: fontCSS + annotationHighlightCSS,
       expandUnchanged: expandUnchangedProp,
       expansionLineCount: 20,
@@ -1013,6 +1055,7 @@ export function DiffView({
     diffOverflow,
     handleGutterUtilityClick,
     handleLineSelectionEnd,
+    handlePostRender,
     expandUnchangedProp,
   ]);
 

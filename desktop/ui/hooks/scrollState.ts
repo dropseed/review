@@ -31,3 +31,9 @@ export const suppressScrollCorrection = (ms: number) =>
   correctionWindow.suppress(ms);
 export const isScrollCorrectionSuppressed = () =>
   correctionWindow.isSuppressed();
+
+/** Suppress both tracking and correction during a programmatic scroll. */
+export function suppressScrollForNav(ms = 600): void {
+  suppressScrollTracking(ms);
+  suppressScrollCorrection(ms);
+}

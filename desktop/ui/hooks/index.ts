@@ -29,6 +29,7 @@ export { useListContinuation } from "./useListContinuation";
 export {
   suppressScrollTracking,
   suppressScrollCorrection,
+  suppressScrollForNav,
 } from "./scrollState";
 export { useAutoStartGuide } from "./useAutoStartGuide";
 export { useWordHighlight } from "./useWordHighlight";

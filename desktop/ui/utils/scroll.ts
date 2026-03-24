@@ -32,16 +32,33 @@ export function findScrollContainer(
 /**
  * Scroll a container so that a given line number is approximately centered.
  * Returns the container that was scrolled, or null if none was found.
+ *
+ * When `totalLines` is provided, uses proportion-based scrolling that
+ * accounts for word wrap: `(lineNumber / totalLines) * scrollHeight`.
+ * This is significantly more accurate than fixed line-height math when
+ * lines wrap to multiple visual rows.
  */
 export function scrollToLinePosition(
   el: HTMLElement | null,
   lineNumber: number,
   lineHeight: number,
   behavior: ScrollBehavior = "smooth",
+  totalLines?: number,
 ): HTMLElement | null {
   const scrollContainer = findScrollContainer(el);
   if (!scrollContainer) return null;
-  const approxTop = (lineNumber - 1) * lineHeight;
+
+  let approxTop: number;
+  if (totalLines && totalLines > 1) {
+    // Proportion-based: the virtualizer's scrollHeight already reflects
+    // actual rendered heights (including word-wrapped lines), so this
+    // naturally handles variable line heights.
+    const ratio = Math.max(0, (lineNumber - 1) / (totalLines - 1));
+    approxTop = ratio * scrollContainer.scrollHeight;
+  } else {
+    approxTop = (lineNumber - 1) * lineHeight;
+  }
+
   const centerOffset = scrollContainer.clientHeight / 2;
   scrollContainer.scrollTo({
     top: Math.max(0, approxTop - centerOffset),
