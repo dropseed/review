@@ -18,7 +18,6 @@ import {
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { stringHash } from "../../utils/string-hash";
-import { suppressScrollForNav } from "../../hooks/scrollState";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -31,7 +30,10 @@ import {
 } from "./annotations";
 import { getLastChangedLine } from "./hunkUtils";
 import type { SupportedLanguages } from "./languageMap";
-import { scrollToLinePosition } from "../../utils/scroll";
+import {
+  scrollToTarget,
+  type ScrollHandle,
+} from "../../utils/scroll-to-target";
 
 // Error boundary to catch rendering errors
 export class DiffErrorBoundary extends Component<
@@ -204,14 +206,8 @@ export function DiffView({
   // Ref to track focused hunk element for scrolling
   const focusedHunkRef = useRef<HTMLDivElement | null>(null);
 
-  // Pending scroll target for onPostRender refinement.
-  // Set when we do an approximate scroll and need pierre to render
-  // the target area before we can do a precise scrollIntoView.
-  const pendingScrollRef = useRef<{
-    type: "hunk" | "line";
-    lineNumber?: number;
-    timeoutId?: ReturnType<typeof setTimeout>;
-  } | null>(null);
+  // Active scroll operation handle (for cancel + onPostRender notification)
+  const scrollHandleRef = useRef<ScrollHandle | null>(null);
 
   // Hash file contents once for use in cache keys and content-change detection.
   const oldContentHash = useMemo(
@@ -234,69 +230,34 @@ export function DiffView({
   // Scroll targets use new-file line numbers, so this is the correct denominator.
   const newLineCount = useMemo(() => countLines(newContent), [newContent]);
 
-  /** Set a pending scroll target for onPostRender to refine. */
-  function setPendingScroll(type: "hunk" | "line", lineNumber?: number): void {
-    clearTimeout(pendingScrollRef.current?.timeoutId);
-    pendingScrollRef.current = {
-      type,
-      lineNumber,
-      timeoutId: setTimeout(() => {
-        pendingScrollRef.current = null;
-      }, 2000),
-    };
+  /** Find a line element inside the @pierre/diffs shadow DOM. */
+  function findLineInShadowDOM(lineNumber: number): HTMLElement | null {
+    const shadow =
+      diffContainerRef.current?.querySelector("diffs-container")?.shadowRoot;
+    return (
+      (shadow?.querySelector(
+        `[data-line="${lineNumber}"]:not([data-line-type="removed"])`,
+      ) as HTMLElement | null) ??
+      (shadow?.querySelector(
+        `[data-line="${lineNumber}"]`,
+      ) as HTMLElement | null)
+    );
   }
 
-  // Called by @pierre/diffs after every shadow DOM render. When a pending
-  // scroll target exists, finds the target element and does a precise
-  // scrollIntoView.
-  const handlePostRender = useCallback((node: HTMLElement) => {
-    const pending = pendingScrollRef.current;
-    if (!pending) return;
-
-    if (pending.type === "hunk") {
-      const el = focusedHunkRef.current;
-      if (el && el.getBoundingClientRect().height > 0) {
-        suppressScrollForNav();
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        clearTimeout(pending.timeoutId);
-        pendingScrollRef.current = null;
-      }
-    } else if (pending.type === "line" && pending.lineNumber) {
-      const shadow =
-        node.querySelector("diffs-container")?.shadowRoot ?? node.shadowRoot;
-      const lineEl =
-        shadow?.querySelector(
-          `[data-line="${pending.lineNumber}"]:not([data-line-type="removed"])`,
-        ) ?? shadow?.querySelector(`[data-line="${pending.lineNumber}"]`);
-      if (lineEl) {
-        suppressScrollForNav();
-        (lineEl as HTMLElement).scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-        clearTimeout(pending.timeoutId);
-        pendingScrollRef.current = null;
-      }
-    }
+  // Called by @pierre/diffs after every shadow DOM render.
+  // Notifies the active scroll operation so it can check for the target.
+  const handlePostRender = useCallback((_node: HTMLElement) => {
+    scrollHandleRef.current?.notify();
   }, []);
 
   // Scroll to focused hunk when scrollTarget changes (type "hunk").
   // Uses store.subscribe to avoid re-rendering on every scrollTarget change.
   // Deferred via rAF so React has time to render and assign focusedHunkRef.
-  // Also handles an existing scrollTarget on mount (file switching causes
-  // unmount/remount due to async content load in FileViewer).
-  //
-  // @pierre/diffs virtualizes lines outside the viewport, so annotation
-  // elements for off-screen hunks have no layout (their shadow-DOM slot
-  // doesn't exist). When that happens we use the standard virtualization
-  // scroll-to pattern: compute approximate offset → scroll container →
-  // virtualizer renders target area → onPostRender refines with scrollIntoView.
 
   const scrollFallbackRef = useRef({ hunks, lineHeight, newLineCount });
   scrollFallbackRef.current = { hunks, lineHeight, newLineCount };
 
   useEffect(() => {
-    // Guards against the initial rAF firing after unmount cleanup.
     let cancelled = false;
 
     function handleScrollTarget(): void {
@@ -305,34 +266,30 @@ export function DiffView({
       if (!scrollTarget || scrollTarget.type !== "hunk") return;
       const targetHunkId = scrollTarget.hunkId;
       useReviewStore.getState().clearScrollTarget();
-      suppressScrollForNav();
 
-      // Fast path: annotation is within the render range and has layout.
-      const el = focusedHunkRef.current;
-      if (el && el.getBoundingClientRect().height > 0) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        return;
-      }
-
-      // Approximate scroll — onPostRender refines with scrollIntoView.
       const {
         hunks: h,
         lineHeight: lh,
         newLineCount: nl,
       } = scrollFallbackRef.current;
       const hunk = h.find((x) => x.id === targetHunkId);
-      if (!hunk) return;
-      scrollToLinePosition(
-        diffContainerRef.current,
-        hunk.newStart,
-        lh,
-        "smooth",
-        nl,
-      );
-      setPendingScroll("hunk");
+      if (!hunk || !diffContainerRef.current) return;
+
+      scrollHandleRef.current?.cancel();
+      scrollHandleRef.current = scrollToTarget({
+        container: diffContainerRef.current,
+        findTarget: () => {
+          const el = focusedHunkRef.current;
+          if (!el || !el.isConnected) return null;
+          return el.getBoundingClientRect().height > 0 ? el : null;
+        },
+        lineNumber: hunk.newStart,
+        lineHeight: lh,
+        totalLines: nl,
+      });
     }
 
-    requestAnimationFrame(handleScrollTarget);
+    const initialFrame = requestAnimationFrame(handleScrollTarget);
 
     const unsubscribe = useReviewStore.subscribe((state, prevState) => {
       if (
@@ -345,52 +302,31 @@ export function DiffView({
 
     return () => {
       cancelled = true;
-      clearTimeout(pendingScrollRef.current?.timeoutId);
-      pendingScrollRef.current = null;
+      cancelAnimationFrame(initialFrame);
+      scrollHandleRef.current?.cancel();
       unsubscribe();
     };
   }, []);
 
-  // Scroll to highlighted line (from in-file search) inside shadow DOM.
+  // Scroll to highlighted line (from in-file search / symbol jump).
   useEffect(() => {
     if (!highlightLine || !diffContainerRef.current) return;
 
     const frame = requestAnimationFrame(() => {
-      const shadow =
-        diffContainerRef.current?.querySelector("diffs-container")?.shadowRoot;
-      if (!shadow) return;
-
-      // Fast path: line element exists in the render range.
-      // Prefer new-side lines since search matches new file content.
-      const lineEl =
-        shadow.querySelector(
-          `[data-line="${highlightLine}"]:not([data-line-type="removed"])`,
-        ) ?? shadow.querySelector(`[data-line="${highlightLine}"]`);
-      if (lineEl) {
-        suppressScrollForNav();
-        (lineEl as HTMLElement).scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-        return;
-      }
-
-      // Approximate scroll — onPostRender refines.
-      suppressScrollForNav();
-      scrollToLinePosition(
-        diffContainerRef.current,
-        highlightLine,
+      if (!diffContainerRef.current) return;
+      scrollHandleRef.current?.cancel();
+      scrollHandleRef.current = scrollToTarget({
+        container: diffContainerRef.current,
+        findTarget: () => findLineInShadowDOM(highlightLine),
+        lineNumber: highlightLine,
         lineHeight,
-        "smooth",
-        newLineCount,
-      );
-      setPendingScroll("line", highlightLine);
+        totalLines: newLineCount,
+      });
     });
 
     return () => {
       cancelAnimationFrame(frame);
-      clearTimeout(pendingScrollRef.current?.timeoutId);
-      pendingScrollRef.current = null;
+      scrollHandleRef.current?.cancel();
     };
   }, [highlightLine, lineHeight, newLineCount]);
 

@@ -9,7 +9,7 @@ import {
 import type { SupportedLanguages } from "./languageMap";
 import { SimpleTooltip } from "../ui/tooltip";
 import { stringHash } from "../../utils/string-hash";
-import { scrollToLinePosition } from "../../utils/scroll";
+import { scrollToTarget } from "../../utils/scroll-to-target";
 
 // Metadata for annotations in file view
 type FileAnnotationMeta =
@@ -64,54 +64,23 @@ export function PlainCodeView({
   );
 
   // Scroll to highlighted line inside the shadow DOM.
-  // Same two-step approach as DiffView: approximate scroll first to get
-  // the virtualizer to render the target range, then find the actual element.
   useEffect(() => {
     if (!highlightLine || !containerRef.current) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const frame = requestAnimationFrame(() => {
-      if (cancelled) return;
-      const shadow =
-        containerRef.current?.querySelector("diffs-container")?.shadowRoot;
-      if (!shadow) return;
-
-      const lineEl = shadow.querySelector(`[data-line="${highlightLine}"]`);
-      if (lineEl) {
-        (lineEl as HTMLElement).scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-        return;
-      }
-
-      // Approximate scroll to get the virtualizer to render the target range
-      scrollToLinePosition(containerRef.current, highlightLine, lineHeight);
-
-      // Retry after the virtualizer catches up
-      retryTimer = setTimeout(() => {
-        if (cancelled) return;
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          const retryEl = shadow.querySelector(
-            `[data-line="${highlightLine}"]`,
-          );
-          if (retryEl) {
-            (retryEl as HTMLElement).scrollIntoView({
-              behavior: "smooth",
-              block: "center",
-            });
-          }
-        });
-      }, 400);
+    const handle = scrollToTarget({
+      container: containerRef.current,
+      findTarget: () => {
+        const shadow =
+          containerRef.current?.querySelector("diffs-container")?.shadowRoot;
+        return shadow?.querySelector(
+          `[data-line="${highlightLine}"]`,
+        ) as HTMLElement | null;
+      },
+      lineNumber: highlightLine,
+      lineHeight,
     });
 
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frame);
-      clearTimeout(retryTimer);
-    };
+    return () => handle.cancel();
   }, [highlightLine, lineHeight]);
 
   // Filter annotations that are for file view (side === "file")
