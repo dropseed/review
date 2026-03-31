@@ -82,7 +82,10 @@ fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
 /// When no git repo is found, returns `(target_path, None)`.
 fn resolve_open_path(path: Option<String>) -> Result<(String, Option<String>), String> {
     let target = match path {
-        Some(p) => resolve_absolute(Path::new(&p))?,
+        Some(p) => {
+            let abs = resolve_absolute(Path::new(&p))?;
+            abs.canonicalize().unwrap_or(abs)
+        }
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
 
