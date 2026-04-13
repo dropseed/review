@@ -56,7 +56,7 @@ function activateSidebarItem(
  * j/k for hunk navigation, a/r for approve/reject, split view, escape.
  *
  * Note: Shortcuts that have Tauri menu accelerators (Cmd+P, Cmd+R,
- * Cmd+Shift+F, Cmd+Shift+N, Cmd+B, Cmd+Shift+D, Cmd+,,
+ * Cmd+Shift+F, Cmd+Shift+N, Cmd+B, Cmd+,,
  * Cmd+0, Cmd+=, Cmd+-) are handled exclusively via useMenuEvents to avoid
  * double-firing.
  */
@@ -74,7 +74,7 @@ export function useKeyboardNavigation() {
       // Cmd/Ctrl+O is handled globally by AppShell
       // Cmd/Ctrl+P, Cmd/Ctrl+R, Cmd/Ctrl+Shift+F, Cmd/Ctrl+Shift+N, Cmd/Ctrl+B
       // are handled via Tauri menu accelerators + useMenuEvents
-      // Cmd/Ctrl+Shift+D, Cmd/Ctrl+, are handled via Tauri menu accelerators + useMenuEvents
+      // Cmd/Ctrl+, is handled via Tauri menu accelerators + useMenuEvents
 
       // Cmd/Ctrl+F to block browser find (in-file search handled by FileViewer)
       if (
@@ -110,6 +110,22 @@ export function useKeyboardNavigation() {
         state.setSplitOrientation(
           state.splitOrientation === "horizontal" ? "vertical" : "horizontal",
         );
+        return;
+      }
+
+      // Cmd/Ctrl+D: split side-by-side (horizontal layout).
+      // Cmd/Ctrl+Shift+D: split stacked (vertical layout).
+      // If already split, just adjust the orientation.
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        (event.key === "d" || event.key === "D")
+      ) {
+        event.preventDefault();
+        const orientation = event.shiftKey ? "vertical" : "horizontal";
+        state.setSplitOrientation(orientation);
+        if (state.secondaryFile === null) {
+          state.openEmptySplit();
+        }
         return;
       }
 

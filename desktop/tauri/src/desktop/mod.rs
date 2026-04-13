@@ -268,7 +268,6 @@ pub fn run() {
 
             let show_debug = MenuItemBuilder::new("Show Debug Data")
                 .id("show_debug")
-                .accelerator("CmdOrCtrl+Shift+D")
                 .build(app)?;
 
             let restart_lsp = MenuItemBuilder::new("Restart Language Servers")
