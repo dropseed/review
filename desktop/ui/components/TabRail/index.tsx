@@ -87,11 +87,11 @@ function FooterVersionInfo({
 }
 
 import {
-  buildRepoGroups,
   type SidebarEntry,
   type RepoGroup,
   type BaseGroup,
 } from "../../utils/sidebar-ordering";
+import { useRepoGroups } from "../../hooks/useRepoGroups";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -106,19 +106,18 @@ function SidebarList({
   onActivateReview,
   onActivateLocalBranch,
 }: SidebarListProps): ReactNode {
+  const repoGroups = useRepoGroups();
+  const showCleanRepos = useReviewStore((s) => s.showCleanRepos);
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
 
   const globalReviews = useReviewStore((s) => s.globalReviews);
-  const globalReviewsByKey = useReviewStore((s) => s.globalReviewsByKey);
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
   const localActivity = useReviewStore((s) => s.localActivity);
   const localActivityLoading = useReviewStore((s) => s.localActivityLoading);
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
-  const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
-  const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
 
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -128,24 +127,6 @@ function SidebarList({
   const liveProgress = useMemo(
     () => (reviewState ? computeReviewProgress(hunks, reviewState) : null),
     [hunks, reviewState],
-  );
-
-  const repoGroups = useMemo(
-    () =>
-      buildRepoGroups(
-        localActivity,
-        globalReviews,
-        globalReviewsByKey,
-        reviewSortOrder,
-        reviewDiffStats,
-      ),
-    [
-      localActivity,
-      globalReviews,
-      globalReviewsByKey,
-      reviewSortOrder,
-      reviewDiffStats,
-    ],
   );
 
   const handleDeleteReview = useCallback(
@@ -205,8 +186,6 @@ function SidebarList({
     );
   }
 
-  const [showCleanRepos, setShowCleanRepos] = useState(false);
-
   const totalItems = repoGroups.reduce((n, g) => n + g.items.length, 0);
 
   const isEmpty =
@@ -221,12 +200,7 @@ function SidebarList({
     globalReviews.length === 0 &&
     localActivity.length === 0;
 
-  // Split repos into those with changes and those without
   const reposWithChanges = repoGroups.filter((g) => g.hasChanges);
-  const reposWithoutChanges = repoGroups.filter((g) => !g.hasChanges);
-  const hiddenRepoCount = reposWithoutChanges.length;
-
-  // Show all repos when filter is off or there are no repos with changes
   const visibleRepos =
     showCleanRepos || reposWithChanges.length === 0
       ? repoGroups
@@ -257,32 +231,6 @@ function SidebarList({
           />
         );
       })}
-
-      {/* Show "+N repos" button when clean repos are hidden */}
-      {!showCleanRepos &&
-        hiddenRepoCount > 0 &&
-        reposWithChanges.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowCleanRepos(true)}
-            className="w-full text-center py-1.5 text-[10px] font-medium text-fg-faint
-                     hover:text-fg-secondary transition-colors"
-          >
-            +{hiddenRepoCount} repo{hiddenRepoCount !== 1 ? "s" : ""}
-          </button>
-        )}
-
-      {/* Show "changes only" toggle when clean repos are visible */}
-      {showCleanRepos && hiddenRepoCount > 0 && reposWithChanges.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowCleanRepos(false)}
-          className="w-full text-center py-1.5 text-[10px] font-medium text-fg-faint
-                     hover:text-fg-secondary transition-colors"
-        >
-          changes only
-        </button>
-      )}
     </div>
   );
 }
@@ -402,12 +350,45 @@ function SidebarHeader({
   const globalReviews = useReviewStore((s) => s.globalReviews);
   const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
+  const showCleanRepos = useReviewStore((s) => s.showCleanRepos);
+  const toggleShowCleanRepos = useReviewStore((s) => s.toggleShowCleanRepos);
+
+  const repoGroups = useRepoGroups();
+  const hiddenRepoCount = useMemo(
+    () =>
+      repoGroups.some((g) => g.hasChanges)
+        ? repoGroups.filter((g) => !g.hasChanges).length
+        : 0,
+    [repoGroups],
+  );
 
   return (
     <div className="shrink-0 px-2 py-2 flex items-center gap-1">
-      <span className="flex-1 pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
+      <span className="pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
         Reviews
       </span>
+      {hiddenRepoCount > 0 && (
+        <button
+          type="button"
+          onClick={toggleShowCleanRepos}
+          className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums
+                     text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.06]
+                     transition-colors duration-100"
+          aria-label={
+            showCleanRepos
+              ? "Show only repos with changes"
+              : `Show ${hiddenRepoCount} repo${hiddenRepoCount !== 1 ? "s" : ""} without changes`
+          }
+          title={
+            showCleanRepos
+              ? "Show only repos with changes"
+              : `Show ${hiddenRepoCount} repo${hiddenRepoCount !== 1 ? "s" : ""} without changes`
+          }
+        >
+          {showCleanRepos ? "changes only" : `+${hiddenRepoCount}`}
+        </button>
+      )}
+      <span className="flex-1" />
       {globalReviews.length > 0 && (
         <SortMenu
           options={SORT_OPTIONS}

@@ -139,6 +139,7 @@ const defaults = {
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
+  showCleanRepos: false,
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -186,6 +187,9 @@ export interface PreferencesSlice {
 
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
+
+  // Sidebar: whether to show repos without working-tree changes
+  showCleanRepos: boolean;
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -248,6 +252,10 @@ export interface PreferencesSlice {
 
   // Review sort order actions
   setReviewSortOrder: (order: ReviewSortOrder) => void;
+
+  // Sidebar clean-repos toggle actions
+  setShowCleanRepos: (show: boolean) => void;
+  toggleShowCleanRepos: () => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -499,6 +507,15 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setReviewSortOrder: (order) => {
       set({ reviewSortOrder: order });
       storage.set("reviewSortOrder", order);
+    },
+
+    setShowCleanRepos: (show) => {
+      set({ showCleanRepos: show });
+      storage.set("showCleanRepos", show);
+    },
+
+    toggleShowCleanRepos: () => {
+      get().setShowCleanRepos(!get().showCleanRepos);
     },
 
     setFileSortOrder: (order) => {

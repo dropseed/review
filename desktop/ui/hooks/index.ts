@@ -35,3 +35,4 @@ export { useAutoStartGuide } from "./useAutoStartGuide";
 export { useWordHighlight } from "./useWordHighlight";
 export { useLspClient } from "./useLspClient";
 export { useHoverInfo } from "./useHoverInfo";
+export { useRepoGroups } from "./useRepoGroups";
