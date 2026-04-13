@@ -4367,7 +4367,7 @@ dependencies = [
 
 [[package]]
 name = "review"
-version = "0.0.76"
+version = "0.0.77"
 dependencies = [
  "anyhow",
  "axum",
@@ -4413,7 +4413,7 @@ dependencies = [
 
 [[package]]
 name = "review-desktop"
-version = "0.0.76"
+version = "0.0.77"
 dependencies = [
  "base64 0.22.1",
  "chrono",
