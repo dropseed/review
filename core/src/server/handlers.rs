@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::Router;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1237,6 +1237,7 @@ async fn events_sse(
         let tx = tx; // move into closure scope
 
         let repo_for_closure = repo_path_str.clone();
+        let repo_root = repo_path.clone();
         let tx_clone = tx.clone();
 
         let debouncer_result = new_debouncer(
@@ -1246,6 +1247,8 @@ async fn events_sse(
                     let mut review_changed = false;
                     let mut git_state_changed = false;
                     let mut working_tree_changed = false;
+                    let mut changed_paths: std::collections::BTreeSet<String> =
+                        std::collections::BTreeSet::new();
 
                     for event in events {
                         if event.kind != DebouncedEventKind::Any {
@@ -1261,7 +1264,16 @@ async fn events_sse(
                         match category {
                             ChangeKind::ReviewState => review_changed = true,
                             ChangeKind::GitState => git_state_changed = true,
-                            ChangeKind::WorkingTree => working_tree_changed = true,
+                            ChangeKind::WorkingTree => {
+                                working_tree_changed = true;
+                                let rel = crate::service::util::repo_relative_path(
+                                    &event.path,
+                                    &repo_root,
+                                );
+                                if !rel.is_empty() {
+                                    changed_paths.insert(rel);
+                                }
+                            }
                             ChangeKind::Ignored => {}
                         }
                     }
@@ -1274,11 +1286,20 @@ async fn events_sse(
                         );
                     }
                     if working_tree_changed || git_state_changed {
-                        let _ = tx_clone.blocking_send(
-                            Event::default()
-                                .event("git-changed")
-                                .data(&repo_for_closure),
-                        );
+                        let payload = GitChangedPayload {
+                            repo_path: repo_for_closure.clone(),
+                            changed_paths: changed_paths.into_iter().collect(),
+                            git_state_changed,
+                        };
+                        let event = Event::default()
+                            .event("git-changed")
+                            .json_data(&payload)
+                            .unwrap_or_else(|_| {
+                                Event::default()
+                                    .event("git-changed")
+                                    .data(&repo_for_closure)
+                            });
+                        let _ = tx_clone.blocking_send(event);
                     }
                     if git_state_changed {
                         let _ = tx_clone.blocking_send(
@@ -1342,6 +1363,16 @@ enum ChangeKind {
     GitState,
     WorkingTree,
     Ignored,
+}
+
+/// SSE counterpart of `GitChangedPayload` in the Tauri watcher — same shape,
+/// serialized into the event `data` as JSON.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitChangedPayload {
+    repo_path: String,
+    changed_paths: Vec<String>,
+    git_state_changed: bool,
 }
 
 fn should_ignore_path(path_str: &str) -> bool {

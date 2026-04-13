@@ -6,11 +6,27 @@
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
-use std::collections::HashMap;
+use serde::Serialize;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+
+/// Payload for the `git-changed` event. Carries the set of working-tree paths
+/// that changed in the debounce window, so the frontend can refresh only those
+/// files rather than doing a blanket reload.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitChangedPayload {
+    repo_path: String,
+    /// Repo-relative paths whose working-tree content changed. Empty when only
+    /// git-internal state changed (branch switch, commit, stage/unstage).
+    changed_paths: Vec<String>,
+    /// True if `.git/HEAD`, `.git/refs/heads/`, or `.git/index` changed —
+    /// signals that a full refresh is warranted (branch switch, commit, stage).
+    git_state_changed: bool,
+}
 
 /// Debounce interval for file system events in milliseconds.
 const WATCHER_DEBOUNCE_MS: u64 = 200;
@@ -254,6 +270,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                     let mut review_changed = false;
                     let mut git_state_changed = false;
                     let mut working_tree_changed = false;
+                    // Deduped set of repo-relative paths that changed in this window.
+                    // Sorted for stable payload ordering.
+                    let mut changed_paths: BTreeSet<String> = BTreeSet::new();
 
                     for event in events {
                         if event.kind != DebouncedEventKind::Any {
@@ -305,6 +324,13 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             }
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
+                                let rel = review::service::util::repo_relative_path(
+                                    &event.path,
+                                    &repo_path_for_closure,
+                                );
+                                if !rel.is_empty() {
+                                    changed_paths.insert(rel);
+                                }
                             }
                             ChangeKind::Ignored => {}
                         }
@@ -319,8 +345,16 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                     // Git state changes (index, HEAD, refs/heads) are a subset of
                     // working tree changes — emit git-changed for both.
                     if working_tree_changed || git_state_changed {
-                        eprintln!("[watcher] Working tree changed for {repo_for_closure}");
-                        let _ = app_clone.emit(EVENT_GIT_CHANGED, &repo_for_closure);
+                        let payload = GitChangedPayload {
+                            repo_path: repo_for_closure.clone(),
+                            changed_paths: changed_paths.into_iter().collect(),
+                            git_state_changed,
+                        };
+                        eprintln!(
+                            "[watcher] git-changed for {repo_for_closure} (paths={}, git_state={git_state_changed})",
+                            payload.changed_paths.len()
+                        );
+                        let _ = app_clone.emit(EVENT_GIT_CHANGED, &payload);
                     }
 
                     // The lightweight local-activity watcher is skipped for repos with

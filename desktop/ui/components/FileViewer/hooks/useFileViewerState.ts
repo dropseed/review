@@ -1,11 +1,18 @@
 import { useReviewStore } from "../../../stores";
 
-/** Bundles the store selectors used by FileViewer into a single hook. */
-export function useFileViewerState() {
+/**
+ * Bundles the store selectors used by FileViewer into a single hook. Takes
+ * the currently-viewed file path so it can return a narrow `fileVersion`
+ * selector — subscribing to per-path invalidation rather than a global
+ * counter means unrelated file changes don't re-run the viewer's effect.
+ */
+export function useFileViewerState(filePath: string | null) {
   // Git / comparison context
   const comparison = useReviewStore((s) => s.comparison);
   const repoPath = useReviewStore((s) => s.repoPath);
-  const refreshGeneration = useReviewStore((s) => s.refreshGeneration);
+  const fileVersion = useReviewStore((s) =>
+    filePath ? (s.fileVersions[filePath] ?? 0) : 0,
+  );
 
   // Preferences
   const codeTheme = useReviewStore((s) => s.codeTheme);
@@ -28,7 +35,7 @@ export function useFileViewerState() {
   return {
     comparison,
     repoPath,
-    refreshGeneration,
+    fileVersion,
     codeTheme,
     codeFontSize,
     codeFontFamily,

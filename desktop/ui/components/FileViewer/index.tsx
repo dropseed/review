@@ -86,13 +86,13 @@ export function FileViewer({
     codeFontFamily,
     reviewState,
     allHunks,
-    refreshGeneration,
+    fileVersion,
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,
     workingTreeDiffFile,
     gitStatus,
-  } = useFileViewerState();
+  } = useFileViewerState(filePath);
 
   const externalFilePath = useReviewStore((s) => s.externalFilePath);
   const isExternalFile = externalFilePath !== null;
@@ -592,7 +592,7 @@ export function FileViewer({
     filePath,
     comparison,
     fileHunkKey,
-    refreshGeneration,
+    fileVersion,
     isWorkingTreeMode,
     workingTreeDiffMode,
     gitStatus,

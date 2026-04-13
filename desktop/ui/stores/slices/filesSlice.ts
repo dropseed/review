@@ -8,7 +8,7 @@ import type {
   CommitEntry,
 } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
-import { flattenFiles } from "../types";
+import { flattenFiles, flattenFilesWithStatus } from "../types";
 import type { UndoEntry } from "./undoSlice";
 import { symbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
@@ -45,8 +45,107 @@ const SKIP_PATTERNS = [
 ];
 
 /** Check if a file path should be skipped (likely binary/build artifact). */
-function shouldSkipFile(path: string): boolean {
+export function shouldSkipFile(path: string): boolean {
   return SKIP_PATTERNS.some((pattern) => pattern.test(path));
+}
+
+/** Build a path → hunk-ID[] index in a single pass. */
+function hunkIdsByPath(hunks: DiffHunk[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const h of hunks) {
+    const arr = map.get(h.filePath);
+    if (arr) arr.push(h.id);
+    else map.set(h.filePath, [h.id]);
+  }
+  return map;
+}
+
+function stringArraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Flat-compare file trees by (path, status) tuples. Order-sensitive. */
+export function filesStructureEqual(a: FileEntry[], b: FileEntry[]): boolean {
+  const fa = flattenFilesWithStatus(a);
+  const fb = flattenFilesWithStatus(b);
+  if (fa.length !== fb.length) return false;
+  for (let i = 0; i < fa.length; i++) {
+    if (fa[i].path !== fb[i].path || fa[i].status !== fb[i].status)
+      return false;
+  }
+  return true;
+}
+
+/** Compare move-pair arrays by (sourceHunkId, destHunkId) tuples. Order-sensitive. */
+export function movePairsEqual(a: MovePair[], b: MovePair[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].sourceHunkId !== b[i].sourceHunkId ||
+      a[i].destHunkId !== b[i].destHunkId
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Return paths whose hunk-ID sequence differs between `oldHunks` and `newHunks`.
+ * Hunk IDs embed content hashes, so differing IDs mean observable changes.
+ */
+export function diffChangedPaths(
+  oldHunks: DiffHunk[],
+  newHunks: DiffHunk[],
+): string[] {
+  const oldMap = hunkIdsByPath(oldHunks);
+  const newMap = hunkIdsByPath(newHunks);
+  const paths = new Set<string>([...oldMap.keys(), ...newMap.keys()]);
+  const changed: string[] = [];
+  for (const p of paths) {
+    const a = oldMap.get(p) ?? [];
+    const b = newMap.get(p) ?? [];
+    if (!stringArraysEqual(a, b)) changed.push(p);
+  }
+  return changed;
+}
+
+/** True if the store's hunks for `filePath` have the same IDs in the same order as `freshHunks`. */
+function hunkIdsForPathEqual(
+  storeHunks: DiffHunk[],
+  filePath: string,
+  freshHunks: DiffHunk[],
+): boolean {
+  let storeIdx = 0;
+  for (let i = 0; i < storeHunks.length; i++) {
+    if (storeHunks[i].filePath !== filePath) continue;
+    if (storeIdx >= freshHunks.length) return false;
+    if (storeHunks[i].id !== freshHunks[storeIdx].id) return false;
+    storeIdx++;
+  }
+  return storeIdx === freshHunks.length;
+}
+
+/**
+ * Compute the store patch to apply after `detectMovePairs` returns. Null means
+ * the result matches current state, so no write is needed (and no downstream
+ * re-renders are triggered).
+ */
+function movePairsPatch(
+  result: { hunks: DiffHunk[]; pairs: MovePair[] },
+  currentHunks: DiffHunk[],
+  currentPairs: MovePair[],
+): { hunks?: DiffHunk[]; movePairs: MovePair[] } | null {
+  if (movePairsEqual(currentPairs, result.pairs)) return null;
+  const annotationsDiffer = result.hunks.some((h, i) => {
+    const cur = currentHunks[i];
+    return !cur || cur.id !== h.id || cur.movePairId !== h.movePairId;
+  });
+  return annotationsDiffer
+    ? { hunks: result.hunks, movePairs: result.pairs }
+    : { movePairs: result.pairs };
 }
 
 /**
@@ -75,8 +174,13 @@ export interface FilesSlice {
   flatFileList: string[];
   // Tracks which gitignored directories have been loaded
   loadedGitIgnoredDirs: Set<string>;
-  // Incremented on each refresh() to trigger re-fetches in components
-  refreshGeneration: number;
+  /**
+   * Per-path version counter. Incremented whenever the store observes a real
+   * change to a file's hunks/content. Components subscribe to their own path's
+   * entry for fine-grained invalidation (replaces the old global
+   * `refreshGeneration` counter).
+   */
+  fileVersions: Record<string, number>;
   // True when viewing a standalone file (not in a git repo)
   isStandaloneFile: boolean;
 
@@ -89,6 +193,8 @@ export interface FilesSlice {
   setHunks: (hunks: DiffHunk[]) => void;
   /** Replace store hunks for a single file with fresh data from getFileContent */
   syncFileHunks: (filePath: string, freshHunks: DiffHunk[]) => void;
+  /** Increment `fileVersions[path]` to signal observers that the file changed. */
+  bumpFileVersion: (filePath: string) => void;
 
   // Loading
   loadFiles: (isRefreshing?: boolean) => Promise<void>;
@@ -99,6 +205,15 @@ export interface FilesSlice {
   loadCurrentBranch: () => Promise<void>;
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
+  /** Surgical refresh: bumps `fileVersions` only for paths with real hunk changes, leaving unchanged paths untouched. */
+  refetchFileHunks: (paths: string[]) => Promise<void>;
+  /**
+   * Apply a working-tree watcher event's file-level impact. In browse mode
+   * just bumps versions for changed paths; in review mode either surgically
+   * refetches those paths, or falls back to a full `loadFiles` when any
+   * changed path isn't tracked yet (added/deleted files).
+   */
+  applyFileWatcherEvent: (changedPaths: string[]) => Promise<void>;
 }
 
 /** State reset shared between comparison and repo switches. */
@@ -140,7 +255,7 @@ const comparisonResetState = {
 const repoResetState = {
   currentBranch: null as string | null,
   loadedGitIgnoredDirs: new Set<string>(),
-  refreshGeneration: 0,
+  fileVersions: {} as Record<string, number>,
   isStandaloneFile: false,
   // Search
   searchQuery: "",
@@ -165,7 +280,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     loadingProgress: null,
     flatFileList: [],
     loadedGitIgnoredDirs: new Set<string>(),
-    refreshGeneration: 0,
+    fileVersions: {},
     isStandaloneFile: false,
     worktreePath: null,
     worktreeStale: false,
@@ -218,20 +333,18 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
 
     setFiles: (files) => set({ files, flatFileList: flattenFiles(files) }),
     setHunks: (hunks) => set({ hunks }),
+    bumpFileVersion: (filePath) => {
+      const current = get().fileVersions;
+      set({
+        fileVersions: {
+          ...current,
+          [filePath]: (current[filePath] ?? 0) + 1,
+        },
+      });
+    },
     syncFileHunks: (filePath, freshHunks) => {
       const { hunks } = get();
-
-      // Fast path: skip update if hunk IDs already match
-      const existingIds = hunks
-        .filter((h) => h.filePath === filePath)
-        .map((h) => h.id);
-      const freshIds = freshHunks.map((h) => h.id);
-      if (
-        existingIds.length === freshIds.length &&
-        existingIds.every((id, i) => id === freshIds[i])
-      ) {
-        return;
-      }
+      if (hunkIdsForPathEqual(hunks, filePath, freshHunks)) return;
 
       // Remove old hunks for this file, insert the fresh ones in their place
       const firstIdx = hunks.findIndex((h) => h.filePath === filePath);
@@ -433,11 +546,34 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           return;
         }
 
-        // Set hunks immediately so the UI becomes interactive
-        if (isRefreshing) {
-          set({ files, flatFileList, hunks: allHunks, movePairs: [] });
-        } else {
-          set({ hunks: allHunks, movePairs: [] });
+        // Commit results with idempotent writes:
+        //   - Skip the file-tree write if structure is unchanged.
+        //   - Skip the hunks write if global hunk IDs are unchanged.
+        //   - Only bump `fileVersions[path]` for paths whose per-file hunk IDs
+        //     actually changed — unchanged files' viewers stay put.
+        //   - Don't blank movePairs; the background detectMovePairs below
+        //     updates them only if they differ.
+        const prev = get();
+        const changedFilePaths = diffChangedPaths(prev.hunks, allHunks);
+        const structureChanged = !filesStructureEqual(prev.files, files);
+        const hunksChanged = changedFilePaths.length > 0;
+
+        if (structureChanged || hunksChanged) {
+          const nextVersions = hunksChanged
+            ? (() => {
+                const v = { ...prev.fileVersions };
+                for (const p of changedFilePaths) {
+                  v[p] = (v[p] ?? 0) + 1;
+                }
+                return v;
+              })()
+            : prev.fileVersions;
+
+          set({
+            ...(structureChanged ? { files, flatFileList } : {}),
+            ...(hunksChanged ? { hunks: allHunks } : {}),
+            ...(hunksChanged ? { fileVersions: nextVersions } : {}),
+          });
         }
 
         // Clear progress
@@ -449,14 +585,16 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           `[perf] Total loadFiles: ${(performance.now() - loadStart).toFixed(0)}ms`,
         );
 
-        // Fire-and-forget: detect move pairs in background
+        // Fire-and-forget: detect move pairs in background. Only commit the
+        // result if pair tuples actually changed, so the UI doesn't flash.
         const phase3Start = performance.now();
         client
           .detectMovePairs(allHunks)
           .then((result) => {
-            if (!isStale()) {
-              set({ hunks: result.hunks, movePairs: result.pairs });
-            }
+            if (isStale()) return;
+            const { hunks: curHunks, movePairs: curPairs } = get();
+            const patch = movePairsPatch(result, curHunks, curPairs);
+            if (patch) set(patch);
             console.log(
               `[perf] Phase 3 (move detection, background): ${(performance.now() - phase3Start).toFixed(0)}ms`,
             );
@@ -571,6 +709,88 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         set({ allFiles: updatedAllFiles, loadedGitIgnoredDirs: newLoadedDirs });
       } catch (err) {
         console.error(`Failed to load directory contents for ${dirPath}:`, err);
+      }
+    },
+
+    refetchFileHunks: async (paths: string[]) => {
+      const { repoPath, comparison, reviewState } = get();
+      if (!repoPath || !comparison || paths.length === 0) return;
+
+      const githubPr = reviewState?.githubPr;
+      const comparisonKey = comparison.key;
+      const isStale = () => get().comparison?.key !== comparisonKey;
+
+      // Filter out binary/build artifacts we never diff.
+      const filtered = paths.filter((p) => !shouldSkipFile(p));
+      if (filtered.length === 0) return;
+
+      // Fetch all paths in parallel. For each, compare observed hunk IDs
+      // against the store — if identical, no writes; otherwise splice via
+      // syncFileHunks and bump that path's version counter.
+      await Promise.all(
+        filtered.map(async (path) => {
+          try {
+            const content = await client.getFileContent(
+              repoPath,
+              path,
+              comparison,
+              githubPr,
+            );
+            if (isStale()) return;
+
+            const { hunks, syncFileHunks, bumpFileVersion } = get();
+            if (hunkIdsForPathEqual(hunks, path, content.hunks)) return;
+
+            syncFileHunks(path, content.hunks);
+            bumpFileVersion(path);
+          } catch (err) {
+            console.warn(`[refetchFileHunks] failed for ${path}:`, err);
+          }
+        }),
+      );
+
+      if (isStale()) return;
+
+      // Same background move-pair refresh as `loadFiles` — idempotent via
+      // `movePairsPatch` so no-op results don't trigger re-renders.
+      client
+        .detectMovePairs(get().hunks)
+        .then((result) => {
+          if (isStale()) return;
+          const { hunks: curHunks, movePairs: curPairs } = get();
+          const patch = movePairsPatch(result, curHunks, curPairs);
+          if (patch) set(patch);
+        })
+        .catch((err) => {
+          console.error("Failed to detect move pairs:", err);
+        });
+    },
+
+    applyFileWatcherEvent: async (changedPaths) => {
+      const {
+        comparison,
+        flatFileList,
+        refetchFileHunks,
+        loadFiles,
+        loadAllFiles,
+        bumpFileVersion,
+      } = get();
+
+      // Browse mode (no comparison, no hunks): bump per-path versions so any
+      // viewer observing one of these files refetches its raw content.
+      if (!comparison) {
+        for (const path of changedPaths) bumpFileVersion(path);
+        return;
+      }
+
+      // If any changed path isn't in the current tree, it's a new/deleted file
+      // — fall back to a full listFiles + hunk reload. The idempotent writes
+      // in `loadFiles` keep unchanged rows stable.
+      const known = new Set(flatFileList);
+      if (changedPaths.some((p) => !known.has(p))) {
+        await Promise.all([loadFiles(true), loadAllFiles(true)]);
+      } else {
+        await refetchFileHunks(changedPaths);
       }
     },
   });

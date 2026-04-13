@@ -44,6 +44,25 @@ import type {
   WorktreeInfo,
 } from "../types";
 
+/**
+ * Payload emitted with the `git-changed` watcher event. Carries the set of
+ * repo-relative working-tree paths that changed in the debounce window so the
+ * frontend can refresh only those files.
+ */
+export interface GitChangedPayload {
+  repoPath: string;
+  /**
+   * Repo-relative paths whose working-tree content changed. Empty when only
+   * git-internal state changed (branch switch, commit, stage/unstage).
+   */
+  changedPaths: string[];
+  /**
+   * True if `.git/HEAD`, `.git/refs/heads/`, or `.git/index` changed — signals
+   * that a full refresh is warranted (branch switch, commit, stage).
+   */
+  gitStateChanged: boolean;
+}
+
 export interface ApiClient {
   // ----- Git operations -----
 
@@ -359,7 +378,7 @@ export interface ApiClient {
   onReviewStateChanged(callback: (repoPath: string) => void): () => void;
 
   /** Subscribe to git change events */
-  onGitChanged(callback: (repoPath: string) => void): () => void;
+  onGitChanged(callback: (payload: GitChangedPayload) => void): () => void;
 
   /** Subscribe to local activity change events (branch added/deleted in any repo) */
   onLocalActivityChanged(callback: (repoPath: string) => void): () => void;

@@ -5,7 +5,7 @@
  * Used when running the UI outside of Tauri (web mode).
  */
 
-import type { ApiClient } from "./client";
+import type { ApiClient, GitChangedPayload } from "./client";
 import type {
   BranchList,
   ClassifyResponse,
@@ -55,7 +55,7 @@ export class HttpClient implements ApiClient {
 
   private eventSource: EventSource | null = null;
   private reviewStateCallbacks: ((repoPath: string) => void)[] = [];
-  private gitChangedCallbacks: ((repoPath: string) => void)[] = [];
+  private gitChangedCallbacks: ((payload: GitChangedPayload) => void)[] = [];
   private localActivityCallbacks: ((repoPath: string) => void)[] = [];
 
   // ----- Private helpers -----
@@ -645,9 +645,22 @@ export class HttpClient implements ApiClient {
       );
     });
     this.eventSource.addEventListener("git-changed", (e) => {
-      this.gitChangedCallbacks.forEach((cb) =>
-        cb((e as MessageEvent).data || repoPath),
-      );
+      const data = (e as MessageEvent).data;
+      let payload: GitChangedPayload;
+      try {
+        const parsed = typeof data === "string" ? JSON.parse(data) : data;
+        payload = {
+          repoPath: parsed?.repoPath ?? repoPath,
+          changedPaths: Array.isArray(parsed?.changedPaths)
+            ? parsed.changedPaths
+            : [],
+          gitStateChanged: Boolean(parsed?.gitStateChanged),
+        };
+      } catch {
+        // Fall back to an unknown-paths event so we don't silently drop signals.
+        payload = { repoPath, changedPaths: [], gitStateChanged: false };
+      }
+      this.gitChangedCallbacks.forEach((cb) => cb(payload));
     });
     this.eventSource.addEventListener("local-activity-changed", (e) => {
       this.localActivityCallbacks.forEach((cb) =>
@@ -671,7 +684,7 @@ export class HttpClient implements ApiClient {
     };
   }
 
-  onGitChanged(callback: (repoPath: string) => void): () => void {
+  onGitChanged(callback: (payload: GitChangedPayload) => void): () => void {
     this.gitChangedCallbacks.push(callback);
     return () => {
       this.gitChangedCallbacks = this.gitChangedCallbacks.filter(

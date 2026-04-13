@@ -112,8 +112,19 @@ export interface ReviewSlice {
   // Reset review
   resetReview: () => Promise<void>;
 
-  // Refresh all data
+  // Refresh all data (full reload)
   refresh: () => Promise<void>;
+
+  /**
+   * Handle a watcher-emitted change. For git-state changes (commits, branch
+   * switches, staging) delegates to `refresh()`. For pure working-tree edits,
+   * surgically refetches only the changed files' hunks and bumps their
+   * `fileVersions` entries so subscribers for those files update in place.
+   */
+  applyWatcherEvent: (event: {
+    changedPaths: string[];
+    gitStateChanged: boolean;
+  }) => Promise<void>;
 }
 
 /**
@@ -754,7 +765,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       if (!comparison) return;
 
-      // Load data in parallel; pass isRefreshing=true to suppress progress indicators
+      // Load data in parallel; pass isRefreshing=true to suppress progress
+      // indicators. `loadFiles(true)` writes idempotently and bumps
+      // `fileVersions[path]` only for files whose hunks actually changed, so
+      // FileViewer subscribers for unaffected files don't re-run their effect.
       const range = getComparisonRange(comparison);
       await Promise.all([
         loadReviewState(),
@@ -766,14 +780,43 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         repoPath ? refreshCommits(repoPath, range) : Promise.resolve(),
       ]);
 
-      // Increment refresh generation AFTER data loads to trigger re-fetches
-      // in components like FileViewer only when new data is actually ready.
-      // (Previously this was at the top, causing a flash as components
-      // re-fetched while stale data was still loading.)
-      set({ refreshGeneration: get().refreshGeneration + 1 });
-
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();
       get().restoreGuideFromState();
+    },
+
+    applyWatcherEvent: async ({ changedPaths, gitStateChanged }) => {
+      const {
+        repoPath,
+        refresh,
+        applyFileWatcherEvent,
+        loadReviewState,
+        loadGitStatus,
+        loadGlobalReviews,
+        checkReviewsFreshness,
+        classifyStaticHunks,
+      } = get();
+
+      if (!repoPath) return;
+
+      // Git-state changes (commits, branch switches, stage/unstage) can
+      // affect anything — delegate to the full refresh. Idempotent writes
+      // in `loadFiles` keep unaffected files from flashing.
+      if (gitStateChanged) {
+        await refresh();
+        return;
+      }
+
+      // Working-tree-only edits: file-level refresh runs in parallel with
+      // cheap peripheral reloads.
+      await Promise.all([
+        applyFileWatcherEvent(changedPaths),
+        loadReviewState(),
+        loadGitStatus(),
+        loadGlobalReviews(),
+        checkReviewsFreshness(),
+      ]);
+
+      classifyStaticHunks();
     },
   });

@@ -2,9 +2,17 @@
 
 use anyhow::{bail, Context};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::FileContent;
+
+/// Return `path` relative to `repo_root` as a string; fall back to the absolute
+/// path when stripping fails (e.g. when the event path is outside the repo).
+pub fn repo_relative_path(path: &Path, repo_root: &Path) -> String {
+    path.strip_prefix(repo_root)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
 
 /// Return the MIME type for a known image extension, or None.
 pub fn get_image_mime_type(extension: &str) -> Option<&'static str> {

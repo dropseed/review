@@ -9,7 +9,7 @@ import { useReviewStore } from "../stores";
 export function useFileWatcher(comparisonReady: number) {
   const repoPath = useReviewStore((s) => s.repoPath);
   const loadReviewState = useReviewStore((s) => s.loadReviewState);
-  const refresh = useReviewStore((s) => s.refresh);
+  const applyWatcherEvent = useReviewStore((s) => s.applyWatcherEvent);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
   const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
@@ -23,7 +23,7 @@ export function useFileWatcher(comparisonReady: number) {
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
   const loadReviewStateRef = useRef(loadReviewState);
-  const refreshRef = useRef(refresh);
+  const applyWatcherEventRef = useRef(applyWatcherEvent);
   const loadGlobalReviewsRef = useRef(loadGlobalReviews);
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
   const loadLocalActivityRef = useRef(loadLocalActivity);
@@ -51,7 +51,7 @@ export function useFileWatcher(comparisonReady: number) {
   useEffect(() => {
     repoPathRef.current = repoPath;
     loadReviewStateRef.current = loadReviewState;
-    refreshRef.current = refresh;
+    applyWatcherEventRef.current = applyWatcherEvent;
     loadGlobalReviewsRef.current = loadGlobalReviews;
     checkReviewsFreshnessRef.current = checkReviewsFreshness;
     loadLocalActivityRef.current = loadLocalActivity;
@@ -65,7 +65,7 @@ export function useFileWatcher(comparisonReady: number) {
   }, [
     repoPath,
     loadReviewState,
-    refresh,
+    applyWatcherEvent,
     loadGlobalReviews,
     checkReviewsFreshness,
     loadLocalActivity,
@@ -155,10 +155,13 @@ export function useFileWatcher(comparisonReady: number) {
     );
     console.log("[watcher] Listening for review-state-changed");
 
-    // Git state changed (branch switch, new commit, etc.)
-    // Debounce at 2s to avoid rapid refreshes during active editing.
-    // Guard against overlapping refreshes: if one is in progress, defer
-    // the next until it completes (then debounce again).
+    // Git change: debounce 2s to avoid rapid refreshes during editing. The
+    // set of changed paths and the `gitStateChanged` flag accumulated across
+    // rapid events in the debounce window is unioned into a single call so
+    // nothing is dropped.
+    const pendingChangedPathsRef = { current: new Set<string>() };
+    const pendingGitStateRef = { current: false };
+
     const scheduleRefresh = () => {
       clearTimeout(gitChangedTimerRef.current!);
       console.log("[watcher] Debouncing refresh (2s)...");
@@ -170,12 +173,25 @@ export function useFileWatcher(comparisonReady: number) {
           return;
         }
         refreshInProgressRef.current = true;
-        console.log("[watcher] Refreshing...");
+
+        // Take a snapshot of the pending event aggregate and clear the buffers
+        // before awaiting, so incoming events during the refresh accumulate
+        // into the NEXT batch rather than being lost.
+        const changedPaths = Array.from(pendingChangedPathsRef.current);
+        const gitStateChanged = pendingGitStateRef.current;
+        pendingChangedPathsRef.current = new Set<string>();
+        pendingGitStateRef.current = false;
+
+        console.log(
+          `[watcher] Applying watcher event (paths=${changedPaths.length}, gitState=${gitStateChanged})...`,
+        );
         try {
-          await refreshRef.current();
+          await applyWatcherEventRef.current({
+            changedPaths,
+            gitStateChanged,
+          });
         } finally {
           refreshInProgressRef.current = false;
-          // If another change came in while we were refreshing, schedule again
           if (refreshRequestedRef.current) {
             refreshRequestedRef.current = false;
             console.log("[watcher] Deferred refresh requested, scheduling...");
@@ -245,9 +261,22 @@ export function useFileWatcher(comparisonReady: number) {
     };
 
     unlistenFns.push(
-      apiClient.onGitChanged((eventRepoPath) => {
-        console.log("[watcher] Received git-changed event:", eventRepoPath);
-        if (eventRepoPath === repoPathRef.current) {
+      apiClient.onGitChanged((payload) => {
+        console.log(
+          "[watcher] Received git-changed event:",
+          payload.repoPath,
+          `(paths=${payload.changedPaths.length}, gitState=${payload.gitStateChanged})`,
+        );
+        if (payload.repoPath === repoPathRef.current) {
+          // Union incoming event into the pending aggregate so a single
+          // debounced flush applies everything that happened in the window.
+          for (const p of payload.changedPaths) {
+            pendingChangedPathsRef.current.add(p);
+          }
+          if (payload.gitStateChanged) {
+            pendingGitStateRef.current = true;
+          }
+
           if (!comparisonReadyRef.current) {
             // Browse mode: refresh file tree and branch info
             // (standalone files have no git, so skip)
@@ -256,7 +285,7 @@ export function useFileWatcher(comparisonReady: number) {
             }
             scheduleLocalActivity();
           } else {
-            // Review mode: full refresh
+            // Review mode: surgical refresh via the new aggregate handler.
             scheduleRefresh();
             // Also refresh local activity so the sidebar shows the repo as
             // soon as it becomes dirty (git-changed fires on working tree

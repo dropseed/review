@@ -8,7 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { ApiClient } from "./client";
+import type { ApiClient, GitChangedPayload } from "./client";
 import type {
   BranchList,
   ClassifyResponse,
@@ -558,8 +558,8 @@ export class TauriClient implements ApiClient {
     return this.listenForEvent(EVENT_REVIEW_STATE_CHANGED, callback);
   }
 
-  onGitChanged(callback: (repoPath: string) => void): () => void {
-    return this.listenForEvent(EVENT_GIT_CHANGED, callback);
+  onGitChanged(callback: (payload: GitChangedPayload) => void): () => void {
+    return this.listenForEvent<GitChangedPayload>(EVENT_GIT_CHANGED, callback);
   }
 
   onLocalActivityChanged(callback: (repoPath: string) => void): () => void {
