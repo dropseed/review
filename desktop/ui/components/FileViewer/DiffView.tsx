@@ -18,6 +18,7 @@ import {
 import { useReviewStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { stringHash } from "../../utils/string-hash";
+import { countLines } from "../../utils/count-lines";
 import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -98,15 +99,6 @@ const LOCK_FILE_SUFFIXES = [
   "Gemfile.lock",
   "composer.lock",
 ];
-
-/** Count newlines in a string without allocating split arrays. */
-function countLines(s: string | undefined): number {
-  if (!s) return 0;
-  let count = 1;
-  let idx = -1;
-  while ((idx = s.indexOf("\n", idx + 1)) !== -1) count++;
-  return count;
-}
 
 // Detects when @pierre/diffs finishes syntax highlighting by polling
 // for styled <span> elements inside the shadow DOM of the diffs-container

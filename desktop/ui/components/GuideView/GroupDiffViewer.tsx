@@ -1,4 +1,5 @@
 import {
+  Fragment,
   type ReactNode,
   useCallback,
   useEffect,
@@ -9,10 +10,13 @@ import {
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { isHunkReviewed } from "../../types";
+import { countLines } from "../../utils/count-lines";
 import type {
+  Comparison,
   DiffHunk,
   DiffLine,
   FileContent,
+  GitHubPrRef,
   HunkGroup,
   HunkState,
 } from "../../types";
@@ -104,6 +108,109 @@ function diffLinePrefix(type: DiffLine["type"]): string {
   }
 }
 
+const EXPAND_STEP = 20;
+
+type HunkExpansion = { above: number; below: number };
+
+type LineCache = Map<string, string>;
+
+// Context lines are fetched from the head ref, so keyed by new-file line number.
+function cacheKey(filePath: string, newLine: number): string {
+  return `${filePath}:${newLine}`;
+}
+
+/**
+ * Return file hunks with their context expanded per the user's requests,
+ * merging any hunks whose expanded ranges touch or overlap.
+ */
+function applyExpansions(
+  fileHunks: DiffHunk[],
+  expansionByHunk: Map<string, HunkExpansion>,
+  lineCache: LineCache,
+): DiffHunk[] {
+  if (fileHunks.length === 0) return fileHunks;
+
+  const sorted = [...fileHunks].sort((a, b) => a.oldStart - b.oldStart);
+
+  const expanded = sorted.map((hunk) => {
+    const exp = expansionByHunk.get(hunk.id) ?? { above: 0, below: 0 };
+
+    const aboveLines: DiffLine[] = [];
+    for (let i = exp.above; i >= 1; i--) {
+      const oldNum = hunk.oldStart - i;
+      const newNum = hunk.newStart - i;
+      if (oldNum < 1 || newNum < 1) continue;
+      const content = lineCache.get(cacheKey(hunk.filePath, newNum));
+      if (content === undefined) continue;
+      aboveLines.push({
+        type: "context",
+        content,
+        oldLineNumber: oldNum,
+        newLineNumber: newNum,
+      });
+    }
+
+    const oldEnd = hunk.oldStart + hunk.oldCount - 1;
+    const newEnd = hunk.newStart + hunk.newCount - 1;
+    const belowLines: DiffLine[] = [];
+    for (let i = 1; i <= exp.below; i++) {
+      const oldNum = oldEnd + i;
+      const newNum = newEnd + i;
+      const content = lineCache.get(cacheKey(hunk.filePath, newNum));
+      if (content === undefined) continue;
+      belowLines.push({
+        type: "context",
+        content,
+        oldLineNumber: oldNum,
+        newLineNumber: newNum,
+      });
+    }
+
+    const addedAbove = aboveLines.length;
+    const addedBelow = belowLines.length;
+    return {
+      ...hunk,
+      oldStart: hunk.oldStart - addedAbove,
+      newStart: hunk.newStart - addedAbove,
+      oldCount: hunk.oldCount + addedAbove + addedBelow,
+      newCount: hunk.newCount + addedAbove + addedBelow,
+      lines: [...aboveLines, ...hunk.lines, ...belowLines],
+    };
+  });
+
+  const merged: DiffHunk[] = [];
+  for (const h of expanded) {
+    const prev = merged[merged.length - 1];
+    if (!prev) {
+      merged.push(h);
+      continue;
+    }
+    const prevOldEndExclusive = prev.oldStart + prev.oldCount;
+    if (h.oldStart > prevOldEndExclusive) {
+      merged.push(h);
+      continue;
+    }
+    const prevNewEndExclusive = prev.newStart + prev.newCount;
+    const tail = h.lines.filter((l) => {
+      if (l.type === "added") {
+        return (l.newLineNumber ?? 0) >= prevNewEndExclusive;
+      }
+      return (l.oldLineNumber ?? 0) >= prevOldEndExclusive;
+    });
+    const hOldEndExclusive = h.oldStart + h.oldCount;
+    const hNewEndExclusive = h.newStart + h.newCount;
+    const combinedOldEnd = Math.max(prevOldEndExclusive, hOldEndExclusive);
+    const combinedNewEnd = Math.max(prevNewEndExclusive, hNewEndExclusive);
+    merged[merged.length - 1] = {
+      ...prev,
+      oldCount: combinedOldEnd - prev.oldStart,
+      newCount: combinedNewEnd - prev.newStart,
+      lines: [...prev.lines, ...tail],
+    };
+  }
+  return merged;
+}
+
 /**
  * Build a unified diff patch containing only the specified hunks.
  * Extracts the diff header (everything before the first @@ line) from
@@ -158,6 +265,31 @@ function getUnreviewedIds(
     }
   }
   return result;
+}
+
+interface ExpandContextBarProps {
+  label: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onClick: () => void;
+}
+
+function ExpandContextBar({
+  label,
+  disabled,
+  loading,
+  onClick,
+}: ExpandContextBarProps): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || loading}
+      className="w-full px-4 py-1 text-xxs font-mono text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/40 disabled:opacity-40 disabled:cursor-not-allowed border-y border-edge/30 bg-surface-raised/20 text-center transition-colors"
+    >
+      {loading ? "Loading…" : label}
+    </button>
+  );
 }
 
 interface FileDiffSectionProps {
@@ -312,6 +444,11 @@ export function GroupDiffViewer({
     new Map(),
   );
   const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set());
+  const [expansionByHunk, setExpansionByHunk] = useState<
+    Map<string, HunkExpansion>
+  >(new Map());
+  const [expandingHunks, setExpandingHunks] = useState<Set<string>>(new Set());
+  const lineCacheRef = useRef<LineCache>(new Map());
 
   const hunkById = useMemo(() => {
     const map = new Map<string, DiffHunk>();
@@ -397,6 +534,127 @@ export function GroupDiffViewer({
       cancelled = true;
     };
   }, [repoPath, comparison, filePaths, fileContents]);
+
+  const groupKey = useMemo(() => group.hunkIds.join(","), [group.hunkIds]);
+  useEffect(() => {
+    setExpansionByHunk(new Map());
+    lineCacheRef.current = new Map();
+  }, [groupKey]);
+
+  const fileLineCounts = useMemo(() => {
+    const map = new Map<string, { newLines: number; oldLines: number }>();
+    for (const [fp, fc] of fileContents) {
+      map.set(fp, {
+        newLines: countLines(fc.content),
+        oldLines: countLines(fc.oldContent),
+      });
+    }
+    return map;
+  }, [fileContents]);
+
+  const handleExpandContext = useCallback(
+    async (hunk: DiffHunk, direction: "above" | "below", amount: number) => {
+      if (!repoPath || !comparison) return;
+
+      const cur = expansionByHunk.get(hunk.id) ?? { above: 0, below: 0 };
+      const counts = fileLineCounts.get(hunk.filePath);
+      const siblings = hunksPerFile.get(hunk.filePath) ?? [];
+
+      let requestStart: number;
+      let requestEnd: number;
+      if (direction === "above") {
+        const topNewLine = hunk.newStart - cur.above;
+        const topOldLine = hunk.oldStart - cur.above;
+        // Don't cross into the previous group hunk's expanded range.
+        const priorSiblings = [...siblings]
+          .filter((h) => h.oldStart < hunk.oldStart)
+          .sort((a, b) => a.oldStart - b.oldStart);
+        const prevSibling = priorSiblings[priorSiblings.length - 1];
+        const prevBelow = prevSibling
+          ? (expansionByHunk.get(prevSibling.id)?.below ?? 0)
+          : 0;
+        const prevOldEndExclusive = prevSibling
+          ? prevSibling.oldStart + prevSibling.oldCount + prevBelow
+          : 1;
+        const limitByPrev = topOldLine - prevOldEndExclusive;
+        const maxStep = Math.min(topNewLine - 1, topOldLine - 1, limitByPrev);
+        if (maxStep <= 0) return;
+        const step = Math.min(amount, maxStep);
+        requestStart = topNewLine - step;
+        requestEnd = topNewLine - 1;
+      } else {
+        const newEnd = hunk.newStart + hunk.newCount - 1 + cur.below;
+        const oldEnd = hunk.oldStart + hunk.oldCount - 1 + cur.below;
+        const newMax = counts?.newLines ?? Infinity;
+        const oldMax = counts?.oldLines ?? Infinity;
+        // Don't cross into the next group hunk's expanded range.
+        const nextSibling = siblings
+          .filter((h) => h.oldStart > hunk.oldStart)
+          .sort((a, b) => a.oldStart - b.oldStart)[0];
+        const nextAbove = nextSibling
+          ? (expansionByHunk.get(nextSibling.id)?.above ?? 0)
+          : 0;
+        const nextOldStart = nextSibling
+          ? nextSibling.oldStart - nextAbove
+          : oldMax + 1;
+        const limitByNext = nextOldStart - 1 - oldEnd;
+        const maxStep = Math.min(newMax - newEnd, oldMax - oldEnd, limitByNext);
+        if (maxStep <= 0) return;
+        const step = Math.min(amount, maxStep);
+        requestStart = newEnd + 1;
+        requestEnd = newEnd + step;
+      }
+
+      setExpandingHunks((prev) => new Set(prev).add(hunk.id));
+      try {
+        const api = getApiClient();
+        const result = await api.getExpandedContext(
+          repoPath,
+          hunk.filePath,
+          comparison as Comparison,
+          requestStart,
+          requestEnd,
+          reviewState?.githubPr as GitHubPrRef | undefined,
+        );
+        for (let i = 0; i < result.lines.length; i++) {
+          lineCacheRef.current.set(
+            cacheKey(hunk.filePath, result.startLine + i),
+            result.lines[i],
+          );
+        }
+        const added = result.lines.length;
+        if (added > 0) {
+          setExpansionByHunk((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(hunk.id) ?? { above: 0, below: 0 };
+            next.set(hunk.id, {
+              above:
+                direction === "above" ? existing.above + added : existing.above,
+              below:
+                direction === "below" ? existing.below + added : existing.below,
+            });
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error("[GroupDiffViewer] Failed to expand context:", err);
+      } finally {
+        setExpandingHunks((prev) => {
+          const next = new Set(prev);
+          next.delete(hunk.id);
+          return next;
+        });
+      }
+    },
+    [
+      repoPath,
+      comparison,
+      expansionByHunk,
+      fileLineCounts,
+      hunksPerFile,
+      reviewState?.githubPr,
+    ],
+  );
 
   const unreviewedIds = useMemo(
     () =>
@@ -504,7 +762,13 @@ export function GroupDiffViewer({
       );
     }
 
-    const filteredPatch = buildFilteredPatch(fc.diffPatch, fileHunks, filePath);
+    const expandedHunks = applyExpansions(
+      fileHunks,
+      expansionByHunk,
+      lineCacheRef.current,
+    );
+    const counts = fileLineCounts.get(filePath);
+    const newMax = counts?.newLines ?? Infinity;
 
     return (
       <DiffErrorBoundary
@@ -518,15 +782,67 @@ export function GroupDiffViewer({
           </div>
         }
       >
-        <DiffView
-          diffPatch={filteredPatch}
-          viewMode={effectiveViewMode(diffViewMode)}
-          hunks={fileHunks}
-          theme={codeTheme}
-          fontCSS={fontCSS}
-          fileName={filePath}
-          expandUnchanged={false}
-        />
+        {expandedHunks.map((hunk, i) => {
+          const prev = i > 0 ? expandedHunks[i - 1] : null;
+          const newEnd = hunk.newStart + hunk.newCount - 1;
+          const atTopOfFile = hunk.newStart <= 1 || hunk.oldStart <= 1;
+          const atBottomOfFile = newEnd >= newMax;
+          const touchesPrev =
+            prev != null && hunk.newStart <= prev.newStart + prev.newCount;
+          const isLoading = expandingHunks.has(hunk.id);
+
+          // Find the underlying group hunk id(s) that belong to this expanded
+          // block. After merging, `hunk.id` is the id of the first source hunk.
+          // Expanding "above" is wired to that hunk's id; "below" is wired to
+          // the LAST merged hunk so it extends at the correct boundary.
+          const blockSources = [...fileHunks]
+            .filter(
+              (h) =>
+                h.oldStart >= hunk.oldStart &&
+                h.oldStart + h.oldCount <= hunk.oldStart + hunk.oldCount,
+            )
+            .sort((a, b) => a.oldStart - b.oldStart);
+          const lastSourceHunk =
+            blockSources[blockSources.length - 1] ??
+            fileHunks.find((h) => h.id === hunk.id)!;
+
+          return (
+            <Fragment key={hunk.id}>
+              {!touchesPrev && !atTopOfFile && (
+                <ExpandContextBar
+                  label={`↑ Expand ${EXPAND_STEP} lines above`}
+                  loading={isLoading}
+                  onClick={() =>
+                    handleExpandContext(
+                      fileHunks.find((h) => h.id === hunk.id) ?? fileHunks[0],
+                      "above",
+                      EXPAND_STEP,
+                    )
+                  }
+                />
+              )}
+              <DiffView
+                key={`${hunk.id}:${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`}
+                diffPatch={buildFilteredPatch(fc.diffPatch, [hunk], filePath)}
+                viewMode={effectiveViewMode(diffViewMode)}
+                hunks={[hunk]}
+                theme={codeTheme}
+                fontCSS={fontCSS}
+                fileName={filePath}
+                expandUnchanged={false}
+              />
+              {i === expandedHunks.length - 1 && !atBottomOfFile && (
+                <ExpandContextBar
+                  label={`↓ Expand ${EXPAND_STEP} lines below`}
+                  loading={expandingHunks.has(lastSourceHunk.id)}
+                  onClick={() =>
+                    handleExpandContext(lastSourceHunk, "below", EXPAND_STEP)
+                  }
+                />
+              )}
+            </Fragment>
+          );
+        })}
       </DiffErrorBoundary>
     );
   }
