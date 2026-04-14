@@ -85,7 +85,7 @@ export function FileViewer({
     codeFontSize,
     codeFontFamily,
     reviewState,
-    allHunks,
+    fileHunks,
     fileVersion,
     addAnnotation,
     updateAnnotation,
@@ -435,12 +435,9 @@ export function FileViewer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [fileContent]);
 
-  // Calculate review progress for this file's hunks using the store's hunks
-  // (same source as the sidebar) so counts stay consistent.
   // Must be before early returns to comply with React hooks rules.
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
   const reviewProgress = useMemo(() => {
-    const fileHunks = allHunks.filter((h) => h.filePath === filePath);
     const total = fileHunks.length;
     if (total === 0) return { reviewed: 0, total: 0 };
     const trustList = reviewState?.trustList ?? [];
@@ -452,7 +449,7 @@ export function FileViewer({
       }),
     ).length;
     return { reviewed, total };
-  }, [allHunks, filePath, reviewState, stagedFilePaths]);
+  }, [fileHunks, filePath, reviewState, stagedFilePaths]);
 
   // Reset language override when switching files
   useEffect(() => {
@@ -479,16 +476,11 @@ export function FileViewer({
     }
   }, [scrollTarget, filePath, loading, fileContent]);
 
-  // Derive a stable key from hunk IDs for this file.
-  // Hunk IDs include content hashes (filepath:hash), so any actual content
-  // change produces new IDs, triggering a re-fetch without a global counter.
+  // Stable key from hunk IDs for the fetch effect. IDs include content
+  // hashes, so any real content change re-triggers the fetch.
   const fileHunkKey = useMemo(
-    () =>
-      allHunks
-        .filter((h) => h.filePath === filePath)
-        .map((h) => h.id)
-        .join(","),
-    [allHunks, filePath],
+    () => fileHunks.map((h) => h.id).join(","),
+    [fileHunks],
   );
 
   const prevFilePathRef = useRef(filePath);
@@ -600,12 +592,6 @@ export function FileViewer({
     isExternalFile,
     externalFilePath,
   ]);
-
-  // Minimap hooks — must be before early returns
-  const fileHunks = useMemo(
-    () => allHunks.filter((h) => h.filePath === filePath),
-    [allHunks, filePath],
-  );
 
   const totalLineCount = useMemo(() => {
     const s =

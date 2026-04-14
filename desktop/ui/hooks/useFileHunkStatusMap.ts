@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { useReviewStore } from "../stores";
+import { useAllHunks } from "../stores/selectors/hunks";
 import { calculateFileHunkStatus } from "../components/FilesPanel/FileTree.utils";
 import type { FileHunkStatus } from "../components/tree/types";
 
@@ -9,7 +10,7 @@ import type { FileHunkStatus } from "../components/tree/types";
  * lives in one place.
  */
 export function useFileHunkStatusMap(): Map<string, FileHunkStatus> {
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
 

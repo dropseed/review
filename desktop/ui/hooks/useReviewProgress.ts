@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useReviewStore } from "../stores";
+import { useAllHunks } from "../stores/selectors/hunks";
 import type { DiffHunk, ReviewState } from "../types";
 import { isHunkTrusted } from "../types";
 
@@ -71,7 +72,7 @@ export function computeReviewProgress(
 }
 
 export function useReviewProgress(): ReviewProgress {
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
 
   return useMemo(

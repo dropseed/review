@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useReviewStore } from "../stores";
+import { getAllHunksFromState } from "../stores/selectors/hunks";
 import type { Comparison } from "../types";
 import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
 import {
@@ -191,7 +192,9 @@ export function useKeyboardNavigation() {
         case "r":
         case "s": {
           const focusedHunk = state.focusedHunkId
-            ? state.hunks.find((h) => h.id === state.focusedHunkId)
+            ? getAllHunksFromState(state).find(
+                (h) => h.id === state.focusedHunkId,
+              )
             : null;
           if (!focusedHunk) break;
           if (event.key === "a") {

@@ -1,10 +1,10 @@
 import { useReviewStore } from "../../../stores";
+import { useFileHunks } from "../../../stores/selectors/hunks";
 
 /**
- * Bundles the store selectors used by FileViewer into a single hook. Takes
- * the currently-viewed file path so it can return a narrow `fileVersion`
- * selector — subscribing to per-path invalidation rather than a global
- * counter means unrelated file changes don't re-run the viewer's effect.
+ * Bundles store selectors used by FileViewer into one hook. The viewer
+ * invalidates when its file's hunks change (via `fileHunks`) or, in non-
+ * review modes, when the file watcher bumps `fileVersions[path]`.
  */
 export function useFileViewerState(filePath: string | null) {
   // Git / comparison context
@@ -21,7 +21,7 @@ export function useFileViewerState(filePath: string | null) {
 
   // Review state
   const reviewState = useReviewStore((s) => s.reviewState);
-  const allHunks = useReviewStore((s) => s.hunks);
+  const fileHunks = useFileHunks(filePath);
 
   // Working tree diff (Git panel)
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
@@ -35,12 +35,12 @@ export function useFileViewerState(filePath: string | null) {
   return {
     comparison,
     repoPath,
-    fileVersion,
     codeTheme,
     codeFontSize,
     codeFontFamily,
     reviewState,
-    allHunks,
+    fileHunks,
+    fileVersion,
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,

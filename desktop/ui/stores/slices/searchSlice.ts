@@ -1,6 +1,7 @@
 import type { SliceCreatorWithClient } from "../types";
 import type { ApiClient } from "../../api";
 import type { SearchMatch } from "../../types";
+import { getAllHunksFromState } from "../selectors/hunks";
 
 export type SearchMode = "text" | "symbols";
 
@@ -82,10 +83,12 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
       }),
 
     navigateToSearchResult: (index) => {
-      const { searchResults, hunks, guideContentMode } = get();
+      const state = get();
+      const { searchResults, guideContentMode } = state;
       const result = searchResults[index];
       if (!result) return;
 
+      const hunks = getAllHunksFromState(state);
       const hunk = hunks.find(
         (h) =>
           h.filePath === result.filePath &&

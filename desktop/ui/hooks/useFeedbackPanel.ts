@@ -1,5 +1,6 @@
 import { useMemo, useCallback, useState } from "react";
 import { useReviewStore } from "../stores";
+import { useAllHunks } from "../stores/selectors/hunks";
 import { getPlatformServices } from "../platform";
 import type { DiffHunk, LineAnnotation } from "../types";
 
@@ -97,7 +98,7 @@ export interface FeedbackPanelState {
  */
 export function useFeedbackPanel(): FeedbackPanelState {
   const reviewState = useReviewStore((s) => s.reviewState);
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
   const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
   const clearFeedback = useReviewStore((s) => s.clearFeedback);

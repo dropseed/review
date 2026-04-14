@@ -249,6 +249,27 @@ export interface MovePair {
   destFilePath: string;
 }
 
+/**
+ * Per-file diff bundle. The store is keyed by `filePath` → `FileDiff`, so
+ * edits to one file touch only that entry. `contentHash` is the concatenation
+ * of hunk IDs (which embed content hashes); we use it for O(1) equality
+ * checks to decide whether to write a new reference or reuse the old one.
+ */
+export interface FileDiff {
+  hunks: DiffHunk[];
+  contentHash: string;
+}
+
+/** Build a FileDiff from a hunks array. contentHash is the joined IDs. */
+export function buildFileDiff(hunks: DiffHunk[]): FileDiff {
+  let contentHash = "";
+  for (let i = 0; i < hunks.length; i++) {
+    if (i > 0) contentHash += "|";
+    contentHash += hunks[i].id;
+  }
+  return { hunks, contentHash };
+}
+
 export interface DiffLine {
   type: "context" | "added" | "removed";
   content: string;

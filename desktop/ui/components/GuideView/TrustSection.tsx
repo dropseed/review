@@ -1,5 +1,6 @@
 import { type ReactNode, useState, useMemo, useEffect, useRef } from "react";
 import { useReviewStore } from "../../stores";
+import { useAllHunks } from "../../stores/selectors/hunks";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { anyLabelMatchesPattern, type TrustCategory } from "../../types";
 import { getApiClient } from "../../api";
@@ -113,7 +114,7 @@ function PatternRow({
 }
 
 export function TrustSection(): ReactNode {
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
   const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);

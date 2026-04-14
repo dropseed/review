@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { useReviewStore } from "../../stores";
+import { useAllHunks } from "../../stores/selectors/hunks";
 import {
   processTree,
   calculateFileHunkStatus,
@@ -348,7 +349,7 @@ function CompactNode({
 
 export function SummaryFileTree(): ReactNode {
   const files = useReviewStore((s) => s.files);
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);

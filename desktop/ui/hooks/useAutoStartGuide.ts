@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useReviewStore } from "../stores";
+import { getAllHunksFromState, useAllHunks } from "../stores/selectors/hunks";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
 
 /**
@@ -18,24 +19,24 @@ export function useAutoStartGuide(): void {
   const autoStart = useReviewStore(
     (s) => s.reviewState?.guide?.autoStart ?? false,
   );
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   // Coerce to boolean so progress object identity changes don't reset the timer.
   // Including isLoading in deps ensures the timer restarts after loading completes.
   const isLoading = useReviewStore((s) => s.loadingProgress !== null);
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparisonKey = useReviewStore((s) => s.comparison?.key);
   const autoStartDelay = useReviewStore((s) => s.autoStartDelay);
-  // Derive staleness from primitive fields so the selector doesn't run O(n) set
-  // comparisons on every unrelated store update (e.g. countdown ticks).
-  const isGroupingStale = useReviewStore((s) => {
-    const generated = s.reviewState?.guide?.state;
-    if (!generated) return false;
-    const storedIds = generated.hunkIds;
-    const currentIds = s.hunks;
-    if (storedIds.length !== currentIds.length) return true;
+  // Derive staleness from the flat hunks list. `hunks` is memoized on
+  // filesByPath identity, so this only runs when hunks or the guide state
+  // object changes.
+  const guideState = useReviewStore((s) => s.reviewState?.guide?.state);
+  const isGroupingStale = useMemo(() => {
+    if (!guideState) return false;
+    const storedIds = guideState.hunkIds;
+    if (storedIds.length !== hunks.length) return true;
     const storedSet = new Set(storedIds);
-    return currentIds.some((h) => !storedSet.has(h.id));
-  });
+    return hunks.some((h) => !storedSet.has(h.id));
+  }, [guideState, hunks]);
 
   useEffect(() => {
     const setSeconds = useReviewStore.getState().setAutoStartSecondsRemaining;
@@ -73,7 +74,8 @@ export function useAutoStartGuide(): void {
 
       // Count unreviewed hunks
       const hunkStates = state.reviewState.hunks;
-      const unreviewedCount = state.hunks.filter((h) => {
+      const allHunks = getAllHunksFromState(state);
+      const unreviewedCount = allHunks.filter((h) => {
         const hs = hunkStates[h.id];
         return hs?.status !== "approved" && hs?.status !== "rejected";
       }).length;

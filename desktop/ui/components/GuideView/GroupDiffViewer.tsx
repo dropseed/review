@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useReviewStore } from "../../stores";
+import { useHunkById } from "../../stores/selectors/hunks";
 import { getApiClient } from "../../api";
 import { isHunkReviewed } from "../../types";
 import { countLines } from "../../utils/count-lines";
@@ -424,7 +425,6 @@ export function GroupDiffViewer({
   headerBadge,
   onClose,
 }: GroupDiffViewerProps): ReactNode {
-  const hunks = useReviewStore((s) => s.hunks);
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.reviewState?.comparison);
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -450,11 +450,7 @@ export function GroupDiffViewer({
   const [expandingHunks, setExpandingHunks] = useState<Set<string>>(new Set());
   const lineCacheRef = useRef<LineCache>(new Map());
 
-  const hunkById = useMemo(() => {
-    const map = new Map<string, DiffHunk>();
-    for (const h of hunks) map.set(h.id, h);
-    return map;
-  }, [hunks]);
+  const hunkById = useHunkById();
 
   const trustList = reviewState?.trustList ?? [];
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;

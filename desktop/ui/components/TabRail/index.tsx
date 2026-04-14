@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useReviewStore } from "../../stores";
+import { useAllHunks } from "../../stores/selectors/hunks";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
@@ -121,7 +122,7 @@ function SidebarList({
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
 
   const reviewState = useReviewStore((s) => s.reviewState);
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
 
   const liveProgress = useMemo(

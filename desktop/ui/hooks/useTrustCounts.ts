@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useReviewStore } from "../stores";
+import { useAllHunks } from "../stores/selectors/hunks";
 import { anyLabelMatchesPattern } from "../types";
 import { getApiClient } from "../api";
 
@@ -45,7 +46,7 @@ interface TrustCounts {
 }
 
 export function useTrustCounts(knownPatternIds?: Set<string>): TrustCounts {
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
 
   const trustList = reviewState?.trustList ?? [];

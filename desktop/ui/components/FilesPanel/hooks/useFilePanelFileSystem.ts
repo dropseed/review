@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useReviewStore } from "../../../stores";
+import { useAllHunks } from "../../../stores/selectors/hunks";
 import { useFileHunkStatusMap } from "../../../hooks/useFileHunkStatusMap";
 import {
   hasChangeStatus,
@@ -15,7 +16,7 @@ export function useFilePanelFileSystem() {
   const repoPath = useReviewStore((s) => s.repoPath);
   const allFiles = useReviewStore((s) => s.allFiles);
   const allFilesLoading = useReviewStore((s) => s.allFilesLoading);
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
 

@@ -16,6 +16,7 @@ import {
   areOptionsEqual,
 } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
+import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import { getPlatformServices } from "../../platform";
 import { stringHash } from "../../utils/string-hash";
 import { countLines } from "../../utils/count-lines";
@@ -187,7 +188,7 @@ export function DiffView({
 }: DiffViewProps): ReactNode {
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
-  const allHunks = useReviewStore((s) => s.hunks);
+  const allHunks = useAllHunks();
   const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const diffOverflow = useReviewStore((s) => s.diffOverflow);
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
@@ -354,14 +355,8 @@ export function DiffView({
 
   const hunkStates = reviewState?.hunks;
 
-  // Build lookup from hunk ID to hunk object (from store, which has movePairId set)
-  const hunkById = useMemo(() => {
-    const map = new Map<string, DiffHunk>();
-    for (const h of allHunks) {
-      map.set(h.id, h);
-    }
-    return map;
-  }, [allHunks]);
+  // Shared cross-file lookup, cached on filesByPath identity.
+  const hunkById = useHunkById();
 
   const fileHunkStates = useMemo(() => {
     if (!hunkStates) return hunkStates;

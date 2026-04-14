@@ -1,6 +1,7 @@
 import type { ApiClient } from "../../api";
 import { isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
+import { getAllHunksFromState } from "../selectors/hunks";
 
 export interface ClassificationSlice {
   // Classification state
@@ -33,9 +34,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
   ...classificationResetState,
 
   classifyStaticHunks: async (hunkIds) => {
-    const { hunks, reviewState, saveReviewState, startActivity, endActivity } =
-      get();
+    const { reviewState, saveReviewState, startActivity, endActivity } = get();
     if (!reviewState) return;
+    const hunks = getAllHunksFromState(get());
 
     const hunksToClassify = filterHunks(hunks, hunkIds).filter((hunk) =>
       isHunkUnclassified(reviewState.hunks[hunk.id]),
@@ -79,8 +80,8 @@ export const createClassificationSlice: SliceCreatorWithClient<
       }
 
       set({
-        classifiedHunkIds: get()
-          .hunks.map((h) => h.id)
+        classifiedHunkIds: getAllHunksFromState(get())
+          .map((h) => h.id)
           .sort(),
       });
     } catch (err) {
@@ -91,8 +92,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
   },
 
   reclassifyHunks: async (hunkIds) => {
-    const { hunks, reviewState, saveReviewState } = get();
+    const { reviewState, saveReviewState } = get();
     if (!reviewState) return;
+    const hunks = getAllHunksFromState(get());
 
     const targetHunks = filterHunks(hunks, hunkIds);
 
@@ -130,8 +132,9 @@ export const createClassificationSlice: SliceCreatorWithClient<
   },
 
   isClassificationStale: () => {
-    const { classifiedHunkIds, hunks } = get();
+    const { classifiedHunkIds } = get();
     if (!classifiedHunkIds) return false;
+    const hunks = getAllHunksFromState(get());
 
     const currentIds = hunks.map((h) => h.id).sort();
     if (classifiedHunkIds.length !== currentIds.length) return true;

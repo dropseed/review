@@ -1,5 +1,6 @@
 import { memo, useMemo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
+import { useAllHunks } from "../../stores/selectors/hunks";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { useNavigate } from "react-router-dom";
 import { Breadcrumbs } from "../Breadcrumbs";
@@ -65,7 +66,7 @@ function SimilarFilesButton({
   filePath: string;
   onNavigateToFile: (path: string) => void;
 }): JSX.Element | null {
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
   const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);

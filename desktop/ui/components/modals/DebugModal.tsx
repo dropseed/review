@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
+import { useAllHunks } from "../../stores/selectors/hunks";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 function highlightJson(json: string): React.ReactNode[] {
@@ -38,7 +39,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
   const comparison = useReviewStore((s) => s.comparison);
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const files = useReviewStore((s) => s.files);
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const focusedHunkId = useReviewStore((s) => s.focusedHunkId);
 

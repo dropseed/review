@@ -1,5 +1,6 @@
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
+import { getAllHunksFromState } from "../selectors/hunks";
 import type {
   DiffHunk,
   FileSymbolDiff,
@@ -329,10 +330,11 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     getGroupingStaleness: () => {
-      const { reviewState, hunks } = get();
+      const { reviewState } = get();
       const generated = reviewState?.guide?.state;
       if (!generated) return { stale: false, added: 0, removed: 0 };
 
+      const hunks = getAllHunksFromState(get());
       const storedIds = new Set(generated.hunkIds);
       const currentIds = new Set(hunks.map((h) => h.id));
 
@@ -349,7 +351,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
 
     startGuide: async () => {
       const {
-        hunks,
         comparison,
         repoPath,
         classifyStaticHunks,
@@ -358,6 +359,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         getActiveGroupingEntry,
         isReviewBusy,
       } = get();
+      const hunks = getAllHunksFromState(get());
       if (hunks.length === 0 || !repoPath || !comparison) return;
 
       const comparisonKey = comparison.key;
@@ -462,7 +464,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     generateGrouping: async (options) => {
       const {
         repoPath,
-        hunks,
         comparison,
         reviewState,
         saveReviewState,
@@ -471,6 +472,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         startActivity,
         endActivity,
       } = get();
+      const hunks = getAllHunksFromState(get());
       if (!repoPath || !reviewState || !comparison) return;
       if (hunks.length === 0) return;
 
@@ -713,9 +715,9 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     restoreGuideFromState: () => {
-      const { reviewState, hunks, isGroupingStale, repoPath, comparison } =
-        get();
+      const { reviewState, isGroupingStale, repoPath, comparison } = get();
       if (!repoPath || !comparison) return;
+      const hunks = getAllHunksFromState(get());
       const generated = reviewState?.guide?.state;
       if (!generated || generated.groups.length === 0) return;
 

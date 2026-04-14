@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useReviewStore } from "../../../stores";
+import { useHasAnyHunks } from "../../../stores/selectors/hunks";
 import type { FilesPanelTab, ProcessedFileEntry } from "../types";
 
 interface UseFilePanelNavigationOptions {
@@ -41,9 +42,9 @@ export function useFilePanelNavigation({
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
-  const hunks = useReviewStore((s) => s.hunks);
+  const hasHunks = useHasAnyHunks();
   const [viewMode, setFilesPanelTab] = useState<FilesPanelTab>(
-    hunks.length === 0 ? "browse" : "changes",
+    hasHunks ? "changes" : "browse",
   );
   const userHasChosenFilesPanelTab = useRef(false);
   const pendingScrollTarget = useRef<string | null>(null);
@@ -57,11 +58,11 @@ export function useFilePanelNavigation({
   // When hunks are cleared (e.g. new comparison), allow auto-switching again
   // and default to Browse. When hunks arrive and user hasn't explicitly chosen
   // a tab, switch to "changes".
-  const prevHunksLength = useRef(hunks.length);
+  const prevHasHunks = useRef(hasHunks);
   useEffect(() => {
-    const wasEmpty = prevHunksLength.current === 0;
-    const isEmpty = hunks.length === 0;
-    prevHunksLength.current = hunks.length;
+    const wasEmpty = !prevHasHunks.current;
+    const isEmpty = !hasHunks;
+    prevHasHunks.current = hasHunks;
 
     if (isEmpty && !wasEmpty) {
       // Hunks just became empty — reset to browse
@@ -74,7 +75,7 @@ export function useFilePanelNavigation({
       // Hunks just arrived — auto-switch to changes
       setFilesPanelTab("changes");
     }
-  }, [hunks.length]);
+  }, [hasHunks]);
 
   // Handle external tab switch requests (e.g., from header Git status indicator)
   const requestedFilesPanelTab = useReviewStore(

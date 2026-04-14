@@ -2,7 +2,7 @@ import type { ApiClient } from "../../api";
 import {
   getComparisonRange,
   type Comparison,
-  type DiffHunk,
+  type FileDiff,
   type GlobalReviewSummary,
   type HunkState,
   type ReviewState,
@@ -19,6 +19,7 @@ import {
 } from "../../utils/sounds";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { makeReviewKey } from "./groupingSlice";
+import { getAllHunksFromState } from "../selectors/hunks";
 
 // Debounced save operation (exported so cancelPendingSaves can cancel it)
 export const debouncedSave = createDebouncedFn(500);
@@ -118,8 +119,8 @@ export interface ReviewSlice {
   /**
    * Handle a watcher-emitted change. For git-state changes (commits, branch
    * switches, staging) delegates to `refresh()`. For pure working-tree edits,
-   * surgically refetches only the changed files' hunks and bumps their
-   * `fileVersions` entries so subscribers for those files update in place.
+   * surgically refetches only the changed files' `filesByPath` entries so
+   * viewers subscribed via `useFileHunks(path)` update in place.
    */
   applyWatcherEvent: (event: {
     changedPaths: string[];
@@ -135,16 +136,21 @@ function patchGlobalReviewProgress(
   get: () => {
     repoPath: string | null;
     comparison: Comparison | null;
-    hunks: DiffHunk[];
+    filesByPath: Record<string, FileDiff>;
+    flatFileList: string[];
     globalReviews: GlobalReviewSummary[];
   },
   set: (partial: { globalReviews: GlobalReviewSummary[] }) => void,
   reviewState: ReviewState,
 ): void {
-  const { repoPath, comparison, hunks, globalReviews } = get();
+  const state = get();
+  const { repoPath, comparison, globalReviews } = state;
   if (!repoPath || !comparison) return;
 
-  const progress = computeReviewProgress(hunks, reviewState);
+  const progress = computeReviewProgress(
+    getAllHunksFromState(state),
+    reviewState,
+  );
   const patched = globalReviews.map((r) => {
     if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
       return {
@@ -252,25 +258,24 @@ function pushHunkUndo(
 
 /** Collect hunk IDs for a specific file path. */
 function getFileHunkIds(
-  hunks: { id: string; filePath: string }[],
+  filesByPath: Record<string, FileDiff>,
   filePath: string,
 ): string[] {
-  const ids: string[] = [];
-  for (const h of hunks) {
-    if (h.filePath === filePath) ids.push(h.id);
-  }
-  return ids;
+  return filesByPath[filePath]?.hunks.map((h) => h.id) ?? [];
 }
 
 /** Collect hunk IDs for all files under the given directory path. */
 function getDirHunkIds(
-  get: () => { hunks: { id: string; filePath: string }[] },
+  get: () => { filesByPath: Record<string, FileDiff> },
   dirPath: string,
 ): string[] {
   const prefix = dirPath + "/";
-  return get()
-    .hunks.filter((h) => h.filePath.startsWith(prefix))
-    .map((h) => h.id);
+  const ids: string[] = [];
+  for (const [path, fd] of Object.entries(get().filesByPath)) {
+    if (!path.startsWith(prefix)) continue;
+    for (const h of fd.hunks) ids.push(h.id);
+  }
+  return ids;
 }
 
 /**
@@ -347,9 +352,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      let { repoPath, reviewState, hunks, comparison, readOnlyPreview } = get();
+      let { repoPath, reviewState, comparison, readOnlyPreview } = get();
       if (readOnlyPreview) return;
       if (!repoPath || !reviewState || !comparison) return;
+      const hunks = getAllHunksFromState(get());
 
       // Skip saving if the review file hasn't been created yet and the state
       // is pristine (no human actions). This avoids creating review files for
@@ -483,18 +489,18 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     approveAllFileHunks: (filePath) => {
-      const ids = getFileHunkIds(get().hunks, filePath);
+      const ids = getFileHunkIds(get().filesByPath, filePath);
       updateHunkStatuses(get, set, ids, "approved");
       get().advanceToNextUnreviewedFile();
     },
 
     unapproveAllFileHunks: (filePath) => {
-      const ids = getFileHunkIds(get().hunks, filePath);
+      const ids = getFileHunkIds(get().filesByPath, filePath);
       updateHunkStatuses(get, set, ids, undefined, { skipMissing: true });
     },
 
     rejectAllFileHunks: (filePath) => {
-      const ids = getFileHunkIds(get().hunks, filePath);
+      const ids = getFileHunkIds(get().filesByPath, filePath);
       updateHunkStatuses(get, set, ids, "rejected");
       // Don't advance — stay on the file so the comment box opens
     },
@@ -541,7 +547,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveAllFileHunksForLater: (filePath) => {
-      const ids = getFileHunkIds(get().hunks, filePath);
+      const ids = getFileHunkIds(get().filesByPath, filePath);
       updateHunkStatuses(get, set, ids, "saved_for_later");
     },
 
@@ -638,7 +644,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     syncTotalDiffHunks: () => {
-      const { reviewState, hunks, saveReviewState } = get();
+      const { reviewState, saveReviewState } = get();
+      const hunks = getAllHunksFromState(get());
       if (
         !reviewState ||
         hunks.length === 0 ||
@@ -659,7 +666,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     flushSidebarProgress: () => {
-      const { reviewState, hunks } = get();
+      const { reviewState } = get();
+      const hunks = getAllHunksFromState(get());
       if (!reviewState || hunks.length === 0) return;
       patchGlobalReviewProgress(get, set, reviewState);
     },
@@ -723,7 +731,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     exportRejectionFeedback: () => {
-      const { reviewState, hunks } = get();
+      const { reviewState } = get();
+      const hunks = getAllHunksFromState(get());
       if (!reviewState) return null;
 
       const rejections: RejectionFeedback["rejections"] = [];
@@ -766,9 +775,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       if (!comparison) return;
 
       // Load data in parallel; pass isRefreshing=true to suppress progress
-      // indicators. `loadFiles(true)` writes idempotently and bumps
-      // `fileVersions[path]` only for files whose hunks actually changed, so
-      // FileViewer subscribers for unaffected files don't re-run their effect.
+      // indicators. `loadFiles(true)` writes idempotently and preserves
+      // `filesByPath[path]` reference identity for files whose hunks didn't
+      // change, so FileViewer subscribers for unaffected files don't re-run.
       const range = getComparisonRange(comparison);
       await Promise.all([
         loadReviewState(),

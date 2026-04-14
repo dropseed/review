@@ -7,8 +7,8 @@ import {
   useState,
 } from "react";
 import { useReviewStore } from "../../stores";
+import { useHunkById, useAllHunks } from "../../stores/selectors/hunks";
 import { isHunkReviewed } from "../../types";
-import type { DiffHunk } from "../../types";
 import { Checkbox } from "../ui/checkbox";
 import { Switch } from "../ui/switch";
 import { SimpleTooltip } from "../ui/tooltip";
@@ -55,12 +55,6 @@ function ElapsedTimer(): ReactNode {
   );
 }
 
-function buildHunkMap(hunks: DiffHunk[]): Map<string, DiffHunk> {
-  const map = new Map<string, DiffHunk>();
-  for (const h of hunks) map.set(h.id, h);
-  return map;
-}
-
 function formatStalenessMessage(added: number, removed: number): string {
   if (added > 0 && removed > 0) {
     return `+${added} / -${removed} hunks since generated`;
@@ -89,7 +83,6 @@ function ungroupedItemStyle(isActive: boolean, isCompleted: boolean): string {
 /** Shared hook for guide group state. Used by both FilesPanel (for section header) and GuideGroupList (for content). */
 export function useGuideGroupState() {
   const guideExpanded = useReviewStore((s) => s.guideExpanded);
-  const hunks = useReviewStore((s) => s.hunks);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
   const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
@@ -97,7 +90,7 @@ export function useGuideGroupState() {
   const groupingLoading = activeEntry.groupingLoading;
   const guideLoading = activeEntry.guideLoading;
 
-  const hunkById = useMemo(() => buildHunkMap(hunks), [hunks]);
+  const hunkById = useHunkById();
   const trustList = reviewState?.trustList ?? [];
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
   const hunkStates = reviewState?.hunks;
@@ -155,7 +148,7 @@ export function GuideGroupList(): ReactNode {
     groupingLoading,
   } = useGuideGroupState();
 
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
   const groupingError = activeEntry.groupingError;

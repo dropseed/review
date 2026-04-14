@@ -1,6 +1,7 @@
 import { isHunkReviewed, isHunkTrusted } from "../../types";
-import type { HunkGroup } from "../../types";
+import type { DiffHunk, HunkGroup } from "../../types";
 import type { ReviewStore, SliceCreator } from "../types";
+import { getHunkLocationMap } from "../selectors/hunks";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
@@ -116,49 +117,51 @@ export interface NavigationSlice {
   canGoBack: boolean;
 }
 
-/** Check whether a hunk in the given file is unreviewed, using the current review context. */
-function isFileHunkUnreviewed(
+/** Check whether a hunk is unreviewed for the given file's review context. */
+function isHunkUnreviewedFor(
   filePath: string,
   state: ReviewStore,
-): (h: { id: string; filePath: string }) => boolean {
+): (h: DiffHunk) => boolean {
   const { reviewState, stagedFilePaths } = state;
   const trustList = reviewState?.trustList ?? [];
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
 
   return (h) => {
-    if (h.filePath !== filePath) return false;
     const hunkState = reviewState?.hunks[h.id];
     return !isHunkReviewed(hunkState, trustList, {
       autoApproveStaged,
       stagedFilePaths,
-      filePath: h.filePath,
+      filePath,
     });
   };
 }
 
 /**
- * Find the ID of the first unreviewed hunk for a file,
- * falling back to the first hunk in the file if all are reviewed.
- * Returns null if no hunks exist for the file.
+ * Find the ID of the first unreviewed hunk for a file, falling back to the
+ * first hunk in the file if all are reviewed. Returns null if no hunks.
  */
 export function findFirstUnreviewedHunkId(
   filePath: string,
   state: ReviewStore,
 ): string | null {
-  const unreviewed = state.hunks.find(isFileHunkUnreviewed(filePath, state));
+  const fileHunks = state.filesByPath[filePath]?.hunks ?? [];
+  const unreviewed = fileHunks.find(isHunkUnreviewedFor(filePath, state));
   if (unreviewed) return unreviewed.id;
-  return state.hunks.find((h) => h.filePath === filePath)?.id ?? null;
+  return fileHunks[0]?.id ?? null;
 }
 
-/** Find the current index of the focused hunk by ID. Returns -1 if not found. */
-function focusedHunkPosition(state: ReviewStore): number {
-  if (!state.focusedHunkId) return -1;
-  return state.hunks.findIndex((h) => h.id === state.focusedHunkId);
+/** Locate the focused hunk via the cached hunkId → location map. O(1). */
+function focusedHunkLocation(
+  state: ReviewStore,
+): { filePath: string; indexInFile: number } | null {
+  if (!state.focusedHunkId) return null;
+  return getHunkLocationMap(state.filesByPath).get(state.focusedHunkId) ?? null;
 }
 
 /** Check whether a file has any unreviewed hunks. */
 function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
-  return state.hunks.some(isFileHunkUnreviewed(filePath, state));
+  const fileHunks = state.filesByPath[filePath]?.hunks ?? [];
+  return fileHunks.some(isHunkUnreviewedFor(filePath, state));
 }
 
 /** Check if a hunk is trusted and has no explicit user action (skip in navigation). */
@@ -177,20 +180,12 @@ function jumpToFileEdge(
   set: (partial: Partial<ReviewStore>) => void,
   edge: "first" | "last",
 ): void {
-  const { hunks, selectedFile } = get();
+  const { filesByPath, selectedFile } = get();
   if (!selectedFile) return;
 
-  let target: (typeof hunks)[number] | undefined;
-  if (edge === "first") {
-    target = hunks.find((h) => h.filePath === selectedFile);
-  } else {
-    for (let i = hunks.length - 1; i >= 0; i--) {
-      if (hunks[i].filePath === selectedFile) {
-        target = hunks[i];
-        break;
-      }
-    }
-  }
+  const fileHunks = filesByPath[selectedFile]?.hunks ?? [];
+  const target =
+    edge === "first" ? fileHunks[0] : fileHunks[fileHunks.length - 1];
 
   if (target) {
     set({
@@ -362,34 +357,63 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   nextHunk: () => {
     const state = get();
-    const { hunks } = state;
-    if (hunks.length === 0) return;
-    const currentIndex = focusedHunkPosition(state);
-    for (let i = currentIndex + 1; i < hunks.length; i++) {
-      if (!isHunkTrustedInState(hunks[i].id, state)) {
-        set({
-          focusedHunkId: hunks[i].id,
-          selectedFile: hunks[i].filePath,
-          scrollTarget: { type: "hunk", hunkId: hunks[i].id },
-        });
-        return;
+    const { filesByPath, flatFileList } = state;
+    const loc = focusedHunkLocation(state);
+
+    // Walk hunks forward starting from after the focused hunk. If there's no
+    // focus, start from the first file. Crosses file boundaries in
+    // `flatFileList` order.
+    const startFileIdx = loc ? flatFileList.indexOf(loc.filePath) : 0;
+    const startInFileIdx = loc ? loc.indexInFile + 1 : 0;
+    if (startFileIdx === -1) return;
+
+    for (let fi = startFileIdx; fi < flatFileList.length; fi++) {
+      const filePath = flatFileList[fi];
+      const fileHunks = filesByPath[filePath]?.hunks;
+      if (!fileHunks) continue;
+      const start = fi === startFileIdx ? startInFileIdx : 0;
+      for (let i = start; i < fileHunks.length; i++) {
+        if (!isHunkTrustedInState(fileHunks[i].id, state)) {
+          set({
+            focusedHunkId: fileHunks[i].id,
+            selectedFile: filePath,
+            scrollTarget: { type: "hunk", hunkId: fileHunks[i].id },
+          });
+          return;
+        }
       }
     }
   },
 
   prevHunk: () => {
     const state = get();
-    const { hunks } = state;
-    if (hunks.length === 0) return;
-    const currentIndex = focusedHunkPosition(state);
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      if (!isHunkTrustedInState(hunks[i].id, state)) {
-        set({
-          focusedHunkId: hunks[i].id,
-          selectedFile: hunks[i].filePath,
-          scrollTarget: { type: "hunk", hunkId: hunks[i].id },
-        });
-        return;
+    const { filesByPath, flatFileList } = state;
+    const loc = focusedHunkLocation(state);
+
+    // Match the pre-reshape behavior: prevHunk with no focused hunk is a
+    // no-op. (nextHunk with no focus jumps to the first hunk; the asymmetry
+    // mirrors how the old flat-array code naturally fell through when
+    // currentIndex was -1.)
+    if (!loc) return;
+
+    const startFileIdx = flatFileList.indexOf(loc.filePath);
+    if (startFileIdx === -1) return;
+    const startInFileIdx = loc.indexInFile - 1;
+
+    for (let fi = startFileIdx; fi >= 0; fi--) {
+      const filePath = flatFileList[fi];
+      const fileHunks = filesByPath[filePath]?.hunks;
+      if (!fileHunks) continue;
+      const start = fi === startFileIdx ? startInFileIdx : fileHunks.length - 1;
+      for (let i = start; i >= 0; i--) {
+        if (!isHunkTrustedInState(fileHunks[i].id, state)) {
+          set({
+            focusedHunkId: fileHunks[i].id,
+            selectedFile: filePath,
+            scrollTarget: { type: "hunk", hunkId: fileHunks[i].id },
+          });
+          return;
+        }
       }
     }
   },
@@ -496,17 +520,14 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Advance to next hunk within the same file, skipping trusted hunks
   nextHunkInFile: () => {
     const state = get();
-    const { hunks } = state;
-    if (hunks.length === 0) return;
-    const currentIndex = focusedHunkPosition(state);
-    const currentHunk = currentIndex >= 0 ? hunks[currentIndex] : null;
-    if (!currentHunk) return;
-    for (let i = currentIndex + 1; i < hunks.length; i++) {
-      if (hunks[i].filePath !== currentHunk.filePath) break;
-      if (!isHunkTrustedInState(hunks[i].id, state)) {
+    const loc = focusedHunkLocation(state);
+    if (!loc) return;
+    const fileHunks = state.filesByPath[loc.filePath]?.hunks ?? [];
+    for (let i = loc.indexInFile + 1; i < fileHunks.length; i++) {
+      if (!isHunkTrustedInState(fileHunks[i].id, state)) {
         set({
-          focusedHunkId: hunks[i].id,
-          scrollTarget: { type: "hunk", hunkId: hunks[i].id },
+          focusedHunkId: fileHunks[i].id,
+          scrollTarget: { type: "hunk", hunkId: fileHunks[i].id },
         });
         return;
       }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useReviewStore } from "../../stores";
+import { useFileHunks } from "../../stores/selectors/hunks";
 import { getApiClient } from "../../api";
 import type { FileSymbol, SymbolDiff } from "../../types";
 import { Dialog, DialogOverlay, DialogPortal } from "../ui/dialog";
@@ -31,7 +32,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const repoPath = useReviewStore((s) => s.repoPath);
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
-  const hunks = useReviewStore((s) => s.hunks);
+  const fileHunks = useFileHunks(selectedFile);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const [query, setQuery] = useState("");
@@ -208,8 +209,6 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
         targetHunkId = symbol.hunkIds[0];
       } else {
         // No hunks (unchanged symbol) — find the nearest hunk by line number
-        const fileHunks = hunks.filter((h) => h.filePath === selectedFile);
-
         if (fileHunks.length > 0) {
           let closest = fileHunks[0];
           let closestDist = Math.abs(
@@ -246,7 +245,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
 
       onClose();
     },
-    [selectedFile, hunks, navigateToBrowse, onClose],
+    [selectedFile, fileHunks, navigateToBrowse, onClose],
   );
 
   const handleKeyDown = useCallback(

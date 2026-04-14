@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
+import { getAllHunksFromState } from "../stores/selectors/hunks";
 import type {
   SymbolDefinition,
   SymbolChangeType,
@@ -276,9 +277,10 @@ export function useSymbolNavigation() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const { repoPath, hunks, symbolDiffs, comparison } =
-        useReviewStore.getState();
+      const state = useReviewStore.getState();
+      const { repoPath, symbolDiffs, comparison } = state;
       if (!repoPath || !comparison) return;
+      const hunks = getAllHunksFromState(state);
 
       setState({
         popoverOpen: true,

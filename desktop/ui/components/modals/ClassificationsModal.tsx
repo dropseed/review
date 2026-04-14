@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
+import { useAllHunks } from "../../stores/selectors/hunks";
 import { isHunkUnclassified, type DiffHunk, type HunkState } from "../../types";
 import {
   Dialog,
@@ -195,7 +196,7 @@ export function ClassificationsModal({
   onClose,
   onSelectHunk,
 }: ClassificationsModalProps): ReactNode {
-  const hunks = useReviewStore((s) => s.hunks);
+  const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const trustList = reviewState?.trustList ?? [];
 
