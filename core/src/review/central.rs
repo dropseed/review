@@ -167,6 +167,12 @@ pub fn list_registered_repos() -> Result<Vec<RepoIndexEntry>, CentralError> {
     Ok(repos)
 }
 
+/// Look up a single registered repo by id without sorting the full list.
+pub fn get_registered_repo(repo_id: &str) -> Result<Option<RepoIndexEntry>, CentralError> {
+    let index = load_index()?;
+    Ok(index.repos.get(repo_id).cloned())
+}
+
 /// Unregister a repo from the index. Does not delete review files.
 pub fn unregister_repo(repo_path: &Path) -> Result<(), CentralError> {
     let repo_id = compute_repo_id(repo_path)?;

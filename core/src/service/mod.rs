@@ -5,6 +5,7 @@
 //! layer and the Axum HTTP handlers call into this module.
 
 pub mod activity;
+pub mod activity_cache;
 pub mod commit;
 pub mod files;
 pub mod freshness;
@@ -69,7 +70,7 @@ pub struct CommitResult {
     pub summary: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoLocalActivity {
     pub repo_path: String,
@@ -77,6 +78,20 @@ pub struct RepoLocalActivity {
     pub default_branch: String,
     pub branches: Vec<crate::sources::local_git::LocalBranchInfo>,
 }
+
+/// Emitted by the file watcher when a repo's activity changes. The payload is
+/// the freshly recomputed activity so the frontend can apply it as a delta to
+/// one sidebar entry without refetching.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoActivityChangedPayload {
+    pub repo_path: String,
+    pub activity: RepoLocalActivity,
+}
+
+/// Event name for `RepoActivityChangedPayload`. Shared across the Tauri and
+/// Axum watcher paths; the TypeScript clients mirror this string.
+pub const EVENT_REPO_ACTIVITY_CHANGED: &str = "repo-activity-changed";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

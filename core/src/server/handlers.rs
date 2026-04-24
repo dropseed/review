@@ -1301,11 +1301,20 @@ async fn events_sse(
                             });
                         let _ = tx_clone.blocking_send(event);
                     }
-                    if git_state_changed {
-                        let _ = tx_clone.blocking_send(
-                            Event::default()
-                                .event("local-activity-changed")
-                                .data(&repo_for_closure),
+                    if git_state_changed || review_changed {
+                        crate::service::activity_cache::refresh_and_emit(
+                            &repo_for_closure,
+                            |payload| {
+                                let event = Event::default()
+                                    .event(crate::service::EVENT_REPO_ACTIVITY_CHANGED)
+                                    .json_data(payload)
+                                    .unwrap_or_else(|_| {
+                                        Event::default()
+                                            .event(crate::service::EVENT_REPO_ACTIVITY_CHANGED)
+                                            .data(&payload.repo_path)
+                                    });
+                                let _ = tx_clone.blocking_send(event);
+                            },
                         );
                     }
                 }

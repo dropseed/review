@@ -5,7 +5,11 @@
  * Used when running the UI outside of Tauri (web mode).
  */
 
-import type { ApiClient, GitChangedPayload } from "./client";
+import type {
+  ApiClient,
+  GitChangedPayload,
+  RepoActivityChangedPayload,
+} from "./client";
 import type {
   BranchList,
   ClassifyResponse,
@@ -56,7 +60,9 @@ export class HttpClient implements ApiClient {
   private eventSource: EventSource | null = null;
   private reviewStateCallbacks: ((repoPath: string) => void)[] = [];
   private gitChangedCallbacks: ((payload: GitChangedPayload) => void)[] = [];
-  private localActivityCallbacks: ((repoPath: string) => void)[] = [];
+  private repoActivityCallbacks: ((
+    payload: RepoActivityChangedPayload,
+  ) => void)[] = [];
 
   // ----- Private helpers -----
 
@@ -662,10 +668,20 @@ export class HttpClient implements ApiClient {
       }
       this.gitChangedCallbacks.forEach((cb) => cb(payload));
     });
-    this.eventSource.addEventListener("local-activity-changed", (e) => {
-      this.localActivityCallbacks.forEach((cb) =>
-        cb((e as MessageEvent).data || repoPath),
-      );
+    this.eventSource.addEventListener("repo-activity-changed", (e) => {
+      const data = (e as MessageEvent).data;
+      try {
+        const parsed = typeof data === "string" ? JSON.parse(data) : data;
+        if (parsed && parsed.repoPath && parsed.activity) {
+          const payload: RepoActivityChangedPayload = {
+            repoPath: parsed.repoPath,
+            activity: parsed.activity,
+          };
+          this.repoActivityCallbacks.forEach((cb) => cb(payload));
+        }
+      } catch {
+        // Malformed payload — drop it rather than dispatch a partial event.
+      }
     });
   }
 
@@ -693,10 +709,12 @@ export class HttpClient implements ApiClient {
     };
   }
 
-  onLocalActivityChanged(callback: (repoPath: string) => void): () => void {
-    this.localActivityCallbacks.push(callback);
+  onRepoActivityChanged(
+    callback: (payload: RepoActivityChangedPayload) => void,
+  ): () => void {
+    this.repoActivityCallbacks.push(callback);
     return () => {
-      this.localActivityCallbacks = this.localActivityCallbacks.filter(
+      this.repoActivityCallbacks = this.repoActivityCallbacks.filter(
         (cb) => cb !== callback,
       );
     };

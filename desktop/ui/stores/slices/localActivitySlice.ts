@@ -22,6 +22,8 @@ export interface LocalActivitySlice {
   lastSeenDiffStats: Record<string, string>;
 
   loadLocalActivity: () => Promise<void>;
+  /** Apply a scoped activity delta for one repo (upserts by repoPath). */
+  applyRepoActivityDelta: (activity: RepoLocalActivity) => void;
   markDiffSeen: (
     repoPath: string,
     branch: string,
@@ -101,6 +103,34 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
         console.error("Failed to load local activity:", err);
         set({ localActivityLoading: false });
       }
+    },
+
+    applyRepoActivityDelta: (activity) => {
+      const current = get().localActivity;
+      const idx = current.findIndex((r) => r.repoPath === activity.repoPath);
+      if (idx !== -1 && current[idx] === activity) return;
+
+      const next =
+        idx === -1
+          ? [...current, activity]
+          : current.map((r, i) => (i === idx ? activity : r));
+
+      // Prune lastSeenDiffStats entries for branches that no longer exist
+      // in this repo. Only touch keys scoped to the delta's repoPath.
+      const prevStats = get().lastSeenDiffStats;
+      const stillExists = new Set<string>(
+        activity.branches.map((b) => makeBranchKey(activity.repoPath, b.name)),
+      );
+      let stats = prevStats;
+      const scopePrefix = `${activity.repoPath}:`;
+      for (const key of Object.keys(prevStats)) {
+        if (key.startsWith(scopePrefix) && !stillExists.has(key)) {
+          if (stats === prevStats) stats = { ...prevStats };
+          delete stats[key];
+        }
+      }
+
+      set({ localActivity: next, lastSeenDiffStats: stats });
     },
 
     markDiffSeen: (repoPath, branch, stats) => {

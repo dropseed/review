@@ -6,6 +6,7 @@
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use review::service::EVENT_REPO_ACTIVITY_CHANGED;
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -34,7 +35,6 @@ const WATCHER_DEBOUNCE_MS: u64 = 200;
 /// Event names emitted to the frontend. Must match the strings in `tauri-client.ts`.
 const EVENT_REVIEW_STATE_CHANGED: &str = "review-state-changed";
 const EVENT_GIT_CHANGED: &str = "git-changed";
-const EVENT_LOCAL_ACTIVITY_CHANGED: &str = "local-activity-changed";
 
 /// Log a message to the app.log file (for debugging watcher events, dev only)
 #[cfg(debug_assertions)]
@@ -193,8 +193,8 @@ fn is_log_file(path_str: &str) -> bool {
 
 /// Returns true if the path refers to a git-internal state file
 /// (index, HEAD, refs/heads/) that affects branch and working-tree status.
-/// Used by both the full watcher (to emit `local-activity-changed`) and
-/// the lightweight local-activity watcher (to filter meaningful events).
+/// Used by both the full watcher and the lightweight local-activity watcher
+/// to decide whether an event warrants recomputing repo activity.
 fn is_git_state_path(path_str: &str) -> bool {
     path_str.contains("/.git/refs/heads/")
         || path_str.contains("\\.git\\refs\\heads\\")
@@ -357,12 +357,13 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         let _ = app_clone.emit(EVENT_GIT_CHANGED, &payload);
                     }
 
-                    // The lightweight local-activity watcher is skipped for repos with
-                    // the full watcher, so we emit local-activity-changed here to keep
-                    // the sidebar's branch data up to date on commits/staging/switches.
-                    if git_state_changed {
-                        eprintln!("[watcher] Local activity changed for {repo_for_closure}");
-                        let _ = app_clone.emit(EVENT_LOCAL_ACTIVITY_CHANGED, &repo_for_closure);
+                    if git_state_changed || review_changed {
+                        review::service::activity_cache::refresh_and_emit(
+                            &repo_for_closure,
+                            |payload| {
+                                let _ = app_clone.emit(EVENT_REPO_ACTIVITY_CHANGED, payload);
+                            },
+                        );
                     }
                 }
                 Err(e) => {
@@ -425,7 +426,9 @@ pub fn stop_watching(repo_path: &str) {
 
 /// Start lightweight watchers on all registered repos to detect branch/ref changes.
 /// Watches `.git/refs/heads/` and `.git/HEAD` for each repo.
-/// Emits `"local-activity-changed"` event when branch state changes.
+/// On meaningful changes, consults `activity_cache::refresh_repo` and emits a
+/// scoped `repo-activity-changed` event only when the cached activity actually
+/// differs from the freshly computed one.
 pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
     init_watchers();
 
@@ -470,10 +473,12 @@ pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
                     let any_meaningful = events
                         .iter()
                         .any(|e| is_git_state_path(&e.path.to_string_lossy()));
-                    if any_meaningful {
-                        eprintln!("[watcher] Local activity changed for {repo_path_str}");
-                        let _ = app_clone.emit(EVENT_LOCAL_ACTIVITY_CHANGED, &repo_path_str);
+                    if !any_meaningful {
+                        return;
                     }
+                    review::service::activity_cache::refresh_and_emit(&repo_path_str, |payload| {
+                        let _ = app_clone.emit(EVENT_REPO_ACTIVITY_CHANGED, payload);
+                    });
                 }
             },
         )

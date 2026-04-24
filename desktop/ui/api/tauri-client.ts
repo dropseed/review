@@ -8,7 +8,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { ApiClient, GitChangedPayload } from "./client";
+import type {
+  ApiClient,
+  GitChangedPayload,
+  RepoActivityChangedPayload,
+} from "./client";
 import type {
   BranchList,
   ClassifyResponse,
@@ -50,7 +54,7 @@ import type {
 /** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
 const EVENT_REVIEW_STATE_CHANGED = "review-state-changed";
 const EVENT_GIT_CHANGED = "git-changed";
-const EVENT_LOCAL_ACTIVITY_CHANGED = "local-activity-changed";
+const EVENT_REPO_ACTIVITY_CHANGED = "repo-activity-changed";
 
 export class TauriClient implements ApiClient {
   // ----- Git operations -----
@@ -562,8 +566,13 @@ export class TauriClient implements ApiClient {
     return this.listenForEvent<GitChangedPayload>(EVENT_GIT_CHANGED, callback);
   }
 
-  onLocalActivityChanged(callback: (repoPath: string) => void): () => void {
-    return this.listenForEvent(EVENT_LOCAL_ACTIVITY_CHANGED, callback);
+  onRepoActivityChanged(
+    callback: (payload: RepoActivityChangedPayload) => void,
+  ): () => void {
+    return this.listenForEvent<RepoActivityChangedPayload>(
+      EVENT_REPO_ACTIVITY_CHANGED,
+      callback,
+    );
   }
 
   // ----- Window/App -----

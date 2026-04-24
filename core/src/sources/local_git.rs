@@ -22,7 +22,7 @@ pub struct RemoteInfo {
 }
 
 /// Lightweight diff statistics from `git diff --shortstat`
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffShortStat {
     pub file_count: u32,
@@ -46,7 +46,7 @@ pub struct SearchMatch {
 
 /// Information about a local branch that is ahead of the default branch
 /// or has uncommitted working tree changes.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalBranchInfo {
     pub name: String,

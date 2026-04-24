@@ -63,6 +63,12 @@ export interface GitChangedPayload {
   gitStateChanged: boolean;
 }
 
+/** Payload emitted with the `repo-activity-changed` watcher event. */
+export interface RepoActivityChangedPayload {
+  repoPath: string;
+  activity: RepoLocalActivity;
+}
+
 export interface ApiClient {
   // ----- Git operations -----
 
@@ -380,8 +386,10 @@ export interface ApiClient {
   /** Subscribe to git change events */
   onGitChanged(callback: (payload: GitChangedPayload) => void): () => void;
 
-  /** Subscribe to local activity change events (branch added/deleted in any repo) */
-  onLocalActivityChanged(callback: (repoPath: string) => void): () => void;
+  /** Subscribe to scoped activity deltas for a single repo. */
+  onRepoActivityChanged(
+    callback: (payload: RepoActivityChangedPayload) => void,
+  ): () => void;
 
   // ----- Window/App -----
 

@@ -12,7 +12,9 @@ export function useFileWatcher(comparisonReady: number) {
   const applyWatcherEvent = useReviewStore((s) => s.applyWatcherEvent);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
-  const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
+  const applyRepoActivityDelta = useReviewStore(
+    (s) => s.applyRepoActivityDelta,
+  );
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const comparison = useReviewStore((s) => s.comparison);
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
@@ -26,7 +28,7 @@ export function useFileWatcher(comparisonReady: number) {
   const applyWatcherEventRef = useRef(applyWatcherEvent);
   const loadGlobalReviewsRef = useRef(loadGlobalReviews);
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
-  const loadLocalActivityRef = useRef(loadLocalActivity);
+  const applyRepoActivityDeltaRef = useRef(applyRepoActivityDelta);
   const comparisonReadyRef = useRef(comparisonReady);
   const isStandaloneFileRef = useRef(isStandaloneFile);
   const loadRepoFilesRef = useRef(loadRepoFiles);
@@ -37,13 +39,8 @@ export function useFileWatcher(comparisonReady: number) {
   );
   const browseRefreshInProgressRef = useRef(false);
   const browseRefreshRequestedRef = useRef(false);
-  const localActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const refreshInProgressRef = useRef(false);
   const refreshRequestedRef = useRef(false);
-  const localActivityInProgressRef = useRef(false);
-  const localActivityRequestedRef = useRef(false);
   const activeReviewKeyRef = useRef(activeReviewKey);
   const comparisonRef = useRef(comparison);
   const setActiveReviewKeyRef = useRef(setActiveReviewKey);
@@ -54,7 +51,7 @@ export function useFileWatcher(comparisonReady: number) {
     applyWatcherEventRef.current = applyWatcherEvent;
     loadGlobalReviewsRef.current = loadGlobalReviews;
     checkReviewsFreshnessRef.current = checkReviewsFreshness;
-    loadLocalActivityRef.current = loadLocalActivity;
+    applyRepoActivityDeltaRef.current = applyRepoActivityDelta;
     comparisonReadyRef.current = comparisonReady;
     activeReviewKeyRef.current = activeReviewKey;
     comparisonRef.current = comparison;
@@ -68,7 +65,7 @@ export function useFileWatcher(comparisonReady: number) {
     applyWatcherEvent,
     loadGlobalReviews,
     checkReviewsFreshness,
-    loadLocalActivity,
+    applyRepoActivityDelta,
     comparisonReady,
     activeReviewKey,
     comparison,
@@ -201,31 +198,6 @@ export function useFileWatcher(comparisonReady: number) {
       }, 2000);
     };
 
-    // Local activity changed — debounce at 500ms to avoid rapid refreshes
-    // during git rebase. Guard against overlapping loads.
-    const scheduleLocalActivity = () => {
-      if (localActivityTimerRef.current) {
-        clearTimeout(localActivityTimerRef.current);
-      }
-      localActivityTimerRef.current = setTimeout(async () => {
-        localActivityTimerRef.current = null;
-        if (localActivityInProgressRef.current) {
-          localActivityRequestedRef.current = true;
-          return;
-        }
-        localActivityInProgressRef.current = true;
-        try {
-          await loadLocalActivityRef.current();
-        } finally {
-          localActivityInProgressRef.current = false;
-          if (localActivityRequestedRef.current) {
-            localActivityRequestedRef.current = false;
-            scheduleLocalActivity();
-          }
-        }
-      }, 500);
-    };
-
     // Browse mode refresh: reload file tree and branch info on git changes.
     // Debounce at 2s with same overlap guard as review-mode refresh.
     const scheduleBrowseRefresh = () => {
@@ -283,14 +255,12 @@ export function useFileWatcher(comparisonReady: number) {
             if (!isStandaloneFileRef.current) {
               scheduleBrowseRefresh();
             }
-            scheduleLocalActivity();
           } else {
-            // Review mode: surgical refresh via the new aggregate handler.
+            // Review mode: surgical refresh via the aggregate handler.
+            // Sidebar activity is no longer refreshed here — it arrives as
+            // a scoped `repo-activity-changed` delta, filtered by the
+            // backend's activity cache.
             scheduleRefresh();
-            // Also refresh local activity so the sidebar shows the repo as
-            // soon as it becomes dirty (git-changed fires on working tree
-            // changes too, not just git state changes).
-            scheduleLocalActivity();
           }
         }
         // Always update sidebar freshness on git changes
@@ -300,28 +270,25 @@ export function useFileWatcher(comparisonReady: number) {
     console.log("[watcher] Listening for git-changed");
 
     unlistenFns.push(
-      apiClient.onLocalActivityChanged(() => {
-        console.log("[watcher] Received local-activity-changed event");
-        scheduleLocalActivity();
+      apiClient.onRepoActivityChanged((payload) => {
+        console.log(
+          "[watcher] Received repo-activity-changed event:",
+          payload.repoPath,
+        );
+        applyRepoActivityDeltaRef.current(payload.activity);
       }),
     );
-    console.log("[watcher] Listening for local-activity-changed");
+    console.log("[watcher] Listening for repo-activity-changed");
 
     return () => {
       clearTimeout(gitChangedTimerRef.current!);
       gitChangedTimerRef.current = null;
       clearTimeout(browseRefreshTimerRef.current!);
       browseRefreshTimerRef.current = null;
-      if (localActivityTimerRef.current) {
-        clearTimeout(localActivityTimerRef.current);
-        localActivityTimerRef.current = null;
-      }
       refreshInProgressRef.current = false;
       refreshRequestedRef.current = false;
       browseRefreshInProgressRef.current = false;
       browseRefreshRequestedRef.current = false;
-      localActivityInProgressRef.current = false;
-      localActivityRequestedRef.current = false;
       unlistenFns.forEach((fn) => fn());
     };
   }, [repoPath]);
