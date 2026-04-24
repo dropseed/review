@@ -469,14 +469,23 @@ pub fn list_all_local_activity() -> Result<Vec<RepoLocalActivity>, String> {
 }
 
 #[tauri::command]
-pub fn register_repo(repo_path: String) -> Result<bool, String> {
-    review::review::central::register_repo_if_valid(&PathBuf::from(repo_path))
-        .map_err(|e| e.to_string())
+pub fn register_repo(app: tauri::AppHandle, repo_path: String) -> Result<bool, String> {
+    let registered = review::review::central::register_repo_if_valid(&PathBuf::from(&repo_path))
+        .map_err(|e| e.to_string())?;
+    if registered {
+        if let Err(e) = super::watchers::start_local_activity_watcher_for(&repo_path, app) {
+            eprintln!("[register_repo] Failed to start watcher for {repo_path}: {e}");
+        }
+    }
+    Ok(registered)
 }
 
 #[tauri::command]
 pub fn unregister_repo(repo_path: String) -> Result<(), String> {
-    review::review::central::unregister_repo(&PathBuf::from(repo_path)).map_err(|e| e.to_string())
+    review::review::central::unregister_repo(&PathBuf::from(&repo_path))
+        .map_err(|e| e.to_string())?;
+    super::watchers::stop_local_activity_watcher(&repo_path);
+    Ok(())
 }
 
 #[tauri::command]
@@ -747,8 +756,8 @@ pub fn start_file_watcher(app: tauri::AppHandle, repo_path: String) -> Result<()
 }
 
 #[tauri::command]
-pub fn stop_file_watcher(repo_path: String) {
-    super::watchers::stop_watching(&repo_path);
+pub fn stop_file_watcher(app: tauri::AppHandle, repo_path: String) {
+    super::watchers::stop_watching(&repo_path, app);
 }
 
 /// Consume a pending CLI open request (signal file written by the `review` CLI).

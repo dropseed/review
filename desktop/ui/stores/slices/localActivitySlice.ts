@@ -108,7 +108,6 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
     applyRepoActivityDelta: (activity) => {
       const current = get().localActivity;
       const idx = current.findIndex((r) => r.repoPath === activity.repoPath);
-      if (idx !== -1 && current[idx] === activity) return;
 
       const next =
         idx === -1

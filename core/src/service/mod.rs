@@ -12,6 +12,7 @@ pub mod freshness;
 pub mod symbols;
 pub mod util;
 pub mod vscode;
+pub mod watcher_events;
 
 use crate::diff::parser::{DiffHunk, MovePair};
 use crate::symbols::Symbol;

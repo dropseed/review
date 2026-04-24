@@ -6,28 +6,16 @@
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use review::service::activity_cache::RefreshTrigger;
+use review::service::watcher_events::{
+    categorize_change, is_git_state_path, ChangeKind, GitChangedPayload,
+};
 use review::service::EVENT_REPO_ACTIVITY_CHANGED;
-use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-
-/// Payload for the `git-changed` event. Carries the set of working-tree paths
-/// that changed in the debounce window, so the frontend can refresh only those
-/// files rather than doing a blanket reload.
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GitChangedPayload {
-    repo_path: String,
-    /// Repo-relative paths whose working-tree content changed. Empty when only
-    /// git-internal state changed (branch switch, commit, stage/unstage).
-    changed_paths: Vec<String>,
-    /// True if `.git/HEAD`, `.git/refs/heads/`, or `.git/index` changed —
-    /// signals that a full refresh is warranted (branch switch, commit, stage).
-    git_state_changed: bool,
-}
 
 /// Debounce interval for file system events in milliseconds.
 const WATCHER_DEBOUNCE_MS: u64 = 200;
@@ -113,122 +101,6 @@ fn init_watchers() {
     if watchers.is_none() {
         *watchers = Some(HashMap::new());
     }
-}
-
-/// Check if a path should be ignored (noise we don't care about)
-fn should_ignore_path(path_str: &str) -> bool {
-    // Ignore most .git internals - only care about specific meaningful changes
-    if path_str.contains("/.git/") || path_str.contains("\\.git\\") {
-        // Always ignore .lock files in .git (transient lock files)
-        if std::path::Path::new(path_str)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
-        {
-            return true;
-        }
-
-        // Only allow these specific .git paths that indicate meaningful state changes
-        let meaningful_git_paths = [
-            "/review/", // Our review state
-            "\\review\\",
-            "/refs/heads/", // Branch changes
-            "\\refs\\heads\\",
-            "/refs/remotes/", // Remote tracking branches
-            "\\refs\\remotes\\",
-            "/.git/HEAD", // Current branch change (must be exact end)
-            "\\.git\\HEAD",
-            "/.git/index", // Staging changes (must be exact end)
-            "\\.git\\index",
-        ];
-        return !meaningful_git_paths.iter().any(|p| path_str.contains(p));
-    }
-
-    // Ignore common noisy directories
-    let noisy_patterns = [
-        "/node_modules/",
-        "\\node_modules\\",
-        "/.venv/",
-        "\\.venv\\",
-        "/venv/",
-        "\\venv\\",
-        "/__pycache__/",
-        "\\__pycache__\\",
-        "/target/", // Rust build output (all of it)
-        "\\target\\",
-        "/.next/",
-        "\\.next\\",
-        "/dist/",
-        "\\dist\\",
-        "/build/",
-        "\\build\\",
-        "/.cache/",
-        "\\.cache\\",
-        "/.cargo/",
-        "\\.cargo\\",
-        "/.turbo/",
-        "\\.turbo\\",
-        ".swp", // Vim swap files
-        ".swo",
-        "~", // Backup files
-    ];
-
-    noisy_patterns.iter().any(|p| path_str.contains(p))
-}
-
-/// Categorize what kind of change occurred
-enum ChangeKind {
-    ReviewState,
-    /// A git-internal state change (index, HEAD, refs/heads) that affects branch/working-tree status.
-    GitState,
-    WorkingTree,
-    Ignored,
-}
-
-/// Check if a path has a `.log` extension (case-insensitive).
-fn is_log_file(path_str: &str) -> bool {
-    std::path::Path::new(path_str)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("log"))
-}
-
-/// Returns true if the path refers to a git-internal state file
-/// (index, HEAD, refs/heads/) that affects branch and working-tree status.
-/// Used by both the full watcher and the lightweight local-activity watcher
-/// to decide whether an event warrants recomputing repo activity.
-fn is_git_state_path(path_str: &str) -> bool {
-    path_str.contains("/.git/refs/heads/")
-        || path_str.contains("\\.git\\refs\\heads\\")
-        || path_str.ends_with("/.git/HEAD")
-        || path_str.ends_with("\\.git\\HEAD")
-        || path_str.ends_with("/.git/index")
-        || path_str.ends_with("\\.git\\index")
-}
-
-fn categorize_change(path_str: &str) -> ChangeKind {
-    if should_ignore_path(path_str) {
-        return ChangeKind::Ignored;
-    }
-
-    // Review state files in central storage (~/.review/) or legacy (.git/review/)
-    let is_central_review =
-        path_str.contains("/.review/repos/") || path_str.contains("\\.review\\repos\\");
-    let is_legacy_review =
-        path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\");
-
-    if is_central_review || is_legacy_review {
-        // Ignore log files to prevent feedback loops with our own logging
-        if is_log_file(path_str) {
-            return ChangeKind::Ignored;
-        }
-        return ChangeKind::ReviewState;
-    }
-
-    if is_git_state_path(path_str) {
-        return ChangeKind::GitState;
-    }
-
-    // Everything else is a working tree change (regular file edits)
-    ChangeKind::WorkingTree
 }
 
 /// Start watching a repository for changes
@@ -357,9 +229,14 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         let _ = app_clone.emit(EVENT_GIT_CHANGED, &payload);
                     }
 
-                    if git_state_changed || review_changed {
+                    if let Some(trigger) = RefreshTrigger::from_flags(
+                        git_state_changed,
+                        review_changed,
+                        working_tree_changed,
+                    ) {
                         review::service::activity_cache::refresh_and_emit(
                             &repo_for_closure,
+                            trigger,
                             |payload| {
                                 let _ = app_clone.emit(EVENT_REPO_ACTIVITY_CHANGED, payload);
                             },
@@ -403,7 +280,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         map.remove(&repo_path_str);
         // Also remove the lightweight local-activity watcher if present,
         // since the full watcher covers refs/heads/ changes too
-        map.remove(&format!("local-activity:{repo_path_str}"));
+        map.remove(&local_activity_key(&repo_path_str));
         map.insert(repo_path_str.clone(), handle);
     }
 
@@ -411,122 +288,162 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Stop watching a repository
-pub fn stop_watching(repo_path: &str) {
+/// Key under which a repo's lightweight watcher is stored in `WATCHERS`.
+fn local_activity_key(repo_path: &str) -> String {
+    format!("local-activity:{repo_path}")
+}
+
+/// Stop watching a repository. If the repo is still registered, resume
+/// lightweight watching so branch/staging/review-state deltas keep reaching
+/// the sidebar.
+pub fn stop_watching(repo_path: &str, app: AppHandle) {
     eprintln!("[watcher] Stopping file watcher for {repo_path}");
-    let mut watchers = WATCHERS
-        .lock()
-        .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
-    if let Some(ref mut map) = *watchers {
-        if map.remove(repo_path).is_some() {
-            eprintln!("[watcher] Stopped file watcher for {repo_path}");
+    {
+        let mut watchers = WATCHERS
+            .lock()
+            .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
+        if let Some(ref mut map) = *watchers {
+            if map.remove(repo_path).is_some() {
+                eprintln!("[watcher] Stopped file watcher for {repo_path}");
+            }
         }
+    }
+    if let Err(e) = start_local_activity_watcher_for(repo_path, app) {
+        eprintln!("[watcher] Failed to restart lightweight watcher for {repo_path}: {e}");
     }
 }
 
-/// Start lightweight watchers on all registered repos to detect branch/ref changes.
-/// Watches `.git/refs/heads/` and `.git/HEAD` for each repo.
-/// On meaningful changes, consults `activity_cache::refresh_repo` and emits a
-/// scoped `repo-activity-changed` event only when the cached activity actually
-/// differs from the freshly computed one.
-pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
-    init_watchers();
-
-    let repos = review::review::central::list_registered_repos().map_err(|e| e.to_string())?;
-
-    // 1. Lock once to determine which repos need watchers, then drop lock
-    let repos_to_watch: Vec<_> = {
-        let watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
-        repos
-            .iter()
-            .filter(|repo_entry| {
-                let repo_path = PathBuf::from(&repo_entry.path);
-                let git_dir = repo_path.join(".git");
-                if !git_dir.exists() {
-                    return false;
-                }
-                // Skip repos already watched by the full watcher
-                if let Some(ref map) = *watchers {
-                    if map.contains_key(&repo_entry.path) {
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect()
-    };
-
-    // 2. Create all debouncers without holding the lock
-    let mut new_handles: Vec<(String, WatcherHandle)> = Vec::new();
-
-    for repo_entry in &repos_to_watch {
-        let repo_path = PathBuf::from(&repo_entry.path);
-        let git_dir = repo_path.join(".git");
-
-        let app_clone = app.clone();
-        let repo_path_str = repo_entry.path.clone();
-
-        let mut debouncer = new_debouncer(
-            Duration::from_millis(500),
-            move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
-                if let Ok(events) = result {
-                    let any_meaningful = events
-                        .iter()
-                        .any(|e| is_git_state_path(&e.path.to_string_lossy()));
-                    if !any_meaningful {
-                        return;
-                    }
-                    review::service::activity_cache::refresh_and_emit(&repo_path_str, |payload| {
-                        let _ = app_clone.emit(EVENT_REPO_ACTIVITY_CHANGED, payload);
-                    });
-                }
-            },
-        )
-        .map_err(|e| format!("Failed to create local activity watcher: {e}"))?;
-
-        // Watch .git/refs/heads/ for branch changes
-        let refs_heads = git_dir.join("refs").join("heads");
-        if refs_heads.exists() {
-            debouncer
-                .watcher()
-                .watch(&refs_heads, RecursiveMode::Recursive)
-                .ok();
-        }
-
-        // Watch .git/HEAD for branch switches
-        debouncer
-            .watcher()
-            .watch(&git_dir.join("HEAD"), RecursiveMode::NonRecursive)
-            .ok();
-
-        // Watch .git/index for staging changes (working tree dirty state)
-        debouncer
-            .watcher()
-            .watch(&git_dir.join("index"), RecursiveMode::NonRecursive)
-            .ok();
-
-        let key = format!("local-activity:{}", repo_entry.path);
-        new_handles.push((
-            key,
-            WatcherHandle {
-                _debouncer: debouncer,
-            },
-        ));
+/// Build (but do not register) a lightweight watcher for a single repo.
+/// The watcher observes only git-internal state (`.git/HEAD`, refs, index)
+/// and emits scoped `repo-activity-changed` deltas via the activity cache.
+fn build_local_activity_watcher(
+    repo_path_str: &str,
+    app: AppHandle,
+) -> Result<WatcherHandle, String> {
+    let repo_path = PathBuf::from(repo_path_str);
+    let git_dir = repo_path.join(".git");
+    if !git_dir.exists() {
+        return Err(format!("Not a git repository: {repo_path_str}"));
     }
 
-    // 3. Lock once to insert all handles
+    let repo_path_for_closure = repo_path_str.to_owned();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(500),
+        move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+            if let Ok(events) = result {
+                let any_meaningful = events
+                    .iter()
+                    .any(|e| is_git_state_path(&e.path.to_string_lossy()));
+                if !any_meaningful {
+                    return;
+                }
+                review::service::activity_cache::refresh_and_emit(
+                    &repo_path_for_closure,
+                    RefreshTrigger::GitState,
+                    |payload| {
+                        let _ = app.emit(EVENT_REPO_ACTIVITY_CHANGED, payload);
+                    },
+                );
+            }
+        },
+    )
+    .map_err(|e| format!("Failed to create local activity watcher: {e}"))?;
+
+    // Branch changes
+    let refs_heads = git_dir.join("refs").join("heads");
+    if refs_heads.exists() {
+        debouncer
+            .watcher()
+            .watch(&refs_heads, RecursiveMode::Recursive)
+            .ok();
+    }
+
+    // Current-branch changes
+    debouncer
+        .watcher()
+        .watch(&git_dir.join("HEAD"), RecursiveMode::NonRecursive)
+        .ok();
+
+    // Staging changes (working tree dirty state)
+    debouncer
+        .watcher()
+        .watch(&git_dir.join("index"), RecursiveMode::NonRecursive)
+        .ok();
+
+    Ok(WatcherHandle {
+        _debouncer: debouncer,
+    })
+}
+
+/// Start (or replace) the lightweight watcher for a single repo. No-op when
+/// the full watcher already owns this repo, since the full watcher's event
+/// categorization covers git-internal state too.
+pub fn start_local_activity_watcher_for(repo_path: &str, app: AppHandle) -> Result<(), String> {
+    init_watchers();
+
+    // Don't fight the full watcher if the repo is currently open.
     {
-        let mut watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
-        if let Some(ref mut map) = *watchers {
-            for (key, handle) in new_handles {
-                map.insert(key, handle);
+        let watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
+        if let Some(ref map) = *watchers {
+            if map.contains_key(repo_path) {
+                return Ok(());
             }
         }
     }
 
-    eprintln!(
-        "[watcher] Started local activity watchers for {} repos",
-        repos_to_watch.len()
-    );
+    let handle = build_local_activity_watcher(repo_path, app)?;
+    let key = local_activity_key(repo_path);
+
+    // Re-check registration and full-watcher presence under the lock: the
+    // caller's first check may have been superseded by `unregister_repo` or
+    // `start_watching` while `build_local_activity_watcher` was running.
+    let mut watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
+    let Some(ref mut map) = *watchers else {
+        return Ok(());
+    };
+    if map.contains_key(repo_path) {
+        return Ok(());
+    }
+    if !review::review::central::is_registered(&PathBuf::from(repo_path)).unwrap_or(false) {
+        return Ok(());
+    }
+    map.insert(key, handle);
+    Ok(())
+}
+
+/// Stop the lightweight watcher for a single repo (if one is running).
+/// Invalidates the cached activity so subsequent reads force a rebuild.
+pub fn stop_local_activity_watcher(repo_path: &str) {
+    let mut watchers = WATCHERS.lock().expect("WATCHERS mutex poisoned");
+    if let Some(ref mut map) = *watchers {
+        map.remove(&local_activity_key(repo_path));
+    }
+    review::service::activity_cache::invalidate(&PathBuf::from(repo_path));
+}
+
+/// Start lightweight watchers on all registered repos at startup. Each watcher
+/// is per-repo so new/removed repos can manage their own lifecycle via
+/// `start_local_activity_watcher_for` / `stop_local_activity_watcher`.
+pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
+    init_watchers();
+
+    let repos = review::review::central::list_registered_repos().map_err(|e| e.to_string())?;
+    let mut started = 0usize;
+
+    for repo_entry in repos {
+        let git_dir = PathBuf::from(&repo_entry.path).join(".git");
+        if !git_dir.exists() {
+            continue;
+        }
+        match start_local_activity_watcher_for(&repo_entry.path, app.clone()) {
+            Ok(()) => started += 1,
+            Err(e) => eprintln!(
+                "[watcher] Failed to start local activity watcher for {}: {e}",
+                repo_entry.path
+            ),
+        }
+    }
+
+    eprintln!("[watcher] Started local activity watchers for {started} repos");
     Ok(())
 }

@@ -16,6 +16,7 @@ use crate::classify::{self, ClassifyResponse};
 use crate::diff::parser::{detect_move_pairs, DiffHunk};
 use crate::review::state::{ReviewState, ReviewSummary};
 use crate::review::storage::{self, GlobalReviewSummary};
+use crate::service::watcher_events::{categorize_change, ChangeKind, GitChangedPayload};
 use crate::service::*;
 use crate::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use crate::sources::local_git::{
@@ -968,8 +969,12 @@ async fn activity_register(Json(req): Json<RepoPathRequest>) -> ApiResult<bool> 
 }
 
 async fn activity_unregister(Json(req): Json<RepoPathRequest>) -> ApiResult<()> {
-    blocking(move || {
-        crate::review::central::unregister_repo(&PathBuf::from(&req.repo_path)).map_err(Into::into)
+    blocking(move || -> anyhow::Result<()> {
+        let path = PathBuf::from(&req.repo_path);
+        crate::review::central::unregister_repo(&path)?;
+        // Drop cached activity so a re-register doesn't surface stale data.
+        crate::service::activity_cache::invalidate(&path);
+        Ok(())
     })
     .await
 }
@@ -1301,9 +1306,16 @@ async fn events_sse(
                             });
                         let _ = tx_clone.blocking_send(event);
                     }
-                    if git_state_changed || review_changed {
+                    if let Some(trigger) =
+                        crate::service::activity_cache::RefreshTrigger::from_flags(
+                            git_state_changed,
+                            review_changed,
+                            working_tree_changed,
+                        )
+                    {
                         crate::service::activity_cache::refresh_and_emit(
                             &repo_for_closure,
+                            trigger,
                             |payload| {
                                 let event = Event::default()
                                     .event(crate::service::EVENT_REPO_ACTIVITY_CHANGED)
@@ -1361,118 +1373,4 @@ async fn events_sse(
             .interval(Duration::from_secs(15))
             .text("keep-alive"),
     )
-}
-
-// ============================================================
-// File watcher helpers (reused from desktop/tauri/watchers.rs)
-// ============================================================
-
-enum ChangeKind {
-    ReviewState,
-    GitState,
-    WorkingTree,
-    Ignored,
-}
-
-/// SSE counterpart of `GitChangedPayload` in the Tauri watcher — same shape,
-/// serialized into the event `data` as JSON.
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GitChangedPayload {
-    repo_path: String,
-    changed_paths: Vec<String>,
-    git_state_changed: bool,
-}
-
-fn should_ignore_path(path_str: &str) -> bool {
-    if path_str.contains("/.git/") || path_str.contains("\\.git\\") {
-        if std::path::Path::new(path_str)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
-        {
-            return true;
-        }
-        let meaningful_git_paths = [
-            "/review/",
-            "\\review\\",
-            "/refs/heads/",
-            "\\refs\\heads\\",
-            "/refs/remotes/",
-            "\\refs\\remotes\\",
-            "/.git/HEAD",
-            "\\.git\\HEAD",
-            "/.git/index",
-            "\\.git\\index",
-        ];
-        return !meaningful_git_paths.iter().any(|p| path_str.contains(p));
-    }
-
-    let noisy_patterns = [
-        "/node_modules/",
-        "\\node_modules\\",
-        "/.venv/",
-        "\\.venv\\",
-        "/venv/",
-        "\\venv\\",
-        "/__pycache__/",
-        "\\__pycache__\\",
-        "/target/",
-        "\\target\\",
-        "/.next/",
-        "\\.next\\",
-        "/dist/",
-        "\\dist\\",
-        "/build/",
-        "\\build\\",
-        "/.cache/",
-        "\\.cache\\",
-        "/.cargo/",
-        "\\.cargo\\",
-        "/.turbo/",
-        "\\.turbo\\",
-        ".swp",
-        ".swo",
-        "~",
-    ];
-
-    noisy_patterns.iter().any(|p| path_str.contains(p))
-}
-
-fn is_log_file(path_str: &str) -> bool {
-    std::path::Path::new(path_str)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("log"))
-}
-
-fn is_git_state_path(path_str: &str) -> bool {
-    path_str.contains("/.git/refs/heads/")
-        || path_str.contains("\\.git\\refs\\heads\\")
-        || path_str.ends_with("/.git/HEAD")
-        || path_str.ends_with("\\.git\\HEAD")
-        || path_str.ends_with("/.git/index")
-        || path_str.ends_with("\\.git\\index")
-}
-
-fn categorize_change(path_str: &str) -> ChangeKind {
-    if should_ignore_path(path_str) {
-        return ChangeKind::Ignored;
-    }
-
-    let is_central_review =
-        path_str.contains("/.review/repos/") || path_str.contains("\\.review\\repos\\");
-    let is_legacy_review =
-        path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\");
-
-    if is_central_review || is_legacy_review {
-        if is_log_file(path_str) {
-            return ChangeKind::Ignored;
-        }
-        return ChangeKind::ReviewState;
-    }
-
-    if is_git_state_path(path_str) {
-        return ChangeKind::GitState;
-    }
-
-    ChangeKind::WorkingTree
 }

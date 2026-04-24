@@ -19,28 +19,82 @@ use crate::review::central::{
 use crate::sources::local_git::LocalGitSource;
 
 /// Files/dirs whose mtime or contents change whenever branch or review state
-/// changes. All four are stat-cheap compared to running git.
+/// changes. All are stat-cheap compared to running git.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 struct Fingerprint {
     head_contents: Option<String>,
     refs_heads_mtime: Option<SystemTime>,
     index_mtime: Option<SystemTime>,
     reviews_dir_mtime: Option<SystemTime>,
+    /// Covers externally-created linked worktrees (`git worktree add ...`).
+    worktrees_dir_mtime: Option<SystemTime>,
 }
 
 impl Fingerprint {
     fn compute(repo_path: &Path) -> Self {
-        let git_dir = repo_path.join(".git");
+        // In a linked worktree, `.git` is a file whose contents are
+        // `gitdir: /path/to/main/.git/worktrees/<name>`. HEAD and index live
+        // there; refs/heads and the worktrees/ dir are in the common dir.
+        // Resolving both is what makes fingerprints work for linked worktrees.
+        let (git_dir, common_dir) = resolve_git_dirs(repo_path);
         Self {
             head_contents: fs::read_to_string(git_dir.join("HEAD")).ok(),
             refs_heads_mtime: dir_max_mtime(
-                &git_dir.join("refs").join("heads"),
+                &common_dir.join("refs").join("heads"),
                 DIR_WALK_MAX_DEPTH,
             ),
             index_mtime: file_mtime(&git_dir.join("index")),
             reviews_dir_mtime: reviews_dir_mtime(repo_path),
+            worktrees_dir_mtime: dir_max_mtime(&common_dir.join("worktrees"), DIR_WALK_MAX_DEPTH),
         }
     }
+}
+
+/// Return `(git_dir, common_dir)` for `repo_path`. For regular repos both are
+/// `<repo>/.git`. For linked worktrees, `git_dir` is the per-worktree dir
+/// (`<main>/.git/worktrees/<name>`) and `common_dir` is the shared root
+/// (`<main>/.git`). If either resolution fails we fall back to `<repo>/.git`.
+fn resolve_git_dirs(repo_path: &Path) -> (PathBuf, PathBuf) {
+    let git_path = repo_path.join(".git");
+    let Ok(meta) = fs::metadata(&git_path) else {
+        return (git_path.clone(), git_path);
+    };
+    if meta.is_dir() {
+        return (git_path.clone(), git_path);
+    }
+    // `.git` is a file — parse the `gitdir: ...` pointer.
+    let Ok(content) = fs::read_to_string(&git_path) else {
+        return (git_path.clone(), git_path);
+    };
+    let Some(gitdir_raw) = content
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("gitdir: "))
+    else {
+        return (git_path.clone(), git_path);
+    };
+    let gitdir = {
+        let p = Path::new(gitdir_raw.trim());
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            repo_path.join(p)
+        }
+    };
+    // `commondir` sits next to HEAD in per-worktree dirs. It's a pointer to
+    // the shared `.git` root (usually the single token `../..`).
+    let common_dir = match fs::read_to_string(gitdir.join("commondir")) {
+        Ok(c) => {
+            let p = Path::new(c.trim());
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                gitdir.join(p)
+            }
+        }
+        Err(_) => gitdir.clone(),
+    };
+    (gitdir, common_dir)
 }
 
 /// Git namespaces under refs/heads/ are rarely deeper than `team/feature/x`,
@@ -174,10 +228,50 @@ fn compute_cached(entry: &RepoIndexEntry) -> Option<(RepoLocalActivity, bool)> {
     Some((activity, false))
 }
 
+/// What kind of filesystem event is prompting a refresh. Callers report the
+/// event; the cache picks the refresh strategy (fingerprint-cached vs forced
+/// rebuild), so this decision lives in one place and both watcher surfaces
+/// stay consistent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshTrigger {
+    /// `.git/HEAD`, refs, or index changed — fingerprint catches it.
+    GitState,
+    /// Review-state files changed — fingerprint catches it via reviews mtime.
+    ReviewState,
+    /// Working-tree edit (save, delete, untracked add). Fingerprint does NOT
+    /// observe unstaged changes, so we force a rebuild and rely on the
+    /// content-equality guard to suppress no-op emits.
+    WorkingTree,
+}
+
+impl RefreshTrigger {
+    fn forces_rebuild(self) -> bool {
+        matches!(self, Self::WorkingTree)
+    }
+
+    /// Pick the right trigger for a debounce window, preferring the
+    /// fingerprint-catchable kinds (`GitState`, `ReviewState`) over
+    /// `WorkingTree` since those skip a git rebuild when state is unchanged.
+    pub fn from_flags(git_state: bool, review: bool, working_tree: bool) -> Option<Self> {
+        if git_state {
+            Some(Self::GitState)
+        } else if review {
+            Some(Self::ReviewState)
+        } else if working_tree {
+            Some(Self::WorkingTree)
+        } else {
+            None
+        }
+    }
+}
+
 /// Refresh a single repo's cached activity. Returns `Some(activity)` **only
 /// when the activity actually differs** from the previously cached copy —
 /// a fingerprint match or a content-equal rescan both return `None`.
-pub fn refresh_repo(repo_path: &Path) -> Result<Option<RepoLocalActivity>> {
+pub fn refresh_repo(
+    repo_path: &Path,
+    trigger: RefreshTrigger,
+) -> Result<Option<RepoLocalActivity>> {
     let repo_id = compute_repo_id(repo_path)?;
     let Some(entry) = get_registered_repo(&repo_id)? else {
         return Ok(None);
@@ -185,9 +279,11 @@ pub fn refresh_repo(repo_path: &Path) -> Result<Option<RepoLocalActivity>> {
 
     let fp = Fingerprint::compute(repo_path);
     let cached = with_cache(|c| c.get(&repo_id).cloned());
-    if let Some(ref cached) = cached {
-        if cached.fingerprint == fp {
-            return Ok(None);
+    if !trigger.forces_rebuild() {
+        if let Some(ref cached) = cached {
+            if cached.fingerprint == fp {
+                return Ok(None);
+            }
         }
     }
 
@@ -196,16 +292,22 @@ pub fn refresh_repo(repo_path: &Path) -> Result<Option<RepoLocalActivity>> {
     };
 
     let changed = cached.as_ref().is_none_or(|c| c.activity != activity);
+    let fingerprint_changed = cached.as_ref().is_none_or(|c| c.fingerprint != fp);
 
-    with_cache(|c| {
-        c.insert(
-            repo_id,
-            CachedRepo {
-                activity: activity.clone(),
-                fingerprint: fp,
-            },
-        );
-    });
+    // Skip the HashMap write when nothing actually moved — common on forced
+    // refreshes triggered by no-op working-tree events (log file rotates,
+    // editor swap files, etc.) that slipped past `should_ignore_path`.
+    if changed || fingerprint_changed {
+        with_cache(|c| {
+            c.insert(
+                repo_id,
+                CachedRepo {
+                    activity: activity.clone(),
+                    fingerprint: fp,
+                },
+            );
+        });
+    }
 
     Ok(if changed { Some(activity) } else { None })
 }
@@ -214,9 +316,12 @@ pub fn refresh_repo(repo_path: &Path) -> Result<Option<RepoLocalActivity>> {
 /// reports a real delta, hand the built `RepoActivityChangedPayload` to
 /// `emit`. Errors are logged rather than propagated, since watcher callbacks
 /// have nowhere useful to return them.
-pub fn refresh_and_emit(repo_path: &str, mut emit: impl FnMut(&RepoActivityChangedPayload)) {
-    let path = PathBuf::from(repo_path);
-    match refresh_repo(&path) {
+pub fn refresh_and_emit(
+    repo_path: &str,
+    trigger: RefreshTrigger,
+    mut emit: impl FnMut(&RepoActivityChangedPayload),
+) {
+    match refresh_repo(&PathBuf::from(repo_path), trigger) {
         Ok(Some(activity)) => {
             let payload = RepoActivityChangedPayload {
                 repo_path: repo_path.to_owned(),

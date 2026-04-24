@@ -12,9 +12,6 @@ export function useFileWatcher(comparisonReady: number) {
   const applyWatcherEvent = useReviewStore((s) => s.applyWatcherEvent);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
-  const applyRepoActivityDelta = useReviewStore(
-    (s) => s.applyRepoActivityDelta,
-  );
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const comparison = useReviewStore((s) => s.comparison);
   const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
@@ -28,7 +25,6 @@ export function useFileWatcher(comparisonReady: number) {
   const applyWatcherEventRef = useRef(applyWatcherEvent);
   const loadGlobalReviewsRef = useRef(loadGlobalReviews);
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
-  const applyRepoActivityDeltaRef = useRef(applyRepoActivityDelta);
   const comparisonReadyRef = useRef(comparisonReady);
   const isStandaloneFileRef = useRef(isStandaloneFile);
   const loadRepoFilesRef = useRef(loadRepoFiles);
@@ -51,7 +47,6 @@ export function useFileWatcher(comparisonReady: number) {
     applyWatcherEventRef.current = applyWatcherEvent;
     loadGlobalReviewsRef.current = loadGlobalReviews;
     checkReviewsFreshnessRef.current = checkReviewsFreshness;
-    applyRepoActivityDeltaRef.current = applyRepoActivityDelta;
     comparisonReadyRef.current = comparisonReady;
     activeReviewKeyRef.current = activeReviewKey;
     comparisonRef.current = comparison;
@@ -65,7 +60,6 @@ export function useFileWatcher(comparisonReady: number) {
     applyWatcherEvent,
     loadGlobalReviews,
     checkReviewsFreshness,
-    applyRepoActivityDelta,
     comparisonReady,
     activeReviewKey,
     comparison,
@@ -268,17 +262,6 @@ export function useFileWatcher(comparisonReady: number) {
       }),
     );
     console.log("[watcher] Listening for git-changed");
-
-    unlistenFns.push(
-      apiClient.onRepoActivityChanged((payload) => {
-        console.log(
-          "[watcher] Received repo-activity-changed event:",
-          payload.repoPath,
-        );
-        applyRepoActivityDeltaRef.current(payload.activity);
-      }),
-    );
-    console.log("[watcher] Listening for repo-activity-changed");
 
     return () => {
       clearTimeout(gitChangedTimerRef.current!);

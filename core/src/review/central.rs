@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, RwLock};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -96,19 +97,42 @@ pub fn get_worktree_base_dir(repo_path: &Path) -> Result<PathBuf, CentralError> 
     Ok(root.join("worktrees").join(repo_id))
 }
 
-/// Load the global repo index.
+/// In-memory cache of the repo index keyed by central_root. The cache is
+/// populated on first `load_index` call and updated on every `save_index` so
+/// we don't re-read `index.json` on every watcher event. Keying by root makes
+/// tests that swap `REVIEW_HOME` (tempdirs) isolated from each other.
+static INDEX_CACHE: LazyLock<RwLock<HashMap<PathBuf, RepoIndex>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Load the global repo index (cached in memory).
 fn load_index() -> Result<RepoIndex, CentralError> {
     let root = get_central_root()?;
-    let index_path = root.join("index.json");
-    if !index_path.exists() {
-        return Ok(RepoIndex::default());
+
+    if let Some(cached) = INDEX_CACHE
+        .read()
+        .expect("INDEX_CACHE poisoned")
+        .get(&root)
+        .cloned()
+    {
+        return Ok(cached);
     }
-    let content = fs::read_to_string(&index_path)?;
-    let index: RepoIndex = serde_json::from_str(&content)?;
+
+    let index_path = root.join("index.json");
+    let index: RepoIndex = if !index_path.exists() {
+        RepoIndex::default()
+    } else {
+        let content = fs::read_to_string(&index_path)?;
+        serde_json::from_str(&content)?
+    };
+    INDEX_CACHE
+        .write()
+        .expect("INDEX_CACHE poisoned")
+        .insert(root, index.clone());
     Ok(index)
 }
 
-/// Save the global repo index (atomic: write tmp + rename).
+/// Save the global repo index (atomic: write tmp + rename). Updates the
+/// in-memory cache so subsequent `load_index` calls see the new contents.
 fn save_index(index: &RepoIndex) -> Result<(), CentralError> {
     let root = get_central_root()?;
     fs::create_dir_all(&root)?;
@@ -118,6 +142,11 @@ fn save_index(index: &RepoIndex) -> Result<(), CentralError> {
     let content = serde_json::to_string_pretty(index)?;
     fs::write(&tmp_path, &content)?;
     fs::rename(&tmp_path, &index_path)?;
+
+    INDEX_CACHE
+        .write()
+        .expect("INDEX_CACHE poisoned")
+        .insert(root, index.clone());
     Ok(())
 }
 
@@ -171,6 +200,12 @@ pub fn list_registered_repos() -> Result<Vec<RepoIndexEntry>, CentralError> {
 pub fn get_registered_repo(repo_id: &str) -> Result<Option<RepoIndexEntry>, CentralError> {
     let index = load_index()?;
     Ok(index.repos.get(repo_id).cloned())
+}
+
+/// Return true iff `repo_path` is currently registered.
+pub fn is_registered(repo_path: &Path) -> Result<bool, CentralError> {
+    let repo_id = compute_repo_id(repo_path)?;
+    Ok(load_index()?.repos.contains_key(&repo_id))
 }
 
 /// Unregister a repo from the index. Does not delete review files.
