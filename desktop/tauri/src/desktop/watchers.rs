@@ -17,8 +17,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-/// Debounce interval for file system events in milliseconds.
-const WATCHER_DEBOUNCE_MS: u64 = 200;
+/// Wide enough that sustained typing doesn't stack working-tree rebuilds
+/// (each forces a git pass per branch). Trailing-edge fires preserve the
+/// last save in a burst.
+const WATCHER_DEBOUNCE_MS: u64 = 500;
 
 /// Event names emitted to the frontend. Must match the strings in `tauri-client.ts`.
 const EVENT_REVIEW_STATE_CHANGED: &str = "review-state-changed";

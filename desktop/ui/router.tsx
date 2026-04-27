@@ -32,6 +32,8 @@ const SettingsModal = lazy(() =>
   })),
 );
 
+const ACTIVITY_POLL_MS = 300_000;
+
 /**
  * AppShell — layout wrapper that provides global effects and the ?repo= bootstrap.
  * Renders <Outlet /> for child routes.
@@ -46,13 +48,32 @@ function AppShell() {
     loadLocalActivity();
   }, [loadGlobalReviews, loadLocalActivity]);
 
-  // Poll local activity periodically to catch working tree changes in
-  // non-active repos (their lightweight watchers only see git metadata).
+  // Backstop poll for working-tree edits in non-active repos — their
+  // lightweight watchers only see git metadata. Paused while hidden since
+  // snapshotting every registered repo isn't free.
   useEffect(() => {
-    const interval = setInterval(() => {
-      loadLocalActivity();
-    }, 60_000);
-    return () => clearInterval(interval);
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadLocalActivity();
+        if (intervalId === null) {
+          intervalId = setInterval(loadLocalActivity, ACTIVITY_POLL_MS);
+        }
+      } else if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    if (document.visibilityState === "visible") {
+      intervalId = setInterval(loadLocalActivity, ACTIVITY_POLL_MS);
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (intervalId !== null) clearInterval(intervalId);
+    };
   }, [loadLocalActivity]);
 
   // Global menu:open-settings listener (always mounted)
