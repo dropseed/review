@@ -1,0 +1,187 @@
+#!/bin/bash
+# Profile the running Review.app for CPU / wakeups / hot stacks.
+#
+# Usage: scripts/profile-battery [duration_seconds] [label]
+#   duration_seconds  How long to sample (default 60).
+#   label             Optional name for the report dir, e.g. "idle", "typing".
+#
+# Works on the installed release app — no rebuild needed. Doesn't require sudo.
+# Runs `sample` (call-stack profiler) on the Rust process and the WebView, and
+# polls `top` for CPU% + wakeups/sec. Writes everything to a tmp dir and prints
+# a summary.
+#
+# Idle expectations (window visible, no activity): each process <1% CPU,
+# wakeups/sec <50. Anything noticeably higher is what's burning the battery.
+set -e
+
+DURATION="${1:-60}"
+LABEL="${2:-run}"
+TS=$(date +%Y%m%d-%H%M%S)
+OUT="${TMPDIR:-/tmp}/review-profile-${TS}-${LABEL}"
+mkdir -p "$OUT"
+
+# --- Find the main Review process ---
+MAIN_PID=$(pgrep -f "Review.app/Contents/MacOS/Review" | head -1 || true)
+if [ -z "$MAIN_PID" ]; then
+    echo "Review.app is not running. Launch it and try again." >&2
+    exit 1
+fi
+
+# --- Find the busiest WebKit WebContent helper (heuristic: that's ours) ---
+# Tauri uses one WKWebView, so its WebContent process is normally the only
+# active one. If you have other WKWebView apps running heavy work this could
+# misattribute — re-run with the app foregrounded and quiet.
+WEB_PID=$(ps -axww -o pid,pcpu,comm \
+    | awk '/WebKit\.WebContent/ {print $1, $2}' \
+    | sort -k2 -nr \
+    | head -1 \
+    | awk '{print $1}')
+
+echo "Profiling Review for ${DURATION}s  (label: ${LABEL})"
+echo "  Rust process : PID $MAIN_PID"
+if [ -n "$WEB_PID" ]; then
+    echo "  WebView      : PID $WEB_PID  (heaviest WebContent — assumed to be Review's)"
+else
+    echo "  WebView      : (no WebContent process found)"
+fi
+echo "  Output dir   : $OUT"
+echo ""
+echo "Don't quit the app. Leave it in whatever state you want to measure."
+echo ""
+
+# --- Stack samples (parallel, no sudo needed) ---
+# `sample <pid> <seconds>` writes a profile with a "Sort by top of stack"
+# section that names the hottest leaf functions.
+sample "$MAIN_PID" "$DURATION" -file "$OUT/sample-rust.txt" >/dev/null 2>&1 &
+SAMPLE_RUST=$!
+if [ -n "$WEB_PID" ]; then
+    sample "$WEB_PID" "$DURATION" -file "$OUT/sample-webview.txt" >/dev/null 2>&1 &
+    SAMPLE_WEB=$!
+fi
+
+# --- CPU% + wakeups/sec polling loop (parallel) ---
+# `top -l N -s 1` takes N+1 snapshots one second apart (the first one is the
+# "since boot" baseline with cpu=0; we drop it). Columns:
+#   cpu     %CPU since last sample (so first sample is always 0)
+#   idlew   *cumulative* idle wakeups since process start — we diff between
+#           snapshots to get per-second wakeups
+#   power   energy impact (relative, lower is better)
+TOP_SAMPLES=$((DURATION + 1))
+TOP_PIDS_ARG="-pid $MAIN_PID"
+[ -n "$WEB_PID" ] && TOP_PIDS_ARG="$TOP_PIDS_ARG -pid $WEB_PID"
+
+(
+    top -l "$TOP_SAMPLES" -s 1 -stats pid,cpu,mem,idlew,power,command $TOP_PIDS_ARG \
+        > "$OUT/top.txt" 2>&1
+) &
+TOP_JOB=$!
+
+# Visual progress
+for i in $(seq 1 "$DURATION"); do
+    printf "\r  sampling... %ds / %ds" "$i" "$DURATION"
+    sleep 1
+done
+echo ""
+
+wait $SAMPLE_RUST 2>/dev/null || true
+[ -n "$WEB_PID" ] && wait $SAMPLE_WEB 2>/dev/null || true
+wait $TOP_JOB 2>/dev/null || true
+
+# --- Summarize top.txt ---
+# top.txt has repeated snapshots. Each PID line looks like:
+#   61881  4.3   307M+  57043+  9.5   Review
+# Column 4 (idlew) is *cumulative* — we diff successive samples to get
+# wakeups/sec. We drop the first sample (cpu=0, no wakeup baseline yet).
+summarize_pid() {
+    local pid="$1"
+    awk -v pid="$pid" '
+        $1 == pid {
+            # Strip any trailing "+" / "-" indicator from numbers.
+            cpu_v = $2 + 0
+            wakes_v = $4 + 0
+            power_v = $5 + 0
+            seen++
+            if (seen == 1) {
+                prev_wakes = wakes_v
+                next  # drop first sample — no delta yet
+            }
+            n++
+            cpu_sum += cpu_v
+            if (cpu_v > maxcpu) maxcpu = cpu_v
+            delta = wakes_v - prev_wakes
+            if (delta < 0) delta = 0
+            wakes_sum += delta
+            if (delta > maxwake) maxwake = delta
+            power_sum += power_v
+            prev_wakes = wakes_v
+        }
+        END {
+            if (n > 0) {
+                printf "  cpu          avg %6.2f%%   peak %6.2f%%\n", cpu_sum/n, maxcpu
+                printf "  idle wakeups avg %6.1f/s  peak %6.1f/s   (CPU waking from idle — high = battery drain)\n", wakes_sum/n, maxwake
+                printf "  power        avg %6.2f     (relative energy impact, lower is better)\n", power_sum/n
+                printf "  samples      %d (1s apart)\n", n
+            } else {
+                print "  (no samples captured — process may have exited)"
+            }
+        }
+    ' "$OUT/top.txt"
+}
+
+# --- Summarize sample.txt ---
+# sample produces a "Sort by top of stack, same collapsed (when >= 5):" section
+# listing the hottest leaf functions. Print the first ~25 lines of that.
+summarize_stack() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        echo "  (no sample file — sampling may have failed)"
+        return
+    fi
+    awk '
+        /Sort by top of stack/ { in_section = 1; next }
+        in_section && /^Binary Images:/ { exit }
+        in_section { print }
+    ' "$file" | head -25
+    if ! grep -q "Sort by top of stack" "$file"; then
+        echo "  (no \"top of stack\" section — process may have been mostly idle, which is good!)"
+        echo "  Total samples taken:"
+        grep -E "Call graph:|samples)" "$file" | head -3 | sed 's/^/    /'
+    fi
+}
+
+echo ""
+echo "================================================================"
+echo "  RUST PROCESS  (PID $MAIN_PID)"
+echo "================================================================"
+summarize_pid "$MAIN_PID"
+echo ""
+echo "  Hot leaf functions (top of stack):"
+summarize_stack "$OUT/sample-rust.txt" | sed 's/^/    /'
+
+if [ -n "$WEB_PID" ]; then
+    echo ""
+    echo "================================================================"
+    echo "  WEBVIEW       (PID $WEB_PID)"
+    echo "================================================================"
+    summarize_pid "$WEB_PID"
+    echo ""
+    echo "  Hot leaf functions (top of stack):"
+    summarize_stack "$OUT/sample-webview.txt" | sed 's/^/    /'
+fi
+
+echo ""
+echo "================================================================"
+echo "Reference: idle Tauri app should be <1% CPU and <50 wakeups/sec."
+echo "Full files: $OUT"
+echo "  - top.txt           per-second CPU/wakeups/power snapshots"
+echo "  - sample-rust.txt   call-stack profile (Rust + Tauri)"
+[ -n "$WEB_PID" ] && echo "  - sample-webview.txt call-stack profile (React/WebKit)"
+echo ""
+echo "Tips:"
+echo "  - Re-run with a label to compare scenarios:"
+echo "      scripts/profile-battery 60 idle"
+echo "      scripts/profile-battery 60 typing-in-editor"
+echo "      scripts/profile-battery 60 switching-repos"
+echo "  - For per-process energy impact + GPU + interrupts (sudo required):"
+echo "      sudo powermetrics --samplers tasks -i 1000 -n $DURATION \\"
+echo "        --show-process-energy --show-process-wait-times | tee $OUT/powermetrics.txt"

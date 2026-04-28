@@ -31,22 +31,41 @@ export function useReviewFreshness() {
     }
   }
 
-  // Window focus, visibility, and polling triggers
+  // Poll only while visible — each check fans out to git per review.
   useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (intervalId === null) {
+        intervalId = setInterval(checkIfReady, POLL_INTERVAL_MS);
+      }
+    };
+    const stop = () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         checkIfReady();
+        start();
+      } else {
+        stop();
       }
     };
 
     window.addEventListener("focus", checkIfReady);
     document.addEventListener("visibilitychange", handleVisibility);
-    const id = setInterval(checkIfReady, POLL_INTERVAL_MS);
+    if (document.visibilityState === "visible") {
+      start();
+    }
 
     return () => {
       window.removeEventListener("focus", checkIfReady);
       document.removeEventListener("visibilitychange", handleVisibility);
-      clearInterval(id);
+      stop();
     };
   }, []);
 }

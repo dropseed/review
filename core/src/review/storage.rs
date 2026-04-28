@@ -1,7 +1,7 @@
 use super::central;
 use super::state::{ReviewState, ReviewSummary};
 use crate::sources::github::GitHubPrRef;
-use crate::sources::local_git::{DiffShortStat, LocalGitSource};
+use crate::sources::local_git::DiffShortStat;
 use crate::sources::traits::Comparison;
 use serde::Serialize;
 use std::fs;
@@ -51,20 +51,20 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
             continue;
         }
 
-        let source = LocalGitSource::new(repo_path.clone()).ok();
-
+        // Diff stats are intentionally NOT computed here: each shortstat fans
+        // out to ~5 git subprocesses, and this fn iterates *every* saved review
+        // across *every* registered repo, so populating stats inline scaled to
+        // dozens of git spawns per call. Stats are filled in by the freshness
+        // flow (`service::freshness::check_reviews_freshness`), which has
+        // SHA-cache short-circuiting and runs reviews in parallel.
         match list_saved_reviews(&repo_path) {
             Ok(summaries) => {
                 for summary in summaries {
-                    let diff_stats = source
-                        .as_ref()
-                        .and_then(|s| s.get_diff_shortstat(&summary.comparison).ok());
-
                     all.push(GlobalReviewSummary {
                         summary,
                         repo_path: entry.path.clone(),
                         repo_name: entry.name.clone(),
-                        diff_stats,
+                        diff_stats: None,
                     });
                 }
             }

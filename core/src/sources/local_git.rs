@@ -190,7 +190,11 @@ impl LocalGitSource {
         &self,
         comparison: &Comparison,
     ) -> Result<DiffShortStat, LocalGitError> {
-        let output = if self.include_working_tree(comparison) {
+        // Compute once — each `include_working_tree` call shells out to
+        // `git rev-parse --abbrev-ref HEAD`, and we'd otherwise call it twice.
+        let include_wt = self.include_working_tree(comparison);
+
+        let output = if include_wt {
             // Net diff: merge_base vs working tree (single diff captures everything)
             let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
             let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
@@ -212,7 +216,7 @@ impl LocalGitSource {
         let (mut file_count, additions, deletions) = parse_shortstat(&output);
 
         // Untracked files aren't in git diff output but are part of the review
-        if self.include_working_tree(comparison) {
+        if include_wt {
             if let Ok(untracked) = self.get_untracked_files() {
                 file_count += untracked.len() as u32;
             }

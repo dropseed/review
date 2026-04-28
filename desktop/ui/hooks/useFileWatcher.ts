@@ -1,3 +1,4 @@
+import type { MutableRefObject } from "react";
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { shouldIgnoreReviewStateReload } from "../stores/slices/reviewSlice";
@@ -40,6 +41,15 @@ export function useFileWatcher(comparisonReady: number) {
   const activeReviewKeyRef = useRef(activeReviewKey);
   const comparisonRef = useRef(comparison);
   const setActiveReviewKeyRef = useRef(setActiveReviewKey);
+  // Debounce timers for the global-reviews refresh and freshness check —
+  // both fan out to N git subprocesses per call, so coalescing edit-storms
+  // into a single trailing call is important for battery.
+  const globalReviewsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const freshnessDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   useEffect(() => {
     repoPathRef.current = repoPath;
@@ -93,6 +103,27 @@ export function useFileWatcher(comparisonReady: number) {
     if (!repoPath) return;
 
     const apiClient = getApiClient();
+
+    const WATCHER_DEBOUNCE_MS = 1500;
+    const trailingDebounce =
+      (
+        ref: MutableRefObject<ReturnType<typeof setTimeout> | null>,
+        fn: () => void,
+      ) =>
+      () => {
+        if (ref.current !== null) clearTimeout(ref.current);
+        ref.current = setTimeout(() => {
+          ref.current = null;
+          fn();
+        }, WATCHER_DEBOUNCE_MS);
+      };
+    const debouncedLoadGlobalReviews = trailingDebounce(
+      globalReviewsDebounceRef,
+      () => loadGlobalReviewsRef.current(),
+    );
+    const debouncedCheckFreshness = trailingDebounce(freshnessDebounceRef, () =>
+      checkReviewsFreshnessRef.current(),
+    );
     const unlistenFns: (() => void)[] = [];
 
     // Review state changed externally
@@ -141,7 +172,7 @@ export function useFileWatcher(comparisonReady: number) {
           }
         }
         // Refresh sidebar for external review state changes
-        loadGlobalReviewsRef.current();
+        debouncedLoadGlobalReviews();
       }),
     );
     console.log("[watcher] Listening for review-state-changed");
@@ -258,7 +289,7 @@ export function useFileWatcher(comparisonReady: number) {
           }
         }
         // Always update sidebar freshness on git changes
-        checkReviewsFreshnessRef.current();
+        debouncedCheckFreshness();
       }),
     );
     console.log("[watcher] Listening for git-changed");
@@ -268,6 +299,14 @@ export function useFileWatcher(comparisonReady: number) {
       gitChangedTimerRef.current = null;
       clearTimeout(browseRefreshTimerRef.current!);
       browseRefreshTimerRef.current = null;
+      if (globalReviewsDebounceRef.current !== null) {
+        clearTimeout(globalReviewsDebounceRef.current);
+        globalReviewsDebounceRef.current = null;
+      }
+      if (freshnessDebounceRef.current !== null) {
+        clearTimeout(freshnessDebounceRef.current);
+        freshnessDebounceRef.current = null;
+      }
       refreshInProgressRef.current = false;
       refreshRequestedRef.current = false;
       browseRefreshInProgressRef.current = false;
