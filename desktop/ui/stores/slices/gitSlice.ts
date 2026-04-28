@@ -6,6 +6,7 @@ import type {
   RemoteInfo,
 } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
+import { jsonEqual } from "../../utils/equality";
 
 /** Singleton empty set -- preserves reference equality to avoid spurious re-renders. */
 export const EMPTY_STAGED_SET = new Set<string>();
@@ -57,11 +58,32 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
       try {
         const status = await client.getGitStatus(repoPath);
-        const staged = new Set<string>(status.staged.map((e) => e.path));
+        // Skip the set() when nothing changed — replacing references
+        // re-renders every component selecting `gitStatus` or
+        // `stagedFilePaths`, even when the data is identical. Cheap O(1)
+        // length checks short-circuit before the stringify.
+        const prev = get().gitStatus;
+        if (
+          prev &&
+          prev.currentBranch === status.currentBranch &&
+          prev.staged.length === status.staged.length &&
+          prev.unstaged.length === status.unstaged.length &&
+          prev.untracked.length === status.untracked.length &&
+          jsonEqual(prev, status)
+        ) {
+          return;
+        }
+        const stagedPaths = status.staged.map((e) => e.path);
+        const staged =
+          stagedPaths.length === 0
+            ? EMPTY_STAGED_SET
+            : new Set<string>(stagedPaths);
         set({ gitStatus: status, stagedFilePaths: staged });
       } catch (err) {
         console.error("Failed to load git status:", err);
-        set({ gitStatus: null, stagedFilePaths: EMPTY_STAGED_SET });
+        if (get().gitStatus !== null) {
+          set({ gitStatus: null, stagedFilePaths: EMPTY_STAGED_SET });
+        }
       }
     },
 

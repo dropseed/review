@@ -799,10 +799,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         repoPath,
         refresh,
         applyFileWatcherEvent,
-        loadReviewState,
         loadGitStatus,
-        loadGlobalReviews,
-        checkReviewsFreshness,
         classifyStaticHunks,
       } = get();
 
@@ -816,15 +813,14 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         return;
       }
 
-      // Working-tree-only edits: file-level refresh runs in parallel with
-      // cheap peripheral reloads.
-      await Promise.all([
-        applyFileWatcherEvent(changedPaths),
-        loadReviewState(),
-        loadGitStatus(),
-        loadGlobalReviews(),
-        checkReviewsFreshness(),
-      ]);
+      // Working-tree-only edits: only refresh what working-tree edits can
+      // actually change. Review state, the global reviews list, and review
+      // freshness are not affected by working-tree content (they track
+      // SHAs, file metadata, and review-state files in `~/.review/`),
+      // so refetching them here was producing re-renders for no gain.
+      // Freshness for working-tree comparisons still runs via the
+      // watcher's separately-debounced `checkReviewsFreshness` trigger.
+      await Promise.all([applyFileWatcherEvent(changedPaths), loadGitStatus()]);
 
       classifyStaticHunks();
     },

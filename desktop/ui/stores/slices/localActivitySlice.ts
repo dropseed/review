@@ -3,6 +3,7 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClientAndStorage } from "../types";
 import type { StorageService } from "../../platform";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
+import { jsonEqual } from "../../utils/equality";
 
 /** Build a composite key for a branch within a repo. */
 export function makeBranchKey(repoPath: string, branch: string): string {
@@ -64,10 +65,7 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
         // Skip state update if the activity data hasn't changed (avoids
         // unnecessary re-renders of sidebar components on no-op refreshes).
         const prev = get().localActivity;
-        if (
-          prev.length === activity.length &&
-          JSON.stringify(prev) === JSON.stringify(activity)
-        ) {
+        if (prev.length === activity.length && jsonEqual(prev, activity)) {
           set({ localActivityLoading: false });
           return;
         }

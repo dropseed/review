@@ -8,6 +8,7 @@ import type {
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
+import { jsonEqual } from "../../utils/equality";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
 
@@ -101,10 +102,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         // Skip state update if the review list is unchanged (avoids re-renders
         // of every sidebar subscriber on no-op refreshes from the watcher).
         const prev = get().globalReviews;
-        if (
-          prev.length === reviews.length &&
-          JSON.stringify(prev) === JSON.stringify(reviews)
-        ) {
+        if (prev.length === reviews.length && jsonEqual(prev, reviews)) {
           set({ globalReviewsLoading: false });
           get()
             .checkReviewsFreshness()
@@ -289,35 +287,103 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
 
         try {
           const results = await client.checkReviewsFreshness(inputs);
-          const newActiveState = { ...get().reviewActiveState };
-          const newCachedShas = { ...get().reviewCachedShas };
-          const newDiffStats = { ...get().reviewDiffStats };
-          const newMissingRefs = { ...get().reviewMissingRefs };
+          const prev = get();
+          // Lazy clone — only allocate a new record when the first real
+          // change for that field is found. On the common no-change path
+          // (most edits) all four references stay identical to `prev` and
+          // the patch is empty.
+          let activeState = prev.reviewActiveState;
+          let cachedShas = prev.reviewCachedShas;
+          let diffStats = prev.reviewDiffStats;
+          let missingRefs = prev.reviewMissingRefs;
 
           for (const result of results) {
-            newActiveState[result.key] = result.isActive;
+            if (activeState[result.key] !== result.isActive) {
+              if (activeState === prev.reviewActiveState) {
+                activeState = { ...activeState };
+              }
+              activeState[result.key] = result.isActive;
+            }
             if (result.oldSha !== null || result.newSha !== null) {
-              newCachedShas[result.key] = {
-                oldSha: result.oldSha,
-                newSha: result.newSha,
-              };
+              const cur = cachedShas[result.key];
+              if (
+                !cur ||
+                cur.oldSha !== result.oldSha ||
+                cur.newSha !== result.newSha
+              ) {
+                if (cachedShas === prev.reviewCachedShas) {
+                  cachedShas = { ...cachedShas };
+                }
+                cachedShas[result.key] = {
+                  oldSha: result.oldSha,
+                  newSha: result.newSha,
+                };
+              }
             }
             if (result.diffStats) {
-              newDiffStats[result.key] = result.diffStats;
+              const cur = diffStats[result.key];
+              if (
+                !cur ||
+                cur.fileCount !== result.diffStats.fileCount ||
+                cur.additions !== result.diffStats.additions ||
+                cur.deletions !== result.diffStats.deletions
+              ) {
+                if (diffStats === prev.reviewDiffStats) {
+                  diffStats = { ...diffStats };
+                }
+                diffStats[result.key] = result.diffStats;
+              }
             }
-            if (result.missingRefs && result.missingRefs.length > 0) {
-              newMissingRefs[result.key] = result.missingRefs;
-            } else {
-              delete newMissingRefs[result.key];
+            const nextMissing =
+              result.missingRefs && result.missingRefs.length > 0
+                ? result.missingRefs
+                : null;
+            const curMissing = missingRefs[result.key];
+            if (nextMissing) {
+              if (
+                !curMissing ||
+                curMissing.length !== nextMissing.length ||
+                curMissing.some((v, i) => v !== nextMissing[i])
+              ) {
+                if (missingRefs === prev.reviewMissingRefs) {
+                  missingRefs = { ...missingRefs };
+                }
+                missingRefs[result.key] = nextMissing;
+              }
+            } else if (curMissing) {
+              if (missingRefs === prev.reviewMissingRefs) {
+                missingRefs = { ...missingRefs };
+              }
+              delete missingRefs[result.key];
             }
           }
 
-          set({
-            reviewActiveState: newActiveState,
-            reviewCachedShas: newCachedShas,
-            reviewDiffStats: newDiffStats,
-            reviewMissingRefs: newMissingRefs,
-          });
+          // Only set fields that changed — replacing a record reference
+          // re-renders every subscriber even when the contents match.
+          const patch: Partial<
+            Pick<
+              GlobalReviewsSlice,
+              | "reviewActiveState"
+              | "reviewCachedShas"
+              | "reviewDiffStats"
+              | "reviewMissingRefs"
+            >
+          > = {};
+          if (activeState !== prev.reviewActiveState) {
+            patch.reviewActiveState = activeState;
+          }
+          if (cachedShas !== prev.reviewCachedShas) {
+            patch.reviewCachedShas = cachedShas;
+          }
+          if (diffStats !== prev.reviewDiffStats) {
+            patch.reviewDiffStats = diffStats;
+          }
+          if (missingRefs !== prev.reviewMissingRefs) {
+            patch.reviewMissingRefs = missingRefs;
+          }
+          if (Object.keys(patch).length > 0) {
+            set(patch);
+          }
         } catch (err) {
           console.error("Failed to check reviews freshness:", err);
         }
