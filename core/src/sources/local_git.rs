@@ -217,6 +217,28 @@ impl LocalGitSource {
         self.resolve_ref_or_self(arg)
     }
 
+    /// Unix-seconds timestamp of the last `git fetch`, derived from the
+    /// mtime of `.git/FETCH_HEAD`. Returns None if no fetch has run
+    /// (or the file is missing / not readable).
+    pub fn last_fetched_at(&self) -> Option<i64> {
+        let metadata = std::fs::metadata(self.repo_path.join(".git/FETCH_HEAD")).ok()?;
+        let modified = metadata.modified().ok()?;
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs() as i64)
+    }
+
+    /// Run `git fetch --prune origin` to refresh remote-tracking refs.
+    pub fn fetch_origin(&self) -> Result<(), LocalGitError> {
+        self.run_git(&["fetch", "--prune", "origin"])?;
+        // A fetch can change ref SHAs out from under any cached resolutions
+        // earlier in this source's lifetime.
+        self.resolve_ref_cache.lock().unwrap().clear();
+        self.merge_base_cache.lock().unwrap().clear();
+        Ok(())
+    }
+
     /// Get the default branch name (main or master)
     pub fn get_default_branch(&self) -> Result<String, LocalGitError> {
         // Try to get from remote origin HEAD
@@ -1041,10 +1063,7 @@ impl LocalGitSource {
     ) -> Result<Vec<CommitEntry>, LocalGitError> {
         let limit_str = format!("-{limit}");
         let format_str = "--COMMIT--%n%H%n%h%n%s%n%an%n%ae%n%aI";
-        let raw_ref = range.or(branch).unwrap_or("HEAD");
-        // Resolve each side of a range (or a bare ref) through the
-        // `origin/` fallback so remote-only branches work.
-        let resolved_ref = self.resolve_log_ref_arg(raw_ref);
+        let resolved_ref = self.resolve_log_ref_arg(range.or(branch).unwrap_or("HEAD"));
 
         let output = self.run_git(&[
             "log",
@@ -1240,11 +1259,8 @@ impl LocalGitSource {
         if let Some(cached) = self.merge_base_cache.lock().unwrap().get(&key) {
             return Ok(cached.clone());
         }
-        // Resolve refs first so remote-only branches (e.g. agent-pushed
-        // branches with no local checkout) are matched via the `origin/`
-        // fallback inside `resolve_ref`.
-        let r1 = self.resolve_ref(ref1).unwrap_or_else(|| ref1.to_owned());
-        let r2 = self.resolve_ref(ref2).unwrap_or_else(|| ref2.to_owned());
+        let r1 = self.resolve_ref_or_self(ref1);
+        let r2 = self.resolve_ref_or_self(ref2);
         let output = self.run_git(&["merge-base", &r1, &r2])?;
         let result = output.trim().to_owned();
         self.merge_base_cache
@@ -2373,56 +2389,43 @@ mod tests {
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir, source, base_sha) = setup_worktree_test();
+        let (_env, _review_home, repo_dir, _source, base_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
 
-        // Create a remote-tracking ref pointing at HEAD without a matching
-        // local branch — mirrors what `git fetch` produces for a remote-only
-        // branch (e.g. an agent push that hasn't been checked out).
-        let remote_ref = "refs/remotes/origin/feature-x";
+        // Commit a new file, point `refs/remotes/origin/feature-x` at it,
+        // then reset HEAD back — mirrors a fetched but not-checked-out
+        // remote branch.
+        std::fs::write(repo_path.join("hello.txt"), "hi\n").unwrap();
+        run_git_cmd(repo_path, &["add", "hello.txt"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "add hello"]).unwrap();
+        let new_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
         run_git_cmd(
-            source.repo_path.as_path(),
-            &["update-ref", remote_ref, "HEAD"],
+            repo_path,
+            &["update-ref", "refs/remotes/origin/feature-x", &new_sha],
         )
         .unwrap();
-        // Add a second commit on the remote ref so the diff is non-empty.
-        std::fs::write(source.repo_path.join("hello.txt"), "hi\n").unwrap();
-        run_git_cmd(source.repo_path.as_path(), &["add", "hello.txt"]).unwrap();
-        run_git_cmd(
-            source.repo_path.as_path(),
-            &["commit", "-m", "add hello on remote"],
-        )
-        .unwrap();
-        let new_sha = source.resolve_ref_or_empty_tree("HEAD").trim().to_owned();
-        run_git_cmd(
-            source.repo_path.as_path(),
-            &["update-ref", remote_ref, &new_sha],
-        )
-        .unwrap();
-        // Reset HEAD back to the original so `feature-x` only lives as a
-        // remote-tracking ref ahead of the local tree.
-        run_git_cmd(source.repo_path.as_path(), &["reset", "--hard", &base_sha]).unwrap();
+        run_git_cmd(repo_path, &["reset", "--hard", &base_sha]).unwrap();
 
-        // Bare name does not resolve via `rev-parse --verify` directly...
-        assert!(source
-            .run_git(&["rev-parse", "--verify", "feature-x"])
-            .is_err());
-        // ...but our helper falls back to origin/feature-x.
-        let resolved = source.resolve_ref("feature-x").expect("origin fallback");
-        assert_eq!(resolved, new_sha);
+        // Fresh source so the resolve_ref cache reflects post-mutation state.
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        assert_eq!(
+            source.resolve_ref("feature-x").as_deref(),
+            Some(new_sha.as_str())
+        );
         assert!(source.ref_exists("feature-x"));
 
-        // And a comparison against the bare name produces a real diff
-        // instead of "everything deleted" (which happens when head falls
-        // back to the empty tree).
         let comparison = Comparison::new(&base_sha, "feature-x");
         let diff = source.get_diff(&comparison, None).unwrap();
         assert!(
             diff.contains("hello.txt"),
-            "expected diff to include added file, got: {diff}"
+            "expected added file in diff: {diff}"
         );
         assert!(
             !diff.contains("deleted file"),
-            "remote-only branch diff should not look like a deletion: {diff}"
+            "remote diff should not look like deletion: {diff}"
         );
     }
 }

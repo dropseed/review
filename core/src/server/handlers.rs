@@ -54,6 +54,7 @@ pub fn build_api_router(state: AppState) -> Router {
         .route("/api/git/current-repo", post(git_current_repo))
         .route("/api/git/current-branch", post(git_current_branch))
         .route("/api/git/remote-info", post(git_remote_info))
+        .route("/api/git/fetch-origin", post(git_fetch_origin))
         .route("/api/git/default-branch", post(git_default_branch))
         .route("/api/git/branches", post(git_branches))
         .route("/api/git/status", post(git_status))
@@ -456,6 +457,14 @@ async fn git_remote_info(Json(req): Json<RepoPathRequest>) -> ApiResult<RemoteIn
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.get_remote_info().map_err(Into::into)
+    })
+    .await
+}
+
+async fn git_fetch_origin(Json(req): Json<RepoPathRequest>) -> ApiResult<()> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source.fetch_origin().map_err(Into::into)
     })
     .await
 }

@@ -80,6 +80,10 @@ pub struct RepoLocalActivity {
     pub branches: Vec<crate::sources::local_git::LocalBranchInfo>,
     #[serde(default)]
     pub recent_remote_branches: Vec<crate::sources::local_git::RecentRemoteBranch>,
+    /// Unix-seconds timestamp of the last `git fetch` on this repo
+    /// (from `.git/FETCH_HEAD` mtime). None if never fetched.
+    #[serde(default)]
+    pub last_fetched_at: Option<i64>,
 }
 
 /// Emitted by the file watcher when a repo's activity changes. The payload is

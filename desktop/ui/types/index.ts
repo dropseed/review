@@ -662,6 +662,8 @@ export interface RepoLocalActivity {
   defaultBranch: string;
   branches: LocalBranchInfo[];
   recentRemoteBranches: RecentRemoteBranch[];
+  /** Unix seconds of the last `git fetch` (FETCH_HEAD mtime). */
+  lastFetchedAt?: number | null;
 }
 
 // --- LSP types ---

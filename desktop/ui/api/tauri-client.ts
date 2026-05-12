@@ -75,6 +75,10 @@ export class TauriClient implements ApiClient {
     }
   }
 
+  async fetchOrigin(repoPath: string): Promise<void> {
+    await invoke<void>("fetch_origin", { repoPath });
+  }
+
   async getDefaultBranch(repoPath: string): Promise<string> {
     return invoke<string>("get_default_branch", { repoPath });
   }

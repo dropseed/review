@@ -81,6 +81,9 @@ export interface ApiClient {
   /** Get remote info (org/repo name and browse URL) */
   getRemoteInfo(repoPath: string): Promise<RemoteInfo | null>;
 
+  /** Run `git fetch --prune origin` for the repo. */
+  fetchOrigin(repoPath: string): Promise<void>;
+
   /** Get the default branch (e.g., main or master) */
   getDefaultBranch(repoPath: string): Promise<string>;
 

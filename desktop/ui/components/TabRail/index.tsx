@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useReviewStore } from "../../stores";
+import { getApiClient } from "../../api";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
@@ -337,6 +338,74 @@ function SectionHeader({ label }: { label: string }): ReactNode {
   );
 }
 
+function formatFetchedAgo(unixSecs: number): string {
+  const diff = Math.floor(Date.now() / 1000) - unixSecs;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+/** "Remote (recent)" header with a manual fetch button and last-fetched stamp. */
+function RemoteSectionHeader({
+  repoPath,
+  lastFetchedAt,
+}: {
+  repoPath: string;
+  lastFetchedAt: number | null;
+}): ReactNode {
+  const [fetching, setFetching] = useState(false);
+  const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
+  const handleFetch = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (fetching) return;
+      setFetching(true);
+      try {
+        await getApiClient().fetchOrigin(repoPath);
+        // A no-op fetch (everything up to date) only updates FETCH_HEAD,
+        // which the watcher ignores — refresh activity ourselves so the
+        // "last fetched" stamp ticks regardless.
+        await loadLocalActivity();
+      } catch (err) {
+        console.error("[fetchOrigin] failed", err);
+      } finally {
+        setFetching(false);
+      }
+    },
+    [fetching, repoPath, loadLocalActivity],
+  );
+
+  const stamp = lastFetchedAt
+    ? formatFetchedAgo(lastFetchedAt)
+    : "never fetched";
+  const title = lastFetchedAt
+    ? `Last fetched ${stamp} — click to refresh`
+    : "Click to fetch from origin";
+
+  return (
+    <div className="px-2 pt-2 pb-0.5 flex items-center gap-1.5">
+      <span className="text-[10px] text-fg-faint/60">Remote (recent)</span>
+      <span className="text-[10px] text-fg-faint/40 truncate">· {stamp}</span>
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={handleFetch}
+        disabled={fetching}
+        title={title}
+        aria-label="Fetch from origin"
+        className="flex items-center justify-center w-4 h-4 shrink-0 rounded
+                   text-fg-faint/70 hover:text-fg-secondary hover:bg-fg/[0.08]
+                   disabled:opacity-50 transition-colors duration-100"
+      >
+        <span className={`text-[10px] ${fetching ? "animate-spin" : ""}`}>
+          ↻
+        </span>
+      </button>
+    </div>
+  );
+}
+
 /** Repo row with persistent collapse and three sections. */
 function RepoGroupHeader({
   group,
@@ -458,7 +527,10 @@ function RepoGroupHeader({
           )}
           {group.remoteRecent.length > 0 && (
             <>
-              <SectionHeader label="Remote (recent)" />
+              <RemoteSectionHeader
+                repoPath={group.repoPath}
+                lastFetchedAt={group.lastFetchedAt}
+              />
               {group.remoteRecent.map(renderEntry)}
             </>
           )}

@@ -29,6 +29,9 @@ struct Fingerprint {
     reviews_dir_mtime: Option<SystemTime>,
     /// Covers externally-created linked worktrees (`git worktree add ...`).
     worktrees_dir_mtime: Option<SystemTime>,
+    /// `.git/FETCH_HEAD` mtime — ticks even when a fetch updates no refs,
+    /// so the "last fetched" stamp surfaces in the sidebar.
+    fetch_head_mtime: Option<SystemTime>,
 }
 
 impl Fingerprint {
@@ -51,6 +54,7 @@ impl Fingerprint {
             index_mtime: file_mtime(&git_dir.join("index")),
             reviews_dir_mtime: reviews_dir_mtime(repo_path),
             worktrees_dir_mtime: dir_max_mtime(&common_dir.join("worktrees"), DIR_WALK_MAX_DEPTH),
+            fetch_head_mtime: file_mtime(&common_dir.join("FETCH_HEAD")),
         }
     }
 }
@@ -170,12 +174,14 @@ fn build_activity(entry: &RepoIndexEntry) -> Option<RepoLocalActivity> {
     let recent_remote_branches = source
         .list_recent_remote_branches(&default_branch, &local_branch_names, 14, 8)
         .unwrap_or_default();
+    let last_fetched_at = source.last_fetched_at();
     Some(RepoLocalActivity {
         repo_path: entry.path.clone(),
         repo_name: entry.name.clone(),
         default_branch,
         branches,
         recent_remote_branches,
+        last_fetched_at,
     })
 }
 

@@ -527,6 +527,7 @@ pub fn run() {
             commands::list_pull_requests,
             commands::get_current_branch,
             commands::get_remote_info,
+            commands::fetch_origin,
             commands::get_default_branch,
             commands::list_branches,
             commands::list_local_branches,

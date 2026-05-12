@@ -79,6 +79,8 @@ export interface RepoGroup {
   latestModifiedAt: number;
   /** Most recent commit/update timestamp in this repo (sort signal). */
   latestCommitDate: number;
+  /** Unix seconds of the last `git fetch` for this repo, or null/undefined. */
+  lastFetchedAt: number | null;
 }
 
 export interface OrgGroup {
@@ -120,6 +122,7 @@ export function buildRepoGroups(
       hasChanges: boolean;
       latestModifiedAt: number;
       latestCommitDate: number;
+      lastFetchedAt: number | null;
     }
   >();
 
@@ -138,6 +141,7 @@ export function buildRepoGroups(
         hasChanges: false,
         latestModifiedAt: 0,
         latestCommitDate: 0,
+        lastFetchedAt: repo.lastFetchedAt ?? null,
       };
       repoMap.set(repo.repoPath, bucket);
     }
@@ -215,6 +219,7 @@ export function buildRepoGroups(
         hasChanges: false,
         latestModifiedAt: 0,
         latestCommitDate: new Date(review.updatedAt).getTime(),
+        lastFetchedAt: null,
       };
       repoMap.set(review.repoPath, bucket);
     }
@@ -321,6 +326,7 @@ export function buildRepoGroups(
       hasChanges: bucket.hasChanges,
       latestModifiedAt: bucket.latestModifiedAt,
       latestCommitDate: bucket.latestCommitDate,
+      lastFetchedAt: bucket.lastFetchedAt,
     });
   }
 

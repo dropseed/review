@@ -364,6 +364,15 @@ pub fn get_remote_info(repo_path: String) -> Result<RemoteInfo, String> {
 }
 
 #[tauri::command]
+pub fn fetch_origin(repo_path: String) -> Result<(), String> {
+    let t0 = Instant::now();
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    source.fetch_origin().map_err(|e| e.to_string())?;
+    info!("[fetch_origin] {} in {:?}", repo_path, t0.elapsed());
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_default_branch(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_default_branch().map_err(|e| e.to_string())

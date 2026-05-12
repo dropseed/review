@@ -150,6 +150,10 @@ export class HttpClient implements ApiClient {
     }
   }
 
+  async fetchOrigin(repoPath: string): Promise<void> {
+    await this.post<null>("/api/git/fetch-origin", { repoPath });
+  }
+
   async getDefaultBranch(repoPath: string): Promise<string> {
     return this.post("/api/git/default-branch", { repoPath });
   }
