@@ -1,6 +1,22 @@
 import { getApiClient } from "../api";
 
 /**
+ * Split a route prefix ("owner/repo" or "local/dirname") into its org and repo
+ * segments. Used by sidebar grouping and repo header display.
+ */
+export function splitRoutePrefix(routePrefix: string): {
+  org: string;
+  repo: string;
+} {
+  const slash = routePrefix.indexOf("/");
+  if (slash <= 0) return { org: "local", repo: routePrefix };
+  return {
+    org: routePrefix.slice(0, slash),
+    repo: routePrefix.slice(slash + 1),
+  };
+}
+
+/**
  * Resolve the route prefix, display name, and browse URL for a repo.
  * Uses the git remote to get "owner/repo", falls back to "local/dirname".
  */

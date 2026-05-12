@@ -24,6 +24,7 @@ use crate::sources::local_git::LocalGitSource;
 struct Fingerprint {
     head_contents: Option<String>,
     refs_heads_mtime: Option<SystemTime>,
+    refs_remotes_mtime: Option<SystemTime>,
     index_mtime: Option<SystemTime>,
     reviews_dir_mtime: Option<SystemTime>,
     /// Covers externally-created linked worktrees (`git worktree add ...`).
@@ -41,6 +42,10 @@ impl Fingerprint {
             head_contents: fs::read_to_string(git_dir.join("HEAD")).ok(),
             refs_heads_mtime: dir_max_mtime(
                 &common_dir.join("refs").join("heads"),
+                DIR_WALK_MAX_DEPTH,
+            ),
+            refs_remotes_mtime: dir_max_mtime(
+                &common_dir.join("refs").join("remotes"),
                 DIR_WALK_MAX_DEPTH,
             ),
             index_mtime: file_mtime(&git_dir.join("index")),
@@ -160,11 +165,17 @@ fn build_activity(entry: &RepoIndexEntry) -> Option<RepoLocalActivity> {
     let branches = source
         .list_branches_ahead(&default_branch)
         .unwrap_or_default();
+    let local_branch_names: std::collections::HashSet<String> =
+        branches.iter().map(|b| b.name.clone()).collect();
+    let recent_remote_branches = source
+        .list_recent_remote_branches(&default_branch, &local_branch_names, 14, 8)
+        .unwrap_or_default();
     Some(RepoLocalActivity {
         repo_path: entry.path.clone(),
         repo_name: entry.name.clone(),
         default_branch,
         branches,
+        recent_remote_branches,
     })
 }
 

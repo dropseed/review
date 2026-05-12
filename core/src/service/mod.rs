@@ -78,6 +78,8 @@ pub struct RepoLocalActivity {
     pub repo_name: String,
     pub default_branch: String,
     pub branches: Vec<crate::sources::local_git::LocalBranchInfo>,
+    #[serde(default)]
+    pub recent_remote_branches: Vec<crate::sources::local_git::RecentRemoteBranch>,
 }
 
 /// Emitted by the file watcher when a repo's activity changes. The payload is

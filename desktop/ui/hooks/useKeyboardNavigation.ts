@@ -4,8 +4,9 @@ import { getAllHunksFromState } from "../stores/selectors/hunks";
 import type { Comparison } from "../types";
 import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
 import {
+  buildOrgGroups,
   buildRepoGroups,
-  flattenRepoGroups,
+  flattenOrgGroups,
   type SidebarEntry,
 } from "../utils/sidebar-ordering";
 
@@ -25,6 +26,16 @@ function entriesToItems(entries: SidebarEntry[]): SidebarItem[] {
           comparisonKey: entry.review.comparison.key,
         },
         comparison: entry.review.comparison,
+      };
+    }
+    if (entry.kind === "remote-recent") {
+      return {
+        key: entry.reviewKey,
+        reviewKey: {
+          repoPath: entry.repoPath,
+          comparisonKey: entry.comparison.key,
+        },
+        comparison: entry.comparison,
       };
     }
     return {
@@ -145,19 +156,24 @@ export function useKeyboardNavigation() {
           return;
         }
 
-        // Cmd+1 through Cmd+9: jump to sidebar item by position
+        // Cmd+1 through Cmd+9: jump to visible sidebar item by position.
+        // Honors collapsed orgs/repos so the Nth keypress hits the Nth visible row.
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           event.preventDefault();
+          const repoGroups = buildRepoGroups(
+            state.localActivity,
+            state.globalReviews,
+            state.globalReviewsByKey,
+            state.reviewSortOrder,
+            state.reviewDiffStats,
+          );
+          const orgGroups = buildOrgGroups(repoGroups, state.repoMetadata);
           const items = entriesToItems(
-            flattenRepoGroups(
-              buildRepoGroups(
-                state.localActivity,
-                state.globalReviews,
-                state.globalReviewsByKey,
-                state.reviewSortOrder,
-                state.reviewDiffStats,
-              ),
+            flattenOrgGroups(
+              orgGroups,
+              state.collapsedOrgs,
+              state.collapsedRepos,
             ),
           );
           const target = items[digit - 1];

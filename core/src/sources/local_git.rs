@@ -62,6 +62,19 @@ pub struct LocalBranchInfo {
     pub working_tree_stats: Option<DiffShortStat>,
 }
 
+/// A remote-tracking branch surfaced as "recently active" in the sidebar.
+/// Discovered without requiring a local checkout — e.g., agent-pushed branches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentRemoteBranch {
+    /// Full remote ref short name, e.g. "origin/claude/feature-x".
+    pub remote_ref: String,
+    /// Branch name with the remote prefix stripped, e.g. "claude/feature-x".
+    pub branch_name: String,
+    /// Last commit date (ISO-8601 strict).
+    pub last_commit_date: String,
+}
+
 /// Information about a git worktree.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,6 +105,7 @@ pub enum LocalGitError {
 pub struct LocalGitSource {
     repo_path: PathBuf,
     merge_base_cache: std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
+    resolve_ref_cache: std::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
 }
 
 impl LocalGitSource {
@@ -102,6 +116,7 @@ impl LocalGitSource {
         Ok(Self {
             repo_path,
             merge_base_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            resolve_ref_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -141,16 +156,65 @@ impl LocalGitSource {
         if git_ref.is_empty() {
             return true;
         }
-        self.run_git(&["rev-parse", "--verify", git_ref]).is_ok()
+        self.resolve_ref(git_ref).is_some()
+    }
+
+    /// Resolve a ref to a SHA, falling back to `origin/<ref>` for
+    /// remote-only branches. Results are cached per `LocalGitSource`.
+    pub fn resolve_ref(&self, git_ref: &str) -> Option<String> {
+        if git_ref.is_empty() {
+            return None;
+        }
+        if let Some(cached) = self.resolve_ref_cache.lock().unwrap().get(git_ref) {
+            return cached.clone();
+        }
+        let resolved = self
+            .run_git(&["rev-parse", "--verify", git_ref])
+            .ok()
+            .map(|o| o.trim().to_owned())
+            .or_else(|| {
+                if git_ref.starts_with("origin/") {
+                    return None;
+                }
+                let with_origin = format!("origin/{git_ref}");
+                self.run_git(&["rev-parse", "--verify", &with_origin])
+                    .ok()
+                    .map(|o| o.trim().to_owned())
+            });
+        self.resolve_ref_cache
+            .lock()
+            .unwrap()
+            .insert(git_ref.to_owned(), resolved.clone());
+        resolved
+    }
+
+    /// Resolve a ref, returning the input verbatim if nothing matches.
+    /// Use when the resolved value will be passed to a git command that
+    /// can produce its own error if the ref is bogus.
+    fn resolve_ref_or_self(&self, git_ref: &str) -> String {
+        self.resolve_ref(git_ref)
+            .unwrap_or_else(|| git_ref.to_owned())
     }
 
     /// Resolve a ref to a commit SHA hash, falling back to the empty tree
     /// if the ref doesn't exist (e.g., HEAD in an empty repo with no commits).
     pub fn resolve_ref_or_empty_tree(&self, git_ref: &str) -> String {
-        match self.run_git(&["rev-parse", "--verify", git_ref]) {
-            Ok(output) => output.trim().to_owned(),
-            Err(_) => Self::EMPTY_TREE.to_owned(),
+        self.resolve_ref(git_ref)
+            .unwrap_or_else(|| Self::EMPTY_TREE.to_owned())
+    }
+
+    /// Resolve a `git log` argument that may be a bare ref or a range
+    /// (`a..b` / `a...b`). Tries the three-dot separator first because
+    /// `split_once("..")` would otherwise greedily split inside `a...b`.
+    fn resolve_log_ref_arg(&self, arg: &str) -> String {
+        for sep in ["...", ".."] {
+            if let Some((left, right)) = arg.split_once(sep) {
+                let l = self.resolve_ref_or_self(left);
+                let r = self.resolve_ref_or_self(right);
+                return format!("{l}{sep}{r}");
+            }
         }
+        self.resolve_ref_or_self(arg)
     }
 
     /// Get the default branch name (main or master)
@@ -319,6 +383,73 @@ impl LocalGitSource {
             stashes,
             dates,
         })
+    }
+
+    /// List remote-tracking branches that committed within `max_age_days`,
+    /// excluding the default branch and any whose head name already exists as
+    /// a local branch (so they don't double-list when the sidebar surfaces
+    /// "Local" and "Remote (recent)" sections).
+    pub fn list_recent_remote_branches(
+        &self,
+        default_branch: &str,
+        local_branch_names: &HashSet<String>,
+        max_age_days: u32,
+        limit: usize,
+    ) -> Result<Vec<RecentRemoteBranch>, LocalGitError> {
+        let cutoff_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+            - i64::from(max_age_days) * 24 * 60 * 60;
+
+        let output = self.run_git(&[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)\t%(committerdate:unix)\t%(committerdate:iso-strict)",
+            "refs/remotes/",
+        ])?;
+
+        let mut out: Vec<RecentRemoteBranch> = Vec::new();
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(3, '\t');
+            let remote_ref = parts.next().unwrap_or("").trim();
+            let unix_secs_str = parts.next().unwrap_or("").trim();
+            let iso_date = parts.next().unwrap_or("").trim();
+
+            if remote_ref.is_empty() || remote_ref.ends_with("/HEAD") || !remote_ref.contains('/') {
+                continue;
+            }
+            // Strip the remote prefix (e.g., "origin/feature" -> "feature").
+            let Some((_, branch_name)) = remote_ref.split_once('/') else {
+                continue;
+            };
+            if branch_name.is_empty() || branch_name == default_branch {
+                continue;
+            }
+            if local_branch_names.contains(branch_name) {
+                continue;
+            }
+            let Ok(commit_secs) = unix_secs_str.parse::<i64>() else {
+                continue;
+            };
+            if commit_secs < cutoff_secs {
+                // Sorted newest-first; everything after this is older.
+                break;
+            }
+            out.push(RecentRemoteBranch {
+                remote_ref: remote_ref.to_owned(),
+                branch_name: branch_name.to_owned(),
+                last_commit_date: iso_date.to_owned(),
+            });
+            if out.len() >= limit {
+                break;
+            }
+        }
+        Ok(out)
     }
 
     /// List local branches that are ahead of the given default branch
@@ -910,14 +1041,17 @@ impl LocalGitSource {
     ) -> Result<Vec<CommitEntry>, LocalGitError> {
         let limit_str = format!("-{limit}");
         let format_str = "--COMMIT--%n%H%n%h%n%s%n%an%n%ae%n%aI";
-        let ref_arg = range.or(branch).unwrap_or("HEAD");
+        let raw_ref = range.or(branch).unwrap_or("HEAD");
+        // Resolve each side of a range (or a bare ref) through the
+        // `origin/` fallback so remote-only branches work.
+        let resolved_ref = self.resolve_log_ref_arg(raw_ref);
 
         let output = self.run_git(&[
             "log",
             &limit_str,
             &format!("--format={format_str}"),
             "--shortstat",
-            ref_arg,
+            &resolved_ref,
         ])?;
 
         let mut commits = Vec::new();
@@ -1090,7 +1224,7 @@ impl LocalGitSource {
 
     /// Get file content as bytes at the specified ref
     pub fn get_file_bytes(&self, file_path: &str, git_ref: &str) -> Result<Vec<u8>, LocalGitError> {
-        let ref_spec = format!("{git_ref}:{file_path}");
+        let ref_spec = format!("{}:{}", self.resolve_ref_or_self(git_ref), file_path);
         self.run_git_bytes(&["show", &ref_spec])
     }
 
@@ -1106,7 +1240,12 @@ impl LocalGitSource {
         if let Some(cached) = self.merge_base_cache.lock().unwrap().get(&key) {
             return Ok(cached.clone());
         }
-        let output = self.run_git(&["merge-base", ref1, ref2])?;
+        // Resolve refs first so remote-only branches (e.g. agent-pushed
+        // branches with no local checkout) are matched via the `origin/`
+        // fallback inside `resolve_ref`.
+        let r1 = self.resolve_ref(ref1).unwrap_or_else(|| ref1.to_owned());
+        let r2 = self.resolve_ref(ref2).unwrap_or_else(|| ref2.to_owned());
+        let output = self.run_git(&["merge-base", &r1, &r2])?;
         let result = output.trim().to_owned();
         self.merge_base_cache
             .lock()
@@ -2224,5 +2363,66 @@ mod tests {
             .unwrap_err()
             .to_string()
             .starts_with("WORKTREE_EXISTS:"));
+    }
+
+    /// A remote-tracking branch (e.g. `origin/feature`) should be reviewable
+    /// via its unprefixed name (`feature`) even when no local branch exists.
+    #[test]
+    fn test_resolve_ref_falls_back_to_origin() {
+        use crate::review::central::tests::ENV_LOCK;
+        use crate::sources::traits::Comparison;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, _repo_dir, source, base_sha) = setup_worktree_test();
+
+        // Create a remote-tracking ref pointing at HEAD without a matching
+        // local branch — mirrors what `git fetch` produces for a remote-only
+        // branch (e.g. an agent push that hasn't been checked out).
+        let remote_ref = "refs/remotes/origin/feature-x";
+        run_git_cmd(
+            source.repo_path.as_path(),
+            &["update-ref", remote_ref, "HEAD"],
+        )
+        .unwrap();
+        // Add a second commit on the remote ref so the diff is non-empty.
+        std::fs::write(source.repo_path.join("hello.txt"), "hi\n").unwrap();
+        run_git_cmd(source.repo_path.as_path(), &["add", "hello.txt"]).unwrap();
+        run_git_cmd(
+            source.repo_path.as_path(),
+            &["commit", "-m", "add hello on remote"],
+        )
+        .unwrap();
+        let new_sha = source.resolve_ref_or_empty_tree("HEAD").trim().to_owned();
+        run_git_cmd(
+            source.repo_path.as_path(),
+            &["update-ref", remote_ref, &new_sha],
+        )
+        .unwrap();
+        // Reset HEAD back to the original so `feature-x` only lives as a
+        // remote-tracking ref ahead of the local tree.
+        run_git_cmd(source.repo_path.as_path(), &["reset", "--hard", &base_sha]).unwrap();
+
+        // Bare name does not resolve via `rev-parse --verify` directly...
+        assert!(source
+            .run_git(&["rev-parse", "--verify", "feature-x"])
+            .is_err());
+        // ...but our helper falls back to origin/feature-x.
+        let resolved = source.resolve_ref("feature-x").expect("origin fallback");
+        assert_eq!(resolved, new_sha);
+        assert!(source.ref_exists("feature-x"));
+
+        // And a comparison against the bare name produces a real diff
+        // instead of "everything deleted" (which happens when head falls
+        // back to the empty tree).
+        let comparison = Comparison::new(&base_sha, "feature-x");
+        let diff = source.get_diff(&comparison, None).unwrap();
+        assert!(
+            diff.contains("hello.txt"),
+            "expected diff to include added file, got: {diff}"
+        );
+        assert!(
+            !diff.contains("deleted file"),
+            "remote-only branch diff should not look like a deletion: {diff}"
+        );
     }
 }

@@ -241,9 +241,9 @@ export const TabRailItem = memo(function TabRailItem({
                     setShowContextMenu(false);
                     onDelete(review);
                   }}
-                  className="w-full px-3 py-1.5 text-left text-xs text-status-rejected hover:bg-fg/[0.08] transition-colors"
+                  className="w-full px-3 py-1.5 text-left text-xs text-fg-secondary hover:bg-fg/[0.08] transition-colors"
                 >
-                  Delete Review
+                  Mark done
                 </button>
               </>
             )}

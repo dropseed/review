@@ -139,7 +139,8 @@ const defaults = {
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
-  showCleanRepos: false,
+  collapsedOrgs: {} as Record<string, boolean>,
+  collapsedRepos: {} as Record<string, boolean>,
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -188,8 +189,10 @@ export interface PreferencesSlice {
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
 
-  // Sidebar: whether to show repos without working-tree changes
-  showCleanRepos: boolean;
+  // Sidebar tree: collapse state per org (e.g., "dropseed") and per repo path.
+  // Empty record = everything expanded; entries with `true` are collapsed.
+  collapsedOrgs: Record<string, boolean>;
+  collapsedRepos: Record<string, boolean>;
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -253,9 +256,11 @@ export interface PreferencesSlice {
   // Review sort order actions
   setReviewSortOrder: (order: ReviewSortOrder) => void;
 
-  // Sidebar clean-repos toggle actions
-  setShowCleanRepos: (show: boolean) => void;
-  toggleShowCleanRepos: () => void;
+  // Sidebar tree actions
+  setOrgCollapsed: (org: string, collapsed: boolean) => void;
+  toggleOrgCollapsed: (org: string) => void;
+  setRepoCollapsed: (repoPath: string, collapsed: boolean) => void;
+  toggleRepoCollapsed: (repoPath: string) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -509,13 +514,34 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.set("reviewSortOrder", order);
     },
 
-    setShowCleanRepos: (show) => {
-      set({ showCleanRepos: show });
-      storage.set("showCleanRepos", show);
+    setOrgCollapsed: (org, collapsed) => {
+      const current = get().collapsedOrgs;
+      if ((current[org] === true) === collapsed) return;
+      const next = { ...current };
+      if (collapsed) next[org] = true;
+      else delete next[org];
+      set({ collapsedOrgs: next });
+      storage.set("collapsedOrgs", next);
     },
 
-    toggleShowCleanRepos: () => {
-      get().setShowCleanRepos(!get().showCleanRepos);
+    toggleOrgCollapsed: (org) => {
+      const collapsed = get().collapsedOrgs[org] === true;
+      get().setOrgCollapsed(org, !collapsed);
+    },
+
+    setRepoCollapsed: (repoPath, collapsed) => {
+      const current = get().collapsedRepos;
+      if ((current[repoPath] === true) === collapsed) return;
+      const next = { ...current };
+      if (collapsed) next[repoPath] = true;
+      else delete next[repoPath];
+      set({ collapsedRepos: next });
+      storage.set("collapsedRepos", next);
+    },
+
+    toggleRepoCollapsed: (repoPath) => {
+      const collapsed = get().collapsedRepos[repoPath] === true;
+      get().setRepoCollapsed(repoPath, !collapsed);
     },
 
     setFileSortOrder: (order) => {

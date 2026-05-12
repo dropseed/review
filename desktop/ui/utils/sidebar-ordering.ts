@@ -4,23 +4,25 @@
  * Used by both the TabRail component (rendering) and keyboard navigation
  * (Cmd+1..9 shortcuts) to ensure consistent item order.
  *
- * Items are grouped by repository. Within each repo, items are ordered:
- * checked-out first, then reviews, then plain branches.
- *
- * Repos are sorted: repos with working-tree changes first (by most recent
- * change), then repos without changes (by most recent commit).
+ * Two-level grouping: orgs (e.g., "dropseed") contain repos; each repo has
+ * three sections: In review, Local, Remote (recent). The "current HEAD" lives
+ * at the top of Local and is what gets activated when the user clicks a
+ * collapsed repo row.
  */
 
 import {
   makeComparison,
   type LocalBranchInfo,
   type RepoLocalActivity,
+  type RecentRemoteBranch,
   type GlobalReviewSummary,
   type Comparison,
   type DiffShortStat,
 } from "../types";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
 import type { ReviewSortOrder } from "../stores/slices/preferencesSlice";
+import type { RepoMetadata } from "../stores/slices/tabRailSlice";
+import { splitRoutePrefix } from "./repo-identity";
 
 export type SidebarItemKind =
   | "working-tree"
@@ -42,25 +44,54 @@ export interface SidebarReviewEntry {
   reviewKey: string;
 }
 
-export type SidebarEntry = SidebarBranchEntry | SidebarReviewEntry;
-
-/** Sub-group of entries sharing the same merge target (comparison.base). */
-export interface BaseGroup {
-  base: string;
-  isDefault: boolean;
-  items: SidebarEntry[];
+export interface SidebarRemoteEntry {
+  kind: "remote-recent";
+  remoteRef: string;
+  branchName: string;
+  lastCommitDate: string;
+  repoPath: string;
+  repoName: string;
+  defaultBranch: string;
+  comparison: Comparison;
+  reviewKey: string;
 }
+
+export type SidebarEntry =
+  | SidebarBranchEntry
+  | SidebarReviewEntry
+  | SidebarRemoteEntry;
 
 export interface RepoGroup {
   repoPath: string;
   repoName: string;
   defaultBranch: string;
-  /** All items in this repo, ordered: checked-out first, then reviews, then branches */
+  /** Saved reviews + branches that have a saved review backing them. */
+  inReview: SidebarEntry[];
+  /** Working-tree first, then worktrees, then plain local branches. */
+  local: SidebarBranchEntry[];
+  /** Remote-tracking branches with recent activity (deduped against local). */
+  remoteRecent: SidebarRemoteEntry[];
+  /** Flattened in section order: inReview → local → remoteRecent. */
   items: SidebarEntry[];
-  /** Items grouped by their merge target */
-  baseGroups: BaseGroup[];
-  /** Whether any item in this repo has uncommitted changes */
+  /** Whether any item in this repo has uncommitted changes. */
   hasChanges: boolean;
+  /** Most recent lastModifiedAt across working-tree changes (sort signal). */
+  latestModifiedAt: number;
+  /** Most recent commit/update timestamp in this repo (sort signal). */
+  latestCommitDate: number;
+}
+
+export interface OrgGroup {
+  /** Org name (e.g., "dropseed") or "local" for repos with no remote. */
+  org: string;
+  isLocal: boolean;
+  /** Org avatar — taken from the first repo that has one (GitHub repos in an
+   *  org all share the same org avatar). Null for "local" repos. */
+  avatarUrl: string | null;
+  repos: RepoGroup[];
+  hasChanges: boolean;
+  latestModifiedAt: number;
+  latestCommitDate: number;
 }
 
 /**
@@ -73,10 +104,8 @@ export function buildRepoGroups(
   reviewSortOrder: ReviewSortOrder = "updated",
   reviewDiffStats: Record<string, DiffShortStat> = {},
 ): RepoGroup[] {
-  // Track which review keys are backed by local branches
   const localKeys = new Set<string>();
 
-  // Accumulate items per repo (keyed by repoPath)
   const repoMap = new Map<
     string,
     {
@@ -87,10 +116,9 @@ export function buildRepoGroups(
       reviewBranches: SidebarBranchEntry[];
       branches: SidebarBranchEntry[];
       orphanReviews: SidebarReviewEntry[];
+      recentRemote: RecentRemoteBranch[];
       hasChanges: boolean;
-      /** Most recent lastModifiedAt for working tree changes (for sorting repos with changes) */
       latestModifiedAt: number;
-      /** Most recent lastCommitDate across all branches (for sorting repos without changes) */
       latestCommitDate: number;
     }
   >();
@@ -106,6 +134,7 @@ export function buildRepoGroups(
         reviewBranches: [],
         branches: [],
         orphanReviews: [],
+        recentRemote: repo.recentRemoteBranches ?? [],
         hasChanges: false,
         latestModifiedAt: 0,
         latestCommitDate: 0,
@@ -141,7 +170,6 @@ export function buildRepoGroups(
         reviewKey: key,
       };
 
-      // 2. Categorize branches
       if (hasWorktree) {
         bucket.checkedOut.push(entry);
       } else if (hasReview) {
@@ -150,7 +178,6 @@ export function buildRepoGroups(
         bucket.branches.push(entry);
       }
 
-      // Track changes
       if (branch.hasWorkingTreeChanges) {
         bucket.hasChanges = true;
         if (
@@ -161,7 +188,6 @@ export function buildRepoGroups(
         }
       }
 
-      // Track most recent commit date
       const commitTime = new Date(branch.lastCommitDate).getTime();
       if (commitTime > bucket.latestCommitDate) {
         bucket.latestCommitDate = commitTime;
@@ -169,24 +195,23 @@ export function buildRepoGroups(
     }
   }
 
-  // 3. Add orphan reviews (not backed by local branches) to their respective repo groups
+  // 2. Add orphan reviews (not backed by local branches)
   const filteredOrphans = globalReviews.filter(
     (r) => !localKeys.has(makeReviewKey(r.repoPath, r.comparison.key)),
   );
 
-  // Group orphans by repoPath
   for (const review of filteredOrphans) {
     let bucket = repoMap.get(review.repoPath);
     if (!bucket) {
-      // Repo not in localActivity — create a bucket for orphan-only repos
       bucket = {
         repoPath: review.repoPath,
         repoName: review.repoName,
-        defaultBranch: "", // Unknown for orphan-only repos
+        defaultBranch: "",
         checkedOut: [],
         reviewBranches: [],
         branches: [],
         orphanReviews: [],
+        recentRemote: [],
         hasChanges: false,
         latestModifiedAt: 0,
         latestCommitDate: new Date(review.updatedAt).getTime(),
@@ -200,39 +225,34 @@ export function buildRepoGroups(
       reviewKey: makeReviewKey(review.repoPath, review.comparison.key),
     });
 
-    // Update latest commit date from orphan review's updatedAt
     const updatedTime = new Date(review.updatedAt).getTime();
     if (updatedTime > bucket.latestCommitDate) {
       bucket.latestCommitDate = updatedTime;
     }
   }
 
-  // 4. Build RepoGroup[] from the map
-  const byRecency = (a: SidebarBranchEntry, b: SidebarBranchEntry) =>
+  // 3. Build RepoGroup[] from the map
+  const byBranchRecency = (a: SidebarBranchEntry, b: SidebarBranchEntry) =>
     new Date(b.branch.lastCommitDate).getTime() -
     new Date(a.branch.lastCommitDate).getTime();
 
   const groups: RepoGroup[] = [];
 
   for (const bucket of repoMap.values()) {
-    // Sort within each category
-    // Working tree always first in checked-out, then worktrees by recency
+    // Working-tree first, then worktrees by recency
     bucket.checkedOut.sort((a, b) => {
       if (a.kind === "working-tree") return -1;
       if (b.kind === "working-tree") return 1;
-      return byRecency(a, b);
+      return byBranchRecency(a, b);
     });
-    bucket.reviewBranches.sort(byRecency);
-    bucket.branches.sort(byRecency);
+    bucket.reviewBranches.sort(byBranchRecency);
+    bucket.branches.sort(byBranchRecency);
 
-    // Sort orphan reviews within this repo
     bucket.orphanReviews.sort((a, b) => {
       switch (reviewSortOrder) {
         case "size": {
-          const keyA = a.reviewKey;
-          const keyB = b.reviewKey;
-          const sA = reviewDiffStats[keyA];
-          const sB = reviewDiffStats[keyB];
+          const sA = reviewDiffStats[a.reviewKey];
+          const sB = reviewDiffStats[b.reviewKey];
           const sizeA = sA ? sA.additions + sA.deletions : a.review.totalHunks;
           const sizeB = sB ? sB.additions + sB.deletions : b.review.totalHunks;
           return sizeB - sizeA;
@@ -246,82 +266,152 @@ export function buildRepoGroups(
       }
     });
 
-    // Combine: checked-out first, then review branches + orphan reviews, then plain branches
-    const items: SidebarEntry[] = [
-      ...bucket.checkedOut,
+    // In review = review-backed branches + orphan reviews, sorted by updatedAt
+    const inReview: SidebarEntry[] = [
       ...bucket.reviewBranches,
       ...bucket.orphanReviews,
+    ].sort((a, b) => {
+      const tA = getEntryUpdatedAt(a, globalReviewsByKey);
+      const tB = getEntryUpdatedAt(b, globalReviewsByKey);
+      return tB - tA;
+    });
+
+    // Local = checked-out + plain branches (working-tree pinned first)
+    const local: SidebarBranchEntry[] = [
+      ...bucket.checkedOut,
       ...bucket.branches,
     ];
+
+    // Remote (recent) — dedupe against any branch name already represented
+    const claimedNames = new Set<string>();
+    for (const e of inReview) {
+      const name = getEntryBranchName(e);
+      if (name) claimedNames.add(name);
+    }
+    for (const e of local) {
+      claimedNames.add(e.branch.name);
+    }
+    const remoteRecent: SidebarRemoteEntry[] = bucket.recentRemote
+      .filter((r) => !claimedNames.has(r.branchName))
+      .map((r) => {
+        const comparison = makeComparison(bucket.defaultBranch, r.branchName);
+        return {
+          kind: "remote-recent" as const,
+          remoteRef: r.remoteRef,
+          branchName: r.branchName,
+          lastCommitDate: r.lastCommitDate,
+          repoPath: bucket.repoPath,
+          repoName: bucket.repoName,
+          defaultBranch: bucket.defaultBranch,
+          comparison,
+          reviewKey: makeReviewKey(bucket.repoPath, comparison.key),
+        };
+      });
+
+    const items: SidebarEntry[] = [...inReview, ...local, ...remoteRecent];
 
     groups.push({
       repoPath: bucket.repoPath,
       repoName: bucket.repoName,
       defaultBranch: bucket.defaultBranch,
+      inReview,
+      local,
+      remoteRecent,
       items,
-      baseGroups: groupByBase(items, bucket.defaultBranch),
       hasChanges: bucket.hasChanges,
+      latestModifiedAt: bucket.latestModifiedAt,
+      latestCommitDate: bucket.latestCommitDate,
     });
   }
 
-  // 5. Sort repos: repos with changes first (by most recent change), then without (by most recent commit)
+  // Sort repos: repos with changes first (by most recent change), then by commit date
   groups.sort((a, b) => {
-    const bucketA = repoMap.get(a.repoPath)!;
-    const bucketB = repoMap.get(b.repoPath)!;
-
     if (a.hasChanges && !b.hasChanges) return -1;
     if (!a.hasChanges && b.hasChanges) return 1;
-
     if (a.hasChanges && b.hasChanges) {
-      // Both have changes — sort by most recent modification
-      return bucketB.latestModifiedAt - bucketA.latestModifiedAt;
+      return b.latestModifiedAt - a.latestModifiedAt;
     }
-
-    // Neither has changes — sort by most recent commit
-    return bucketB.latestCommitDate - bucketA.latestCommitDate;
+    return b.latestCommitDate - a.latestCommitDate;
   });
 
   return groups;
 }
 
-/** Get the comparison base ref from a sidebar entry. */
-function getEntryBase(entry: SidebarEntry): string {
-  return entry.kind === "review"
-    ? entry.review.comparison.base
-    : entry.comparison.base;
+function getEntryBranchName(entry: SidebarEntry): string | null {
+  if (entry.kind === "review") return entry.review.comparison.head;
+  if (entry.kind === "remote-recent") return entry.branchName;
+  return entry.branch.name;
 }
 
-/** Group entries by their merge target (comparison.base). */
-function groupByBase(
-  items: SidebarEntry[],
-  defaultBranch: string,
-): BaseGroup[] {
-  const map = new Map<string, SidebarEntry[]>();
+function getEntryUpdatedAt(
+  entry: SidebarEntry,
+  globalReviewsByKey: Record<string, GlobalReviewSummary>,
+): number {
+  if (entry.kind === "review") {
+    return new Date(entry.review.updatedAt).getTime();
+  }
+  if (entry.kind === "remote-recent") {
+    return new Date(entry.lastCommitDate).getTime();
+  }
+  // Branch entry — prefer backing review's updatedAt if present
+  const review = globalReviewsByKey[entry.reviewKey];
+  if (review) return new Date(review.updatedAt).getTime();
+  return new Date(entry.branch.lastCommitDate).getTime();
+}
 
-  for (const item of items) {
-    const base = getEntryBase(item);
-    let list = map.get(base);
-    if (!list) {
-      list = [];
-      map.set(base, list);
+/**
+ * Bucket repo groups by their org (derived from RepoMetadata.routePrefix).
+ * The first path segment of the route prefix is the org name. Repos with
+ * "local/" prefix (no GitHub remote) land in a synthetic "local" org.
+ */
+export function buildOrgGroups(
+  repoGroups: RepoGroup[],
+  repoMetadata: Record<string, RepoMetadata>,
+): OrgGroup[] {
+  const orgMap = new Map<string, OrgGroup>();
+
+  for (const repo of repoGroups) {
+    const meta = repoMetadata[repo.repoPath];
+    const prefix = meta?.routePrefix ?? `local/${repo.repoName || "repo"}`;
+    const { org } = splitRoutePrefix(prefix);
+    const isLocal = org === "local";
+
+    let group = orgMap.get(org);
+    if (!group) {
+      group = {
+        org,
+        isLocal,
+        avatarUrl: null,
+        repos: [],
+        hasChanges: false,
+        latestModifiedAt: 0,
+        latestCommitDate: 0,
+      };
+      orgMap.set(org, group);
     }
-    list.push(item);
+    group.repos.push(repo);
+    if (!group.avatarUrl && meta?.avatarUrl) {
+      group.avatarUrl = meta.avatarUrl;
+    }
+    if (repo.hasChanges) group.hasChanges = true;
+    if (repo.latestModifiedAt > group.latestModifiedAt) {
+      group.latestModifiedAt = repo.latestModifiedAt;
+    }
+    if (repo.latestCommitDate > group.latestCommitDate) {
+      group.latestCommitDate = repo.latestCommitDate;
+    }
   }
 
-  const groups: BaseGroup[] = [];
-  for (const [base, entries] of map) {
-    groups.push({
-      base,
-      isDefault: base === defaultBranch,
-      items: entries,
-    });
-  }
+  const groups = Array.from(orgMap.values());
 
-  // Default branch group first, then alphabetical
+  // Same sort policy as repos: orgs with changes first, then by recency.
   groups.sort((a, b) => {
-    if (a.isDefault && !b.isDefault) return -1;
-    if (!a.isDefault && b.isDefault) return 1;
-    return a.base.localeCompare(b.base);
+    if (a.hasChanges && !b.hasChanges) return -1;
+    if (!a.hasChanges && b.hasChanges) return 1;
+    if (a.hasChanges && b.hasChanges) {
+      return b.latestModifiedAt - a.latestModifiedAt;
+    }
+    return b.latestCommitDate - a.latestCommitDate;
   });
 
   return groups;
@@ -330,4 +420,32 @@ function groupByBase(
 /** Flatten repo groups into a single ordered list (for keyboard navigation). */
 export function flattenRepoGroups(groups: RepoGroup[]): SidebarEntry[] {
   return groups.flatMap((g) => g.items);
+}
+
+/**
+ * Flatten org groups respecting collapsed state. Used by keyboard navigation
+ * so Cmd+1..9 walks the visible rows in render order.
+ */
+export function flattenOrgGroups(
+  orgs: OrgGroup[],
+  collapsedOrgs: Record<string, boolean>,
+  collapsedRepos: Record<string, boolean>,
+): SidebarEntry[] {
+  const out: SidebarEntry[] = [];
+  for (const org of orgs) {
+    if (collapsedOrgs[org.org]) continue;
+    for (const repo of org.repos) {
+      if (collapsedRepos[repo.repoPath]) {
+        // Collapsed repo: include only the working-tree entry (the row that
+        // gets activated when the user clicks the collapsed repo header).
+        const head = repo.local.find((e) => e.kind === "working-tree");
+        if (head) out.push(head);
+        continue;
+      }
+      for (const item of repo.items) {
+        out.push(item);
+      }
+    }
+  }
+  return out;
 }

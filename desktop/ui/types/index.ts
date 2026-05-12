@@ -647,11 +647,21 @@ export interface LocalBranchInfo {
   workingTreeStats: DiffShortStat | null;
 }
 
+export interface RecentRemoteBranch {
+  /** Full remote ref short name, e.g. "origin/claude/feature-x". */
+  remoteRef: string;
+  /** Branch name with the remote prefix stripped, e.g. "claude/feature-x". */
+  branchName: string;
+  /** Last commit date (ISO-8601 strict). */
+  lastCommitDate: string;
+}
+
 export interface RepoLocalActivity {
   repoPath: string;
   repoName: string;
   defaultBranch: string;
   branches: LocalBranchInfo[];
+  recentRemoteBranches: RecentRemoteBranch[];
 }
 
 // --- LSP types ---

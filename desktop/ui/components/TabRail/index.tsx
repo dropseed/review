@@ -24,6 +24,7 @@ import { LspStatusIndicator } from "../LspStatusIndicator";
 import { SortMenu } from "../FilesPanel/SortMenu";
 import { LocalBranchItem } from "./LocalBranchItem";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
+import { splitRoutePrefix } from "../../utils/repo-identity";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
 
@@ -90,9 +91,10 @@ function FooterVersionInfo({
 import {
   type SidebarEntry,
   type RepoGroup,
-  type BaseGroup,
+  type OrgGroup,
 } from "../../utils/sidebar-ordering";
-import { useRepoGroups } from "../../hooks/useRepoGroups";
+import { useOrgGroups } from "../../hooks/useRepoGroups";
+import { RemoteBranchItem } from "./RemoteBranchItem";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -107,8 +109,7 @@ function SidebarList({
   onActivateReview,
   onActivateLocalBranch,
 }: SidebarListProps): ReactNode {
-  const repoGroups = useRepoGroups();
-  const showCleanRepos = useReviewStore((s) => s.showCleanRepos);
+  const orgGroups = useOrgGroups();
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -165,12 +166,26 @@ function SidebarList({
     };
   }
 
-  function renderEntry(entry: SidebarEntry) {
+  function renderEntry(entry: SidebarEntry): ReactNode {
     if (entry.kind === "review") {
       return (
         <TabRailItem
           key={entry.reviewKey}
           {...reviewItemPropsFor(entry.review)}
+        />
+      );
+    }
+
+    if (entry.kind === "remote-recent") {
+      return (
+        <RemoteBranchItem
+          key={entry.reviewKey}
+          branchName={entry.branchName}
+          remoteRef={entry.remoteRef}
+          repoPath={entry.repoPath}
+          defaultBranch={entry.defaultBranch}
+          lastCommitDate={entry.lastCommitDate}
+          onActivate={onActivateLocalBranch}
         />
       );
     }
@@ -187,7 +202,10 @@ function SidebarList({
     );
   }
 
-  const totalItems = repoGroups.reduce((n, g) => n + g.items.length, 0);
+  const totalItems = orgGroups.reduce(
+    (n, org) => n + org.repos.reduce((m, r) => m + r.items.length, 0),
+    0,
+  );
 
   const isEmpty =
     totalItems === 0 && !globalReviewsLoading && !localActivityLoading;
@@ -201,11 +219,11 @@ function SidebarList({
     globalReviews.length === 0 &&
     localActivity.length === 0;
 
-  const reposWithChanges = repoGroups.filter((g) => g.hasChanges);
-  const visibleRepos =
-    showCleanRepos || reposWithChanges.length === 0
-      ? repoGroups
-      : reposWithChanges;
+  // Repos with no remote yet (or only one local repo total) should not get
+  // wrapped in a stutter "local" org header.
+  const suppressLocalOrgHeader =
+    orgGroups.length === 1 ||
+    (orgGroups.find((g) => g.isLocal)?.repos.length ?? 0) <= 1;
 
   return (
     <div role="tablist" className="pb-1">
@@ -220,120 +238,230 @@ function SidebarList({
         </div>
       )}
 
-      {visibleRepos.map((group) => {
-        const meta = repoMetadata[group.repoPath];
-        return (
-          <RepoGroupHeader
-            key={group.repoPath}
-            group={group}
-            avatarUrl={meta?.avatarUrl}
-            displayName={meta?.routePrefix ?? group.repoName}
-            renderEntry={renderEntry}
-          />
-        );
-      })}
+      {orgGroups.map((org) => (
+        <OrgSection
+          key={org.org}
+          org={org}
+          suppressHeader={org.isLocal && suppressLocalOrgHeader}
+          renderEntry={renderEntry}
+          onActivateLocalBranch={onActivateLocalBranch}
+        />
+      ))}
     </div>
   );
 }
 
-/** Render a base group with a subtle label and tree-line connector. */
-function BaseGroupSection({
-  baseGroup,
+/** An org bucket containing one or more repos. */
+function OrgSection({
+  org,
+  suppressHeader,
   renderEntry,
-  showAll,
+  onActivateLocalBranch,
 }: {
-  baseGroup: BaseGroup;
+  org: OrgGroup;
+  suppressHeader: boolean;
   renderEntry: (entry: SidebarEntry) => ReactNode;
-  showAll: boolean;
-}) {
-  const visibleItems = showAll
-    ? baseGroup.items
-    : baseGroup.items.filter((e) => e.kind !== "branch");
+  onActivateLocalBranch: (
+    repoPath: string,
+    branch: string,
+    defaultBranch: string,
+  ) => void;
+}): ReactNode {
+  const collapsedOrgs = useReviewStore((s) => s.collapsedOrgs);
+  const toggleOrgCollapsed = useReviewStore((s) => s.toggleOrgCollapsed);
+  const repoMetadata = useReviewStore((s) => s.repoMetadata);
 
-  if (visibleItems.length === 0) return null;
-
-  return (
-    <div className="mt-1.5">
-      <div className="px-3 py-0.5 flex items-center gap-1.5">
-        <span className="h-px flex-1 bg-edge/20" />
-        <span className="text-[9px] text-fg-faint/50 tracking-wider shrink-0">
-          {baseGroup.base}
-        </span>
-        <span className="h-px flex-1 bg-edge/20" />
-      </div>
-      <div className="ml-3 border-l border-l-fg/[0.06] pl-0.5">
-        {visibleItems.map(renderEntry)}
-      </div>
-    </div>
-  );
-}
-
-/** Repo group with avatar, name, and per-repo expand toggle for plain branches. */
-function RepoGroupHeader({
-  group,
-  avatarUrl,
-  displayName,
-  renderEntry,
-}: {
-  group: RepoGroup;
-  avatarUrl?: string | null;
-  displayName: string;
-  renderEntry: (entry: SidebarEntry) => ReactNode;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [showAll, setShowAll] = useState(false);
-
-  const hiddenCount = group.items.filter((e) => e.kind === "branch").length;
+  const collapsed = collapsedOrgs[org.org] === true;
+  const repoCount = org.repos.length;
 
   return (
     <div className="mt-1.5 first:mt-0 border-t border-t-edge/30 first:border-t-0 pt-1.5">
-      <button
-        type="button"
-        onClick={() => setCollapsed((v) => !v)}
-        className="flex items-center gap-1.5 w-full text-left px-2.5 py-1.5 mb-0.5
-                   hover:bg-fg/[0.04] transition-colors duration-100 rounded-sm"
+      {!suppressHeader && (
+        <button
+          type="button"
+          onClick={() => toggleOrgCollapsed(org.org)}
+          className="flex items-center gap-1.5 w-full text-left px-2.5 py-1.5 mb-0.5
+                     hover:bg-fg/[0.04] transition-colors duration-100 rounded-sm"
+        >
+          {org.avatarUrl ? (
+            <img
+              src={org.avatarUrl}
+              alt=""
+              className="h-4 w-4 rounded-sm shrink-0 opacity-70"
+            />
+          ) : (
+            <span className="h-4 w-4 rounded-sm shrink-0 bg-fg/[0.10]" />
+          )}
+          <span className="flex-1 text-[11px] text-fg-muted truncate">
+            {org.org}
+          </span>
+          {collapsed && (
+            <span className="text-[10px] tabular-nums text-fg-faint/70">
+              {repoCount}
+            </span>
+          )}
+          <span className="text-[9px] text-fg-faint">
+            {collapsed ? "▸" : "▾"}
+          </span>
+        </button>
+      )}
+      {!collapsed && (
+        <div className={suppressHeader ? "" : "ml-3"}>
+          {org.repos.map((repo) => {
+            const routePrefix = repoMetadata[repo.repoPath]?.routePrefix;
+            const displayName = routePrefix
+              ? splitRoutePrefix(routePrefix).repo || repo.repoName
+              : repo.repoName;
+            return (
+              <RepoGroupHeader
+                key={repo.repoPath}
+                group={repo}
+                displayName={displayName}
+                renderEntry={renderEntry}
+                onActivateLocalBranch={onActivateLocalBranch}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Section label inside an expanded repo (e.g., "In review"). */
+function SectionHeader({ label }: { label: string }): ReactNode {
+  return (
+    <div className="px-2 pt-2 pb-0.5">
+      <span className="text-[10px] text-fg-faint/60">{label}</span>
+    </div>
+  );
+}
+
+/** Repo row with persistent collapse and three sections. */
+function RepoGroupHeader({
+  group,
+  displayName,
+  renderEntry,
+  onActivateLocalBranch,
+}: {
+  group: RepoGroup;
+  displayName: string;
+  renderEntry: (entry: SidebarEntry) => ReactNode;
+  onActivateLocalBranch: (
+    repoPath: string,
+    branch: string,
+    defaultBranch: string,
+  ) => void;
+}) {
+  const collapsedRepos = useReviewStore((s) => s.collapsedRepos);
+  const setRepoCollapsed = useReviewStore((s) => s.setRepoCollapsed);
+  const collapsed = collapsedRepos[group.repoPath] === true;
+
+  const currentHead = group.local.find((e) => e.kind === "working-tree");
+  const canActivate = !!(currentHead && group.defaultBranch);
+
+  const handleActivate = () => {
+    if (!canActivate) {
+      // No working-tree entry — fall back to toggling collapse so the row
+      // still does something useful.
+      setRepoCollapsed(group.repoPath, !collapsed);
+      return;
+    }
+    onActivateLocalBranch(
+      group.repoPath,
+      currentHead!.branch.name,
+      group.defaultBranch,
+    );
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRepoCollapsed(group.repoPath, !collapsed);
+  };
+
+  const headBranch = currentHead?.branch;
+  const headIsActive = useReviewStore(
+    (s) =>
+      !!currentHead &&
+      s.activeReviewKey?.repoPath === group.repoPath &&
+      s.activeReviewKey?.comparisonKey === currentHead.comparison.key,
+  );
+
+  // The working-tree entry is surfaced in the repo header, so exclude it from
+  // the Local section list (would otherwise render twice).
+  const localRest = group.local.filter((e) => e.kind !== "working-tree");
+
+  return (
+    <div className="mt-0.5 first:mt-0">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleActivate();
+          }
+        }}
+        className={`group relative flex items-center gap-1.5 w-full text-left px-2.5 py-1
+                    transition-colors duration-100 rounded-sm cursor-default
+                    ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}`}
+        aria-current={headIsActive ? "true" : undefined}
+        title={
+          headBranch ? `${displayName} — on ${headBranch.name}` : displayName
+        }
       >
-        {avatarUrl ? (
-          <img
-            src={avatarUrl}
-            alt=""
-            className="h-4 w-4 rounded-sm shrink-0 opacity-70"
-          />
-        ) : (
-          <span className="h-4 w-4 rounded-sm shrink-0 bg-fg/[0.10]" />
+        {headIsActive && (
+          <span className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full bg-fg/30" />
         )}
-        <span className="flex-1 text-[11px] font-semibold text-fg-secondary truncate">
+        <span className="text-[11px] text-fg-muted truncate shrink-0">
           {displayName}
         </span>
-        {hiddenCount > 0 && !collapsed && (
-          <span
-            role="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowAll((v) => !v);
-            }}
-            className="text-[10px] tabular-nums text-fg-faint hover:text-fg-secondary
-                       transition-colors px-0.5"
-          >
-            {showAll ? "active" : `+${hiddenCount}`}
+        {headBranch && (
+          <span className="flex items-center gap-1 min-w-0">
+            <span className="text-[10px] text-fg-faint/40 shrink-0">/</span>
+            <span className="text-[11px] text-fg-faint truncate">
+              {headBranch.name}
+            </span>
+            {headBranch.hasWorkingTreeChanges && (
+              <span className="text-[10px] text-status-modified shrink-0">
+                M
+              </span>
+            )}
           </span>
         )}
-      </button>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="flex items-center justify-center w-4 h-4 shrink-0 rounded
+                     text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]
+                     transition-colors duration-100"
+          aria-label={collapsed ? "Expand branches" : "Collapse branches"}
+        >
+          <span className="text-[9px]">{collapsed ? "▸" : "▾"}</span>
+        </button>
+      </div>
       {!collapsed && (
-        <div>
-          {group.baseGroups.length > 1
-            ? group.baseGroups.map((bg) => (
-                <BaseGroupSection
-                  key={bg.base}
-                  baseGroup={bg}
-                  renderEntry={renderEntry}
-                  showAll={showAll}
-                />
-              ))
-            : (showAll
-                ? group.items
-                : group.items.filter((e) => e.kind !== "branch")
-              ).map(renderEntry)}
+        <div className="ml-2 border-l border-l-fg/[0.06] pl-0.5">
+          {group.inReview.length > 0 && (
+            <>
+              <SectionHeader label="In review" />
+              {group.inReview.map(renderEntry)}
+            </>
+          )}
+          {localRest.length > 0 && (
+            <>
+              <SectionHeader label="Local" />
+              {localRest.map(renderEntry)}
+            </>
+          )}
+          {group.remoteRecent.length > 0 && (
+            <>
+              <SectionHeader label="Remote (recent)" />
+              {group.remoteRecent.map(renderEntry)}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -351,44 +479,12 @@ function SidebarHeader({
   const globalReviews = useReviewStore((s) => s.globalReviews);
   const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
-  const showCleanRepos = useReviewStore((s) => s.showCleanRepos);
-  const toggleShowCleanRepos = useReviewStore((s) => s.toggleShowCleanRepos);
-
-  const repoGroups = useRepoGroups();
-  const hiddenRepoCount = useMemo(
-    () =>
-      repoGroups.some((g) => g.hasChanges)
-        ? repoGroups.filter((g) => !g.hasChanges).length
-        : 0,
-    [repoGroups],
-  );
 
   return (
     <div className="shrink-0 px-2 py-2 flex items-center gap-1">
       <span className="pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
         Reviews
       </span>
-      {hiddenRepoCount > 0 && (
-        <button
-          type="button"
-          onClick={toggleShowCleanRepos}
-          className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums
-                     text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.06]
-                     transition-colors duration-100"
-          aria-label={
-            showCleanRepos
-              ? "Show only repos with changes"
-              : `Show ${hiddenRepoCount} repo${hiddenRepoCount !== 1 ? "s" : ""} without changes`
-          }
-          title={
-            showCleanRepos
-              ? "Show only repos with changes"
-              : `Show ${hiddenRepoCount} repo${hiddenRepoCount !== 1 ? "s" : ""} without changes`
-          }
-        >
-          {showCleanRepos ? "changes only" : `+${hiddenRepoCount}`}
-        </button>
-      )}
       <span className="flex-1" />
       {globalReviews.length > 0 && (
         <SortMenu
