@@ -28,6 +28,7 @@ import {
   useHoverInfo,
 } from "../../hooks";
 import { InFileSearchBar } from "./InFileSearchBar";
+import { GoToLineBar } from "./GoToLineBar";
 import {
   detectLanguage,
   isMarkdownFile,
@@ -177,8 +178,8 @@ export function FileViewer({
     SupportedLanguages | undefined
   >(undefined);
 
-  // In-file search state
-  const [inFileSearchOpen, setInFileSearchOpen] = useState(false);
+  // Which floating bar (if any) is open over the file viewport.
+  const [openBar, setOpenBar] = useState<"search" | "goToLine" | null>(null);
 
   // File-level comment editor state
   const [fileCommentEditorOpen, setFileCommentEditorOpen] = useState(false);
@@ -186,15 +187,21 @@ export function FileViewer({
     string | null
   >(null);
 
-  // Handle search highlight — stable callback for InFileSearchBar
   const handleSearchHighlightLine = useCallback((line: number | null) => {
     setHighlightLine(line);
   }, []);
 
-  // Close search and clear highlight
   const handleCloseSearch = useCallback(() => {
-    setInFileSearchOpen(false);
+    setOpenBar(null);
     setHighlightLine(null);
+  }, []);
+
+  const handleCloseGoToLine = useCallback(() => {
+    setOpenBar(null);
+  }, []);
+
+  const handleGoToLine = useCallback((line: number) => {
+    setHighlightLine(line);
   }, []);
 
   // Stable callback for toolbar to clear highlight on view mode change
@@ -276,23 +283,27 @@ export function FileViewer({
   useEffect(() => {
     setFileCommentEditorOpen(false);
     setEditingFileCommentId(null);
-    setInFileSearchOpen(false);
+    setOpenBar(null);
     setHighlightLine(null);
   }, [filePath]);
 
-  // Cmd+F listener to open in-file search
+  // Listener stays registered for the FileViewer's lifetime; gate via
+  // fileContentRef so the handler doesn't re-bind on every file load.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
+      if (!fileContentRef.current) return;
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      if (e.key === "f") {
         e.preventDefault();
-        if (fileContent) {
-          setInFileSearchOpen(true);
-        }
+        setOpenBar("search");
+      } else if (e.key === "l") {
+        e.preventDefault();
+        setOpenBar("goToLine");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [fileContent]);
+  }, []);
 
   // Must be before early returns to comply with React hooks rules.
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
@@ -714,12 +725,21 @@ export function FileViewer({
       )}
 
       <div className="relative flex flex-1 overflow-hidden">
-        {inFileSearchOpen && fileContent && (
+        {openBar === "search" && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <InFileSearchBar
               content={fileContent.content}
               onHighlightLine={handleSearchHighlightLine}
               onClose={handleCloseSearch}
+            />
+          </div>
+        )}
+        {openBar === "goToLine" && fileContent && (
+          <div className="absolute top-0 right-0 z-20 p-2">
+            <GoToLineBar
+              maxLine={totalLineCount}
+              onGoToLine={handleGoToLine}
+              onClose={handleCloseGoToLine}
             />
           </div>
         )}
