@@ -1,4 +1,11 @@
-import { type ReactNode, lazy, Suspense, useCallback, useState } from "react";
+import {
+  type ReactNode,
+  lazy,
+  Suspense,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import { useReviewStore } from "../stores";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -71,6 +78,14 @@ export function ReviewView({
   const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
   const worktreeStale = useReviewStore((s) => s.worktreeStale);
   const worktreePath = useReviewStore((s) => s.worktreePath);
+  const localActivity = useReviewStore((s) => s.localActivity);
+  const isOnCurrentBranch = useMemo(() => {
+    if (!repoPath || !comparison) return false;
+    const repo = localActivity.find((r) => r.repoPath === repoPath);
+    return (
+      repo?.branches.find((b) => b.name === comparison.head)?.isCurrent ?? false
+    );
+  }, [localActivity, repoPath, comparison]);
   const updateWorktreeAction = useCallback(async () => {
     if (!repoPath || !comparison || !worktreePath) return;
     const client = getApiClient();
@@ -340,8 +355,10 @@ export function ReviewView({
           </div>
         )}
 
-        {/* Checkout prompt — shown for reviews without a worktree */}
-        {!readOnlyPreview && !worktreePath && (
+        {/* Checkout prompt — shown for reviews without a worktree.
+            Skipped when on the current branch, since the main working tree
+            already matches the branch being reviewed (LSP works correctly). */}
+        {!readOnlyPreview && !worktreePath && !isOnCurrentBranch && (
           <div className="flex items-center gap-2 border-b border-edge px-4 py-1.5">
             <span className="text-xs text-fg-faint flex-1">
               Check out to enable LSP features (hover, go-to-definition)
