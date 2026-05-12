@@ -15,6 +15,10 @@ import {
   areFilesEqual,
   areOptionsEqual,
 } from "@pierre/diffs";
+import type {
+  TokenHoverHandler,
+  TokenClickHandler,
+} from "./FileContentRenderer";
 import { useReviewStore } from "../../stores";
 import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import { getPlatformServices } from "../../platform";
@@ -169,6 +173,10 @@ interface DiffViewProps {
   highlightLine?: number | null;
   /** Line height in px — used to compute scroll position for off-screen targets */
   lineHeight?: number;
+  /** Token enter/leave hooks (e.g. LSP hover) wired into pierre/diffs options */
+  onTokenEnter?: TokenHoverHandler;
+  onTokenLeave?: TokenHoverHandler;
+  onTokenClick?: TokenClickHandler;
 }
 
 export function DiffView({
@@ -185,6 +193,9 @@ export function DiffView({
   expandUnchanged: expandUnchangedProp = true,
   highlightLine,
   lineHeight = 21,
+  onTokenEnter,
+  onTokenLeave,
+  onTokenClick,
 }: DiffViewProps): ReactNode {
   // Reactive subscriptions — values used in render output
   const reviewState = useReviewStore((s) => s.reviewState);
@@ -923,6 +934,9 @@ export function DiffView({
     onGutterUtilityClick: typeof handleGutterUtilityClick;
     onLineSelectionEnd: typeof handleLineSelectionEnd;
     onPostRender: typeof handlePostRender;
+    onTokenEnter?: TokenHoverHandler;
+    onTokenLeave?: TokenHoverHandler;
+    onTokenClick?: TokenClickHandler;
     unsafeCSS: string;
     expandUnchanged: boolean;
     expansionLineCount: number;
@@ -950,6 +964,9 @@ export function DiffView({
       onGutterUtilityClick: handleGutterUtilityClick,
       onLineSelectionEnd: handleLineSelectionEnd,
       onPostRender: handlePostRender,
+      onTokenEnter,
+      onTokenLeave,
+      onTokenClick,
       unsafeCSS: fontCSS + annotationHighlightCSS,
       expandUnchanged: expandUnchangedProp,
       expansionLineCount: 20,
@@ -980,6 +997,9 @@ export function DiffView({
     handleLineSelectionEnd,
     handlePostRender,
     expandUnchangedProp,
+    onTokenEnter,
+    onTokenLeave,
+    onTokenClick,
   ]);
 
   return (

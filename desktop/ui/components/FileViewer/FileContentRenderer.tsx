@@ -1,4 +1,5 @@
 import { memo } from "react";
+import type { TokenEventBase } from "@pierre/diffs";
 import type { LineAnnotation, FileContent } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
 import { isMarkdownFile } from "./languageMap";
@@ -7,6 +8,16 @@ import { DiffView, DiffErrorBoundary } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
 import type { ContentMode } from "./content-mode";
+
+export type TokenHoverHandler = (
+  props: TokenEventBase,
+  event: PointerEvent,
+) => void;
+
+export type TokenClickHandler = (
+  props: TokenEventBase,
+  event: MouseEvent,
+) => void;
 
 interface FileContentRendererProps {
   filePath: string;
@@ -32,6 +43,9 @@ interface FileContentRendererProps {
     repoRelativePath: string,
     options?: { openInSplit?: boolean },
   ) => void;
+  onTokenEnter?: TokenHoverHandler;
+  onTokenLeave?: TokenHoverHandler;
+  onTokenClick?: TokenClickHandler;
 }
 
 export const FileContentRenderer = memo(function FileContentRenderer({
@@ -50,6 +64,9 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   updateAnnotation,
   deleteAnnotation,
   onNavigateToFile,
+  onTokenEnter,
+  onTokenLeave,
+  onTokenClick,
 }: FileContentRendererProps) {
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
@@ -126,6 +143,9 @@ export const FileContentRenderer = memo(function FileContentRenderer({
               onUpdateAnnotation={updateAnnotation}
               onDeleteAnnotation={deleteAnnotation}
               extraCSS={buildDiffHighlightCSS(fileContent, viewMode)}
+              onTokenEnter={onTokenEnter}
+              onTokenLeave={onTokenLeave}
+              onTokenClick={onTokenClick}
             />
           </DiffErrorBoundary>
         );
@@ -154,6 +174,9 @@ export const FileContentRenderer = memo(function FileContentRenderer({
           expandUnchanged={expandUnchanged}
           highlightLine={highlightLine}
           lineHeight={lineHeight}
+          onTokenEnter={onTokenEnter}
+          onTokenLeave={onTokenLeave}
+          onTokenClick={onTokenClick}
         />
       );
     }
@@ -180,6 +203,9 @@ export const FileContentRenderer = memo(function FileContentRenderer({
             }
             onUpdateAnnotation={updateAnnotation}
             onDeleteAnnotation={deleteAnnotation}
+            onTokenEnter={onTokenEnter}
+            onTokenLeave={onTokenLeave}
+            onTokenClick={onTokenClick}
           />
         </DiffErrorBoundary>
       );

@@ -33,8 +33,6 @@ import {
   isMarkdownFile,
   type SupportedLanguages,
 } from "./languageMap";
-import { getUrlAtClick } from "../../utils/getUrlAtClick";
-import { getPlatformServices } from "../../platform";
 import { FileViewerToolbar } from "./FileViewerToolbar";
 import {
   AnnotationEditor,
@@ -63,9 +61,6 @@ function hasFileStatus(
   }
   return false;
 }
-
-const CMD_HOVER_STYLE_ID = "cmd-hover-style";
-const CMD_HOVER_CSS = `code span { cursor: pointer; }`;
 
 interface FileViewerProps {
   filePath: string;
@@ -123,7 +118,7 @@ export function FileViewer({
     [virtualizer],
   );
 
-  // Symbol navigation (Cmd+Click)
+  // Cmd+click symbol navigation
   const {
     popoverOpen,
     popoverPosition,
@@ -131,168 +126,32 @@ export function FileViewer({
     definitions,
     references,
     loading: symbolLoading,
-    handleSymbolClick,
+    onTokenClick: onTokenClickSymbol,
     closePopover,
     navigateToDefinition,
     navigateToReference,
-  } = useSymbolNavigation();
+  } = useSymbolNavigation(scrollNode);
 
-  useWordHighlight(scrollNode);
+  // Double-click word highlight
+  const { onTokenClick: onTokenClickHighlight } = useWordHighlight(scrollNode);
 
-  // LSP hover tooltips (Cmd+hover)
+  // LSP hover tooltip + Cmd-hover underline
   const {
     hoverContent,
     hoverPosition: hoverPos,
     dismissHover,
+    onTokenEnter: onTokenEnterHover,
+    onTokenLeave: onTokenLeaveHover,
   } = useHoverInfo(scrollNode);
 
-  // Cmd+hover CSS injection and Cmd+Click handling — entirely imperative to
-  // avoid re-rendering FileViewer on every Cmd press/release (rerender-use-ref-transient-values).
-  const handleSymbolClickRef = useRef(handleSymbolClick);
-  handleSymbolClickRef.current = handleSymbolClick;
-  const closePopoverRef = useRef(closePopover);
-  closePopoverRef.current = closePopover;
-  const dismissHoverRef = useRef(dismissHover);
-  dismissHoverRef.current = dismissHover;
-
-  useEffect(() => {
-    const node = scrollNode;
-    if (!node) return;
-
-    const getShadowRoot = () =>
-      node.querySelector("diffs-container")?.shadowRoot ?? null;
-
-    const injectStyle = () => {
-      const shadow = getShadowRoot();
-      if (!shadow || shadow.getElementById(CMD_HOVER_STYLE_ID)) return;
-      const style = document.createElement("style");
-      style.id = CMD_HOVER_STYLE_ID;
-      style.textContent = CMD_HOVER_CSS;
-      shadow.appendChild(style);
-    };
-
-    const removeStyle = () => {
-      getShadowRoot()?.getElementById(CMD_HOVER_STYLE_ID)?.remove();
-    };
-
-    // Track Cmd state imperatively — no React state, no re-renders
-    let cmdDown = false;
-    let hoveredSpan: HTMLElement | null = null;
-
-    const clearHoverStyle = () => {
-      if (hoveredSpan) {
-        hoveredSpan.style.textDecoration = "";
-        hoveredSpan = null;
-      }
-    };
-
-    const handleMouseOver = (e: Event) => {
-      if (!cmdDown) return;
-      const target = (e as MouseEvent).composedPath?.()[0];
-      if (
-        target instanceof HTMLElement &&
-        target.tagName === "SPAN" &&
-        target.textContent?.trim()
-      ) {
-        if (target !== hoveredSpan) {
-          clearHoverStyle();
-          target.style.textDecoration = "underline";
-          hoveredSpan = target;
-        }
-      } else {
-        clearHoverStyle();
-      }
-    };
-
-    const handleMouseOut = (e: Event) => {
-      if (!hoveredSpan) return;
-      const target = (e as MouseEvent).composedPath?.()[0];
-      if (target === hoveredSpan) {
-        clearHoverStyle();
-      }
-    };
-
-    // Toggle CSS directly from key events — no React state involved
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Meta") {
-        cmdDown = true;
-        injectStyle();
-      }
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Meta") {
-        cmdDown = false;
-        clearHoverStyle();
-        removeStyle();
-      }
-    };
-    const handleBlur = () => {
-      cmdDown = false;
-      clearHoverStyle();
-      removeStyle();
-    };
-
-    const handleClick = (e: MouseEvent) => {
-      if (e.metaKey) {
-        dismissHoverRef.current();
-        const url = getUrlAtClick(e);
-        if (url) {
-          e.preventDefault();
-          e.stopPropagation();
-          getPlatformServices().opener.openUrl(url);
-          return;
-        }
-        handleSymbolClickRef.current(e);
-      }
-    };
-
-    // Dismiss popover when the diff scrolls — the symbol moves away from the anchor
-    const handleScroll = () => closePopoverRef.current();
-
-    // Attach mouseover/mouseout to shadow root if available, else the node
-    const attachHoverListeners = () => {
-      const shadow = getShadowRoot();
-      const hoverTarget = shadow ?? node;
-      hoverTarget.addEventListener("mouseover", handleMouseOver);
-      hoverTarget.addEventListener("mouseout", handleMouseOut);
-      return hoverTarget;
-    };
-
-    // Shadow root may not exist yet (custom element may upgrade later),
-    // so attach now and re-attach via MutationObserver if needed.
-    let hoverTarget = attachHoverListeners();
-
-    const observer = new MutationObserver(() => {
-      const shadow = getShadowRoot();
-      if (!shadow) return;
-      hoverTarget.removeEventListener("mouseover", handleMouseOver);
-      hoverTarget.removeEventListener("mouseout", handleMouseOut);
-      hoverTarget = shadow;
-      shadow.addEventListener("mouseover", handleMouseOver);
-      shadow.addEventListener("mouseout", handleMouseOut);
-      observer.disconnect();
-    });
-    observer.observe(node, { childList: true, subtree: true });
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
-    node.addEventListener("click", handleClick);
-    node.addEventListener("scroll", handleScroll, { passive: true });
-
-    return () => {
-      clearHoverStyle();
-      removeStyle();
-      observer.disconnect();
-      hoverTarget.removeEventListener("mouseover", handleMouseOver);
-      hoverTarget.removeEventListener("mouseout", handleMouseOut);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
-      node.removeEventListener("click", handleClick);
-      node.removeEventListener("scroll", handleScroll);
-    };
-  }, [scrollNode]);
+  const onTokenClick = useCallback(
+    (props: Parameters<typeof onTokenClickSymbol>[0], event: MouseEvent) => {
+      if (event.metaKey) dismissHover();
+      onTokenClickSymbol(props, event);
+      onTokenClickHighlight(props, event);
+    },
+    [dismissHover, onTokenClickSymbol, onTokenClickHighlight],
+  );
 
   // Generate CSS for font injection into pierre/diffs shadow DOM
   const lineHeight = Math.round(codeFontSize * 1.5);
@@ -899,6 +758,9 @@ export function FileViewer({
                 updateAnnotation={updateAnnotation}
                 deleteAnnotation={deleteAnnotation}
                 onNavigateToFile={handleNavigateToFile}
+                onTokenEnter={onTokenEnterHover}
+                onTokenLeave={onTokenLeaveHover}
+                onTokenClick={onTokenClick}
               />
             </div>
           </div>

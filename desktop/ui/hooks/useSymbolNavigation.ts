@@ -1,5 +1,7 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import type { TokenEventBase } from "@pierre/diffs";
 import { getApiClient } from "../api";
+import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
 import { getAllHunksFromState } from "../stores/selectors/hunks";
 import type {
@@ -12,7 +14,7 @@ import {
   findSymbolReferencesInDiff,
   type SymbolReferenceInDiff,
 } from "../utils/findSymbolReferencesInDiff";
-import { getClickedSpan, getPositionFromEvent } from "../utils/getUrlAtClick";
+import { getUrlAtClick } from "../utils/getUrlAtClick";
 
 // Language keywords to filter out (combined across JS/TS, Rust, Python, Go)
 const KEYWORDS = new Set([
@@ -227,7 +229,7 @@ function findChangeType(
   return search(fileDiff.symbols);
 }
 
-export function useSymbolNavigation() {
+export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
   const [state, setState] = useState<SymbolNavigationState>({
     popoverOpen: false,
     popoverPosition: { x: 0, y: 0 },
@@ -246,6 +248,15 @@ export function useSymbolNavigation() {
       return { ...prev, popoverOpen: false, loading: false };
     });
   }, []);
+
+  // The symbol popover anchors to the click position; dismiss when the diff
+  // scrolls so the popover doesn't float over the wrong line.
+  useEffect(() => {
+    if (!scrollNode) return;
+    const handleScroll = () => closePopover();
+    scrollNode.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollNode.removeEventListener("scroll", handleScroll);
+  }, [scrollNode, closePopover]);
 
   const navigateToDefinition = useCallback(
     (def: SymbolDefinition) => {
@@ -268,11 +279,12 @@ export function useSymbolNavigation() {
     [closePopover],
   );
 
-  const handleSymbolClick = useCallback(
-    async (event: MouseEvent) => {
-      const word = getWordAtClick(event);
-      if (!word) return;
-
+  const lookUpSymbol = useCallback(
+    async (
+      word: string,
+      position: { x: number; y: number },
+      lsp: { line: number; character: number } | null,
+    ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -284,7 +296,7 @@ export function useSymbolNavigation() {
 
       setState({
         popoverOpen: true,
-        popoverPosition: { x: event.clientX, y: event.clientY },
+        popoverPosition: position,
         symbolName: word,
         definitions: [],
         references: [],
@@ -294,7 +306,6 @@ export function useSymbolNavigation() {
       try {
         const references = findSymbolReferencesInDiff(word, hunks);
 
-        // Try both tree-sitter and LSP definition lookups in parallel
         const api = getApiClient();
         const treeSitterPromise = api.findSymbolDefinitions(
           repoPath,
@@ -302,25 +313,22 @@ export function useSymbolNavigation() {
           comparison.head,
         );
 
-        // Extract line and character from the click target for LSP
         const { selectedFile, externalFilePath } = useReviewStore.getState();
         const currentFile = externalFilePath ?? selectedFile;
-        const clickInfo = currentFile
-          ? getPositionFromEvent(event, currentFile)
-          : null;
-        const lspPromise = clickInfo
-          ? api
-              .lspGotoDefinition(
-                repoPath,
-                clickInfo.filePath,
-                clickInfo.line,
-                clickInfo.character,
-              )
-              .catch((err: unknown) => {
-                console.error("[lsp] goto_definition failed:", err);
-                return [] as SymbolDefinition[];
-              })
-          : Promise.resolve([] as SymbolDefinition[]);
+        const lspPromise =
+          lsp && currentFile
+            ? api
+                .lspGotoDefinition(
+                  repoPath,
+                  currentFile,
+                  lsp.line,
+                  lsp.character,
+                )
+                .catch((err: unknown) => {
+                  console.error("[lsp] goto_definition failed:", err);
+                  return [] as SymbolDefinition[];
+                })
+            : Promise.resolve([] as SymbolDefinition[]);
 
         const [backendDefs, lspDefs] = await Promise.all([
           treeSitterPromise,
@@ -329,13 +337,10 @@ export function useSymbolNavigation() {
 
         if (controller.signal.aborted) return;
 
-        // Supplement backend results with definitions from symbolDiffs,
-        // and annotate all definitions with changeType from the diff.
         const diffDefs = findDefinitionsFromSymbolDiffs(word, symbolDiffs);
         const seen = new Set(
           backendDefs.map((d) => `${d.filePath}:${d.startLine}`),
         );
-        // Merge: tree-sitter first, then LSP (deduped), then symbolDiffs
         const mergedBackend: EnrichedDefinition[] = backendDefs.map((d) => ({
           ...d,
           changeType: findChangeType(d, symbolDiffs),
@@ -352,7 +357,6 @@ export function useSymbolNavigation() {
           ...diffDefs.filter((d) => !seen.has(`${d.filePath}:${d.startLine}`)),
         ];
 
-        // If exactly one definition and no references, navigate directly
         if (definitions.length === 1 && references.length === 0) {
           navigateToDefinition(definitions[0]);
           return;
@@ -373,33 +377,44 @@ export function useSymbolNavigation() {
     [navigateToDefinition],
   );
 
+  const onTokenClick = useCallback(
+    (props: TokenEventBase, event: MouseEvent) => {
+      if (!event.metaKey) return;
+
+      // Cmd+click on a URL opens it; otherwise treat as symbol navigation.
+      const url = getUrlAtClick(event);
+      if (url) {
+        event.preventDefault();
+        event.stopPropagation();
+        getPlatformServices().opener.openUrl(url);
+        return;
+      }
+
+      const word = props.tokenText.trim();
+      if (!isNavigableIdentifier(word)) return;
+
+      void lookUpSymbol(
+        word,
+        { x: event.clientX, y: event.clientY },
+        { line: props.lineNumber - 1, character: props.lineCharStart + 1 },
+      );
+    },
+    [lookUpSymbol],
+  );
+
   return {
     ...state,
-    handleSymbolClick,
+    onTokenClick,
     closePopover,
     navigateToDefinition,
     navigateToReference,
   };
 }
 
-/**
- * Extract the identifier word at the click position.
- * Walks the composed path to find a span element, then checks if
- * the text content is a valid, non-keyword identifier.
- */
-function getWordAtClick(event: MouseEvent): string | null {
-  const targetSpan = getClickedSpan(event);
-  if (!targetSpan) return null;
-
-  const text = targetSpan.textContent?.trim();
-  if (!text) return null;
-
-  // Must be a valid identifier: letter/underscore start, alphanumeric/underscore body
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(text)) return null;
-
-  // Filter short identifiers and keywords
-  if (text.length < 3) return null;
-  if (KEYWORDS.has(text)) return null;
-
-  return text;
+function isNavigableIdentifier(text: string): boolean {
+  if (!text) return false;
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(text)) return false;
+  if (text.length < 3) return false;
+  if (KEYWORDS.has(text)) return false;
+  return true;
 }

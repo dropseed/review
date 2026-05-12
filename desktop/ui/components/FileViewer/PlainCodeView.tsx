@@ -2,6 +2,10 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { File as PierreFile } from "@pierre/diffs/react";
 import type { LineAnnotation as PierreLineAnnotation } from "@pierre/diffs/react";
 import type { LineAnnotation } from "../../types";
+import type {
+  TokenHoverHandler,
+  TokenClickHandler,
+} from "./FileContentRenderer";
 import {
   AnnotationEditor,
   AnnotationDisplay,
@@ -36,6 +40,10 @@ interface PlainCodeViewProps {
   onDeleteAnnotation?: (id: string) => void;
   /** Extra CSS to inject into the shadow DOM (e.g. diff line highlights) */
   extraCSS?: string;
+  /** Token enter/leave hooks (e.g. LSP hover) wired into pierre/diffs options */
+  onTokenEnter?: TokenHoverHandler;
+  onTokenLeave?: TokenHoverHandler;
+  onTokenClick?: TokenClickHandler;
 }
 
 export function PlainCodeView({
@@ -51,6 +59,9 @@ export function PlainCodeView({
   onUpdateAnnotation,
   onDeleteAnnotation,
   extraCSS,
+  onTokenEnter,
+  onTokenLeave,
+  onTokenClick,
 }: PlainCodeViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -237,6 +248,9 @@ export function PlainCodeView({
           disableFileHeader: true,
           unsafeCSS: fontCSS + (extraCSS ?? ""),
           enableGutterUtility: true,
+          onTokenEnter,
+          onTokenLeave,
+          onTokenClick,
         }}
       />
     </div>

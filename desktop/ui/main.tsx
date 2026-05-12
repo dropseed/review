@@ -42,8 +42,12 @@ function WorkerPoolThemeSync(): null {
   const codeTheme = useReviewStore((s) => s.codeTheme);
 
   useEffect(() => {
+    // setRenderOptions destructures with defaults, so every field we care
+    // about has to be re-passed here or it silently reverts (notably
+    // useTokenTransformer, which gates pierre's token hooks).
     pool?.setRenderOptions({
       theme: { dark: codeTheme, light: codeTheme },
+      useTokenTransformer: true,
     });
   }, [pool, codeTheme]);
 
@@ -104,6 +108,10 @@ function App() {
         theme: { dark: codeTheme, light: codeTheme },
         lineDiffType: "word-alt",
         tokenizeMaxLineLength: 1000,
+        // Required for onTokenEnter/onTokenLeave/onTokenClick to fire — the
+        // worker has to emit the data-char attributes pierre's pointer-target
+        // resolver reads.
+        useTokenTransformer: true,
       }}
     >
       <WorkerPoolThemeSync />

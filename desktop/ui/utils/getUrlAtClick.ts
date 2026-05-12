@@ -9,15 +9,11 @@
 
 const URL_RE = /https?:\/\/[^\s"'`<>)\]},;]+/g;
 
-/**
- * Strip trailing punctuation that's likely sentence-level, not part of the URL.
- * Preserves balanced parentheses (e.g. Wikipedia URLs).
- */
-export function cleanUrlTrailing(url: string): string {
-  // Strip trailing dots and commas
+/** Strip trailing punctuation likely from sentence-level context, not the URL itself. */
+function cleanUrlTrailing(url: string): string {
   let cleaned = url.replace(/[.,]+$/, "");
 
-  // Strip trailing ')' only if unbalanced
+  // Strip trailing ')' only if unbalanced (preserves Wikipedia-style URLs).
   let open = 0;
   let close = 0;
   for (let i = 0; i < cleaned.length; i++) {
@@ -32,11 +28,7 @@ export function cleanUrlTrailing(url: string): string {
   return cleaned;
 }
 
-/**
- * Find a URL in `lineText` that overlaps the character range [charStart, charEnd).
- * Returns the cleaned URL or null.
- */
-export function findUrlAtOffset(
+function findUrlAtOffset(
   lineText: string,
   charStart: number,
   charEnd: number,
@@ -46,7 +38,6 @@ export function findUrlAtOffset(
   while ((match = URL_RE.exec(lineText)) !== null) {
     const urlStart = match.index;
     const urlEnd = urlStart + match[0].length;
-    // Check overlap: clicked span range intersects URL range
     if (charStart < urlEnd && charEnd > urlStart) {
       return cleanUrlTrailing(match[0]);
     }
@@ -54,83 +45,17 @@ export function findUrlAtOffset(
   return null;
 }
 
-/**
- * Walk composedPath to find the first <span> element (works across shadow DOM).
- * Shared by URL detection and symbol navigation.
- */
-export function getClickedSpan(event: MouseEvent): HTMLElement | null {
+function getClickedSpan(event: MouseEvent): HTMLElement | null {
   for (const el of event.composedPath()) {
     if (el instanceof HTMLElement && el.tagName === "SPAN") return el;
   }
   return null;
 }
 
-/**
- * Get the character offset of a span within a line container by walking text nodes.
- * Returns the offset to the first non-whitespace character inside the span.
- */
-export function getSpanCharOffset(
-  lineContainer: HTMLElement,
-  targetSpan: HTMLElement,
-): number {
-  const walker = document.createTreeWalker(lineContainer, NodeFilter.SHOW_TEXT);
-  let offset = 0;
-  let textNode: Text | null;
-  while ((textNode = walker.nextNode() as Text | null)) {
-    if (textNode.parentElement === targetSpan) {
-      const text = textNode.textContent || "";
-      const trimmedStart = text.length - text.trimStart().length;
-      return offset + trimmedStart + 1;
-    }
-    offset += textNode.length;
-  }
-  return offset;
-}
-
-/**
- * Extract file path, line number (0-based), and character offset from an event.
- * Works across shadow DOM boundaries via composedPath().
- *
- * @param event - The mouse event to extract position from
- * @param filePath - The file path (caller provides from store)
- * @param targetSpan - Optional pre-resolved span element; if omitted, uses getClickedSpan
- */
-export function getPositionFromEvent(
-  event: MouseEvent,
-  filePath: string,
-  targetSpan?: HTMLElement | null,
-): { filePath: string; line: number; character: number } | null {
-  // Walk composedPath to find element with data-line
-  let lineEl: HTMLElement | null = null;
-  for (const el of event.composedPath()) {
-    if (el instanceof HTMLElement && el.dataset.line) {
-      lineEl = el;
-      break;
-    }
-  }
-  if (!lineEl?.dataset.line) return null;
-
-  const line = parseInt(lineEl.dataset.line, 10) - 1; // 0-based for LSP
-  if (isNaN(line) || line < 0) return null;
-
-  const span = targetSpan ?? getClickedSpan(event);
-  const lineContent = lineEl.querySelector("[data-line-content]") || lineEl;
-  const character = span
-    ? getSpanCharOffset(lineContent as HTMLElement, span)
-    : 0;
-
-  return { filePath, line, character };
-}
-
-/**
- * Given a click event inside Shiki-highlighted code, return the URL
- * at the click position, or null if none.
- */
 export function getUrlAtClick(event: MouseEvent): string | null {
   const clickedSpan = getClickedSpan(event);
   if (!clickedSpan) return null;
 
-  // Find the line container — either [data-column-content] or <code>
   let lineContainer: HTMLElement | null = clickedSpan.parentElement;
   while (lineContainer) {
     if (
@@ -143,7 +68,6 @@ export function getUrlAtClick(event: MouseEvent): string | null {
   }
   if (!lineContainer) return null;
 
-  // Reconstruct full line text up to and including the clicked span's offset
   let charOffset = 0;
   let spanStart = 0;
   let spanEnd = 0;

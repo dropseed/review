@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import type { TokenEventBase } from "@pierre/diffs";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
-import { getPositionFromEvent } from "../utils/getUrlAtClick";
 
 interface HoverPosition {
   x: number;
@@ -13,9 +13,54 @@ interface HoverState {
   hoverPosition: HoverPosition | null;
 }
 
+function parseHoverContents(contents: unknown): string | null {
+  if (!contents) return null;
+
+  // MarkedString: { kind: "markdown" | "plaintext", value: string }
+  if (
+    typeof contents === "object" &&
+    contents !== null &&
+    "value" in contents
+  ) {
+    return (contents as { value: string }).value || null;
+  }
+
+  // Plain string
+  if (typeof contents === "string") {
+    return contents || null;
+  }
+
+  // Array of MarkedStrings or strings
+  if (Array.isArray(contents)) {
+    const parts = contents
+      .map((c) => {
+        if (typeof c === "string") return c;
+        if (typeof c === "object" && c !== null && "value" in c)
+          return (c as { value: string }).value;
+        return null;
+      })
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join("\n\n") : null;
+  }
+
+  return null;
+}
+
+function applyUnderline(el: HTMLElement): void {
+  el.style.textDecoration = "underline";
+  el.style.cursor = "pointer";
+}
+
+function clearUnderline(el: HTMLElement): void {
+  el.style.textDecoration = "";
+  el.style.cursor = "";
+}
+
 /**
- * Provides LSP hover info when the user hovers over code while holding Meta/Cmd.
- * Debounces 300ms, cancels on element change, Meta release, or scroll.
+ * LSP hover info plus the visual "Cmd-hover" affordance (underline + pointer
+ * cursor) on the hovered token. Returns the enter/leave handlers to wire into
+ * @pierre/diffs `options.onTokenEnter` / `options.onTokenLeave`. Debounces the
+ * LSP request 300ms; cancels on token change, Meta release, blur, or scroll.
  */
 export function useHoverInfo(scrollNode: HTMLDivElement | null) {
   const [state, setState] = useState<HoverState>({
@@ -23,9 +68,17 @@ export function useHoverInfo(scrollNode: HTMLDivElement | null) {
     hoverPosition: null,
   });
 
+  const cmdDownRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSpanRef = useRef<HTMLElement | null>(null);
+  const underlinedRef = useRef<HTMLElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const clearUnderlined = useCallback(() => {
+    if (underlinedRef.current) {
+      clearUnderline(underlinedRef.current);
+      underlinedRef.current = null;
+    }
+  }, []);
 
   const dismissHover = useCallback(() => {
     if (debounceRef.current) {
@@ -33,190 +86,117 @@ export function useHoverInfo(scrollNode: HTMLDivElement | null) {
       debounceRef.current = null;
     }
     abortRef.current?.abort();
-    lastSpanRef.current = null;
+    clearUnderlined();
     setState({ hoverContent: null, hoverPosition: null });
-  }, []);
+  }, [clearUnderlined]);
 
   useEffect(() => {
-    const node = scrollNode;
-    if (!node) return;
-
-    let cmdDown = false;
-
-    const getShadowRoot = () =>
-      node.querySelector("diffs-container")?.shadowRoot ?? null;
-
-    function parseHoverContents(contents: unknown): string | null {
-      if (!contents) return null;
-
-      // MarkedString: { kind: "markdown" | "plaintext", value: string }
-      if (
-        typeof contents === "object" &&
-        contents !== null &&
-        "value" in contents
-      ) {
-        return (contents as { value: string }).value || null;
-      }
-
-      // Plain string
-      if (typeof contents === "string") {
-        return contents || null;
-      }
-
-      // Array of MarkedStrings or strings
-      if (Array.isArray(contents)) {
-        const parts = contents
-          .map((c) => {
-            if (typeof c === "string") return c;
-            if (typeof c === "object" && c !== null && "value" in c)
-              return (c as { value: string }).value;
-            return null;
-          })
-          .filter(Boolean);
-        return parts.length > 0 ? parts.join("\n\n") : null;
-      }
-
-      return null;
-    }
-
-    const handleMouseMove = (e: Event) => {
-      if (!cmdDown) return;
-
-      const mouseEvent = e as MouseEvent;
-      const target = mouseEvent.composedPath?.()[0];
-
-      // Find the span element
-      let span: HTMLElement | null = null;
-      if (target instanceof HTMLElement && target.tagName === "SPAN") {
-        span = target;
-      }
-
-      // If hovering same span, do nothing
-      if (span === lastSpanRef.current) return;
-
-      // Cancel any pending request
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-      abortRef.current?.abort();
-
-      // If no span, clear state
-      if (!span || !span.textContent?.trim()) {
-        lastSpanRef.current = null;
-        setState({ hoverContent: null, hoverPosition: null });
-        return;
-      }
-
-      lastSpanRef.current = span;
-      const capturedSpan = span;
-      const clientX = mouseEvent.clientX;
-      const clientY = mouseEvent.clientY;
-
-      // Capture position info BEFORE the debounce — the browser may recycle
-      // the MouseEvent object by the time the timeout fires.
-      const { selectedFile, externalFilePath, repoPath } =
-        useReviewStore.getState();
-      const filePath = externalFilePath ?? selectedFile;
-      if (!filePath || !repoPath) return;
-
-      const posInfo = getPositionFromEvent(mouseEvent, filePath, capturedSpan);
-      if (!posInfo) return;
-
-      debounceRef.current = setTimeout(() => {
-        debounceRef.current = null;
-
-        const controller = new AbortController();
-        abortRef.current = controller;
-
-        getApiClient()
-          .lspHover(repoPath, posInfo.filePath, posInfo.line, posInfo.character)
-          .then((result) => {
-            if (controller.signal.aborted) return;
-
-            const hover = result as { contents?: unknown } | null;
-            const content = hover ? parseHoverContents(hover.contents) : null;
-
-            if (content) {
-              setState({
-                hoverContent: content,
-                hoverPosition: { x: clientX, y: clientY },
-              });
-            } else {
-              setState({ hoverContent: null, hoverPosition: null });
-            }
-          })
-          .catch((err) => {
-            if (controller.signal.aborted) return;
-            console.error("[useHoverInfo] lspHover failed:", err);
-          });
-      }, 300);
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Meta") {
-        cmdDown = true;
-      }
+      if (e.key === "Meta") cmdDownRef.current = true;
     };
-
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Meta") {
-        cmdDown = false;
+        cmdDownRef.current = false;
         dismissHover();
       }
     };
-
     const handleBlur = () => {
-      cmdDown = false;
+      cmdDownRef.current = false;
       dismissHover();
     };
-
-    const handleScroll = () => {
-      dismissHover();
-    };
-
-    // Attach mousemove to shadow root if available
-    const attachMoveListener = () => {
-      const shadow = getShadowRoot();
-      const moveTarget = shadow ?? node;
-      moveTarget.addEventListener("mousemove", handleMouseMove);
-      return moveTarget;
-    };
-
-    let moveTarget = attachMoveListener();
-
-    const observer = new MutationObserver(() => {
-      const shadow = getShadowRoot();
-      if (!shadow) return;
-      moveTarget.removeEventListener("mousemove", handleMouseMove);
-      moveTarget = shadow;
-      shadow.addEventListener("mousemove", handleMouseMove);
-      observer.disconnect();
-    });
-    observer.observe(node, { childList: true, subtree: true });
-
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
-    node.addEventListener("scroll", handleScroll, { passive: true });
-
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-      abortRef.current?.abort();
-      observer.disconnect();
-      moveTarget.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
-      node.removeEventListener("scroll", handleScroll);
     };
+  }, [dismissHover]);
+
+  useEffect(() => {
+    if (!scrollNode) return;
+    const handleScroll = () => dismissHover();
+    scrollNode.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollNode.removeEventListener("scroll", handleScroll);
   }, [scrollNode, dismissHover]);
+
+  const onTokenEnter = useCallback((props: TokenEventBase) => {
+    if (!cmdDownRef.current) return;
+    const { tokenText, lineNumber, lineCharStart, tokenElement } = props;
+    if (!tokenText.trim()) return;
+    if (tokenElement === underlinedRef.current) return;
+
+    if (underlinedRef.current) clearUnderline(underlinedRef.current);
+    applyUnderline(tokenElement);
+    underlinedRef.current = tokenElement;
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    abortRef.current?.abort();
+
+    const { selectedFile, externalFilePath, repoPath } =
+      useReviewStore.getState();
+    const filePath = externalFilePath ?? selectedFile;
+    if (!filePath || !repoPath) return;
+
+    const lspLine = lineNumber - 1;
+    if (lspLine < 0) return;
+    // Pointing one column into the token rather than at its leading edge —
+    // some servers return no hover info at a token boundary.
+    const lspChar = lineCharStart + 1;
+
+    const rect = tokenElement.getBoundingClientRect();
+    const clientX = rect.left;
+    const clientY = rect.bottom;
+
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      getApiClient()
+        .lspHover(repoPath, filePath, lspLine, lspChar)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          const hover = result as { contents?: unknown } | null;
+          const content = hover ? parseHoverContents(hover.contents) : null;
+          if (content) {
+            setState({
+              hoverContent: content,
+              hoverPosition: { x: clientX, y: clientY },
+            });
+          } else {
+            setState({ hoverContent: null, hoverPosition: null });
+          }
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return;
+          console.error("[useHoverInfo] lspHover failed:", err);
+        });
+    }, 300);
+  }, []);
+
+  const onTokenLeave = useCallback(
+    (props: TokenEventBase) => {
+      if (props.tokenElement === underlinedRef.current) {
+        clearUnderlined();
+      }
+      // Don't dismiss the tooltip here — pierre fires onTokenLeave between
+      // adjacent tokens too. Dismissal is driven by Meta release, blur,
+      // scroll, or pointerdown outside the tooltip (HoverTooltip handles
+      // the last).
+    },
+    [clearUnderlined],
+  );
 
   return {
     hoverContent: state.hoverContent,
     hoverPosition: state.hoverPosition,
     dismissHover,
+    onTokenEnter,
+    onTokenLeave,
   };
 }
