@@ -1,4 +1,5 @@
 import { PatchDiff, Virtualizer } from "@pierre/diffs/react";
+import type { FileDiffMetadata } from "@pierre/diffs";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
@@ -42,6 +43,43 @@ function splitPatch(patch: string): string[] {
     parts.push(current.join("\n"));
   }
   return parts;
+}
+
+function renderPatchHeader(fileDiff: FileDiffMetadata): ReactNode {
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of fileDiff.hunks) {
+    additions += hunk.additionLines;
+    deletions += hunk.deletionLines;
+  }
+  const { name, prevName } = fileDiff;
+  return (
+    <div className="sticky top-12 z-[9] flex items-center gap-2 border-b border-edge/30 bg-surface-panel/95 px-4 py-1.5 backdrop-blur-sm">
+      {prevName != null && prevName !== name && (
+        <>
+          <span className="truncate font-mono text-xs text-fg-muted">
+            {prevName}
+          </span>
+          <span aria-hidden className="text-fg-faint">
+            →
+          </span>
+        </>
+      )}
+      <span className="flex-1 truncate font-mono text-xs text-fg-muted">
+        {name}
+      </span>
+      {(additions > 0 || deletions > 0) && (
+        <span className="flex shrink-0 gap-2 text-xxs tabular-nums">
+          {deletions > 0 && (
+            <span className="text-status-deleted">−{deletions}</span>
+          )}
+          {additions > 0 && (
+            <span className="text-status-added">+{additions}</span>
+          )}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function statusIcon(status: string): ReactNode {
@@ -269,6 +307,7 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
             <div key={i} className="border-b border-edge/60 last:border-b-0">
               <PatchDiff
                 patch={patch}
+                renderCustomHeader={renderPatchHeader}
                 options={{
                   diffStyle: effectiveDiffStyle,
                   theme: {

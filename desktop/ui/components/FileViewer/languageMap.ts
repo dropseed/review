@@ -58,14 +58,15 @@ const shebangMap: Record<string, SupportedLanguages> = {
 };
 
 // Map known filenames to languages
+// Ruby filenames (Gemfile, Rakefile, Vagrantfile, Capfile, Guardfile,
+// Berksfile, Brewfile, Thorfile, Appraisals, Dangerfile, etc.) are
+// resolved by @pierre/diffs >= 1.1.22 — leave them out so we inherit
+// its richer mapping.
 const filenameMap: Record<string, SupportedLanguages> = {
   dockerfile: "dockerfile",
   makefile: "makefile",
   gnumakefile: "makefile",
   "cmakelists.txt": "cmake",
-  gemfile: "ruby",
-  rakefile: "ruby",
-  vagrantfile: "ruby",
   ".editorconfig": "ini",
   ".bashrc": "bash",
   ".zshrc": "bash",

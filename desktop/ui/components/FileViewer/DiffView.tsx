@@ -929,6 +929,7 @@ export function DiffView({
     themeType: "dark";
     diffIndicators: "none";
     disableBackground: boolean;
+    disableFileHeader: true;
     enableGutterUtility: boolean;
     enableLineSelection: boolean;
     onGutterUtilityClick: typeof handleGutterUtilityClick;
@@ -959,6 +960,9 @@ export function DiffView({
       themeType: "dark",
       diffIndicators: "none",
       disableBackground: false,
+      // FileViewerToolbar already shows the filename and review actions —
+      // suppress pierre's default per-file header to avoid duplication.
+      disableFileHeader: true,
       enableGutterUtility: true,
       enableLineSelection: true,
       onGutterUtilityClick: handleGutterUtilityClick,
