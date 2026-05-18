@@ -89,6 +89,18 @@ pub struct WorktreeInfo {
     pub is_review_managed: bool,
 }
 
+/// Tracked + untracked files and change statuses for a comparison, gathered
+/// from the directory its head branch is checked out in. Shared by
+/// `list_files` and `list_all_files`.
+struct WorkingTreeFiles {
+    file_status: HashMap<String, FileStatus>,
+    rename_map: HashMap<String, String>,
+    all_files: HashSet<String>,
+    /// The directory the listing was taken from — a linked worktree when the
+    /// comparison reviews one, otherwise the main repo.
+    root: PathBuf,
+}
+
 #[derive(Error, Debug)]
 pub enum LocalGitError {
     #[error("Git error: {0}")]
@@ -106,6 +118,7 @@ pub struct LocalGitSource {
     repo_path: PathBuf,
     merge_base_cache: std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
     resolve_ref_cache: std::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
+    working_tree_dir_cache: std::sync::Mutex<std::collections::HashMap<String, Option<PathBuf>>>,
 }
 
 impl LocalGitSource {
@@ -117,16 +130,72 @@ impl LocalGitSource {
             repo_path,
             merge_base_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             resolve_ref_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            working_tree_dir_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
-    /// Check if the comparison head is the current branch, meaning working
+    /// Check if the comparison head is checked out somewhere, meaning working
     /// tree changes (staged + unstaged + untracked) should be included in diffs.
     pub fn include_working_tree(&self, comparison: &Comparison) -> bool {
-        match self.get_current_branch() {
-            Ok(branch) => comparison.head == branch,
-            Err(_) => false, // detached HEAD or error — committed diff only
+        self.working_tree_dir(comparison).is_some()
+    }
+
+    /// Directory whose working tree should be diffed for this comparison.
+    ///
+    /// Returns `Some` when `comparison.head` is checked out somewhere — either
+    /// the main repo's current branch or a linked worktree — so diffs include
+    /// staged + unstaged + untracked changes from that directory. Returns `None`
+    /// for committed-only comparisons (the head branch isn't checked out).
+    ///
+    /// A linked worktree's uncommitted changes live in the worktree directory,
+    /// not the main repo, so git commands must run there to see them.
+    ///
+    /// Result is cached per head ref — it's consulted several times while
+    /// servicing one request and each miss shells out to git.
+    pub fn working_tree_dir(&self, comparison: &Comparison) -> Option<PathBuf> {
+        if let Some(cached) = self
+            .working_tree_dir_cache
+            .lock()
+            .unwrap()
+            .get(&comparison.head)
+        {
+            return cached.clone();
         }
+        let dir = self.compute_working_tree_dir(comparison);
+        self.working_tree_dir_cache
+            .lock()
+            .unwrap()
+            .insert(comparison.head.clone(), dir.clone());
+        dir
+    }
+
+    fn compute_working_tree_dir(&self, comparison: &Comparison) -> Option<PathBuf> {
+        // Main repo working tree.
+        if let Ok(branch) = self.get_current_branch() {
+            if comparison.head == branch {
+                return Some(self.repo_path.clone());
+            }
+        }
+        // A linked worktree that has `comparison.head` checked out.
+        let worktrees = self.list_worktrees().ok()?;
+        worktrees.into_iter().find_map(|wt| {
+            if !wt.is_main && wt.branch.as_deref() == Some(comparison.head.as_str()) {
+                Some(PathBuf::from(wt.path))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Resolve `HEAD` within `dir` to a commit SHA, falling back to the empty
+    /// tree when the branch is unborn. Unlike [`Self::resolve_ref`], this honours
+    /// the working tree at `dir`, which may be a linked worktree with its own HEAD.
+    fn resolve_head_in(&self, dir: &std::path::Path) -> String {
+        self.run_git_in(dir, &["rev-parse", "HEAD"])
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| Self::EMPTY_TREE.to_owned())
     }
 
     /// Get the current branch name
@@ -276,18 +345,16 @@ impl LocalGitSource {
         &self,
         comparison: &Comparison,
     ) -> Result<DiffShortStat, LocalGitError> {
-        // Compute once — each `include_working_tree` call shells out to
-        // `git rev-parse --abbrev-ref HEAD`, and we'd otherwise call it twice.
-        let include_wt = self.include_working_tree(comparison);
+        let wt_dir = self.working_tree_dir(comparison);
 
-        let output = if include_wt {
+        let output = if let Some(dir) = &wt_dir {
             // Net diff: merge_base vs working tree (single diff captures everything)
-            let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
+            let resolved_head = self.resolve_head_in(dir);
             let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
                 Ok(b) => b,
                 Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
             };
-            self.run_git(&["diff", "--shortstat", &merge_base])?
+            self.run_git_in(dir, &["diff", "--shortstat", &merge_base])?
         } else {
             // Committed diff between base and head refs
             let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
@@ -302,8 +369,8 @@ impl LocalGitSource {
         let (mut file_count, additions, deletions) = parse_shortstat(&output);
 
         // Untracked files aren't in git diff output but are part of the review
-        if include_wt {
-            if let Ok(untracked) = self.get_untracked_files() {
+        if let Some(dir) = &wt_dir {
+            if let Ok(untracked) = self.get_untracked_files(dir) {
                 file_count += untracked.len() as u32;
             }
         }
@@ -1277,14 +1344,14 @@ impl LocalGitSource {
         let mut changes = HashMap::new();
         let mut rename_map = HashMap::new();
 
-        if self.include_working_tree(comparison) {
+        if let Some(dir) = self.working_tree_dir(comparison) {
             // Net change status: merge_base vs working tree (single diff captures everything)
-            let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
+            let resolved_head = self.resolve_head_in(&dir);
             let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
                 Ok(b) => b,
                 Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
             };
-            let output = self.run_git(&["diff", "--name-status", &merge_base])?;
+            let output = self.run_git_in(&dir, &["diff", "--name-status", &merge_base])?;
             self.parse_name_status(&output, &mut changes, &mut rename_map);
         } else {
             // Committed diff between base and head refs
@@ -1332,9 +1399,9 @@ impl LocalGitSource {
         }
     }
 
-    /// Get untracked files (not in git index, not ignored)
-    fn get_untracked_files(&self) -> Result<Vec<String>, LocalGitError> {
-        let output = self.run_git(&["ls-files", "--others", "--exclude-standard"])?;
+    /// Get untracked files (not in git index, not ignored) within `dir`.
+    fn get_untracked_files(&self, dir: &std::path::Path) -> Result<Vec<String>, LocalGitError> {
+        let output = self.run_git_in(dir, &["ls-files", "--others", "--exclude-standard"])?;
         Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
     }
 
@@ -1344,43 +1411,65 @@ impl LocalGitSource {
         Ok(!output.trim().is_empty())
     }
 
-    /// Get all files including gitignored (for browsing, not review)
-    /// Uses git ls-files with different flags to get everything
-    pub fn list_all_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, LocalGitError> {
-        // Get changed files with their status
+    /// Gather change statuses plus the tracked and untracked files of the
+    /// directory the comparison's head branch is checked out in.
+    fn working_tree_files(
+        &self,
+        comparison: &Comparison,
+    ) -> Result<WorkingTreeFiles, LocalGitError> {
         let (mut file_status, rename_map) = self.get_changed_files(comparison)?;
 
-        // Add untracked files
-        if self.include_working_tree(comparison) {
-            if let Ok(untracked) = self.get_untracked_files() {
+        let wt_dir = self.working_tree_dir(comparison);
+        let root = wt_dir.clone().unwrap_or_else(|| self.repo_path.clone());
+
+        if wt_dir.is_some() {
+            if let Ok(untracked) = self.get_untracked_files(&root) {
                 for path in untracked {
                     file_status.entry(path).or_insert(FileStatus::Untracked);
                 }
             }
         }
 
-        // Get tracked files
-        let tracked = self.run_git(&["ls-files"])?;
-        let mut all_files: HashSet<String> = HashSet::new();
-        for line in tracked.lines() {
-            all_files.insert(line.to_owned());
-        }
-
-        // Ensure all changed/untracked files are included in the tree
+        let mut all_files: HashSet<String> = self
+            .run_git_in(&root, &["ls-files"])?
+            .lines()
+            .map(std::borrow::ToOwned::to_owned)
+            .collect();
         for path in file_status.keys() {
             all_files.insert(path.clone());
         }
 
+        Ok(WorkingTreeFiles {
+            file_status,
+            rename_map,
+            all_files,
+            root,
+        })
+    }
+
+    /// Get all files including gitignored (for browsing, not review)
+    /// Uses git ls-files with different flags to get everything
+    pub fn list_all_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, LocalGitError> {
+        let WorkingTreeFiles {
+            mut file_status,
+            rename_map,
+            mut all_files,
+            root,
+        } = self.working_tree_files(comparison)?;
+
         // Get gitignored entries using --directory to collapse entire ignored
         // directories into a single entry (avoids listing 100K+ files in node_modules, etc.)
         let mut gitignored_dirs: HashSet<String> = HashSet::new();
-        if let Ok(ignored) = self.run_git(&[
-            "ls-files",
-            "--others",
-            "--ignored",
-            "--exclude-standard",
-            "--directory",
-        ]) {
+        if let Ok(ignored) = self.run_git_in(
+            &root,
+            &[
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+            ],
+        ) {
             for line in ignored.lines() {
                 if let Some(dir_path) = line.strip_suffix('/') {
                     // Directory entry — add as a gitignored directory
@@ -1408,7 +1497,7 @@ impl LocalGitSource {
             all_files,
             &file_status,
             &gitignored_dirs,
-            Some(&self.repo_path),
+            Some(&root),
             &rename_map,
         ))
     }
@@ -2044,32 +2133,18 @@ impl DiffSource for LocalGitSource {
     }
 
     fn list_files(&self, comparison: &Comparison) -> Result<Vec<FileEntry>, Self::Error> {
-        // Get changed files with their status
-        let (mut file_status, rename_map) = self.get_changed_files(comparison)?;
-
-        // Add untracked files (these are important for review)
-        if self.include_working_tree(comparison) {
-            if let Ok(untracked) = self.get_untracked_files() {
-                for path in untracked {
-                    file_status.entry(path).or_insert(FileStatus::Untracked);
-                }
-            }
-        }
-
-        // Get all tracked files for the tree structure
-        let tracked_files = self.get_tracked_files()?;
-
-        // Build file set: tracked files + any files with status changes
-        let mut all_files: HashSet<String> = tracked_files.into_iter().collect();
-        for path in file_status.keys() {
-            all_files.insert(path.clone());
-        }
+        let WorkingTreeFiles {
+            file_status,
+            rename_map,
+            all_files,
+            root,
+        } = self.working_tree_files(comparison)?;
 
         Ok(build_file_tree(
             all_files,
             &file_status,
             &HashSet::new(),
-            Some(&self.repo_path),
+            Some(&root),
             &rename_map,
         ))
     }
@@ -2081,10 +2156,10 @@ impl DiffSource for LocalGitSource {
     ) -> Result<String, Self::Error> {
         let mut all_diffs = String::new();
 
-        if self.include_working_tree(comparison) {
+        if let Some(dir) = self.working_tree_dir(comparison) {
             // Net diff: merge_base vs working tree (single diff avoids phantom hunks
             // when working tree changes revert committed changes)
-            let resolved_head = self.resolve_ref_or_empty_tree("HEAD");
+            let resolved_head = self.resolve_head_in(&dir);
             let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
                 Ok(b) => b,
                 Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
@@ -2101,7 +2176,7 @@ impl DiffSource for LocalGitSource {
                 args.push("--");
                 args.push(path);
             }
-            if let Ok(output) = self.run_git(&args) {
+            if let Ok(output) = self.run_git_in(&dir, &args) {
                 all_diffs.push_str(&output);
             }
         } else {
@@ -2426,6 +2501,87 @@ mod tests {
         assert!(
             !diff.contains("deleted file"),
             "remote diff should not look like deletion: {diff}"
+        );
+    }
+
+    /// Reviewing a branch checked out in a linked worktree must surface that
+    /// worktree's uncommitted changes, even when the branch has no commits
+    /// beyond the base (the diff lives entirely in the worktree's working tree).
+    #[test]
+    fn test_diff_includes_linked_worktree_changes() {
+        use crate::review::central::tests::ENV_LOCK;
+        use crate::sources::traits::Comparison;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        // Commit a tracked file so the worktree branch has something to modify.
+        std::fs::write(repo_path.join("tracked.txt"), "original\n").unwrap();
+        run_git_cmd(repo_path, &["add", "tracked.txt"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "add tracked"]).unwrap();
+        let base_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // Add a linked worktree on a new branch with the same tip as base.
+        let wt_path = repo_dir.path().join("wt");
+        let wt_path_str = wt_path.to_string_lossy().to_string();
+        run_git_cmd(
+            repo_path,
+            &["worktree", "add", &wt_path_str, "-b", "wt-branch"],
+        )
+        .unwrap();
+
+        // Uncommitted changes live only in the worktree's working tree:
+        // a modified tracked file plus a new untracked file.
+        std::fs::write(wt_path.join("tracked.txt"), "modified in worktree\n").unwrap();
+        std::fs::write(wt_path.join("worktree_only.txt"), "from worktree\n").unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let comparison = Comparison::new(&base_sha, "wt-branch");
+
+        // The head branch is checked out in the worktree, so diffs target it.
+        // `git worktree list` reports canonicalized paths.
+        let canonical_wt = wt_path.canonicalize().unwrap();
+        assert_eq!(
+            source
+                .working_tree_dir(&comparison)
+                .map(|p| p.canonicalize().unwrap()),
+            Some(canonical_wt),
+            "head branch should resolve to its linked worktree"
+        );
+        assert!(source.include_working_tree(&comparison));
+
+        // The modified tracked file shows in the diff; untracked files never
+        // appear in `git diff` output (they're surfaced via `list_files`).
+        let diff = source.get_diff(&comparison, None).unwrap();
+        assert!(
+            diff.contains("tracked.txt") && diff.contains("modified in worktree"),
+            "expected worktree's uncommitted change in diff: {diff}"
+        );
+
+        // Both the modified and untracked files should appear in the file list.
+        let files = source.list_files(&comparison).unwrap();
+        fn flatten(entries: &[FileEntry], out: &mut Vec<String>) {
+            for e in entries {
+                if let Some(children) = &e.children {
+                    flatten(children, out);
+                } else {
+                    out.push(e.path.clone());
+                }
+            }
+        }
+        let mut paths = Vec::new();
+        flatten(&files, &mut paths);
+        assert!(
+            paths.iter().any(|p| p == "worktree_only.txt"),
+            "expected untracked worktree file in list_files: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p == "tracked.txt"),
+            "expected modified file in list_files: {paths:?}"
         );
     }
 }

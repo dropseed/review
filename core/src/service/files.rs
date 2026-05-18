@@ -135,7 +135,18 @@ pub fn get_file_content(
         return get_file_content_for_pr(repo_path, file_path, pr);
     }
 
-    let full_path = repo_path.join(file_path);
+    // Validate the logical path doesn't escape the repo.
+    if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
+        bail!("Path traversal detected: file path escapes repository");
+    }
+
+    let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
+
+    // Working-tree files live in the linked worktree when the head branch is checked out there.
+    let content_root = source
+        .working_tree_dir(comparison)
+        .unwrap_or_else(|| repo_path.to_path_buf());
+    let full_path = content_root.join(file_path);
     let file_exists = full_path.exists();
 
     debug!(
@@ -143,13 +154,6 @@ pub fn get_file_content(
         full_path.display(),
         file_exists
     );
-
-    // Validate the logical path doesn't escape the repo.
-    if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
-        bail!("Path traversal detected: file path escapes repository");
-    }
-
-    let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
     if !file_exists {
         debug!("[get_file_content] handling file not on disk");
@@ -511,6 +515,11 @@ pub fn get_all_hunks(
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
+    // Untracked files live in the linked worktree when the head branch is checked out there.
+    let content_root = source
+        .working_tree_dir(comparison)
+        .unwrap_or_else(|| repo_path.to_path_buf());
+
     // Single git diff call for all files at once
     let diff_start = Instant::now();
     let full_diff = source
@@ -551,7 +560,7 @@ pub fn get_all_hunks(
         if !files_with_hunks.contains(fp.as_str()) {
             let is_tracked = source.is_file_tracked(fp).unwrap_or(false);
             if !is_tracked {
-                let full_path = repo_path.join(fp);
+                let full_path = content_root.join(fp);
                 let (content_hash, text_content) = std::fs::read(&full_path)
                     .map(|bytes| {
                         let hash = compute_content_hash(&bytes);
