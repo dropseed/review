@@ -80,6 +80,9 @@ pub enum Commands {
     /// Delete a saved review
     Delete(review_state::DeleteArgs),
 
+    /// Change the base ref of a saved review
+    ChangeBase(review_state::ChangeBaseArgs),
+
     /// Inspect or edit the trust list
     Trust(review_state::TrustArgs),
 
@@ -191,6 +194,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Status(args)) => review_state::run_status(args),
         Some(Commands::List(args)) => review_state::run_list(args),
         Some(Commands::Delete(args)) => review_state::run_delete(args),
+        Some(Commands::ChangeBase(args)) => review_state::run_change_base(args),
         Some(Commands::Trust(args)) => review_state::run_trust(args),
         Some(Commands::Note(args)) => review_state::run_note(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),

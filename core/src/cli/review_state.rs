@@ -91,6 +91,17 @@ pub struct DeleteArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ChangeBaseArgs {
+    #[command(flatten)]
+    pub target: ReviewTarget,
+    /// New base ref (the branch the review should compare against)
+    pub new_base: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct TrustArgs {
     #[command(flatten)]
     pub target: ReviewTarget,
@@ -199,6 +210,13 @@ struct MarkResultJson {
 struct DeleteResultJson {
     comparison: String,
     deleted: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeBaseResultJson {
+    old_comparison: String,
+    new_comparison: String,
 }
 
 /// `review hunks` — list a comparison's hunks with their review status.
@@ -536,6 +554,33 @@ pub fn run_delete(args: DeleteArgs) -> Result<(), String> {
         });
     } else {
         println!("Deleted review {}", comparison.key);
+    }
+    Ok(())
+}
+
+/// `review change-base` — switch the comparison's base ref to another branch.
+/// The saved review is renamed under the new key; notes, trust, and per-hunk
+/// status carry over (orphans get pruned on the next mutation).
+pub fn run_change_base(args: ChangeBaseArgs) -> Result<(), String> {
+    let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
+    let old_comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
+    if !storage::review_exists(&repo, &old_comparison).unwrap_or(false) {
+        return Err(format!("No review exists for {}.", old_comparison.key));
+    }
+    let new_comparison = storage::change_review_base(&repo, &old_comparison, &args.new_base)
+        .map_err(|e| e.to_string())?;
+    if args.json {
+        print_json(&ChangeBaseResultJson {
+            old_comparison: old_comparison.key.clone(),
+            new_comparison: new_comparison.key.clone(),
+        });
+    } else if new_comparison.key == old_comparison.key {
+        println!("Base is already {}", args.new_base);
+    } else {
+        println!(
+            "Changed base: {} → {}",
+            old_comparison.key, new_comparison.key
+        );
     }
     Ok(())
 }

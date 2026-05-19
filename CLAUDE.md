@@ -120,7 +120,7 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 
 - `review hunks [-s base..head] [--status|--file|--label|--hunk] [--json] [--diff]`
 - `review approve|reject|save|unmark <hunk-id>... [--reason TEXT]`
-- `review status` · `review list [--all]` · `review delete`
+- `review status` · `review list [--all]` · `review delete` · `review change-base <new-base>`
 - `review trust list|add|remove [<pattern>]`
 - `review note show|set|append [<text>]`
 
