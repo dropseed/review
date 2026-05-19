@@ -10,6 +10,9 @@ export interface WorktreeSlice {
   setWorktreeStale: (stale: boolean) => void;
   setReadOnlyPreview: (readOnly: boolean) => void;
   checkoutWorktree: (repoPath: string, comparison: Comparison) => Promise<void>;
+  /** On-disk path for working-tree git ops — the linked worktree if one is
+   *  active, else the main repo. */
+  getWorkingTreePath: () => string | null;
 }
 
 export const createWorktreeSlice: SliceCreator<WorktreeSlice> = (set, get) => ({
@@ -20,6 +23,7 @@ export const createWorktreeSlice: SliceCreator<WorktreeSlice> = (set, get) => ({
   setWorktreePath: (path) => set({ worktreePath: path }),
   setWorktreeStale: (stale) => set({ worktreeStale: stale }),
   setReadOnlyPreview: (readOnly) => set({ readOnlyPreview: readOnly }),
+  getWorkingTreePath: () => get().worktreePath ?? get().repoPath,
 
   checkoutWorktree: async (repoPath, comparison) => {
     const apiClient = getApiClient();

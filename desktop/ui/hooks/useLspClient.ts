@@ -9,16 +9,14 @@ import { useReviewStore } from "../stores";
  * Stops old servers when the root changes to avoid orphaned processes.
  */
 export function useLspClient() {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const worktreePath = useReviewStore((s) => s.worktreePath);
+  const lspRoot = useReviewStore((s) => s.worktreePath ?? s.repoPath);
   const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
   const prevRootRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!repoPath || !isTauriEnvironment()) return;
+    if (!lspRoot || !isTauriEnvironment()) return;
 
     const api = getApiClient();
-    const lspRoot = worktreePath ?? repoPath;
     let cancelled = false;
 
     // Stop previous servers if root changed, then start new ones
@@ -52,5 +50,5 @@ export function useLspClient() {
       // Stop servers on unmount
       api.stopAllLspServers(lspRoot).catch(() => {});
     };
-  }, [repoPath, worktreePath, lspDisabledLanguages]);
+  }, [lspRoot, lspDisabledLanguages]);
 }

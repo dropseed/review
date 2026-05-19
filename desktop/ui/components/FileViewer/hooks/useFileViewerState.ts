@@ -10,6 +10,7 @@ export function useFileViewerState(filePath: string | null) {
   // Git / comparison context
   const comparison = useReviewStore((s) => s.comparison);
   const repoPath = useReviewStore((s) => s.repoPath);
+  const workingTreePath = useReviewStore((s) => s.worktreePath ?? s.repoPath);
   const fileVersion = useReviewStore((s) =>
     filePath ? (s.fileVersions[filePath] ?? 0) : 0,
   );
@@ -35,6 +36,7 @@ export function useFileViewerState(filePath: string | null) {
   return {
     comparison,
     repoPath,
+    workingTreePath,
     codeTheme,
     codeFontSize,
     codeFontFamily,

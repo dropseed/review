@@ -53,11 +53,11 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     commitMessageGenerating: false,
 
     loadGitStatus: async () => {
-      const { repoPath } = get();
-      if (!repoPath) return;
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
 
       try {
-        const status = await client.getGitStatus(repoPath);
+        const status = await client.getGitStatus(workingPath);
         // Skip the set() when nothing changed — replacing references
         // re-renders every component selecting `gitStatus` or
         // `stagedFilePaths`, even when the data is identical. Cheap O(1)
@@ -100,37 +100,37 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     },
 
     stageFile: async (path: string) => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-      await client.stageFile(repoPath, path);
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
+      await client.stageFile(workingPath, path);
       await get().loadGitStatus();
     },
 
     unstageFile: async (path: string) => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-      await client.unstageFile(repoPath, path);
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
+      await client.unstageFile(workingPath, path);
       await get().loadGitStatus();
     },
 
     unstageAll: async () => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-      await client.unstageAll(repoPath);
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
+      await client.unstageAll(workingPath);
       await get().loadGitStatus();
     },
 
     stageHunks: async (filePath: string, contentHashes: string[]) => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-      await client.stageHunks(repoPath, filePath, contentHashes);
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
+      await client.stageHunks(workingPath, filePath, contentHashes);
       await get().loadGitStatus();
     },
 
     unstageHunks: async (filePath: string, contentHashes: string[]) => {
-      const { repoPath } = get();
-      if (!repoPath) return;
-      await client.unstageHunks(repoPath, filePath, contentHashes);
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
+      await client.unstageHunks(workingPath, filePath, contentHashes);
       await get().loadGitStatus();
     },
 
@@ -139,8 +139,9 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     },
 
     commitStaged: async () => {
-      const { repoPath, commitMessage } = get();
-      if (!repoPath || !commitMessage.trim()) return;
+      const workingPath = get().getWorkingTreePath();
+      const { commitMessage } = get();
+      if (!workingPath || !commitMessage.trim()) return;
 
       const requestId = `commit-${++commitNonce}`;
 
@@ -162,7 +163,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
       try {
         const result = await client.gitCommit(
-          repoPath,
+          workingPath,
           commitMessage,
           requestId,
         );
@@ -195,8 +196,8 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     },
 
     generateCommitMessage: async () => {
-      const { repoPath } = get();
-      if (!repoPath) return;
+      const workingPath = get().getWorkingTreePath();
+      if (!workingPath) return;
 
       const requestId = `commit-msg-${++commitNonce}`;
 
@@ -212,7 +213,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
       try {
         const finalMessage = await client.generateCommitMessage(
-          repoPath,
+          workingPath,
           requestId,
         );
         set({ commitMessage: finalMessage });

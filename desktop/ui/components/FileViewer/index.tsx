@@ -77,6 +77,7 @@ export function FileViewer({
   const {
     comparison,
     repoPath,
+    workingTreePath,
     codeTheme,
     codeFontSize,
     codeFontFamily,
@@ -388,10 +389,10 @@ export function FileViewer({
       // Standalone file mode: read raw file from disk (no git needed)
       const absolutePath = repoPath + "/" + filePath;
       contentPromise = api.readRawFile(absolutePath);
-    } else if (isWorkingTreeMode && workingTreeDiffMode) {
+    } else if (isWorkingTreeMode && workingTreeDiffMode && workingTreePath) {
       // When viewing a Git panel file with a specific mode, use the dedicated API
       contentPromise = api.getWorkingTreeFileContent(
-        repoPath,
+        workingTreePath,
         filePath,
         workingTreeDiffMode === "staged",
       );
@@ -451,6 +452,7 @@ export function FileViewer({
     };
   }, [
     repoPath,
+    workingTreePath,
     filePath,
     comparison,
     fileHunkKey,
