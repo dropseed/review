@@ -112,6 +112,27 @@ Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined 
 - **Trust List**: Patterns the user has chosen to auto-approve
 - **Comparison**: The base..compare refs being reviewed
 
+## The `review` CLI
+
+The `review` binary (built with `--features cli`, source in `core/src/cli/`) is the terminal- and Claude-driven interface to a review. Two command families share `filepath:hash` hunk IDs.
+
+**Review state** — reads/writes `~/.review/`; the desktop app's file watcher picks up CLI changes live, no reopen needed.
+
+- `review hunks [-s base..head] [--status|--file|--label|--hunk] [--json] [--diff]`
+- `review approve|reject|save|unmark <hunk-id>... [--reason TEXT]`
+- `review status` · `review list [--all]` · `review delete`
+- `review trust list|add|remove [<pattern>]`
+- `review note show|set|append [<text>]`
+
+**Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
+
+- `review changes [--staged|--unstaged|--file GLOB] [--json] [--diff]`
+- `review stage|unstage <hunk-id|file>...`
+
+**Skill**: `review skill install` writes the bundled `review-cli` skill into `~/.claude/skills/`. The skill's canonical source is `core/resources/skills/review-cli/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it.
+
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, `sync_classification`); `staging.rs`; `review_state.rs`; `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+
 ## Debugging / Traces
 
 In dev mode (`scripts/dev`), Rust backend logs are written to `~/.review/app.log` via `tauri-plugin-log`. Frontend `console.*` calls are also written to this same file. This is disabled in release builds.

@@ -1,9 +1,15 @@
+use crate::review::state::HunkStatus;
 use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+mod common;
+mod review_state;
+mod skill;
+mod staging;
 
 #[derive(Debug, Parser)]
 #[command(name = "review")]
@@ -40,6 +46,48 @@ pub enum Commands {
         #[arg(long)]
         new: Option<String>,
     },
+
+    /// List uncommitted working-tree changes as individual hunks
+    Changes(staging::ChangesArgs),
+
+    /// Stage hunks (or whole files) to the git index
+    Stage(staging::StageArgs),
+
+    /// Unstage hunks (or whole files) from the git index
+    Unstage(staging::StageArgs),
+
+    /// List a comparison's hunks with their review status
+    Hunks(review_state::HunksArgs),
+
+    /// Mark hunks as approved
+    Approve(review_state::MarkArgs),
+
+    /// Mark hunks as rejected
+    Reject(review_state::MarkArgs),
+
+    /// Mark hunks as saved for later
+    Save(review_state::MarkArgs),
+
+    /// Clear the review status of hunks
+    Unmark(review_state::MarkArgs),
+
+    /// Show review progress for a comparison
+    Status(review_state::StatusArgs),
+
+    /// List saved reviews
+    List(review_state::ListArgs),
+
+    /// Delete a saved review
+    Delete(review_state::DeleteArgs),
+
+    /// Inspect or edit the trust list
+    Trust(review_state::TrustArgs),
+
+    /// Read or edit review notes
+    Note(review_state::NoteArgs),
+
+    /// Install the review-cli skill for Claude Code
+    Skill(skill::SkillArgs),
 }
 
 /// Walk up from `start` to find a directory containing `.git/`.
@@ -57,7 +105,7 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
 }
 
 /// Get the repository path from an explicit `--repo` flag, or walk up from cwd.
-fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
+pub(crate) fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
     if let Some(ref repo) = repo {
         return Ok(repo.clone());
     }
@@ -132,6 +180,20 @@ pub fn run(cli: Cli) -> Result<(), String> {
             old,
             new,
         }) => run_start(repo, spec, old, new, has_home_override),
+        Some(Commands::Changes(args)) => staging::run_changes(args),
+        Some(Commands::Stage(args)) => staging::run_stage(args, false),
+        Some(Commands::Unstage(args)) => staging::run_stage(args, true),
+        Some(Commands::Hunks(args)) => review_state::run_hunks(args),
+        Some(Commands::Approve(args)) => review_state::run_mark(args, HunkStatus::Approved),
+        Some(Commands::Reject(args)) => review_state::run_mark(args, HunkStatus::Rejected),
+        Some(Commands::Save(args)) => review_state::run_mark(args, HunkStatus::SavedForLater),
+        Some(Commands::Unmark(args)) => review_state::run_unmark(args),
+        Some(Commands::Status(args)) => review_state::run_status(args),
+        Some(Commands::List(args)) => review_state::run_list(args),
+        Some(Commands::Delete(args)) => review_state::run_delete(args),
+        Some(Commands::Trust(args)) => review_state::run_trust(args),
+        Some(Commands::Note(args)) => review_state::run_note(args),
+        Some(Commands::Skill(args)) => skill::run_skill(args),
         None => run_open(cli.path, has_home_override),
     }
 }
@@ -177,7 +239,7 @@ fn run_start(
 
 /// Resolve a comparison from optional `--old`/`--new` overrides, falling back
 /// to the repo's default and current branches for whichever side is `None`.
-fn resolve_comparison(
+pub(crate) fn resolve_comparison(
     repo_path: &Path,
     old: Option<String>,
     new: Option<String>,
@@ -198,7 +260,7 @@ fn resolve_comparison(
 
 /// Parse a comparison spec (e.g. "main..feature") into a `Comparison`.
 /// A single ref is compared against the default branch.
-fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comparison, String> {
+pub(crate) fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comparison, String> {
     if let Some((base, head)) = spec.split_once("..") {
         Ok(Comparison::new(base.to_owned(), head.to_owned()))
     } else {

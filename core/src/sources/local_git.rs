@@ -1692,13 +1692,23 @@ impl LocalGitSource {
         content_hashes: &[String],
     ) -> Result<(), LocalGitError> {
         let raw_diff = self.get_raw_file_diff(file_path, false)?;
+        self.stage_hunks_with_diff(file_path, &raw_diff, content_hashes)
+    }
+
+    /// Stage hunks using an already-fetched unstaged diff, so a caller that
+    /// has the diff in hand doesn't pay for a second `git diff`.
+    pub fn stage_hunks_with_diff(
+        &self,
+        file_path: &str,
+        raw_diff: &str,
+        content_hashes: &[String],
+    ) -> Result<(), LocalGitError> {
         if raw_diff.is_empty() {
             return Err(LocalGitError::Git(
                 "No unstaged changes for this file".to_owned(),
             ));
         }
-
-        let patch = build_selective_patch(&raw_diff, file_path, content_hashes)?;
+        let patch = build_selective_patch(raw_diff, file_path, content_hashes)?;
         self.run_git_with_stdin(&["apply", "--cached", "--allow-empty"], patch.as_bytes())?;
         Ok(())
     }
@@ -1713,13 +1723,23 @@ impl LocalGitSource {
         content_hashes: &[String],
     ) -> Result<(), LocalGitError> {
         let raw_diff = self.get_raw_file_diff(file_path, true)?;
+        self.unstage_hunks_with_diff(file_path, &raw_diff, content_hashes)
+    }
+
+    /// Unstage hunks using an already-fetched staged diff, so a caller that
+    /// has the diff in hand doesn't pay for a second `git diff`.
+    pub fn unstage_hunks_with_diff(
+        &self,
+        file_path: &str,
+        raw_diff: &str,
+        content_hashes: &[String],
+    ) -> Result<(), LocalGitError> {
         if raw_diff.is_empty() {
             return Err(LocalGitError::Git(
                 "No staged changes for this file".to_owned(),
             ));
         }
-
-        let patch = build_selective_patch(&raw_diff, file_path, content_hashes)?;
+        let patch = build_selective_patch(raw_diff, file_path, content_hashes)?;
         self.run_git_with_stdin(
             &["apply", "--cached", "--reverse", "--allow-empty"],
             patch.as_bytes(),
@@ -1747,6 +1767,17 @@ impl LocalGitSource {
     pub fn get_head_short_hash(&self) -> Result<String, LocalGitError> {
         let output = self.run_git(&["rev-parse", "--short", "HEAD"])?;
         Ok(output.trim().to_owned())
+    }
+
+    /// Get the full unstaged diff (`git diff` — worktree vs index).
+    pub fn get_unstaged_diff(&self) -> Result<String, LocalGitError> {
+        self.run_git(&[
+            "diff",
+            "--histogram",
+            "--no-renames",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+        ])
     }
 
     /// Get the full staged diff (git diff --cached).

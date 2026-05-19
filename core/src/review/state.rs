@@ -129,7 +129,7 @@ pub enum ClassifiedVia {
     Ai,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HunkState {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub label: Vec<String>,
@@ -179,6 +179,15 @@ impl ReviewState {
         self.updated_at = now_iso8601();
     }
 
+    /// Whether any of `labels` matches a pattern in the trust list.
+    pub fn labels_trusted(&self, labels: &[String]) -> bool {
+        labels.iter().any(|label| {
+            self.trust_list
+                .iter()
+                .any(|pattern| matches_pattern(label, pattern))
+        })
+    }
+
     /// Create a summary of this review state
     pub fn to_summary(&self) -> ReviewSummary {
         let total_hunks = self.total_diff_hunks;
@@ -195,12 +204,9 @@ impl ReviewState {
                 Some(HunkStatus::Rejected) => rejected_hunks += 1,
                 Some(HunkStatus::SavedForLater) => saved_for_later_hunks += 1,
                 None => {
-                    // Count hunks with no explicit status but labels matching trust list
-                    if h.label.iter().any(|label| {
-                        self.trust_list
-                            .iter()
-                            .any(|pattern| matches_pattern(label, pattern))
-                    }) {
+                    // Hunks with no explicit status count as reviewed when a
+                    // label matches the trust list.
+                    if self.labels_trusted(&h.label) {
                         trusted_hunks += 1;
                     }
                 }
@@ -209,13 +215,8 @@ impl ReviewState {
 
         let reviewed_hunks = trusted_hunks + approved_hunks + rejected_hunks;
 
-        let state = if rejected_hunks > 0 {
-            Some("changes_requested".to_string())
-        } else if reviewed_hunks == total_hunks && total_hunks > 0 {
-            Some("approved".to_string())
-        } else {
-            None
-        };
+        let state = overall_review_state(rejected_hunks, reviewed_hunks, total_hunks)
+            .map(ToOwned::to_owned);
 
         ReviewSummary {
             comparison: self.comparison.clone(),
@@ -230,6 +231,21 @@ impl ReviewState {
             github_pr: self.github_pr.clone(),
             worktree_path: self.worktree_path.clone(),
         }
+    }
+}
+
+/// Derive the overall review state from hunk tallies. `None` means in progress.
+pub fn overall_review_state(
+    rejected: usize,
+    reviewed: usize,
+    total: usize,
+) -> Option<&'static str> {
+    if rejected > 0 {
+        Some("changes_requested")
+    } else if total > 0 && reviewed == total {
+        Some("approved")
+    } else {
+        None
     }
 }
 
