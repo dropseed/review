@@ -1,11 +1,11 @@
-//! `review skill` — install the bundled `review-cli` skill for Claude Code.
+//! `review skill` — install the bundled `review-guide` skill for Claude Code.
 
 use clap::{Args, Subcommand};
 
-/// The `review-cli` skill, embedded into the binary at build time so the
+/// The `review-guide` skill, embedded into the binary at build time so the
 /// shipped CLI can install it without the source repo present.
-const SKILL_MD: &str = include_str!("../../resources/skills/review-cli/SKILL.md");
-const SKILL_NAME: &str = "review-cli";
+const SKILL_MD: &str = include_str!("../../resources/skills/review-guide/SKILL.md");
+const SKILL_NAME: &str = "review-guide";
 
 #[derive(Debug, Args)]
 pub struct SkillArgs {
@@ -15,7 +15,7 @@ pub struct SkillArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum SkillAction {
-    /// Install the review-cli skill into ~/.claude/skills/
+    /// Install the review-guide skill into ~/.claude/skills/
     Install,
 }
 
@@ -25,7 +25,7 @@ pub fn run_skill(args: SkillArgs) -> Result<(), String> {
     }
 }
 
-/// Write the bundled skill to `~/.claude/skills/review-cli/SKILL.md`.
+/// Write the bundled skill to `~/.claude/skills/review-guide/SKILL.md`.
 fn install_skill() -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not determine the home directory.")?;
     let skill_dir = home.join(".claude").join("skills").join(SKILL_NAME);

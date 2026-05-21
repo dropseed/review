@@ -93,7 +93,7 @@ pub enum Commands {
     /// Print a `review://` deep link for a file or hunk
     Url(url::UrlArgs),
 
-    /// Install the review-cli skill for Claude Code
+    /// Install the review-guide skill for Claude Code
     Skill(skill::SkillArgs),
 }
 
