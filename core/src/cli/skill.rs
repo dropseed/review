@@ -1,4 +1,7 @@
-//! `review skill` — install the bundled `review-guide` skill for Claude Code.
+//! `review skill` — install the bundled `review-guide` skill for Claude Code
+//! and/or Codex.
+
+use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 
@@ -15,7 +18,7 @@ pub struct SkillArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum SkillAction {
-    /// Install the review-guide skill into ~/.claude/skills/
+    /// Install the review-guide skill for Claude Code and Codex
     Install,
 }
 
@@ -25,10 +28,26 @@ pub fn run_skill(args: SkillArgs) -> Result<(), String> {
     }
 }
 
-/// Write the bundled skill to `~/.claude/skills/review-guide/SKILL.md`.
+/// Install the bundled skill into both `~/.claude/skills/` and
+/// `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`).
 fn install_skill() -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not determine the home directory.")?;
-    let skill_dir = home.join(".claude").join("skills").join(SKILL_NAME);
+
+    let claude_dir = home.join(".claude").join("skills");
+    write_skill("Claude Code", &claude_dir)?;
+
+    let codex_home = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".codex"));
+    let codex_dir = codex_home.join("skills");
+    write_skill("Codex", &codex_dir)?;
+
+    println!("Restart Claude Code or Codex to pick up the skill.");
+    Ok(())
+}
+
+fn write_skill(tool: &str, skills_root: &std::path::Path) -> Result<(), String> {
+    let skill_dir = skills_root.join(SKILL_NAME);
     let skill_file = skill_dir.join("SKILL.md");
 
     let updating = skill_file.exists();
@@ -38,7 +57,9 @@ fn install_skill() -> Result<(), String> {
         .map_err(|e| format!("Failed to write {}: {e}", skill_file.display()))?;
 
     let verb = if updating { "Updated" } else { "Installed" };
-    println!("{verb} the {SKILL_NAME} skill at {}", skill_file.display());
-    println!("Claude Code picks it up in any repo — restart it if it's running.");
+    println!(
+        "{verb} the {SKILL_NAME} skill for {tool} at {}",
+        skill_file.display()
+    );
     Ok(())
 }
