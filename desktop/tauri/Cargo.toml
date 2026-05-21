@@ -28,9 +28,11 @@ tauri-plugin-notification = "2"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-deep-link = "2"
+url = "2"
 
 # Desktop-specific dependencies
 log = "0.4"

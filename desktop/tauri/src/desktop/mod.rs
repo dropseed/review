@@ -47,10 +47,20 @@ fn open_request_path() -> std::path::PathBuf {
     std::path::PathBuf::from(tmp).join("review-open-request")
 }
 
-/// Read and delete the signal file. Returns `(repo_path, optional_comparison_key, optional_focused_file)`
-/// if the file exists and was written recently (within 30 seconds).
+/// Parsed signal-file payload. The 5th `focused_hunk_hash` line is optional;
+/// older callers (the CLI) only write 4 lines and leave it implicitly absent.
 #[cfg(desktop)]
-fn read_open_request() -> Option<(String, Option<String>, Option<String>)> {
+pub struct OpenRequest {
+    pub repo_path: String,
+    pub comparison_key: Option<String>,
+    pub focused_file: Option<String>,
+    pub focused_hunk_hash: Option<String>,
+}
+
+/// Read and delete the signal file. Returns the parsed payload if the file
+/// exists and was written recently (within 30 seconds).
+#[cfg(desktop)]
+fn read_open_request() -> Option<OpenRequest> {
     let path = open_request_path();
     let content = std::fs::read_to_string(&path).ok()?;
     let _ = std::fs::remove_file(&path);
@@ -58,14 +68,15 @@ fn read_open_request() -> Option<(String, Option<String>, Option<String>)> {
     let mut lines = content.lines();
     let timestamp: u64 = lines.next()?.parse().ok()?;
     let repo_path = lines.next()?.trim().to_owned();
-    let comparison_key = lines
-        .next()
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty());
-    let focused_file = lines
-        .next()
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty());
+    let take_optional = |lines: &mut std::str::Lines<'_>| {
+        lines
+            .next()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    };
+    let comparison_key = take_optional(&mut lines);
+    let focused_file = take_optional(&mut lines);
+    let focused_hunk_hash = take_optional(&mut lines);
 
     // Ignore stale requests (e.g. from a crashed CLI run)
     let now = std::time::SystemTime::now()
@@ -79,7 +90,12 @@ fn read_open_request() -> Option<(String, Option<String>, Option<String>)> {
     if repo_path.is_empty() {
         None
     } else {
-        Some((repo_path, comparison_key, focused_file))
+        Some(OpenRequest {
+            repo_path,
+            comparison_key,
+            focused_file,
+            focused_hunk_hash,
+        })
     }
 }
 
@@ -91,6 +107,7 @@ fn emit_cli_open_review(
     repo_path: &str,
     comparison_key: Option<&str>,
     focused_file: Option<&str>,
+    focused_hunk_hash: Option<&str>,
 ) {
     if let Some((_, window)) = app.webview_windows().into_iter().next() {
         let _ = window.emit(
@@ -99,11 +116,101 @@ fn emit_cli_open_review(
                 "repoPath": repo_path,
                 "comparisonKey": comparison_key,
                 "focusedFile": focused_file,
+                "focusedHunkHash": focused_hunk_hash,
             }),
         );
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// Parse a `review://open?repo=&compare=&file=&hunk=` URL into the parts
+/// `emit_cli_open_review` needs. Returns `None` for unrecognized URLs
+/// (wrong scheme, missing or unknown repo id, etc.).
+#[cfg(desktop)]
+fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>, Option<String>)> {
+    let url = url::Url::parse(raw).ok()?;
+    if url.scheme() != "review" {
+        return None;
+    }
+
+    let mut repo_id: Option<String> = None;
+    let mut compare: Option<String> = None;
+    let mut file: Option<String> = None;
+    let mut hunk: Option<String> = None;
+
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "repo" => repo_id = Some(value.into_owned()),
+            "compare" => compare = Some(value.into_owned()),
+            "file" => file = Some(value.into_owned()),
+            "hunk" => hunk = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+
+    let repo_id = repo_id?;
+    let entry = review::review::central::get_registered_repo(&repo_id)
+        .ok()
+        .flatten()?;
+
+    Some((entry.path, compare, file, hunk))
+}
+
+/// Handle a `review://` URL: parse it, then either navigate the running
+/// window or write a signal file for the next launch. `app_handle` is used
+/// to emit into an existing window; the signal-file fallback is for the
+/// cold-start case where no webview exists yet.
+#[cfg(desktop)]
+fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
+    let Some((repo_path, comparison, file, hunk)) = parse_review_url(raw) else {
+        log::warn!("Ignoring unrecognized deep link: {}", raw);
+        return;
+    };
+    log::info!("Deep link opened: {}", raw);
+
+    if app.webview_windows().is_empty() {
+        // Cold start — frontend not ready yet. Drop a signal file the
+        // startup code reads (matches the CLI's existing channel).
+        write_open_request(
+            &repo_path,
+            comparison.as_deref(),
+            file.as_deref(),
+            hunk.as_deref(),
+        );
+        return;
+    }
+
+    emit_cli_open_review(
+        app,
+        &repo_path,
+        comparison.as_deref(),
+        file.as_deref(),
+        hunk.as_deref(),
+    );
+}
+
+/// Write the signal file used by `read_open_request`. Always writes 5
+/// lines (timestamp + 4 fields, blank for missing) for forward
+/// compatibility with older readers that only consumed 4.
+#[cfg(desktop)]
+fn write_open_request(
+    repo_path: &str,
+    comparison_key: Option<&str>,
+    focused_file: Option<&str>,
+    focused_hunk_hash: Option<&str>,
+) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let content = format!(
+        "{now}\n{repo_path}\n{}\n{}\n{}",
+        comparison_key.unwrap_or(""),
+        focused_file.unwrap_or(""),
+        focused_hunk_hash.unwrap_or(""),
+    );
+    let _ = std::fs::write(open_request_path(), content);
 }
 
 /// Run the Tauri desktop application.
@@ -157,6 +264,15 @@ pub fn run() {
                 // second process was intercepted by the single-instance plugin.
                 let _ = std::fs::remove_file(open_request_path());
 
+                // If the second instance was launched with a review:// URL
+                // (e.g. clicking a link in another app), the deep-link plugin
+                // forwards it via argv. Handle it before the positional-arg
+                // path below.
+                if let Some(deep_link) = argv.iter().skip(1).find(|a| a.starts_with("review://")) {
+                    handle_deep_link(app, deep_link);
+                    return;
+                }
+
                 // When a second instance is launched, its CLI args are forwarded here.
                 // Find non-flag args after the binary name: first is repo path,
                 // optional second is comparison key.
@@ -174,6 +290,7 @@ pub fn run() {
                         &repo,
                         comparison_key.as_deref(),
                         focused_file.as_deref(),
+                        None,
                     );
                 }
             },
@@ -212,7 +329,8 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_drag::init());
+        .plugin(tauri_plugin_drag::init())
+        .plugin(tauri_plugin_deep_link::init());
 
     // Desktop-only plugins and setup
     #[cfg(desktop)]
@@ -628,27 +746,34 @@ pub fn run() {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
-                // Check for a pending open request from the CLI
-                if let Some((repo_path, comparison_key, focused_file)) = read_open_request() {
+                // Check for a pending open request from the CLI or a cold-start deep link
+                if let Some(req) = read_open_request() {
                     emit_cli_open_review(
                         app_handle,
-                        &repo_path,
-                        comparison_key.as_deref(),
-                        focused_file.as_deref(),
+                        &req.repo_path,
+                        req.comparison_key.as_deref(),
+                        req.focused_file.as_deref(),
+                        req.focused_hunk_hash.as_deref(),
                     );
                 }
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
-                // Handle files opened via "Open with Review" in Finder.
-                // macOS delivers file:// URLs for file associations.
+                // Handle files opened via "Open with Review" in Finder, and
+                // review:// deep links delivered to a running app.
                 for url in urls {
-                    if url.scheme() == "file" {
-                        if let Ok(path) = url.to_file_path() {
-                            let path_str = path.to_string_lossy().to_string();
-                            log::info!("Opened file via file association: {}", path_str);
-                            emit_cli_open_review(app_handle, &path_str, None, None);
+                    match url.scheme() {
+                        "file" => {
+                            if let Ok(path) = url.to_file_path() {
+                                let path_str = path.to_string_lossy().to_string();
+                                log::info!("Opened file via file association: {}", path_str);
+                                emit_cli_open_review(app_handle, &path_str, None, None, None);
+                            }
                         }
+                        "review" => {
+                            handle_deep_link(app_handle, url.as_str());
+                        }
+                        _ => {}
                     }
                 }
             }

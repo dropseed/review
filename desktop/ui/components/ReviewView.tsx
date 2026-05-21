@@ -19,6 +19,7 @@ import {
   useCelebration,
   useAutoStartGuide,
   useLspClient,
+  useDeepLinkFocus,
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanel } from "./FilesPanel";
@@ -184,6 +185,7 @@ export function ReviewView({
   });
 
   useKeyboardNavigation();
+  useDeepLinkFocus();
 
   useMenuEvents({
     handleClose,

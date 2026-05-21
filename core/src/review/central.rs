@@ -73,7 +73,7 @@ fn canonical_path(repo_path: &Path) -> PathBuf {
 }
 
 /// Compute a 16-character hex repo ID from the canonical path.
-pub(crate) fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
+pub fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
     let canonical = canonical_path(repo_path);
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());

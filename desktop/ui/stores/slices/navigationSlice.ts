@@ -19,6 +19,18 @@ export interface NavigationSlice {
   scrollTarget: ScrollTarget | null;
   clearScrollTarget: () => void;
 
+  /**
+   * A deep-link target waiting for hunks to load. When the route navigates
+   * before `filesByPath` is populated (e.g. cold-start review:// deep links),
+   * setting `selectedFile`/`scrollTarget` immediately is a no-op because the
+   * hunk isn't in the store yet. A separate effect consumes this once hunks
+   * arrive and forwards the focus to `selectedFile` + `scrollTarget`.
+   */
+  pendingDeepLinkFocus: { filePath: string; hunkHash: string | null } | null;
+  setPendingDeepLinkFocus: (
+    focus: { filePath: string; hunkHash: string | null } | null,
+  ) => void;
+
   /** Absolute path to an external file (outside the repo) being viewed read-only. */
   externalFilePath: string | null;
   setExternalFile: (path: string | null, lineNumber?: number) => void;
@@ -203,6 +215,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   focusedHunkId: null,
   scrollTarget: null,
   clearScrollTarget: () => set({ scrollTarget: null }),
+
+  pendingDeepLinkFocus: null,
+  setPendingDeepLinkFocus: (focus) => set({ pendingDeepLinkFocus: focus }),
 
   externalFilePath: null,
   externalFileHistory: [],

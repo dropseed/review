@@ -730,6 +730,7 @@ export class HttpClient implements ApiClient {
     repoPath: string;
     comparisonKey: string | null;
     focusedFile: string | null;
+    focusedHunkHash: string | null;
   } | null> {
     return null;
   }

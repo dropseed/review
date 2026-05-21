@@ -585,6 +585,7 @@ export class TauriClient implements ApiClient {
     repoPath: string;
     comparisonKey: string | null;
     focusedFile: string | null;
+    focusedHunkHash: string | null;
   } | null> {
     return invoke("consume_cli_request");
   }

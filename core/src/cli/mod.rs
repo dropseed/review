@@ -10,6 +10,7 @@ mod common;
 mod review_state;
 mod skill;
 mod staging;
+mod url;
 
 #[derive(Debug, Parser)]
 #[command(name = "review")]
@@ -88,6 +89,9 @@ pub enum Commands {
 
     /// Read or edit review notes
     Note(review_state::NoteArgs),
+
+    /// Print a `review://` deep link for a file or hunk
+    Url(url::UrlArgs),
 
     /// Install the review-cli skill for Claude Code
     Skill(skill::SkillArgs),
@@ -197,6 +201,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::ChangeBase(args)) => review_state::run_change_base(args),
         Some(Commands::Trust(args)) => review_state::run_trust(args),
         Some(Commands::Note(args)) => review_state::run_note(args),
+        Some(Commands::Url(args)) => url::run_url(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),
         None => run_open(cli.path, has_home_override),
     }

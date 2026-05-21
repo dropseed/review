@@ -67,6 +67,24 @@ review stage   path/to/file            # whole file
 
 After staging, commit with normal `git`.
 
+## Deep-linking hunks back to the desktop app
+
+When you reference a hunk or file in your reply, hand the user a `review://`
+deep link they can click to jump straight to it in the Review desktop app.
+Generate one with `review url`:
+
+```
+review url <hunk-id>                      # link to a specific hunk
+review url path/to/file.rs                # link to a file in the current comparison
+review url --no-comparison path/to/file   # browse-mode link (no diff context)
+review url -s main..feature <hunk-id>     # explicit comparison
+```
+
+The output is a single URL like `review://open?repo=…&compare=…&file=…&hunk=…`.
+Paste it inline next to the hunk you're talking about — clicking it opens the
+app focused on that hunk. Prefer one link per hunk reference rather than a list
+of bare `file:hash` IDs.
+
 ## Working with the user
 
 - **Read before acting.** Run `review hunks --json --diff` (or `review changes
@@ -81,6 +99,8 @@ After staging, commit with normal `git`.
   `approve`/`reject`/`save`; `review changes` IDs are for `stage`/`unstage`. The
   same change can have a different ID in each — always list from the family
   you're about to act on.
+- **Link, don't just name.** When pointing the user at a specific hunk or file,
+  pair the human-readable label with a `review url` so they can jump to it.
 - **Report back.** After triaging, `review note set` a short summary and tell
   the user what you left for them.
 - The desktop app picks up CLI changes live; there's no need to reopen it.

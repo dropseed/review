@@ -401,6 +401,7 @@ export interface ApiClient {
     repoPath: string;
     comparisonKey: string | null;
     focusedFile: string | null;
+    focusedHunkHash: string | null;
   } | null>;
 
   /** Open a new window for a repository */

@@ -774,11 +774,12 @@ pub fn stop_file_watcher(app: tauri::AppHandle, repo_path: String) {
 /// or `None` if there is no pending request.
 #[tauri::command]
 pub fn consume_cli_request() -> Option<CliOpenRequest> {
-    let (repo_path, comparison_key, focused_file) = super::read_open_request()?;
+    let req = super::read_open_request()?;
     Some(CliOpenRequest {
-        repo_path,
-        comparison_key,
-        focused_file,
+        repo_path: req.repo_path,
+        comparison_key: req.comparison_key,
+        focused_file: req.focused_file,
+        focused_hunk_hash: req.focused_hunk_hash,
     })
 }
 
@@ -790,6 +791,8 @@ pub struct CliOpenRequest {
     pub comparison_key: Option<String>,
     #[serde(rename = "focusedFile")]
     pub focused_file: Option<String>,
+    #[serde(rename = "focusedHunkHash")]
+    pub focused_hunk_hash: Option<String>,
 }
 
 // Multi-window support

@@ -348,6 +348,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
               cliRequest.repoPath,
               cliRequest.comparisonKey,
             );
+            if (cliRequest.focusedFile) {
+              useReviewStore.getState().setPendingDeepLinkFocus({
+                filePath: cliRequest.focusedFile,
+                hunkHash: cliRequest.focusedHunkHash,
+              });
+            }
             await initRepo(cliRequest.repoPath, comparison, {
               clearLogFile: true,
               storeInSession: true,
@@ -470,6 +476,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           repoPath?: string;
           comparisonKey?: string | null;
           focusedFile?: string | null;
+          focusedHunkHash?: string | null;
         } | null;
         const repoPath = data?.repoPath;
         if (!repoPath) return;
@@ -490,6 +497,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
             focusedFile: data?.focusedFile,
           });
           return;
+        }
+
+        if (data?.focusedFile) {
+          useReviewStore.getState().setPendingDeepLinkFocus({
+            filePath: data.focusedFile,
+            hunkHash: data.focusedHunkHash ?? null,
+          });
         }
 
         const comparison = await resolveComparison(repoPath, comparisonKey);
