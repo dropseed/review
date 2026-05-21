@@ -22,6 +22,9 @@ interface CollapsibleSectionProps {
   onToggle: () => void;
   actionContent?: ReactNode;
   menuContent?: ReactNode;
+  /** Notified when the overflow menu opens/closes — lets callers reset
+   * transient menu state (e.g. a pending confirm) when it's dismissed. */
+  onMenuOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }
 
@@ -35,6 +38,7 @@ export function CollapsibleSection({
   onToggle,
   actionContent,
   menuContent,
+  onMenuOpenChange,
   children,
 }: CollapsibleSectionProps): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -62,7 +66,13 @@ export function CollapsibleSection({
           <div className="flex items-center gap-0.5 pr-1">
             {actionContent}
             {menuContent && (
-              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenu
+                open={menuOpen}
+                onOpenChange={(open) => {
+                  setMenuOpen(open);
+                  onMenuOpenChange?.(open);
+                }}
+              >
                 <DropdownMenuTrigger asChild>
                   <button
                     onClick={(e) => e.stopPropagation()}

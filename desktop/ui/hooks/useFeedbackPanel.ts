@@ -1,8 +1,12 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import { useReviewStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
 import { getPlatformServices } from "../platform";
-import type { DiffHunk, LineAnnotation } from "../types";
+import {
+  computeReviewProgress,
+  type ReviewProgress,
+} from "./useReviewProgress";
+import type { Comparison, DiffHunk, LineAnnotation } from "../types";
 
 /** Returns a human-readable line range string for a hunk (e.g. "10" or "10-15"). */
 function hunkLineRange(hunk: DiffHunk): string {
@@ -19,57 +23,95 @@ function isAnnotationInHunk(a: LineAnnotation, hunk: DiffHunk): boolean {
   );
 }
 
+/** Re-indent the 2nd+ lines of multi-line content so it stays inside a
+ * Markdown list item instead of breaking out into top-level blocks. */
+function indentContinuation(text: string, indent: string): string {
+  return text.replace(/\n/g, `\n${indent}`);
+}
+
+/** A "42" or "42-48" line reference, never the redundant "42-42". */
+function annotationLineRef(a: LineAnnotation): string {
+  return a.endLineNumber && a.endLineNumber !== a.lineNumber
+    ? `${a.lineNumber}-${a.endLineNumber}`
+    : `${a.lineNumber}`;
+}
+
+/** Human-readable label for the review's overall state. */
+function reviewStateLabel(progress: ReviewProgress): string {
+  switch (progress.state) {
+    case "approved":
+      return "Approved";
+    case "changes_requested":
+      return "Changes requested";
+    default:
+      return "In progress";
+  }
+}
+
 /**
- * Generates feedback markdown for clipboard export.
- * Accepts already-grouped data to avoid re-deriving the grouping.
+ * Generates a Markdown representation of the whole review: status, hunk
+ * tallies, requested changes, comments, and notes. This is the document the
+ * bottom action bar copies (and, for a PR, will eventually submit).
  */
-function generateFeedbackMarkdown(
+function generateReviewMarkdown(
+  comparison: Comparison | null,
+  progress: ReviewProgress,
   rejectedHunks: RejectedHunkWithAnnotations[],
   standaloneAnnotations: LineAnnotation[],
   notes: string,
 ): string {
   const lines: string[] = [];
 
-  lines.push("# Review Feedback");
+  lines.push(`# Review — ${comparison?.key ?? "working tree"}`);
+  lines.push("");
+  lines.push(
+    `**${reviewStateLabel(progress)}** · ${progress.reviewedHunks}/${progress.totalHunks} hunks reviewed`,
+  );
+  lines.push(
+    [
+      `${progress.trustedHunks} trusted`,
+      `${progress.approvedHunks} approved`,
+      `${progress.rejectedHunks} changes requested`,
+      `${progress.savedForLaterHunks} saved`,
+      `${progress.pendingHunks} pending`,
+    ].join(" · "),
+  );
   lines.push("");
 
   if (rejectedHunks.length > 0) {
-    lines.push("## Changes Requested");
+    lines.push("## Changes requested");
     lines.push("");
-
     for (const hunk of rejectedHunks) {
       lines.push(`- **${hunk.filePath}:${hunk.lineRange}**`);
       for (const annotation of hunk.annotations) {
         const suffix = annotation.resolvedAt ? " _(resolved)_" : "";
-        lines.push(`  - ${annotation.content}${suffix}`);
+        const body = indentContinuation(annotation.content, "    ");
+        lines.push(`  - ${body}${suffix}`);
       }
     }
     lines.push("");
   }
 
   if (standaloneAnnotations.length > 0) {
-    lines.push("## Annotations");
+    lines.push("## Comments");
     lines.push("");
-
     for (const annotation of standaloneAnnotations) {
-      const lineRef = annotation.endLineNumber
-        ? `${annotation.lineNumber}-${annotation.endLineNumber}`
-        : `${annotation.lineNumber}`;
-      lines.push(
-        `- **${annotation.filePath}:${lineRef}** — ${annotation.content}`,
-      );
+      const ref = annotationLineRef(annotation);
+      const author = annotation.author ? ` _(${annotation.author})_` : "";
+      const body = indentContinuation(annotation.content, "  ");
+      lines.push(`- **${annotation.filePath}:${ref}** — ${body}${author}`);
     }
     lines.push("");
   }
 
   if (notes.trim()) {
-    lines.push("## Review Notes");
+    lines.push("## Notes");
     lines.push("");
     lines.push(notes.trim());
     lines.push("");
   }
 
-  return lines.join("\n");
+  return lines.join("\n").trimEnd() + "\n";
 }
 
 export interface RejectedHunkWithAnnotations {
@@ -81,18 +123,37 @@ export interface RejectedHunkWithAnnotations {
 
 export interface FeedbackPanelState {
   notes: string;
-  standaloneAnnotations: LineAnnotation[];
+  /** Unresolved comments — every open comment, including those on rejected hunks. */
+  openComments: LineAnnotation[];
+  /** All resolved comments, regardless of hunk coverage. */
   resolvedAnnotations: LineAnnotation[];
+  standaloneAnnotations: LineAnnotation[];
   setReviewNotes: (notes: string) => void;
   deleteAnnotation: (annotationId: string) => void;
+  resolveAnnotation: (annotationId: string) => void;
   unresolveAnnotation: (annotationId: string) => void;
-  hasFeedbackToExport: boolean;
+  resolveAllAnnotations: () => void;
+  deleteResolvedAnnotations: () => void;
+  /** True when notes or comments exist — gates the Notes "Clear" action. */
+  hasClearableFeedback: boolean;
+  /** True when the review has explicit content worth copying/submitting. */
+  hasReviewContent: boolean;
+  /** Overall review progress — drives the bottom action bar's status line. */
+  progress: ReviewProgress;
   goToFile: (filePath: string) => void;
   rejectedHunks: RejectedHunkWithAnnotations[];
-  feedbackCount: number;
   copied: boolean;
-  copyFeedbackToClipboard: () => Promise<void>;
+  copyReviewToClipboard: () => Promise<void>;
   clearFeedback: () => void;
+}
+
+/** Sort comments by file path, then line, then creation time — stable list order. */
+function byLocation(a: LineAnnotation, b: LineAnnotation): number {
+  return (
+    a.filePath.localeCompare(b.filePath) ||
+    a.lineNumber - b.lineNumber ||
+    a.createdAt.localeCompare(b.createdAt)
+  );
 }
 
 /**
@@ -104,11 +165,23 @@ export function useFeedbackPanel(): FeedbackPanelState {
   const hunks = useAllHunks();
   const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
   const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const resolveAnnotation = useReviewStore((s) => s.resolveAnnotation);
   const unresolveAnnotation = useReviewStore((s) => s.unresolveAnnotation);
+  const resolveAllAnnotations = useReviewStore((s) => s.resolveAllAnnotations);
+  const deleteResolvedAnnotations = useReviewStore(
+    (s) => s.deleteResolvedAnnotations,
+  );
   const clearFeedback = useReviewStore((s) => s.clearFeedback);
   const revealFileInTree = useReviewStore((s) => s.revealFileInTree);
 
   const [copied, setCopied] = useState(false);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    };
+  }, []);
 
   const notes = reviewState?.notes || "";
 
@@ -147,45 +220,95 @@ export function useFeedbackPanel(): FeedbackPanelState {
     return annotations.filter((a) => !coveredIds.has(a.id) && !a.resolvedAt);
   }, [rejectedHunks, annotations]);
 
-  // All resolved annotations, regardless of hunk coverage — surfaced in their
-  // own panel section so a resolved comment on a file that has left the diff
-  // is still reachable (to unresolve or delete) without the CLI.
-  const resolvedAnnotations = useMemo(() => {
-    return (reviewState?.annotations ?? []).filter((a) => a.resolvedAt);
+  // Every unresolved comment — the Comments panel shows them all in one flat
+  // list. Derived from the raw annotation set (not the hunk-filtered view)
+  // so an open comment whose line has rebased out of the diff stays reachable,
+  // matching how `resolvedAnnotations` is derived.
+  const openComments = useMemo(() => {
+    return (reviewState?.annotations ?? [])
+      .filter((a) => !a.resolvedAt)
+      .sort(byLocation);
   }, [reviewState?.annotations]);
 
-  const feedbackCount = rejectedHunks.length + standaloneAnnotations.length;
+  // All resolved comments, regardless of hunk coverage — surfaced in their
+  // own panel subsection so a resolved comment on a file that has left the
+  // diff is still reachable (to unresolve or delete) without the CLI.
+  const resolvedAnnotations = useMemo(() => {
+    return (reviewState?.annotations ?? [])
+      .filter((a) => a.resolvedAt)
+      .sort(byLocation);
+  }, [reviewState?.annotations]);
 
-  const hasFeedbackToExport =
-    rejectedHunks.length > 0 ||
-    standaloneAnnotations.length > 0 ||
+  const progress = useMemo(
+    () => computeReviewProgress(hunks, reviewState ?? null),
+    [hunks, reviewState],
+  );
+
+  const annotationCount = reviewState?.annotations?.length ?? 0;
+
+  // The Notes "Clear" action wipes notes + the user's own unresolved UI
+  // comments only — so it's enabled exactly when one of those exists, not
+  // whenever any annotation (resolved / agent / imported) is present.
+  const hasClearableFeedback =
+    notes.trim().length > 0 ||
+    (reviewState?.annotations ?? []).some(
+      (a) => !a.resolvedAt && a.source === "ui",
+    );
+
+  // The review has content worth copying/submitting once any review state
+  // exists — trusted hunks count (trust-listing is a legitimate way to
+  // complete a review), as do approvals, rejections, saves, comments, notes.
+  const hasReviewContent =
+    progress.reviewedHunks > 0 ||
+    progress.savedForLaterHunks > 0 ||
+    annotationCount > 0 ||
     notes.trim().length > 0;
 
-  const copyFeedbackToClipboard = useCallback(async () => {
-    const markdown = generateFeedbackMarkdown(
+  const copyReviewToClipboard = useCallback(async () => {
+    const markdown = generateReviewMarkdown(
+      reviewState?.comparison ?? null,
+      progress,
       rejectedHunks,
       standaloneAnnotations,
       notes,
     );
-    const platform = getPlatformServices();
-    await platform.clipboard.writeText(markdown);
+    try {
+      await getPlatformServices().clipboard.writeText(markdown);
+    } catch (err) {
+      // Clipboard can reject (denied permission, non-secure context, focus
+      // loss). Don't leave it as an unhandled rejection or flash "Copied".
+      console.error("Failed to copy review to clipboard:", err);
+      return;
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [rejectedHunks, standaloneAnnotations, notes]);
+    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+  }, [
+    reviewState?.comparison,
+    progress,
+    rejectedHunks,
+    standaloneAnnotations,
+    notes,
+  ]);
 
   return {
     notes,
-    standaloneAnnotations,
+    openComments,
     resolvedAnnotations,
+    standaloneAnnotations,
     setReviewNotes,
     deleteAnnotation,
+    resolveAnnotation,
     unresolveAnnotation,
-    hasFeedbackToExport,
+    resolveAllAnnotations,
+    deleteResolvedAnnotations,
+    hasClearableFeedback,
+    hasReviewContent,
+    progress,
     goToFile: revealFileInTree,
     rejectedHunks,
-    feedbackCount,
     copied,
-    copyFeedbackToClipboard,
+    copyReviewToClipboard,
     clearFeedback,
   };
 }

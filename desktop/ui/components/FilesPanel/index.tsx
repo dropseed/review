@@ -28,6 +28,8 @@ import { FilenameModal } from "./FilenameModal";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import { GitStatusPanel } from "./GitStatusPanel";
 import { ReviewNotesPanel } from "./ReviewNotesPanel";
+import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
+import { ReviewActionBar } from "./ReviewActionBar";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
 import { GuideGroupList, useGuideGroupState } from "./GuideGroupList";
@@ -986,189 +988,194 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 </p>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto scrollbar-thin">
-                <ReviewNotesPanel />
+              <>
+                <div className="flex-1 overflow-y-auto scrollbar-thin">
+                  <ReviewNotesPanel />
 
-                {/* Reviewed section */}
-                <SectionHeader
-                  title="Reviewed"
-                  icon={REVIEWED_ICON}
-                  badge={stats.reviewed + stats.rejected}
-                  badgeColor="status-approved"
-                  isOpen={reviewedOpen}
-                  onToggle={() => setReviewedOpen(!reviewedOpen)}
-                  onUnapproveAll={
-                    reviewedHunkIds.length > 0
-                      ? handleUnapproveAllHunks
-                      : undefined
-                  }
-                  quickActions={reviewedQuickActions}
-                  onExpandAll={
-                    changesDisplayMode === "tree"
-                      ? () => expandAll(reviewedDirPaths, renamedDirPaths)
-                      : undefined
-                  }
-                  onCollapseAll={
-                    changesDisplayMode === "tree" ? collapseAll : undefined
-                  }
-                  additionalMenuContent={viewOptionsMenuContent}
-                >
-                  <FileListSection
-                    treeEntries={sectionedFiles.reviewed}
-                    flatFilePaths={flatSectionedFiles.reviewed}
-                    displayMode={changesDisplayMode}
-                    hunkContext="reviewed"
-                    emptyMessage="No files reviewed yet"
-                  />
-                </SectionHeader>
+                  <ReviewCommentsPanel />
 
-                {/* Needs Review section */}
-                <SectionHeader
-                  title="Needs Review"
-                  icon={NEEDS_REVIEW_ICON}
-                  badge={stats.pending}
-                  badgeColor="status-pending"
-                  statusBadge={
-                    guideActive ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-guide/10 px-1.5 py-0.5 text-xxs font-medium text-guide">
-                        <svg
-                          className="h-2.5 w-2.5"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                        </svg>
-                        Guided
-                      </span>
-                    ) : undefined
-                  }
-                  isOpen={needsReviewOpen}
-                  onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
-                  onApproveAll={
-                    pendingHunkIds.length > 0
-                      ? handleApproveAllHunks
-                      : undefined
-                  }
-                  quickActions={
-                    guideActive ? undefined : needsReviewQuickActions
-                  }
-                  onExpandAll={
-                    !guideActive && changesDisplayMode === "tree"
-                      ? () => expandAll(needsReviewDirPaths, renamedDirPaths)
-                      : undefined
-                  }
-                  onCollapseAll={
-                    !guideActive && changesDisplayMode === "tree"
-                      ? collapseAll
-                      : undefined
-                  }
-                  actionContent={
-                    guideActive ? (
-                      <button
-                        type="button"
-                        onClick={exitGuide}
-                        className="flex items-center justify-center w-6 h-6 rounded
-                                   text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
-                        aria-label="Exit guided review"
-                      >
-                        <XIcon className="w-3.5 h-3.5" />
-                      </button>
-                    ) : pendingHunkIds.length >= 4 ? (
-                      <button
-                        type="button"
-                        onClick={() => startGuide()}
-                        className="flex items-center justify-center w-6 h-6 rounded
-                                   text-guide hover:bg-guide/10 transition-colors"
-                        aria-label="Start guided review"
-                      >
-                        {GUIDE_ICON}
-                      </button>
-                    ) : undefined
-                  }
-                  additionalMenuContent={
-                    guideActive ? (
-                      <>
-                        <DropdownMenuItem
-                          onClick={() => generateGrouping()}
-                          disabled={groupingLoading}
-                        >
-                          Regenerate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={clearGrouping}
-                          disabled={groupingLoading}
-                        >
-                          Clear grouping
-                        </DropdownMenuItem>
-                      </>
-                    ) : undefined
-                  }
-                >
-                  {guideActive ? (
-                    <GuideGroupList />
-                  ) : (
-                    <FileListSection
-                      treeEntries={sectionedFiles.needsReview}
-                      flatFilePaths={flatSectionedFiles.needsReview}
-                      displayMode={changesDisplayMode}
-                      hunkContext="needs-review"
-                      emptyIcon={CHECK_ICON}
-                      emptyMessage="No files need review"
-                    />
-                  )}
-                </SectionHeader>
-
-                {/* Saved for Later section */}
-                {(sectionedFiles.savedForLater.length > 0 ||
-                  flatSectionedFiles.savedForLater.length > 0) && (
+                  {/* Reviewed section */}
                   <SectionHeader
-                    title="Saved for Later"
-                    icon={SAVED_FOR_LATER_ICON}
-                    badge={stats.savedForLater}
-                    badgeColor="status-modified"
-                    isOpen={savedForLaterOpen}
-                    onToggle={() => setSavedForLaterOpen(!savedForLaterOpen)}
+                    title="Reviewed"
+                    icon={REVIEWED_ICON}
+                    badge={stats.reviewed + stats.rejected}
+                    badgeColor="status-approved"
+                    isOpen={reviewedOpen}
+                    onToggle={() => setReviewedOpen(!reviewedOpen)}
                     onUnapproveAll={
-                      savedForLaterHunkIds.length > 0
-                        ? handleUnsaveAll
+                      reviewedHunkIds.length > 0
+                        ? handleUnapproveAllHunks
                         : undefined
                     }
-                    unapproveAllLabel="Unsave all"
+                    quickActions={reviewedQuickActions}
                     onExpandAll={
                       changesDisplayMode === "tree"
-                        ? () =>
-                            expandAll(savedForLaterDirPaths, renamedDirPaths)
+                        ? () => expandAll(reviewedDirPaths, renamedDirPaths)
                         : undefined
                     }
                     onCollapseAll={
                       changesDisplayMode === "tree" ? collapseAll : undefined
                     }
+                    additionalMenuContent={viewOptionsMenuContent}
                   >
                     <FileListSection
-                      treeEntries={sectionedFiles.savedForLater}
-                      flatFilePaths={flatSectionedFiles.savedForLater}
+                      treeEntries={sectionedFiles.reviewed}
+                      flatFilePaths={flatSectionedFiles.reviewed}
                       displayMode={changesDisplayMode}
-                      hunkContext="needs-review"
-                      emptyMessage="No files saved for later"
+                      hunkContext="reviewed"
+                      emptyMessage="No files reviewed yet"
                     />
                   </SectionHeader>
-                )}
 
-                {/* Trust section */}
-                {trustableHunkCount > 0 && (
+                  {/* Needs Review section */}
                   <SectionHeader
-                    title="Trust"
-                    icon={TRUST_ICON}
-                    badge={`${trustedHunkCount}/${trustableHunkCount}`}
-                    badgeColor="status-trusted"
-                    isOpen={trustOpen}
-                    onToggle={() => setTrustOpen(!trustOpen)}
-                    quickActions={trustQuickActions}
+                    title="Needs Review"
+                    icon={NEEDS_REVIEW_ICON}
+                    badge={stats.pending}
+                    badgeColor="status-pending"
+                    statusBadge={
+                      guideActive ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-guide/10 px-1.5 py-0.5 text-xxs font-medium text-guide">
+                          <svg
+                            className="h-2.5 w-2.5"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                          </svg>
+                          Guided
+                        </span>
+                      ) : undefined
+                    }
+                    isOpen={needsReviewOpen}
+                    onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
+                    onApproveAll={
+                      pendingHunkIds.length > 0
+                        ? handleApproveAllHunks
+                        : undefined
+                    }
+                    quickActions={
+                      guideActive ? undefined : needsReviewQuickActions
+                    }
+                    onExpandAll={
+                      !guideActive && changesDisplayMode === "tree"
+                        ? () => expandAll(needsReviewDirPaths, renamedDirPaths)
+                        : undefined
+                    }
+                    onCollapseAll={
+                      !guideActive && changesDisplayMode === "tree"
+                        ? collapseAll
+                        : undefined
+                    }
+                    actionContent={
+                      guideActive ? (
+                        <button
+                          type="button"
+                          onClick={exitGuide}
+                          className="flex items-center justify-center w-6 h-6 rounded
+                                   text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+                          aria-label="Exit guided review"
+                        >
+                          <XIcon className="w-3.5 h-3.5" />
+                        </button>
+                      ) : pendingHunkIds.length >= 4 ? (
+                        <button
+                          type="button"
+                          onClick={() => startGuide()}
+                          className="flex items-center justify-center w-6 h-6 rounded
+                                   text-guide hover:bg-guide/10 transition-colors"
+                          aria-label="Start guided review"
+                        >
+                          {GUIDE_ICON}
+                        </button>
+                      ) : undefined
+                    }
+                    additionalMenuContent={
+                      guideActive ? (
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => generateGrouping()}
+                            disabled={groupingLoading}
+                          >
+                            Regenerate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={clearGrouping}
+                            disabled={groupingLoading}
+                          >
+                            Clear grouping
+                          </DropdownMenuItem>
+                        </>
+                      ) : undefined
+                    }
                   >
-                    <TrustSection />
+                    {guideActive ? (
+                      <GuideGroupList />
+                    ) : (
+                      <FileListSection
+                        treeEntries={sectionedFiles.needsReview}
+                        flatFilePaths={flatSectionedFiles.needsReview}
+                        displayMode={changesDisplayMode}
+                        hunkContext="needs-review"
+                        emptyIcon={CHECK_ICON}
+                        emptyMessage="No files need review"
+                      />
+                    )}
                   </SectionHeader>
-                )}
-              </div>
+
+                  {/* Saved for Later section */}
+                  {(sectionedFiles.savedForLater.length > 0 ||
+                    flatSectionedFiles.savedForLater.length > 0) && (
+                    <SectionHeader
+                      title="Saved for Later"
+                      icon={SAVED_FOR_LATER_ICON}
+                      badge={stats.savedForLater}
+                      badgeColor="status-modified"
+                      isOpen={savedForLaterOpen}
+                      onToggle={() => setSavedForLaterOpen(!savedForLaterOpen)}
+                      onUnapproveAll={
+                        savedForLaterHunkIds.length > 0
+                          ? handleUnsaveAll
+                          : undefined
+                      }
+                      unapproveAllLabel="Unsave all"
+                      onExpandAll={
+                        changesDisplayMode === "tree"
+                          ? () =>
+                              expandAll(savedForLaterDirPaths, renamedDirPaths)
+                          : undefined
+                      }
+                      onCollapseAll={
+                        changesDisplayMode === "tree" ? collapseAll : undefined
+                      }
+                    >
+                      <FileListSection
+                        treeEntries={sectionedFiles.savedForLater}
+                        flatFilePaths={flatSectionedFiles.savedForLater}
+                        displayMode={changesDisplayMode}
+                        hunkContext="needs-review"
+                        emptyMessage="No files saved for later"
+                      />
+                    </SectionHeader>
+                  )}
+
+                  {/* Trust section */}
+                  {trustableHunkCount > 0 && (
+                    <SectionHeader
+                      title="Trust"
+                      icon={TRUST_ICON}
+                      badge={`${trustedHunkCount}/${trustableHunkCount}`}
+                      badgeColor="status-trusted"
+                      isOpen={trustOpen}
+                      onToggle={() => setTrustOpen(!trustOpen)}
+                      quickActions={trustQuickActions}
+                    >
+                      <TrustSection />
+                    </SectionHeader>
+                  )}
+                </div>
+                <ReviewActionBar />
+              </>
             )
           ) : (
             <div className="flex-1 overflow-y-auto scrollbar-thin">

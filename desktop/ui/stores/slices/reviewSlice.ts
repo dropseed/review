@@ -105,6 +105,8 @@ export interface ReviewSlice {
   deleteAnnotation: (annotationId: string) => void;
   resolveAnnotation: (annotationId: string) => void;
   unresolveAnnotation: (annotationId: string) => void;
+  resolveAllAnnotations: () => void;
+  deleteResolvedAnnotations: () => void;
   getAnnotationsForFile: (filePath: string) => LineAnnotation[];
 
   // Auto-approve staged
@@ -671,6 +673,31 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         delete next.resolvedBy;
         return next;
       });
+      patchReviewState(get, set, { annotations });
+    },
+
+    resolveAllAnnotations: () => {
+      const { reviewState, gitUser } = get();
+      if (!reviewState) return;
+      const now = new Date().toISOString();
+      const annotations = (reviewState.annotations ?? []).map((a) =>
+        a.resolvedAt
+          ? a
+          : {
+              ...a,
+              resolvedAt: now,
+              ...(gitUser ? { resolvedBy: gitUser } : {}),
+            },
+      );
+      patchReviewState(get, set, { annotations });
+    },
+
+    deleteResolvedAnnotations: () => {
+      const { reviewState } = get();
+      if (!reviewState) return;
+      const annotations = (reviewState.annotations ?? []).filter(
+        (a) => !a.resolvedAt,
+      );
       patchReviewState(get, set, { annotations });
     },
 
