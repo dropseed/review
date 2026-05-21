@@ -18,6 +18,7 @@ export interface GitSlice {
   gitStatus: GitStatusSummary | null;
   stagedFilePaths: Set<string>;
   remoteInfo: RemoteInfo | null;
+  gitUser: string | null;
 
   // Commit state
   commitMessage: string;
@@ -29,6 +30,7 @@ export interface GitSlice {
   // Actions
   loadGitStatus: () => Promise<void>;
   loadRemoteInfo: () => Promise<void>;
+  loadGitUser: () => Promise<void>;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
   unstageAll: () => Promise<void>;
@@ -45,6 +47,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     gitStatus: null,
     stagedFilePaths: EMPTY_STAGED_SET,
     remoteInfo: null,
+    gitUser: null,
 
     commitMessage: "",
     commitInProgress: false,
@@ -96,6 +99,26 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
         set({ remoteInfo: info });
       } catch {
         set({ remoteInfo: null });
+      }
+    },
+
+    loadGitUser: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      try {
+        // Bound the wait: `git config user.name` is a local config read,
+        // but a hung git process must not block whoever awaits this.
+        const user = await Promise.race([
+          client.getGitUser(repoPath),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+        // Guard against a stale response: if the repo changed while this
+        // request was in flight, don't clobber the new repo's identity.
+        if (get().repoPath !== repoPath) return;
+        set({ gitUser: user });
+      } catch {
+        if (get().repoPath !== repoPath) return;
+        set({ gitUser: null });
       }
     },
 

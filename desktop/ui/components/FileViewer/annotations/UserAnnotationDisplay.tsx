@@ -8,6 +8,8 @@ interface UserAnnotationDisplayProps {
   onSave: (content: string) => void;
   onCancel: () => void;
   onDelete: () => void;
+  onResolve?: () => void;
+  onUnresolve?: () => void;
 }
 
 export function UserAnnotationDisplay({
@@ -17,6 +19,8 @@ export function UserAnnotationDisplay({
   onSave,
   onCancel,
   onDelete,
+  onResolve,
+  onUnresolve,
 }: UserAnnotationDisplayProps) {
   if (isEditing) {
     return (
@@ -35,6 +39,8 @@ export function UserAnnotationDisplay({
       annotation={annotation}
       onEdit={onEdit}
       onDelete={onDelete}
+      onResolve={onResolve}
+      onUnresolve={onUnresolve}
     />
   );
 }

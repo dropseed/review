@@ -28,6 +28,21 @@ export const debouncedSave = createDebouncedFn(500);
 let lastSaveTimestamp = 0;
 const SAVE_GRACE_PERIOD_MS = 1000; // Ignore file watcher events within 1s of our save
 
+// Per-window counter that disambiguates IDs created in the same millisecond.
+// Combined with the `t` prefix on the epoch segment, this guarantees the
+// trailing token has at least one non-hex char so `parse_hunk_target`
+// (Rust CLI) won't ever misclassify a comment ID as a hunk hash.
+let annotationIdCounter = 0;
+function newAnnotationId(
+  filePath: string,
+  lineNumber: number,
+  side: "old" | "new" | "file",
+): string {
+  const epoch = Date.now();
+  const c = annotationIdCounter++;
+  return `${filePath}:${lineNumber}:${side}:t${epoch}-${c}`;
+}
+
 export function shouldIgnoreReviewStateReload(): boolean {
   return Date.now() - lastSaveTimestamp < SAVE_GRACE_PERIOD_MS;
 }
@@ -88,6 +103,8 @@ export interface ReviewSlice {
   ) => string;
   updateAnnotation: (annotationId: string, content: string) => void;
   deleteAnnotation: (annotationId: string) => void;
+  resolveAnnotation: (annotationId: string) => void;
+  unresolveAnnotation: (annotationId: string) => void;
   getAnnotationsForFile: (filePath: string) => LineAnnotation[];
 
   // Auto-approve staged
@@ -578,10 +595,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     addAnnotation: (filePath, lineNumber, side, content, endLineNumber?) => {
-      const { reviewState, saveReviewState } = get();
+      const { reviewState, saveReviewState, gitUser } = get();
       if (!reviewState) return "";
 
-      const id = `${filePath}:${lineNumber}:${side}:${Date.now()}`;
+      const id = newAnnotationId(filePath, lineNumber, side);
       const newAnnotation: LineAnnotation = {
         id,
         filePath,
@@ -592,6 +609,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         side,
         content,
         createdAt: new Date().toISOString(),
+        ...(gitUser ? { author: gitUser } : {}),
+        source: "ui",
       };
 
       const newState = {
@@ -609,8 +628,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const { reviewState } = get();
       if (!reviewState) return;
 
+      const now = new Date().toISOString();
       const annotations = (reviewState.annotations ?? []).map((a) =>
-        a.id === annotationId ? { ...a, content } : a,
+        a.id === annotationId ? { ...a, content, updatedAt: now } : a,
       );
       patchReviewState(get, set, { annotations });
     },
@@ -622,6 +642,35 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const annotations = (reviewState.annotations ?? []).filter(
         (a) => a.id !== annotationId,
       );
+      patchReviewState(get, set, { annotations });
+    },
+
+    resolveAnnotation: (annotationId) => {
+      const { reviewState, gitUser } = get();
+      if (!reviewState) return;
+      const now = new Date().toISOString();
+      const annotations = (reviewState.annotations ?? []).map((a) =>
+        a.id === annotationId
+          ? {
+              ...a,
+              resolvedAt: now,
+              ...(gitUser ? { resolvedBy: gitUser } : {}),
+            }
+          : a,
+      );
+      patchReviewState(get, set, { annotations });
+    },
+
+    unresolveAnnotation: (annotationId) => {
+      const { reviewState } = get();
+      if (!reviewState) return;
+      const annotations = (reviewState.annotations ?? []).map((a) => {
+        if (a.id !== annotationId) return a;
+        const next = { ...a };
+        delete next.resolvedAt;
+        delete next.resolvedBy;
+        return next;
+      });
       patchReviewState(get, set, { annotations });
     },
 
@@ -695,7 +744,16 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     clearFeedback: () => {
-      patchReviewState(get, set, { notes: "", annotations: [] });
+      const { reviewState } = get();
+      // "Clear feedback" only wipes the human's own unresolved UI-authored
+      // comments plus the notes. Preserve: resolved annotations (audit
+      // trail), comments from other sources (agent / cli / imported PR
+      // review comments), and legacy annotations with no `source` field —
+      // those predate authorship tracking and must not be silently lost.
+      const keep = (reviewState?.annotations ?? []).filter(
+        (a) => a.resolvedAt || a.source !== "ui",
+      );
+      patchReviewState(get, set, { notes: "", annotations: keep });
     },
 
     resetReview: async () => {

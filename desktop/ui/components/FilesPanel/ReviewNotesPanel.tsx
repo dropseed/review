@@ -53,8 +53,10 @@ export function ReviewNotesPanel(): ReactNode {
   const {
     notes,
     standaloneAnnotations,
+    resolvedAnnotations,
     setReviewNotes,
     deleteAnnotation,
+    unresolveAnnotation,
     hasFeedbackToExport,
     goToFile,
     rejectedHunks,
@@ -66,6 +68,7 @@ export function ReviewNotesPanel(): ReactNode {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isOpen, setIsOpen] = useState(true);
+  const [resolvedOpen, setResolvedOpen] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const clearTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -136,7 +139,7 @@ export function ReviewNotesPanel(): ReactNode {
               d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"
             />
           </svg>
-          Confirm clear
+          Confirm — keeps resolved &amp; agent comments
         </DropdownMenuItem>
       ) : (
         <DropdownMenuItem
@@ -161,7 +164,7 @@ export function ReviewNotesPanel(): ReactNode {
               d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
             />
           </svg>
-          Clear feedback
+          Clear notes &amp; my comments
         </DropdownMenuItem>
       )}
     </>
@@ -202,7 +205,9 @@ export function ReviewNotesPanel(): ReactNode {
                 }
               }}
               title={
-                confirmingReset ? "Click again to confirm" : "Clear feedback"
+                confirmingReset
+                  ? "Click again to confirm"
+                  : "Clear notes and your own comments (keeps resolved and agent/PR comments)"
               }
               className={`h-5 px-1.5 rounded text-[10px] flex items-center gap-1 ${
                 confirmingReset
@@ -387,6 +392,104 @@ export function ReviewNotesPanel(): ReactNode {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {resolvedAnnotations.length > 0 && (
+          <div className="flex flex-col">
+            <button
+              onClick={() => setResolvedOpen((v) => !v)}
+              className="px-1 pb-0.5 flex items-center gap-1.5 text-left hover:opacity-80"
+            >
+              <svg
+                className={`h-2.5 w-2.5 text-fg-muted/50 transition-transform ${
+                  resolvedOpen ? "rotate-90" : ""
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+              <span className="text-[10px] font-medium text-fg-muted/70">
+                Resolved
+              </span>
+              <span className="text-[9px] tabular-nums text-fg-muted/40">
+                {resolvedAnnotations.length}
+              </span>
+            </button>
+            {resolvedOpen && (
+              <div className="max-h-28 overflow-y-auto scrollbar-thin flex flex-col gap-px">
+                {resolvedAnnotations.map((a) => (
+                  <div
+                    key={a.id}
+                    className="group/item relative rounded-r border-l-2 border-l-edge-default hover:bg-surface-hover/60 transition-colors opacity-60"
+                  >
+                    <button
+                      onClick={() => goToFile(a.filePath)}
+                      className="w-full text-left pl-1.5 pr-9 py-0.5"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <FilePathLabel filePath={a.filePath} />
+                        <span className="shrink-0 text-[9px] tabular-nums text-fg-muted/40 bg-surface-raised/60 rounded px-1 py-px">
+                          {a.lineNumber}
+                        </span>
+                      </div>
+                      <p className="text-[10px] leading-snug text-fg-muted/70 mt-px line-clamp-2">
+                        {a.content}
+                      </p>
+                    </button>
+                    <div className="absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => unresolveAnnotation(a.id)}
+                        className="p-0.5 rounded text-fg-faint hover:text-status-modified hover:bg-status-modified/15"
+                        aria-label="Unresolve comment"
+                        title="Unresolve"
+                      >
+                        <svg
+                          className="h-2.5 w-2.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M9 14L4 9l5-5M20 20v-7a4 4 0 00-4-4H4"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => deleteAnnotation(a.id)}
+                        className="p-0.5 rounded text-fg-faint hover:text-status-rejected hover:bg-status-rejected/15"
+                        aria-label="Delete comment"
+                        title="Delete"
+                      >
+                        <svg
+                          className="h-2.5 w-2.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

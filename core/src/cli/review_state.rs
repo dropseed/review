@@ -382,6 +382,7 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
                 entry.reasoning = Some(reason.clone());
             }
         }
+        true
     })?;
 
     let verb = status_verb(&status);
@@ -436,6 +437,7 @@ pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
                 state.hunks.remove(id);
             }
         }
+        true
     })?;
 
     if args.json {
@@ -614,8 +616,11 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             let (comparison, _hunks, live_ids) =
                 load_for_mutation(&repo, args.target.spec.as_deref())?;
             let state = mutate_review(&repo, &comparison, &live_ids, |state| {
-                if !state.trust_list.contains(&pattern) {
+                if state.trust_list.contains(&pattern) {
+                    false
+                } else {
                     state.trust_list.push(pattern.clone());
+                    true
                 }
             })?;
             println!(
@@ -629,7 +634,9 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             let (comparison, _hunks, live_ids) =
                 load_for_mutation(&repo, args.target.spec.as_deref())?;
             let state = mutate_review(&repo, &comparison, &live_ids, |state| {
+                let before = state.trust_list.len();
                 state.trust_list.retain(|existing| existing != &pattern);
+                state.trust_list.len() != before
             })?;
             println!(
                 "Trust list now has {} pattern(s) for {} (review v{})",
@@ -661,7 +668,12 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
             let (comparison, _hunks, live_ids) =
                 load_for_mutation(&repo, args.target.spec.as_deref())?;
             mutate_review(&repo, &comparison, &live_ids, |state| {
-                state.notes.clone_from(&text);
+                if state.notes == text {
+                    false
+                } else {
+                    state.notes.clone_from(&text);
+                    true
+                }
             })?;
             println!("Notes updated for {}", comparison.key);
         }
@@ -674,6 +686,7 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
                 } else {
                     state.notes = format!("{}\n{}", state.notes, text);
                 }
+                true
             })?;
             println!("Notes updated for {}", comparison.key);
         }

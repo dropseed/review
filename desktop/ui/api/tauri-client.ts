@@ -67,6 +67,10 @@ export class TauriClient implements ApiClient {
     return invoke<string>("get_current_branch", { repoPath });
   }
 
+  async getGitUser(repoPath: string): Promise<string | null> {
+    return invoke<string | null>("get_git_user", { repoPath });
+  }
+
   async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
     try {
       return await invoke<RemoteInfo>("get_remote_info", { repoPath });

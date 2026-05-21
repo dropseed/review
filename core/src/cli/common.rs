@@ -248,6 +248,11 @@ pub fn load_for_mutation(
 /// is no longer in the live diff, then save — retrying on version conflicts
 /// so concurrent writes (e.g. from the desktop app) don't fail.
 ///
+/// `apply` returns `true` when it made a change worth persisting and `false`
+/// for a no-op (e.g. resolving an already-resolved comment). On a no-op the
+/// loaded state is returned untouched — no version bump, no write, no file-
+/// watcher churn.
+///
 /// Pruning keeps `to_summary` and `review list` honest: an approval is
 /// content-tied; when content changes the hash drifts and the entry is a
 /// meaningless orphan.
@@ -258,12 +263,16 @@ pub fn mutate_review<F>(
     apply: F,
 ) -> Result<ReviewState, String>
 where
-    F: Fn(&mut ReviewState),
+    F: Fn(&mut ReviewState) -> bool,
 {
     for attempt in 0..MAX_SAVE_RETRIES {
         let mut state = storage::load_review_state(repo, comparison)
             .map_err(|e| format!("Failed to load review: {e}"))?;
-        apply(&mut state);
+        let changed = apply(&mut state);
+        if !changed {
+            // No-op: don't bump the version or rewrite the file.
+            return Ok(state);
+        }
         state.hunks.retain(|id, _| live_ids.contains(id));
         state.prepare_for_save();
         match storage::save_review_state(repo, &state) {

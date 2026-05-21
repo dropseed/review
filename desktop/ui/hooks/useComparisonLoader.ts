@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 
@@ -16,6 +16,10 @@ export function useComparisonLoader(
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparisonKey = useReviewStore((s) => s.comparison?.key);
   const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
+
+  // Tracks the repo the cached gitUser belongs to, so a branch/comparison
+  // switch within the same repo doesn't needlessly clear it.
+  const gitUserRepoRef = useRef<string | null>(null);
 
   // Browse mode (git repo): load repo files and current branch when no comparison is set
   useEffect(() => {
@@ -82,6 +86,7 @@ export function useComparisonLoader(
       loadAllFiles,
       loadGitStatus,
       loadRemoteInfo,
+      loadGitUser,
       syncTotalDiffHunks,
       classifyStaticHunks,
       restoreGuideFromState,
@@ -93,6 +98,14 @@ export function useComparisonLoader(
 
     let cancelled = false;
 
+    // Clear stale gitUser only when the repo actually changed — a branch or
+    // comparison switch within the same repo keeps the same identity, so
+    // clearing it there would just cause a needless null flicker.
+    if (gitUserRepoRef.current !== repoPath) {
+      gitUserRepoRef.current = repoPath;
+      useReviewStore.setState({ gitUser: null });
+    }
+
     async function loadData(): Promise<void> {
       try {
         // Load review state and files in parallel
@@ -103,6 +116,9 @@ export function useComparisonLoader(
           loadFiles(),
           loadAllFiles(),
           loadGitStatus(),
+          // Resolved early so the first annotation in this session is
+          // attributed correctly even if the user is fast.
+          loadGitUser(),
         ]);
         if (cancelled) return;
 

@@ -623,6 +623,12 @@ export function DiffView({
                 useReviewStore.getState().deleteAnnotation(userAnnotation.id);
                 deps.setEditingAnnotationId(null);
               }}
+              onResolve={() =>
+                useReviewStore.getState().resolveAnnotation(userAnnotation.id)
+              }
+              onUnresolve={() =>
+                useReviewStore.getState().unresolveAnnotation(userAnnotation.id)
+              }
             />
           );
         }

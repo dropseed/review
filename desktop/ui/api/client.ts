@@ -78,6 +78,9 @@ export interface ApiClient {
   /** Get the current branch name */
   getCurrentBranch(repoPath: string): Promise<string>;
 
+  /** Get `git config user.name` (null if unset). Used as the default annotation author. */
+  getGitUser(repoPath: string): Promise<string | null>;
+
   /** Get remote info (org/repo name and browse URL) */
   getRemoteInfo(repoPath: string): Promise<RemoteInfo | null>;
 

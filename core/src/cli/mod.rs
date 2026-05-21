@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+mod comments;
 mod common;
 mod review_state;
 mod skill;
@@ -89,6 +90,12 @@ pub enum Commands {
 
     /// Read or edit review notes
     Note(review_state::NoteArgs),
+
+    /// List line-level comments on a comparison
+    Comments(comments::CommentsArgs),
+
+    /// Add, edit, resolve, or delete a line-level comment
+    Comment(comments::CommentArgs),
 
     /// Print a `review://` deep link for a file or hunk
     Url(url::UrlArgs),
@@ -201,6 +208,14 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::ChangeBase(args)) => review_state::run_change_base(args),
         Some(Commands::Trust(args)) => review_state::run_trust(args),
         Some(Commands::Note(args)) => review_state::run_note(args),
+        Some(Commands::Comments(args)) => comments::run_comments(args),
+        Some(Commands::Comment(args)) => match args.action {
+            comments::CommentAction::Add(a) => comments::run_add(args.target, a),
+            comments::CommentAction::Edit(a) => comments::run_edit(args.target, a),
+            comments::CommentAction::Resolve(a) => comments::run_resolve(args.target, a),
+            comments::CommentAction::Unresolve(a) => comments::run_unresolve(args.target, a),
+            comments::CommentAction::Delete(a) => comments::run_delete(args.target, a),
+        },
         Some(Commands::Url(args)) => url::run_url(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),
         None => run_open(cli.path, has_home_override),

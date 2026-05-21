@@ -72,6 +72,31 @@ pub struct LineAnnotation {
     pub content: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    /// Display name of who left the comment (e.g. git user, "claude", "codex",
+    /// GitHub login). `None` for legacy annotations created before authorship.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Where the annotation came from (ui, cli, agent, github, …). Used for
+    /// styling and filtering. `None` for legacy data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<AnnotationSource>,
+    /// Last edit time; absent if never edited after creation.
+    #[serde(rename = "updatedAt", default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    /// Resolution timestamp; presence means "resolved".
+    #[serde(
+        rename = "resolvedAt",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resolved_at: Option<String>,
+    /// Display name of who resolved the comment.
+    #[serde(
+        rename = "resolvedBy",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resolved_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +105,17 @@ pub enum AnnotationSide {
     Old,
     New,
     File,
+}
+
+/// Origin of an annotation. Stored on each comment for rendering and filtering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnnotationSource {
+    Ui,
+    Cli,
+    Agent,
+    Github,
+    Gitlab,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -208,6 +208,16 @@ impl LocalGitSource {
         Ok(output.trim().to_owned())
     }
 
+    /// Get the configured git user's display name (`git config user.name`).
+    /// Returns `None` when unset or blank — the UI falls back to leaving the
+    /// author empty rather than fabricating an identity.
+    pub fn get_user_name(&self) -> Option<String> {
+        self.run_git(&["config", "user.name"])
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    }
+
     /// Get remote info (org/repo name and browse URL) from the origin remote
     pub fn get_remote_info(&self) -> Result<RemoteInfo, LocalGitError> {
         let url = self.run_git(&["remote", "get-url", "origin"])?;

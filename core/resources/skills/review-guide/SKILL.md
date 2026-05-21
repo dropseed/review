@@ -79,6 +79,40 @@ capturing the question, and move on. Batch the saved ones at the end as
 "things I left for you" so they can sit down with the desktop app and a
 coffee for those.
 
+### 4b. Leaving comments on specific lines
+
+If you want the human to look at one specific line later — *not* a whole-hunk
+question, but "look at line 42, this name is misleading" — drop a comment:
+
+```
+review comment add path/to/file.rs:42 "this name is misleading — `cache` suggests memoization"
+review comment add path/to/file.rs:10-15 "consider extracting; same shape repeats 3x in this file"
+```
+
+Comments show up live on the lines in the desktop app, attributed to you
+(`author` defaults to the repo's git user, or whatever the agent harness has
+set via `$REVIEW_AUTHOR`). Use them sparingly — comments are for line-specific
+notes the human will want context on, not for general review decisions, and
+not for restating the obvious. If the question is "should this whole hunk
+land?", use `save --reason` instead; that keeps it in the decision queue.
+
+To check what's outstanding (yours or anyone else's):
+
+```
+review comments --unresolved
+review comments --author claude       # just yours
+review comment resolve <comment-id>   # when an issue is addressed
+```
+
+A few rules the CLI enforces strictly, so a script doesn't fail silently:
+
+- Line numbers are **1-based** — `path:0` is rejected.
+- `$REVIEW_SOURCE`, if set, must be one of `ui`, `cli`, `agent`, `github`,
+  `gitlab` — a typo is a hard error, not a silent fallback.
+- `resolve` / `unresolve` / `delete` are idempotent: re-running one prints
+  `Already resolved` / `Already unresolved` / `Already deleted` and exits 0
+  without touching the file. Acting on a missing comment ID is an error.
+
 ### 5. Hand off cleanly
 
 ```
@@ -125,6 +159,9 @@ review status                          # progress + overall state
 review list                            # all saved reviews
 review note set|append|show [<text>]
 review trust list|add|remove [<pattern>]
+review comments [--file GLOB] [--unresolved|--resolved] [--author NAME]
+review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file]
+review comment edit|resolve|unresolve|delete <comment-id>
 ```
 
 Git index (working tree):

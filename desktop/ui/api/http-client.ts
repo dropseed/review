@@ -142,6 +142,10 @@ export class HttpClient implements ApiClient {
     return this.post("/api/git/current-branch", { repoPath });
   }
 
+  async getGitUser(repoPath: string): Promise<string | null> {
+    return this.post("/api/git/user", { repoPath });
+  }
+
   async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
     try {
       return await this.post<RemoteInfo>("/api/git/remote-info", { repoPath });

@@ -327,6 +327,9 @@ export function isHunkReviewed(
   return isHunkTrusted(hunkState, trustList);
 }
 
+// Where an annotation came from (rendering + filtering)
+export type AnnotationSource = "ui" | "cli" | "agent" | "github" | "gitlab";
+
 // Line annotations for inline comments
 export interface LineAnnotation {
   id: string;
@@ -336,6 +339,16 @@ export interface LineAnnotation {
   side: "old" | "new" | "file"; // which version of the file (old=deletion side, new=addition side, file=full file view)
   content: string;
   createdAt: string;
+  // Display name of the author (git user, "claude", "codex", GH login).
+  // Absent on legacy annotations.
+  author?: string;
+  // Where this comment came from. Absent on legacy annotations.
+  source?: AnnotationSource;
+  // Last edit time; absent until first edit.
+  updatedAt?: string;
+  // Presence means "resolved".
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 // Rejection feedback for export

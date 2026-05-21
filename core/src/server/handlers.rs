@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::Router;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -53,6 +53,7 @@ pub fn build_api_router(state: AppState) -> Router {
         // Git operations
         .route("/api/git/current-repo", post(git_current_repo))
         .route("/api/git/current-branch", post(git_current_branch))
+        .route("/api/git/user", post(git_user))
         .route("/api/git/remote-info", post(git_remote_info))
         .route("/api/git/fetch-origin", post(git_fetch_origin))
         .route("/api/git/default-branch", post(git_default_branch))
@@ -449,6 +450,14 @@ async fn git_current_branch(Json(req): Json<RepoPathRequest>) -> ApiResult<Strin
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.get_current_branch().map_err(Into::into)
+    })
+    .await
+}
+
+async fn git_user(Json(req): Json<RepoPathRequest>) -> ApiResult<Option<String>> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        Ok(source.get_user_name())
     })
     .await
 }

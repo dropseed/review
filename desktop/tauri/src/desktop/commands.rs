@@ -358,6 +358,12 @@ pub fn get_current_branch(repo_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn get_git_user(repo_path: String) -> Result<Option<String>, String> {
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    Ok(source.get_user_name())
+}
+
+#[tauri::command]
 pub fn get_remote_info(repo_path: String) -> Result<RemoteInfo, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_remote_info().map_err(|e| e.to_string())

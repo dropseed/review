@@ -39,6 +39,8 @@ interface FileContentRendererProps {
   ) => void;
   updateAnnotation: (id: string, content: string) => void;
   deleteAnnotation: (id: string) => void;
+  resolveAnnotation: (id: string) => void;
+  unresolveAnnotation: (id: string) => void;
   onNavigateToFile?: (
     repoRelativePath: string,
     options?: { openInSplit?: boolean },
@@ -63,6 +65,8 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   addAnnotation,
   updateAnnotation,
   deleteAnnotation,
+  resolveAnnotation,
+  unresolveAnnotation,
   onNavigateToFile,
   onTokenEnter,
   onTokenLeave,
@@ -142,6 +146,8 @@ export const FileContentRenderer = memo(function FileContentRenderer({
               }
               onUpdateAnnotation={updateAnnotation}
               onDeleteAnnotation={deleteAnnotation}
+              onResolveAnnotation={resolveAnnotation}
+              onUnresolveAnnotation={unresolveAnnotation}
               extraCSS={buildDiffHighlightCSS(fileContent, viewMode)}
               onTokenEnter={onTokenEnter}
               onTokenLeave={onTokenLeave}
@@ -203,6 +209,8 @@ export const FileContentRenderer = memo(function FileContentRenderer({
             }
             onUpdateAnnotation={updateAnnotation}
             onDeleteAnnotation={deleteAnnotation}
+            onResolveAnnotation={resolveAnnotation}
+            onUnresolveAnnotation={unresolveAnnotation}
             onTokenEnter={onTokenEnter}
             onTokenLeave={onTokenLeave}
             onTokenClick={onTokenClick}

@@ -87,6 +87,8 @@ export function FileViewer({
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,
+    resolveAnnotation,
+    unresolveAnnotation,
     workingTreeDiffFile,
     gitStatus,
   } = useFileViewerState(filePath);
@@ -713,6 +715,8 @@ export function FileViewer({
                 annotation={annotation}
                 onEdit={() => setEditingFileCommentId(annotation.id)}
                 onDelete={() => deleteAnnotation(annotation.id)}
+                onResolve={() => resolveAnnotation(annotation.id)}
+                onUnresolve={() => unresolveAnnotation(annotation.id)}
               />
             );
           })}
@@ -779,6 +783,8 @@ export function FileViewer({
                 addAnnotation={addAnnotation}
                 updateAnnotation={updateAnnotation}
                 deleteAnnotation={deleteAnnotation}
+                resolveAnnotation={resolveAnnotation}
+                unresolveAnnotation={unresolveAnnotation}
                 onNavigateToFile={handleNavigateToFile}
                 onTokenEnter={onTokenEnterHover}
                 onTokenLeave={onTokenLeaveHover}

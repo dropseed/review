@@ -32,6 +32,8 @@ export function useFileViewerState(filePath: string | null) {
   const addAnnotation = useReviewStore((s) => s.addAnnotation);
   const updateAnnotation = useReviewStore((s) => s.updateAnnotation);
   const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const resolveAnnotation = useReviewStore((s) => s.resolveAnnotation);
+  const unresolveAnnotation = useReviewStore((s) => s.unresolveAnnotation);
 
   return {
     comparison,
@@ -46,6 +48,8 @@ export function useFileViewerState(filePath: string | null) {
     addAnnotation,
     updateAnnotation,
     deleteAnnotation,
+    resolveAnnotation,
+    unresolveAnnotation,
     workingTreeDiffFile,
     gitStatus,
   };

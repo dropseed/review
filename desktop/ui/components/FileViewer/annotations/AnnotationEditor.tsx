@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useListContinuation } from "../../../hooks";
-import type { LineAnnotation } from "../../../types";
+import type { AnnotationSource, LineAnnotation } from "../../../types";
 import { SimpleTooltip } from "../../ui/tooltip";
 
 interface AnnotationEditorProps {
@@ -93,6 +93,8 @@ interface AnnotationDisplayProps {
   annotation: LineAnnotation;
   onEdit: () => void;
   onDelete: () => void;
+  onResolve?: () => void;
+  onUnresolve?: () => void;
 }
 
 // Display component for existing annotations
@@ -100,21 +102,93 @@ export function AnnotationDisplay({
   annotation,
   onEdit,
   onDelete,
+  onResolve,
+  onUnresolve,
 }: AnnotationDisplayProps) {
+  const resolved = !!annotation.resolvedAt;
+  const containerClass = resolved
+    ? "border-l-2 border-edge-default bg-surface-panel/40 px-3 py-2 group opacity-60"
+    : "border-l-2 border-status-modified/50 bg-status-modified/5 px-3 py-2 group";
   return (
-    <div className="border-l-2 border-status-modified/50 bg-status-modified/5 px-3 py-2 group">
+    <div className={containerClass}>
       <div className="flex items-start gap-2">
         <svg
-          className="h-3.5 w-3.5 text-status-modified mt-0.5 flex-shrink-0"
+          className={`h-3.5 w-3.5 mt-0.5 flex-shrink-0 ${
+            resolved ? "text-fg-muted" : "text-status-modified"
+          }`}
           fill="currentColor"
           viewBox="0 0 24 24"
         >
           <path d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
         </svg>
-        <p className="flex-1 text-xs text-fg-secondary whitespace-pre-wrap text-pretty">
-          {annotation.content}
-        </p>
+        <div className="flex-1 min-w-0">
+          {(annotation.author || resolved) && (
+            <div className="flex items-center gap-1.5 mb-1">
+              {annotation.author && (
+                <AnnotationAuthorChip
+                  author={annotation.author}
+                  source={annotation.source}
+                />
+              )}
+              {resolved && (
+                <span className="text-xxs text-fg-faint">
+                  resolved
+                  {annotation.resolvedBy ? ` by ${annotation.resolvedBy}` : ""}
+                </span>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-fg-secondary whitespace-pre-wrap text-pretty">
+            {annotation.content}
+          </p>
+        </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onResolve && !resolved && (
+            <SimpleTooltip content="Resolve">
+              <button
+                onClick={onResolve}
+                className="p-1 text-fg-muted hover:text-status-approved hover:bg-status-approved/20 rounded transition-colors"
+                aria-label="Resolve annotation"
+              >
+                <svg
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4.5 12.75l6 6 9-13.5"
+                  />
+                </svg>
+              </button>
+            </SimpleTooltip>
+          )}
+          {onUnresolve && resolved && (
+            <SimpleTooltip content="Unresolve">
+              <button
+                onClick={onUnresolve}
+                className="p-1 text-fg-muted hover:text-fg-secondary hover:bg-surface-hover rounded transition-colors"
+                aria-label="Unresolve annotation"
+              >
+                <svg
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 14L4 9l5-5M20 20v-7a4 4 0 00-4-4H4"
+                  />
+                </svg>
+              </button>
+            </SimpleTooltip>
+          )}
           <SimpleTooltip content="Edit">
             <button
               onClick={onEdit}
@@ -161,4 +235,54 @@ export function AnnotationDisplay({
       </div>
     </div>
   );
+}
+
+// Author + source chip rendered above an annotation's content.
+function AnnotationAuthorChip({
+  author,
+  source,
+}: {
+  author: string;
+  source?: AnnotationSource;
+}) {
+  const tone = sourceToneClass(source);
+  const label = sourceLabel(source);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-sm px-1 py-px text-xxs ${tone}`}
+    >
+      <span className="font-medium">{author}</span>
+      {label && <span className="opacity-70">·&nbsp;{label}</span>}
+    </span>
+  );
+}
+
+function sourceToneClass(source?: AnnotationSource): string {
+  switch (source) {
+    case "agent":
+      return "bg-status-modified/15 text-status-modified";
+    case "github":
+    case "gitlab":
+      return "bg-surface-raised text-fg-secondary";
+    case "cli":
+      return "bg-surface-raised text-fg-secondary";
+    case "ui":
+    default:
+      return "bg-surface-raised text-fg-secondary";
+  }
+}
+
+function sourceLabel(source?: AnnotationSource): string | null {
+  switch (source) {
+    case "agent":
+      return "agent";
+    case "cli":
+      return "cli";
+    case "github":
+      return "github";
+    case "gitlab":
+      return "gitlab";
+    default:
+      return null;
+  }
 }

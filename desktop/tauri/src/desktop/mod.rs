@@ -644,6 +644,7 @@ pub fn run() {
             commands::check_github_available,
             commands::list_pull_requests,
             commands::get_current_branch,
+            commands::get_git_user,
             commands::get_remote_info,
             commands::fetch_origin,
             commands::get_default_branch,

@@ -296,7 +296,7 @@ pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), St
 mod tests {
     use super::*;
     use crate::review::central::tests::ENV_LOCK;
-    use crate::review::state::HunkState;
+    use crate::review::state::{AnnotationSide, AnnotationSource, HunkState, LineAnnotation};
     use tempfile::TempDir;
 
     fn create_test_comparison() -> Comparison {
@@ -370,6 +370,69 @@ mod tests {
         let hunk = loaded_state.hunks.get("file.rs:abc123").unwrap();
         assert_eq!(hunk.label, vec!["imports:added".to_string()]);
         assert_eq!(hunk.reasoning, Some("Added import".to_string()));
+    }
+
+    #[test]
+    fn test_annotation_fields_roundtrip() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        let mut state = ReviewState::new(comparison.clone());
+        // A fully-populated, resolved annotation.
+        state.annotations.push(LineAnnotation {
+            id: "file.rs:42:new:t123-0".to_string(),
+            file_path: "file.rs".to_string(),
+            line_number: 42,
+            end_line_number: Some(45),
+            side: AnnotationSide::New,
+            content: "needs work".to_string(),
+            created_at: "2026-01-01T00:00:00.000Z".to_string(),
+            author: Some("claude".to_string()),
+            source: Some(AnnotationSource::Agent),
+            updated_at: Some("2026-01-02T00:00:00.000Z".to_string()),
+            resolved_at: Some("2026-01-03T00:00:00.000Z".to_string()),
+            resolved_by: Some("Dave".to_string()),
+        });
+        // A legacy annotation: no author/source/updated/resolved fields.
+        state.annotations.push(LineAnnotation {
+            id: "file.rs:7:old:legacy".to_string(),
+            file_path: "file.rs".to_string(),
+            line_number: 7,
+            end_line_number: None,
+            side: AnnotationSide::Old,
+            content: "old comment".to_string(),
+            created_at: "2025-01-01T00:00:00.000Z".to_string(),
+            author: None,
+            source: None,
+            updated_at: None,
+            resolved_at: None,
+            resolved_by: None,
+        });
+
+        save_review_state(&repo_path, &state).unwrap();
+        let loaded = load_review_state(&repo_path, &comparison).unwrap();
+
+        assert_eq!(loaded.annotations.len(), 2);
+
+        let full = &loaded.annotations[0];
+        assert_eq!(full.author.as_deref(), Some("claude"));
+        assert!(matches!(full.source, Some(AnnotationSource::Agent)));
+        assert_eq!(full.end_line_number, Some(45));
+        assert_eq!(full.updated_at.as_deref(), Some("2026-01-02T00:00:00.000Z"));
+        assert_eq!(
+            full.resolved_at.as_deref(),
+            Some("2026-01-03T00:00:00.000Z")
+        );
+        assert_eq!(full.resolved_by.as_deref(), Some("Dave"));
+
+        let legacy = &loaded.annotations[1];
+        assert_eq!(legacy.author, None);
+        assert!(legacy.source.is_none());
+        assert_eq!(legacy.updated_at, None);
+        assert_eq!(legacy.resolved_at, None);
+        assert_eq!(legacy.resolved_by, None);
     }
 
     #[test]

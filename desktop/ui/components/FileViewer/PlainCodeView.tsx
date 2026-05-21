@@ -38,6 +38,10 @@ interface PlainCodeViewProps {
   onUpdateAnnotation?: (id: string, content: string) => void;
   /** Callback when deleting an annotation */
   onDeleteAnnotation?: (id: string) => void;
+  /** Callback when resolving an annotation */
+  onResolveAnnotation?: (id: string) => void;
+  /** Callback when unresolving a resolved annotation */
+  onUnresolveAnnotation?: (id: string) => void;
   /** Extra CSS to inject into the shadow DOM (e.g. diff line highlights) */
   extraCSS?: string;
   /** Token enter/leave hooks (e.g. LSP hover) wired into pierre/diffs options */
@@ -58,6 +62,8 @@ export function PlainCodeView({
   onAddAnnotation,
   onUpdateAnnotation,
   onDeleteAnnotation,
+  onResolveAnnotation,
+  onUnresolveAnnotation,
   extraCSS,
   onTokenEnter,
   onTokenLeave,
@@ -175,6 +181,16 @@ export function PlainCodeView({
         annotation={userAnnotation}
         onEdit={() => setEditingAnnotationId(userAnnotation.id)}
         onDelete={() => onDeleteAnnotation?.(userAnnotation.id)}
+        onResolve={
+          onResolveAnnotation
+            ? () => onResolveAnnotation(userAnnotation.id)
+            : undefined
+        }
+        onUnresolve={
+          onUnresolveAnnotation
+            ? () => onUnresolveAnnotation(userAnnotation.id)
+            : undefined
+        }
       />
     );
   };

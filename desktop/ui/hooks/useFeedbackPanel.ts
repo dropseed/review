@@ -40,7 +40,8 @@ function generateFeedbackMarkdown(
     for (const hunk of rejectedHunks) {
       lines.push(`- **${hunk.filePath}:${hunk.lineRange}**`);
       for (const annotation of hunk.annotations) {
-        lines.push(`  - ${annotation.content}`);
+        const suffix = annotation.resolvedAt ? " _(resolved)_" : "";
+        lines.push(`  - ${annotation.content}${suffix}`);
       }
     }
     lines.push("");
@@ -81,8 +82,10 @@ export interface RejectedHunkWithAnnotations {
 export interface FeedbackPanelState {
   notes: string;
   standaloneAnnotations: LineAnnotation[];
+  resolvedAnnotations: LineAnnotation[];
   setReviewNotes: (notes: string) => void;
   deleteAnnotation: (annotationId: string) => void;
+  unresolveAnnotation: (annotationId: string) => void;
   hasFeedbackToExport: boolean;
   goToFile: (filePath: string) => void;
   rejectedHunks: RejectedHunkWithAnnotations[];
@@ -101,6 +104,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
   const hunks = useAllHunks();
   const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
   const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
+  const unresolveAnnotation = useReviewStore((s) => s.unresolveAnnotation);
   const clearFeedback = useReviewStore((s) => s.clearFeedback);
   const revealFileInTree = useReviewStore((s) => s.revealFileInTree);
 
@@ -109,9 +113,11 @@ export function useFeedbackPanel(): FeedbackPanelState {
   const notes = reviewState?.notes || "";
 
   // Hide annotations whose lines no longer fall within any current hunk.
-  // The annotations stay in the persisted review state so they survive
-  // temporary hunk changes (rebases, resets, amends) and reappear if the
-  // matching hunks come back.
+  // Resolved annotations are kept here: a resolved comment on a hunk that is
+  // still rejected is the rationale for that rejection and must survive into
+  // the export. The annotations stay in the persisted review state so they
+  // survive temporary hunk changes (rebases, resets, amends) and reappear if
+  // the matching hunks come back.
   const annotations = useMemo(() => {
     const all = reviewState?.annotations ?? [];
     if (hunks.length === 0) return all;
@@ -132,12 +138,21 @@ export function useFeedbackPanel(): FeedbackPanelState {
       }));
   }, [hunks, reviewState, annotations]);
 
+  // Standalone comments are the "still needs attention" queue — resolved ones
+  // drop off here (unlike rejected-hunk comments, which stay as rationale).
   const standaloneAnnotations = useMemo(() => {
     const coveredIds = new Set(
       rejectedHunks.flatMap((rh) => rh.annotations.map((a) => a.id)),
     );
-    return annotations.filter((a) => !coveredIds.has(a.id));
+    return annotations.filter((a) => !coveredIds.has(a.id) && !a.resolvedAt);
   }, [rejectedHunks, annotations]);
+
+  // All resolved annotations, regardless of hunk coverage — surfaced in their
+  // own panel section so a resolved comment on a file that has left the diff
+  // is still reachable (to unresolve or delete) without the CLI.
+  const resolvedAnnotations = useMemo(() => {
+    return (reviewState?.annotations ?? []).filter((a) => a.resolvedAt);
+  }, [reviewState?.annotations]);
 
   const feedbackCount = rejectedHunks.length + standaloneAnnotations.length;
 
@@ -161,8 +176,10 @@ export function useFeedbackPanel(): FeedbackPanelState {
   return {
     notes,
     standaloneAnnotations,
+    resolvedAnnotations,
     setReviewNotes,
     deleteAnnotation,
+    unresolveAnnotation,
     hasFeedbackToExport,
     goToFile: revealFileInTree,
     rejectedHunks,
