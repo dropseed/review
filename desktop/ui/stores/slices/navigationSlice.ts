@@ -109,6 +109,12 @@ export interface NavigationSlice {
 
   // Ad-hoc hunk group (used with guideContentMode "adhoc-group")
   adhocGroup: HunkGroup | null;
+  /**
+   * Show a one-off HunkGroup in MultiFileDiffViewer without changing the
+   * generated review groups. Used for trust-pattern previews and the
+   * Files-panel "view as rolling diff" buttons.
+   */
+  openAdhocGroup: (group: HunkGroup) => void;
 
   // Working-tree rolling diff (Git panel section "view as rolling diff").
   // When set, ContentArea renders WorkingTreeMultiFileDiffViewer for these
@@ -200,6 +206,21 @@ function isHunkTrustedInState(hunkId: string, state: ReviewStore): boolean {
   if (hunkState?.status) return false;
   return isHunkTrusted(hunkState, reviewState.trustList);
 }
+
+/**
+ * Field set that nulls out every "overlay" view in the content area, used to
+ * keep the overlays mutually exclusive. ContentArea picks viewingCommitHash >
+ * guideContentMode > workingTreeMultiView > file viewer, but if two are set at
+ * once the lower-priority one leaks state when the higher one is dismissed.
+ * Any action that opens or dismisses one overlay should spread these in to
+ * clear the others.
+ */
+const OVERLAYS_CLEARED = {
+  guideContentMode: null,
+  adhocGroup: null,
+  viewingCommitHash: null,
+  workingTreeMultiView: null,
+} as const;
 
 /** Jump to the first or last hunk in the current file. */
 function jumpToFileEdge(
@@ -456,7 +477,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   navigateToBrowse: (filePath?, scrollTo?) => {
     if (filePath === undefined) {
-      set({ guideContentMode: null, viewingCommitHash: null });
+      set({ ...OVERLAYS_CLEARED });
       return;
     }
 
@@ -464,8 +485,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       // Caller provides a specific hunk — set focusedHunkId but let the
       // caller control scrollTarget (e.g. type "line" for a highlight).
       set({
-        guideContentMode: null,
-        viewingCommitHash: null,
+        ...OVERLAYS_CLEARED,
         selectedFile: filePath,
         filesPanelCollapsed: false,
         focusedHunkId: scrollTo.hunkId,
@@ -477,8 +497,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     const hunkId = findFirstUnreviewedHunkId(filePath, get());
 
     set({
-      guideContentMode: null,
-      viewingCommitHash: null,
+      ...OVERLAYS_CLEARED,
       selectedFile: filePath,
       filesPanelCollapsed: false,
       ...(hunkId && {
@@ -490,7 +509,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   revealInBrowse: (filePath) => {
     set({
-      viewingCommitHash: null,
+      ...OVERLAYS_CLEARED,
       requestedFilesPanelTab: "browse",
       fileToReveal: filePath,
       selectedFile: filePath,
@@ -606,13 +625,12 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   selectWorkingTreeFile: (path, mode) => {
     const hunkId = findFirstUnreviewedHunkId(path, get());
     set({
+      ...OVERLAYS_CLEARED,
       selectedFile: path,
       workingTreeDiffFile: path,
       workingTreeDiffMode: mode ?? "unstaged",
       focusedHunkId: hunkId,
       scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
-      guideContentMode: null,
-      workingTreeMultiView: null,
     });
   },
 
@@ -632,23 +650,35 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Ad-hoc group
   adhocGroup: null,
+  openAdhocGroup: (group) =>
+    set({
+      ...OVERLAYS_CLEARED,
+      adhocGroup: group,
+      guideContentMode: "adhoc-group",
+      selectedFile: null,
+    }),
 
   // Working-tree multi-file rolling diff
   workingTreeMultiView: null,
   openWorkingTreeMultiView: (view) =>
     set({
+      ...OVERLAYS_CLEARED,
       workingTreeMultiView: view,
       selectedFile: null,
       workingTreeDiffFile: null,
       workingTreeDiffMode: null,
-      guideContentMode: null,
-      viewingCommitHash: null,
     }),
   closeWorkingTreeMultiView: () => set({ workingTreeMultiView: null }),
 
   // Viewing a commit diff inline
   viewingCommitHash: null,
-  setViewingCommitHash: (hash) => set({ viewingCommitHash: hash }),
+  setViewingCommitHash: (hash) => {
+    if (hash === null) {
+      set({ viewingCommitHash: null });
+      return;
+    }
+    set({ ...OVERLAYS_CLEARED, viewingCommitHash: hash });
+  },
 
   // Content search modal
   contentSearchOpen: false,

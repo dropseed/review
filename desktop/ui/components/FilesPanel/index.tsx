@@ -434,11 +434,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
 
   const openRollingDiff = useCallback((title: string, hunkIds: string[]) => {
     if (hunkIds.length === 0) return;
-    useReviewStore.setState({
-      adhocGroup: { title, hunkIds },
-      guideContentMode: "adhoc-group",
-      selectedFile: null,
-    });
+    useReviewStore.getState().openAdhocGroup({ title, hunkIds });
   }, []);
 
   // Quick actions: approve/unapprove by file status (deleted, renamed, added)

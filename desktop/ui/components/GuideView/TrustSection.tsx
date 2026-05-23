@@ -184,13 +184,10 @@ export function TrustSection(): ReactNode {
 
     if (hunkIds.length === 0) return;
 
-    useReviewStore.setState({
-      adhocGroup: {
-        title: patternName,
-        hunkIds,
-        badgeLabel: "Trust pattern",
-      },
-      guideContentMode: "adhoc-group",
+    useReviewStore.getState().openAdhocGroup({
+      title: patternName,
+      hunkIds,
+      badgeLabel: "Trust pattern",
     });
   };
 
