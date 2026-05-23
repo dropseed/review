@@ -12,82 +12,9 @@ import { getApiClient } from "../../api";
 import type { FileContent } from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
-import { Spinner } from "../ui/spinner";
+import { FileDiffStackItem } from "../ui/file-diff-stack-item";
 
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
-
-interface FileSectionProps {
-  filePath: string;
-  isLoading: boolean;
-  onView: () => void;
-  children: ReactNode;
-}
-
-function FileSection({
-  filePath,
-  isLoading,
-  onView,
-  children,
-}: FileSectionProps): ReactNode {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  return (
-    <div className="border-b border-edge/50">
-      <div className="sticky top-[72px] z-[9] bg-surface-panel/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-edge/30">
-        <button
-          type="button"
-          onClick={() => setIsCollapsed((prev) => !prev)}
-          className="shrink-0 text-fg-muted hover:text-fg-secondary transition-colors"
-        >
-          <svg
-            className={`w-3 h-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsCollapsed((prev) => !prev)}
-          className="font-mono text-xs text-fg-muted flex-1 truncate text-left hover:text-fg-secondary transition-colors"
-        >
-          {filePath}
-        </button>
-        <button
-          type="button"
-          onClick={onView}
-          className="shrink-0 text-fg-muted hover:text-fg-secondary transition-colors p-0.5 rounded hover:bg-surface-hover"
-          title="View full file"
-        >
-          <svg
-            className="w-3.5 h-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-            <path d="M15 3h6v6" />
-            <path d="M10 14L21 3" />
-          </svg>
-        </button>
-      </div>
-      {!isCollapsed && (
-        <>
-          {isLoading && (
-            <div className="flex items-center gap-2 px-4 py-6 text-fg-muted">
-              <Spinner className="h-4 w-4" />
-              <span className="text-xs">Loading diff...</span>
-            </div>
-          )}
-          {children}
-        </>
-      )}
-    </div>
-  );
-}
 
 export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   const view = useReviewStore((s) => s.workingTreeMultiView);
@@ -284,14 +211,14 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
             const fc = fileContents.get(filePath);
             const isLoading = loadingFiles.has(filePath);
             return (
-              <FileSection
+              <FileDiffStackItem
                 key={filePath}
                 filePath={filePath}
                 isLoading={isLoading && !fc}
-                onView={() => handleOpenFile(filePath)}
+                onViewFile={() => handleOpenFile(filePath)}
               >
                 {fc ? renderFileContent(fc, filePath) : null}
-              </FileSection>
+              </FileDiffStackItem>
             );
           })}
         </div>

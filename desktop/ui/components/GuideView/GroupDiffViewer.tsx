@@ -24,30 +24,7 @@ import type {
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
-
-function Spinner({ className = "h-4 w-4" }: { className?: string }): ReactNode {
-  return (
-    <svg
-      className={`animate-spin ${className}`}
-      viewBox="0 0 24 24"
-      fill="none"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="3"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
-}
+import { FileDiffStackItem } from "../ui/file-diff-stack-item";
 
 function CheckIcon(): ReactNode {
   return (
@@ -314,101 +291,42 @@ function FileDiffSection({
   onViewFile,
   children,
 }: FileDiffSectionProps): ReactNode {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  // Auto-collapse when all hunks in this file become reviewed
-  const prevCompleted = useRef(false);
-  useEffect(() => {
-    if (fileCompleted && !prevCompleted.current) {
-      setIsCollapsed(true);
-    }
-    prevCompleted.current = fileCompleted;
-  }, [fileCompleted]);
+  const headerActions = fileCompleted ? (
+    <span className="text-status-approved shrink-0">
+      <CheckIcon />
+    </span>
+  ) : (
+    <div className="flex items-center gap-1 shrink-0">
+      <button
+        type="button"
+        onClick={onApproveFile}
+        className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
+                   bg-status-approved/10 text-status-approved hover:bg-status-approved/20"
+      >
+        Approve{" "}
+        {fileUnreviewed.length > 1 ? `all ${fileUnreviewed.length}` : ""}
+      </button>
+      <button
+        type="button"
+        onClick={onRejectFile}
+        className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
+                   text-fg-muted hover:text-status-rejected hover:bg-status-rejected/10"
+      >
+        Reject
+      </button>
+    </div>
+  );
 
   return (
-    <div className="border-b border-edge/50">
-      {/* File path header */}
-      <div className="sticky top-[72px] z-[9] bg-surface-panel/95 backdrop-blur-sm flex items-center gap-2 px-4 py-1.5 border-b border-edge/30">
-        <button
-          type="button"
-          onClick={() => setIsCollapsed((prev) => !prev)}
-          className="shrink-0 text-fg-muted hover:text-fg-secondary transition-colors"
-        >
-          <svg
-            className={`w-3 h-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsCollapsed((prev) => !prev)}
-          className="font-mono text-xs text-fg-muted flex-1 truncate text-left hover:text-fg-secondary transition-colors"
-        >
-          {filePath}
-        </button>
-        <button
-          type="button"
-          onClick={onViewFile}
-          className="shrink-0 text-fg-muted hover:text-fg-secondary transition-colors p-0.5 rounded hover:bg-surface-hover"
-          title="View full file"
-        >
-          <svg
-            className="w-3.5 h-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-            <path d="M15 3h6v6" />
-            <path d="M10 14L21 3" />
-          </svg>
-        </button>
-        {fileCompleted ? (
-          <span className="text-status-approved shrink-0">
-            <CheckIcon />
-          </span>
-        ) : (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={onApproveFile}
-              className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
-                               bg-status-approved/10 text-status-approved hover:bg-status-approved/20"
-            >
-              Approve{" "}
-              {fileUnreviewed.length > 1 ? `all ${fileUnreviewed.length}` : ""}
-            </button>
-            <button
-              type="button"
-              onClick={onRejectFile}
-              className="px-2 py-0.5 text-xxs font-medium rounded transition-colors
-                               text-fg-muted hover:text-status-rejected hover:bg-status-rejected/10"
-            >
-              Reject
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Content */}
-      {!isCollapsed && (
-        <>
-          {isLoading && (
-            <div className="flex items-center gap-2 px-4 py-6 text-fg-muted">
-              <Spinner className="h-4 w-4" />
-              <span className="text-xs">Loading diff...</span>
-            </div>
-          )}
-          {children}
-        </>
-      )}
-    </div>
+    <FileDiffStackItem
+      filePath={filePath}
+      isLoading={isLoading}
+      headerActions={headerActions}
+      autoCollapseSignal={fileCompleted}
+      onViewFile={onViewFile}
+    >
+      {children}
+    </FileDiffStackItem>
   );
 }
 
