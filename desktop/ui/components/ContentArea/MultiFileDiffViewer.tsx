@@ -66,9 +66,9 @@ export function MultiFileDiffViewer(): ReactNode {
           group={group}
           groupIndex={groupIndex}
           headerBadge={
-            isAdhoc ? (
+            group.badgeLabel ? (
               <span className="text-xs font-medium text-status-trusted bg-status-trusted/10 px-2 py-0.5 rounded-full">
-                Trust pattern
+                {group.badgeLabel}
               </span>
             ) : undefined
           }

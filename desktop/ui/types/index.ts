@@ -406,6 +406,8 @@ export interface HunkGroup {
   phase?: string;
   /** True when this group was created by client-side patching, not AI grouping. */
   ungrouped?: boolean;
+  /** Optional short label displayed next to the title (e.g. "Trust pattern"). */
+  badgeLabel?: string;
 }
 
 /** A single event emitted during streaming grouping. */

@@ -21,6 +21,7 @@ export function useFileRouteSync() {
 
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
+  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
   const flatFileList = useReviewStore((s) => s.flatFileList);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
@@ -76,6 +77,7 @@ export function useFileRouteSync() {
   useEffect(() => {
     if (isSyncingRef.current) return;
     if (guideContentMode !== null) return;
+    if (workingTreeMultiView !== null) return;
     if (!owner || !repo) return;
     if (!isBrowseRoute && !comparisonKey) return;
 
@@ -100,6 +102,7 @@ export function useFileRouteSync() {
   }, [
     selectedFile,
     guideContentMode,
+    workingTreeMultiView,
     owner,
     repo,
     comparisonKey,

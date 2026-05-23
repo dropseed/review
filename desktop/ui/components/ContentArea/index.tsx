@@ -15,6 +15,11 @@ const MultiFileDiffViewer = lazy(() =>
     default: m.MultiFileDiffViewer,
   })),
 );
+const WorkingTreeMultiFileDiffViewer = lazy(() =>
+  import("./WorkingTreeMultiFileDiffViewer").then((m) => ({
+    default: m.WorkingTreeMultiFileDiffViewer,
+  })),
+);
 
 export function ContentArea(): ReactNode {
   const selectedFile = useReviewStore((s) => s.selectedFile);
@@ -24,6 +29,7 @@ export function ContentArea(): ReactNode {
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const viewingCommitHash = useReviewStore((s) => s.viewingCommitHash);
+  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
   const setFocusedPane = useReviewStore((s) => s.setFocusedPane);
 
   // When viewing an external file (from LSP go-to-definition), use that path
@@ -58,6 +64,15 @@ export function ContentArea(): ReactNode {
     return (
       <Suspense fallback={null}>
         <MultiFileDiffViewer />
+      </Suspense>
+    );
+  }
+
+  // Working-tree rolling diff (Git panel "view as rolling diff")
+  if (workingTreeMultiView !== null) {
+    return (
+      <Suspense fallback={null}>
+        <WorkingTreeMultiFileDiffViewer />
       </Suspense>
     );
   }

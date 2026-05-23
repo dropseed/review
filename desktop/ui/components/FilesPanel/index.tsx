@@ -107,6 +107,46 @@ const GUIDE_ICON = (
   </svg>
 );
 
+const ROLLING_DIFF_ICON = (
+  <svg
+    className="h-3.5 w-3.5"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="4" width="18" height="5" rx="1" />
+    <rect x="3" y="11" width="18" height="3" rx="1" opacity="0.7" />
+    <rect x="3" y="16" width="18" height="4" rx="1" opacity="0.45" />
+  </svg>
+);
+
+function RollingDiffButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="flex items-center justify-center w-6 h-6 rounded
+                 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+      aria-label={label}
+      title={label}
+    >
+      {ROLLING_DIFF_ICON}
+    </button>
+  );
+}
+
 /** Collect all directory paths from a processed tree (for expand/collapse) */
 function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
   const paths = new Set<string>();
@@ -457,6 +497,15 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     if (savedForLaterHunkIds.length > 0)
       useReviewStore.getState().unapproveHunkIds(savedForLaterHunkIds);
   }, [savedForLaterHunkIds]);
+
+  const openRollingDiff = useCallback((title: string, hunkIds: string[]) => {
+    if (hunkIds.length === 0) return;
+    useReviewStore.setState({
+      adhocGroup: { title, hunkIds },
+      guideContentMode: "adhoc-group",
+      selectedFile: null,
+    });
+  }, []);
 
   // Quick actions: approve/unapprove by file status (deleted, renamed, added)
   const quickActionData = useMemo(() => {
@@ -1016,6 +1065,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                     onCollapseAll={
                       changesDisplayMode === "tree" ? collapseAll : undefined
                     }
+                    actionContent={
+                      reviewedHunkIds.length > 0 ? (
+                        <RollingDiffButton
+                          label="View as rolling diff"
+                          onClick={() =>
+                            openRollingDiff("Reviewed", reviewedHunkIds)
+                          }
+                        />
+                      ) : undefined
+                    }
                     additionalMenuContent={viewOptionsMenuContent}
                   >
                     <FileListSection
@@ -1068,27 +1127,37 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         : undefined
                     }
                     actionContent={
-                      guideActive ? (
-                        <button
-                          type="button"
-                          onClick={exitGuide}
-                          className="flex items-center justify-center w-6 h-6 rounded
+                      <>
+                        {!guideActive && pendingHunkIds.length > 0 && (
+                          <RollingDiffButton
+                            label="View as rolling diff"
+                            onClick={() =>
+                              openRollingDiff("Needs Review", pendingHunkIds)
+                            }
+                          />
+                        )}
+                        {guideActive ? (
+                          <button
+                            type="button"
+                            onClick={exitGuide}
+                            className="flex items-center justify-center w-6 h-6 rounded
                                    text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
-                          aria-label="Exit guided review"
-                        >
-                          <XIcon className="w-3.5 h-3.5" />
-                        </button>
-                      ) : pendingHunkIds.length >= 4 ? (
-                        <button
-                          type="button"
-                          onClick={() => startGuide()}
-                          className="flex items-center justify-center w-6 h-6 rounded
+                            aria-label="Exit guided review"
+                          >
+                            <XIcon className="w-3.5 h-3.5" />
+                          </button>
+                        ) : pendingHunkIds.length >= 4 ? (
+                          <button
+                            type="button"
+                            onClick={() => startGuide()}
+                            className="flex items-center justify-center w-6 h-6 rounded
                                    text-guide hover:bg-guide/10 transition-colors"
-                          aria-label="Start guided review"
-                        >
-                          {GUIDE_ICON}
-                        </button>
-                      ) : undefined
+                            aria-label="Start guided review"
+                          >
+                            {GUIDE_ICON}
+                          </button>
+                        ) : null}
+                      </>
                     }
                     additionalMenuContent={
                       guideActive ? (
@@ -1147,6 +1216,19 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                       }
                       onCollapseAll={
                         changesDisplayMode === "tree" ? collapseAll : undefined
+                      }
+                      actionContent={
+                        savedForLaterHunkIds.length > 0 ? (
+                          <RollingDiffButton
+                            label="View as rolling diff"
+                            onClick={() =>
+                              openRollingDiff(
+                                "Saved for Later",
+                                savedForLaterHunkIds,
+                              )
+                            }
+                          />
+                        ) : undefined
                       }
                     >
                       <FileListSection

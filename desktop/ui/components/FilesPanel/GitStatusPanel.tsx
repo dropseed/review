@@ -62,6 +62,40 @@ const UNTRACKED_ICON = (
   </svg>
 );
 
+const ROLLING_DIFF_ICON = (
+  <svg
+    className="h-3.5 w-3.5"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="4" width="18" height="5" rx="1" />
+    <rect x="3" y="11" width="18" height="3" rx="1" opacity="0.7" />
+    <rect x="3" y="16" width="18" height="4" rx="1" opacity="0.45" />
+  </svg>
+);
+
+function RollingDiffButton({ onClick }: { onClick: () => void }): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="flex items-center justify-center w-6 h-6 rounded
+                 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+      aria-label="View as rolling diff"
+      title="View as rolling diff"
+    >
+      {ROLLING_DIFF_ICON}
+    </button>
+  );
+}
+
 function GitSection({
   title,
   icon,
@@ -72,6 +106,7 @@ function GitSection({
   menuItems,
   onExpandAll,
   onCollapseAll,
+  actionContent,
 }: {
   title: string;
   icon?: ReactNode;
@@ -82,6 +117,7 @@ function GitSection({
   menuItems?: { label: string; onClick: () => void }[];
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
+  actionContent?: ReactNode;
 }): ReactNode {
   const [open, setOpen] = useState(defaultOpen);
   const hasExpandCollapse = onExpandAll || onCollapseAll;
@@ -94,6 +130,7 @@ function GitSection({
       badgeColor={accentColor}
       isOpen={open}
       onToggle={() => setOpen(!open)}
+      actionContent={actionContent}
       menuContent={
         (menuItems && menuItems.length > 0) || hasExpandCollapse ? (
           <>
@@ -165,6 +202,9 @@ export function GitStatusPanel({
   const unstageAll = useReviewStore((s) => s.unstageAll);
   const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
   const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
+  const openWorkingTreeMultiView = useReviewStore(
+    (s) => s.openWorkingTreeMultiView,
+  );
 
   const displayModeMenuItems = useMemo(
     () => [
@@ -303,6 +343,17 @@ export function GitStatusPanel({
             icon={STAGED_ICON}
             count={staged.length}
             accentColor="bg-status-added/20 text-status-added"
+            actionContent={
+              <RollingDiffButton
+                onClick={() =>
+                  openWorkingTreeMultiView({
+                    title: "Staged changes",
+                    mode: "staged",
+                    files: staged.map((e) => e.path),
+                  })
+                }
+              />
+            }
             menuItems={[
               {
                 label: "Approve all staged",
@@ -358,6 +409,17 @@ export function GitStatusPanel({
             icon={UNSTAGED_ICON}
             count={unstaged.length}
             accentColor="bg-status-pending/20 text-status-pending"
+            actionContent={
+              <RollingDiffButton
+                onClick={() =>
+                  openWorkingTreeMultiView({
+                    title: "Unstaged changes",
+                    mode: "unstaged",
+                    files: unstaged.map((e) => e.path),
+                  })
+                }
+              />
+            }
             menuItems={[
               {
                 label: "Stage reviewed",

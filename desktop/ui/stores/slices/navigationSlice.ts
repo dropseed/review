@@ -110,6 +110,21 @@ export interface NavigationSlice {
   // Ad-hoc hunk group (used with guideContentMode "adhoc-group")
   adhocGroup: HunkGroup | null;
 
+  // Working-tree rolling diff (Git panel section "view as rolling diff").
+  // When set, ContentArea renders WorkingTreeMultiFileDiffViewer for these
+  // file paths in the requested staged/unstaged mode.
+  workingTreeMultiView: {
+    title: string;
+    mode: "staged" | "unstaged";
+    files: string[];
+  } | null;
+  openWorkingTreeMultiView: (view: {
+    title: string;
+    mode: "staged" | "unstaged";
+    files: string[];
+  }) => void;
+  closeWorkingTreeMultiView: () => void;
+
   // Viewing a commit diff inline
   viewingCommitHash: string | null;
   setViewingCommitHash: (hash: string | null) => void;
@@ -597,6 +612,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       focusedHunkId: hunkId,
       scrollTarget: hunkId ? { type: "hunk", hunkId } : null,
       guideContentMode: null,
+      workingTreeMultiView: null,
     });
   },
 
@@ -616,6 +632,19 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Ad-hoc group
   adhocGroup: null,
+
+  // Working-tree multi-file rolling diff
+  workingTreeMultiView: null,
+  openWorkingTreeMultiView: (view) =>
+    set({
+      workingTreeMultiView: view,
+      selectedFile: null,
+      workingTreeDiffFile: null,
+      workingTreeDiffMode: null,
+      guideContentMode: null,
+      viewingCommitHash: null,
+    }),
+  closeWorkingTreeMultiView: () => set({ workingTreeMultiView: null }),
 
   // Viewing a commit diff inline
   viewingCommitHash: null,
