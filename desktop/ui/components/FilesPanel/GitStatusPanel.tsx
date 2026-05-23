@@ -9,6 +9,7 @@ import {
 import { CommitPanel } from "./CommitPanel";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
+import { RollingDiffButton } from "../ui/rolling-diff-button";
 import {
   buildFileTreeFromPaths,
   processTree,
@@ -61,40 +62,6 @@ const UNTRACKED_ICON = (
     <line x1="8" y1="12" x2="16" y2="12" />
   </svg>
 );
-
-const ROLLING_DIFF_ICON = (
-  <svg
-    className="h-3.5 w-3.5"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="3" y="4" width="18" height="5" rx="1" />
-    <rect x="3" y="11" width="18" height="3" rx="1" opacity="0.7" />
-    <rect x="3" y="16" width="18" height="4" rx="1" opacity="0.45" />
-  </svg>
-);
-
-function RollingDiffButton({ onClick }: { onClick: () => void }): ReactNode {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className="flex items-center justify-center w-6 h-6 rounded
-                 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
-      aria-label="View as rolling diff"
-      title="View as rolling diff"
-    >
-      {ROLLING_DIFF_ICON}
-    </button>
-  );
-}
 
 function GitSection({
   title,

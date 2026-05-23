@@ -107,3 +107,23 @@ export function SidebarPanelIcon({ className = "w-4 h-4" }: IconProps) {
     </svg>
   );
 }
+
+/** Stacked-rectangles icon for opening a multi-file rolling diff. */
+export function RollingDiffIcon({ className = "h-3.5 w-3.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="5" rx="1" />
+      <rect x="3" y="11" width="18" height="3" rx="1" opacity="0.7" />
+      <rect x="3" y="16" width="18" height="4" rx="1" opacity="0.45" />
+    </svg>
+  );
+}

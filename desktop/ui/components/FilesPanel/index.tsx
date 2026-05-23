@@ -35,6 +35,7 @@ import { FilesPanelProvider } from "./FilesPanelContext";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
 import { GuideGroupList, useGuideGroupState } from "./GuideGroupList";
 import { XIcon } from "../ui/icons";
+import { RollingDiffButton } from "../ui/rolling-diff-button";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import { TrustSection } from "../GuideView/TrustSection";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
@@ -107,46 +108,6 @@ const GUIDE_ICON = (
     <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
   </svg>
 );
-
-const ROLLING_DIFF_ICON = (
-  <svg
-    className="h-3.5 w-3.5"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="3" y="4" width="18" height="5" rx="1" />
-    <rect x="3" y="11" width="18" height="3" rx="1" opacity="0.7" />
-    <rect x="3" y="16" width="18" height="4" rx="1" opacity="0.45" />
-  </svg>
-);
-
-function RollingDiffButton({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className="flex items-center justify-center w-6 h-6 rounded
-                 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
-      aria-label={label}
-      title={label}
-    >
-      {ROLLING_DIFF_ICON}
-    </button>
-  );
-}
 
 /** Collect all directory paths from a processed tree (for expand/collapse) */
 function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
