@@ -1,4 +1,5 @@
-import type { DiffHunk, FileDiff } from "../../types";
+import { isHunkTrusted } from "../../types";
+import type { DiffHunk, FileDiff, ReviewState } from "../../types";
 import { useReviewStore } from "../index";
 
 const EMPTY_HUNKS: DiffHunk[] = [];
@@ -132,4 +133,76 @@ export function useHasAnyHunks(): boolean {
     }
     return false;
   });
+}
+
+export interface HunkIdsByStatus {
+  /** Not approved, rejected, saved-for-later, or trusted. */
+  pending: string[];
+  /** Approved or rejected (explicit user action). Excludes trusted-only. */
+  reviewed: string[];
+  /** Marked saved-for-later. */
+  savedForLater: string[];
+}
+
+const EMPTY_HUNK_IDS_BY_STATUS: HunkIdsByStatus = {
+  pending: [],
+  reviewed: [],
+  savedForLater: [],
+};
+
+let hunkIdsByStatusCache: {
+  allHunks: DiffHunk[];
+  reviewState: ReviewState | null;
+  output: HunkIdsByStatus;
+} | null = null;
+
+/**
+ * Categorize all hunks by review status. Cached on (allHunks, reviewState)
+ * identity so React subscribers share a single computation.
+ */
+export function getHunkIdsByStatus(
+  allHunks: DiffHunk[],
+  reviewState: ReviewState | null,
+): HunkIdsByStatus {
+  if (
+    hunkIdsByStatusCache &&
+    hunkIdsByStatusCache.allHunks === allHunks &&
+    hunkIdsByStatusCache.reviewState === reviewState
+  ) {
+    return hunkIdsByStatusCache.output;
+  }
+  if (allHunks.length === 0) {
+    hunkIdsByStatusCache = {
+      allHunks,
+      reviewState,
+      output: EMPTY_HUNK_IDS_BY_STATUS,
+    };
+    return EMPTY_HUNK_IDS_BY_STATUS;
+  }
+  const pending: string[] = [];
+  const reviewed: string[] = [];
+  const savedForLater: string[] = [];
+  const hunkStates = reviewState?.hunks;
+  const trustList = reviewState?.trustList ?? [];
+  for (const hunk of allHunks) {
+    const state = hunkStates?.[hunk.id];
+    const status = state?.status;
+    if (status === "approved" || status === "rejected") {
+      reviewed.push(hunk.id);
+    } else if (status === "saved_for_later") {
+      savedForLater.push(hunk.id);
+    } else if (!reviewState || !isHunkTrusted(state, trustList)) {
+      pending.push(hunk.id);
+    }
+  }
+  const output: HunkIdsByStatus = { pending, reviewed, savedForLater };
+  hunkIdsByStatusCache = { allHunks, reviewState, output };
+  return output;
+}
+
+/** Hook form of {@link getHunkIdsByStatus}. */
+export function useHunkIdsByStatus(): HunkIdsByStatus {
+  const allHunks = useAllHunks();
+  const reviewState = useReviewStore((s) => s.reviewState);
+  return getHunkIdsByStatus(allHunks, reviewState ?? null);
 }

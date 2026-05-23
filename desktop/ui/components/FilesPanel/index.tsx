@@ -22,6 +22,7 @@ import {
   type CommitEntry,
   type FileSymbolDiff,
 } from "../../types";
+import { useHunkIdsByStatus } from "../../stores/selectors/hunks";
 import { flattenFilesWithStatus } from "../../stores/types";
 import { ReviewDataProvider } from "../ReviewDataContext";
 import { FilenameModal } from "./FilenameModal";
@@ -449,33 +450,11 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     [],
   );
 
-  const pendingHunkIds = useMemo(() => {
-    return hunks
-      .filter((h) => {
-        const state = reviewState?.hunks[h.id];
-        if (
-          state?.status === "approved" ||
-          state?.status === "rejected" ||
-          state?.status === "saved_for_later"
-        )
-          return false;
-        if (reviewState && isHunkTrusted(state, reviewState.trustList))
-          return false;
-        return true;
-      })
-      .map((h) => h.id);
-  }, [hunks, reviewState]);
-
-  const reviewedHunkIds = useMemo(() => {
-    return hunks
-      .filter((h) => {
-        const state = reviewState?.hunks[h.id];
-        // Include explicitly approved or rejected hunks — trusted hunks can't be
-        // "unapproved" (they'd need their trust pattern removed instead)
-        return state?.status === "approved" || state?.status === "rejected";
-      })
-      .map((h) => h.id);
-  }, [hunks, reviewState]);
+  const {
+    pending: pendingHunkIds,
+    reviewed: reviewedHunkIds,
+    savedForLater: savedForLaterHunkIds,
+  } = useHunkIdsByStatus();
 
   const handleApproveAllHunks = useCallback(() => {
     if (pendingHunkIds.length > 0)
@@ -486,12 +465,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     if (reviewedHunkIds.length > 0)
       useReviewStore.getState().unapproveHunkIds(reviewedHunkIds);
   }, [reviewedHunkIds]);
-
-  const savedForLaterHunkIds = useMemo(() => {
-    return hunks
-      .filter((h) => reviewState?.hunks[h.id]?.status === "saved_for_later")
-      .map((h) => h.id);
-  }, [hunks, reviewState]);
 
   const handleUnsaveAll = useCallback(() => {
     if (savedForLaterHunkIds.length > 0)
