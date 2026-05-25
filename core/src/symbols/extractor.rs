@@ -1814,6 +1814,73 @@ pub fn find_symbol_references(
         .collect()
 }
 
+/// Find (line, start_column) positions in a file where the given name appears
+/// as a tree-sitter identifier.
+///
+/// Returns a map from 1-based line number to a list of 1-based start columns,
+/// matching the coordinate system git grep `--column` emits. Used to split
+/// text-search hits into "verified" (real code references)
+/// vs "unverified" (matches in comments, strings, or otherwise non-identifier text).
+///
+/// Returns `None` if the file has no tree-sitter grammar — the caller should
+/// treat all hits in that file as unverified.
+pub fn identifier_positions_for_name(
+    content: &str,
+    file_path: &str,
+    name: &str,
+    case_sensitive: bool,
+) -> Option<HashMap<u32, Vec<u32>>> {
+    let language = get_language_for_file(file_path)?;
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        log::warn!(
+            "[identifier_positions_for_name] set_language failed for {}",
+            file_path
+        );
+        return Some(HashMap::new());
+    }
+    let Some(tree) = parser.parse(content, None) else {
+        log::warn!(
+            "[identifier_positions_for_name] parse returned None for {}",
+            file_path
+        );
+        return Some(HashMap::new());
+    };
+
+    let mut identifiers: Vec<(String, u32, u32)> = Vec::new();
+    collect_identifier_positions(tree.root_node(), content, &mut identifiers);
+
+    let needle_lower = name.to_lowercase();
+    let mut by_line: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (ident, line, col) in identifiers {
+        let hit = if case_sensitive {
+            ident == name
+        } else {
+            ident.to_lowercase() == needle_lower
+        };
+        if hit {
+            by_line.entry(line).or_default().push(col);
+        }
+    }
+    Some(by_line)
+}
+
+fn collect_identifier_positions(node: Node, source: &str, out: &mut Vec<(String, u32, u32)>) {
+    if node.child_count() == 0 && node.is_named() {
+        let kind = node.kind();
+        if kind.contains("identifier") || kind == "name" {
+            let text = &source[node.byte_range()];
+            let pos = node.start_position();
+            // tree-sitter is 0-indexed; git grep is 1-indexed
+            out.push((text.to_owned(), pos.row as u32 + 1, pos.column as u32 + 1));
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_identifier_positions(child, source, out);
+    }
+}
+
 /// Recursively collect identifier-like leaf nodes from the AST.
 ///
 /// Matches any named leaf node whose kind contains "identifier" or equals "name".
@@ -3087,6 +3154,50 @@ function render() {
             find_symbol_references(content, "test.ts", &hunks, &targets, &HashMap::new(), true);
         // Both "x" and "fn" are < 3 chars, should be skipped
         assert_eq!(refs.len(), 0);
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_identifier_positions_for_name_skips_strings_and_comments() {
+        let content = r#"function calculateTotal(items: number[]): number {
+    // calculateTotal here is a comment, not a reference
+    const label = "calculateTotal";
+    return calculateTotal(items.slice(1));
+}
+"#;
+        let positions =
+            identifier_positions_for_name(content, "math.ts", "calculateTotal", true).unwrap();
+        // line 1: definition identifier; line 4: real call. Comment+string skipped.
+        assert!(positions.contains_key(&1));
+        assert!(positions.contains_key(&4));
+        assert!(!positions.contains_key(&2));
+        assert!(!positions.contains_key(&3));
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_identifier_positions_for_name_distinguishes_columns() {
+        // Line 2 has both a string literal containing "foo" and a real call to foo().
+        let content = r#"function foo(): number { return 0; }
+const x = "foo bar"; foo();
+"#;
+        let positions = identifier_positions_for_name(content, "math.ts", "foo", true).unwrap();
+        // Line 2 should contain only the real identifier column (around col 22),
+        // not the string column (around col 12).
+        let line2 = positions.get(&2).expect("line 2 has an identifier");
+        assert!(
+            line2.iter().any(|&c| c > 15),
+            "expected real foo() column, got {line2:?}"
+        );
+        assert!(
+            !line2.iter().any(|&c| (10..15).contains(&c)),
+            "string-literal columns should not be flagged, got {line2:?}"
+        );
+    }
+
+    #[test]
+    fn test_identifier_positions_for_name_unknown_grammar() {
+        assert!(identifier_positions_for_name("anything", "foo.unknown", "foo", true).is_none());
     }
 
     #[cfg(feature = "symbols-typescript")]

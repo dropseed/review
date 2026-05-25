@@ -796,6 +796,11 @@ pub fn list_directory_plain(dir_path: &Path) -> anyhow::Result<Vec<FileEntry>> {
 }
 
 /// Search file contents using git grep.
+///
+/// When the query looks like an identifier, results are split into "verified"
+/// (the query appears as a tree-sitter identifier on the matched line) and
+/// "unverified" (text-only matches — comments, strings, files without a
+/// grammar). Non-identifier queries always come back unverified.
 pub fn search_file_contents(
     repo_path: &Path,
     query: &str,
@@ -810,14 +815,90 @@ pub fn search_file_contents(
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
-    let results = source
+    let mut results = source
         .search_contents(query, case_sensitive, max_results)
         .context("Failed to search")?;
 
+    let verified_count = if is_identifier_query(query) {
+        verify_matches(repo_path, query, case_sensitive, &mut results)
+    } else {
+        0
+    };
+
     info!(
-        "[search_file_contents] SUCCESS: {} matches in {:?}",
+        "[search_file_contents] SUCCESS: {} matches ({} verified) in {:?}",
         results.len(),
+        verified_count,
         t0.elapsed()
     );
     Ok(results)
+}
+
+/// Whether the query is shaped like an identifier worth running the
+/// tree-sitter verification pass against.
+///
+/// We require at least 3 chars to suppress the noise floor for very common
+/// short names like `id`, `fn`, `i`. We allow ASCII alphanumerics, `_`, and
+/// `$` (valid in JS identifiers). Unicode identifiers are not yet covered.
+fn is_identifier_query(query: &str) -> bool {
+    if query.len() < 3 {
+        return false;
+    }
+    let mut chars = query.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// Parses each file once and flips `verified` on matches whose (line, column)
+/// matches an identifier-named-`query` position in the file. Returns the
+/// number of verified matches.
+fn verify_matches(
+    repo_path: &Path,
+    query: &str,
+    case_sensitive: bool,
+    matches: &mut [SearchMatch],
+) -> usize {
+    use std::collections::HashMap;
+
+    let mut by_file: HashMap<String, Vec<usize>> = HashMap::new();
+    for (idx, m) in matches.iter().enumerate() {
+        by_file.entry(m.file_path.clone()).or_default().push(idx);
+    }
+
+    let mut positions_by_file: HashMap<String, HashMap<u32, Vec<u32>>> = HashMap::new();
+    for file_path in by_file.keys() {
+        let full_path = repo_path.join(file_path);
+        let Ok(content) = std::fs::read_to_string(&full_path) else {
+            continue;
+        };
+        if let Some(positions) = crate::symbols::extractor::identifier_positions_for_name(
+            &content,
+            file_path,
+            query,
+            case_sensitive,
+        ) {
+            positions_by_file.insert(file_path.clone(), positions);
+        }
+    }
+
+    let mut verified_count = 0;
+    for (file_path, indices) in &by_file {
+        let Some(positions) = positions_by_file.get(file_path) else {
+            continue;
+        };
+        for &idx in indices {
+            let line = matches[idx].line_number;
+            let col = matches[idx].column;
+            if positions.get(&line).is_some_and(|cols| cols.contains(&col)) {
+                matches[idx].verified = true;
+                verified_count += 1;
+            }
+        }
+    }
+    verified_count
 }

@@ -42,6 +42,11 @@ pub struct SearchMatch {
     pub column: u32,
     /// Full content of the matching line
     pub line_content: String,
+    /// True when tree-sitter sees the query as an identifier at this exact
+    /// (line, column) — a real code reference, not a match inside a comment
+    /// or string. Always false for non-identifier queries or files without a
+    /// grammar.
+    pub verified: bool,
 }
 
 /// Information about a local branch that is ahead of the default branch
@@ -1828,7 +1833,16 @@ impl LocalGitSource {
             return Ok(Vec::new());
         }
 
-        let mut args = vec!["grep", "-n", "--column", "--no-color"];
+        // -c core.quotepath=false keeps non-ASCII file paths unquoted so the
+        // tree-sitter verification pass can resolve them on disk.
+        let mut args = vec![
+            "-c",
+            "core.quotepath=false",
+            "grep",
+            "-n",
+            "--column",
+            "--no-color",
+        ];
 
         if !case_sensitive {
             args.push("-i");
@@ -1875,6 +1889,7 @@ impl LocalGitSource {
                         line_number,
                         column,
                         line_content,
+                        verified: false,
                     });
                 }
             }

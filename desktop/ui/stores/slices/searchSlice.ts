@@ -13,11 +13,13 @@ export interface SearchSlice {
   searchError: string | null;
   searchCaseSensitive: boolean;
   searchMode: SearchMode;
+  searchVerifiedOnly: boolean;
 
   // Actions
   setSearchQuery: (query: string) => void;
   setSearchCaseSensitive: (value: boolean) => void;
   setSearchMode: (mode: SearchMode) => void;
+  setSearchVerifiedOnly: (value: boolean) => void;
   performSearch: (query: string) => Promise<void>;
   clearSearch: () => void;
   clearSearchResults: () => void;
@@ -32,10 +34,12 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
     searchError: null,
     searchCaseSensitive: false,
     searchMode: "text",
+    searchVerifiedOnly: false,
 
     setSearchQuery: (query) => set({ searchQuery: query }),
     setSearchCaseSensitive: (value) => set({ searchCaseSensitive: value }),
     setSearchMode: (mode) => set({ searchMode: mode }),
+    setSearchVerifiedOnly: (value) => set({ searchVerifiedOnly: value }),
 
     performSearch: async (query) => {
       const { repoPath, searchCaseSensitive } = get();
@@ -73,6 +77,7 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         searchResults: [],
         searchLoading: false,
         searchError: null,
+        searchVerifiedOnly: false,
       }),
 
     clearSearchResults: () =>

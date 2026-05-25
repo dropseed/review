@@ -34,6 +34,8 @@ export function SearchResultsPanel(): ReactNode {
   );
   const searchMode = useReviewStore((s) => s.searchMode);
   const setSearchMode = useReviewStore((s) => s.setSearchMode);
+  const searchVerifiedOnly = useReviewStore((s) => s.searchVerifiedOnly);
+  const setSearchVerifiedOnly = useReviewStore((s) => s.setSearchVerifiedOnly);
 
   const [query, setQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,12 +62,31 @@ export function SearchResultsPanel(): ReactNode {
     searchMode,
   ]);
 
-  const groupedResults = useMemo(
-    () => groupSearchResultsByFile(searchResults),
+  const verifiedCount = useMemo(
+    () => searchResults.filter((r) => r.verified).length,
     [searchResults],
   );
+  const hasVerified = verifiedCount > 0;
 
-  let flatIndex = 0;
+  const visibleResults = useMemo(
+    () =>
+      searchVerifiedOnly
+        ? searchResults.filter((r) => r.verified)
+        : searchResults,
+    [searchResults, searchVerifiedOnly],
+  );
+
+  // Group, then float files containing any verified hit to the top. Intra-file
+  // order is preserved from grep (already line-sorted) so line numbers stay
+  // monotonic within a file group.
+  const groupedResults = useMemo(() => {
+    const groups = groupSearchResultsByFile(visibleResults);
+    return [...groups].sort((a, b) => {
+      const aHas = a.matches.some((m) => m.verified) ? 0 : 1;
+      const bHas = b.matches.some((m) => m.verified) ? 0 : 1;
+      return aHas - bHas;
+    });
+  }, [visibleResults]);
 
   return (
     <div className="flex h-full flex-col">
@@ -123,6 +144,28 @@ export function SearchResultsPanel(): ReactNode {
               </button>
             </SimpleTooltip>
           )}
+          {searchMode === "text" && (hasVerified || searchVerifiedOnly) && (
+            <SimpleTooltip
+              content={
+                searchVerifiedOnly
+                  ? "Showing verified only — click to include text matches"
+                  : "Showing all matches — click to hide unverified (comments/strings)"
+              }
+            >
+              <button
+                onClick={() => setSearchVerifiedOnly(!searchVerifiedOnly)}
+                className={`flex h-5 items-center justify-center rounded px-1 text-xxs font-mono font-bold transition-colors flex-shrink-0 ${
+                  searchVerifiedOnly
+                    ? "bg-status-approved/20 text-status-approved"
+                    : "text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50"
+                }`}
+                aria-label="Toggle verified-only filter"
+                aria-pressed={searchVerifiedOnly}
+              >
+                {"{}"}
+              </button>
+            </SimpleTooltip>
+          )}
           {searchMode === "text" && searchLoading && (
             <Spinner className="h-3.5 w-3.5 border-2 border-surface-active border-t-fg-secondary flex-shrink-0" />
           )}
@@ -173,9 +216,11 @@ export function SearchResultsPanel(): ReactNode {
             <div className="px-4 py-8 text-center text-xs text-status-rejected">
               {searchError}
             </div>
-          ) : searchResults.length === 0 ? (
+          ) : visibleResults.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-fg-muted">
-              {getEmptyStateMessage(query, searchLoading)}
+              {searchVerifiedOnly && searchResults.length > 0
+                ? "No verified matches. Toggle off to include text-only hits."
+                : getEmptyStateMessage(query, searchLoading)}
             </div>
           ) : (
             groupedResults.map((group) => (
@@ -186,17 +231,30 @@ export function SearchResultsPanel(): ReactNode {
                 />
                 {/* Match rows */}
                 {group.matches.map((result) => {
-                  const currentIndex = flatIndex++;
+                  const originalIndex = searchResults.indexOf(result);
                   return (
                     <button
                       key={`${result.filePath}:${result.lineNumber}:${result.column}`}
-                      onClick={() => navigateToSearchResult(currentIndex)}
-                      className="w-full flex items-start gap-2 px-3 py-1 text-left hover:bg-surface-raised/50 transition-colors"
+                      onClick={() => navigateToSearchResult(originalIndex)}
+                      className={`w-full flex items-start gap-2 px-3 py-1 text-left hover:bg-surface-raised/50 transition-colors ${
+                        hasVerified && !result.verified ? "opacity-60" : ""
+                      }`}
+                      title={
+                        hasVerified && !result.verified
+                          ? "Unverified — text match, not a parsed identifier"
+                          : undefined
+                      }
                     >
                       <span className="text-xxs font-mono text-fg-faint w-8 text-right flex-shrink-0 pt-px tabular-nums">
                         {result.lineNumber}
                       </span>
-                      <span className="text-xxs font-mono text-fg-secondary truncate flex-1 min-w-0">
+                      <span
+                        className={`text-xxs font-mono truncate flex-1 min-w-0 ${
+                          hasVerified && !result.verified
+                            ? "text-fg-muted italic"
+                            : "text-fg-secondary"
+                        }`}
+                      >
                         <HighlightedLine
                           content={result.lineContent}
                           query={query}
@@ -217,10 +275,15 @@ export function SearchResultsPanel(): ReactNode {
             className="border-t border-edge/50 px-3 py-1.5 text-xxs text-fg-muted"
             aria-live="polite"
           >
-            {searchResults.length >= 100 ? "100+" : searchResults.length} result
-            {searchResults.length !== 1 ? "s" : ""} in {groupedResults.length}{" "}
-            file
-            {groupedResults.length !== 1 ? "s" : ""}
+            {visibleResults.length >= 100 ? "100+" : visibleResults.length}{" "}
+            result{visibleResults.length !== 1 ? "s" : ""} in{" "}
+            {groupedResults.length} file{groupedResults.length !== 1 ? "s" : ""}
+            {hasVerified && !searchVerifiedOnly && (
+              <span className="ml-1">
+                ({verifiedCount} verified,{" "}
+                {searchResults.length - verifiedCount} unverified)
+              </span>
+            )}
           </div>
         )}
       </div>

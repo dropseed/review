@@ -218,6 +218,7 @@ const repoResetState = {
   searchResults: [] as SearchMatch[],
   searchLoading: false,
   searchError: null,
+  searchVerifiedOnly: false,
   // Git
   gitStatus: null,
   stagedFilePaths: EMPTY_STAGED_SET,

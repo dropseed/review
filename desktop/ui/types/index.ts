@@ -588,6 +588,7 @@ export interface SearchMatch {
   lineNumber: number;
   column: number;
   lineContent: string;
+  verified: boolean;
 }
 
 export interface RemoteInfo {
