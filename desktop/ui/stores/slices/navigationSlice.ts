@@ -117,17 +117,15 @@ export interface NavigationSlice {
   openAdhocGroup: (group: HunkGroup) => void;
 
   // Working-tree rolling diff (Git panel section "view as rolling diff").
-  // When set, ContentArea renders WorkingTreeMultiFileDiffViewer for these
-  // file paths in the requested staged/unstaged mode.
+  // When set, ContentArea renders WorkingTreeMultiFileDiffViewer, which
+  // derives the file list from the live gitStatus for the requested mode.
   workingTreeMultiView: {
     title: string;
     mode: "staged" | "unstaged";
-    files: string[];
   } | null;
   openWorkingTreeMultiView: (view: {
     title: string;
     mode: "staged" | "unstaged";
-    files: string[];
   }) => void;
   closeWorkingTreeMultiView: () => void;
 

@@ -16,6 +16,10 @@ import { FileDiffStackItem } from "../ui/file-diff-stack-item";
 
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
+type FileLoadState =
+  | { kind: "ok"; content: FileContent }
+  | { kind: "error"; message: string };
+
 export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   const view = useReviewStore((s) => s.workingTreeMultiView);
   const closeView = useReviewStore((s) => s.closeWorkingTreeMultiView);
@@ -25,39 +29,57 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
+  const gitStatus = useReviewStore((s) => s.gitStatus);
+  const fileVersions = useReviewStore((s) => s.fileVersions);
 
-  const [fileContents, setFileContents] = useState<Map<string, FileContent>>(
+  // Live file list derived from gitStatus — stays in sync when the user
+  // stages/unstages files elsewhere while the rolling diff is open.
+  const files = useMemo(() => {
+    if (!view || !gitStatus) return [];
+    const entries =
+      view.mode === "staged" ? gitStatus.staged : gitStatus.unstaged;
+    return entries.map((e) => e.path);
+  }, [view, gitStatus]);
+
+  const [fileStates, setFileStates] = useState<Map<string, FileLoadState>>(
     new Map(),
   );
   const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set());
-  // Tracks which file paths we've already kicked off a request for in the
-  // current view. Lives in a ref so the loader effect doesn't depend on
-  // `fileContents` (which would re-fire the effect on every successful load).
-  const requestedRef = useRef<Set<string>>(new Set());
+  // The fileVersions value we used the last time we successfully fetched a
+  // file. When the watcher bumps a version (file edited on disk), we re-fetch.
+  const loadedVersionsRef = useRef<Map<string, number>>(new Map());
 
-  // The view changes when mode swaps or the file list changes.
-  const viewKey = useMemo(
-    () => (view ? `${view.mode}:${view.files.join("|")}` : null),
-    [view],
-  );
+  // Reset everything when the view target changes (mode swap or close+reopen).
+  const mode = view?.mode ?? null;
+  useEffect(() => {
+    setFileStates(new Map());
+    setLoadingFiles(new Set());
+    loadedVersionsRef.current = new Map();
+  }, [mode]);
 
   useEffect(() => {
-    // Reset everything when the view target changes so a new file list is
-    // refetched from scratch.
-    setFileContents(new Map());
-    setLoadingFiles(new Set());
-    requestedRef.current = new Set();
-
     if (!view || !workingTreePath) return;
-    const toLoad = view.files.filter((fp) => !requestedRef.current.has(fp));
+    // Files we either haven't loaded yet or whose on-disk version has changed.
+    const toLoad = files.filter((fp) => {
+      const lastVersion = loadedVersionsRef.current.get(fp);
+      const currentVersion = fileVersions[fp] ?? 0;
+      return lastVersion === undefined || lastVersion !== currentVersion;
+    });
     if (toLoad.length === 0) return;
-    for (const fp of toLoad) requestedRef.current.add(fp);
 
     const api = getApiClient();
     let cancelled = false;
     const cached = view.mode === "staged";
+    // Snapshot versions at request time so we don't mistakenly mark a file
+    // "loaded at version N" if it gets edited again mid-request.
+    const requestVersions = new Map<string, number>();
+    for (const fp of toLoad) requestVersions.set(fp, fileVersions[fp] ?? 0);
 
-    setLoadingFiles(new Set(toLoad));
+    setLoadingFiles((prev) => {
+      const next = new Set(prev);
+      for (const fp of toLoad) next.add(fp);
+      return next;
+    });
 
     Promise.all(
       toLoad.map(async (filePath) => {
@@ -67,24 +89,42 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
             filePath,
             cached,
           );
-          return { filePath, content };
+          return {
+            filePath,
+            state: { kind: "ok" as const, content },
+          };
         } catch (err) {
           console.error(
             `[WorkingTreeMultiFileDiffViewer] Failed to load ${filePath}:`,
             err,
           );
-          return { filePath, content: null };
+          return {
+            filePath,
+            state: {
+              kind: "error" as const,
+              message: err instanceof Error ? err.message : String(err),
+            },
+          };
         }
       }),
     ).then((results) => {
       if (cancelled) return;
-      setFileContents((prev) => {
+      setFileStates((prev) => {
         const next = new Map(prev);
-        for (const { filePath, content } of results) {
-          if (content) next.set(filePath, content);
+        for (const { filePath, state } of results) {
+          next.set(filePath, state);
         }
         return next;
       });
+      // Record the loaded-at version for both success AND failure so we
+      // don't retry a failing file on every unrelated fileVersions bump —
+      // we only re-fetch when this file's own version changes again.
+      for (const { filePath } of results) {
+        loadedVersionsRef.current.set(
+          filePath,
+          requestVersions.get(filePath) ?? 0,
+        );
+      }
       setLoadingFiles((prev) => {
         const next = new Set(prev);
         for (const fp of toLoad) next.delete(fp);
@@ -95,7 +135,7 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [viewKey, view, workingTreePath]);
+  }, [view, workingTreePath, files, fileVersions]);
 
   const handleOpenFile = useCallback(
     (filePath: string) => {
@@ -183,7 +223,7 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
                 {view.title}
               </h2>
               <span className="text-xxs text-fg-muted tabular-nums">
-                {view.files.length} {view.files.length === 1 ? "file" : "files"}
+                {files.length} {files.length === 1 ? "file" : "files"}
               </span>
               <button
                 type="button"
@@ -207,20 +247,38 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
           </div>
 
           {/* File sections */}
-          {view.files.map((filePath) => {
-            const fc = fileContents.get(filePath);
-            const isLoading = loadingFiles.has(filePath);
-            return (
-              <FileDiffStackItem
-                key={filePath}
-                filePath={filePath}
-                isLoading={isLoading && !fc}
-                onViewFile={() => handleOpenFile(filePath)}
-              >
-                {fc ? renderFileContent(fc, filePath) : null}
-              </FileDiffStackItem>
-            );
-          })}
+          {files.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-fg-muted">
+              <p className="text-sm">
+                No {view.mode === "staged" ? "staged" : "unstaged"} changes.
+              </p>
+            </div>
+          ) : (
+            files.map((filePath) => {
+              const state = fileStates.get(filePath);
+              const isLoading = loadingFiles.has(filePath);
+              return (
+                <FileDiffStackItem
+                  key={filePath}
+                  filePath={filePath}
+                  isLoading={isLoading && state?.kind !== "ok"}
+                  onViewFile={() => handleOpenFile(filePath)}
+                >
+                  {state?.kind === "ok" ? (
+                    renderFileContent(state.content, filePath)
+                  ) : state?.kind === "error" ? (
+                    <div className="px-4 py-3">
+                      <div className="rounded bg-status-rejected/10 border border-status-rejected/20 px-3 py-2">
+                        <p className="text-xs text-status-rejected">
+                          Failed to load diff: {state.message}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                </FileDiffStackItem>
+              );
+            })
+          )}
         </div>
       </Virtualizer>
     </div>

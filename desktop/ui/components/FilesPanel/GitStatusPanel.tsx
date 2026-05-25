@@ -316,7 +316,6 @@ export function GitStatusPanel({
                   openWorkingTreeMultiView({
                     title: "Staged changes",
                     mode: "staged",
-                    files: staged.map((e) => e.path),
                   })
                 }
               />
@@ -382,7 +381,6 @@ export function GitStatusPanel({
                   openWorkingTreeMultiView({
                     title: "Unstaged changes",
                     mode: "unstaged",
-                    files: unstaged.map((e) => e.path),
                   })
                 }
               />
