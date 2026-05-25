@@ -63,7 +63,7 @@ export function SearchResultsPanel(): ReactNode {
   ]);
 
   const verifiedCount = useMemo(
-    () => searchResults.filter((r) => r.verified).length,
+    () => searchResults.filter((r) => r.verified === "yes").length,
     [searchResults],
   );
   const hasVerified = verifiedCount > 0;
@@ -71,7 +71,7 @@ export function SearchResultsPanel(): ReactNode {
   const visibleResults = useMemo(
     () =>
       searchVerifiedOnly
-        ? searchResults.filter((r) => r.verified)
+        ? searchResults.filter((r) => r.verified === "yes")
         : searchResults,
     [searchResults, searchVerifiedOnly],
   );
@@ -82,8 +82,8 @@ export function SearchResultsPanel(): ReactNode {
   const groupedResults = useMemo(() => {
     const groups = groupSearchResultsByFile(visibleResults);
     return [...groups].sort((a, b) => {
-      const aHas = a.matches.some((m) => m.verified) ? 0 : 1;
-      const bHas = b.matches.some((m) => m.verified) ? 0 : 1;
+      const aHas = a.matches.some((m) => m.verified === "yes") ? 0 : 1;
+      const bHas = b.matches.some((m) => m.verified === "yes") ? 0 : 1;
       return aHas - bHas;
     });
   }, [visibleResults]);
@@ -148,13 +148,13 @@ export function SearchResultsPanel(): ReactNode {
             <SimpleTooltip
               content={
                 searchVerifiedOnly
-                  ? "Showing verified only — click to include text matches"
-                  : "Showing all matches — click to hide unverified (comments/strings)"
+                  ? "Showing verified only — click to show all matches"
+                  : "Showing all matches — click to filter to verified only"
               }
             >
               <button
                 onClick={() => setSearchVerifiedOnly(!searchVerifiedOnly)}
-                className={`flex h-5 items-center justify-center rounded px-1 text-xxs font-mono font-bold transition-colors flex-shrink-0 ${
+                className={`flex h-5 w-5 items-center justify-center rounded transition-colors flex-shrink-0 ${
                   searchVerifiedOnly
                     ? "bg-status-approved/20 text-status-approved"
                     : "text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/50"
@@ -162,7 +162,18 @@ export function SearchResultsPanel(): ReactNode {
                 aria-label="Toggle verified-only filter"
                 aria-pressed={searchVerifiedOnly}
               >
-                {"{}"}
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 5h18l-7 9v6l-4-2v-4z" />
+                </svg>
               </button>
             </SimpleTooltip>
           )}
@@ -231,17 +242,17 @@ export function SearchResultsPanel(): ReactNode {
                 />
                 {/* Match rows */}
                 {group.matches.map((result) => {
-                  const originalIndex = searchResults.indexOf(result);
+                  const isTextOnly = result.verified === "no";
                   return (
                     <button
                       key={`${result.filePath}:${result.lineNumber}:${result.column}`}
-                      onClick={() => navigateToSearchResult(originalIndex)}
+                      onClick={() => navigateToSearchResult(result)}
                       className={`w-full flex items-start gap-2 px-3 py-1 text-left hover:bg-surface-raised/50 transition-colors ${
-                        hasVerified && !result.verified ? "opacity-60" : ""
+                        isTextOnly ? "opacity-60" : ""
                       }`}
                       title={
-                        hasVerified && !result.verified
-                          ? "Unverified — text match, not a parsed identifier"
+                        isTextOnly
+                          ? "Text match — query is not a parsed identifier here"
                           : undefined
                       }
                     >
@@ -250,7 +261,7 @@ export function SearchResultsPanel(): ReactNode {
                       </span>
                       <span
                         className={`text-xxs font-mono truncate flex-1 min-w-0 ${
-                          hasVerified && !result.verified
+                          isTextOnly
                             ? "text-fg-muted italic"
                             : "text-fg-secondary"
                         }`}
@@ -279,10 +290,7 @@ export function SearchResultsPanel(): ReactNode {
             result{visibleResults.length !== 1 ? "s" : ""} in{" "}
             {groupedResults.length} file{groupedResults.length !== 1 ? "s" : ""}
             {hasVerified && !searchVerifiedOnly && (
-              <span className="ml-1">
-                ({verifiedCount} verified,{" "}
-                {searchResults.length - verifiedCount} unverified)
-              </span>
+              <span className="ml-1">({verifiedCount} verified)</span>
             )}
           </div>
         )}

@@ -94,10 +94,11 @@ export function ContentSearch({
 
   const handleSelect = useCallback(
     (index: number) => {
-      navigateToSearchResult(index);
+      const match = searchResults[index];
+      if (match) navigateToSearchResult(match);
       onClose();
     },
-    [navigateToSearchResult, onClose],
+    [navigateToSearchResult, onClose, searchResults],
   );
 
   const handleKeyDown = useCallback(

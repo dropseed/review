@@ -15,7 +15,7 @@ use crate::diff::parser::{
     parse_multi_file_diff, DiffHunk,
 };
 use crate::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider};
-use crate::sources::local_git::{LocalGitSource, SearchMatch};
+use crate::sources::local_git::{LocalGitSource, SearchMatch, VerifiedStatus};
 use crate::sources::traits::{Comparison, DiffSource, FileEntry};
 
 use super::util::{
@@ -797,10 +797,12 @@ pub fn list_directory_plain(dir_path: &Path) -> anyhow::Result<Vec<FileEntry>> {
 
 /// Search file contents using git grep.
 ///
-/// When the query looks like an identifier, results are split into "verified"
-/// (the query appears as a tree-sitter identifier on the matched line) and
-/// "unverified" (text-only matches — comments, strings, files without a
-/// grammar). Non-identifier queries always come back unverified.
+/// When the query looks like an identifier, each result is tagged with a
+/// `VerifiedStatus`: `Yes` when tree-sitter sees the query as an identifier
+/// at the matched (line, column), `No` when it parsed the file but the
+/// query is in a comment/string/substring, and `Unknown` when verification
+/// couldn't run (file has no grammar, parse failed, file unreadable, or
+/// the query itself isn't identifier-shaped).
 pub fn search_file_contents(
     repo_path: &Path,
     query: &str,
@@ -819,7 +821,7 @@ pub fn search_file_contents(
         .search_contents(query, case_sensitive, max_results)
         .context("Failed to search")?;
 
-    let verified_count = if is_identifier_query(query) {
+    let yes_count = if is_identifier_query(query) {
         verify_matches(repo_path, query, case_sensitive, &mut results)
     } else {
         0
@@ -828,7 +830,7 @@ pub fn search_file_contents(
     info!(
         "[search_file_contents] SUCCESS: {} matches ({} verified) in {:?}",
         results.len(),
-        verified_count,
+        yes_count,
         t0.elapsed()
     );
     Ok(results)
@@ -854,9 +856,14 @@ fn is_identifier_query(query: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
-/// Parses each file once and flips `verified` on matches whose (line, column)
-/// matches an identifier-named-`query` position in the file. Returns the
-/// number of verified matches.
+/// Parses each file once and assigns a `VerifiedStatus` to every match.
+///
+/// Files are read + parsed in parallel via `thread::scope`. A file that
+/// parses cleanly produces either `Yes` (identifier is at the hit's column)
+/// or `No` (it isn't) for each of its hits. A file that can't be parsed
+/// (no grammar, parse failure, unreadable) leaves its hits as `Unknown`.
+///
+/// Returns the number of matches marked `Yes`.
 fn verify_matches(
     repo_path: &Path,
     query: &str,
@@ -870,35 +877,96 @@ fn verify_matches(
         by_file.entry(m.file_path.clone()).or_default().push(idx);
     }
 
-    let mut positions_by_file: HashMap<String, HashMap<u32, Vec<u32>>> = HashMap::new();
-    for file_path in by_file.keys() {
-        let full_path = repo_path.join(file_path);
-        let Ok(content) = std::fs::read_to_string(&full_path) else {
-            continue;
-        };
-        if let Some(positions) = crate::symbols::extractor::identifier_positions_for_name(
-            &content,
-            file_path,
-            query,
-            case_sensitive,
-        ) {
-            positions_by_file.insert(file_path.clone(), positions);
-        }
-    }
+    // Parallel parse: one thread per unique file. None = couldn't parse,
+    // Some(map) = parsed (map may be empty if identifier doesn't appear).
+    let positions_by_file: HashMap<String, HashMap<u32, Vec<u32>>> = std::thread::scope(|s| {
+        let handles: Vec<_> = by_file
+            .keys()
+            .map(|file_path| {
+                let file_path = file_path.clone();
+                s.spawn(move || {
+                    let full_path = repo_path.join(&file_path);
+                    let content = std::fs::read_to_string(&full_path).ok()?;
+                    let positions = crate::symbols::extractor::identifier_positions_for_name(
+                        &content,
+                        &file_path,
+                        query,
+                        case_sensitive,
+                    )?;
+                    Some((file_path, positions))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok().flatten())
+            .collect()
+    });
 
-    let mut verified_count = 0;
+    let mut yes_count = 0;
     for (file_path, indices) in &by_file {
         let Some(positions) = positions_by_file.get(file_path) else {
+            // file unparseable; hits stay Unknown
             continue;
         };
         for &idx in indices {
             let line = matches[idx].line_number;
             let col = matches[idx].column;
             if positions.get(&line).is_some_and(|cols| cols.contains(&col)) {
-                matches[idx].verified = true;
-                verified_count += 1;
+                matches[idx].verified = VerifiedStatus::Yes;
+                yes_count += 1;
+            } else {
+                matches[idx].verified = VerifiedStatus::No;
             }
         }
     }
-    verified_count
+    yes_count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_identifier_query_accepts_typical_identifiers() {
+        assert!(is_identifier_query("verified"));
+        assert!(is_identifier_query("verifiedCount"));
+        assert!(is_identifier_query("_private"));
+        assert!(is_identifier_query("foo_bar_123"));
+        assert!(is_identifier_query("FOO_BAR"));
+    }
+
+    #[test]
+    fn is_identifier_query_accepts_js_dollar_identifiers() {
+        assert!(is_identifier_query("$el"));
+        assert!(is_identifier_query("$$internal"));
+        assert!(is_identifier_query("jQuery$wrapped"));
+    }
+
+    #[test]
+    fn is_identifier_query_rejects_short_queries() {
+        assert!(!is_identifier_query(""));
+        assert!(!is_identifier_query("x"));
+        assert!(!is_identifier_query("id"));
+        assert!(!is_identifier_query("fn"));
+    }
+
+    #[test]
+    fn is_identifier_query_rejects_non_identifier_shapes() {
+        assert!(!is_identifier_query("foo bar"));
+        assert!(!is_identifier_query("foo()"));
+        assert!(!is_identifier_query("foo.bar"));
+        assert!(!is_identifier_query("foo-bar"));
+        assert!(!is_identifier_query("1foo"));
+        assert!(!is_identifier_query("foo!"));
+        assert!(!is_identifier_query("foo/bar"));
+    }
+
+    #[test]
+    fn is_identifier_query_rejects_non_ascii() {
+        // Unicode identifiers are valid in many languages but we don't
+        // attempt verification for them (yet).
+        assert!(!is_identifier_query("café"));
+        assert!(!is_identifier_query("Δfoo"));
+    }
 }

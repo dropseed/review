@@ -1818,12 +1818,13 @@ pub fn find_symbol_references(
 /// as a tree-sitter identifier.
 ///
 /// Returns a map from 1-based line number to a list of 1-based start columns,
-/// matching the coordinate system git grep `--column` emits. Used to split
-/// text-search hits into "verified" (real code references)
-/// vs "unverified" (matches in comments, strings, or otherwise non-identifier text).
+/// matching the coordinate system git grep `--column` emits.
 ///
-/// Returns `None` if the file has no tree-sitter grammar — the caller should
-/// treat all hits in that file as unverified.
+/// Returns `None` for any failure that means "we couldn't actually check":
+/// no grammar for this extension, `set_language` rejected, or `parse`
+/// produced no tree. Returns `Some(empty map)` only when parsing succeeded
+/// and the name simply doesn't appear as an identifier. Callers can use this
+/// distinction to mark hits as Unknown vs No.
 pub fn identifier_positions_for_name(
     content: &str,
     file_path: &str,
@@ -1837,15 +1838,15 @@ pub fn identifier_positions_for_name(
             "[identifier_positions_for_name] set_language failed for {}",
             file_path
         );
-        return Some(HashMap::new());
+        return None;
     }
-    let Some(tree) = parser.parse(content, None) else {
+    let tree = parser.parse(content, None).or_else(|| {
         log::warn!(
             "[identifier_positions_for_name] parse returned None for {}",
             file_path
         );
-        return Some(HashMap::new());
-    };
+        None
+    })?;
 
     let mut identifiers: Vec<(String, u32, u32)> = Vec::new();
     collect_identifier_positions(tree.root_node(), content, &mut identifiers);

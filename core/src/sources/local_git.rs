@@ -30,6 +30,23 @@ pub struct DiffShortStat {
     pub deletions: u32,
 }
 
+/// Verification status for a search hit.
+///
+/// `Yes` and `No` only appear when tree-sitter actually ran on the file.
+/// `Unknown` means verification didn't happen — non-identifier query,
+/// file without a grammar, parse failure, or unreadable file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerifiedStatus {
+    /// Tree-sitter sees the query as an identifier at this exact (line, column).
+    Yes,
+    /// Tree-sitter parsed the file but the query is NOT at this position —
+    /// match is inside a comment, string, or substring of another identifier.
+    No,
+    /// Verification didn't run.
+    Unknown,
+}
+
 /// A single search match from git grep
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,11 +59,8 @@ pub struct SearchMatch {
     pub column: u32,
     /// Full content of the matching line
     pub line_content: String,
-    /// True when tree-sitter sees the query as an identifier at this exact
-    /// (line, column) — a real code reference, not a match inside a comment
-    /// or string. Always false for non-identifier queries or files without a
-    /// grammar.
-    pub verified: bool,
+    /// Tree-sitter verification result for this position.
+    pub verified: VerifiedStatus,
 }
 
 /// Information about a local branch that is ahead of the default branch
@@ -1889,7 +1903,7 @@ impl LocalGitSource {
                         line_number,
                         column,
                         line_content,
-                        verified: false,
+                        verified: VerifiedStatus::Unknown,
                     });
                 }
             }

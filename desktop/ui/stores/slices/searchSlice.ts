@@ -23,7 +23,7 @@ export interface SearchSlice {
   performSearch: (query: string) => Promise<void>;
   clearSearch: () => void;
   clearSearchResults: () => void;
-  navigateToSearchResult: (index: number) => void;
+  navigateToSearchResult: (match: SearchMatch) => void;
 }
 
 export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
@@ -87,30 +87,27 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
         searchError: null,
       }),
 
-    navigateToSearchResult: (index) => {
+    navigateToSearchResult: (match) => {
       const state = get();
-      const { searchResults, guideContentMode } = state;
-      const result = searchResults[index];
-      if (!result) return;
-
+      const { guideContentMode } = state;
       const hunks = getAllHunksFromState(state);
       const hunk = hunks.find(
         (h) =>
-          h.filePath === result.filePath &&
+          h.filePath === match.filePath &&
           (h.lines || []).some(
-            (line) => line.newLineNumber === result.lineNumber,
+            (line) => line.newLineNumber === match.lineNumber,
           ),
       );
 
       set({
         ...(guideContentMode !== null && { guideContentMode: null }),
-        selectedFile: result.filePath,
+        selectedFile: match.filePath,
         filesPanelCollapsed: false,
         focusedHunkId: hunk?.id ?? null,
         scrollTarget: {
           type: "line",
-          filePath: result.filePath,
-          lineNumber: result.lineNumber,
+          filePath: match.filePath,
+          lineNumber: match.lineNumber,
         },
       });
     },

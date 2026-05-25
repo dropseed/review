@@ -583,12 +583,20 @@ export interface ExpandedContext {
   endLine: number;
 }
 
+/**
+ * Tree-sitter verification result for a search hit.
+ * - "yes": parsed, query appears as an identifier at this (line, column)
+ * - "no": parsed, query is NOT at this position (comment/string/substring)
+ * - "unknown": verification didn't run (no grammar, non-identifier query, parse failure)
+ */
+export type VerifiedStatus = "yes" | "no" | "unknown";
+
 export interface SearchMatch {
   filePath: string;
   lineNumber: number;
   column: number;
   lineContent: string;
-  verified: boolean;
+  verified: VerifiedStatus;
 }
 
 export interface RemoteInfo {
