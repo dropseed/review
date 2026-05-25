@@ -195,16 +195,22 @@ export function useKeyboardNavigation() {
 
       switch (event.key) {
         case "j":
-          // In guide content, switch to browse first
-          if (state.guideContentMode !== null) {
+          // In any overlay view, switch to browse first so hunk navigation
+          // lands in the single-file viewer rather than getting eaten.
+          if (
+            state.guideContentMode !== null ||
+            state.workingTreeMultiView !== null
+          ) {
             state.navigateToBrowse();
           }
           // Navigate to next hunk (handles file switching automatically)
           state.nextHunk();
           break;
         case "k":
-          // In guide content, switch to browse first
-          if (state.guideContentMode !== null) {
+          if (
+            state.guideContentMode !== null ||
+            state.workingTreeMultiView !== null
+          ) {
             state.navigateToBrowse();
           }
           // Navigate to previous hunk (handles file switching automatically)
