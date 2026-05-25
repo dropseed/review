@@ -349,7 +349,7 @@ export function HunkAnnotationPanel({
                         onAddTrustPattern(lbl);
                       }
                     }}
-                    className={`rounded px-1.5 py-0.5 text-xxs font-medium cursor-pointer transition-colors hover:ring-1 ${
+                    className={`rounded px-1.5 py-0.5 text-xxs font-medium transition-colors hover:ring-1 ${
                       isTrustedLabel
                         ? "bg-status-renamed/15 text-status-renamed hover:ring-status-renamed/50"
                         : "bg-surface-hover/50 text-fg-muted hover:ring-fg-muted/50"

@@ -543,6 +543,10 @@ kbd {
   /* Accessibility: prevent double-tap zoom delay on interactive elements */
   button, a, [role="button"] {
     touch-action: manipulation;
+  }
+
+  /* Native macOS feel: only links show the pointer cursor; buttons keep arrow */
+  a {
     cursor: pointer;
   }
 

@@ -93,7 +93,7 @@ function BranchRow({
   badge,
   onClick,
 }: BranchRowProps) {
-  let cursorClass = "cursor-pointer";
+  let cursorClass = "";
   let bgClass = "hover:bg-surface-raised/50";
   if (existing) {
     cursorClass = "opacity-40 cursor-not-allowed";
@@ -505,7 +505,7 @@ function PullRequestSection({
             const selected = isSelected("pr", prValue);
             const existing = isExisting("pr", prValue, pr);
 
-            let cursorClass = "cursor-pointer";
+            let cursorClass = "";
             let bgClass = "hover:bg-surface-raised/50";
             if (existing) {
               cursorClass = "opacity-40 cursor-not-allowed";

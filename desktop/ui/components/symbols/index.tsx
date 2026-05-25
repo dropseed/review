@@ -213,7 +213,7 @@ export const SymbolNode = memo(function SymbolNode({
   return (
     <div className="select-none">
       <div
-        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
+        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors"
         style={{ paddingLeft }}
         onClick={hasChildren ? () => setExpanded(!expanded) : handleClick}
       >

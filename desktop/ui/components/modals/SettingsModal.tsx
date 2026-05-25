@@ -59,7 +59,7 @@ function ToggleRow({
   onCheckedChange,
 }: ToggleRowProps): ReactNode {
   return (
-    <label className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5 cursor-pointer hover:bg-surface-raised/50 transition-colors">
+    <label className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5 hover:bg-surface-raised/50 transition-colors">
       <span className="text-xs text-fg-secondary">{label}</span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </label>

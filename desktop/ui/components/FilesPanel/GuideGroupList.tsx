@@ -408,7 +408,7 @@ export function GuideGroupList(): ReactNode {
       )}
 
       <div className="border-t border-edge/50 px-3 py-2 space-y-1.5">
-        <label className="flex items-center gap-1.5 cursor-pointer">
+        <label className="flex items-center gap-1.5">
           <Checkbox
             checked={excludeReviewed}
             onCheckedChange={(v) => setExcludeReviewed(v === true)}
@@ -419,7 +419,7 @@ export function GuideGroupList(): ReactNode {
           </span>
         </label>
         <SimpleTooltip content="Auto-start guided review when hunks load">
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-1.5">
             <Switch
               checked={autoStartGuide}
               onCheckedChange={setAutoStartGuide}

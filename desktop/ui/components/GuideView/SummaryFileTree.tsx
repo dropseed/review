@@ -205,10 +205,7 @@ function SymbolTreeNode({
 
   return (
     <>
-      <TreeRow
-        depth={depth}
-        className="hover:bg-surface-raised/40 cursor-pointer"
-      >
+      <TreeRow depth={depth} className="hover:bg-surface-raised/40">
         <TreeRowButton
           onClick={
             firstHunkId
@@ -267,10 +264,7 @@ function CompactNode({
 
     return (
       <TreeNodeItem>
-        <TreeRow
-          depth={depth}
-          className="hover:bg-surface-raised/40 cursor-pointer"
-        >
+        <TreeRow depth={depth} className="hover:bg-surface-raised/40">
           <TreeRowButton onClick={() => onToggle(entry.path)}>
             <TreeChevron expanded={!isCollapsed} />
             <TreeFileIcon
@@ -313,10 +307,7 @@ function CompactNode({
 
   return (
     <TreeNodeItem>
-      <TreeRow
-        depth={depth}
-        className="hover:bg-surface-raised/40 cursor-pointer"
-      >
+      <TreeRow depth={depth} className="hover:bg-surface-raised/40">
         <TreeRowButton onClick={() => onNavigate(entry.path)}>
           <TreeChevron expanded={false} visible={false} />
           <TreeFileIcon

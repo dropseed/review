@@ -117,7 +117,7 @@ export const SymbolRow = memo(function SymbolRow({
   return (
     <div className="select-none">
       <div
-        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors cursor-pointer"
+        className="group flex w-full items-center gap-1 py-0.5 pr-2 hover:bg-surface-raised/40 transition-colors"
         style={{ paddingLeft }}
         onClick={hasChildren ? () => setExpanded(!expanded) : handleClick}
       >
@@ -143,7 +143,7 @@ export const SymbolRow = memo(function SymbolRow({
         <ChangeIndicator changeType={symbol.changeType} />
         <SymbolKindBadge kind={symbol.kind} />
         <button
-          className={`min-w-0 flex-1 truncate text-left text-xs cursor-pointer ${symbolNameColor(symbol.changeType)}`}
+          className={`min-w-0 flex-1 truncate text-left text-xs ${symbolNameColor(symbol.changeType)}`}
           onClick={(e) => {
             e.stopPropagation();
             handleClick();

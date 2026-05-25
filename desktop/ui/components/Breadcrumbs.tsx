@@ -28,7 +28,7 @@ export const Breadcrumbs = memo(function Breadcrumbs({
             ) : (
               <button
                 onClick={() => onNavigateToDirectory?.(path)}
-                className="font-mono text-fg-muted hover:text-fg-secondary hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded"
+                className="font-mono text-fg-muted hover:text-fg-secondary hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-focus-ring/50 rounded"
               >
                 {part}
               </button>

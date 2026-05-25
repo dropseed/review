@@ -131,7 +131,7 @@ export const RepoSelect = memo(function RepoSelect({
             transition-colors duration-150
             focus:outline-hidden focus:ring-2 focus:ring-focus-ring/30 focus:border-focus-ring/50
             hover:border-edge-strong/60 hover:bg-surface-raised/70
-            ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
+            ${disabled ? "cursor-not-allowed opacity-50" : ""}
           `}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
@@ -219,7 +219,7 @@ export const RepoSelect = memo(function RepoSelect({
                 onClick={() => handleSelect(repo.path)}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 className={`
-                  flex items-center gap-2.5 px-3 py-2 cursor-pointer
+                  flex items-center gap-2.5 px-3 py-2
                   text-sm transition-colors duration-75
                   ${
                     isHighlighted
@@ -274,7 +274,7 @@ export const RepoSelect = memo(function RepoSelect({
             }}
             onMouseEnter={() => setHighlightedIndex(openRepoIndex)}
             className={`
-              flex items-center gap-2.5 mx-2 px-3 py-2.5 cursor-pointer rounded-lg
+              flex items-center gap-2.5 mx-2 px-3 py-2.5 rounded-lg
               text-sm transition-colors duration-75
               border border-dashed
               ${

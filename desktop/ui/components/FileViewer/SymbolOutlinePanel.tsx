@@ -245,7 +245,7 @@ const OutlineNode = memo(function OutlineNode({
     <>
       <div
         data-symbol-line={symbol.startLine}
-        className={`group flex items-center gap-1 py-0.5 pr-2 cursor-pointer transition-colors ${
+        className={`group flex items-center gap-1 py-0.5 pr-2 transition-colors ${
           isActive
             ? "bg-surface-raised/60 text-fg-secondary"
             : "hover:bg-surface-raised/30"

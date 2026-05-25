@@ -342,7 +342,7 @@ export const BranchSelect = memo(function BranchSelect({
             text-left
             transition-colors duration-150
             ${variantClasses}
-            ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface-raised/70"}
+            ${disabled ? "cursor-not-allowed opacity-50" : "hover:bg-surface-raised/70"}
             focus:outline-hidden focus:ring-2
           `}
           aria-haspopup="listbox"
@@ -430,7 +430,7 @@ export const BranchSelect = memo(function BranchSelect({
                         onClick={() => handleSelect(opt.value)}
                         onMouseEnter={() => setHighlightedIndex(flatIndex)}
                         className={`
-                          flex items-center gap-2 px-3 py-2 cursor-pointer
+                          flex items-center gap-2 px-3 py-2
                           text-sm transition-colors duration-75
                           ${
                             isHighlighted

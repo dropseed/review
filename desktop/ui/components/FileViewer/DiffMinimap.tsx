@@ -133,7 +133,7 @@ export const DiffMinimap = memo(function DiffMinimap({
 
   return (
     <div
-      className="relative w-3 shrink-0 cursor-pointer group border-l border-edge/50"
+      className="relative w-3 shrink-0 group border-l border-edge/50"
       onClick={handleTrackClick}
       aria-hidden="true"
     >
@@ -162,7 +162,7 @@ export const DiffMinimap = memo(function DiffMinimap({
         return (
           <div
             key={marker.id}
-            className={`absolute left-0.5 right-0.5 rounded-[2px] transition-[left,right] cursor-pointer hover:left-0 hover:right-0 ${colorClass}${pulseClass}${focusRing}`}
+            className={`absolute left-0.5 right-0.5 rounded-[2px] transition-[left,right] hover:left-0 hover:right-0 ${colorClass}${pulseClass}${focusRing}`}
             style={{
               top: `${marker.topFraction * 100}%`,
               height: `${marker.heightFraction * 100}%`,

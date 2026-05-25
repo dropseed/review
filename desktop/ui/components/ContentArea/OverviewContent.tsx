@@ -21,7 +21,7 @@ function ExternalLink({
         e.preventDefault();
         if (href) getPlatformServices().opener.openUrl(href);
       }}
-      className="text-link hover:text-link/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-link/50 rounded underline underline-offset-2 cursor-pointer"
+      className="text-link hover:text-link/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-link/50 rounded underline underline-offset-2"
       rel="noopener noreferrer"
     >
       {children}

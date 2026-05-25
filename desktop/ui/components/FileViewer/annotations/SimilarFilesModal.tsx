@@ -397,7 +397,7 @@ export function FileRow({
       className={`flex items-center gap-2 rounded-md border px-3 py-2 ${
         highlighted
           ? "border-status-modified/30 bg-status-modified/5"
-          : "border-edge-default/50 bg-surface-raised/30 cursor-pointer hover:border-edge-strong hover:bg-surface-raised/50"
+          : "border-edge-default/50 bg-surface-raised/30 hover:border-edge-strong hover:bg-surface-raised/50"
       }`}
     >
       {/* File icon */}
