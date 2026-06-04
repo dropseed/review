@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
 import { isHunkTrusted } from "../../../types";
+import { getFilesByGlob } from "../../../utils/glob";
 import {
   Dialog,
   DialogContent,
@@ -9,27 +10,6 @@ import {
   DialogClose,
 } from "../../ui/dialog";
 import { SimpleTooltip } from "../../ui/tooltip";
-
-/**
- * Group hunks by file path, filtered to files matching a given basename.
- * Returns a Map of filePath → DiffHunk[].
- * Designed so matching logic can be swapped to glob later.
- */
-export function getFilesByBasename(
-  hunks: DiffHunk[],
-  basename: string,
-): Map<string, DiffHunk[]> {
-  const map = new Map<string, DiffHunk[]>();
-  for (const hunk of hunks) {
-    const name = hunk.filePath.split("/").pop();
-    if (name === basename) {
-      const arr = map.get(hunk.filePath) ?? [];
-      arr.push(hunk);
-      map.set(hunk.filePath, arr);
-    }
-  }
-  return map;
-}
 
 /** Status indicator with colored dot */
 export function StatusIndicator({
@@ -146,9 +126,10 @@ export function SimilarFilesModal({
 
   const basename = currentFilePath.split("/").pop() ?? "";
 
-  // Group hunks by file path for files matching this basename
+  // Group hunks by file path for files matching this basename. A bare name is
+  // a valid glob (no metacharacters → exact basename match).
   const matchingFiles = useMemo(
-    () => getFilesByBasename(hunks, basename),
+    () => getFilesByGlob(hunks, basename),
     [hunks, basename],
   );
 

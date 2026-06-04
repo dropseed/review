@@ -109,7 +109,8 @@ function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
 
 interface QuickActionItem {
   label: string;
-  count: number;
+  /** Number of hunks the action affects. Omit for actions that open a tool. */
+  count?: number;
   onAction: () => void;
 }
 
@@ -216,9 +217,11 @@ function SectionHeader({
           {quickActions.map((qa) => (
             <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
               <span className="flex-1">{qa.label}</span>
-              <span className="ml-2 text-xxs tabular-nums text-fg-muted">
-                {qa.count}
-              </span>
+              {qa.count !== undefined && (
+                <span className="ml-2 text-xxs tabular-nums text-fg-muted">
+                  {qa.count}
+                </span>
+              )}
             </DropdownMenuItem>
           ))}
         </>
@@ -435,22 +438,6 @@ export function ReviewTabContent({
     return result;
   }, [files, hunks, reviewState]);
 
-  // Count unique basenames that appear in 2+ files (for "by filename" quick actions)
-  const basenameCount = useMemo(() => {
-    const nameToFiles = new Map<string, Set<string>>();
-    for (const hunk of hunks) {
-      const name = hunk.filePath.split("/").pop() ?? "";
-      const set = nameToFiles.get(name) ?? new Set();
-      set.add(hunk.filePath);
-      nameToFiles.set(name, set);
-    }
-    let count = 0;
-    for (const f of nameToFiles.values()) {
-      if (f.size >= 2) count++;
-    }
-    return count;
-  }, [hunks]);
-
   const needsReviewQuickActions = useMemo(() => {
     const actions: QuickActionItem[] = [];
     const labels: Record<string, string> = {
@@ -469,10 +456,11 @@ export function ReviewTabContent({
         });
       }
     }
-    if (basenameCount > 0) {
+    // Opens a glob-driven modal (matches by pattern, not just literal dupes),
+    // so it's offered whenever there are hunks to target.
+    if (hunks.length > 0) {
       actions.push({
         label: "Approve by filename…",
-        count: basenameCount,
         onAction: () => {
           setFilenameModalMode("approve");
           setFilenameModalOpen(true);
@@ -480,7 +468,7 @@ export function ReviewTabContent({
       });
     }
     return actions;
-  }, [quickActionData, basenameCount]);
+  }, [quickActionData, hunks.length]);
 
   // Count of approved + trusted hunks (for "Stage approved" action)
   const approvedOrTrustedCount = useMemo(() => {
@@ -540,10 +528,9 @@ export function ReviewTabContent({
         });
       }
     }
-    if (basenameCount > 0) {
+    if (approvedOrTrustedCount > 0) {
       actions.push({
         label: "Unapprove by filename…",
-        count: basenameCount,
         onAction: () => {
           setFilenameModalMode("unapprove");
           setFilenameModalOpen(true);
@@ -551,13 +538,7 @@ export function ReviewTabContent({
       });
     }
     return actions;
-  }, [
-    quickActionData,
-    basenameCount,
-    approvedOrTrustedCount,
-    hunks,
-    reviewState,
-  ]);
+  }, [quickActionData, approvedOrTrustedCount, hunks, reviewState]);
 
   // Trust section
   const knownPatternIds = useKnownPatternIds();

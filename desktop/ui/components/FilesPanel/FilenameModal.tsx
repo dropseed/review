@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import type { DiffHunk, HunkState } from "../../types";
 import { isHunkTrusted } from "../../types";
+import { getFilesByGlob } from "../../utils/glob";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +10,6 @@ import {
   DialogClose,
 } from "../ui/dialog";
 import {
-  getFilesByBasename,
   getFileProgress,
   StatusIndicator,
   FileRow,
@@ -28,9 +28,22 @@ interface FilenameModalProps {
   onNavigateToFile?: (filePath: string) => void;
 }
 
+interface Suggestion {
+  /** The glob/exact pattern this suggestion fills into the input. */
+  pattern: string;
+  /** Number of distinct files the pattern matches. */
+  fileCount: number;
+}
+
 /**
- * Modal for approving/unapproving files by filename pattern.
- * Shows a text input for typing a filename with live-updating file list.
+ * Modal for approving/unapproving files by filename glob.
+ *
+ * The text input is a glob pattern (see {@link getFilesByGlob}): a bare name
+ * like `index.ts` matches that basename at any depth, `*.test.ts` matches by
+ * extension, and a pattern with a slash like `src/**` matches the full path.
+ * Matching files update live, and the footer action applies to every hunk in
+ * the matched set. Repeated filenames and per-extension globs are offered as
+ * clickable suggestions for discoverability.
  */
 export function FilenameModal({
   open,
@@ -44,46 +57,45 @@ export function FilenameModal({
   onUnapproveAll,
   onNavigateToFile,
 }: FilenameModalProps) {
-  const [query, setQuery] = useState("");
-  const [selectedBasename, setSelectedBasename] = useState<string | null>(null);
+  const [pattern, setPattern] = useState("");
 
-  // Get all unique basenames that appear in 2+ files
-  const availableBasenames = useMemo(() => {
+  // Suggestions: repeated basenames and per-extension globs that cover 2+
+  // files, so the user can fill the input without knowing glob syntax.
+  const suggestions = useMemo(() => {
     const nameToFiles = new Map<string, Set<string>>();
+    const extToFiles = new Map<string, Set<string>>();
     for (const hunk of hunks) {
       const name = hunk.filePath.split("/").pop() ?? "";
-      const set = nameToFiles.get(name) ?? new Set();
-      set.add(hunk.filePath);
-      nameToFiles.set(name, set);
+      addTo(nameToFiles, name, hunk.filePath);
+      const dot = name.lastIndexOf(".");
+      if (dot > 0) addTo(extToFiles, name.slice(dot), hunk.filePath);
     }
-    const result: { name: string; fileCount: number }[] = [];
-    for (const [name, files] of nameToFiles) {
-      if (files.size >= 2) {
-        result.push({ name, fileCount: files.size });
-      }
-    }
-    return result.sort((a, b) => b.fileCount - a.fileCount);
+    const repeatedNames = toSuggestions(nameToFiles, (name) => name);
+    const extensions = toSuggestions(extToFiles, (ext) => `*${ext}`);
+    return { repeatedNames, extensions };
   }, [hunks]);
 
-  // Filter basenames by query
-  const filteredBasenames = useMemo(() => {
-    if (!query.trim()) return availableBasenames;
-    const q = query.toLowerCase();
-    return availableBasenames.filter((b) => b.name.toLowerCase().includes(q));
-  }, [availableBasenames, query]);
+  // Filter suggestions by the typed text so they stay relevant while refining.
+  const visibleSuggestions = useMemo(() => {
+    const q = pattern.trim().toLowerCase();
+    const filter = (s: Suggestion) => !q || s.pattern.toLowerCase().includes(q);
+    return {
+      repeatedNames: suggestions.repeatedNames.filter(filter),
+      extensions: suggestions.extensions.filter(filter),
+    };
+  }, [suggestions, pattern]);
 
-  // Matching files for selected basename
-  const matchingFiles = useMemo(() => {
-    if (!selectedBasename) return new Map<string, DiffHunk[]>();
-    return getFilesByBasename(hunks, selectedBasename);
-  }, [hunks, selectedBasename]);
+  // Files (and their hunks) matched by the current pattern.
+  const matchingFiles = useMemo(
+    () => getFilesByGlob(hunks, pattern),
+    [hunks, pattern],
+  );
 
   const filePaths = useMemo(
     () => Array.from(matchingFiles.keys()),
     [matchingFiles],
   );
 
-  // Collect all hunk IDs across matching files
   const allHunkIds = useMemo(() => {
     const ids: string[] = [];
     for (const fileHunks of matchingFiles.values()) {
@@ -92,7 +104,7 @@ export function FilenameModal({
     return ids;
   }, [matchingFiles]);
 
-  // Count hunks by status
+  // Count hunks by status across the matched set.
   let approvedCount = 0;
   let rejectedCount = 0;
   for (const id of allHunkIds) {
@@ -103,12 +115,12 @@ export function FilenameModal({
   }
   const pendingCount = allHunkIds.length - approvedCount - rejectedCount;
 
+  const hasQuery = pattern.trim().length > 0;
+  const hasMatches = allHunkIds.length > 0;
+
   const handleClose = (v: boolean) => {
     onOpenChange(v);
-    if (!v) {
-      setSelectedBasename(null);
-      setQuery("");
-    }
+    if (!v) setPattern("");
   };
 
   const handleBatchAction = (actionFn: (ids: string[]) => void) => {
@@ -144,86 +156,35 @@ export function FilenameModal({
           </DialogClose>
         </DialogHeader>
 
-        {/* Search input */}
-        <div className="border-b border-edge px-4 py-2">
+        {/* Glob input */}
+        <div className="border-b border-edge px-4 py-2 space-y-1">
           <input
             type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedBasename(null);
-            }}
-            placeholder="Search filenames…"
-            className="w-full rounded-md border border-edge-default bg-surface-raised/50 px-3 py-1.5 text-sm text-fg-secondary placeholder:text-fg-muted focus:border-focus-ring/50 focus:outline-none focus:ring-1 focus:ring-focus-ring/50"
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            placeholder="Filename or glob — e.g. index.ts, *.test.ts, src/**/*.py"
+            className="w-full rounded-md border border-edge-default bg-surface-raised/50 px-3 py-1.5 text-sm font-mono text-fg-secondary placeholder:text-fg-muted placeholder:font-sans focus:border-focus-ring/50 focus:outline-none focus:ring-1 focus:ring-focus-ring/50"
             autoFocus
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
           />
+          {hasQuery && (
+            <p className="text-xxs text-fg-muted px-0.5">
+              {hasMatches
+                ? `${allHunkIds.length} hunks across ${filePaths.length} file${
+                    filePaths.length === 1 ? "" : "s"
+                  }`
+                : "No files match this pattern"}
+            </p>
+          )}
         </div>
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          {!selectedBasename ? (
-            /* Basename list */
-            <div className="p-4 space-y-1">
-              {filteredBasenames.length === 0 ? (
-                <p className="text-center text-xs text-fg-muted py-4">
-                  {query
-                    ? "No matching filenames found"
-                    : "No filenames appear in multiple files"}
-                </p>
-              ) : (
-                filteredBasenames.map((b) => (
-                  <button
-                    key={b.name}
-                    onClick={() => setSelectedBasename(b.name)}
-                    className="flex w-full items-center gap-2 rounded-md border border-edge-default/50 bg-surface-raised/30 px-3 py-2 text-left hover:border-edge-strong hover:bg-surface-raised/50 transition-colors"
-                  >
-                    <svg
-                      className="h-3.5 w-3.5 shrink-0 text-fg-muted"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                      />
-                    </svg>
-                    <span className="flex-1 text-xs text-fg-secondary">
-                      {b.name}
-                    </span>
-                    <span className="rounded-full bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted tabular-nums">
-                      {b.fileCount} files
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          ) : (
-            /* File list for selected basename */
+          {hasMatches ? (
+            /* Matched file list */
             <div className="p-4 space-y-2">
-              {/* Back button */}
-              <button
-                onClick={() => setSelectedBasename(null)}
-                className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary transition-colors mb-2"
-              >
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
-                Back to filenames
-              </button>
-
               {/* Status summary */}
               <div className="flex items-center gap-4 text-xs mb-2">
                 <StatusIndicator
@@ -276,11 +237,18 @@ export function FilenameModal({
                 </div>
               ))}
             </div>
+          ) : (
+            /* Suggestions — shown until a pattern matches something */
+            <SuggestionList
+              hasQuery={hasQuery}
+              suggestions={visibleSuggestions}
+              onPick={setPattern}
+            />
           )}
         </div>
 
-        {/* Action footer - only shown when a basename is selected */}
-        {selectedBasename && allHunkIds.length > 0 && (
+        {/* Action footer — only when the pattern matches hunks */}
+        {hasMatches && (
           <div className="flex items-center justify-between border-t border-edge px-4 py-3 bg-surface-panel/50">
             <div className="text-xs text-fg-muted">
               Applies to all {allHunkIds.length} hunks across {filePaths.length}{" "}
@@ -355,4 +323,97 @@ export function FilenameModal({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Clickable glob suggestions, grouped by repeated names and extensions. */
+function SuggestionList({
+  hasQuery,
+  suggestions,
+  onPick,
+}: {
+  hasQuery: boolean;
+  suggestions: { repeatedNames: Suggestion[]; extensions: Suggestion[] };
+  onPick: (pattern: string) => void;
+}) {
+  const { repeatedNames, extensions } = suggestions;
+  const isEmpty = repeatedNames.length === 0 && extensions.length === 0;
+
+  if (isEmpty) {
+    return (
+      <p className="text-center text-xs text-fg-muted py-6">
+        {hasQuery
+          ? "No matching files or suggestions"
+          : "Type a filename or glob to match files"}
+      </p>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      {repeatedNames.length > 0 && (
+        <SuggestionGroup
+          label="Repeated filenames"
+          items={repeatedNames}
+          onPick={onPick}
+        />
+      )}
+      {extensions.length > 0 && (
+        <SuggestionGroup
+          label="By extension"
+          items={extensions}
+          onPick={onPick}
+        />
+      )}
+    </div>
+  );
+}
+
+function SuggestionGroup({
+  label,
+  items,
+  onPick,
+}: {
+  label: string;
+  items: Suggestion[];
+  onPick: (pattern: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xxs uppercase tracking-wide text-fg-faint">{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((s) => (
+          <button
+            key={s.pattern}
+            onClick={() => onPick(s.pattern)}
+            className="flex items-center gap-1.5 rounded-md border border-edge-default/50 bg-surface-raised/30 px-2 py-1 text-xs text-fg-secondary hover:border-edge-strong hover:bg-surface-raised/50 transition-colors"
+          >
+            <span className="font-mono">{s.pattern}</span>
+            <span className="rounded-full bg-surface-hover/50 px-1.5 text-xxs text-fg-muted tabular-nums">
+              {s.fileCount}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function addTo(map: Map<string, Set<string>>, key: string, value: string) {
+  const set = map.get(key) ?? new Set<string>();
+  set.add(value);
+  map.set(key, set);
+}
+
+/** Keep keys covering 2+ files, mapped to a pattern and sorted by frequency. */
+function toSuggestions(
+  map: Map<string, Set<string>>,
+  toPattern: (key: string) => string,
+): Suggestion[] {
+  const result: Suggestion[] = [];
+  for (const [key, files] of map) {
+    if (files.size >= 2) {
+      result.push({ pattern: toPattern(key), fileCount: files.size });
+    }
+  }
+  return result.sort((a, b) => b.fileCount - a.fileCount);
 }
