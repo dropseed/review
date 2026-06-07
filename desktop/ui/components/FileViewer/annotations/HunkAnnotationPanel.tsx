@@ -526,6 +526,7 @@ export function HunkAnnotationPanel({
             >
               <HighRiskTriangle />
               Mark high risk
+              <span className="ml-auto pl-4 text-xxs text-fg-faint">⇧H</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
@@ -545,6 +546,7 @@ export function HunkAnnotationPanel({
                 />
               </svg>
               Mark low risk
+              <span className="ml-auto pl-4 text-xxs text-fg-faint">⇧L</span>
             </DropdownMenuItem>
             {hunkState?.risk && (
               <DropdownMenuItem

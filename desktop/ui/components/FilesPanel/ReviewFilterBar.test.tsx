@@ -98,6 +98,26 @@ describe("ReviewFilterBar", () => {
     expect(useReviewStore.getState().reviewFilter.risk).toEqual(["low"]);
   });
 
+  it("filters and acts by label", () => {
+    seed({
+      "a.ts:1": { classification: attributed(["imports:added"], "static") },
+      "a.ts:2": { classification: attributed(["code:logic"], "static") },
+    });
+    render(<ReviewFilterBar />);
+
+    const select = screen.getByLabelText(
+      "Filter by label",
+    ) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "imports:added" } });
+    expect(useReviewStore.getState().reviewFilter.label).toBe("imports:added");
+    expect(screen.getByText("1 matching")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Approve"));
+    const hunks = useReviewStore.getState().reviewState!.hunks;
+    expect(hunks["a.ts:1"].status?.value).toBe("approved");
+    expect(hunks["a.ts:2"].status?.value).toBeUndefined();
+  });
+
   it("acts on exactly the matching set", () => {
     seed({
       "a.ts:1": { risk: attributed("low", "agent") },
