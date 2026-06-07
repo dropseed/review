@@ -1,7 +1,12 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
-import { isHunkUnclassified, type DiffHunk, type HunkState } from "../../types";
+import {
+  isHunkUnclassified,
+  hunkLabels,
+  type DiffHunk,
+  type HunkState,
+} from "../../types";
 import {
   Dialog,
   DialogContent,
@@ -32,8 +37,9 @@ function buildLabelGroups(
 
   for (const hunk of hunks) {
     const state = reviewState?.hunks[hunk.id];
-    if (state?.label && state.label.length > 0) {
-      for (const lbl of state.label) {
+    const labels = hunkLabels(state);
+    if (labels.length > 0) {
+      for (const lbl of labels) {
         labelCounts.set(lbl, (labelCounts.get(lbl) || 0) + 1);
       }
     } else if (isHunkUnclassified(state)) {
@@ -82,7 +88,7 @@ function getFilteredHunks(
 
   return hunks.filter((h) => {
     const state = reviewState?.hunks[h.id];
-    return state?.label?.includes(filter);
+    return hunkLabels(state).includes(filter);
   });
 }
 
@@ -154,9 +160,9 @@ function HunkCard({
       {/* Body: labels, reasoning, diff preview */}
       <div className="px-3 py-2 space-y-2">
         {/* Labels */}
-        {hunkState?.label && hunkState.label.length > 0 && (
+        {hunkLabels(hunkState).length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            {hunkState.label.map((lbl, i) => {
+            {hunkLabels(hunkState).map((lbl, i) => {
               const isTrusted = trustList.includes(lbl);
               return (
                 <span
@@ -171,7 +177,7 @@ function HunkCard({
                 </span>
               );
             })}
-            {hunkState.classifiedVia === "static" && (
+            {hunkState?.classification?.source === "static" && (
               <span className="rounded px-1.5 py-0.5 text-xxs font-medium bg-surface-raised text-fg-muted">
                 Static
               </span>
@@ -180,8 +186,10 @@ function HunkCard({
         )}
 
         {/* Reasoning */}
-        {hunkState?.reasoning && (
-          <p className="text-xs italic text-fg-muted">{hunkState.reasoning}</p>
+        {hunkState?.classification?.reasoning && (
+          <p className="text-xs italic text-fg-muted">
+            {hunkState.classification.reasoning}
+          </p>
         )}
 
         {/* Diff preview */}
@@ -213,7 +221,7 @@ export function ClassificationsModal({
   const classifiedCount = useMemo(() => {
     return hunks.filter((h) => {
       const state = reviewState?.hunks[h.id];
-      return state?.label && state.label.length > 0;
+      return hunkLabels(state).length > 0;
     }).length;
   }, [hunks, reviewState]);
 

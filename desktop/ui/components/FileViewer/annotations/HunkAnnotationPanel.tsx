@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
-import type { DiffHunk, HunkState } from "../../../types";
-import { isHunkTrusted } from "../../../types";
+import type { DiffHunk, HunkState, Source } from "../../../types";
+import { isHunkTrusted, hunkLabels } from "../../../types";
 import { useReviewStore } from "../../../stores";
 import { useIsFocusedHunk } from "../../../hooks";
 import {
@@ -13,6 +13,32 @@ import { SimpleTooltip } from "../../ui/tooltip";
 import { MovePairModal } from "./MovePairModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
 
+/** "· set by agent" provenance suffix, shown only when something other than
+ *  the human-in-this-app set the value (status and risk share this). */
+function setBySuffix(source: Source | undefined): string {
+  return source && source !== "ui" ? ` · set by ${source}` : "";
+}
+
+/** The high-risk warning triangle, shared by the risk badge and its menu item. */
+function HighRiskTriangle({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+      />
+    </svg>
+  );
+}
+
 type ReviewStatus =
   | "approved"
   | "rejected"
@@ -24,9 +50,9 @@ function getReviewStatus(
   hunkState: HunkState | undefined,
   trustList: string[],
 ): ReviewStatus {
-  if (hunkState?.status === "rejected") return "rejected";
-  if (hunkState?.status === "approved") return "approved";
-  if (hunkState?.status === "saved_for_later") return "saved_for_later";
+  if (hunkState?.status?.value === "rejected") return "rejected";
+  if (hunkState?.status?.value === "approved") return "approved";
+  if (hunkState?.status?.value === "saved_for_later") return "saved_for_later";
   if (!hunkState?.status && isHunkTrusted(hunkState, trustList))
     return "trusted";
   return "pending";
@@ -110,6 +136,10 @@ export function HunkAnnotationPanel({
   const isRejected = reviewStatus === "rejected";
   const isSavedForLater = reviewStatus === "saved_for_later";
   const isTrusted = reviewStatus === "trusted";
+  // Provenance of the decision: surface who set it when it wasn't the human in
+  // this app (e.g. an agent that approved via the CLI), the symmetric twin of
+  // the risk badge's agent styling.
+  const statusBy = setBySuffix(hunkState?.status?.source);
   // Drives ref assignment and tabIndex only. Visual focus (border, ring,
   // button visibility) uses the data-scroll-focused DOM attribute to avoid
   // React re-renders during active scrolling.
@@ -134,7 +164,7 @@ export function HunkAnnotationPanel({
       )}
 
       {isApproved ? (
-        <SimpleTooltip content="Click to unapprove">
+        <SimpleTooltip content={`Click to unapprove${statusBy}`}>
           <button
             onClick={() => onUnapprove(hunk.id)}
             className="group flex items-center gap-1.5 rounded-md bg-status-approved/20 px-2.5 py-1 text-xs font-medium text-status-approved transition-colors hover:bg-status-approved/30 inset-ring-1 inset-ring-status-approved/30 animate-in fade-in zoom-in-95 duration-200"
@@ -156,7 +186,7 @@ export function HunkAnnotationPanel({
           </button>
         </SimpleTooltip>
       ) : isRejected ? (
-        <SimpleTooltip content="Click to clear rejection">
+        <SimpleTooltip content={`Click to clear rejection${statusBy}`}>
           <button
             onClick={() => onUnreject(hunk.id)}
             className="group flex items-center gap-1.5 rounded-md bg-status-rejected/20 px-2.5 py-1 text-xs font-medium text-status-rejected transition-colors hover:bg-status-rejected/30 inset-ring-1 inset-ring-status-rejected/30 animate-in fade-in zoom-in-95 duration-200"
@@ -178,7 +208,7 @@ export function HunkAnnotationPanel({
           </button>
         </SimpleTooltip>
       ) : isSavedForLater ? (
-        <SimpleTooltip content="Click to clear saved for later">
+        <SimpleTooltip content={`Click to clear saved for later${statusBy}`}>
           <button
             onClick={() => onUnsaveForLater(hunk.id)}
             className="group flex items-center gap-1.5 rounded-md bg-status-modified/20 px-2.5 py-1 text-xs font-medium text-status-modified transition-colors hover:bg-status-modified/30 inset-ring-1 inset-ring-status-modified/30 animate-in fade-in zoom-in-95 duration-200"
@@ -310,11 +340,38 @@ export function HunkAnnotationPanel({
       )}
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {hunkState?.label && hunkState.label.length > 0 && (
+        {hunkState?.risk && (
+          <SimpleTooltip
+            content={
+              `${hunkState.risk.value === "high" ? "High" : "Low"} risk` +
+              setBySuffix(hunkState.risk.source) +
+              (hunkState.risk.reasoning ? ` — ${hunkState.risk.reasoning}` : "")
+            }
+          >
+            <span
+              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs font-semibold ${
+                hunkState.risk.value === "high"
+                  ? "bg-status-rejected/15 text-status-rejected"
+                  : "bg-surface-hover/50 text-fg-muted"
+              } ${
+                hunkState.risk.source !== "ui"
+                  ? "border border-dashed border-edge-strong/50"
+                  : ""
+              }`}
+            >
+              {hunkState.risk.value === "high" && (
+                <HighRiskTriangle className="h-3 w-3" />
+              )}
+              {hunkState.risk.value === "high" ? "High" : "Low"}
+            </span>
+          </SimpleTooltip>
+        )}
+
+        {hunkLabels(hunkState).length > 0 && (
           <div className="flex items-center gap-1.5">
             <SimpleTooltip
               content={
-                hunkState.classifiedVia === "static"
+                hunkState?.classification?.source === "static"
                   ? "Classified by rules"
                   : "Classified"
               }
@@ -334,7 +391,7 @@ export function HunkAnnotationPanel({
                 </svg>
               </span>
             </SimpleTooltip>
-            {hunkState.label.map((lbl, i) => {
+            {hunkLabels(hunkState).map((lbl, i) => {
               const isTrustedLabel = trustList.includes(lbl);
               return (
                 <SimpleTooltip
@@ -363,8 +420,8 @@ export function HunkAnnotationPanel({
           </div>
         )}
 
-        {hunkState?.reasoning && (
-          <SimpleTooltip content={hunkState.reasoning}>
+        {hunkState?.classification?.reasoning && (
+          <SimpleTooltip content={hunkState.classification.reasoning}>
             <span className="text-fg-faint hover:text-fg-muted cursor-help transition-colors">
               <svg
                 className="h-3 w-3"
@@ -462,6 +519,52 @@ export function HunkAnnotationPanel({
               </svg>
               Copy hunk
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                useReviewStore.getState().setHunkRisk(hunk.id, "high")
+              }
+            >
+              <HighRiskTriangle />
+              Mark high risk
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                useReviewStore.getState().setHunkRisk(hunk.id, "low")
+              }
+            >
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              Mark low risk
+            </DropdownMenuItem>
+            {hunkState?.risk && (
+              <DropdownMenuItem
+                onClick={() => useReviewStore.getState().clearHunkRisk(hunk.id)}
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+                Clear risk
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

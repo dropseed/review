@@ -44,6 +44,7 @@ export function SummaryStats({
   rejectedHunks,
   reviewedHunks,
   pendingHunks,
+  highRiskPendingHunks,
   reviewedPercent,
   state,
 }: ReviewProgress): ReactNode {
@@ -92,6 +93,14 @@ export function SummaryStats({
         )}
         <span className="text-fg-faint">&middot;</span>
         <span className="text-fg-muted">{pendingHunks} pending</span>
+        {highRiskPendingHunks > 0 && (
+          <>
+            <span className="text-fg-faint">&middot;</span>
+            <span className="font-medium text-status-rejected">
+              {highRiskPendingHunks} high-risk
+            </span>
+          </>
+        )}
         <span className="text-fg-faint ml-auto">
           {reviewedHunks}/{totalHunks} hunks
         </span>

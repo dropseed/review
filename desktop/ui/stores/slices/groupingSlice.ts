@@ -590,7 +590,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
           id: hunk.id,
           filePath: hunk.filePath,
           content: hunk.content,
-          label: hunkStates[hunk.id]?.label,
+          label: hunkStates[hunk.id]?.classification?.value,
           symbols: hunkDefines.get(hunk.id),
           references: hunkReferences.get(hunk.id),
           hasGrammar: fileHasGrammar.get(hunk.filePath),

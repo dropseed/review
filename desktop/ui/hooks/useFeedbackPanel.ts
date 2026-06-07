@@ -202,7 +202,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
   const rejectedHunks = useMemo((): RejectedHunkWithAnnotations[] => {
     if (!reviewState) return [];
     return hunks
-      .filter((h) => reviewState.hunks[h.id]?.status === "rejected")
+      .filter((h) => reviewState.hunks[h.id]?.status?.value === "rejected")
       .map((h) => ({
         filePath: h.filePath,
         lineRange: hunkLineRange(h),

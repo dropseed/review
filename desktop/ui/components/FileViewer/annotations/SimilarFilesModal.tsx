@@ -74,8 +74,8 @@ export function getFileProgress(
   let rejected = 0;
   for (const h of fileHunks) {
     const state = hunkStates[h.id];
-    if (state?.status === "approved") approved++;
-    else if (state?.status === "rejected") rejected++;
+    if (state?.status?.value === "approved") approved++;
+    else if (state?.status?.value === "rejected") rejected++;
     else if (isHunkTrusted(state, trustList)) approved++;
   }
   return { approved, rejected, total: fileHunks.length };
@@ -154,8 +154,8 @@ export function SimilarFilesModal({
   let rejectedCount = 0;
   for (const id of allHunkIds) {
     const state = hunkStates[id];
-    if (state?.status === "approved") approvedCount++;
-    else if (state?.status === "rejected") rejectedCount++;
+    if (state?.status?.value === "approved") approvedCount++;
+    else if (state?.status?.value === "rejected") rejectedCount++;
     else if (isHunkTrusted(state, trustList)) approvedCount++;
   }
   const pendingCount = allHunkIds.length - approvedCount - rejectedCount;

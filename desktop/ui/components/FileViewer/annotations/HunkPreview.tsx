@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { ThemedToken } from "shiki";
 import type { DiffHunk, HunkState } from "../../../types";
+import { hunkLabels } from "../../../types";
 import {
   useHighlighter,
   getLanguageFromFilename,
@@ -113,7 +114,7 @@ export function HunkPreview({
   );
 
   const tokenMap = useTokenizedLines(hunk);
-  const status = hunkState?.status;
+  const status = hunkState?.status?.value;
   return (
     <div
       className={`rounded-md border transition-colors ${
@@ -129,9 +130,9 @@ export function HunkPreview({
         </span>
         {status === "approved" && <StatusBadge status="approved" />}
         {status === "rejected" && <StatusBadge status="rejected" />}
-        {hunkState?.label && hunkState.label.length > 0 && (
+        {hunkLabels(hunkState).length > 0 && (
           <span className="rounded bg-surface-hover/50 px-1.5 py-0.5 text-xxs text-fg-muted">
-            {hunkState.label[0]}
+            {hunkLabels(hunkState)[0]}
           </span>
         )}
       </div>

@@ -23,6 +23,7 @@ import { SearchResultsPanel } from "./SearchResultsPanel";
 import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { ReviewTabContent } from "./ReviewTabContent";
+import { ReviewFilterBar } from "./ReviewFilterBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 
 interface FilesPanelProps {
@@ -318,24 +319,27 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
               selectedCommitHash={selectedCommitHash}
             />
           ) : viewMode === "changes" ? (
-            <ReviewTabContent
-              sectionedFiles={sectionedFiles}
-              flatSectionedFiles={flatSectionedFiles}
-              stats={stats}
-              renamedDirPaths={renamedDirPaths}
-              hunks={hunks}
-              reviewState={reviewState}
-              expandAll={expandAll}
-              collapseAll={collapseAll}
-              needsReviewOpen={needsReviewOpen}
-              setNeedsReviewOpen={setNeedsReviewOpen}
-              savedForLaterOpen={savedForLaterOpen}
-              setSavedForLaterOpen={setSavedForLaterOpen}
-              reviewedOpen={reviewedOpen}
-              setReviewedOpen={setReviewedOpen}
-              trustOpen={trustOpen}
-              setTrustOpen={setTrustOpen}
-            />
+            <>
+              <ReviewFilterBar />
+              <ReviewTabContent
+                sectionedFiles={sectionedFiles}
+                flatSectionedFiles={flatSectionedFiles}
+                stats={stats}
+                renamedDirPaths={renamedDirPaths}
+                hunks={hunks}
+                reviewState={reviewState}
+                expandAll={expandAll}
+                collapseAll={collapseAll}
+                needsReviewOpen={needsReviewOpen}
+                setNeedsReviewOpen={setNeedsReviewOpen}
+                savedForLaterOpen={savedForLaterOpen}
+                setSavedForLaterOpen={setSavedForLaterOpen}
+                reviewedOpen={reviewedOpen}
+                setReviewedOpen={setReviewedOpen}
+                trustOpen={trustOpen}
+                setTrustOpen={setTrustOpen}
+              />
+            </>
           ) : (
             <div className="flex-1 overflow-y-auto scrollbar-thin">
               <CollapsibleSection

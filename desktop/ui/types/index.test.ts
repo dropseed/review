@@ -3,6 +3,7 @@ import {
   makeComparison,
   isHunkTrusted,
   isHunkReviewed,
+  attributed,
   type HunkState,
 } from "./index";
 
@@ -35,32 +36,42 @@ describe("isHunkTrusted", () => {
   });
 
   it("returns false for hunkState with empty labels", () => {
-    const hunkState: HunkState = { label: [] };
+    const hunkState: HunkState = { classification: attributed([], "static") };
     expect(isHunkTrusted(hunkState, trustList)).toBe(false);
   });
 
   it("returns true when label matches a wildcard pattern", () => {
-    const hunkState: HunkState = { label: ["imports:added"] };
+    const hunkState: HunkState = {
+      classification: attributed(["imports:added"], "static"),
+    };
     expect(isHunkTrusted(hunkState, trustList)).toBe(true);
   });
 
   it("returns true when label matches an exact pattern", () => {
-    const hunkState: HunkState = { label: ["formatting:whitespace"] };
+    const hunkState: HunkState = {
+      classification: attributed(["formatting:whitespace"], "static"),
+    };
     expect(isHunkTrusted(hunkState, trustList)).toBe(true);
   });
 
   it("returns false when label does not match any pattern", () => {
-    const hunkState: HunkState = { label: ["code:logic"] };
+    const hunkState: HunkState = {
+      classification: attributed(["code:logic"], "static"),
+    };
     expect(isHunkTrusted(hunkState, trustList)).toBe(false);
   });
 
   it("returns true if any label matches", () => {
-    const hunkState: HunkState = { label: ["code:logic", "imports:added"] };
+    const hunkState: HunkState = {
+      classification: attributed(["code:logic", "imports:added"], "static"),
+    };
     expect(isHunkTrusted(hunkState, trustList)).toBe(true);
   });
 
   it("returns false when trustList is empty", () => {
-    const hunkState: HunkState = { label: ["imports:added"] };
+    const hunkState: HunkState = {
+      classification: attributed(["imports:added"], "static"),
+    };
     expect(isHunkTrusted(hunkState, [])).toBe(false);
   });
 });
@@ -73,27 +84,31 @@ describe("isHunkReviewed", () => {
   });
 
   it("returns true when status is approved", () => {
-    const hunkState: HunkState = { label: [], status: "approved" };
+    const hunkState: HunkState = { status: attributed("approved", "ui") };
     expect(isHunkReviewed(hunkState, trustList)).toBe(true);
   });
 
   it("returns true when status is rejected", () => {
-    const hunkState: HunkState = { label: [], status: "rejected" };
+    const hunkState: HunkState = { status: attributed("rejected", "ui") };
     expect(isHunkReviewed(hunkState, trustList)).toBe(true);
   });
 
   it("returns true when label matches trust list (no status)", () => {
-    const hunkState: HunkState = { label: ["imports:added"] };
+    const hunkState: HunkState = {
+      classification: attributed(["imports:added"], "static"),
+    };
     expect(isHunkReviewed(hunkState, trustList)).toBe(true);
   });
 
   it("returns false when no status and label does not match trust list", () => {
-    const hunkState: HunkState = { label: ["code:logic"] };
+    const hunkState: HunkState = {
+      classification: attributed(["code:logic"], "static"),
+    };
     expect(isHunkReviewed(hunkState, trustList)).toBe(false);
   });
 
   it("returns false when no status and no labels", () => {
-    const hunkState: HunkState = { label: [] };
+    const hunkState: HunkState = { classification: attributed([], "static") };
     expect(isHunkReviewed(hunkState, trustList)).toBe(false);
   });
 });

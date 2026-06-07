@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useReviewStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
-import { anyLabelMatchesPattern } from "../types";
+import { anyLabelMatchesPattern, hunkLabels } from "../types";
 import { getApiClient } from "../api";
 
 let cachedKnownPatternIds: Set<string> | null = null;
@@ -54,7 +54,7 @@ export function useTrustCounts(knownPatternIds?: Set<string>): TrustCounts {
   const trustedHunkCount = useMemo(() => {
     if (trustList.length === 0) return 0;
     return hunks.filter((hunk) => {
-      const labels = reviewState?.hunks[hunk.id]?.label ?? [];
+      const labels = hunkLabels(reviewState?.hunks[hunk.id]);
       return trustList.some((pattern) =>
         anyLabelMatchesPattern(labels, pattern),
       );
@@ -64,7 +64,7 @@ export function useTrustCounts(knownPatternIds?: Set<string>): TrustCounts {
   const trustableHunkCount = useMemo(() => {
     if (!knownPatternIds || knownPatternIds.size === 0) return 0;
     return hunks.filter((hunk) => {
-      const labels = reviewState?.hunks[hunk.id]?.label ?? [];
+      const labels = hunkLabels(reviewState?.hunks[hunk.id]);
       return labels.some((label) => knownPatternIds.has(label));
     }).length;
   }, [hunks, reviewState?.hunks, knownPatternIds]);

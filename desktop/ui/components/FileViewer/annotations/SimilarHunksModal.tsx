@@ -74,7 +74,7 @@ export function SimilarHunksModal({
   let approvedCount = 0;
   let rejectedCount = 0;
   for (const h of similarHunks) {
-    const status = hunkStates[h.id]?.status;
+    const status = hunkStates[h.id]?.status?.value;
     if (status === "approved") approvedCount++;
     else if (status === "rejected") rejectedCount++;
   }

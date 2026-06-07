@@ -34,7 +34,7 @@ import type {
   FileSymbolDiff,
   SymbolDiff,
 } from "../../types";
-import { isHunkTrusted } from "../../types";
+import { isHunkTrusted, hunkLabels } from "../../types";
 
 /** Per-file trust labels, precomputed once */
 interface FileTrustInfo {
@@ -52,13 +52,16 @@ function computeFileTrustInfo(
     if (!reviewState) continue;
 
     const hunkState = reviewState.hunks[hunk.id];
-    if (isHunkTrusted(hunkState, reviewState.trustList) && hunkState?.label) {
+    if (
+      isHunkTrusted(hunkState, reviewState.trustList) &&
+      hunkLabels(hunkState).length > 0
+    ) {
       let info = map.get(hunk.filePath);
       if (!info) {
         info = { trustLabels: [] };
         map.set(hunk.filePath, info);
       }
-      for (const label of hunkState.label) {
+      for (const label of hunkLabels(hunkState)) {
         if (!info.trustLabels.includes(label)) {
           info.trustLabels.push(label);
         }

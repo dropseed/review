@@ -10,7 +10,12 @@ import { useReviewStore } from "../../stores";
 import { flattenFilesWithStatus } from "../../stores/types";
 import { useHunkIdsByStatus } from "../../stores/selectors/hunks";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
-import { isHunkTrusted, type DiffHunk, type ReviewState } from "../../types";
+import {
+  isHunkTrusted,
+  hunkLabels,
+  type DiffHunk,
+  type ReviewState,
+} from "../../types";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { XIcon } from "../ui/icons";
@@ -424,7 +429,7 @@ export function ReviewTabContent({
       for (const hunk of hunks) {
         if (!matchingPaths.has(hunk.filePath)) continue;
         const hunkState = reviewState?.hunks[hunk.id];
-        if (hunkState?.status === "approved") {
+        if (hunkState?.status?.value === "approved") {
           approvedIds.push(hunk.id);
         } else if (
           !hunkState?.status &&
@@ -474,7 +479,7 @@ export function ReviewTabContent({
   const approvedOrTrustedCount = useMemo(() => {
     return hunks.filter((h) => {
       const state = reviewState?.hunks[h.id];
-      if (state?.status === "approved") return true;
+      if (state?.status?.value === "approved") return true;
       if (reviewState && isHunkTrusted(state, reviewState.trustList))
         return true;
       return false;
@@ -492,7 +497,7 @@ export function ReviewTabContent({
           const byFile = new Map<string, string[]>();
           for (const h of hunks) {
             const state = reviewState?.hunks[h.id];
-            const isApproved = state?.status === "approved";
+            const isApproved = state?.status?.value === "approved";
             const isTrusted =
               reviewState && isHunkTrusted(state, reviewState.trustList);
             if (!isApproved && !isTrusted) continue;
@@ -550,7 +555,7 @@ export function ReviewTabContent({
     () =>
       hunks.filter((h) => {
         const state = reviewState?.hunks[h.id];
-        return !state?.label || state.label.length === 0;
+        return hunkLabels(state).length === 0;
       }).length,
     [hunks, reviewState?.hunks],
   );
@@ -560,7 +565,7 @@ export function ReviewTabContent({
       return new Set<string>();
     const matched = new Set<string>();
     for (const hunk of hunks) {
-      const labels = reviewState?.hunks[hunk.id]?.label ?? [];
+      const labels = hunkLabels(reviewState?.hunks[hunk.id]);
       for (const label of labels) {
         if (knownPatternIds.has(label)) matched.add(label);
       }

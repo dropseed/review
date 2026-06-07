@@ -1,5 +1,5 @@
 import type { ApiClient } from "../../api";
-import { isHunkUnclassified } from "../../types";
+import { attributed, isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
 
@@ -62,9 +62,11 @@ export const createClassificationSlice: SliceCreatorWithClient<
           )) {
             updatedHunks[hunkId] = {
               ...updatedHunks[hunkId],
-              label: classification.label,
-              reasoning: classification.reasoning,
-              classifiedVia: "static",
+              classification: attributed(
+                classification.label,
+                "static",
+                classification.reasoning || undefined,
+              ),
             };
           }
 
@@ -110,9 +112,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
       if (newHunks[hunk.id]) {
         newHunks[hunk.id] = {
           ...newHunks[hunk.id],
-          label: [],
-          reasoning: undefined,
-          classifiedVia: undefined,
+          classification: undefined,
         };
       }
     }

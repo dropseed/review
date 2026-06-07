@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::classify::{classify_hunks_static, ClassifyResponse};
 use crate::diff::parser::{DiffHunk, LineType};
-use crate::review::state::{ClassifiedVia, HunkStatus, ReviewState};
+use crate::review::state::{Attributed, HunkStatus, ReviewState, Source};
 use crate::review::storage::{self, StorageError};
 use crate::sources::traits::{Comparison, FileEntry};
 
@@ -144,8 +144,9 @@ pub fn hunk_labels(
     classification: &ClassifyResponse,
 ) -> Vec<String> {
     if let Some(hunk_state) = state.hunks.get(hunk_id) {
-        if !hunk_state.label.is_empty() {
-            return hunk_state.label.clone();
+        let labels = hunk_state.labels();
+        if !labels.is_empty() {
+            return labels.to_vec();
         }
     }
     classified_labels(classification, hunk_id)
@@ -161,11 +162,12 @@ pub fn sync_classification(state: &mut ReviewState, classification: &ClassifyRes
             continue;
         }
         let entry = state.hunks.entry(hunk_id.clone()).or_default();
-        if entry.label.is_empty() {
-            entry.label.clone_from(&result.label);
-            if entry.classified_via.is_none() {
-                entry.classified_via = Some(ClassifiedVia::Static);
-            }
+        if entry.classification.is_none() {
+            entry.classification = Some(Attributed {
+                value: result.label.clone(),
+                source: Source::Static,
+                reasoning: (!result.reasoning.is_empty()).then(|| result.reasoning.clone()),
+            });
         }
     }
 }
@@ -173,16 +175,20 @@ pub fn sync_classification(state: &mut ReviewState, classification: &ClassifyRes
 /// Effective review status of a hunk: an explicit status if one is set, else
 /// `Trusted` when a label matches the trust list, else `Unreviewed`.
 pub fn effective_status(hunk_id: &str, labels: &[String], state: &ReviewState) -> EffectiveStatus {
-    if let Some(hunk_state) = state.hunks.get(hunk_id) {
+    let hunk_state = state.hunks.get(hunk_id);
+    if let Some(hunk_state) = hunk_state {
         if let Some(status) = &hunk_state.status {
-            return match status {
+            return match &status.value {
                 HunkStatus::Approved => EffectiveStatus::Approved,
                 HunkStatus::Rejected => EffectiveStatus::Rejected,
                 HunkStatus::SavedForLater => EffectiveStatus::Saved,
             };
         }
     }
-    if state.labels_trusted(labels) {
+    // High risk vetoes auto-trust: a risky hunk stays unreviewed until it's
+    // explicitly decided, even when its label is trust-listed.
+    let high_risk = hunk_state.map(|h| h.is_high_risk()).unwrap_or(false);
+    if !high_risk && state.labels_trusted(labels) {
         EffectiveStatus::Trusted
     } else {
         EffectiveStatus::Unreviewed
@@ -282,6 +288,22 @@ where
         }
     }
     Err("Failed to save review after repeated version conflicts.".to_owned())
+}
+
+/// Resolve a `--source` flag (or `$REVIEW_SOURCE`) to a [`Source`], defaulting
+/// to `cli`. Shared by the comment, status, and risk commands so an agent
+/// harness can export `REVIEW_SOURCE=agent` once and have every mutation it
+/// makes attributed correctly.
+pub fn resolve_source(arg: Option<super::comments::SourceArg>) -> Result<Source, String> {
+    if let Some(arg) = arg {
+        return Ok(Source::from(arg));
+    }
+    match std::env::var("REVIEW_SOURCE") {
+        Ok(value) => super::comments::parse_source_str(&value).ok_or_else(|| {
+            format!("Invalid $REVIEW_SOURCE value '{value}' (expected one of: ui, cli, agent, github, gitlab)")
+        }),
+        Err(_) => Ok(Source::Cli),
+    }
 }
 
 /// Print a value as pretty JSON to stdout.

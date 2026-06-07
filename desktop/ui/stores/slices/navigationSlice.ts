@@ -1,5 +1,6 @@
 import { isHunkReviewed, isHunkTrusted } from "../../types";
 import type { DiffHunk, HunkGroup } from "../../types";
+import type { HunkFilter } from "../../types/hunkFilter";
 import type { ReviewStore, SliceCreator } from "../types";
 import { getHunkLocationMap } from "../selectors/hunks";
 
@@ -97,6 +98,11 @@ export interface NavigationSlice {
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
+
+  // Review-scoped hunk filter (risk / status / label / file). Drives the
+  // Review-tab file list and the "act on the current filter" bulk actions.
+  reviewFilter: HunkFilter;
+  setReviewFilter: (filter: HunkFilter) => void;
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: string | null;
@@ -616,6 +622,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   classificationsModalOpen: false,
   setClassificationsModalOpen: (open) =>
     set({ classificationsModalOpen: open }),
+
+  reviewFilter: {},
+  setReviewFilter: (filter) => set({ reviewFilter: filter }),
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: null,

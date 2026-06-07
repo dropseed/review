@@ -543,7 +543,7 @@ export function DiffView({
       commentHunkId !== "gutter";
     if (
       isHunkComment &&
-      reviewState?.hunks[commentHunkId]?.status === "rejected"
+      reviewState?.hunks[commentHunkId]?.status?.value === "rejected"
     ) {
       nextHunkInFile();
     }

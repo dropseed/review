@@ -41,11 +41,11 @@ export function getMarkerStatus(
   const hunkState = reviewState?.hunks[hunkId];
   if (!hunkState) return "pending";
 
-  switch (hunkState.status) {
+  switch (hunkState.status?.value) {
     case "approved":
     case "rejected":
     case "saved_for_later":
-      return hunkState.status;
+      return hunkState.status.value;
     default:
       return isHunkTrusted(hunkState, trustList) ? "trusted" : "pending";
   }

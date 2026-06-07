@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useReviewStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
-import type { DiffHunk, ReviewState } from "../types";
+import { hunkLabels, type DiffHunk, type ReviewState } from "../types";
 
 const CATEGORY_NAMES: Record<string, string> = {
   imports: "Imports",
@@ -43,10 +43,11 @@ export function computeChangeComposition(
   if (reviewState) {
     for (const h of hunks) {
       const state = reviewState.hunks[h.id];
-      if (!state?.label || state.label.length === 0) continue;
+      const labels = hunkLabels(state);
+      if (labels.length === 0) continue;
       totalClassified++;
       const seen = new Set<string>();
-      for (const label of state.label) {
+      for (const label of labels) {
         const category = label.split(":")[0];
         if (!seen.has(category) && category in CATEGORY_NAMES) {
           seen.add(category);

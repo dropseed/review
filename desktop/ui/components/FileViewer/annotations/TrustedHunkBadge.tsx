@@ -1,5 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
+import { hunkLabels } from "../../../types";
 import { useIsFocusedHunk } from "../../../hooks";
 import {
   DropdownMenu,
@@ -30,7 +31,7 @@ export function TrustedHunkBadge({
   onCopyHunk,
 }: TrustedHunkBadgeProps) {
   const isFocused = useIsFocusedHunk(hunk.id);
-  const labels = hunkState?.label ?? [];
+  const labels = hunkLabels(hunkState);
   const trustedLabels = labels.filter((lbl) => trustList.includes(lbl));
 
   return (

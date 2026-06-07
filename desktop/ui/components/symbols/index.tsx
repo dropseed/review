@@ -98,7 +98,10 @@ export function getHunkIdsStatus(
 
   for (const hunkId of hunkIds) {
     const state = hunkStates[hunkId];
-    if (state?.status === "approved" || state?.status === "rejected") {
+    if (
+      state?.status?.value === "approved" ||
+      state?.status?.value === "rejected"
+    ) {
       reviewed++;
     } else if (isHunkTrusted(state, trustList)) {
       reviewed++;

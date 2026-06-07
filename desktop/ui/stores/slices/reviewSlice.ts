@@ -1,10 +1,13 @@
 import type { ApiClient } from "../../api";
 import {
+  attributed,
   getComparisonRange,
   type Comparison,
   type FileDiff,
   type GlobalReviewSummary,
+  type HunkRisk,
   type HunkState,
+  type HunkStatusValue,
   type ReviewState,
   type ReviewSummary,
   type RejectionFeedback,
@@ -86,6 +89,12 @@ export interface ReviewSlice {
   saveHunkIdsForLater: (hunkIds: string[]) => void;
   saveAllDirHunksForLater: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
+
+  // Risk actions
+  setHunkRisk: (hunkId: string, risk: HunkRisk) => void;
+  clearHunkRisk: (hunkId: string) => void;
+  /** Set (or clear, when null) the risk on a set of hunks in one action. */
+  setRiskForHunks: (hunkIds: string[], risk: HunkRisk | null) => void;
 
   // Feedback export
   exportRejectionFeedback: () => RejectionFeedback | null;
@@ -203,7 +212,7 @@ function updateHunkStatuses(
   get: () => HunkStatusGetter,
   set: (partial: { reviewState: ReviewState }) => void,
   hunkIds: string[],
-  status: "approved" | "rejected" | "saved_for_later" | undefined,
+  status: HunkStatusValue | undefined,
   options?: {
     /** Skip hunks that don't already exist in reviewState.hunks */
     skipMissing?: boolean;
@@ -220,8 +229,7 @@ function updateHunkStatuses(
     if (status) {
       newHunks[id] = {
         ...newHunks[id],
-        label: newHunks[id]?.label ?? [],
-        status,
+        status: attributed(status, "ui"),
       };
     } else if (newHunks[id]) {
       newHunks[id] = {
@@ -321,6 +329,30 @@ function patchReviewState(
   });
   debouncedSave(saveReviewState);
   return true;
+}
+
+/**
+ * Merge a partial HunkState into a single hunk entry and trigger a debounced
+ * save. The shared shape behind setHunkLabel / setHunkRisk / clearHunkRisk —
+ * each axis of the attributed model patches one field the same way.
+ */
+function patchHunk(
+  get: () => {
+    reviewState: ReviewState | null;
+    saveReviewState: () => Promise<void>;
+  },
+  set: (partial: { reviewState: ReviewState }) => void,
+  hunkId: string,
+  partial: Partial<HunkState>,
+): void {
+  const { reviewState } = get();
+  if (!reviewState) return;
+  patchReviewState(get, set, {
+    hunks: {
+      ...reviewState.hunks,
+      [hunkId]: { ...reviewState.hunks[hunkId], ...partial },
+    },
+  });
 }
 
 export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
@@ -580,16 +612,27 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     setHunkLabel: (hunkId, label) => {
-      const { reviewState } = get();
-      if (!reviewState) return;
-
       const labels = Array.isArray(label) ? label : [label];
-      patchReviewState(get, set, {
-        hunks: {
-          ...reviewState.hunks,
-          [hunkId]: { ...reviewState.hunks[hunkId], label: labels },
-        },
-      });
+      patchHunk(get, set, hunkId, { classification: attributed(labels, "ui") });
+    },
+
+    setHunkRisk: (hunkId, risk) => get().setRiskForHunks([hunkId], risk),
+
+    clearHunkRisk: (hunkId) => get().setRiskForHunks([hunkId], null),
+
+    setRiskForHunks: (hunkIds, risk) => {
+      const { reviewState } = get();
+      if (!reviewState || hunkIds.length === 0) return;
+      const newHunks = { ...reviewState.hunks };
+      for (const id of hunkIds) {
+        if (risk === null) {
+          if (!newHunks[id]) continue;
+          newHunks[id] = { ...newHunks[id], risk: undefined };
+        } else {
+          newHunks[id] = { ...newHunks[id], risk: attributed(risk, "ui") };
+        }
+      }
+      patchReviewState(get, set, { hunks: newHunks });
     },
 
     setReviewNotes: (notes) => {
@@ -822,7 +865,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       const rejections: RejectionFeedback["rejections"] = [];
       for (const [hunkId, hunkState] of Object.entries(reviewState.hunks)) {
-        if (hunkState.status === "rejected") {
+        if (hunkState.status?.value === "rejected") {
           const hunk = hunks.find((h) => h.id === hunkId);
           if (hunk) {
             rejections.push({

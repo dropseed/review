@@ -2,7 +2,12 @@ import { type ReactNode, useState, useMemo, useEffect, useRef } from "react";
 import { useReviewStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
-import { anyLabelMatchesPattern, type TrustCategory } from "../../types";
+import {
+  anyLabelMatchesPattern,
+  hunkLabels,
+  type HunkState,
+  type TrustCategory,
+} from "../../types";
 import { getApiClient } from "../../api";
 import { Checkbox } from "../ui/checkbox";
 import { playApproveSound, playBulkSound } from "../../utils/sounds";
@@ -20,7 +25,7 @@ interface PatternInfo {
 function buildPatternList(
   categories: TrustCategory[],
   hunks: { id: string }[],
-  hunkStates: Record<string, { label?: string[] }> | undefined,
+  hunkStates: Record<string, HunkState> | undefined,
   trustList: string[],
 ): PatternInfo[] {
   const knownPatternIds = new Set<string>();
@@ -32,7 +37,7 @@ function buildPatternList(
 
   const counts = new Map<string, number>();
   for (const hunk of hunks) {
-    const labels = hunkStates?.[hunk.id]?.label ?? [];
+    const labels = hunkStates ? hunkLabels(hunkStates[hunk.id]) : [];
     for (const label of labels) {
       if (knownPatternIds.has(label)) {
         counts.set(label, (counts.get(label) ?? 0) + 1);
@@ -177,7 +182,7 @@ export function TrustSection(): ReactNode {
       patterns.find((p) => p.id === patternId)?.name ?? patternId;
     const hunkIds = hunks
       .filter((hunk) => {
-        const labels = reviewState?.hunks[hunk.id]?.label ?? [];
+        const labels = hunkLabels(reviewState?.hunks[hunk.id]);
         return anyLabelMatchesPattern(labels, patternId);
       })
       .map((hunk) => hunk.id);

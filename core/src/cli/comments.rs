@@ -14,9 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
-use crate::review::state::{
-    now_iso8601, AnnotationSide, AnnotationSource, LineAnnotation, ReviewState,
-};
+use crate::review::state::{now_iso8601, AnnotationSide, LineAnnotation, ReviewState, Source};
 use crate::review::storage;
 
 use super::common::{
@@ -155,14 +153,14 @@ pub enum SourceArg {
     Gitlab,
 }
 
-impl From<SourceArg> for AnnotationSource {
+impl From<SourceArg> for Source {
     fn from(value: SourceArg) -> Self {
         match value {
-            SourceArg::Ui => AnnotationSource::Ui,
-            SourceArg::Cli => AnnotationSource::Cli,
-            SourceArg::Agent => AnnotationSource::Agent,
-            SourceArg::Github => AnnotationSource::Github,
-            SourceArg::Gitlab => AnnotationSource::Gitlab,
+            SourceArg::Ui => Source::Ui,
+            SourceArg::Cli => Source::Cli,
+            SourceArg::Agent => Source::Agent,
+            SourceArg::Github => Source::Github,
+            SourceArg::Gitlab => Source::Gitlab,
         }
     }
 }
@@ -293,15 +291,7 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
         .author
         .or_else(|| std::env::var("REVIEW_AUTHOR").ok())
         .or_else(|| default_git_user(&repo));
-    let source = match args.source {
-        Some(arg) => AnnotationSource::from(arg),
-        None => match std::env::var("REVIEW_SOURCE") {
-            Ok(value) => parse_source_str(&value).ok_or_else(|| {
-                format!("Invalid $REVIEW_SOURCE value '{value}' (expected one of: ui, cli, agent, github, gitlab)")
-            })?,
-            Err(_) => AnnotationSource::Cli,
-        },
-    };
+    let source = super::common::resolve_source(args.source)?;
 
     let side: AnnotationSide = args.side.into();
     let side_str = args.side.as_str();
@@ -612,13 +602,13 @@ fn parse_location(raw: &str) -> Result<(String, u32, Option<u32>), String> {
     Ok((file.to_owned(), start, end))
 }
 
-fn parse_source_str(value: &str) -> Option<AnnotationSource> {
+pub(super) fn parse_source_str(value: &str) -> Option<Source> {
     match value.to_ascii_lowercase().as_str() {
-        "ui" => Some(AnnotationSource::Ui),
-        "cli" => Some(AnnotationSource::Cli),
-        "agent" => Some(AnnotationSource::Agent),
-        "github" => Some(AnnotationSource::Github),
-        "gitlab" => Some(AnnotationSource::Gitlab),
+        "ui" => Some(Source::Ui),
+        "cli" => Some(Source::Cli),
+        "agent" => Some(Source::Agent),
+        "github" => Some(Source::Github),
+        "gitlab" => Some(Source::Gitlab),
         _ => None,
     }
 }
@@ -730,7 +720,7 @@ mod tests {
         assert!(parse_source_str("agnet").is_none());
         assert_eq!(
             parse_source_str("AGENT"),
-            Some(crate::review::state::AnnotationSource::Agent),
+            Some(crate::review::state::Source::Agent),
         );
     }
 }

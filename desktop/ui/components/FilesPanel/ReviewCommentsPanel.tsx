@@ -9,7 +9,7 @@ import { useFeedbackPanel } from "../../hooks";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
 import { SimpleTooltip } from "../ui/tooltip";
-import type { AnnotationSource, LineAnnotation } from "../../types";
+import type { Source, LineAnnotation } from "../../types";
 
 const COMMENTS_ICON = (
   <svg
@@ -52,7 +52,7 @@ function FilePathLabel({ filePath }: { filePath: string }): ReactNode {
 }
 
 /** Tone for an author tag, keyed on where the comment came from. */
-function authorTone(source: AnnotationSource | undefined): string {
+function authorTone(source: Source | undefined): string {
   switch (source) {
     case "agent":
       return "text-status-modified/80";

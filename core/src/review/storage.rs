@@ -296,7 +296,7 @@ pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), St
 mod tests {
     use super::*;
     use crate::review::central::tests::ENV_LOCK;
-    use crate::review::state::{AnnotationSide, AnnotationSource, HunkState, LineAnnotation};
+    use crate::review::state::{AnnotationSide, Attributed, HunkState, LineAnnotation, Source};
     use tempfile::TempDir;
 
     fn create_test_comparison() -> Comparison {
@@ -351,10 +351,12 @@ mod tests {
         state.hunks.insert(
             "file.rs:abc123".to_string(),
             HunkState {
-                label: vec!["imports:added".to_string()],
-                reasoning: Some("Added import".to_string()),
-                status: None,
-                classified_via: None,
+                classification: Some(Attributed {
+                    value: vec!["imports:added".to_string()],
+                    source: Source::Static,
+                    reasoning: Some("Added import".to_string()),
+                }),
+                ..Default::default()
             },
         );
 
@@ -368,8 +370,9 @@ mod tests {
         assert_eq!(loaded_state.trust_list.len(), 2);
         assert!(loaded_state.hunks.contains_key("file.rs:abc123"));
         let hunk = loaded_state.hunks.get("file.rs:abc123").unwrap();
-        assert_eq!(hunk.label, vec!["imports:added".to_string()]);
-        assert_eq!(hunk.reasoning, Some("Added import".to_string()));
+        assert_eq!(hunk.labels(), &["imports:added".to_string()]);
+        let classification = hunk.classification.as_ref().unwrap();
+        assert_eq!(classification.reasoning, Some("Added import".to_string()));
     }
 
     #[test]
@@ -390,7 +393,7 @@ mod tests {
             content: "needs work".to_string(),
             created_at: "2026-01-01T00:00:00.000Z".to_string(),
             author: Some("claude".to_string()),
-            source: Some(AnnotationSource::Agent),
+            source: Some(Source::Agent),
             updated_at: Some("2026-01-02T00:00:00.000Z".to_string()),
             resolved_at: Some("2026-01-03T00:00:00.000Z".to_string()),
             resolved_by: Some("Dave".to_string()),
@@ -418,7 +421,7 @@ mod tests {
 
         let full = &loaded.annotations[0];
         assert_eq!(full.author.as_deref(), Some("claude"));
-        assert!(matches!(full.source, Some(AnnotationSource::Agent)));
+        assert!(matches!(full.source, Some(Source::Agent)));
         assert_eq!(full.end_line_number, Some(45));
         assert_eq!(full.updated_at.as_deref(), Some("2026-01-02T00:00:00.000Z"));
         assert_eq!(

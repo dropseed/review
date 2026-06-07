@@ -79,7 +79,7 @@ pub struct LineAnnotation {
     /// Where the annotation came from (ui, cli, agent, github, …). Used for
     /// styling and filtering. `None` for legacy data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<AnnotationSource>,
+    pub source: Option<Source>,
     /// Last edit time; absent if never edited after creation.
     #[serde(rename = "updatedAt", default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
@@ -107,12 +107,20 @@ pub enum AnnotationSide {
     File,
 }
 
-/// Origin of an annotation. Stored on each comment for rendering and filtering.
+/// Where a value came from — the producer that set a classification, status,
+/// risk level, or annotation. One provenance vocabulary across the whole model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum AnnotationSource {
+pub enum Source {
+    /// Rule-based static classifier.
+    Static,
+    /// The app's built-in Claude classification pass.
+    Ai,
+    /// A human acting in the desktop app.
     Ui,
+    /// A human via the review CLI.
     Cli,
+    /// An external agent (Claude/Codex) acting through the CLI.
     Agent,
     Github,
     Gitlab,
@@ -158,27 +166,70 @@ pub struct ReviewState {
     pub worktree_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Risk level for a hunk — how costly a mistake here would be, independent of
+/// what kind of change it is (classification) or the review decision (status).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ClassifiedVia {
-    Static,
-    Ai,
+pub enum HunkRisk {
+    Low,
+    High,
 }
 
+/// A value paired with its provenance and an optional rationale. Every axis of
+/// a [`HunkState`] is an `Attributed<T>`, so each independently records who or
+/// what set it and why.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attributed<T> {
+    pub value: T,
+    pub source: Source,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+}
+
+impl<T> Attributed<T> {
+    /// An attributed value with no rationale.
+    pub fn new(value: T, source: Source) -> Self {
+        Self {
+            value,
+            source,
+            reasoning: None,
+        }
+    }
+}
+
+/// The review record for a single hunk. Each field is an independent axis:
+/// `classification` (what kind of change), `status` (the review decision), and
+/// `risk` (blast radius). All optional — absent means "not set".
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HunkState {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub label: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<HunkStatus>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "classifiedVia"
-    )]
-    pub classified_via: Option<ClassifiedVia>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classification: Option<Attributed<Vec<String>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<Attributed<HunkStatus>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<Attributed<HunkRisk>>,
+}
+
+impl HunkState {
+    /// The classification labels, or an empty slice when unclassified.
+    pub fn labels(&self) -> &[String] {
+        self.classification
+            .as_ref()
+            .map(|c| c.value.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// True when no axis is set. Used to prune entries that have nothing left
+    /// on them after a status or risk is cleared.
+    pub fn is_empty(&self) -> bool {
+        self.classification.is_none() && self.status.is_none() && self.risk.is_none()
+    }
+
+    /// True when the hunk is flagged high-risk. High risk vetoes trust
+    /// auto-approval — a risky change is never silently trusted.
+    pub fn is_high_risk(&self) -> bool {
+        matches!(self.risk.as_ref().map(|r| r.value), Some(HunkRisk::High))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,16 +284,20 @@ impl ReviewState {
         let mut rejected_hunks = 0usize;
         let mut saved_for_later_hunks = 0usize;
         let mut trusted_hunks = 0usize;
+        let mut high_risk_pending_hunks = 0usize;
 
         for h in self.hunks.values() {
-            match &h.status {
+            match h.status.as_ref().map(|s| &s.value) {
                 Some(HunkStatus::Approved) => approved_hunks += 1,
                 Some(HunkStatus::Rejected) => rejected_hunks += 1,
                 Some(HunkStatus::SavedForLater) => saved_for_later_hunks += 1,
                 None => {
                     // Hunks with no explicit status count as reviewed when a
-                    // label matches the trust list.
-                    if self.labels_trusted(&h.label) {
+                    // label matches the trust list — unless they're high-risk,
+                    // which vetoes auto-trust and leaves them to review.
+                    if h.is_high_risk() {
+                        high_risk_pending_hunks += 1;
+                    } else if self.labels_trusted(h.labels()) {
                         trusted_hunks += 1;
                     }
                 }
@@ -262,6 +317,7 @@ impl ReviewState {
             reviewed_hunks,
             rejected_hunks,
             saved_for_later_hunks,
+            high_risk_pending_hunks,
             state,
             updated_at: self.updated_at.clone(),
             github_pr: self.github_pr.clone(),
@@ -354,6 +410,9 @@ pub struct ReviewSummary {
     pub rejected_hunks: usize,
     #[serde(rename = "savedForLaterHunks")]
     pub saved_for_later_hunks: usize,
+    /// High-risk hunks with no explicit decision yet — the ones to look at.
+    #[serde(rename = "highRiskPendingHunks")]
+    pub high_risk_pending_hunks: usize,
     /// Review state: "approved", "changes_requested", or null (in progress)
     pub state: Option<String>,
     #[serde(rename = "updatedAt")]
@@ -416,23 +475,15 @@ mod tests {
         state.hunks.insert(
             "file.rs:abc123".to_string(),
             HunkState {
-                label: vec![],
-                reasoning: None,
-                status: Some(HunkStatus::Approved),
-                classified_via: None,
+                status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
+                ..Default::default()
             },
         );
 
         // Add a pending hunk
-        state.hunks.insert(
-            "file.rs:def456".to_string(),
-            HunkState {
-                label: vec![],
-                reasoning: None,
-                status: None,
-                classified_via: None,
-            },
-        );
+        state
+            .hunks
+            .insert("file.rs:def456".to_string(), HunkState::default());
 
         let summary = state.to_summary();
         assert_eq!(summary.total_hunks, 2);
@@ -449,10 +500,11 @@ mod tests {
         state.hunks.insert(
             "file.rs:abc123".to_string(),
             HunkState {
-                label: vec!["imports:added".to_string()],
-                reasoning: None,
-                status: None,
-                classified_via: None,
+                classification: Some(Attributed::new(
+                    vec!["imports:added".to_string()],
+                    Source::Static,
+                )),
+                ..Default::default()
             },
         );
 
@@ -460,16 +512,95 @@ mod tests {
         state.hunks.insert(
             "file.rs:def456".to_string(),
             HunkState {
-                label: vec!["code:logic".to_string()],
-                reasoning: None,
-                status: None,
-                classified_via: None,
+                classification: Some(Attributed::new(
+                    vec!["code:logic".to_string()],
+                    Source::Static,
+                )),
+                ..Default::default()
             },
         );
 
         let summary = state.to_summary();
         assert_eq!(summary.total_hunks, 2);
         assert_eq!(summary.reviewed_hunks, 1);
+    }
+
+    #[test]
+    fn test_high_risk_vetoes_trust_in_summary() {
+        let mut state = ReviewState::new(test_comparison());
+        state.total_diff_hunks = 2;
+        state.trust_list = vec!["imports:*".to_string()];
+
+        // Trust-listed label but high-risk → must NOT count as trusted.
+        state.hunks.insert(
+            "file.rs:high".to_string(),
+            HunkState {
+                classification: Some(Attributed::new(
+                    vec!["imports:added".to_string()],
+                    Source::Static,
+                )),
+                risk: Some(Attributed::new(HunkRisk::High, Source::Agent)),
+                ..Default::default()
+            },
+        );
+        // Trust-listed label, low-risk → counts as trusted.
+        state.hunks.insert(
+            "file.rs:low".to_string(),
+            HunkState {
+                classification: Some(Attributed::new(
+                    vec!["imports:added".to_string()],
+                    Source::Static,
+                )),
+                risk: Some(Attributed::new(HunkRisk::Low, Source::Agent)),
+                ..Default::default()
+            },
+        );
+
+        let summary = state.to_summary();
+        assert_eq!(summary.trusted_hunks, 1);
+        assert_eq!(summary.reviewed_hunks, 1);
+    }
+
+    #[test]
+    fn test_high_risk_pending_counted_in_summary() {
+        let mut state = ReviewState::new(test_comparison());
+        state.total_diff_hunks = 3;
+        state.trust_list = vec!["imports:*".to_string()];
+
+        // High-risk, no decision → pending.
+        state.hunks.insert(
+            "f:1".to_string(),
+            HunkState {
+                risk: Some(Attributed::new(HunkRisk::High, Source::Agent)),
+                ..Default::default()
+            },
+        );
+        // High-risk but explicitly approved → done, not pending.
+        state.hunks.insert(
+            "f:2".to_string(),
+            HunkState {
+                risk: Some(Attributed::new(HunkRisk::High, Source::Agent)),
+                status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
+                ..Default::default()
+            },
+        );
+        // High-risk with a trusted label → still pending (veto).
+        state.hunks.insert(
+            "f:3".to_string(),
+            HunkState {
+                classification: Some(Attributed::new(
+                    vec!["imports:added".to_string()],
+                    Source::Static,
+                )),
+                risk: Some(Attributed::new(HunkRisk::High, Source::Agent)),
+                ..Default::default()
+            },
+        );
+
+        let summary = state.to_summary();
+        assert_eq!(summary.high_risk_pending_hunks, 2); // f:1 and f:3
+        assert_eq!(summary.approved_hunks, 1);
+        assert_eq!(summary.trusted_hunks, 0);
     }
 
     #[test]
@@ -482,19 +613,22 @@ mod tests {
         state.hunks.insert(
             "file.rs:abc123".to_string(),
             HunkState {
-                label: vec!["imports:added".to_string()],
-                reasoning: None,
-                status: None,
-                classified_via: None,
+                classification: Some(Attributed::new(
+                    vec!["imports:added".to_string()],
+                    Source::Static,
+                )),
+                ..Default::default()
             },
         );
         state.hunks.insert(
             "file.rs:def456".to_string(),
             HunkState {
-                label: vec!["code:logic".to_string()],
-                reasoning: None,
-                status: Some(HunkStatus::Approved),
-                classified_via: None,
+                classification: Some(Attributed::new(
+                    vec!["code:logic".to_string()],
+                    Source::Static,
+                )),
+                status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
+                ..Default::default()
             },
         );
 
@@ -516,10 +650,8 @@ mod tests {
         state.hunks.insert(
             "file.rs:abc123".to_string(),
             HunkState {
-                label: vec![],
-                reasoning: None,
-                status: Some(HunkStatus::Approved),
-                classified_via: None,
+                status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
+                ..Default::default()
             },
         );
 

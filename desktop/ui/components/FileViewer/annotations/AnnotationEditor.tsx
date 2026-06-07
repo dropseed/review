@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useListContinuation } from "../../../hooks";
-import type { AnnotationSource, LineAnnotation } from "../../../types";
+import type { Source, LineAnnotation } from "../../../types";
 import { SimpleTooltip } from "../../ui/tooltip";
 
 interface AnnotationEditorProps {
@@ -243,7 +243,7 @@ function AnnotationAuthorChip({
   source,
 }: {
   author: string;
-  source?: AnnotationSource;
+  source?: Source;
 }) {
   const tone = sourceToneClass(source);
   const label = sourceLabel(source);
@@ -257,7 +257,7 @@ function AnnotationAuthorChip({
   );
 }
 
-function sourceToneClass(source?: AnnotationSource): string {
+function sourceToneClass(source?: Source): string {
   switch (source) {
     case "agent":
       return "bg-status-modified/15 text-status-modified";
@@ -272,7 +272,7 @@ function sourceToneClass(source?: AnnotationSource): string {
   }
 }
 
-function sourceLabel(source?: AnnotationSource): string | null {
+function sourceLabel(source?: Source): string | null {
   switch (source) {
     case "agent":
       return "agent";

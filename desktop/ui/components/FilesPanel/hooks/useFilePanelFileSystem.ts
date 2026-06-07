@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { useAllHunks } from "../../../stores/selectors/hunks";
 import { useFileHunkStatusMap } from "../../../hooks/useFileHunkStatusMap";
+import { hunkMatchesFilter, isEmptyFilter } from "../../../types/hunkFilter";
 import {
+  calculateFileHunkStatus,
   hasChangeStatus,
   processTree,
   processTreeWithSections,
@@ -19,8 +21,38 @@ export function useFilePanelFileSystem() {
   const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
+  const reviewFilter = useReviewStore((s) => s.reviewFilter);
+  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
 
-  const hunkStatusMap = useFileHunkStatusMap();
+  // The whole Review tab — sections, counts, and stats — derives from this
+  // map. When a hunk filter is active we recount over only the matching hunks,
+  // so files with no matching hunk drop out of the sections and the counts
+  // scope to the filter (the same "select by predicate" the bulk actions use).
+  const sharedHunkStatusMap = useFileHunkStatusMap();
+  const filterActive = !isEmptyFilter(reviewFilter);
+  const hunkStatusMap = useMemo(() => {
+    if (!filterActive) return sharedHunkStatusMap;
+    const trustList = reviewState?.trustList ?? [];
+    const matching = hunks.filter((h) =>
+      hunkMatchesFilter({
+        hunkState: reviewState?.hunks[h.id],
+        filePath: h.filePath,
+        trustList,
+        filter: reviewFilter,
+      }),
+    );
+    return calculateFileHunkStatus(matching, reviewState, {
+      autoApproveStaged: reviewState?.autoApproveStaged,
+      stagedFilePaths,
+    });
+  }, [
+    filterActive,
+    sharedHunkStatusMap,
+    hunks,
+    reviewState,
+    reviewFilter,
+    stagedFilePaths,
+  ]);
 
   const movedFilePaths = useMemo(() => {
     const allPaths = new Set<string>();

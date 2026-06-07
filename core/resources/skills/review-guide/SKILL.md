@@ -43,6 +43,34 @@ classes of change that are mechanically obvious once you've sampled a few.
 
 This is how you make a 142-hunk diff become a 60-hunk diff in 30 seconds.
 
+### 2b. Or sort by risk, not just by category
+
+Trust patterns sort by *what kind* of change a hunk is. **Risk** is the other
+axis — *how costly a mistake would be* — and it's how you and the human hand
+work back and forth. Risk is `low` or `high`, independent of the review
+decision; it just steers attention.
+
+- **You triage, the human reviews the scary ones.** Skim the diff and tag each
+  hunk, leaving a one-line reason on the high-risk ones:
+
+  ```
+  review risk set high <ids> --reason "touches the session-validation path"
+  review risk set low  <ids>
+  ```
+
+  Then the human reviews just `review hunks --risk high` (in the terminal or the
+  app), and once they're happy you clear the rest in one shot:
+  `review approve --risk low`.
+
+- **The human flags, you review.** If the human marks some hunks high-risk in
+  the desktop app and says "go look at these", pull them with
+  `review hunks --risk high --diff` — their marks carry `source: ui`, so you can
+  tell them apart from your own — read each, and report back (or drop
+  `review comment add` notes on specifics).
+
+Export `REVIEW_SOURCE=agent` (or pass `--source agent`) so the risk *you* set is
+attributed to you, not mistaken for the human's own marks.
+
 ### 3. Walk the rest as a small queue
 
 For everything that's left, work **file by file** in small batches (≈5–10
@@ -153,8 +181,11 @@ After staging, commit with normal `git`.
 Review state (operates on a `base..head` comparison):
 
 ```
-review hunks   [--status|--file|--label|--hunk] [--json] [--diff]
-review approve|reject|save|unmark <hunk-id>... [--reason TEXT]
+review hunks   [--status|--file|--label|--risk|--hunk] [--json] [--diff]
+review approve|reject|save|unmark <hunk-id>... [--reason TEXT] [--source ui|cli|agent]
+review approve|reject|save --risk low|high          # act on all hunks at a risk level
+review risk set low|high <hunk-id>... [--reason TEXT] [--source ui|cli|agent]
+review risk clear <hunk-id>...
 review status                          # progress + overall state
 review list                            # all saved reviews
 review note set|append|show [<text>]

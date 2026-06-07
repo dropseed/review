@@ -109,8 +109,8 @@ export function FilenameModal({
   let rejectedCount = 0;
   for (const id of allHunkIds) {
     const state = hunkStates[id];
-    if (state?.status === "approved") approvedCount++;
-    else if (state?.status === "rejected") rejectedCount++;
+    if (state?.status?.value === "approved") approvedCount++;
+    else if (state?.status?.value === "rejected") rejectedCount++;
     else if (isHunkTrusted(state, trustList)) approvedCount++;
   }
   const pendingCount = allHunkIds.length - approvedCount - rejectedCount;

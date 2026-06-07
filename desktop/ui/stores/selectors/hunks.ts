@@ -186,7 +186,7 @@ export function getHunkIdsByStatus(
   const trustList = reviewState?.trustList ?? [];
   for (const hunk of allHunks) {
     const state = hunkStates?.[hunk.id];
-    const status = state?.status;
+    const status = state?.status?.value;
     if (status === "approved" || status === "rejected") {
       reviewed.push(hunk.id);
     } else if (status === "saved_for_later") {

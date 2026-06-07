@@ -44,11 +44,11 @@ export function calculateFileHunkStatus(
     const hunkState = reviewState?.hunks[hunk.id];
     const trustList = reviewState?.trustList ?? [];
 
-    if (hunkState?.status === "rejected") {
+    if (hunkState?.status?.value === "rejected") {
       current.rejected++;
-    } else if (hunkState?.status === "approved") {
+    } else if (hunkState?.status?.value === "approved") {
       current.approved++;
-    } else if (hunkState?.status === "saved_for_later") {
+    } else if (hunkState?.status?.value === "saved_for_later") {
       current.savedForLater++;
     } else if (isHunkTrusted(hunkState, trustList)) {
       current.trusted++;

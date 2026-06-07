@@ -77,7 +77,9 @@ export function useAutoStartGuide(): void {
       const allHunks = getAllHunksFromState(state);
       const unreviewedCount = allHunks.filter((h) => {
         const hs = hunkStates[h.id];
-        return hs?.status !== "approved" && hs?.status !== "rejected";
+        return (
+          hs?.status?.value !== "approved" && hs?.status?.value !== "rejected"
+        );
       }).length;
 
       if (unreviewedCount < 4) {
