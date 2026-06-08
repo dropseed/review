@@ -1,4 +1,5 @@
 use super::central;
+use super::migrate;
 use super::state::{ReviewState, ReviewSummary};
 use crate::sources::github::GitHubPrRef;
 use crate::sources::local_git::DiffShortStat;
@@ -15,10 +16,42 @@ pub enum StorageError {
     Io(#[from] io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("Schema migration error: {0}")]
+    Migrate(#[from] migrate::MigrateError),
     #[error("Version conflict: expected version {expected}, found {found}. Another process modified the file.")]
     VersionConflict { expected: u64, found: u64 },
     #[error("Central storage error: {0}")]
     Central(#[from] central::CentralError),
+}
+
+/// Parse review JSON, migrating it forward to the current schema first.
+///
+/// All review reads funnel through here so a stored file is never deserialized
+/// against the typed struct without going through migration — that is what
+/// turns a breaking format change into a migration instead of silent data loss.
+fn deserialize_review(content: &str) -> Result<ReviewState, StorageError> {
+    let raw: serde_json::Value = serde_json::from_str(content)?;
+    let migrated = migrate::migrate(raw)?;
+    Ok(serde_json::from_value(migrated)?)
+}
+
+/// Build a placeholder summary for an unreadable review file, recovering the
+/// comparison from the filename and the timestamp from the file's mtime.
+fn unreadable_summary(path: &Path) -> ReviewSummary {
+    // Inverts `comparison_filename`: the stem is the sanitized "base..head" key.
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let comparison = match stem.split_once("..") {
+        Some((base, head)) => Comparison::new(base, head),
+        None => Comparison::new("", stem),
+    };
+    let updated_at = fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map(super::state::iso8601_from_system_time)
+        .unwrap_or_default();
+    ReviewSummary::unreadable(comparison, updated_at)
 }
 
 /// Get the storage directory for review state (centralized).
@@ -99,7 +132,7 @@ pub fn load_review_state(
 
     if path.exists() {
         let content = fs::read_to_string(&path)?;
-        let state: ReviewState = serde_json::from_str(&content)?;
+        let state = deserialize_review(&content)?;
         Ok(state)
     } else {
         // Return a new empty state (not persisted — call ensure_review_exists for that)
@@ -124,20 +157,22 @@ pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), St
     let filename = comparison_filename(&state.comparison);
     let path = storage_dir.join(&filename);
 
-    // Check for version conflict if the file exists
+    // Check for version conflict if the file exists.
     if path.exists() {
         let existing_content = fs::read_to_string(&path)?;
-        if let Ok(existing_state) = serde_json::from_str::<ReviewState>(&existing_content) {
-            // If state.version is 0, this is a new save (no conflict check needed)
-            // Otherwise, the expected on-disk version is state.version - 1
-            if state.version > 0 {
-                let expected_disk_version = state.version - 1;
-                if existing_state.version != expected_disk_version {
-                    return Err(StorageError::VersionConflict {
-                        expected: expected_disk_version,
-                        found: existing_state.version,
-                    });
-                }
+        // An existing file we can't read is a hard conflict, never silently
+        // overwritten: it may be a newer schema or genuinely corrupt, and
+        // clobbering it would be the data loss the loud-load path prevents.
+        let existing_state = deserialize_review(&existing_content)?;
+        // version 0 means a fresh save (no conflict check needed); otherwise the
+        // expected on-disk version is state.version - 1.
+        if state.version > 0 {
+            let expected_disk_version = state.version - 1;
+            if existing_state.version != expected_disk_version {
+                return Err(StorageError::VersionConflict {
+                    expected: expected_disk_version,
+                    found: existing_state.version,
+                });
             }
         }
     }
@@ -165,24 +200,28 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
         // Only process .json files
         if path.extension().is_some_and(|ext| ext == "json") {
             match fs::read_to_string(&path) {
-                Ok(content) => match serde_json::from_str::<ReviewState>(&content) {
+                Ok(content) => match deserialize_review(&content) {
                     Ok(state) => {
                         summaries.push(state.to_summary());
                     }
                     Err(e) => {
-                        log::warn!(
-                            "[list_saved_reviews] Failed to parse {}: {}",
-                            path.display(),
-                            e
+                        // Don't silently drop an unreadable review — that is the
+                        // failure mode this whole effort is undoing. Log loudly
+                        // and surface a placeholder so it stays visible; opening
+                        // it still fails loudly via `load_review_state`.
+                        log::error!(
+                            "[list_saved_reviews] Unreadable review {}: {e}",
+                            path.display()
                         );
+                        summaries.push(unreadable_summary(&path));
                     }
                 },
                 Err(e) => {
-                    log::warn!(
-                        "[list_saved_reviews] Failed to read {}: {}",
-                        path.display(),
-                        e
+                    log::error!(
+                        "[list_saved_reviews] Failed to read {}: {e}",
+                        path.display()
                     );
+                    summaries.push(unreadable_summary(&path));
                 }
             }
         }
@@ -253,7 +292,7 @@ pub fn change_review_base(
 
     let mut state = if old_path.exists() {
         let content = fs::read_to_string(&old_path)?;
-        serde_json::from_str::<ReviewState>(&content)?
+        deserialize_review(&content)?
     } else {
         ReviewState::new(old_comparison.clone())
     };
@@ -296,7 +335,9 @@ pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), St
 mod tests {
     use super::*;
     use crate::review::central::tests::ENV_LOCK;
-    use crate::review::state::{AnnotationSide, Attributed, HunkState, LineAnnotation, Source};
+    use crate::review::state::{
+        AnnotationSide, Attributed, HunkState, LineAnnotation, Source, REVIEW_SCHEMA_VERSION,
+    };
     use tempfile::TempDir;
 
     fn create_test_comparison() -> Comparison {
@@ -508,6 +549,82 @@ mod tests {
 
         // Should not exist again
         assert!(!review_exists(&repo_path, &comparison).unwrap());
+    }
+
+    #[test]
+    fn test_schema_version_roundtrip() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        save_review_state(&repo_path, &ReviewState::new(comparison.clone())).unwrap();
+        let loaded = load_review_state(&repo_path, &comparison).unwrap();
+        assert_eq!(loaded.schema_version, REVIEW_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_load_rejects_newer_schema() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        central::register_repo(&repo_path).unwrap();
+        let dir = get_storage_dir(&repo_path).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(comparison_filename(&comparison));
+        // A review claiming a schema this build can't understand must fail
+        // loudly, never load as empty (which would invite an overwrite).
+        fs::write(
+            &path,
+            r#"{"schemaVersion":9999,"comparison":{"base":"main","head":"HEAD","key":"main..HEAD"},"hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x","version":1}"#,
+        )
+        .unwrap();
+
+        let err = load_review_state(&repo_path, &comparison).unwrap_err();
+        assert!(matches!(err, StorageError::Migrate(_)));
+    }
+
+    #[test]
+    fn test_save_refuses_to_overwrite_unreadable_file() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+        let comparison = create_test_comparison();
+
+        central::register_repo(&repo_path).unwrap();
+        let dir = get_storage_dir(&repo_path).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(comparison_filename(&comparison));
+        // A too-new file already on disk must not be clobbered by a save.
+        fs::write(
+            &path,
+            r#"{"schemaVersion":9999,"comparison":{"base":"main","head":"HEAD","key":"main..HEAD"},"hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x","version":1}"#,
+        )
+        .unwrap();
+
+        let mut state = ReviewState::new(comparison.clone());
+        state.version = 1; // not a fresh save
+        let err = save_review_state(&repo_path, &state).unwrap_err();
+        assert!(matches!(err, StorageError::Migrate(_)));
+    }
+
+    #[test]
+    fn test_list_surfaces_unreadable_review() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+
+        central::register_repo(&repo_path).unwrap();
+        let dir = get_storage_dir(&repo_path).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main..broken.json"), "{ not valid json").unwrap();
+
+        let reviews = list_saved_reviews(&repo_path).unwrap();
+        assert_eq!(reviews.len(), 1);
+        assert!(reviews[0].unreadable);
+        assert_eq!(reviews[0].comparison.key, "main..broken");
     }
 
     #[test]

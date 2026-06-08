@@ -35,9 +35,9 @@ pub fn compute_hash(input: &str) -> String {
 
 /// Return the cache file path for a given repo + comparison.
 fn cache_path(repo_path: &Path, comparison: &Comparison) -> Result<PathBuf> {
-    let repo_dir = central::get_repo_storage_dir(repo_path)?;
+    let cache_dir = central::get_repo_cache_dir(repo_path)?;
     let filename = format!("{}.json", central::sanitize_path_component(&comparison.key));
-    Ok(repo_dir.join("symbol-cache").join(filename))
+    Ok(cache_dir.join("symbol-cache").join(filename))
 }
 
 /// Load cached symbol diffs if the diff hash matches.

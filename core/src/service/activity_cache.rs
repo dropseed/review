@@ -14,7 +14,7 @@ use std::time::{Instant, SystemTime};
 
 use super::{RepoActivityChangedPayload, RepoLocalActivity};
 use crate::review::central::{
-    compute_repo_id, get_registered_repo, list_registered_repos, RepoIndexEntry,
+    compute_repo_id, get_registered_repo, list_registered_repos, resolve_git_dirs, RepoIndexEntry,
 };
 use crate::sources::local_git::LocalGitSource;
 
@@ -57,53 +57,6 @@ impl Fingerprint {
             fetch_head_mtime: file_mtime(&common_dir.join("FETCH_HEAD")),
         }
     }
-}
-
-/// Return `(git_dir, common_dir)` for `repo_path`. For regular repos both are
-/// `<repo>/.git`. For linked worktrees, `git_dir` is the per-worktree dir
-/// (`<main>/.git/worktrees/<name>`) and `common_dir` is the shared root
-/// (`<main>/.git`). If either resolution fails we fall back to `<repo>/.git`.
-fn resolve_git_dirs(repo_path: &Path) -> (PathBuf, PathBuf) {
-    let git_path = repo_path.join(".git");
-    let Ok(meta) = fs::metadata(&git_path) else {
-        return (git_path.clone(), git_path);
-    };
-    if meta.is_dir() {
-        return (git_path.clone(), git_path);
-    }
-    // `.git` is a file — parse the `gitdir: ...` pointer.
-    let Ok(content) = fs::read_to_string(&git_path) else {
-        return (git_path.clone(), git_path);
-    };
-    let Some(gitdir_raw) = content
-        .lines()
-        .next()
-        .and_then(|l| l.strip_prefix("gitdir: "))
-    else {
-        return (git_path.clone(), git_path);
-    };
-    let gitdir = {
-        let p = Path::new(gitdir_raw.trim());
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            repo_path.join(p)
-        }
-    };
-    // `commondir` sits next to HEAD in per-worktree dirs. It's a pointer to
-    // the shared `.git` root (usually the single token `../..`).
-    let common_dir = match fs::read_to_string(gitdir.join("commondir")) {
-        Ok(c) => {
-            let p = Path::new(c.trim());
-            if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                gitdir.join(p)
-            }
-        }
-        Err(_) => gitdir.clone(),
-    };
-    (gitdir, common_dir)
 }
 
 /// Git namespaces under refs/heads/ are rarely deeper than `team/feature/x`,

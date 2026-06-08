@@ -3,16 +3,26 @@
 //! Stores all review data in `~/.review/` (or `$REVIEW_HOME`) so that
 //! reviews from every repository are accessible system-wide.
 //!
-//! Layout:
+//! Layout — split by durability so the disposable tier can be cleared without
+//! risking durable state:
 //! ```text
 //! ~/.review/
 //!   index.json                        # repo_id -> { path, name, last_accessed }
-//!   repos/
-//!     <16-char-hex-hash>/
+//!   repos/                            # DURABLE — never delete to reclaim space
+//!     <repo-id>/
 //!       repo.json                     # { canonical_path, display_name }
 //!       reviews/
-//!         <comparison-key>.json       # ReviewState
+//!         <comparison-key>.json       # ReviewState (carries schemaVersion)
+//!   cache/                            # DISPOSABLE — safe to `rm -rf` anytime
+//!     <repo-id>/
+//!       hunk-cache/<comparison-key>.json
+//!       symbol-cache/<comparison-key>.json
+//!   worktrees/<repo-id>/              # Review-managed git worktrees
+//!   settings.json                     # desktop UI preferences
 //! ```
+//!
+//! `repo-id` is a 16-hex hash of the git **common dir**, so a repository and
+//! all of its worktrees share one id (see [`compute_repo_id`]).
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -72,20 +82,104 @@ fn canonical_path(repo_path: &Path) -> PathBuf {
         .unwrap_or_else(|_| repo_path.to_path_buf())
 }
 
-/// Compute a 16-character hex repo ID from the canonical path.
+/// Return `(git_dir, common_dir)` for `repo_path`. For a regular repo both are
+/// `<repo>/.git`. For a linked worktree, `git_dir` is the per-worktree dir
+/// (`<main>/.git/worktrees/<name>`) and `common_dir` is the shared root
+/// (`<main>/.git`) — the part every worktree of a repo agrees on. If anything
+/// can't be resolved we fall back to `<repo>/.git`.
+///
+/// This is the single source of truth for git-dir resolution; consumers that
+/// need worktree-aware identity or fingerprints (`compute_repo_id`,
+/// `service::activity_cache`) build on it.
+pub(crate) fn resolve_git_dirs(repo_path: &Path) -> (PathBuf, PathBuf) {
+    let git_path = repo_path.join(".git");
+    let Ok(meta) = fs::metadata(&git_path) else {
+        return (git_path.clone(), git_path);
+    };
+    if meta.is_dir() {
+        return (git_path.clone(), git_path);
+    }
+    // `.git` is a file — parse the `gitdir: ...` pointer.
+    let Ok(content) = fs::read_to_string(&git_path) else {
+        return (git_path.clone(), git_path);
+    };
+    let Some(gitdir_raw) = content
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("gitdir: "))
+    else {
+        return (git_path.clone(), git_path);
+    };
+    let gitdir = {
+        let p = Path::new(gitdir_raw.trim());
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            repo_path.join(p)
+        }
+    };
+    // `commondir` sits next to HEAD in per-worktree dirs — a pointer to the
+    // shared `.git` root (usually the single token `../..`).
+    let common_dir = match fs::read_to_string(gitdir.join("commondir")) {
+        Ok(c) => {
+            let p = Path::new(c.trim());
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                gitdir.join(p)
+            }
+        }
+        Err(_) => gitdir.clone(),
+    };
+    (gitdir, common_dir)
+}
+
+/// The main working tree for a repo, given any path inside it (including a
+/// linked or Review-managed worktree). A repo registers and stores reviews
+/// under this single root so worktrees don't fork into separate entries.
+pub fn repo_root(repo_path: &Path) -> PathBuf {
+    let (_git_dir, common_dir) = resolve_git_dirs(repo_path);
+    let canonical_common = canonical_path(&common_dir);
+    if canonical_common.file_name().and_then(|n| n.to_str()) == Some(".git") {
+        if let Some(parent) = canonical_common.parent() {
+            return parent.to_path_buf();
+        }
+    }
+    canonical_path(repo_path)
+}
+
+/// Compute a 16-character hex repo ID that is stable across worktrees.
+///
+/// The ID hashes the canonical git **common dir** rather than the working path,
+/// so a repository and all of its worktrees resolve to the same ID (and share
+/// one review store). Non-git paths fall back to hashing `<path>/.git`.
 pub fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
-    let canonical = canonical_path(repo_path);
+    let (_git_dir, common_dir) = resolve_git_dirs(repo_path);
+    let canonical = canonical_path(&common_dir);
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let result = hasher.finalize();
     Ok(hex::encode(&result[..8])) // 8 bytes = 16 hex chars
 }
 
-/// Get the storage directory for a specific repo.
+/// Get the **durable** storage directory for a specific repo
+/// (`~/.review/repos/<repo-id>/`): review state and `repo.json`. This is the
+/// precious tier — never delete it to reclaim space.
 pub fn get_repo_storage_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
     let root = get_central_root()?;
     let repo_id = compute_repo_id(repo_path)?;
     Ok(root.join("repos").join(repo_id))
+}
+
+/// Get the **disposable** cache directory for a specific repo
+/// (`~/.review/cache/<repo-id>/`): reconstructable derived data (parsed hunks,
+/// symbol diffs). Safe to delete at any time — `rm -rf ~/.review/cache` never
+/// touches durable review state. Kept separate from `get_repo_storage_dir` so
+/// the two tiers can be cleared independently.
+pub fn get_repo_cache_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
+    let root = get_central_root()?;
+    let repo_id = compute_repo_id(repo_path)?;
+    Ok(root.join("cache").join(repo_id))
 }
 
 /// Get the base directory for review-managed worktrees for a given repo.
@@ -156,7 +250,9 @@ pub fn register_repo(repo_path: &Path) -> Result<(), CentralError> {
     let repo_dir = get_repo_storage_dir(repo_path)?;
     fs::create_dir_all(repo_dir.join("reviews"))?;
 
-    let canonical = canonical_path(repo_path);
+    // Register under the repo's main working tree, not the (possibly worktree)
+    // path we were handed, so every worktree maps to one canonical entry.
+    let canonical = repo_root(repo_path);
     let canonical_str = canonical.to_string_lossy().to_string();
     let display_name = canonical
         .file_name()
@@ -264,6 +360,36 @@ pub(crate) mod tests {
         let id2 = compute_repo_id(tmp.path()).unwrap();
         assert_eq!(id1, id2);
         assert_eq!(id1.len(), 16);
+    }
+
+    #[test]
+    fn test_worktree_and_main_share_repo_id() {
+        // Main repo: a real `.git` directory.
+        let main = TempDir::new().unwrap();
+        let git_dir = main.path().join(".git");
+        let wt_gitdir = git_dir.join("worktrees").join("wt");
+        fs::create_dir_all(&wt_gitdir).unwrap();
+        // `commondir` points back to the shared `.git` (git writes `../..`).
+        fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+
+        // Linked worktree: `.git` is a file pointing at the per-worktree gitdir.
+        let worktree = TempDir::new().unwrap();
+        fs::write(
+            worktree.path().join(".git"),
+            format!("gitdir: {}\n", wt_gitdir.display()),
+        )
+        .unwrap();
+
+        let main_id = compute_repo_id(main.path()).unwrap();
+        let wt_id = compute_repo_id(worktree.path()).unwrap();
+        assert_eq!(main_id, wt_id, "worktree must share the main repo's id");
+
+        // And both resolve to the main working tree as the canonical root.
+        assert_eq!(
+            repo_root(worktree.path()),
+            main.path().canonicalize().unwrap()
+        );
+        assert_eq!(repo_root(main.path()), main.path().canonicalize().unwrap());
     }
 
     #[test]

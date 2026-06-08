@@ -489,6 +489,7 @@ export interface Guide {
 }
 
 export interface ReviewState {
+  schemaVersion?: number; // On-disk format version (migrated forward on read)
   comparison: Comparison;
   hunks: Record<string, HunkState>; // keyed by hunk id
   trustList: string[]; // List of trusted patterns
@@ -522,6 +523,7 @@ export interface ReviewSummary {
   savedForLaterHunks: number;
   highRiskPendingHunks?: number; // High-risk hunks still awaiting a decision
   state: "approved" | "changes_requested" | null;
+  unreadable?: boolean; // File exists but couldn't be parsed; opening fails loudly
   updatedAt: string;
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
   worktreePath?: string; // Path to review-managed worktree, if created

@@ -4,6 +4,22 @@ use crate::trust::patterns::get_all_pattern_ids;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// The on-disk format version for a serialized [`ReviewState`].
+///
+/// This is the *schema* version — distinct from [`ReviewState::version`], which
+/// is the optimistic-concurrency counter. Bump this whenever the persisted
+/// shape changes in a way old readers can't understand, and add a matching step
+/// in [`super::migrate`]. Files are migrated forward on read; a file written by
+/// a newer schema than this binary understands is rejected loudly rather than
+/// silently dropped.
+pub const REVIEW_SCHEMA_VERSION: u32 = 1;
+
+/// Default for the `schema_version` field when absent — i.e. a file written
+/// before schema versioning existed. Such files go through the migration path.
+pub(crate) fn default_schema_version() -> u32 {
+    0
+}
+
 /// A group of related hunks identified by Claude.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HunkGroup {
@@ -128,6 +144,10 @@ pub enum Source {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewState {
+    /// On-disk format version. See [`REVIEW_SCHEMA_VERSION`]. Migrated forward
+    /// on read; not to be confused with `version` (the concurrency counter).
+    #[serde(rename = "schemaVersion", default = "default_schema_version")]
+    pub schema_version: u32,
     pub comparison: Comparison,
     pub hunks: HashMap<String, HunkState>,
     #[serde(rename = "trustList")]
@@ -139,8 +159,10 @@ pub struct ReviewState {
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
-    /// Version counter for optimistic concurrency control.
-    /// Incremented on each save to detect concurrent modifications.
+    /// Concurrency counter for optimistic conflict detection — incremented on
+    /// each save. NOT the on-disk format version; see [`schema_version`].
+    ///
+    /// [`schema_version`]: ReviewState::schema_version
     #[serde(default)]
     pub version: u64,
     #[serde(
@@ -245,6 +267,7 @@ impl ReviewState {
     pub fn new(comparison: Comparison) -> Self {
         let now = now_iso8601();
         Self {
+            schema_version: REVIEW_SCHEMA_VERSION,
             comparison,
             hunks: HashMap::new(),
             trust_list: get_all_pattern_ids(),
@@ -264,6 +287,10 @@ impl ReviewState {
     pub fn prepare_for_save(&mut self) {
         self.version += 1;
         self.updated_at = now_iso8601();
+        // Always persist the current format version, so a state constructed
+        // without one (e.g. a frontend fallback) doesn't write a stale
+        // schemaVersion that the next read has to migrate back up.
+        self.schema_version = REVIEW_SCHEMA_VERSION;
     }
 
     /// Whether any of `labels` matches a pattern in the trust list.
@@ -319,9 +346,33 @@ impl ReviewState {
             saved_for_later_hunks,
             high_risk_pending_hunks,
             state,
+            unreadable: false,
             updated_at: self.updated_at.clone(),
             github_pr: self.github_pr.clone(),
             worktree_path: self.worktree_path.clone(),
+        }
+    }
+}
+
+impl ReviewSummary {
+    /// A placeholder summary for a review file that could not be read. Keeps the
+    /// review visible in listings (flagged `unreadable`) instead of dropping it.
+    /// `comparison` is recovered best-effort from the filename.
+    pub fn unreadable(comparison: Comparison, updated_at: String) -> Self {
+        ReviewSummary {
+            comparison,
+            total_hunks: 0,
+            trusted_hunks: 0,
+            approved_hunks: 0,
+            reviewed_hunks: 0,
+            rejected_hunks: 0,
+            saved_for_later_hunks: 0,
+            high_risk_pending_hunks: 0,
+            state: None,
+            unreadable: true,
+            updated_at,
+            github_pr: None,
+            worktree_path: None,
         }
     }
 }
@@ -342,11 +393,14 @@ pub fn overall_review_state(
 }
 
 pub(crate) fn now_iso8601() -> String {
-    // ISO 8601 timestamp without external crate (with milliseconds for JS compatibility)
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    iso8601_from_system_time(std::time::SystemTime::now())
+}
+
+/// Format a `SystemTime` as an ISO 8601 UTC timestamp with milliseconds (for JS
+/// compatibility), without pulling in a date crate.
+pub(crate) fn iso8601_from_system_time(time: std::time::SystemTime) -> String {
+    use std::time::UNIX_EPOCH;
+    let duration = time.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = duration.as_secs();
     let millis = duration.subsec_millis();
 
@@ -415,6 +469,11 @@ pub struct ReviewSummary {
     pub high_risk_pending_hunks: usize,
     /// Review state: "approved", "changes_requested", or null (in progress)
     pub state: Option<String>,
+    /// True when the review file exists but could not be read (parse/migration
+    /// failure). Surfaced so a broken review stays visible instead of silently
+    /// vanishing from the list; opening it still fails loudly.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unreadable: bool,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
     /// Optional GitHub PR reference
