@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import type { ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { usePrefersReducedMotion, suppressScrollForNav } from "../../hooks";
-import { NAV_SCROLL_SUPPRESS_MS } from "../../utils/scroll-to-target";
+import { NAV_SCROLL_SUPPRESS_MS } from "../../hooks/scrollState";
 import { useReviewStore } from "../../stores";
 
 // --- Public types ---

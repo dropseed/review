@@ -6,8 +6,6 @@ import {
   useCallback,
   useRef,
 } from "react";
-import { Virtualizer as VirtualizerClass } from "@pierre/diffs";
-import { VirtualizerContext } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
@@ -22,7 +20,6 @@ import {
 } from "./DiffMinimap";
 import {
   useScrollHunkTracking,
-  useScrollAnchor,
   useHunkScrollTarget,
   useLineHighlightScroll,
   useCodeFont,
@@ -30,6 +27,7 @@ import {
   useWordHighlight,
   useHoverInfo,
 } from "../../hooks";
+import type { FileCodeViewHandle } from "./FileCodeView";
 import { countLines } from "../../utils/count-lines";
 import { InFileSearchBar } from "./InFileSearchBar";
 import { GoToLineBar } from "./GoToLineBar";
@@ -109,21 +107,11 @@ export function FileViewer({
 
   const [viewMode, setViewMode] = useDiffViewMode(filePath, isSplitActive);
 
-  const [virtualizer] = useState(() => new VirtualizerClass());
-  useEffect(() => {
-    return () => virtualizer.cleanUp();
-  }, [virtualizer]);
-  const [scrollNode, setScrollNodeState] = useState<HTMLDivElement | null>(
-    null,
-  );
-  const setScrollNode = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node) virtualizer.setup(node);
-      else virtualizer.cleanUp();
-      setScrollNodeState(node);
-    },
-    [virtualizer],
-  );
+  // The CodeView's scroll container (null while a non-code mode is shown) —
+  // consumed by scroll tracking, the minimap, and shadow-DOM token hooks.
+  const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
+  // Imperative scroll API of the rendered CodeView.
+  const codeViewHandleRef = useRef<FileCodeViewHandle | null>(null);
 
   // Cmd+click symbol navigation
   const {
@@ -576,32 +564,29 @@ export function FileViewer({
 
   // Track scroll position to update focused hunk
   useScrollHunkTracking(scrollNode, fileHunks);
-  useScrollAnchor(scrollNode, filePath);
 
   // Consume store scrollTargets addressed to this container. This viewer
-  // owns the scroll container, so it owns scroll orchestration — DiffView
-  // and PlainCodeView are pure renderers.
+  // owns scroll orchestration — the CodeView computes exact line offsets
+  // from measured layout, so targets resolve without polling.
   const contentReady = !loading && fileContentPath === filePath;
   const renderedHunks = useMemo(
     () => (contentReady ? (fileContent?.hunks ?? EMPTY_HUNKS) : EMPTY_HUNKS),
     [contentReady, fileContent?.hunks],
   );
   useHunkScrollTarget({
-    scrollContainer: scrollNode,
+    handleRef: codeViewHandleRef,
     filePath,
     hunks: renderedHunks,
-    lineHeight,
-    totalLines: newLineCount,
     pane,
     enabled: contentReady,
   });
 
   // Scroll to the highlighted line (in-file search, go-to-line, symbol jump).
   useLineHighlightScroll(
-    contentReady ? scrollNode : null,
+    codeViewHandleRef,
     highlightLine,
-    lineHeight,
-    totalLineCount,
+    contentReady,
+    scrollNode,
   );
 
   // Check if file is gitignored (from the file tree's allFiles)
@@ -783,43 +768,24 @@ export function FileViewer({
             symbols={fileSymbols}
           />
         )}
-        <VirtualizerContext.Provider value={virtualizer}>
-          <div
-            ref={setScrollNode}
-            className={`min-w-0 flex-1 h-full overflow-auto bg-surface-panel ${
-              contentMode.type === "diff" ? "scrollbar-none" : "scrollbar-thin"
-            }`}
-          >
-            {/* Virtualizer.setup() uses root.firstElementChild as the content
-                container for resize observation. Do not remove this wrapper.
-                Bottom padding gives the virtualizer extra scroll room so
-                annotation panels at the end of a file don't clip trailing lines. */}
-            <div className="pb-16">
-              <FileContentRenderer
-                filePath={filePath}
-                fileContent={fileContent}
-                contentMode={contentMode}
-                codeTheme={codeTheme}
-                fontCSS={fontCSS}
-                effectiveLanguage={effectiveLanguage}
-                markdownViewMode={markdownViewMode}
-                highlightLine={highlightLine}
-                lineHeight={lineHeight}
-                onViewInFile={setHighlightLine}
-                annotations={allFileAnnotations}
-                addAnnotation={addAnnotation}
-                updateAnnotation={updateAnnotation}
-                deleteAnnotation={deleteAnnotation}
-                resolveAnnotation={resolveAnnotation}
-                unresolveAnnotation={unresolveAnnotation}
-                onNavigateToFile={handleNavigateToFile}
-                onTokenEnter={onTokenEnterHover}
-                onTokenLeave={onTokenLeaveHover}
-                onTokenClick={onTokenClick}
-              />
-            </div>
-          </div>
-        </VirtualizerContext.Provider>
+        <FileContentRenderer
+          filePath={filePath}
+          fileContent={fileContent}
+          contentMode={contentMode}
+          codeTheme={codeTheme}
+          fontCSS={fontCSS}
+          effectiveLanguage={effectiveLanguage}
+          markdownViewMode={markdownViewMode}
+          highlightLine={highlightLine}
+          lineHeight={lineHeight}
+          onViewInFile={setHighlightLine}
+          onNavigateToFile={handleNavigateToFile}
+          onTokenEnter={onTokenEnterHover}
+          onTokenLeave={onTokenLeaveHover}
+          onTokenClick={onTokenClick}
+          containerRef={setScrollNode}
+          handleRef={codeViewHandleRef}
+        />
         {contentMode.type === "diff" && (
           <DiffMinimap
             markers={minimapMarkers}

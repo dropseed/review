@@ -1,13 +1,18 @@
-import { PatchDiff, Virtualizer } from "@pierre/diffs/react";
-import { useCodeFont, useVirtualFileMetrics } from "../../hooks";
-import type { FileDiffMetadata } from "@pierre/diffs";
+import { CodeView } from "@pierre/diffs/react";
+import { useCodeFont } from "../../hooks";
+import { parsePatchFiles } from "@pierre/diffs";
+import type {
+  CodeViewItem,
+  CodeViewOptions,
+  FileDiffMetadata,
+} from "@pierre/diffs";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import type { CommitDetail } from "../../types";
 import { Spinner } from "../ui/spinner";
 
-const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
+const CODE_VIEW_STYLE = { overflow: "auto" } as const;
 
 function formatDate(isoDate: string): string {
   try {
@@ -24,29 +29,9 @@ function formatDate(isoDate: string): string {
   }
 }
 
-/** Split a multi-file unified diff into individual per-file patches */
-function splitPatch(patch: string): string[] {
-  const parts: string[] = [];
-  const lines = patch.split("\n");
-  let current: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith("diff --git ")) {
-      if (current.length > 0) {
-        parts.push(current.join("\n"));
-      }
-      current = [line];
-    } else if (current.length > 0) {
-      current.push(line);
-    }
-  }
-  if (current.length > 0) {
-    parts.push(current.join("\n"));
-  }
-  return parts;
-}
-
-function renderPatchHeader(fileDiff: FileDiffMetadata): ReactNode {
+function renderPatchHeader(item: CodeViewItem<undefined>): ReactNode {
+  if (item.type !== "diff") return null;
+  const fileDiff: FileDiffMetadata = item.fileDiff;
   let additions = 0;
   let deletions = 0;
   for (const hunk of fileDiff.hunks) {
@@ -55,7 +40,7 @@ function renderPatchHeader(fileDiff: FileDiffMetadata): ReactNode {
   }
   const { name, prevName } = fileDiff;
   return (
-    <div className="sticky top-12 z-[9] flex items-center gap-2 border-b border-edge/30 bg-surface-panel/95 px-4 py-1.5 backdrop-blur-sm">
+    <div className="flex items-center gap-2 border-b border-edge/30 bg-surface-panel/95 px-4 py-1.5 backdrop-blur-sm">
       {prevName != null && prevName !== name && (
         <>
           <span className="truncate font-mono text-xs text-fg-muted">
@@ -106,7 +91,6 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const { lineHeight, fontCSS } = useCodeFont();
-  const metrics = useVirtualFileMetrics(lineHeight);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const setViewingCommitHash = useReviewStore((s) => s.setViewingCommitHash);
   const effectiveDiffStyle = diffViewMode === "unified" ? "unified" : "split";
@@ -114,9 +98,29 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const filePatches = useMemo(
-    () => (detail?.diff ? splitPatch(detail.diff) : []),
-    [detail?.diff],
+  const items = useMemo<CodeViewItem<undefined>[]>(() => {
+    if (!detail?.diff) return [];
+    const parsed = parsePatchFiles(detail.diff, `commit:${hash}`);
+    return parsed.flatMap((patch, patchIndex) =>
+      patch.files.map((fileDiff, fileIndex) => ({
+        id: `${patchIndex}:${fileIndex}:${fileDiff.name}`,
+        type: "diff" as const,
+        fileDiff,
+      })),
+    );
+  }, [detail?.diff, hash]);
+
+  const options = useMemo<CodeViewOptions<undefined>>(
+    () => ({
+      diffStyle: effectiveDiffStyle,
+      theme: { dark: codeTheme, light: codeTheme },
+      themeType: "dark",
+      unsafeCSS: fontCSS,
+      itemMetrics: { lineHeight },
+      stickyHeaders: true,
+      layout: { paddingTop: 0, paddingBottom: 48, gap: 0 },
+    }),
+    [effectiveDiffStyle, codeTheme, fontCSS, lineHeight],
   );
 
   useEffect(() => {
@@ -148,12 +152,9 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
   }, [hash, repoPath]);
 
   return (
-    <Virtualizer
-      className="flex flex-1 flex-col min-h-0"
-      style={VIRTUALIZER_STYLE}
-    >
+    <div className="flex flex-1 flex-col min-h-0">
       {/* Header bar */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-edge/60 bg-surface sticky top-0 z-10">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-edge/60 bg-surface shrink-0">
         <button
           type="button"
           onClick={() => setViewingCommitHash(null)}
@@ -221,14 +222,14 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
       {detail && (
         <>
           {/* Commit message */}
-          <div className="px-5 py-4 border-b border-edge/60">
+          <div className="px-5 py-4 border-b border-edge/60 max-h-40 overflow-auto scrollbar-thin shrink-0">
             <pre className="whitespace-pre-wrap font-mono text-sm text-fg-secondary leading-relaxed">
               {detail.message}
             </pre>
           </div>
 
           {/* Author and date */}
-          <div className="px-5 py-3 border-b border-edge/60 flex items-center gap-4 text-xs text-fg-muted">
+          <div className="px-5 py-3 border-b border-edge/60 flex items-center gap-4 text-xs text-fg-muted shrink-0">
             <div className="flex items-center gap-1.5">
               <svg
                 className="h-3.5 w-3.5 text-fg-muted"
@@ -267,7 +268,7 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
           </div>
 
           {/* Changed files */}
-          <div className="px-5 py-3 border-b border-edge/60">
+          <div className="px-5 py-3 border-b border-edge/60 max-h-48 overflow-auto scrollbar-thin shrink-0">
             <div className="mb-2 flex items-center gap-2">
               <span className="text-xxs font-medium text-fg-muted uppercase tracking-wide">
                 Changed files
@@ -304,26 +305,15 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
           </div>
 
           {/* Diff */}
-          {filePatches.map((patch, i) => (
-            <div key={i} className="border-b border-edge/60 last:border-b-0">
-              <PatchDiff
-                patch={patch}
-                renderCustomHeader={renderPatchHeader}
-                metrics={metrics}
-                options={{
-                  diffStyle: effectiveDiffStyle,
-                  theme: {
-                    dark: codeTheme,
-                    light: codeTheme,
-                  },
-                  themeType: "dark" as const,
-                  unsafeCSS: fontCSS,
-                }}
-              />
-            </div>
-          ))}
+          <CodeView
+            items={items}
+            options={options}
+            renderCustomHeader={renderPatchHeader}
+            className="flex-1 min-h-0 scrollbar-thin"
+            style={CODE_VIEW_STYLE}
+          />
         </>
       )}
-    </Virtualizer>
+    </div>
   );
 }

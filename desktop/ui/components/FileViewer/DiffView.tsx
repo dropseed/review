@@ -1,14 +1,6 @@
-import {
-  type ReactNode,
-  useState,
-  useMemo,
-  useEffect,
-  useCallback,
-  useRef,
-  Component,
-} from "react";
+import { type ReactNode, useMemo, useRef, Component } from "react";
 import { MultiFileDiff, FileDiff } from "@pierre/diffs/react";
-import type { DiffLineAnnotation, FileContents } from "@pierre/diffs/react";
+import type { FileContents } from "@pierre/diffs/react";
 import {
   getSingularPatch,
   setLanguageOverride,
@@ -16,27 +8,19 @@ import {
   areOptionsEqual,
 } from "@pierre/diffs";
 import { useVirtualFileMetrics } from "../../hooks";
-import type {
-  TokenHoverHandler,
-  TokenClickHandler,
-} from "./FileContentRenderer";
 import { useReviewStore } from "../../stores";
-import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
-import { getPlatformServices } from "../../platform";
 import { stringHash } from "../../utils/string-hash";
-import { countLines } from "../../utils/count-lines";
-import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
-import { isHunkTrusted } from "../../types";
-import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
-import {
-  NewAnnotationEditor,
-  UserAnnotationDisplay,
-  HunkAnnotationPanel,
-  TrustedHunkBadge,
-  WorkingTreeHunkPanel,
-} from "./annotations";
-import { getLastChangedLine } from "./hunkUtils";
+import type { DiffHunk } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
+import {
+  useDiffAnnotationModel,
+  useAdaptiveLineDiffType,
+  useSyntaxHighlightReady,
+  type TokenHoverHandler,
+  type TokenClickHandler,
+} from "./diff-model";
+
+export type { TokenHoverHandler, TokenClickHandler };
 
 // Error boundary to catch rendering errors
 export class DiffErrorBoundary extends Component<
@@ -64,93 +48,6 @@ export class DiffErrorBoundary extends Component<
   }
 }
 
-/** Returns true if a hunk contains only deletions (source of a move). */
-function isDeletionOnly(hunk: DiffHunk): boolean {
-  return (
-    hunk.lines.every((l) => l.type === "removed" || l.type === "context") &&
-    hunk.lines.some((l) => l.type === "removed")
-  );
-}
-
-interface HunkAnnotationMeta {
-  hunk: DiffHunk;
-  hunkState: HunkState | undefined;
-  pairedHunk: DiffHunk | null;
-  isSource: boolean;
-}
-
-interface UserAnnotationMeta {
-  annotation: LineAnnotation;
-}
-
-type AnnotationMeta =
-  | { type: "hunk"; data: HunkAnnotationMeta }
-  | { type: "user"; data: UserAnnotationMeta }
-  | { type: "new"; data: Record<string, never> };
-
-/** Validates that a line number is valid for @pierre/diffs (must be >= 1). */
-function isValidLineNumber(lineNumber: number): boolean {
-  return lineNumber >= 1;
-}
-
-const LOCK_FILE_SUFFIXES = [
-  "package-lock.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-  "Cargo.lock",
-  "Gemfile.lock",
-  "composer.lock",
-];
-
-// Detects when @pierre/diffs finishes syntax highlighting by polling
-// for styled <span> elements inside the shadow DOM of the diffs-container
-// custom element. We poll because the shadow root is not observable via
-// MutationObserver from an ancestor outside the shadow boundary.
-function useSyntaxHighlightReady(
-  containerRef: React.RefObject<HTMLDivElement | null>,
-  contentKey: string,
-) {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setReady(false);
-    const el = containerRef.current;
-    if (!el) return;
-
-    const isHighlighted = () => {
-      const shadow = el.querySelector("diffs-container")?.shadowRoot;
-      if (!shadow) return false;
-      const code = shadow.querySelector("code");
-      return code ? code.querySelector('span[style*="color"]') !== null : false;
-    };
-
-    if (isHighlighted()) {
-      setReady(true);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      if (isHighlighted()) {
-        setReady(true);
-        clearInterval(interval);
-      }
-    }, 150);
-
-    // Force ready after 5s to prevent infinite shimmer if highlighting never completes
-    const timeout = setTimeout(() => {
-      setReady(true);
-      clearInterval(interval);
-    }, 5000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [contentKey]);
-
-  return ready;
-}
-
 interface DiffViewProps {
   diffPatch: string;
   viewMode: "unified" | "split";
@@ -176,6 +73,12 @@ interface DiffViewProps {
   onTokenClick?: TokenClickHandler;
 }
 
+/**
+ * Embedded diff renderer for surfaces that own their own scroll container
+ * (GroupDiffViewer, WorkingTreeMultiFileDiffViewer) — rendered inside a
+ * pierre `Virtualizer`. The single-file viewer uses the CodeView-based
+ * FileCodeView instead.
+ */
 export function DiffView({
   diffPatch,
   viewMode,
@@ -194,15 +97,16 @@ export function DiffView({
   onTokenLeave,
   onTokenClick,
 }: DiffViewProps): ReactNode {
-  // Reactive subscriptions — values used in render output
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const allHunks = useAllHunks();
-  const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
   const diffOverflow = useReviewStore((s) => s.diffOverflow);
-  const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
-  const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
-  const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
-  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
+
+  const filePath = hunks[0]?.filePath ?? "";
+  const {
+    lineAnnotations,
+    renderAnnotation,
+    handleLineSelectionEnd,
+    handleGutterUtilityClick,
+    annotationHighlightCSS,
+  } = useDiffAnnotationModel({ hunks, filePath, fileName, onViewInFile });
 
   // Hash file contents once for use in cache keys and content-change detection.
   const oldContentHash = useMemo(
@@ -220,452 +124,6 @@ export function DiffView({
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
   const contentKey = `${fileName}:${oldContentHash}:${newContentHash}`;
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, contentKey);
-
-  // Annotation editing state
-  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
-    null,
-  );
-  const [newAnnotationLine, setNewAnnotationLine] = useState<{
-    lineNumber: number;
-    endLineNumber?: number;
-    side: "old" | "new";
-    hunkId: string;
-  } | null>(null);
-
-  // Watch for pending comment requests (from keyboard reject)
-  useEffect(() => {
-    if (!pendingCommentHunkId) return;
-    const targetHunk = hunks.find((h) => h.id === pendingCommentHunkId);
-    if (!targetHunk) return;
-    if (newAnnotationLine) return;
-
-    const { lineNumber, side } = getLastChangedLine(targetHunk);
-    setNewAnnotationLine({ lineNumber, side, hunkId: pendingCommentHunkId });
-    useReviewStore.getState().setPendingCommentHunkId(null);
-  }, [pendingCommentHunkId, hunks, newAnnotationLine]);
-
-  const filePath = hunks[0]?.filePath ?? "";
-
-  const fileAnnotations = useMemo(() => {
-    const all = reviewState?.annotations ?? [];
-    return all.filter((a) => a.filePath === filePath);
-  }, [reviewState?.annotations, filePath]);
-
-  const hunkStates = reviewState?.hunks;
-
-  // Shared cross-file lookup, cached on filesByPath identity.
-  const hunkById = useHunkById();
-
-  const fileHunkStates = useMemo(() => {
-    if (!hunkStates) return hunkStates;
-    const states: Record<string, HunkState> = {};
-    let changed = false;
-    for (const hunk of hunks) {
-      const s = hunkStates[hunk.id];
-      if (s) {
-        states[hunk.id] = s;
-        changed = true;
-      }
-    }
-    return changed ? states : undefined;
-  }, [hunks, hunkStates]);
-
-  // Build line annotations for each hunk - position at last changed line
-  // Memoized to preserve reference stability — @pierre/diffs uses reference
-  // equality on lineAnnotations to decide whether to re-render the diff.
-  const hunkAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
-    return hunks.flatMap((hunk): DiffLineAnnotation<AnnotationMeta>[] => {
-      const hunkState = fileHunkStates?.[hunk.id];
-      // Prop hunks come from getFileContent (per-file, no movePairId).
-      // Store hunks have movePairId set by detect_move_pairs. Use hunkById for O(1) lookup.
-      const movePairId = hunkById.get(hunk.id)?.movePairId;
-      const pairedHunk = movePairId ? (hunkById.get(movePairId) ?? null) : null;
-      const isSource = pairedHunk ? isDeletionOnly(hunk) : false;
-
-      const changedLines = hunk.lines.filter(
-        (l) => l.type === "added" || l.type === "removed",
-      );
-      const lastChanged = changedLines[changedLines.length - 1];
-
-      let side: "additions" | "deletions";
-      let lineNumber: number;
-
-      // Prefer the additions (right) side so the annotation bar renders in the
-      // "new code" pane during split view.  Only fall back to the deletions
-      // (left) side for pure-deletion hunks or move-pair sources.
-      const lastAdded = [...changedLines]
-        .reverse()
-        .find((l) => l.type === "added");
-
-      if (!lastChanged) {
-        side = isSource ? "deletions" : "additions";
-        lineNumber = isSource ? hunk.oldStart : hunk.newStart;
-      } else if (isSource || !lastAdded) {
-        side = "deletions";
-        lineNumber =
-          (lastChanged.type === "removed"
-            ? lastChanged.oldLineNumber
-            : lastChanged.newLineNumber) ?? hunk.oldStart;
-      } else {
-        side = "additions";
-        lineNumber = lastAdded.newLineNumber ?? hunk.newStart;
-      }
-
-      if (!isValidLineNumber(lineNumber)) {
-        console.warn(
-          `[DiffView] Skipping hunk annotation with invalid lineNumber: ${lineNumber}`,
-          { hunkId: hunk.id, side },
-        );
-        return [];
-      }
-
-      return [
-        {
-          side,
-          lineNumber,
-          metadata: {
-            type: "hunk",
-            data: { hunk, hunkState, pairedHunk, isSource },
-          },
-        },
-      ];
-    });
-  }, [hunks, fileHunkStates, hunkById]);
-
-  // Build lookup from changed-lines key to hunk IDs for batch operations.
-  // Groups identical changes across different files for "approve all identical" feature.
-  const changedLinesKeyToHunkIds = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const h of allHunks) {
-      const key = getChangedLinesKeyUtil(h);
-      if (!key) continue;
-      const ids = map.get(key) ?? [];
-      ids.push(h.id);
-      map.set(key, ids);
-    }
-    return map;
-  }, [allHunks]);
-
-  // Get similar hunks for a given hunk (same changed lines, different context/files)
-  const getSimilarHunks = useCallback(
-    (hunk: DiffHunk): DiffHunk[] => {
-      const key = getChangedLinesKeyUtil(hunk);
-      if (!key) return [hunk];
-      const ids = changedLinesKeyToHunkIds.get(key) ?? [hunk.id];
-      return ids.map((id) => hunkById.get(id)).filter(Boolean) as DiffHunk[];
-    },
-    [changedLinesKeyToHunkIds, hunkById],
-  );
-
-  // Build annotations for user comments
-  // Include "file" annotations as well - they map to the "additions" side (new/compare version)
-  const userAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
-    return fileAnnotations.flatMap(
-      (annotation): DiffLineAnnotation<AnnotationMeta>[] => {
-        const lineNumber = annotation.endLineNumber ?? annotation.lineNumber;
-
-        if (!isValidLineNumber(lineNumber)) {
-          console.warn(
-            `[DiffView] Skipping user annotation with invalid lineNumber: ${lineNumber}`,
-            { annotationId: annotation.id },
-          );
-          return [];
-        }
-
-        return [
-          {
-            side: annotation.side === "old" ? "deletions" : "additions",
-            lineNumber,
-            metadata: { type: "user", data: { annotation } },
-          },
-        ];
-      },
-    );
-  }, [fileAnnotations]);
-
-  // Combine all annotations into a stable reference
-  const lineAnnotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(() => {
-    const newLineNumber =
-      newAnnotationLine?.endLineNumber ?? newAnnotationLine?.lineNumber;
-
-    if (
-      !newAnnotationLine ||
-      !newLineNumber ||
-      !isValidLineNumber(newLineNumber)
-    ) {
-      return [...hunkAnnotations, ...userAnnotations];
-    }
-
-    const newAnnotation: DiffLineAnnotation<AnnotationMeta> = {
-      side: newAnnotationLine.side === "old" ? "deletions" : "additions",
-      lineNumber: newLineNumber,
-      metadata: { type: "new", data: {} },
-    };
-
-    return [...hunkAnnotations, ...userAnnotations, newAnnotation];
-  }, [hunkAnnotations, userAnnotations, newAnnotationLine]);
-
-  async function handleCopyHunk(hunk: DiffHunk) {
-    const platform = getPlatformServices();
-    await platform.clipboard.writeText(hunk.content);
-  }
-
-  function handleSaveNewAnnotation(content: string) {
-    if (!newAnnotationLine) return;
-    const { addAnnotation, nextHunkInFile } = useReviewStore.getState();
-    addAnnotation(
-      filePath,
-      newAnnotationLine.lineNumber,
-      newAnnotationLine.side,
-      content,
-      newAnnotationLine.endLineNumber,
-    );
-    const commentHunkId = newAnnotationLine.hunkId;
-    setNewAnnotationLine(null);
-    // Auto-advance if this comment was attached to a rejected hunk
-    // (skip for hover/selection comments which aren't hunk-specific)
-    const isHunkComment =
-      commentHunkId !== "hover" &&
-      commentHunkId !== "selection" &&
-      commentHunkId !== "gutter";
-    if (
-      isHunkComment &&
-      reviewState?.hunks[commentHunkId]?.status?.value === "rejected"
-    ) {
-      nextHunkInFile();
-    }
-  }
-
-  // Render annotation for each type - use ref pattern for stable function reference
-  // Store non-store dependencies in a ref so the callback can access latest values
-  // without causing re-renders. Store action functions are accessed via getState() at call time.
-  const renderAnnotationDepsRef = useRef<{
-    handleSaveNewAnnotation: typeof handleSaveNewAnnotation;
-    setNewAnnotationLine: typeof setNewAnnotationLine;
-    editingAnnotationId: typeof editingAnnotationId;
-    setEditingAnnotationId: typeof setEditingAnnotationId;
-    hunks: typeof hunks;
-    getSimilarHunks: typeof getSimilarHunks;
-    reviewState: typeof reviewState;
-    hunkStates: typeof hunkStates;
-    handleCopyHunk: typeof handleCopyHunk;
-    onViewInFile: typeof onViewInFile;
-    hunkById: typeof hunkById;
-    newAnnotationLine: typeof newAnnotationLine;
-    workingTreeDiffMode: typeof workingTreeDiffMode;
-    isWorkingTreeFile: boolean;
-    readOnlyPreview: boolean;
-  }>(null!);
-  renderAnnotationDepsRef.current = {
-    handleSaveNewAnnotation,
-    setNewAnnotationLine,
-    editingAnnotationId,
-    setEditingAnnotationId,
-    hunks,
-    getSimilarHunks,
-    reviewState,
-    hunkStates,
-    handleCopyHunk,
-    onViewInFile,
-    hunkById,
-    newAnnotationLine,
-    workingTreeDiffMode,
-    isWorkingTreeFile: workingTreeDiffFile === fileName,
-    readOnlyPreview,
-  };
-
-  const renderAnnotation = useCallback(
-    (annotation: DiffLineAnnotation<AnnotationMeta>) => {
-      const deps = renderAnnotationDepsRef.current;
-      const meta = annotation.metadata!;
-
-      switch (meta.type) {
-        case "new":
-          return (
-            <NewAnnotationEditor
-              onSave={deps.handleSaveNewAnnotation}
-              onCancel={() => {
-                deps.setNewAnnotationLine(null);
-              }}
-            />
-          );
-
-        case "user": {
-          const { annotation: userAnnotation } = meta.data;
-          return (
-            <UserAnnotationDisplay
-              annotation={userAnnotation}
-              isEditing={deps.editingAnnotationId === userAnnotation.id}
-              onEdit={() => deps.setEditingAnnotationId(userAnnotation.id)}
-              onSave={(content) => {
-                useReviewStore
-                  .getState()
-                  .updateAnnotation(userAnnotation.id, content);
-                deps.setEditingAnnotationId(null);
-              }}
-              onCancel={() => deps.setEditingAnnotationId(null)}
-              onDelete={() => {
-                useReviewStore.getState().deleteAnnotation(userAnnotation.id);
-                deps.setEditingAnnotationId(null);
-              }}
-              onResolve={() =>
-                useReviewStore.getState().resolveAnnotation(userAnnotation.id)
-              }
-              onUnresolve={() =>
-                useReviewStore.getState().unresolveAnnotation(userAnnotation.id)
-              }
-            />
-          );
-        }
-
-        case "hunk": {
-          const { hunk, hunkState, pairedHunk, isSource } = meta.data;
-          const hunkIndex = deps.hunks.findIndex((h) => h.id === hunk.id);
-
-          // Read-only preview: skip hunk action panels entirely
-          if (deps.readOnlyPreview) {
-            return null;
-          }
-
-          // Working tree mode: render lightweight stage/unstage panel
-          if (deps.isWorkingTreeFile && deps.workingTreeDiffMode) {
-            return (
-              <WorkingTreeHunkPanel
-                hunk={hunk}
-                hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
-                totalHunksInFile={deps.hunks.length}
-                mode={deps.workingTreeDiffMode}
-                onStage={(contentHash) => {
-                  useReviewStore
-                    .getState()
-                    .stageHunks(hunk.filePath, [contentHash]);
-                }}
-                onUnstage={(contentHash) => {
-                  useReviewStore
-                    .getState()
-                    .unstageHunks(hunk.filePath, [contentHash]);
-                }}
-                onCopyHunk={deps.handleCopyHunk}
-                onViewInFile={deps.onViewInFile}
-              />
-            );
-          }
-
-          // Trusted hunk: compact badge instead of full panel
-          const trustList = deps.reviewState?.trustList ?? [];
-          if (!hunkState?.status && isHunkTrusted(hunkState, trustList)) {
-            return (
-              <TrustedHunkBadge
-                hunk={hunk}
-                hunkState={hunkState}
-                trustList={trustList}
-                onApprove={(hunkId) => {
-                  const s = useReviewStore.getState();
-                  s.approveHunk(hunkId);
-                  s.nextHunkInFile();
-                }}
-                onReject={(hunkId) => {
-                  const s = useReviewStore.getState();
-                  s.rejectHunk(hunkId);
-                  const targetHunk = deps.hunks.find((h) => h.id === hunkId);
-                  if (targetHunk && !deps.newAnnotationLine) {
-                    const { lineNumber, side } = getLastChangedLine(targetHunk);
-                    deps.setNewAnnotationLine({ lineNumber, side, hunkId });
-                  }
-                }}
-                onRemoveTrustPattern={(pattern) =>
-                  useReviewStore.getState().removeTrustPattern(pattern)
-                }
-                onCopyHunk={deps.handleCopyHunk}
-              />
-            );
-          }
-
-          // Review mode: full annotation panel
-          const similarHunks = deps.getSimilarHunks(hunk);
-          return (
-            <HunkAnnotationPanel
-              hunk={hunk}
-              hunkState={hunkState}
-              pairedHunk={pairedHunk}
-              isSource={isSource}
-              trustList={deps.reviewState?.trustList ?? []}
-              hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
-              totalHunksInFile={deps.hunks.length}
-              similarHunks={similarHunks}
-              allHunkStates={deps.hunkStates ?? {}}
-              onApprove={(hunkId) => {
-                const s = useReviewStore.getState();
-                s.approveHunk(hunkId);
-                s.nextHunkInFile();
-              }}
-              onUnapprove={(hunkId) =>
-                useReviewStore.getState().unapproveHunk(hunkId)
-              }
-              onReject={(hunkId) => {
-                const s = useReviewStore.getState();
-                s.rejectHunk(hunkId);
-                const targetHunk = deps.hunks.find((h) => h.id === hunkId);
-                if (targetHunk && !deps.newAnnotationLine) {
-                  const { lineNumber, side } = getLastChangedLine(targetHunk);
-                  deps.setNewAnnotationLine({ lineNumber, side, hunkId });
-                }
-              }}
-              onUnreject={(hunkId) =>
-                useReviewStore.getState().unrejectHunk(hunkId)
-              }
-              onSaveForLater={(hunkId) =>
-                useReviewStore.getState().saveHunkForLater(hunkId)
-              }
-              onUnsaveForLater={(hunkId) =>
-                useReviewStore.getState().unsaveHunkForLater(hunkId)
-              }
-              onApprovePair={(hunkIds) => {
-                const s = useReviewStore.getState();
-                s.approveHunkIds(hunkIds);
-                s.nextHunkInFile();
-              }}
-              onRejectPair={(hunkIds) => {
-                const s = useReviewStore.getState();
-                s.rejectHunkIds(hunkIds);
-                s.nextHunkInFile();
-              }}
-              onAddTrustPattern={(pattern) =>
-                useReviewStore.getState().addTrustPattern(pattern)
-              }
-              onRemoveTrustPattern={(pattern) =>
-                useReviewStore.getState().removeTrustPattern(pattern)
-              }
-              onReclassifyHunks={(hunkIds) =>
-                useReviewStore.getState().reclassifyHunks(hunkIds)
-              }
-              onCopyHunk={deps.handleCopyHunk}
-              onViewInFile={deps.onViewInFile}
-              onApproveAllSimilar={(hunkIds) => {
-                const s = useReviewStore.getState();
-                s.approveHunkIds(hunkIds);
-                s.nextHunkInFile();
-              }}
-              onRejectAllSimilar={(hunkIds) => {
-                const s = useReviewStore.getState();
-                s.rejectHunkIds(hunkIds);
-                s.nextHunkInFile();
-              }}
-              onNavigateToHunk={(hunkId) => {
-                const targetHunk = deps.hunkById.get(hunkId);
-                if (targetHunk) {
-                  useReviewStore
-                    .getState()
-                    .setSelectedFile(targetHunk.filePath);
-                }
-              }}
-            />
-          );
-        }
-      }
-    },
-    [],
-  );
 
   // Create file contents for MultiFileDiff when available
   // Use != null to catch both null and undefined (Rust None serializes to null)
@@ -716,98 +174,10 @@ export function DiffView({
     return language ? setLanguageOverride(fileDiff, language) : fileDiff;
   }, [hasFileContents, diffPatch, language]);
 
-  // Performance optimization: detect large files and JSON files
-  // JSON diffs are often noisy with word-level diffing; large files are slow to render
-  const isJsonFile = fileName.endsWith(".json");
-  const isLockFile = LOCK_FILE_SUFFIXES.some((s) => fileName.endsWith(s));
-  const totalLines = useMemo(
-    () => countLines(oldContent) + countLines(newContent),
-    [oldContent, newContent],
-  );
-  const isLargeFile = totalLines > 5000;
-
-  // For lock files and very large files, disable word-level diffing entirely
-  // For large JSON files, also disable to improve performance
-  // Otherwise use the user's preference
-  const lineDiffType =
-    isLockFile || isLargeFile || (isJsonFile && totalLines > 1000)
-      ? "none"
-      : prefLineDiffType;
-
-  // Generate CSS to subtly highlight lines covered by annotations.
-  // Injected into the shadow DOM via unsafeCSS so annotated line ranges
-  // stay visually connected to the comment rendered below them.
-  const annotationHighlightCSS = useMemo(() => {
-    if (fileAnnotations.length === 0) return "";
-    const lineSelectors: string[] = [];
-    for (const a of fileAnnotations) {
-      const end = a.endLineNumber ?? a.lineNumber;
-      for (let line = a.lineNumber; line <= end; line++) {
-        lineSelectors.push(`[data-line="${line}"]`);
-      }
-    }
-    if (lineSelectors.length === 0) return "";
-    const selector = [...new Set(lineSelectors)].join(", ");
-    return `
-      :is(${selector}) > [data-column-content] {
-        background-image: linear-gradient(to right, color-mix(in srgb, var(--color-focus-ring) 7%, transparent), color-mix(in srgb, var(--color-focus-ring) 3%, transparent)) !important;
-      }
-      :is(${selector}) > [data-column-number]:last-of-type {
-        box-shadow: inset -2px 0 0 color-mix(in srgb, var(--color-focus-ring) 35%, transparent);
-      }
-    `;
-  }, [fileAnnotations]);
-
-  // Track line selection for range commenting.
-  // Use onLineSelectionEnd (fires on pointerup) instead of onLineSelected
-  // (fires on every drag move) to avoid mid-drag re-renders that disrupt
-  // the selection. Only open the annotation editor for multi-line ranges —
-  // single-line comments are handled by the hover "+" button.
-  const handleLineSelectionEnd = useCallback(
-    (range: { start: number; end: number; side?: string } | null) => {
-      if (!range) return;
-
-      const start = Math.min(range.start, range.end);
-      const end = Math.max(range.start, range.end);
-
-      if (!isValidLineNumber(start) || !isValidLineNumber(end)) {
-        console.warn(
-          `[DiffView] Ignoring selection with invalid line range: ${start}-${end}`,
-        );
-        return;
-      }
-
-      // Single line selections are handled by the hover "+" button
-      if (start === end) return;
-
-      setNewAnnotationLine({
-        lineNumber: start,
-        endLineNumber: end,
-        side: range.side === "deletions" ? "old" : "new",
-        hunkId: "selection",
-      });
-    },
-    [],
-  );
-
-  // Handle gutter utility button clicks (single-click or drag-to-select range).
-  // Uses the library's built-in button + pointer handling which properly
-  // coexists with enableLineSelection.
-  const handleGutterUtilityClick = useCallback(
-    (range: { start: number; end: number; side?: string }) => {
-      const start = Math.min(range.start, range.end);
-      const end = Math.max(range.start, range.end);
-
-      if (!isValidLineNumber(start) || !isValidLineNumber(end)) return;
-
-      setNewAnnotationLine({
-        lineNumber: start,
-        endLineNumber: start !== end ? end : undefined,
-        side: range.side === "deletions" ? "old" : "new",
-        hunkId: "gutter",
-      });
-    },
-    [],
+  const lineDiffType = useAdaptiveLineDiffType(
+    fileName,
+    oldContent,
+    newContent,
   );
 
   // Define diff options type inline to avoid type mismatch between FileOptions and FileDiffOptions

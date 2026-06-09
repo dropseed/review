@@ -3,13 +3,9 @@ import { useReviewStore } from "../stores";
 import type { ReviewStore } from "../stores/types";
 import type { DiffHunk } from "../types";
 import { hunkIdBelongsToFile } from "../types";
-import {
-  scrollToTarget,
-  findLineInShadowDOM,
-  NAV_SCROLL_SUPPRESS_MS,
-  type ScrollHandle,
-} from "../utils/scroll-to-target";
-import { suppressScrollForNav } from "./scrollState";
+import { getLastChangedLine } from "../components/FileViewer/hunkUtils";
+import type { FileCodeViewHandle } from "../components/FileViewer/FileCodeView";
+import { suppressScrollForNav, NAV_SCROLL_SUPPRESS_MS } from "./scrollState";
 
 /**
  * Scroll-target consumption is owned by the component that owns the scroll
@@ -58,16 +54,12 @@ function useHunkTargetConsumer(
 }
 
 interface HunkScrollTargetOptions {
-  /** The scrollable container (overflow: auto) that owns the diff content */
-  scrollContainer: HTMLElement | null;
+  /** Scroll API of the CodeView rendering this file (ref so it can be late-bound) */
+  handleRef: React.RefObject<FileCodeViewHandle | null>;
   /** File rendered in this container (used to detect stale same-file targets) */
   filePath: string;
   /** Hunks actually rendered in this container */
   hunks: DiffHunk[];
-  /** Line height in px, for approximate scroll positioning */
-  lineHeight: number;
-  /** New-side line count, for proportion-based positioning */
-  totalLines: number;
   /** Which split pane this container is, when split view is possible */
   pane?: "primary" | "secondary";
   /** Whether the container is ready to scroll (content loaded and rendered) */
@@ -90,113 +82,99 @@ function paneAllowsClaim(
 }
 
 /**
- * Consume `scrollTarget` (type "hunk") for a single-file diff container.
- * Finds the hunk's annotation panel (`[data-hunk-id]`, light DOM) or falls
- * back to the hunk's first line inside the shadow DOM, and scrolls to it via
- * scrollToTarget (which handles virtualized content and height settling).
+ * Consume `scrollTarget` (type "hunk") for a single-file CodeView container.
+ * Scrolls to the hunk's last changed line — the line its annotation panel is
+ * attached to — via CodeView's scrollTo, which computes exact offsets from
+ * measured layout (no approximation or polling needed).
  */
 export function useHunkScrollTarget({
-  scrollContainer,
+  handleRef,
   filePath,
   hunks,
-  lineHeight,
-  totalLines,
   pane,
   enabled = true,
 }: HunkScrollTargetOptions): void {
-  const depsRef = useRef({ filePath, hunks, lineHeight, totalLines, pane });
-  depsRef.current = { filePath, hunks, lineHeight, totalLines, pane };
-  const handleRef = useRef<ScrollHandle | null>(null);
+  const depsRef = useRef({ filePath, hunks, pane });
+  depsRef.current = { filePath, hunks, pane };
 
   // Re-attempt consumption when the rendered hunks change — a target set
   // before the file content loaded becomes claimable once hunks arrive.
   const hunksKey = useMemo(() => hunks.map((h) => h.id).join(","), [hunks]);
 
-  useHunkTargetConsumer(
-    scrollContainer !== null && enabled,
-    hunksKey,
-    function tryConsume(): void {
-      const state = useReviewStore.getState();
-      const target = state.scrollTarget;
-      if (!target || target.type !== "hunk") return;
+  useHunkTargetConsumer(enabled, hunksKey, function tryConsume(): void {
+    const state = useReviewStore.getState();
+    const target = state.scrollTarget;
+    if (!target || target.type !== "hunk") return;
 
-      const { filePath, hunks, lineHeight, totalLines, pane } = depsRef.current;
-      const hunk = hunks.find((h) => h.id === target.hunkId);
+    const { filePath, hunks, pane } = depsRef.current;
+    const hunk = hunks.find((h) => h.id === target.hunkId);
 
-      if (!hunk) {
-        // The target names this file but the rendered hunks don't include it
-        // (stale ID after a re-diff, or a different diff base). Consume it
-        // with a warning so it can't fire somewhere unexpected later.
-        if (
-          hunkIdBelongsToFile(target.hunkId, filePath) &&
-          paneAllowsClaim(state, pane, filePath)
-        ) {
-          console.warn(
-            "[useHunkScrollTarget] target hunk not in rendered file, dropping",
-            { hunkId: target.hunkId, filePath },
-          );
-          state.clearScrollTarget();
-        }
-        return;
+    if (!hunk) {
+      // The target names this file but the rendered hunks don't include it
+      // (stale ID after a re-diff, or a different diff base). Consume it
+      // with a warning so it can't fire somewhere unexpected later.
+      if (
+        hunkIdBelongsToFile(target.hunkId, filePath) &&
+        paneAllowsClaim(state, pane, filePath)
+      ) {
+        console.warn(
+          "[useHunkScrollTarget] target hunk not in rendered file, dropping",
+          { hunkId: target.hunkId, filePath },
+        );
+        state.clearScrollTarget();
       }
+      return;
+    }
 
-      if (!paneAllowsClaim(state, pane, filePath)) return;
+    if (!paneAllowsClaim(state, pane, filePath)) return;
 
+    // Consumers run a frame after commit, so a rendered CodeView has bound
+    // its handle by now. A persistently missing handle means this file is
+    // showing a non-code mode (image, markdown preview) — consume the
+    // target so it can't fire somewhere unexpected later.
+    const handle = handleRef.current;
+    if (!handle) {
+      console.warn(
+        "[useHunkScrollTarget] no scrollable code view for target, dropping",
+        { hunkId: target.hunkId, filePath },
+      );
       state.clearScrollTarget();
-      const lineNumber = Math.max(1, hunk.newStart);
-      handleRef.current?.cancel();
-      handleRef.current = scrollToTarget({
-        scrollContainer: scrollContainer!,
-        findTarget: () => {
-          const panel = scrollContainer!.querySelector(
-            `[data-hunk-id="${CSS.escape(hunk.id)}"]`,
-          ) as HTMLElement | null;
-          // A panel can exist in the light DOM with zero height while its
-          // region is virtualized out — don't let it shadow the line fallback.
-          if (panel && panel.getBoundingClientRect().height > 0) return panel;
-          return findLineInShadowDOM(scrollContainer!, lineNumber) ?? panel;
-        },
-        lineNumber,
-        lineHeight,
-        totalLines,
-        debugLabel: hunk.id,
-      });
-    },
-  );
+      return;
+    }
 
-  // Cancel any in-flight scroll when the container goes away.
-  useEffect(() => {
-    return () => {
-      handleRef.current?.cancel();
-      handleRef.current = null;
-    };
-  }, [scrollContainer]);
+    state.clearScrollTarget();
+    // Target the line the hunk's annotation panel hangs off so both the
+    // change and its review panel land in view.
+    const { lineNumber, side } = getLastChangedLine(hunk);
+    suppressScrollForNav(NAV_SCROLL_SUPPRESS_MS);
+    handle.scrollToLine(Math.max(1, lineNumber), {
+      side: side === "old" ? "deletions" : "additions",
+    });
+  });
 }
 
 /**
  * Scroll a highlighted line (in-file search, go-to-line, symbol jump) into
- * view. Works for both diff and plain-code shadow DOM content.
+ * view. Works for both diff and plain-code CodeView items.
  */
 export function useLineHighlightScroll(
-  scrollContainer: HTMLElement | null,
+  handleRef: React.RefObject<FileCodeViewHandle | null>,
   highlightLine: number | null,
-  lineHeight: number,
-  totalLines: number,
+  enabled = true,
+  /**
+   * The code view's scroll container. Included as a dep so a highlight set
+   * while a non-code mode was showing (markdown preview, rendered SVG)
+   * scrolls once the user toggles to code view and the CodeView mounts.
+   */
+  containerNode?: HTMLElement | null,
 ): void {
   useEffect(() => {
-    if (!highlightLine || !scrollContainer) return;
-
-    const handle = scrollToTarget({
-      scrollContainer,
-      findTarget: () => findLineInShadowDOM(scrollContainer, highlightLine),
-      lineNumber: highlightLine,
-      lineHeight,
-      totalLines,
-      debugLabel: `line:${highlightLine}`,
-    });
-
-    return () => handle.cancel();
-  }, [scrollContainer, highlightLine, lineHeight, totalLines]);
+    if (!highlightLine || !enabled) return;
+    const handle = handleRef.current;
+    if (!handle) return;
+    suppressScrollForNav(NAV_SCROLL_SUPPRESS_MS);
+    handle.scrollToLine(highlightLine);
+  }, [handleRef, highlightLine, enabled, containerNode]);
 }
 
 /**

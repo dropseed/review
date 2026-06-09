@@ -15,7 +15,6 @@ export { useHighlighter, getLanguageFromFilename } from "./useHighlighter";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 export { useCelebration } from "./useCelebration";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";
-export { useScrollAnchor } from "./useScrollAnchor";
 export {
   useHunkScrollTarget,
   useLineHighlightScroll,
@@ -33,11 +32,7 @@ export { useReviewFreshness } from "./useReviewFreshness";
 export { useFileHunkStatusMap } from "./useFileHunkStatusMap";
 export { useIsFocusedHunk } from "./useIsFocusedHunk";
 export { useListContinuation } from "./useListContinuation";
-export {
-  suppressScrollTracking,
-  suppressScrollCorrection,
-  suppressScrollForNav,
-} from "./scrollState";
+export { suppressScrollTracking, suppressScrollForNav } from "./scrollState";
 export { useAutoStartGuide } from "./useAutoStartGuide";
 export { useWordHighlight } from "./useWordHighlight";
 export { useLspClient } from "./useLspClient";

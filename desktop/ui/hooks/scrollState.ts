@@ -25,15 +25,10 @@ export const suppressScrollTracking = (ms: number) =>
   trackingWindow.suppress(ms);
 export const isScrollTrackingSuppressed = () => trackingWindow.isSuppressed();
 
-/** Prevents useScrollAnchor from fighting smooth scroll animations. */
-const correctionWindow = makeSuppressWindow();
-export const suppressScrollCorrection = (ms: number) =>
-  correctionWindow.suppress(ms);
-export const isScrollCorrectionSuppressed = () =>
-  correctionWindow.isSuppressed();
-
-/** Suppress both tracking and correction during a programmatic scroll. */
+/** Suppress scroll tracking during a programmatic scroll. */
 export function suppressScrollForNav(ms: number): void {
   suppressScrollTracking(ms);
-  suppressScrollCorrection(ms);
 }
+
+/** Suppression window covering a smooth programmatic scroll animation. */
+export const NAV_SCROLL_SUPPRESS_MS = 800;

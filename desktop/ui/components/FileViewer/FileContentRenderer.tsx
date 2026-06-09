@@ -1,23 +1,18 @@
 import { memo } from "react";
-import type { TokenEventBase } from "@pierre/diffs";
-import type { LineAnnotation, FileContent } from "../../types";
+import type { FileContent } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
 import { isMarkdownFile } from "./languageMap";
-import { PlainCodeView } from "./PlainCodeView";
-import { DiffView, DiffErrorBoundary } from "./DiffView";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
+import {
+  FileCodeView,
+  type FileCodeViewHandle,
+  type FileCodeViewContent,
+} from "./FileCodeView";
+import type { TokenHoverHandler, TokenClickHandler } from "./diff-model";
 import type { ContentMode } from "./content-mode";
 
-export type TokenHoverHandler = (
-  props: TokenEventBase,
-  event: PointerEvent,
-) => void;
-
-export type TokenClickHandler = (
-  props: TokenEventBase,
-  event: MouseEvent,
-) => void;
+export type { TokenHoverHandler, TokenClickHandler };
 
 interface FileContentRendererProps {
   filePath: string;
@@ -30,17 +25,6 @@ interface FileContentRendererProps {
   highlightLine: number | null;
   lineHeight: number;
   onViewInFile: (line: number) => void;
-  annotations: LineAnnotation[] | undefined;
-  addAnnotation: (
-    filePath: string,
-    lineNumber: number,
-    side: "old" | "new" | "file",
-    content: string,
-  ) => void;
-  updateAnnotation: (id: string, content: string) => void;
-  deleteAnnotation: (id: string) => void;
-  resolveAnnotation: (id: string) => void;
-  unresolveAnnotation: (id: string) => void;
   onNavigateToFile?: (
     repoRelativePath: string,
     options?: { openInSplit?: boolean },
@@ -48,6 +32,10 @@ interface FileContentRendererProps {
   onTokenEnter?: TokenHoverHandler;
   onTokenLeave?: TokenHoverHandler;
   onTokenClick?: TokenClickHandler;
+  /** Receives the code scroll container (null for non-code content modes) */
+  containerRef?: (node: HTMLDivElement | null) => void;
+  /** Imperative scroll API of the rendered CodeView */
+  handleRef?: React.Ref<FileCodeViewHandle>;
 }
 
 export const FileContentRenderer = memo(function FileContentRenderer({
@@ -61,38 +49,56 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   highlightLine,
   lineHeight,
   onViewInFile,
-  annotations: fileAnnotations,
-  addAnnotation,
-  updateAnnotation,
-  deleteAnnotation,
-  resolveAnnotation,
-  unresolveAnnotation,
   onNavigateToFile,
   onTokenEnter,
   onTokenLeave,
   onTokenClick,
+  containerRef,
+  handleRef,
 }: FileContentRendererProps) {
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
     return (
-      <MarkdownViewer
-        content={fileContent.content}
-        filePath={filePath}
-        onNavigateToFile={onNavigateToFile}
-      />
+      <div className="min-w-0 flex-1 h-full overflow-auto scrollbar-thin bg-surface-panel">
+        <MarkdownViewer
+          content={fileContent.content}
+          filePath={filePath}
+          onNavigateToFile={onNavigateToFile}
+        />
+      </div>
     );
   }
+
+  const renderCodeView = (content: FileCodeViewContent) => (
+    <FileCodeView
+      filePath={filePath}
+      content={content}
+      theme={codeTheme}
+      fontCSS={fontCSS}
+      language={effectiveLanguage}
+      lineHeight={lineHeight}
+      highlightLine={highlightLine}
+      onViewInFile={onViewInFile}
+      onTokenEnter={onTokenEnter}
+      onTokenLeave={onTokenLeave}
+      onTokenClick={onTokenClick}
+      containerRef={containerRef}
+      handleRef={handleRef}
+    />
+  );
 
   switch (contentMode.type) {
     case "image":
       if (!fileContent.imageDataUrl) return null;
       return (
-        <ImageViewer
-          imageDataUrl={fileContent.imageDataUrl}
-          oldImageDataUrl={fileContent.oldImageDataUrl}
-          filePath={filePath}
-          hasChanges={fileContent.hunks.length > 0}
-        />
+        <div className="min-w-0 flex-1 h-full overflow-auto scrollbar-thin bg-surface-panel">
+          <ImageViewer
+            imageDataUrl={fileContent.imageDataUrl}
+            oldImageDataUrl={fileContent.oldImageDataUrl}
+            filePath={filePath}
+            hasChanges={fileContent.hunks.length > 0}
+          />
+        </div>
       );
 
     case "diff": {
@@ -127,34 +133,11 @@ export const FileContentRenderer = memo(function FileContentRenderer({
           );
         }
 
-        return (
-          <DiffErrorBoundary
-            key={filePath}
-            fallback={<RenderErrorFallback filePath={filePath} />}
-          >
-            <PlainCodeView
-              content={content}
-              filePath={filePath}
-              highlightLine={highlightLine}
-              theme={codeTheme}
-              fontCSS={fontCSS}
-              language={effectiveLanguage}
-              lineHeight={lineHeight}
-              annotations={fileAnnotations}
-              onAddAnnotation={(lineNumber, content) =>
-                addAnnotation(filePath, lineNumber, "file", content)
-              }
-              onUpdateAnnotation={updateAnnotation}
-              onDeleteAnnotation={deleteAnnotation}
-              onResolveAnnotation={resolveAnnotation}
-              onUnresolveAnnotation={unresolveAnnotation}
-              extraCSS={buildDiffHighlightCSS(fileContent, viewMode)}
-              onTokenEnter={onTokenEnter}
-              onTokenLeave={onTokenLeave}
-              onTokenClick={onTokenClick}
-            />
-          </DiffErrorBoundary>
-        );
+        return renderCodeView({
+          kind: "plain",
+          content,
+          extraCSS: buildDiffHighlightCSS(fileContent, viewMode),
+        });
       }
 
       // Diff view (unified or split)
@@ -165,58 +148,21 @@ export const FileContentRenderer = memo(function FileContentRenderer({
         (fileContent.content?.split("\n").length ?? 0);
       const expandUnchanged = totalLines <= 2500;
 
-      return (
-        <DiffView
-          diffPatch={fileContent.diffPatch}
-          viewMode={viewMode}
-          hunks={fileContent.hunks}
-          theme={codeTheme}
-          fontCSS={fontCSS}
-          onViewInFile={onViewInFile}
-          fileName={filePath}
-          oldContent={fileContent.oldContent}
-          newContent={fileContent.content}
-          language={effectiveLanguage}
-          expandUnchanged={expandUnchanged}
-          highlightLine={highlightLine}
-          lineHeight={lineHeight}
-          onTokenEnter={onTokenEnter}
-          onTokenLeave={onTokenLeave}
-          onTokenClick={onTokenClick}
-        />
-      );
+      return renderCodeView({
+        kind: "diff",
+        diffPatch: fileContent.diffPatch,
+        hunks: fileContent.hunks,
+        oldContent: fileContent.oldContent,
+        newContent: fileContent.content,
+        viewMode,
+        expandUnchanged,
+      });
     }
 
     case "svg":
     case "plain":
       // Plain code view (file view mode, or files without changes)
-      return (
-        <DiffErrorBoundary
-          key={filePath}
-          fallback={<RenderErrorFallback filePath={filePath} />}
-        >
-          <PlainCodeView
-            content={fileContent.content}
-            filePath={filePath}
-            highlightLine={highlightLine}
-            theme={codeTheme}
-            fontCSS={fontCSS}
-            language={effectiveLanguage}
-            lineHeight={lineHeight}
-            annotations={fileAnnotations}
-            onAddAnnotation={(lineNumber, content) =>
-              addAnnotation(filePath, lineNumber, "file", content)
-            }
-            onUpdateAnnotation={updateAnnotation}
-            onDeleteAnnotation={deleteAnnotation}
-            onResolveAnnotation={resolveAnnotation}
-            onUnresolveAnnotation={unresolveAnnotation}
-            onTokenEnter={onTokenEnter}
-            onTokenLeave={onTokenLeave}
-            onTokenClick={onTokenClick}
-          />
-        </DiffErrorBoundary>
-      );
+      return renderCodeView({ kind: "plain", content: fileContent.content });
   }
 });
 
@@ -268,15 +214,4 @@ function buildDiffHighlightCSS(
   ${barCSS}
 }
 `;
-}
-
-function RenderErrorFallback({ filePath }: { filePath: string }) {
-  return (
-    <div className="p-6">
-      <div className="rounded-lg bg-status-rejected/10 border border-status-rejected/20 p-4">
-        <p className="text-status-rejected">Failed to render file view</p>
-        <p className="mt-1 text-sm text-fg-muted">{filePath}</p>
-      </div>
-    </div>
-  );
 }
