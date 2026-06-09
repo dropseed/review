@@ -198,6 +198,31 @@ pub fn get_worktree_base_dir(repo_path: &Path) -> Result<PathBuf, CentralError> 
 static INDEX_CACHE: LazyLock<RwLock<HashMap<PathBuf, RepoIndex>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
+/// Drop stale duplicate entries that point at the same path under different
+/// repo IDs — left behind when the repo-ID scheme changes (e.g. the move to
+/// common-dir-based IDs re-registered repos without removing the old entry).
+/// Keeps the most recently accessed entry per path. Returns true if anything
+/// was removed.
+fn prune_duplicate_paths(index: &mut RepoIndex) -> bool {
+    // Winner per path: latest last_accessed (ISO 8601, so lexicographic
+    // compare is chronological), repo_id as a deterministic tiebreak.
+    let mut keep: HashMap<String, (String, String)> = HashMap::new();
+    for entry in index.repos.values() {
+        let candidate = (entry.last_accessed.clone(), entry.repo_id.clone());
+        match keep.get(&entry.path) {
+            Some(best) if *best >= candidate => {}
+            _ => {
+                keep.insert(entry.path.clone(), candidate);
+            }
+        }
+    }
+    let before = index.repos.len();
+    index
+        .repos
+        .retain(|id, e| keep.get(&e.path).is_none_or(|(_, kid)| kid == id));
+    index.repos.len() != before
+}
+
 /// Load the global repo index (cached in memory).
 fn load_index() -> Result<RepoIndex, CentralError> {
     let root = get_central_root()?;
@@ -212,12 +237,21 @@ fn load_index() -> Result<RepoIndex, CentralError> {
     }
 
     let index_path = root.join("index.json");
-    let index: RepoIndex = if !index_path.exists() {
+    let mut index: RepoIndex = if !index_path.exists() {
         RepoIndex::default()
     } else {
         let content = fs::read_to_string(&index_path)?;
         serde_json::from_str(&content)?
     };
+    // Heal-on-read, mirroring review-file migration: prune stale duplicates
+    // and persist so it only happens once. A failed write still leaves the
+    // pruned index in memory for this run.
+    if prune_duplicate_paths(&mut index) {
+        if let Err(e) = save_index(&index) {
+            log::warn!("[central] failed to persist pruned repo index: {e}");
+        }
+        return Ok(index);
+    }
     INDEX_CACHE
         .write()
         .expect("INDEX_CACHE poisoned")
@@ -390,6 +424,38 @@ pub(crate) mod tests {
             main.path().canonicalize().unwrap()
         );
         assert_eq!(repo_root(main.path()), main.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_prune_duplicate_paths_keeps_latest_accessed() {
+        let mut index = RepoIndex::default();
+        for (id, path, accessed) in [
+            ("old-id-aaaa", "/repos/one", "2025-01-01T00:00:00Z"),
+            ("new-id-bbbb", "/repos/one", "2026-06-01T00:00:00Z"),
+            ("only-id-cccc", "/repos/two", "2024-01-01T00:00:00Z"),
+        ] {
+            index.repos.insert(
+                id.to_string(),
+                RepoIndexEntry {
+                    repo_id: id.to_string(),
+                    path: path.to_string(),
+                    name: "x".to_string(),
+                    last_accessed: accessed.to_string(),
+                },
+            );
+        }
+
+        assert!(prune_duplicate_paths(&mut index));
+        assert_eq!(index.repos.len(), 2);
+        assert!(
+            index.repos.contains_key("new-id-bbbb"),
+            "most recently accessed duplicate must win"
+        );
+        assert!(index.repos.contains_key("only-id-cccc"));
+
+        // Idempotent: a clean index is untouched.
+        assert!(!prune_duplicate_paths(&mut index));
+        assert_eq!(index.repos.len(), 2);
     }
 
     #[test]
