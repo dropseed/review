@@ -1,5 +1,5 @@
 ---
-description: Run the full release process — build, tag, push, and create a draft GitHub release with release notes
+description: Run the full release process — build, tag, push, and publish a GitHub release with release notes
 user_invocable: true
 ---
 
@@ -31,5 +31,8 @@ Orchestrate a full release of the Review desktop app.
    ```bash
    scripts/gh-release <version> <notes-file>
    ```
+   This publishes the release immediately (it is NOT a draft) and uploads the
+   DMGs, updater tarballs, signatures, and `latest.json` — auto-updaters see
+   it as soon as it's created, so the notes must be final before this step.
 
-7. **Print the release URL** so the user can review and publish the draft.
+7. **Print the release URL**.
