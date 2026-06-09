@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { File as PierreFile } from "@pierre/diffs/react";
 import type { LineAnnotation as PierreLineAnnotation } from "@pierre/diffs/react";
+import { useVirtualFileMetrics } from "../../hooks";
 import type { LineAnnotation } from "../../types";
 import type {
   TokenHoverHandler,
@@ -13,7 +14,6 @@ import {
 import type { SupportedLanguages } from "./languageMap";
 import { SimpleTooltip } from "../ui/tooltip";
 import { stringHash } from "../../utils/string-hash";
-import { scrollToTarget } from "../../utils/scroll-to-target";
 
 // Metadata for annotations in file view
 type FileAnnotationMeta =
@@ -69,8 +69,6 @@ export function PlainCodeView({
   onTokenLeave,
   onTokenClick,
 }: PlainCodeViewProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
   // State for new annotation editor
   const [newAnnotationLine, setNewAnnotationLine] = useState<number | null>(
     null,
@@ -80,25 +78,7 @@ export function PlainCodeView({
     null,
   );
 
-  // Scroll to highlighted line inside the shadow DOM.
-  useEffect(() => {
-    if (!highlightLine || !containerRef.current) return;
-
-    const handle = scrollToTarget({
-      container: containerRef.current,
-      findTarget: () => {
-        const shadow =
-          containerRef.current?.querySelector("diffs-container")?.shadowRoot;
-        return shadow?.querySelector(
-          `[data-line="${highlightLine}"]`,
-        ) as HTMLElement | null;
-      },
-      lineNumber: highlightLine,
-      lineHeight,
-    });
-
-    return () => handle.cancel();
-  }, [highlightLine, lineHeight]);
+  const metrics = useVirtualFileMetrics(lineHeight);
 
   // Filter annotations that are for file view (side === "file")
   const fileAnnotations = useMemo(() => {
@@ -244,9 +224,10 @@ export function PlainCodeView({
   );
 
   return (
-    <div ref={containerRef}>
+    <div>
       <PierreFile
         file={fileContents}
+        metrics={metrics}
         selectedLines={
           highlightLine
             ? { start: highlightLine, end: highlightLine, side: "additions" }

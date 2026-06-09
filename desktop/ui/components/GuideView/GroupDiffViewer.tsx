@@ -25,6 +25,7 @@ import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
 import { FileDiffStackItem } from "../ui/file-diff-stack-item";
+import { useHunkBlockScrollTarget, useCodeFont } from "../../hooks";
 
 function CheckIcon(): ReactNode {
   return (
@@ -354,8 +355,6 @@ export function GroupDiffViewer({
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const setDiffViewMode = useReviewStore((s) => s.setDiffViewMode);
   const codeTheme = useReviewStore((s) => s.codeTheme);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const [fileContents, setFileContents] = useState<Map<string, FileContent>>(
@@ -367,6 +366,7 @@ export function GroupDiffViewer({
   >(new Map());
   const [expandingHunks, setExpandingHunks] = useState<Set<string>>(new Set());
   const lineCacheRef = useRef<LineCache>(new Map());
+  const [rootNode, setRootNode] = useState<HTMLDivElement | null>(null);
 
   const hunkById = useHunkById();
 
@@ -592,8 +592,16 @@ export function GroupDiffViewer({
 
   const isCompleted = unreviewedIds.length === 0;
 
-  const lineHeight = Math.round(codeFontSize * 1.5);
-  const fontCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; --diffs-font-family: ${codeFontFamily}; }`;
+  const { lineHeight, fontCSS } = useCodeFont();
+
+  // Scroll-to-hunk for this surface: hunk blocks are light-DOM wrappers
+  // tagged with their source hunk IDs, so targets resolve to a direct
+  // scrollIntoView on the wrapper. Re-attempt once file contents load.
+  const loadedContentKey = useMemo(
+    () => [...fileContents.keys()].join(","),
+    [fileContents],
+  );
+  useHunkBlockScrollTarget(rootNode, group.hunkIds, loadedContentKey);
 
   const handleApproveAll = useCallback(() => {
     if (unreviewedIds.length > 0) approveHunkIds(unreviewedIds);
@@ -719,6 +727,8 @@ export function GroupDiffViewer({
           const lastSourceHunk =
             blockSources[blockSources.length - 1] ??
             fileHunks.find((h) => h.id === hunk.id)!;
+          const blockHunkIds =
+            blockSources.length > 0 ? blockSources.map((h) => h.id) : [hunk.id];
 
           return (
             <Fragment key={hunk.id}>
@@ -735,16 +745,21 @@ export function GroupDiffViewer({
                   }
                 />
               )}
-              <DiffView
-                key={`${hunk.id}:${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`}
-                diffPatch={buildFilteredPatch(fc.diffPatch, [hunk], filePath)}
-                viewMode={effectiveViewMode(diffViewMode)}
-                hunks={[hunk]}
-                theme={codeTheme}
-                fontCSS={fontCSS}
-                fileName={filePath}
-                expandUnchanged={false}
-              />
+              {/* data-hunk-ids marks this block as the scroll anchor for its
+                  source hunks (consumed by useHunkBlockScrollTarget). */}
+              <div data-hunk-ids={blockHunkIds.join("\n")}>
+                <DiffView
+                  key={`${hunk.id}:${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`}
+                  diffPatch={buildFilteredPatch(fc.diffPatch, [hunk], filePath)}
+                  viewMode={effectiveViewMode(diffViewMode)}
+                  hunks={[hunk]}
+                  theme={codeTheme}
+                  fontCSS={fontCSS}
+                  lineHeight={lineHeight}
+                  fileName={filePath}
+                  expandUnchanged={false}
+                />
+              </div>
               {i === expandedHunks.length - 1 && !atBottomOfFile && (
                 <ExpandContextBar
                   label={`↓ Expand ${EXPAND_STEP} lines below`}
@@ -762,7 +777,7 @@ export function GroupDiffViewer({
   }
 
   return (
-    <div>
+    <div ref={setRootNode}>
       {/* Group header */}
       <div className="sticky top-0 z-10 bg-surface-panel/95 backdrop-blur-sm border-b border-edge/50 px-4 py-2.5">
         {/* Row 1: Badge + title + close button */}

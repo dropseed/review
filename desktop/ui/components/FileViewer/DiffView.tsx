@@ -15,6 +15,7 @@ import {
   areFilesEqual,
   areOptionsEqual,
 } from "@pierre/diffs";
+import { useVirtualFileMetrics } from "../../hooks";
 import type {
   TokenHoverHandler,
   TokenClickHandler,
@@ -36,10 +37,6 @@ import {
 } from "./annotations";
 import { getLastChangedLine } from "./hunkUtils";
 import type { SupportedLanguages } from "./languageMap";
-import {
-  scrollToTarget,
-  type ScrollHandle,
-} from "../../utils/scroll-to-target";
 
 // Error boundary to catch rendering errors
 export class DiffErrorBoundary extends Component<
@@ -169,9 +166,9 @@ interface DiffViewProps {
   language?: SupportedLanguages;
   /** Whether to expand all unchanged sections (default: true for full file view) */
   expandUnchanged?: boolean;
-  /** Line number to scroll to (from in-file search) */
+  /** Line number to highlight (scrolling is handled by the container owner) */
   highlightLine?: number | null;
-  /** Line height in px — used to compute scroll position for off-screen targets */
+  /** Line height in px — fed to the virtualizer's height estimates */
   lineHeight?: number;
   /** Token enter/leave hooks (e.g. LSP hover) wired into pierre/diffs options */
   onTokenEnter?: TokenHoverHandler;
@@ -207,12 +204,6 @@ export function DiffView({
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
   const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
 
-  // Ref to track focused hunk element for scrolling
-  const focusedHunkRef = useRef<HTMLDivElement | null>(null);
-
-  // Active scroll operation handle (for cancel + onPostRender notification)
-  const scrollHandleRef = useRef<ScrollHandle | null>(null);
-
   // Hash file contents once for use in cache keys and content-change detection.
   const oldContentHash = useMemo(
     () => stringHash(oldContent ?? ""),
@@ -229,110 +220,6 @@ export function DiffView({
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
   const contentKey = `${fileName}:${oldContentHash}:${newContentHash}`;
   const highlightReady = useSyntaxHighlightReady(diffContainerRef, contentKey);
-
-  // New-side line count for proportion-based scroll (handles word wrap).
-  // Scroll targets use new-file line numbers, so this is the correct denominator.
-  const newLineCount = useMemo(() => countLines(newContent), [newContent]);
-
-  /** Find a line element inside the @pierre/diffs shadow DOM. */
-  function findLineInShadowDOM(lineNumber: number): HTMLElement | null {
-    const shadow =
-      diffContainerRef.current?.querySelector("diffs-container")?.shadowRoot;
-    return (
-      (shadow?.querySelector(
-        `[data-line="${lineNumber}"]:not([data-line-type="removed"])`,
-      ) as HTMLElement | null) ??
-      (shadow?.querySelector(
-        `[data-line="${lineNumber}"]`,
-      ) as HTMLElement | null)
-    );
-  }
-
-  // Called by @pierre/diffs after every shadow DOM render.
-  // Notifies the active scroll operation so it can check for the target.
-  const handlePostRender = useCallback((_node: HTMLElement) => {
-    scrollHandleRef.current?.notify();
-  }, []);
-
-  // Scroll to focused hunk when scrollTarget changes (type "hunk").
-  // Uses store.subscribe to avoid re-rendering on every scrollTarget change.
-  // Deferred via rAF so React has time to render and assign focusedHunkRef.
-
-  const scrollFallbackRef = useRef({ hunks, lineHeight, newLineCount });
-  scrollFallbackRef.current = { hunks, lineHeight, newLineCount };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    function handleScrollTarget(): void {
-      if (cancelled) return;
-      const { scrollTarget } = useReviewStore.getState();
-      if (!scrollTarget || scrollTarget.type !== "hunk") return;
-      const targetHunkId = scrollTarget.hunkId;
-      useReviewStore.getState().clearScrollTarget();
-
-      const {
-        hunks: h,
-        lineHeight: lh,
-        newLineCount: nl,
-      } = scrollFallbackRef.current;
-      const hunk = h.find((x) => x.id === targetHunkId);
-      if (!hunk || !diffContainerRef.current) return;
-
-      scrollHandleRef.current?.cancel();
-      scrollHandleRef.current = scrollToTarget({
-        container: diffContainerRef.current,
-        findTarget: () => {
-          const el = focusedHunkRef.current;
-          if (!el || !el.isConnected) return null;
-          return el.getBoundingClientRect().height > 0 ? el : null;
-        },
-        lineNumber: hunk.newStart,
-        lineHeight: lh,
-        totalLines: nl,
-      });
-    }
-
-    const initialFrame = requestAnimationFrame(handleScrollTarget);
-
-    const unsubscribe = useReviewStore.subscribe((state, prevState) => {
-      if (
-        state.scrollTarget !== prevState.scrollTarget &&
-        state.scrollTarget?.type === "hunk"
-      ) {
-        requestAnimationFrame(handleScrollTarget);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(initialFrame);
-      scrollHandleRef.current?.cancel();
-      unsubscribe();
-    };
-  }, []);
-
-  // Scroll to highlighted line (from in-file search / symbol jump).
-  useEffect(() => {
-    if (!highlightLine || !diffContainerRef.current) return;
-
-    const frame = requestAnimationFrame(() => {
-      if (!diffContainerRef.current) return;
-      scrollHandleRef.current?.cancel();
-      scrollHandleRef.current = scrollToTarget({
-        container: diffContainerRef.current,
-        findTarget: () => findLineInShadowDOM(highlightLine),
-        lineNumber: highlightLine,
-        lineHeight,
-        totalLines: newLineCount,
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(frame);
-      scrollHandleRef.current?.cancel();
-    };
-  }, [highlightLine, lineHeight, newLineCount]);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
@@ -559,7 +446,6 @@ export function DiffView({
     setEditingAnnotationId: typeof setEditingAnnotationId;
     hunks: typeof hunks;
     getSimilarHunks: typeof getSimilarHunks;
-    focusedHunkRef: typeof focusedHunkRef;
     reviewState: typeof reviewState;
     hunkStates: typeof hunkStates;
     handleCopyHunk: typeof handleCopyHunk;
@@ -577,7 +463,6 @@ export function DiffView({
     setEditingAnnotationId,
     hunks,
     getSimilarHunks,
-    focusedHunkRef,
     reviewState,
     hunkStates,
     handleCopyHunk,
@@ -647,7 +532,6 @@ export function DiffView({
             return (
               <WorkingTreeHunkPanel
                 hunk={hunk}
-                focusedHunkRef={deps.focusedHunkRef}
                 hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
                 totalHunksInFile={deps.hunks.length}
                 mode={deps.workingTreeDiffMode}
@@ -674,7 +558,6 @@ export function DiffView({
               <TrustedHunkBadge
                 hunk={hunk}
                 hunkState={hunkState}
-                focusedHunkRef={deps.focusedHunkRef}
                 trustList={trustList}
                 onApprove={(hunkId) => {
                   const s = useReviewStore.getState();
@@ -706,7 +589,6 @@ export function DiffView({
               hunkState={hunkState}
               pairedHunk={pairedHunk}
               isSource={isSource}
-              focusedHunkRef={deps.focusedHunkRef}
               trustList={deps.reviewState?.trustList ?? []}
               hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
               totalHunksInFile={deps.hunks.length}
@@ -940,7 +822,6 @@ export function DiffView({
     enableLineSelection: boolean;
     onGutterUtilityClick: typeof handleGutterUtilityClick;
     onLineSelectionEnd: typeof handleLineSelectionEnd;
-    onPostRender: typeof handlePostRender;
     onTokenEnter?: TokenHoverHandler;
     onTokenLeave?: TokenHoverHandler;
     onTokenClick?: TokenClickHandler;
@@ -973,7 +854,6 @@ export function DiffView({
       enableLineSelection: true,
       onGutterUtilityClick: handleGutterUtilityClick,
       onLineSelectionEnd: handleLineSelectionEnd,
-      onPostRender: handlePostRender,
       onTokenEnter,
       onTokenLeave,
       onTokenClick,
@@ -1005,12 +885,13 @@ export function DiffView({
     diffOverflow,
     handleGutterUtilityClick,
     handleLineSelectionEnd,
-    handlePostRender,
     expandUnchangedProp,
     onTokenEnter,
     onTokenLeave,
     onTokenClick,
   ]);
+
+  const metrics = useVirtualFileMetrics(lineHeight);
 
   return (
     <div className="diff-container relative" ref={diffContainerRef}>
@@ -1040,6 +921,7 @@ export function DiffView({
             key={`${oldFile.cacheKey}|${newFile.cacheKey}`}
             oldFile={oldFile}
             newFile={newFile}
+            metrics={metrics}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
             selectedLines={
@@ -1056,6 +938,7 @@ export function DiffView({
         ) : (
           <FileDiff
             fileDiff={parsedFileDiff!}
+            metrics={metrics}
             lineAnnotations={lineAnnotations}
             renderAnnotation={renderAnnotation}
             selectedLines={

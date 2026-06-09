@@ -1,4 +1,5 @@
 import { PatchDiff, Virtualizer } from "@pierre/diffs/react";
+import { useCodeFont, useVirtualFileMetrics } from "../../hooks";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
@@ -104,8 +105,8 @@ interface CommitDiffContentProps {
 export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
   const codeTheme = useReviewStore((s) => s.codeTheme);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const { lineHeight, fontCSS } = useCodeFont();
+  const metrics = useVirtualFileMetrics(lineHeight);
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const setViewingCommitHash = useReviewStore((s) => s.setViewingCommitHash);
   const effectiveDiffStyle = diffViewMode === "unified" ? "unified" : "split";
@@ -308,6 +309,7 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
               <PatchDiff
                 patch={patch}
                 renderCustomHeader={renderPatchHeader}
+                metrics={metrics}
                 options={{
                   diffStyle: effectiveDiffStyle,
                   theme: {
@@ -315,7 +317,7 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
                     light: codeTheme,
                   },
                   themeType: "dark" as const,
-                  unsafeCSS: `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${Math.round(codeFontSize * 1.5)}px; --diffs-font-family: ${codeFontFamily}; }`,
+                  unsafeCSS: fontCSS,
                 }}
               />
             </div>

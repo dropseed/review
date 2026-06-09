@@ -16,6 +16,12 @@ export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 export { useCelebration } from "./useCelebration";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";
 export { useScrollAnchor } from "./useScrollAnchor";
+export {
+  useHunkScrollTarget,
+  useLineHighlightScroll,
+  useHunkBlockScrollTarget,
+} from "./useScrollTargets";
+export { useCodeFont, useVirtualFileMetrics } from "./useCodeFont";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
 export { useFeedbackPanel } from "./useFeedbackPanel";

@@ -1,4 +1,3 @@
-import type { MutableRefObject } from "react";
 import type { DiffHunk, HunkState, Source } from "../../../types";
 import { isHunkTrusted, hunkLabels } from "../../../types";
 import { useReviewStore } from "../../../stores";
@@ -78,7 +77,6 @@ interface HunkAnnotationPanelProps {
   hunkState: HunkState | undefined;
   pairedHunk: DiffHunk | null;
   isSource: boolean;
-  focusedHunkRef: MutableRefObject<HTMLDivElement | null>;
   trustList: string[];
   hunkPosition?: number; // 1-indexed position in file
   totalHunksInFile?: number;
@@ -108,7 +106,6 @@ export function HunkAnnotationPanel({
   hunkState,
   pairedHunk,
   isSource,
-  focusedHunkRef,
   trustList,
   hunkPosition,
   totalHunksInFile,
@@ -140,15 +137,14 @@ export function HunkAnnotationPanel({
   // this app (e.g. an agent that approved via the CLI), the symmetric twin of
   // the risk badge's agent styling.
   const statusBy = setBySuffix(hunkState?.status?.source);
-  // Drives ref assignment and tabIndex only. Visual focus (border, ring,
-  // button visibility) uses the data-scroll-focused DOM attribute to avoid
-  // React re-renders during active scrolling.
+  // Drives tabIndex only. Visual focus (border, ring, button visibility)
+  // uses the data-scroll-focused DOM attribute to avoid React re-renders
+  // during active scrolling.
   const isFocused = useIsFocusedHunk(hunk.id);
 
   return (
     <div
       data-hunk-id={hunk.id}
-      ref={isFocused ? focusedHunkRef : undefined}
       className={`group/panel @container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 border border-edge-default/40 data-[scroll-focused]:border-edge-strong/60 data-[scroll-focused]:ring-1 data-[scroll-focused]:ring-fg/25 ${getHunkBackgroundClass(reviewStatus)}`}
     >
       {pairedHunk && (

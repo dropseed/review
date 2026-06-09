@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
+import { useCodeFont } from "../../hooks";
 import { getApiClient } from "../../api";
 import type { FileContent } from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
@@ -26,8 +27,7 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
   const workingTreePath = useReviewStore((s) => s.worktreePath ?? s.repoPath);
   const codeTheme = useReviewStore((s) => s.codeTheme);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const { lineHeight, fontCSS } = useCodeFont();
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const fileVersions = useReviewStore((s) => s.fileVersions);
@@ -153,8 +153,6 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
     );
   }
 
-  const lineHeight = Math.round(codeFontSize * 1.5);
-  const fontCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; --diffs-font-family: ${codeFontFamily}; }`;
   const effectiveViewMode = diffViewMode === "split" ? "split" : "unified";
 
   function renderFileContent(fc: FileContent, filePath: string): ReactNode {
@@ -200,6 +198,7 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
           hunks={fc.hunks}
           theme={codeTheme}
           fontCSS={fontCSS}
+          lineHeight={lineHeight}
           fileName={filePath}
           oldContent={fc.oldContent}
           newContent={fc.content}

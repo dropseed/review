@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useRef } from "react";
 import type { ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
-import { usePrefersReducedMotion } from "../../hooks";
+import { usePrefersReducedMotion, suppressScrollForNav } from "../../hooks";
+import { NAV_SCROLL_SUPPRESS_MS } from "../../utils/scroll-to-target";
 import { useReviewStore } from "../../stores";
 
 // --- Public types ---
@@ -123,6 +124,8 @@ export const DiffMinimap = memo(function DiffMinimap({
       const fraction = (e.clientY - rect.top) / rect.height;
       const maxScroll =
         scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      // Keep scroll tracking/anchor correction from fighting the animation.
+      suppressScrollForNav(NAV_SCROLL_SUPPRESS_MS);
       scrollContainer.scrollTo({
         top: fraction * maxScroll,
         behavior: "smooth",

@@ -241,6 +241,14 @@ export interface DiffHunk {
   movePairId?: string;
 }
 
+/**
+ * Whether a hunk ID names the given file. Hunk IDs are `filepath:hash`
+ * (see DiffHunk.id) — this is the one place that structure is parsed.
+ */
+export function hunkIdBelongsToFile(hunkId: string, filePath: string): boolean {
+  return hunkId.startsWith(`${filePath}:`);
+}
+
 // Move pair information
 export interface MovePair {
   sourceHunkId: string;

@@ -1,7 +1,5 @@
-import type { MutableRefObject } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
 import { hunkLabels } from "../../../types";
-import { useIsFocusedHunk } from "../../../hooks";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -12,7 +10,6 @@ import {
 interface TrustedHunkBadgeProps {
   hunk: DiffHunk;
   hunkState: HunkState | undefined;
-  focusedHunkRef: MutableRefObject<HTMLDivElement | null>;
   trustList: string[];
   onApprove: (hunkId: string) => void;
   onReject: (hunkId: string) => void;
@@ -23,21 +20,18 @@ interface TrustedHunkBadgeProps {
 export function TrustedHunkBadge({
   hunk,
   hunkState,
-  focusedHunkRef,
   trustList,
   onApprove,
   onReject,
   onRemoveTrustPattern,
   onCopyHunk,
 }: TrustedHunkBadgeProps) {
-  const isFocused = useIsFocusedHunk(hunk.id);
   const labels = hunkLabels(hunkState);
   const trustedLabels = labels.filter((lbl) => trustList.includes(lbl));
 
   return (
     <div
       data-hunk-id={hunk.id}
-      ref={isFocused ? focusedHunkRef : undefined}
       className="flex items-center gap-2 px-3 py-1 mx-2 my-1 rounded-md transition-[border-color,box-shadow] duration-150 border border-transparent data-[scroll-focused]:border-edge-strong/40 data-[scroll-focused]:ring-1 data-[scroll-focused]:ring-fg/15 bg-status-renamed/[0.03] data-[scroll-focused]:bg-status-renamed/5"
     >
       <svg

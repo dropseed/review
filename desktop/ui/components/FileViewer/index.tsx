@@ -11,7 +11,7 @@ import { VirtualizerContext } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
-import type { FileContent, FileEntry } from "../../types";
+import type { DiffHunk, FileContent, FileEntry } from "../../types";
 import { Spinner } from "../ui/spinner";
 import { isHunkReviewed, makeComparison } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
@@ -23,10 +23,14 @@ import {
 import {
   useScrollHunkTracking,
   useScrollAnchor,
+  useHunkScrollTarget,
+  useLineHighlightScroll,
+  useCodeFont,
   useSymbolNavigation,
   useWordHighlight,
   useHoverInfo,
 } from "../../hooks";
+import { countLines } from "../../utils/count-lines";
 import { InFileSearchBar } from "./InFileSearchBar";
 import { GoToLineBar } from "./GoToLineBar";
 import {
@@ -48,6 +52,7 @@ import { useDiffViewMode } from "./hooks/useDiffViewMode";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
+const EMPTY_HUNKS: DiffHunk[] = [];
 
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
@@ -79,8 +84,6 @@ export function FileViewer({
     repoPath,
     workingTreePath,
     codeTheme,
-    codeFontSize,
-    codeFontFamily,
     reviewState,
     fileHunks,
     fileVersion,
@@ -157,9 +160,8 @@ export function FileViewer({
     [dismissHover, onTokenClickSymbol, onTokenClickHighlight],
   );
 
-  // Generate CSS for font injection into pierre/diffs shadow DOM
-  const lineHeight = Math.round(codeFontSize * 1.5);
-  const fontCSS = `:host { --diffs-font-size: ${codeFontSize}px; --diffs-line-height: ${lineHeight}px; --diffs-font-family: ${codeFontFamily}; }`;
+  // Font geometry shared between shadow DOM CSS and virtualizer metrics
+  const { lineHeight, fontCSS } = useCodeFont();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
@@ -467,16 +469,15 @@ export function FileViewer({
     externalFilePath,
   ]);
 
-  const totalLineCount = useMemo(() => {
-    const s =
-      viewMode === "old" ? fileContent?.oldContent : fileContent?.content;
-    if (!s) return 0;
-    let count = 1;
-    for (let i = 0; i < s.length; i++) {
-      if (s.charCodeAt(i) === 10) count++;
-    }
-    return count;
-  }, [fileContent?.content, fileContent?.oldContent, viewMode]);
+  const newLineCount = useMemo(
+    () => countLines(fileContent?.content),
+    [fileContent?.content],
+  );
+  const totalLineCount = useMemo(
+    () =>
+      viewMode === "old" ? countLines(fileContent?.oldContent) : newLineCount,
+    [fileContent?.oldContent, newLineCount, viewMode],
+  );
 
   const trustList = reviewState?.trustList ?? [];
 
@@ -576,6 +577,32 @@ export function FileViewer({
   // Track scroll position to update focused hunk
   useScrollHunkTracking(scrollNode, fileHunks);
   useScrollAnchor(scrollNode, filePath);
+
+  // Consume store scrollTargets addressed to this container. This viewer
+  // owns the scroll container, so it owns scroll orchestration — DiffView
+  // and PlainCodeView are pure renderers.
+  const contentReady = !loading && fileContentPath === filePath;
+  const renderedHunks = useMemo(
+    () => (contentReady ? (fileContent?.hunks ?? EMPTY_HUNKS) : EMPTY_HUNKS),
+    [contentReady, fileContent?.hunks],
+  );
+  useHunkScrollTarget({
+    scrollContainer: scrollNode,
+    filePath,
+    hunks: renderedHunks,
+    lineHeight,
+    totalLines: newLineCount,
+    pane,
+    enabled: contentReady,
+  });
+
+  // Scroll to the highlighted line (in-file search, go-to-line, symbol jump).
+  useLineHighlightScroll(
+    contentReady ? scrollNode : null,
+    highlightLine,
+    lineHeight,
+    totalLineCount,
+  );
 
   // Check if file is gitignored (from the file tree's allFiles)
   const isGitignored = useReviewStore((s) =>

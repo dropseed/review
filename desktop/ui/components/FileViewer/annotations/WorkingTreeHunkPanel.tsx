@@ -1,6 +1,5 @@
-import type { MutableRefObject, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { DiffHunk } from "../../../types";
-import { useIsFocusedHunk } from "../../../hooks";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -11,7 +10,6 @@ import { SimpleTooltip } from "../../ui/tooltip";
 
 interface WorkingTreeHunkPanelProps {
   hunk: DiffHunk;
-  focusedHunkRef: MutableRefObject<HTMLDivElement | null>;
   hunkPosition?: number;
   totalHunksInFile?: number;
   mode: "staged" | "unstaged";
@@ -23,7 +21,6 @@ interface WorkingTreeHunkPanelProps {
 
 export function WorkingTreeHunkPanel({
   hunk,
-  focusedHunkRef,
   hunkPosition,
   totalHunksInFile,
   mode,
@@ -32,12 +29,9 @@ export function WorkingTreeHunkPanel({
   onCopyHunk,
   onViewInFile,
 }: WorkingTreeHunkPanelProps): ReactNode {
-  const isFocused = useIsFocusedHunk(hunk.id);
-
   return (
     <div
       data-hunk-id={hunk.id}
-      ref={isFocused ? focusedHunkRef : undefined}
       className="group/panel @container flex items-center gap-2 overflow-x-auto px-3 py-1.5 mx-2 my-1.5 rounded-lg shadow-depth transition-[border-color,box-shadow] duration-150 border border-edge-default/40 data-[scroll-focused]:border-edge-strong/60 data-[scroll-focused]:ring-1 data-[scroll-focused]:ring-fg/25 bg-surface-raised/90"
     >
       {mode === "unstaged" ? (

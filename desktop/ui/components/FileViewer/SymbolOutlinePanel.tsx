@@ -9,6 +9,7 @@ import {
   nestMarkdownHeadings,
 } from "../symbols/utils";
 import { isMarkdownFile } from "./languageMap";
+import { useCodeFont } from "../../hooks";
 
 interface SymbolOutlinePanelProps {
   filePath: string;
@@ -53,7 +54,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
 }: SymbolOutlinePanelProps) {
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const toggleOutline = useReviewStore((s) => s.toggleOutline);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const { lineHeight } = useCodeFont();
 
   const [filter, setFilter] = useState("");
   const [activeStartLine, setActiveStartLine] = useState<number | null>(null);
@@ -111,8 +112,6 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
   // doesn't need to re-attach when the tree changes.
   const symbolsRef = useRef(outlineSymbols);
   symbolsRef.current = outlineSymbols;
-
-  const lineHeight = Math.round(codeFontSize * 1.5);
 
   useEffect(() => {
     if (!scrollNode) return;
