@@ -313,9 +313,9 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
         resolved_by: None,
     };
 
-    let (comparison, _hunks, live_ids) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
     let to_push = new_annotation.clone();
-    let state = mutate_review(&repo, &comparison, &live_ids, |state| {
+    let state = mutate_review(&repo, &comparison, &hunks, |state| {
         state.annotations.push(to_push.clone());
         true
     })?;
@@ -339,7 +339,7 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
 /// `review comment edit` — replace the content of an existing comment.
 pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, _hunks, live_ids) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
 
     let id = args.id.clone();
     let new_content = args.content.clone();
@@ -347,7 +347,7 @@ pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
     let state = mutate_review(
         &repo,
         &comparison,
-        &live_ids,
+        &hunks,
         |state| match find_annotation_mut(state, &id) {
             Some(a) if a.content == new_content => {
                 outcome.set(MutationOutcome::NoOp);
@@ -381,7 +381,7 @@ pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
 /// `review comment resolve` — mark a comment as resolved.
 pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, _hunks, live_ids) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
 
     let by = args
         .by
@@ -390,7 +390,7 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
     let id = args.id.clone();
     let by_for_apply = by.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
-    let state = mutate_review(&repo, &comparison, &live_ids, |state| {
+    let state = mutate_review(&repo, &comparison, &hunks, |state| {
         match find_annotation_mut(state, &id) {
             Some(a) if a.resolved_at.is_some() => {
                 // Already resolved — keep the prior resolver's attribution
@@ -426,14 +426,14 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
 /// `review comment unresolve` — clear the resolved state.
 pub fn run_unresolve(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, _hunks, live_ids) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
 
     let id = args.id.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
     let state = mutate_review(
         &repo,
         &comparison,
-        &live_ids,
+        &hunks,
         |state| match find_annotation_mut(state, &id) {
             Some(a) if a.resolved_at.is_none() => {
                 outcome.set(MutationOutcome::NoOp);
@@ -467,11 +467,11 @@ pub fn run_unresolve(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
 /// `review comment delete` — remove a comment.
 pub fn run_delete(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, _hunks, live_ids) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
 
     let id = args.id.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
-    let state = mutate_review(&repo, &comparison, &live_ids, |state| {
+    let state = mutate_review(&repo, &comparison, &hunks, |state| {
         let before = state.annotations.len();
         state.annotations.retain(|a| a.id != id);
         if state.annotations.len() == before {

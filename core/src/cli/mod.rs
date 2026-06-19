@@ -36,7 +36,9 @@ pub enum Commands {
         #[arg(short, long)]
         repo: Option<String>,
 
-        /// Comparison spec: "base..head" or a single ref (compared against default branch).
+        /// Comparison spec: "base..head"; a branch/tag (compared against the
+        /// default branch); a bare commit (SHA, HEAD, HEAD~n — reviewed on its
+        /// own); or "<rev>^!" (also a single commit).
         /// Auto-detects from branches if not specified.
         spec: Option<String>,
 
@@ -47,6 +49,37 @@ pub enum Commands {
         /// The new side of the diff (defaults to current branch)
         #[arg(long)]
         new: Option<String>,
+
+        /// Review just this one commit (its diff against its parent)
+        #[arg(long, value_name = "REV", conflicts_with_all = ["spec", "old", "new"])]
+        commit: Option<String>,
+
+        /// Review only uncommitted changes (staged, unstaged, and untracked) on
+        /// the current branch — i.e. everything since the last commit.
+        #[arg(long, conflicts_with_all = ["spec", "old", "new", "commit"])]
+        working: bool,
+
+        /// Review only staged changes (the git index — what would be committed).
+        #[arg(long, conflicts_with_all = ["spec", "old", "new", "commit", "working"])]
+        staged: bool,
+
+        /// Review a stash entry's changes (defaults to the most recent, stash@{0}).
+        #[arg(
+            long,
+            value_name = "N",
+            num_args = 0..=1,
+            default_missing_value = "0",
+            conflicts_with_all = ["spec", "old", "new", "commit", "working", "staged"]
+        )]
+        stash: Option<u32>,
+
+        /// Review a unified-diff patch applied on top of HEAD ("-" reads stdin).
+        #[arg(
+            long,
+            value_name = "FILE",
+            conflicts_with_all = ["spec", "old", "new", "commit", "working", "staged", "stash"]
+        )]
+        patch: Option<String>,
     },
 
     /// List uncommitted working-tree changes as individual hunks
@@ -196,7 +229,16 @@ pub fn run(cli: Cli) -> Result<(), String> {
             spec,
             old,
             new,
-        }) => run_start(repo, spec, old, new, has_home_override),
+            commit,
+            working,
+            staged,
+            stash,
+            patch,
+        }) => run_start(
+            repo,
+            StartTarget::from_args(spec, old, new, commit, working, staged, stash, patch),
+            has_home_override,
+        ),
         Some(Commands::Changes(args)) => staging::run_changes(args),
         Some(Commands::Stage(args)) => staging::run_stage(args, false),
         Some(Commands::Unstage(args)) => staging::run_stage(args, true),
@@ -243,22 +285,81 @@ fn run_open(path: Option<String>, has_home_override: bool) -> Result<(), String>
 }
 
 /// `review start [spec]` — resolve a comparison, persist review state, open the app.
+/// What to review, selected by the mutually-exclusive `review start` flags. New
+/// target kinds (e.g. `--patch`, `--pr`) become a variant here rather than
+/// another argument threaded through `run_start`.
+enum StartTarget {
+    /// Default: current branch vs default branch, honoring `--old`/`--new`.
+    Compare {
+        old: Option<String>,
+        new: Option<String>,
+    },
+    /// A comparison spec (`a..b`, a bare ref, `<rev>^!`, `snapshot:<ref>`).
+    Spec(String),
+    /// Just one commit (`--commit <rev>`).
+    Commit(String),
+    /// Uncommitted changes only (`--working`).
+    Working,
+    /// Staged changes only (`--staged`).
+    Staged,
+    /// A stash entry (`--stash [<n>]`).
+    Stash(u32),
+    /// A unified-diff patch from a file or stdin (`--patch <file|->`).
+    Patch(String),
+}
+
+impl StartTarget {
+    /// Pick the target from the parsed flags. clap's `conflicts_with` guarantees
+    /// at most one selector is set; the order here is just a defensive tiebreak.
+    #[allow(clippy::too_many_arguments)]
+    fn from_args(
+        spec: Option<String>,
+        old: Option<String>,
+        new: Option<String>,
+        commit: Option<String>,
+        working: bool,
+        staged: bool,
+        stash: Option<u32>,
+        patch: Option<String>,
+    ) -> Self {
+        if working {
+            StartTarget::Working
+        } else if staged {
+            StartTarget::Staged
+        } else if let Some(n) = stash {
+            StartTarget::Stash(n)
+        } else if let Some(src) = patch {
+            StartTarget::Patch(src)
+        } else if let Some(rev) = commit {
+            StartTarget::Commit(rev)
+        } else if let Some(spec) = spec {
+            StartTarget::Spec(spec)
+        } else {
+            StartTarget::Compare { old, new }
+        }
+    }
+
+    fn resolve(self, repo_path: &Path) -> Result<Comparison, String> {
+        match self {
+            StartTarget::Working => resolve_working_comparison(repo_path),
+            StartTarget::Staged => resolve_staged_comparison(repo_path),
+            StartTarget::Stash(n) => resolve_stash_comparison(repo_path, n),
+            StartTarget::Patch(src) => resolve_patch_comparison(repo_path, &src),
+            StartTarget::Commit(rev) => resolve_commit_comparison(repo_path, &rev),
+            StartTarget::Spec(spec) => parse_comparison_spec(repo_path, &spec),
+            StartTarget::Compare { old, new } => resolve_comparison(repo_path, old, new),
+        }
+    }
+}
+
 fn run_start(
     repo: Option<String>,
-    spec: Option<String>,
-    old: Option<String>,
-    new: Option<String>,
+    target: StartTarget,
     has_home_override: bool,
 ) -> Result<(), String> {
     let repo_path = get_repo_path(&repo)?;
     let path = PathBuf::from(&repo_path);
-
-    let comparison = if let Some(spec) = spec {
-        parse_comparison_spec(&path, &spec)?
-    } else {
-        resolve_comparison(&path, old, new)?
-    };
-
+    let comparison = target.resolve(&path)?;
     storage::ensure_review_exists(&path, &comparison, None).map_err(|e| e.to_string())?;
     open_app(&repo_path, Some(&comparison.key), None)?;
     warn_home_override(has_home_override);
@@ -273,6 +374,18 @@ pub(crate) fn resolve_comparison(
     new: Option<String>,
 ) -> Result<Comparison, String> {
     let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    Ok(resolve_comparison_with(&source, old, new))
+}
+
+/// Resolve a comparison from optional `--old`/`--new` overrides against an
+/// already-built source, defaulting each missing side to the repo's default /
+/// current branch. Reused by `parse_comparison_spec` to avoid rebuilding a
+/// `LocalGitSource` on the common single-ref path.
+fn resolve_comparison_with(
+    source: &LocalGitSource,
+    old: Option<String>,
+    new: Option<String>,
+) -> Comparison {
     let base = old.unwrap_or_else(|| {
         source
             .get_default_branch()
@@ -283,18 +396,140 @@ pub(crate) fn resolve_comparison(
             .get_current_branch()
             .unwrap_or_else(|_| "HEAD".to_owned())
     });
+    Comparison::new(base, head)
+}
+
+/// Parse a comparison spec into a `Comparison`. Forms:
+/// - `a..b` — explicit base/head range (an empty side means `HEAD`, like git).
+/// - `<rev>^!` — review just that one commit (git-native syntax).
+/// - `snapshot:<ref>` — the full tree at a ref, diffed against the empty tree.
+/// - a bare **branch or tag** — compared against the default branch.
+/// - a bare **commit** (SHA, `HEAD`, `HEAD~n`) — reviewed on its own.
+pub(crate) fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comparison, String> {
+    // Explicit range — no git resolution needed. An empty side means HEAD,
+    // matching git's `a..` / `..b` shorthand.
+    if let Some((base, head)) = spec.split_once("..") {
+        let base = if base.is_empty() { "HEAD" } else { base };
+        let head = if head.is_empty() { "HEAD" } else { head };
+        return Ok(Comparison::new(base.to_owned(), head.to_owned()));
+    }
+    // Everything else resolves against the repo; build the source once and reuse it.
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    // "snapshot:<ref>" — full tree state at a ref, diffed against the empty tree
+    // (every file shows as added). Empty-string base is the empty-tree convention.
+    if let Some(rev) = spec.strip_prefix("snapshot:") {
+        if rev.is_empty() {
+            return Err("Specify a ref after 'snapshot:' (e.g. snapshot:HEAD)".to_owned());
+        }
+        let head = source
+            .resolve_ref(rev)
+            .ok_or_else(|| format!("Could not resolve '{rev}'"))?;
+        return Ok(Comparison::new("", head));
+    }
+    if let Some(rev) = spec.strip_suffix("^!") {
+        if rev.is_empty() {
+            return Err("Specify a commit before '^!' (e.g. abc123^!)".to_owned());
+        }
+        return commit_comparison(&source, rev);
+    }
+    // Single ref. A branch/tag name reviews that branch's work against the
+    // default branch; a bare commit reviews just that commit.
+    if !source.is_named_ref(spec) && source.resolve_ref(spec).is_some() {
+        commit_comparison(&source, spec)
+    } else {
+        Ok(resolve_comparison_with(
+            &source,
+            None,
+            Some(spec.to_owned()),
+        ))
+    }
+}
+
+/// Resolve `<rev>` into a comparison covering just that commit: `parent..rev`.
+pub(crate) fn resolve_commit_comparison(repo_path: &Path, rev: &str) -> Result<Comparison, String> {
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    commit_comparison(&source, rev)
+}
+
+/// Resolve a "working tree" comparison: only the uncommitted changes (staged,
+/// unstaged, and untracked) on the current branch. Base is `HEAD` and head is the
+/// current branch, so the committed history drops out and only the dirty state
+/// remains. `HEAD` is kept as a relative ref on purpose — this stays a single
+/// live review per branch that always reflects the current working tree, and the
+/// branch head makes the working tree get folded into the diff.
+pub(crate) fn resolve_working_comparison(repo_path: &Path) -> Result<Comparison, String> {
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let head = source.get_current_branch().map_err(|e| e.to_string())?;
+    Ok(Comparison::new("HEAD", head))
+}
+
+/// Resolve a "staged" comparison: only the changes in the git index (what would
+/// be committed). The index is captured as a tree object via `git write-tree`, so
+/// `HEAD..<index-tree>` is an ordinary object comparison the existing diff
+/// pipeline handles directly — no staged-specific plumbing. This is a frozen
+/// snapshot of the index at invocation time (re-staging produces a new review).
+pub(crate) fn resolve_staged_comparison(repo_path: &Path) -> Result<Comparison, String> {
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let base = source.resolve_ref_or_empty_tree("HEAD");
+    let tree = source.write_index_tree().map_err(|e| e.to_string())?;
+    Ok(Comparison::new(base, tree))
+}
+
+/// Resolve a "patch" comparison: apply a unified diff on top of HEAD in a
+/// throwaway index and review the result as `HEAD..<patched-tree>`. `patch_src`
+/// is a file path, or "-" to read the patch from stdin. Lets a proposed or
+/// external patch be reviewed before it's actually applied.
+pub(crate) fn resolve_patch_comparison(
+    repo_path: &Path,
+    patch_src: &str,
+) -> Result<Comparison, String> {
+    let patch = read_patch_input(patch_src)?;
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let base = source.resolve_ref_or_empty_tree("HEAD");
+    let tree = source
+        .write_patched_tree(patch.as_bytes())
+        .map_err(|e| format!("Patch does not apply on HEAD: {e}"))?;
+    Ok(Comparison::new(base, tree))
+}
+
+/// Read a patch from a file path, or from stdin when `src` is "-".
+fn read_patch_input(src: &str) -> Result<String, String> {
+    if src == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Could not read patch from stdin: {e}"))?;
+        Ok(buf)
+    } else {
+        std::fs::read_to_string(src).map_err(|e| format!("Could not read patch '{src}': {e}"))
+    }
+}
+
+/// Resolve a "stash" comparison: the changes captured in `stash@{n}` against the
+/// commit it was created on (`stash@{n}^1`). Defaults to the most recent stash.
+pub(crate) fn resolve_stash_comparison(repo_path: &Path, index: u32) -> Result<Comparison, String> {
+    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let stash_ref = format!("stash@{{{index}}}");
+    let head = source
+        .resolve_ref(&stash_ref)
+        .ok_or_else(|| format!("No stash entry {stash_ref}"))?;
+    let base = source.resolve_ref_or_empty_tree(&format!("{stash_ref}^1"));
     Ok(Comparison::new(base, head))
 }
 
-/// Parse a comparison spec (e.g. "main..feature") into a `Comparison`.
-/// A single ref is compared against the default branch.
-pub(crate) fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comparison, String> {
-    if let Some((base, head)) = spec.split_once("..") {
-        Ok(Comparison::new(base.to_owned(), head.to_owned()))
-    } else {
-        // Single ref: compare default branch against the given ref
-        resolve_comparison(repo_path, None, Some(spec.to_owned()))
-    }
+/// Build a single-commit comparison (`parent..rev`) from an existing source.
+/// Both sides are resolved to concrete SHAs so the review key is stable even if
+/// refs move later. A root commit (no parent) is compared against the empty tree,
+/// and a merge commit is diffed against its first parent. Resolving the head to a
+/// raw SHA (not a branch name) means the working tree is never folded in, so the
+/// review shows exactly that commit's changes.
+fn commit_comparison(source: &LocalGitSource, rev: &str) -> Result<Comparison, String> {
+    let head = source
+        .resolve_ref(rev)
+        .ok_or_else(|| format!("Could not resolve commit '{rev}'"))?;
+    let base = source.resolve_ref_or_empty_tree(&format!("{rev}^"));
+    Ok(Comparison::new(base, head))
 }
 
 /// Path to the signal file used to communicate a repo path to the running app.
@@ -427,4 +662,263 @@ fn open_app(
     }
 
     Err("Could not open Review app. Make sure it is installed and in your PATH.".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command as Cmd;
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let out = Cmd::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            // Isolate from the developer's global/system git config (e.g. forced
+            // signed tags) so the tests are deterministic.
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// Temp repo with `first` (root) and `second` commits; returns (dir, first_sha, second_sha).
+    fn two_commit_repo() -> (tempfile::TempDir, String, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        git(p, &["init", "-q"]);
+        std::fs::write(p.join("a.txt"), "one\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "first"]);
+        let first = git(p, &["rev-parse", "HEAD"]);
+        std::fs::write(p.join("a.txt"), "one\ntwo\n").unwrap();
+        git(p, &["commit", "-aqm", "second"]);
+        let second = git(p, &["rev-parse", "HEAD"]);
+        (dir, first, second)
+    }
+
+    #[test]
+    fn commit_comparison_is_parent_to_commit() {
+        let (dir, first, second) = two_commit_repo();
+        let c = resolve_commit_comparison(dir.path(), &second).unwrap();
+        assert_eq!(c.base, first);
+        assert_eq!(c.head, second);
+        assert_eq!(c.key, format!("{first}..{second}"));
+    }
+
+    #[test]
+    fn root_commit_compares_against_empty_tree() {
+        let (dir, first, _second) = two_commit_repo();
+        let c = resolve_commit_comparison(dir.path(), &first).unwrap();
+        assert_eq!(c.base, LocalGitSource::EMPTY_TREE);
+        assert_eq!(c.head, first);
+    }
+
+    #[test]
+    fn caret_bang_spec_resolves_to_commit() {
+        let (dir, first, second) = two_commit_repo();
+        let via_spec = parse_comparison_spec(dir.path(), &format!("{second}^!")).unwrap();
+        let direct = resolve_commit_comparison(dir.path(), &second).unwrap();
+        assert_eq!(via_spec.key, direct.key);
+        assert_eq!(via_spec.base, first);
+        assert_eq!(via_spec.head, second);
+    }
+
+    #[test]
+    fn unknown_commit_errors() {
+        let (dir, _first, _second) = two_commit_repo();
+        assert!(resolve_commit_comparison(dir.path(), "deadbeef").is_err());
+    }
+
+    #[test]
+    fn bare_commit_sha_reviews_that_commit() {
+        let (dir, first, second) = two_commit_repo();
+        let c = parse_comparison_spec(dir.path(), &second).unwrap();
+        assert_eq!(c.base, first);
+        assert_eq!(c.head, second);
+    }
+
+    #[test]
+    fn bare_head_reviews_that_commit() {
+        let (dir, first, second) = two_commit_repo();
+        let c = parse_comparison_spec(dir.path(), "HEAD").unwrap();
+        assert_eq!(c.base, first);
+        assert_eq!(c.head, second);
+    }
+
+    #[test]
+    fn bare_branch_compares_against_default() {
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        git(p, &["branch", "feature"]);
+        let c = parse_comparison_spec(p, "feature").unwrap();
+        // Branch name is kept verbatim as the head (not resolved to a SHA),
+        // i.e. it took the default..branch path, not the single-commit path.
+        assert_eq!(c.head, "feature");
+        assert_ne!(c.base, c.head);
+    }
+
+    #[test]
+    fn bare_tag_compares_against_default() {
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        git(p, &["tag", "v1.0.0"]);
+        let c = parse_comparison_spec(p, "v1.0.0").unwrap();
+        // Tag is a named ref → compared against the default branch, not reviewed alone.
+        assert_eq!(c.head, "v1.0.0");
+    }
+
+    #[test]
+    fn working_comparison_is_head_to_current_branch() {
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        let branch = git(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        let c = resolve_working_comparison(p).unwrap();
+        assert_eq!(c.base, "HEAD");
+        assert_eq!(c.head, branch);
+    }
+
+    #[test]
+    fn working_diff_shows_only_uncommitted_changes() {
+        use crate::sources::traits::DiffSource;
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        // "two" is already committed; "three" is a new uncommitted edit.
+        std::fs::write(p.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+        let c = resolve_working_comparison(p).unwrap();
+        let source = LocalGitSource::new(p.to_path_buf()).unwrap();
+        let diff = source.get_diff(&c, None).unwrap();
+        assert!(
+            diff.contains("+three"),
+            "should show the uncommitted line:\n{diff}"
+        );
+        assert!(
+            !diff.contains("+two"),
+            "should not include committed history:\n{diff}"
+        );
+    }
+
+    #[test]
+    fn staged_diff_shows_only_staged_changes() {
+        use crate::sources::traits::DiffSource;
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        // Stage "three", then leave a further unstaged edit that must NOT appear.
+        std::fs::write(p.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+        git(p, &["add", "a.txt"]);
+        std::fs::write(p.join("a.txt"), "one\ntwo\nthree\nfour-unstaged\n").unwrap();
+        let c = resolve_staged_comparison(p).unwrap();
+        let source = LocalGitSource::new(p.to_path_buf()).unwrap();
+        let diff = source.get_diff(&c, None).unwrap();
+        assert!(
+            diff.contains("+three"),
+            "staged change should appear:\n{diff}"
+        );
+        assert!(
+            !diff.contains("four-unstaged"),
+            "unstaged change must not appear:\n{diff}"
+        );
+    }
+
+    #[test]
+    fn stash_diff_shows_stashed_changes() {
+        use crate::sources::traits::DiffSource;
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        std::fs::write(p.join("a.txt"), "one\ntwo\nstashed\n").unwrap();
+        git(p, &["stash"]);
+        let c = resolve_stash_comparison(p, 0).unwrap();
+        let source = LocalGitSource::new(p.to_path_buf()).unwrap();
+        let diff = source.get_diff(&c, None).unwrap();
+        assert!(
+            diff.contains("+stashed"),
+            "stashed change should appear:\n{diff}"
+        );
+    }
+
+    #[test]
+    fn missing_stash_errors() {
+        let (dir, _first, _second) = two_commit_repo();
+        assert!(resolve_stash_comparison(dir.path(), 0).is_err());
+    }
+
+    #[test]
+    fn patch_comparison_applies_patch_on_head() {
+        use crate::sources::traits::DiffSource;
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        // Generate a real patch via git (add a line), then revert the worktree.
+        std::fs::write(p.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+        let patch = git(p, &["diff"]);
+        git(p, &["checkout", "--", "a.txt"]);
+        let patch_file = p.join("change.patch");
+        std::fs::write(&patch_file, format!("{patch}\n")).unwrap();
+
+        let c = resolve_patch_comparison(p, patch_file.to_str().unwrap()).unwrap();
+        let source = LocalGitSource::new(p.to_path_buf()).unwrap();
+        let diff = source.get_diff(&c, None).unwrap();
+        assert!(
+            diff.contains("+three"),
+            "patched result should show the added line:\n{diff}"
+        );
+    }
+
+    #[test]
+    fn patch_that_does_not_apply_errors() {
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        let patch_file = p.join("bad.patch");
+        std::fs::write(
+            &patch_file,
+            "diff --git a/zzz.txt b/zzz.txt\n--- a/zzz.txt\n+++ b/zzz.txt\n@@ -1 +1 @@\n-nope\n+changed\n",
+        )
+        .unwrap();
+        assert!(resolve_patch_comparison(p, patch_file.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn dotdot_empty_side_means_head() {
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        assert_eq!(parse_comparison_spec(p, "main..").unwrap().head, "HEAD");
+        assert_eq!(parse_comparison_spec(p, "..main").unwrap().base, "HEAD");
+    }
+
+    #[test]
+    fn empty_caret_bang_and_snapshot_error() {
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        assert!(parse_comparison_spec(p, "^!").is_err());
+        assert!(parse_comparison_spec(p, "snapshot:").is_err());
+    }
+
+    #[test]
+    fn snapshot_spec_diffs_against_empty_tree() {
+        use crate::sources::traits::DiffSource;
+        let (dir, _first, second) = two_commit_repo();
+        let p = dir.path();
+        let c = parse_comparison_spec(p, "snapshot:HEAD").unwrap();
+        assert_eq!(c.base, "");
+        assert_eq!(c.head, second);
+        let source = LocalGitSource::new(p.to_path_buf()).unwrap();
+        let diff = source.get_diff(&c, None).unwrap();
+        // The whole file appears as added.
+        assert!(
+            diff.contains("new file"),
+            "snapshot should add files:\n{diff}"
+        );
+        assert!(
+            diff.contains("+one"),
+            "full content shown as added:\n{diff}"
+        );
+    }
 }

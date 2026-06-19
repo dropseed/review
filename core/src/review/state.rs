@@ -1,3 +1,4 @@
+use crate::diff::parser::DiffHunk;
 use crate::sources::traits::Comparison;
 use crate::trust::matches_pattern;
 use crate::trust::patterns::get_all_pattern_ids;
@@ -230,6 +231,12 @@ pub struct HunkState {
     pub status: Option<Attributed<HunkStatus>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub risk: Option<Attributed<HunkRisk>>,
+    /// The hunk's stable identity (changed lines only — see
+    /// [`crate::diff::parser::DiffHunk::stable_hash`]) at the time a decision was
+    /// recorded. Lets [`ReviewState::reconcile`] carry this decision forward onto
+    /// the same change after surrounding context drifts and the hunk ID changes.
+    #[serde(rename = "stableKey", default, skip_serializing_if = "Option::is_none")]
+    pub stable_key: Option<String>,
 }
 
 impl HunkState {
@@ -263,6 +270,15 @@ pub enum HunkStatus {
     SavedForLater,
 }
 
+/// What [`ReviewState::reconcile`] did when re-associating persisted decisions
+/// with a fresh diff: how many decisions were carried forward onto a drifted
+/// hunk, and how many orphans were dropped for lack of a stable match.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reconciliation {
+    pub carried_forward: usize,
+    pub dropped: usize,
+}
+
 impl ReviewState {
     pub fn new(comparison: Comparison) -> Self {
         let now = now_iso8601();
@@ -291,6 +307,75 @@ impl ReviewState {
         // without one (e.g. a frontend fallback) doesn't write a stale
         // schemaVersion that the next read has to migrate back up.
         self.schema_version = REVIEW_SCHEMA_VERSION;
+    }
+
+    /// Re-associate persisted per-hunk decisions with the current diff, so a
+    /// review survives the hunk IDs changing underneath it (working-tree edits,
+    /// new commits on a branch, a re-pushed PR).
+    ///
+    /// - Entries whose ID still matches a live hunk are kept, and re-stamped with
+    ///   that hunk's current stable key so the next reconcile can match them.
+    /// - Orphaned entries (the content hash drifted) are carried forward onto the
+    ///   live hunk with the same [`DiffHunk::stable_hash`] — i.e. the same change
+    ///   in the same file, just with shifted surrounding context.
+    /// - Orphans with no stable match, or whose stable key maps to more than one
+    ///   live hunk (ambiguous), are dropped — keeping `to_summary` / `review
+    ///   list` honest rather than leaving meaningless entries behind.
+    ///
+    /// Carry-forward only kicks in for entries that were previously stamped with
+    /// a stable key; older entries (pre-`stable_key`) that orphan are simply
+    /// dropped, exactly as before.
+    pub fn reconcile(&mut self, live_hunks: &[DiffHunk]) -> Reconciliation {
+        // One stable hash per live hunk, computed once and reused throughout.
+        let stable_by_id: HashMap<&str, String> = live_hunks
+            .iter()
+            .map(|hunk| (hunk.id.as_str(), hunk.stable_hash()))
+            .collect();
+
+        // Candidate carry-forward targets: live hunks that don't already have an
+        // entry, mapped stable key -> hunk id. A key shared by >1 such hunk is
+        // ambiguous and disqualified (`None`) so a decision is never
+        // mis-attributed.
+        let mut targets: HashMap<String, Option<String>> = HashMap::new();
+        for hunk in live_hunks {
+            if self.hunks.contains_key(&hunk.id) {
+                continue;
+            }
+            targets
+                .entry(stable_by_id[hunk.id.as_str()].clone())
+                .and_modify(|slot| *slot = None)
+                .or_insert_with(|| Some(hunk.id.clone()));
+        }
+
+        let mut result = Reconciliation::default();
+        let mut next: HashMap<String, HunkState> = HashMap::with_capacity(self.hunks.len());
+
+        for (id, mut hunk_state) in std::mem::take(&mut self.hunks) {
+            if let Some(stable) = stable_by_id.get(id.as_str()) {
+                // Still present: refresh the stable key and keep as-is.
+                hunk_state.stable_key = Some(stable.clone());
+                next.insert(id, hunk_state);
+                continue;
+            }
+            // Orphan: carry forward onto an unambiguous, unclaimed live hunk with
+            // the same stable identity.
+            let target_id = hunk_state
+                .stable_key
+                .as_deref()
+                .and_then(|key| targets.get(key).and_then(|slot| slot.clone()))
+                .filter(|tid| !next.contains_key(tid));
+            match target_id {
+                Some(tid) => {
+                    hunk_state.stable_key = stable_by_id.get(tid.as_str()).cloned();
+                    next.insert(tid, hunk_state);
+                    result.carried_forward += 1;
+                }
+                None => result.dropped += 1,
+            }
+        }
+
+        self.hunks = next;
+        result
     }
 
     /// Whether any of `labels` matches a pattern in the trust list.
@@ -730,5 +815,118 @@ mod tests {
         assert!(timestamp.ends_with('Z'));
         // Check rough format with regex pattern
         assert!(timestamp.len() >= 24); // "2024-01-01T00:00:00.000Z"
+    }
+
+    // --- stable identity + carry-forward (reconcile) ---
+
+    // Both diffs add the same line `NEW` to `f.txt`, but with different
+    // surrounding context (and line numbers), so their content-hash IDs differ
+    // while their stable hashes match.
+    const DIFF_A: &str = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,3 +1,4 @@\n alpha\n beta\n+NEW\n gamma\n";
+    const DIFF_B: &str = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -10,3 +10,4 @@\n delta\n epsilon\n+NEW\n zeta\n";
+
+    fn hunk_from(diff: &str) -> DiffHunk {
+        crate::diff::parser::parse_multi_file_diff(diff)
+            .into_iter()
+            .next()
+            .expect("expected one hunk")
+    }
+
+    fn approved_entry(stable_key: Option<String>) -> HunkState {
+        HunkState {
+            status: Some(Attributed::new(HunkStatus::Approved, Source::Cli)),
+            stable_key,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn stable_hash_ignores_context() {
+        let a = hunk_from(DIFF_A);
+        let b = hunk_from(DIFF_B);
+        assert_ne!(a.id, b.id, "different context → different content-hash ID");
+        assert_eq!(
+            a.stable_hash(),
+            b.stable_hash(),
+            "same change → same stable hash"
+        );
+    }
+
+    #[test]
+    fn reconcile_carries_decision_forward_on_context_drift() {
+        let a = hunk_from(DIFF_A);
+        let b = hunk_from(DIFF_B);
+        let mut state = ReviewState::new(test_comparison());
+        state
+            .hunks
+            .insert(a.id.clone(), approved_entry(Some(a.stable_hash())));
+
+        // The diff now contains `b` (same change, drifted context) instead of `a`.
+        let recon = state.reconcile(&[b.clone()]);
+
+        assert_eq!(recon.carried_forward, 1);
+        assert_eq!(recon.dropped, 0);
+        assert!(!state.hunks.contains_key(&a.id), "old ID is gone");
+        let migrated = state
+            .hunks
+            .get(&b.id)
+            .expect("decision re-keyed onto live hunk");
+        assert!(matches!(
+            migrated.status.as_ref().map(|s| &s.value),
+            Some(HunkStatus::Approved)
+        ));
+        assert_eq!(
+            migrated.stable_key.as_deref(),
+            Some(b.stable_hash().as_str())
+        );
+    }
+
+    #[test]
+    fn reconcile_drops_orphan_without_stable_match() {
+        let a = hunk_from(DIFF_A);
+        let mut state = ReviewState::new(test_comparison());
+        // An old-style entry (no stable key), now orphaned with nothing live.
+        state.hunks.insert(a.id.clone(), approved_entry(None));
+
+        let recon = state.reconcile(&[]);
+
+        assert_eq!(recon.carried_forward, 0);
+        assert_eq!(recon.dropped, 1);
+        assert!(state.hunks.is_empty());
+    }
+
+    #[test]
+    fn reconcile_keeps_exact_match_and_stamps_stable_key() {
+        let a = hunk_from(DIFF_A);
+        let mut state = ReviewState::new(test_comparison());
+        state.hunks.insert(a.id.clone(), approved_entry(None));
+
+        let recon = state.reconcile(&[a.clone()]);
+
+        assert_eq!(recon.carried_forward, 0);
+        assert_eq!(recon.dropped, 0);
+        assert_eq!(
+            state.hunks[&a.id].stable_key.as_deref(),
+            Some(a.stable_hash().as_str()),
+            "exact-match entries get their stable key stamped for next time"
+        );
+    }
+
+    #[test]
+    fn reconcile_skips_ambiguous_stable_key() {
+        let a = hunk_from(DIFF_A);
+        let b = hunk_from(DIFF_B);
+        assert_eq!(a.stable_hash(), b.stable_hash());
+        let mut state = ReviewState::new(test_comparison());
+        // An orphan whose stable key matches *two* live hunks — can't safely pick.
+        state.hunks.insert(
+            "f.txt:deadbeefdeadbeef".to_owned(),
+            approved_entry(Some(a.stable_hash())),
+        );
+
+        let recon = state.reconcile(&[a.clone(), b.clone()]);
+
+        assert_eq!(recon.carried_forward, 0, "ambiguous match is not carried");
+        assert_eq!(recon.dropped, 1);
     }
 }

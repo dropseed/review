@@ -287,14 +287,26 @@ pub fn get_diff_shortstat(
 
 #[tauri::command]
 pub fn load_review_state(repo_path: String, comparison: Comparison) -> Result<ReviewState, String> {
-    storage::load_review_state(&PathBuf::from(&repo_path), &comparison).map_err(|e| e.to_string())
+    let t0 = Instant::now();
+    // Carries decisions forward onto the current diff (best-effort) so the app
+    // reflects prior work even after edits shifted hunk IDs.
+    let state =
+        review::service::review_io::load_reconciled_review(&PathBuf::from(&repo_path), &comparison)
+            .map_err(|e| e.to_string())?;
+    info!("load_review_state {} in {:?}", comparison.key, t0.elapsed());
+    Ok(state)
 }
 
 #[tauri::command]
-pub fn save_review_state(repo_path: String, mut state: ReviewState) -> Result<u64, String> {
-    state.prepare_for_save();
-    storage::save_review_state(&PathBuf::from(&repo_path), &state).map_err(|e| e.to_string())?;
-    Ok(state.version)
+pub fn save_review_state(repo_path: String, state: ReviewState) -> Result<u64, String> {
+    let t0 = Instant::now();
+    let key = state.comparison.key.clone();
+    // Reconciles before persisting so stable keys are (re)stamped from the live
+    // diff and decisions carry across hunk-ID drift.
+    let version = review::service::review_io::reconcile_and_save(&PathBuf::from(&repo_path), state)
+        .map_err(|e| e.to_string())?;
+    info!("save_review_state {key} v{version} in {:?}", t0.elapsed());
+    Ok(version)
 }
 
 #[tauri::command]

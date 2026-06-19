@@ -464,7 +464,7 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     let existed = storage::review_exists(&repo, &comparison).unwrap_or(false);
     let reason = args.reason.clone();
     let source = resolve_source(args.source)?;
-    let result = mutate_review(&repo, &comparison, &live_ids, |state| {
+    let result = mutate_review(&repo, &comparison, &hunks, |state| {
         // Keep the total and per-hunk labels fresh so `review list` and the
         // desktop app show accurate progress.
         state.total_diff_hunks = total_hunks;
@@ -524,7 +524,7 @@ pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
     for id in &unknown {
         eprintln!("warning: hunk not found in {}: {id}", comparison.key);
     }
-    let result = mutate_review(&repo, &comparison, &live_ids, |state| {
+    let result = mutate_review(&repo, &comparison, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
         for id in &ids {
@@ -727,9 +727,8 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             {
                 eprintln!("warning: '{pattern}' is not a known taxonomy pattern");
             }
-            let (comparison, _hunks, live_ids) =
-                load_for_mutation(&repo, args.target.spec.as_deref())?;
-            let state = mutate_review(&repo, &comparison, &live_ids, |state| {
+            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            let state = mutate_review(&repo, &comparison, &hunks, |state| {
                 if state.trust_list.contains(&pattern) {
                     false
                 } else {
@@ -745,9 +744,8 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             );
         }
         TrustAction::Remove { pattern } => {
-            let (comparison, _hunks, live_ids) =
-                load_for_mutation(&repo, args.target.spec.as_deref())?;
-            let state = mutate_review(&repo, &comparison, &live_ids, |state| {
+            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            let state = mutate_review(&repo, &comparison, &hunks, |state| {
                 let before = state.trust_list.len();
                 state.trust_list.retain(|existing| existing != &pattern);
                 state.trust_list.len() != before
@@ -779,9 +777,8 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
             }
         }
         NoteAction::Set { text } => {
-            let (comparison, _hunks, live_ids) =
-                load_for_mutation(&repo, args.target.spec.as_deref())?;
-            mutate_review(&repo, &comparison, &live_ids, |state| {
+            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            mutate_review(&repo, &comparison, &hunks, |state| {
                 if state.notes == text {
                     false
                 } else {
@@ -792,9 +789,8 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
             println!("Notes updated for {}", comparison.key);
         }
         NoteAction::Append { text } => {
-            let (comparison, _hunks, live_ids) =
-                load_for_mutation(&repo, args.target.spec.as_deref())?;
-            mutate_review(&repo, &comparison, &live_ids, |state| {
+            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            mutate_review(&repo, &comparison, &hunks, |state| {
                 if state.notes.trim().is_empty() {
                     state.notes.clone_from(&text);
                 } else {
@@ -835,7 +831,7 @@ fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
     let existed = storage::review_exists(repo, &comparison).unwrap_or(false);
     let source = resolve_source(args.source)?;
     let reason = args.reason.clone();
-    let result = mutate_review(repo, &comparison, &live_ids, |state| {
+    let result = mutate_review(repo, &comparison, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
         for id in &known {
@@ -875,7 +871,7 @@ fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
 fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let repo = repo.as_path();
-    let (comparison, hunks, live_ids) = load_for_mutation(repo, args.target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(repo, args.target.spec.as_deref())?;
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
@@ -884,7 +880,7 @@ fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
     }
 
     let ids = args.hunks.clone();
-    let result = mutate_review(repo, &comparison, &live_ids, |state| {
+    let result = mutate_review(repo, &comparison, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
         for id in &ids {

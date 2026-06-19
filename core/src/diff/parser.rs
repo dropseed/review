@@ -24,6 +24,31 @@ pub struct DiffHunk {
     pub move_pair_id: Option<String>,
 }
 
+impl DiffHunk {
+    /// A content identity that survives context drift: a hash of the file path
+    /// plus only the changed (added/removed) lines, excluding surrounding
+    /// context. Unlike [`Self::content_hash`] (which covers the whole hunk body,
+    /// context included, and so changes whenever the neighborhood shifts), this
+    /// stays stable as long as the actual change is unchanged — letting a review
+    /// decision be carried forward across edits to the surrounding code.
+    pub fn stable_hash(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.file_path.as_bytes());
+        hasher.update([0]);
+        for line in &self.lines {
+            let marker: &[u8] = match line.line_type {
+                LineType::Added => b"+",
+                LineType::Removed => b"-",
+                LineType::Context => continue,
+            };
+            hasher.update(marker);
+            hasher.update(line.content.as_bytes());
+            hasher.update(b"\n");
+        }
+        hex::encode(&hasher.finalize()[..8])
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffLine {
     #[serde(rename = "type")]

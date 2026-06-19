@@ -500,6 +500,34 @@ pub fn get_file_content_for_pr(
     })
 }
 
+/// Enumerate every hunk in a comparison: list its changed files, then parse
+/// their diffs. Shared by the CLI, the HTTP server, and the desktop app so they
+/// all see the same hunk set — in particular to feed
+/// [`crate::review::state::ReviewState::reconcile`].
+pub fn comparison_hunks(
+    repo_path: &Path,
+    comparison: &Comparison,
+    github_pr: Option<&GitHubPrRef>,
+) -> anyhow::Result<Vec<DiffHunk>> {
+    let files = list_files(repo_path, comparison, github_pr)?;
+    let mut paths = Vec::new();
+    collect_file_paths(&files, &mut paths);
+    get_all_hunks(repo_path, comparison, &paths)
+}
+
+/// Flatten a `FileEntry` tree into the list of non-directory file paths.
+fn collect_file_paths(entries: &[FileEntry], out: &mut Vec<String>) {
+    for entry in entries {
+        if entry.is_directory {
+            if let Some(children) = &entry.children {
+                collect_file_paths(children, out);
+            }
+        } else {
+            out.push(entry.path.clone());
+        }
+    }
+}
+
 /// Batch-load all hunks for multiple files in a single call.
 pub fn get_all_hunks(
     repo_path: &Path,

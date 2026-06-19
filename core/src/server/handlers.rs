@@ -790,18 +790,17 @@ async fn files_directory_plain(Json(req): Json<FilePathRequest>) -> ApiResult<Ve
 
 async fn review_load(Json(req): Json<ReviewLoadRequest>) -> ApiResult<ReviewState> {
     blocking(move || {
-        storage::load_review_state(&PathBuf::from(&req.repo_path), &req.comparison)
-            .map_err(Into::into)
+        crate::service::review_io::load_reconciled_review(
+            &PathBuf::from(&req.repo_path),
+            &req.comparison,
+        )
     })
     .await
 }
 
 async fn review_save(Json(req): Json<ReviewSaveRequest>) -> ApiResult<u64> {
     blocking(move || {
-        let mut state = req.state;
-        state.prepare_for_save();
-        storage::save_review_state(&PathBuf::from(&req.repo_path), &state)?;
-        Ok(state.version)
+        crate::service::review_io::reconcile_and_save(&PathBuf::from(&req.repo_path), req.state)
     })
     .await
 }

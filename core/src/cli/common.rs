@@ -11,7 +11,7 @@ use crate::classify::{classify_hunks_static, ClassifyResponse};
 use crate::diff::parser::{DiffHunk, LineType};
 use crate::review::state::{Attributed, HunkStatus, ReviewState, Source};
 use crate::review::storage::{self, StorageError};
-use crate::sources::traits::{Comparison, FileEntry};
+use crate::sources::traits::Comparison;
 
 /// The `--repo` / `--spec` flags shared by the review-state subcommands.
 #[derive(Debug, Args)]
@@ -78,19 +78,6 @@ pub fn resolve_comparison_arg(repo: &Path, spec: Option<&str>) -> Result<Compari
     match spec {
         Some(spec) => super::parse_comparison_spec(repo, spec),
         None => super::resolve_comparison(repo, None, None),
-    }
-}
-
-/// Recursively collect non-directory file paths from a `FileEntry` tree.
-pub fn collect_file_paths(entries: &[FileEntry], out: &mut Vec<String>) {
-    for entry in entries {
-        if entry.is_directory {
-            if let Some(children) = &entry.children {
-                collect_file_paths(children, out);
-            }
-        } else {
-            out.push(entry.path.clone());
-        }
     }
 }
 
@@ -201,11 +188,7 @@ pub fn load_comparison_hunks(
     spec: Option<&str>,
 ) -> Result<(Comparison, Vec<DiffHunk>), String> {
     let comparison = resolve_comparison_arg(repo, spec)?;
-    let files = crate::service::files::list_files(repo, &comparison, None)
-        .map_err(|e| format!("Failed to list files: {e}"))?;
-    let mut paths = Vec::new();
-    collect_file_paths(&files, &mut paths);
-    let hunks = crate::service::files::get_all_hunks(repo, &comparison, &paths)
+    let hunks = crate::service::files::comparison_hunks(repo, &comparison, None)
         .map_err(|e| format!("Failed to read hunks: {e}"))?;
     Ok((comparison, hunks))
 }
@@ -222,8 +205,12 @@ pub struct ReviewView {
 pub fn load_review_view(repo: &Path, spec: Option<&str>) -> Result<ReviewView, String> {
     let (comparison, hunks) = load_comparison_hunks(repo, spec)?;
     let classification = classify_hunks_static(&hunks);
-    let state = storage::load_review_state(repo, &comparison)
+    let mut state = storage::load_review_state(repo, &comparison)
         .map_err(|e| format!("Failed to load review: {e}"))?;
+    // Carry decisions forward onto the current diff for display (not persisted
+    // until the next mutation), so `review hunks`/`status` reflect prior work
+    // even after edits shifted hunk IDs.
+    state.reconcile(&hunks);
     Ok(ReviewView {
         comparison,
         hunks,
@@ -250,22 +237,23 @@ pub fn load_for_mutation(
     Ok((comparison, hunks, live_ids))
 }
 
-/// Load a review, apply a mutation, prune entries in `state.hunks` whose ID
-/// is no longer in the live diff, then save — retrying on version conflicts
-/// so concurrent writes (e.g. from the desktop app) don't fail.
+/// Load a review, apply a mutation, reconcile `state.hunks` against the live
+/// diff, then save — retrying on version conflicts so concurrent writes (e.g.
+/// from the desktop app) don't fail.
 ///
 /// `apply` returns `true` when it made a change worth persisting and `false`
 /// for a no-op (e.g. resolving an already-resolved comment). On a no-op the
 /// loaded state is returned untouched — no version bump, no write, no file-
 /// watcher churn.
 ///
-/// Pruning keeps `to_summary` and `review list` honest: an approval is
-/// content-tied; when content changes the hash drifts and the entry is a
-/// meaningless orphan.
+/// [`ReviewState::reconcile`] carries each decision forward onto the live hunk
+/// with the same stable identity (so an edit that shifts hunk IDs doesn't
+/// discard prior review work) and drops only the genuine orphans — keeping
+/// `to_summary` and `review list` honest.
 pub fn mutate_review<F>(
     repo: &Path,
     comparison: &Comparison,
-    live_ids: &HashSet<String>,
+    live_hunks: &[DiffHunk],
     apply: F,
 ) -> Result<ReviewState, String>
 where
@@ -279,7 +267,7 @@ where
             // No-op: don't bump the version or rewrite the file.
             return Ok(state);
         }
-        state.hunks.retain(|id, _| live_ids.contains(id));
+        state.reconcile(live_hunks);
         state.prepare_for_save();
         match storage::save_review_state(repo, &state) {
             Ok(()) => return Ok(state),

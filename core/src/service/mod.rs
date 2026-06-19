@@ -9,6 +9,7 @@ pub mod activity_cache;
 pub mod commit;
 pub mod files;
 pub mod freshness;
+pub mod review_io;
 pub mod symbols;
 pub mod util;
 pub mod vscode;

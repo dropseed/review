@@ -257,6 +257,26 @@ impl LocalGitSource {
         self.resolve_ref(git_ref).is_some()
     }
 
+    /// Whether `git_ref` is literally the name of a branch or tag, as opposed to
+    /// a raw commit-ish (a SHA, `HEAD`, `HEAD~n`). Used to decide whether a
+    /// single-ref review means "this branch/tag vs the default branch" or "just
+    /// this one commit". Checks for an exact ref by name under `refs/heads/`,
+    /// `refs/tags/`, or `refs/remotes/` — note `HEAD` is deliberately *not*
+    /// named (it's a symbolic alias for a commit), so it reviews the commit.
+    pub fn is_named_ref(&self, git_ref: &str) -> bool {
+        ["refs/heads/", "refs/tags/", "refs/remotes/"]
+            .iter()
+            .any(|prefix| {
+                self.run_git(&[
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    &format!("{prefix}{git_ref}"),
+                ])
+                .is_ok()
+            })
+    }
+
     /// Resolve a ref to a SHA, falling back to `origin/<ref>` for
     /// remote-only branches. Results are cached per `LocalGitSource`.
     pub fn resolve_ref(&self, git_ref: &str) -> Option<String> {
@@ -379,17 +399,11 @@ impl LocalGitSource {
         let output = if let Some(dir) = &wt_dir {
             // Net diff: merge_base vs working tree (single diff captures everything)
             let resolved_head = self.resolve_head_in(dir);
-            let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
-                Ok(b) => b,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
-            };
+            let merge_base = self.merge_base_or_base(&comparison.base, &resolved_head);
             self.run_git_in(dir, &["diff", "--shortstat", &merge_base])?
         } else {
             // Committed diff between base and head refs
-            let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
-                Ok(b) => b,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
-            };
+            let merge_base = self.merge_base_or_base(&comparison.base, &comparison.head);
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             self.run_git(&["diff", "--shortstat", &range])?
@@ -1366,6 +1380,18 @@ impl LocalGitSource {
         Ok(result)
     }
 
+    /// The diff range's left side for `base`..`head`: their merge-base, falling
+    /// back to `base` itself (resolved, or the empty tree) when no merge-base
+    /// exists. That happens for unrelated histories, and — deliberately — when
+    /// `head` is a tree object rather than a commit (staged/index reviews via
+    /// `write_index_tree`), for which `git merge-base` legitimately fails.
+    fn merge_base_or_base(&self, base: &str, head: &str) -> String {
+        match self.get_merge_base(base, head) {
+            Ok(b) => b,
+            Err(_) => self.resolve_ref_or_empty_tree(base),
+        }
+    }
+
     fn get_changed_files(
         &self,
         comparison: &Comparison,
@@ -1376,18 +1402,12 @@ impl LocalGitSource {
         if let Some(dir) = self.working_tree_dir(comparison) {
             // Net change status: merge_base vs working tree (single diff captures everything)
             let resolved_head = self.resolve_head_in(&dir);
-            let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
-                Ok(b) => b,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
-            };
+            let merge_base = self.merge_base_or_base(&comparison.base, &resolved_head);
             let output = self.run_git_in(&dir, &["diff", "--name-status", &merge_base])?;
             self.parse_name_status(&output, &mut changes, &mut rename_map);
         } else {
             // Committed diff between base and head refs
-            let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
-                Ok(b) => b,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
-            };
+            let merge_base = self.merge_base_or_base(&comparison.base, &comparison.head);
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             let output = self.run_git(&["diff", "--name-status", &range])?;
@@ -1678,6 +1698,69 @@ impl LocalGitSource {
 
         let output = child.wait_with_output()?;
 
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            Err(LocalGitError::Git(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ))
+        }
+    }
+
+    /// Write the current index to a tree object and return its SHA, without
+    /// mutating any refs or the working tree. This lets the staged state be
+    /// reviewed as an ordinary object comparison: `HEAD..<index-tree>` is exactly
+    /// the staged changes, handled by the normal diff pipeline with no
+    /// staged-specific plumbing. The tree is a harmless dangling object.
+    pub fn write_index_tree(&self) -> Result<String, LocalGitError> {
+        Ok(self.run_git(&["write-tree"])?.trim().to_owned())
+    }
+
+    /// Apply a unified-diff patch on top of HEAD in a throwaway index — without
+    /// touching the real index or working tree — and return the resulting tree
+    /// SHA. This lets an arbitrary patch be reviewed as `HEAD..<tree>` through
+    /// the ordinary diff pipeline. Errors if the patch doesn't apply on HEAD.
+    pub fn write_patched_tree(&self, patch: &[u8]) -> Result<String, LocalGitError> {
+        // A scratch index file, distinct from the repo's real index.
+        let dir = tempfile::tempdir()?;
+        let index_path = dir.path().join("index");
+        let index_path = index_path.as_os_str();
+        let head = self.resolve_ref_or_empty_tree("HEAD");
+        self.git_with_index(index_path, &["read-tree", &head], None)?;
+        self.git_with_index(
+            index_path,
+            &["apply", "--cached", "--allow-empty"],
+            Some(patch),
+        )?;
+        let tree = self.git_with_index(index_path, &["write-tree"], None)?;
+        Ok(tree.trim().to_owned())
+    }
+
+    /// Run a git command against an alternate index file (`GIT_INDEX_FILE`),
+    /// optionally feeding `stdin`. Used to build trees without disturbing the
+    /// repo's real index or working tree.
+    fn git_with_index(
+        &self,
+        index_path: &std::ffi::OsStr,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+    ) -> Result<String, LocalGitError> {
+        let mut cmd = Command::new("git");
+        cmd.args(args)
+            .current_dir(&self.repo_path)
+            .env("GIT_INDEX_FILE", index_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if stdin.is_some() {
+            cmd.stdin(Stdio::piped());
+        }
+        let mut child = cmd.spawn()?;
+        if let Some(input) = stdin {
+            if let Some(mut sink) = child.stdin.take() {
+                sink.write_all(input)?;
+            }
+        }
+        let output = child.wait_with_output()?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
@@ -2230,10 +2313,7 @@ impl DiffSource for LocalGitSource {
             // Net diff: merge_base vs working tree (single diff avoids phantom hunks
             // when working tree changes revert committed changes)
             let resolved_head = self.resolve_head_in(&dir);
-            let merge_base = match self.get_merge_base(&comparison.base, &resolved_head) {
-                Ok(b) => b,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
-            };
+            let merge_base = self.merge_base_or_base(&comparison.base, &resolved_head);
             let mut args = vec![
                 "diff",
                 "--histogram",
@@ -2251,10 +2331,7 @@ impl DiffSource for LocalGitSource {
             }
         } else {
             // Committed diff between base and head refs
-            let merge_base = match self.get_merge_base(&comparison.base, &comparison.head) {
-                Ok(b) => b,
-                Err(_) => self.resolve_ref_or_empty_tree(&comparison.base),
-            };
+            let merge_base = self.merge_base_or_base(&comparison.base, &comparison.head);
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             let mut args = vec![
