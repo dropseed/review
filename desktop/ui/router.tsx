@@ -202,7 +202,7 @@ interface AppContext {
   ) => Promise<void>;
 }
 
-function useAppContext() {
+export function useAppContext() {
   return useOutletContext<AppContext>();
 }
 

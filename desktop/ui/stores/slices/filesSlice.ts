@@ -195,6 +195,7 @@ const comparisonResetState = {
   workingTreeDiffFile: null,
   // Review
   reviewState: null,
+  carriedForward: 0,
   undoStack: [] as UndoEntry[],
   // History
   commits: [] as CommitEntry[],

@@ -1,10 +1,34 @@
 import { type ReactNode, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { Comparison, GitHubPrRef } from "../types";
+import type { Comparison, GitHubPrRef, ReviewTarget } from "../types";
 import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { ComparisonPicker } from "./ComparisonPicker/ComparisonPicker";
+
+/** A one-click review target (e.g. uncommitted / staged changes). */
+function TargetCard({
+  title,
+  subtitle,
+  onClick,
+}: {
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-start gap-0.5 rounded-lg border border-edge-default/50 bg-surface-raised/40 px-3 py-2.5 text-left
+                 hover:border-edge-strong/60 hover:bg-surface-raised/70 transition-colors duration-100
+                 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring/50"
+    >
+      <span className="text-sm font-medium text-fg-secondary">{title}</span>
+      <span className="text-2xs text-fg-muted">{subtitle}</span>
+    </button>
+  );
+}
 
 interface NewReviewViewProps {
   onNewReview: (
@@ -58,6 +82,27 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
     [selectedRepoPath, onNewReview],
   );
 
+  // Resolve a one-click target (uncommitted/staged/…) into a comparison and open it.
+  const handleQuickTarget = useCallback(
+    async (target: ReviewTarget) => {
+      if (!selectedRepoPath) return;
+      try {
+        const comparison = await getApiClient().resolveReviewTarget(
+          selectedRepoPath,
+          target,
+        );
+        await handleSelectComparison(comparison);
+      } catch (err) {
+        console.error("Failed to resolve review target:", err);
+        await getPlatformServices().dialogs.message(String(err), {
+          title: "Couldn't start review",
+          kind: "error",
+        });
+      }
+    },
+    [selectedRepoPath, handleSelectComparison],
+  );
+
   return (
     <div
       className="flex h-full items-center justify-center"
@@ -93,7 +138,7 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
               New Review
             </h1>
             <p className="mt-1 text-sm text-fg-muted">
-              Select a repository and choose branches to compare
+              Pick a repository, then choose what to review
             </p>
           </div>
 
@@ -202,15 +247,45 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
           {/* Comparison section */}
           <div>
             {selectedRepoPath ? (
-              <ComparisonPicker
-                repoPath={selectedRepoPath}
-                onSelectReview={handleSelectComparison}
-                existingComparisonKeys={existingComparisonKeys}
-              />
+              <div className="space-y-4">
+                {/* Quick start: review your current work */}
+                <div>
+                  <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+                    Your current work
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <TargetCard
+                      title="Uncommitted"
+                      subtitle="All working changes"
+                      onClick={() => handleQuickTarget({ kind: "working" })}
+                    />
+                    <TargetCard
+                      title="Staged"
+                      subtitle="What's in the index"
+                      onClick={() => handleQuickTarget({ kind: "staged" })}
+                    />
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-edge-default/40" />
+                  <span className="text-2xs uppercase tracking-wider text-fg-faint">
+                    or compare refs
+                  </span>
+                  <div className="h-px flex-1 bg-edge-default/40" />
+                </div>
+
+                <ComparisonPicker
+                  repoPath={selectedRepoPath}
+                  onSelectReview={handleSelectComparison}
+                  existingComparisonKeys={existingComparisonKeys}
+                />
+              </div>
             ) : (
               <div className="flex items-center gap-3 rounded-xl border border-edge/60 bg-gradient-to-br from-surface-panel/60 to-surface/80 px-5 py-4 shadow-inner shadow-black/20 min-h-[58px]">
                 <span className="text-sm text-fg-faint">
-                  Select a repository to choose branches
+                  Select a repository to choose what to review
                 </span>
               </div>
             )}

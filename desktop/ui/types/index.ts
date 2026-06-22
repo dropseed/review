@@ -167,6 +167,15 @@ export interface Comparison {
   key: string; // Always "{base}..{head}"
 }
 
+// A kind of thing to review that the backend resolves into a Comparison.
+// Mirrors core's `service::targets::ReviewTarget` (serde tag = "kind").
+export type ReviewTarget =
+  | { kind: "working" } // uncommitted changes only
+  | { kind: "staged" } // the git index
+  | { kind: "stash"; index: number }
+  | { kind: "commit"; rev: string }
+  | { kind: "snapshot"; rev: string };
+
 /**
  * Return the git range string for a comparison, or undefined when
  * base and head are identical (no divergent range to query).
@@ -511,6 +520,13 @@ export interface ReviewState {
   totalDiffHunks: number; // Total diff hunks (including unclassified) for accurate progress
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
   worktreePath?: string; // Path to review-managed worktree, if created
+}
+
+// Result of loading a review: the state plus how many decisions reconciliation
+// carried forward onto the current diff (for surfacing "N carried forward").
+export interface ReviewLoadResult {
+  state: ReviewState;
+  carriedForward: number;
 }
 
 // Summary of a saved review tagged with repo info (for cross-repo listing)

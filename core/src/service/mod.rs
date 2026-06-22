@@ -11,6 +11,7 @@ pub mod files;
 pub mod freshness;
 pub mod review_io;
 pub mod symbols;
+pub mod targets;
 pub mod util;
 pub mod vscode;
 pub mod watcher_events;

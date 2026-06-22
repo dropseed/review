@@ -59,9 +59,13 @@ export interface ReviewSlice {
   reviewState: ReviewState | null;
   savedReviews: ReviewSummary[];
   savedReviewsLoading: boolean;
+  // How many decisions the last load carried forward onto a drifted diff.
+  // Transient — surfaced as a banner, cleared on dismiss or next clean load.
+  carriedForward: number;
 
   // Actions
   setReviewState: (state: ReviewState) => void;
+  dismissCarriedForward: () => void;
 
   // Persistence
   loadReviewState: () => Promise<void>;
@@ -360,8 +364,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     reviewState: null,
     savedReviews: [],
     savedReviewsLoading: false,
+    carriedForward: 0,
 
     setReviewState: (state) => set({ reviewState: state }),
+    dismissCarriedForward: () => set({ carriedForward: 0 }),
 
     loadReviewState: async () => {
       const { repoPath, comparison } = get();
@@ -369,7 +375,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       const comparisonKey = comparison.key;
       try {
-        const state = await client.loadReviewState(repoPath, comparison);
+        const { state, carriedForward } = await client.loadReviewState(
+          repoPath,
+          comparison,
+        );
         // Discard result if comparison changed while loading
         if (get().comparison?.key !== comparisonKey) return;
         // Re-read current state after await — it may have been updated
@@ -382,11 +391,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
           if (latestState.updatedAt > state.updatedAt) return;
         }
         ensuredLocalReviews.add(makeReviewKey(repoPath, comparisonKey));
-        set({ reviewState: state });
+        set({ reviewState: state, carriedForward });
       } catch (err) {
         if (get().comparison?.key !== comparisonKey) return;
         console.error("Failed to load review state:", err);
         set({
+          carriedForward: 0,
           reviewState: {
             comparison,
             hunks: {},
@@ -469,7 +479,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         try {
           const { comparison: currentComparison } = get();
           if (!currentComparison) return;
-          const diskState = await client.loadReviewState(
+          const { state: diskState } = await client.loadReviewState(
             repoPath,
             currentComparison,
           );

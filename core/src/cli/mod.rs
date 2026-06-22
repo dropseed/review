@@ -1,5 +1,6 @@
 use crate::review::state::HunkStatus;
 use crate::review::storage;
+use crate::service::targets::{self, ReviewTarget};
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 use clap::{Parser, Subcommand};
@@ -421,21 +422,18 @@ pub(crate) fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comp
         if rev.is_empty() {
             return Err("Specify a ref after 'snapshot:' (e.g. snapshot:HEAD)".to_owned());
         }
-        let head = source
-            .resolve_ref(rev)
-            .ok_or_else(|| format!("Could not resolve '{rev}'"))?;
-        return Ok(Comparison::new("", head));
+        return targets::snapshot_comparison(&source, rev).map_err(|e| e.to_string());
     }
     if let Some(rev) = spec.strip_suffix("^!") {
         if rev.is_empty() {
             return Err("Specify a commit before '^!' (e.g. abc123^!)".to_owned());
         }
-        return commit_comparison(&source, rev);
+        return targets::commit_comparison(&source, rev).map_err(|e| e.to_string());
     }
     // Single ref. A branch/tag name reviews that branch's work against the
     // default branch; a bare commit reviews just that commit.
     if !source.is_named_ref(spec) && source.resolve_ref(spec).is_some() {
-        commit_comparison(&source, spec)
+        targets::commit_comparison(&source, spec).map_err(|e| e.to_string())
     } else {
         Ok(resolve_comparison_with(
             &source,
@@ -445,40 +443,41 @@ pub(crate) fn parse_comparison_spec(repo_path: &Path, spec: &str) -> Result<Comp
     }
 }
 
-/// Resolve `<rev>` into a comparison covering just that commit: `parent..rev`.
+// The working/staged/stash/commit/snapshot leaf resolvers live in
+// `crate::service::targets` so the desktop app and HTTP server share them; these
+// thin CLI wrappers just adapt the error type to `String`.
+
+/// Resolve `<rev>` into a comparison covering just that commit (`parent..rev`).
 pub(crate) fn resolve_commit_comparison(repo_path: &Path, rev: &str) -> Result<Comparison, String> {
-    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-    commit_comparison(&source, rev)
+    targets::resolve_target(
+        repo_path,
+        &ReviewTarget::Commit {
+            rev: rev.to_owned(),
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Resolve a "working tree" comparison: only the uncommitted changes (staged,
-/// unstaged, and untracked) on the current branch. Base is `HEAD` and head is the
-/// current branch, so the committed history drops out and only the dirty state
-/// remains. `HEAD` is kept as a relative ref on purpose — this stays a single
-/// live review per branch that always reflects the current working tree, and the
-/// branch head makes the working tree get folded into the diff.
+/// unstaged, and untracked) on the current branch.
 pub(crate) fn resolve_working_comparison(repo_path: &Path) -> Result<Comparison, String> {
-    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-    let head = source.get_current_branch().map_err(|e| e.to_string())?;
-    Ok(Comparison::new("HEAD", head))
+    targets::resolve_target(repo_path, &ReviewTarget::Working).map_err(|e| e.to_string())
 }
 
-/// Resolve a "staged" comparison: only the changes in the git index (what would
-/// be committed). The index is captured as a tree object via `git write-tree`, so
-/// `HEAD..<index-tree>` is an ordinary object comparison the existing diff
-/// pipeline handles directly — no staged-specific plumbing. This is a frozen
-/// snapshot of the index at invocation time (re-staging produces a new review).
+/// Resolve a "staged" comparison: only the changes in the git index.
 pub(crate) fn resolve_staged_comparison(repo_path: &Path) -> Result<Comparison, String> {
-    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-    let base = source.resolve_ref_or_empty_tree("HEAD");
-    let tree = source.write_index_tree().map_err(|e| e.to_string())?;
-    Ok(Comparison::new(base, tree))
+    targets::resolve_target(repo_path, &ReviewTarget::Staged).map_err(|e| e.to_string())
+}
+
+/// Resolve a "stash" comparison: a stash entry's changes vs its parent.
+pub(crate) fn resolve_stash_comparison(repo_path: &Path, index: u32) -> Result<Comparison, String> {
+    targets::resolve_target(repo_path, &ReviewTarget::Stash { index }).map_err(|e| e.to_string())
 }
 
 /// Resolve a "patch" comparison: apply a unified diff on top of HEAD in a
 /// throwaway index and review the result as `HEAD..<patched-tree>`. `patch_src`
-/// is a file path, or "-" to read the patch from stdin. Lets a proposed or
-/// external patch be reviewed before it's actually applied.
+/// is a file path, or "-" to read the patch from stdin. CLI-only — the desktop
+/// targets don't include patch.
 pub(crate) fn resolve_patch_comparison(
     repo_path: &Path,
     patch_src: &str,
@@ -504,32 +503,6 @@ fn read_patch_input(src: &str) -> Result<String, String> {
     } else {
         std::fs::read_to_string(src).map_err(|e| format!("Could not read patch '{src}': {e}"))
     }
-}
-
-/// Resolve a "stash" comparison: the changes captured in `stash@{n}` against the
-/// commit it was created on (`stash@{n}^1`). Defaults to the most recent stash.
-pub(crate) fn resolve_stash_comparison(repo_path: &Path, index: u32) -> Result<Comparison, String> {
-    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-    let stash_ref = format!("stash@{{{index}}}");
-    let head = source
-        .resolve_ref(&stash_ref)
-        .ok_or_else(|| format!("No stash entry {stash_ref}"))?;
-    let base = source.resolve_ref_or_empty_tree(&format!("{stash_ref}^1"));
-    Ok(Comparison::new(base, head))
-}
-
-/// Build a single-commit comparison (`parent..rev`) from an existing source.
-/// Both sides are resolved to concrete SHAs so the review key is stable even if
-/// refs move later. A root commit (no parent) is compared against the empty tree,
-/// and a merge commit is diffed against its first parent. Resolving the head to a
-/// raw SHA (not a branch name) means the working tree is never folded in, so the
-/// review shows exactly that commit's changes.
-fn commit_comparison(source: &LocalGitSource, rev: &str) -> Result<Comparison, String> {
-    let head = source
-        .resolve_ref(rev)
-        .ok_or_else(|| format!("Could not resolve commit '{rev}'"))?;
-    let base = source.resolve_ref_or_empty_tree(&format!("{rev}^"));
-    Ok(Comparison::new(base, head))
 }
 
 /// Path to the signal file used to communicate a repo path to the running app.

@@ -99,6 +99,7 @@ pub fn build_api_router(state: AppState) -> Router {
         .route("/api/files/raw-content", post(files_raw_content))
         .route("/api/files/directory-plain", post(files_directory_plain))
         // Review
+        .route("/api/review/resolve-target", post(review_resolve_target))
         .route("/api/review/load", post(review_load))
         .route("/api/review/save", post(review_save))
         .route("/api/review/list", post(review_list))
@@ -237,6 +238,13 @@ struct DirContentsRequest {
 struct ReviewLoadRequest {
     repo_path: String,
     comparison: Comparison,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveTargetRequest {
+    repo_path: String,
+    target: crate::service::targets::ReviewTarget,
 }
 
 #[derive(Deserialize)]
@@ -788,7 +796,18 @@ async fn files_directory_plain(Json(req): Json<FilePathRequest>) -> ApiResult<Ve
 // Review handlers
 // ============================================================
 
-async fn review_load(Json(req): Json<ReviewLoadRequest>) -> ApiResult<ReviewState> {
+async fn review_resolve_target(
+    Json(req): Json<ResolveTargetRequest>,
+) -> ApiResult<crate::sources::traits::Comparison> {
+    blocking(move || {
+        crate::service::targets::resolve_target(&PathBuf::from(&req.repo_path), &req.target)
+    })
+    .await
+}
+
+async fn review_load(
+    Json(req): Json<ReviewLoadRequest>,
+) -> ApiResult<crate::service::review_io::ReviewLoadResult> {
     blocking(move || {
         crate::service::review_io::load_reconciled_review(
             &PathBuf::from(&req.repo_path),

@@ -39,6 +39,8 @@ import type {
   ReviewFreshnessInput,
   ReviewFreshnessResult,
   ReviewState,
+  ReviewLoadResult,
+  ReviewTarget,
   ReviewSummary,
   GlobalReviewSummary,
   SearchMatch,
@@ -393,10 +395,17 @@ export class HttpClient implements ApiClient {
 
   // ----- Review state -----
 
+  async resolveReviewTarget(
+    repoPath: string,
+    target: ReviewTarget,
+  ): Promise<Comparison> {
+    return this.post("/api/review/resolve-target", { repoPath, target });
+  }
+
   async loadReviewState(
     repoPath: string,
     comparison: Comparison,
-  ): Promise<ReviewState> {
+  ): Promise<ReviewLoadResult> {
     return this.post("/api/review/load", { repoPath, comparison });
   }
 

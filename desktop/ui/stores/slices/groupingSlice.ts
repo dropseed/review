@@ -550,7 +550,10 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         } else {
           // Navigated away — save directly to disk
           try {
-            const diskState = await client.loadReviewState(repo, comparison!);
+            const { state: diskState } = await client.loadReviewState(
+              repo,
+              comparison!,
+            );
             const updatedState = updateReviewGuide(
               diskState,
               hunks,

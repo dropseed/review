@@ -19,6 +19,8 @@ import type {
   FileEntry,
   FileContent,
   ReviewState,
+  ReviewLoadResult,
+  ReviewTarget,
   ReviewSummary,
   GlobalReviewSummary,
   TrustCategory,
@@ -235,11 +237,17 @@ export interface ApiClient {
 
   // ----- Review state -----
 
-  /** Load review state for a comparison */
+  /** Resolve a review target (uncommitted/staged/stash/commit/snapshot) into a comparison */
+  resolveReviewTarget(
+    repoPath: string,
+    target: ReviewTarget,
+  ): Promise<Comparison>;
+
+  /** Load review state for a comparison (with carry-forward count) */
   loadReviewState(
     repoPath: string,
     comparison: Comparison,
-  ): Promise<ReviewState>;
+  ): Promise<ReviewLoadResult>;
 
   /** Save review state (returns the new version number) */
   saveReviewState(repoPath: string, state: ReviewState): Promise<number>;

@@ -12,26 +12,44 @@ use std::path::Path;
 use std::time::Instant;
 
 use log::debug;
+use serde::{Deserialize, Serialize};
 
 use crate::review::state::ReviewState;
 use crate::review::storage;
 use crate::service::files::comparison_hunks;
 use crate::sources::traits::Comparison;
 
+/// A loaded review plus how many decisions reconciliation carried forward onto
+/// the current diff — so the UI can surface "N carried forward since the diff
+/// changed". The count is transient (not persisted); a later load after a save
+/// finds exact ID matches and reports 0.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewLoadResult {
+    pub state: ReviewState,
+    pub carried_forward: usize,
+}
+
 /// Load a review and carry its decisions forward onto the current diff. Skips the
 /// diff computation for a review with no recorded decisions. Reconcile is
 /// best-effort: if the diff can't be read, the state is returned unreconciled
 /// rather than failing the load.
-pub fn load_reconciled_review(repo: &Path, comparison: &Comparison) -> anyhow::Result<ReviewState> {
+pub fn load_reconciled_review(
+    repo: &Path,
+    comparison: &Comparison,
+) -> anyhow::Result<ReviewLoadResult> {
     let t0 = Instant::now();
     let mut state = storage::load_review_state(repo, comparison)?;
-    reconcile_against_diff(repo, &mut state);
+    let carried_forward = reconcile_against_diff(repo, &mut state);
     debug!(
-        "[load_reconciled_review] {} in {:?}",
+        "[load_reconciled_review] {} carried={carried_forward} in {:?}",
         comparison.key,
         t0.elapsed()
     );
-    Ok(state)
+    Ok(ReviewLoadResult {
+        state,
+        carried_forward,
+    })
 }
 
 /// Reconcile a review against the current diff, then persist it; returns the new
@@ -50,15 +68,17 @@ pub fn reconcile_and_save(repo: &Path, mut state: ReviewState) -> anyhow::Result
     Ok(state.version)
 }
 
-/// Reconcile `state.hunks` against the comparison's live diff in place. No-op for
-/// an empty review (nothing to carry forward, so the diff isn't computed).
-/// Best-effort: a diff that can't be read leaves the state untouched.
-fn reconcile_against_diff(repo: &Path, state: &mut ReviewState) {
+/// Reconcile `state.hunks` against the comparison's live diff in place, returning
+/// how many decisions were carried forward. No-op (0) for an empty review
+/// (nothing to carry forward, so the diff isn't computed). Best-effort: a diff
+/// that can't be read leaves the state untouched.
+fn reconcile_against_diff(repo: &Path, state: &mut ReviewState) -> usize {
     if state.hunks.is_empty() {
-        return;
+        return 0;
     }
-    if let Ok(hunks) = comparison_hunks(repo, &state.comparison, state.github_pr.as_ref()) {
-        state.reconcile(&hunks);
+    match comparison_hunks(repo, &state.comparison, state.github_pr.as_ref()) {
+        Ok(hunks) => state.reconcile(&hunks).carried_forward,
+        Err(_) => 0,
     }
 }
 
@@ -119,7 +139,13 @@ mod tests {
         assert_eq!(version, 1);
 
         let loaded = load_reconciled_review(p, &comparison).unwrap();
-        let hunk_state = loaded.hunks.get(&id).expect("approved hunk persisted");
+        // No drift since save → exact-match, nothing carried.
+        assert_eq!(loaded.carried_forward, 0);
+        let hunk_state = loaded
+            .state
+            .hunks
+            .get(&id)
+            .expect("approved hunk persisted");
         assert!(matches!(
             hunk_state.status.as_ref().map(|s| &s.value),
             Some(HunkStatus::Approved)
@@ -143,7 +169,8 @@ mod tests {
         assert_eq!(reconcile_and_save(p, state).unwrap(), 1);
 
         let loaded = load_reconciled_review(p, &comparison).unwrap();
-        assert!(loaded.hunks.is_empty());
-        assert_eq!(loaded.version, 1);
+        assert!(loaded.state.hunks.is_empty());
+        assert_eq!(loaded.state.version, 1);
+        assert_eq!(loaded.carried_forward, 0);
     }
 }

@@ -42,6 +42,8 @@ import type {
   ReviewFreshnessInput,
   ReviewFreshnessResult,
   ReviewState,
+  ReviewLoadResult,
+  ReviewTarget,
   ReviewSummary,
   GlobalReviewSummary,
   SearchMatch,
@@ -320,11 +322,21 @@ export class TauriClient implements ApiClient {
 
   // ----- Review state -----
 
+  async resolveReviewTarget(
+    repoPath: string,
+    target: ReviewTarget,
+  ): Promise<Comparison> {
+    return invoke<Comparison>("resolve_review_target", { repoPath, target });
+  }
+
   async loadReviewState(
     repoPath: string,
     comparison: Comparison,
-  ): Promise<ReviewState> {
-    return invoke<ReviewState>("load_review_state", { repoPath, comparison });
+  ): Promise<ReviewLoadResult> {
+    return invoke<ReviewLoadResult>("load_review_state", {
+      repoPath,
+      comparison,
+    });
   }
 
   async saveReviewState(repoPath: string, state: ReviewState): Promise<number> {

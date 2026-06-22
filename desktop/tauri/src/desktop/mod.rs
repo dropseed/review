@@ -679,6 +679,7 @@ pub fn run() {
             commands::get_diff,
             commands::get_diff_shortstat,
             commands::get_expanded_context,
+            commands::resolve_review_target,
             commands::load_review_state,
             commands::save_review_state,
             commands::list_saved_reviews,

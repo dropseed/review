@@ -253,7 +253,7 @@ export function ComparisonPicker({
     });
   }, []);
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
     if (!selection || !baseRef) return;
 
     if (selection.kind === "pr" && selection.pr) {
@@ -262,9 +262,25 @@ export function ComparisonPicker({
       return;
     }
 
+    if (selection.kind === "stash") {
+      // Review the stash's own changes (stash@{n}^1..stash@{n}), matching the
+      // CLI — not the stash vs the default branch.
+      const index = Number(selection.value.match(/stash@\{(\d+)\}/)?.[1] ?? 0);
+      try {
+        const comparison = await getApiClient().resolveReviewTarget(repoPath, {
+          kind: "stash",
+          index,
+        });
+        onSelectReview(comparison);
+      } catch (err) {
+        console.error("Failed to resolve stash:", err);
+      }
+      return;
+    }
+
     const comparison = makeComparison(baseRef, selection.value);
     onSelectReview(comparison);
-  }, [selection, baseRef, onSelectReview]);
+  }, [selection, baseRef, repoPath, onSelectReview]);
 
   const handleBaseChange = useCallback(
     (newBase: string) => {

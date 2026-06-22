@@ -285,16 +285,42 @@ pub fn get_diff_shortstat(
         .map_err(|e| e.to_string())
 }
 
+/// Resolve a review target (uncommitted/staged/stash/commit/snapshot) into a
+/// `Comparison` the normal review flow can open.
 #[tauri::command]
-pub fn load_review_state(repo_path: String, comparison: Comparison) -> Result<ReviewState, String> {
+pub fn resolve_review_target(
+    repo_path: String,
+    target: review::service::targets::ReviewTarget,
+) -> Result<Comparison, String> {
+    let t0 = Instant::now();
+    let comparison = review::service::targets::resolve_target(&PathBuf::from(&repo_path), &target)
+        .map_err(|e| e.to_string())?;
+    info!(
+        "resolve_review_target {} in {:?}",
+        comparison.key,
+        t0.elapsed()
+    );
+    Ok(comparison)
+}
+
+#[tauri::command]
+pub fn load_review_state(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<review::service::review_io::ReviewLoadResult, String> {
     let t0 = Instant::now();
     // Carries decisions forward onto the current diff (best-effort) so the app
     // reflects prior work even after edits shifted hunk IDs.
-    let state =
+    let result =
         review::service::review_io::load_reconciled_review(&PathBuf::from(&repo_path), &comparison)
             .map_err(|e| e.to_string())?;
-    info!("load_review_state {} in {:?}", comparison.key, t0.elapsed());
-    Ok(state)
+    info!(
+        "load_review_state {} carried={} in {:?}",
+        comparison.key,
+        result.carried_forward,
+        t0.elapsed()
+    );
+    Ok(result)
 }
 
 #[tauri::command]

@@ -9,6 +9,7 @@ import type {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
+import { useAppContext } from "../../router";
 import type { CommitDetail } from "../../types";
 import { Spinner } from "../ui/spinner";
 
@@ -93,7 +94,23 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
   const { lineHeight, fontCSS } = useCodeFont();
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const setViewingCommitHash = useReviewStore((s) => s.setViewingCommitHash);
+  const { handleNewReview } = useAppContext();
   const effectiveDiffStyle = diffViewMode === "unified" ? "unified" : "split";
+
+  // Open this commit as its own review (parent..commit) rather than just browsing it.
+  const reviewThisCommit = async (): Promise<void> => {
+    if (!repoPath) return;
+    try {
+      const comparison = await getApiClient().resolveReviewTarget(repoPath, {
+        kind: "commit",
+        rev: hash,
+      });
+      setViewingCommitHash(null);
+      await handleNewReview(repoPath, comparison);
+    } catch (err) {
+      console.error("Failed to start commit review:", err);
+    }
+  };
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +214,15 @@ export function CommitDiffContent({ hash }: CommitDiffContentProps): ReactNode {
             </span>
           </span>
         </div>
+        <button
+          type="button"
+          onClick={reviewThisCommit}
+          className="ml-auto shrink-0 rounded-md border border-edge-default/60 bg-surface-raised/50 px-2.5 py-1 text-xs font-medium text-fg-secondary
+                     hover:border-edge-strong/60 hover:bg-surface-raised transition-colors duration-100
+                     focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring/50"
+        >
+          Review this commit
+        </button>
       </div>
 
       {/* Loading */}
