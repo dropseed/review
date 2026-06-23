@@ -209,8 +209,9 @@ pub fn load_review_view(repo: &Path, spec: Option<&str>) -> Result<ReviewView, S
         .map_err(|e| format!("Failed to load review: {e}"))?;
     // Carry decisions forward onto the current diff for display (not persisted
     // until the next mutation), so `review hunks`/`status` reflect prior work
-    // even after edits shifted hunk IDs.
-    state.reconcile(&hunks);
+    // even after edits shifted hunk IDs. drop_orphans=true: `hunks` is the
+    // authoritative full diff the CLI just computed.
+    state.reconcile(&hunks, true);
     Ok(ReviewView {
         comparison,
         hunks,
@@ -267,7 +268,9 @@ where
             // No-op: don't bump the version or rewrite the file.
             return Ok(state);
         }
-        state.reconcile(live_hunks);
+        // drop_orphans=true: `live_hunks` is the authoritative full diff loaded
+        // by `load_for_mutation`.
+        state.reconcile(live_hunks, true);
         state.prepare_for_save();
         match storage::save_review_state(repo, &state) {
             Ok(()) => return Ok(state),

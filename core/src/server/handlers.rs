@@ -101,6 +101,7 @@ pub fn build_api_router(state: AppState) -> Router {
         // Review
         .route("/api/review/resolve-target", post(review_resolve_target))
         .route("/api/review/load", post(review_load))
+        .route("/api/review/reconcile", post(review_reconcile))
         .route("/api/review/save", post(review_save))
         .route("/api/review/list", post(review_list))
         .route("/api/review/change-base", post(review_change_base))
@@ -249,9 +250,18 @@ struct ResolveTargetRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ReviewReconcileRequest {
+    state: ReviewState,
+    hunks: Vec<DiffHunk>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ReviewSaveRequest {
     repo_path: String,
     state: ReviewState,
+    #[serde(default)]
+    hunks: Option<Vec<DiffHunk>>,
 }
 
 #[derive(Deserialize)]
@@ -805,21 +815,32 @@ async fn review_resolve_target(
     .await
 }
 
-async fn review_load(
-    Json(req): Json<ReviewLoadRequest>,
+async fn review_load(Json(req): Json<ReviewLoadRequest>) -> ApiResult<ReviewState> {
+    blocking(move || {
+        storage::load_review_state(&PathBuf::from(&req.repo_path), &req.comparison)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+async fn review_reconcile(
+    Json(req): Json<ReviewReconcileRequest>,
 ) -> ApiResult<crate::service::review_io::ReviewLoadResult> {
     blocking(move || {
-        crate::service::review_io::load_reconciled_review(
-            &PathBuf::from(&req.repo_path),
-            &req.comparison,
-        )
+        Ok(crate::service::review_io::reconcile_review(
+            req.state, &req.hunks,
+        ))
     })
     .await
 }
 
 async fn review_save(Json(req): Json<ReviewSaveRequest>) -> ApiResult<u64> {
     blocking(move || {
-        crate::service::review_io::reconcile_and_save(&PathBuf::from(&req.repo_path), req.state)
+        crate::service::review_io::save_review(
+            &PathBuf::from(&req.repo_path),
+            req.state,
+            req.hunks.as_deref(),
+        )
     })
     .await
 }

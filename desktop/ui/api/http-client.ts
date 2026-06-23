@@ -405,12 +405,23 @@ export class HttpClient implements ApiClient {
   async loadReviewState(
     repoPath: string,
     comparison: Comparison,
-  ): Promise<ReviewLoadResult> {
+  ): Promise<ReviewState> {
     return this.post("/api/review/load", { repoPath, comparison });
   }
 
-  async saveReviewState(repoPath: string, state: ReviewState): Promise<number> {
-    return this.post("/api/review/save", { repoPath, state });
+  async reconcileReviewState(
+    state: ReviewState,
+    hunks: DiffHunk[],
+  ): Promise<ReviewLoadResult> {
+    return this.post("/api/review/reconcile", { state, hunks });
+  }
+
+  async saveReviewState(
+    repoPath: string,
+    state: ReviewState,
+    hunks?: DiffHunk[],
+  ): Promise<number> {
+    return this.post("/api/review/save", { repoPath, state, hunks });
   }
 
   async listSavedReviews(repoPath: string): Promise<ReviewSummary[]> {

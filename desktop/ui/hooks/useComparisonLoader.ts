@@ -82,6 +82,7 @@ export function useComparisonLoader(
       startActivity,
       endActivity,
       loadReviewState,
+      reconcileReviewState,
       loadFiles,
       loadAllFiles,
       loadGitStatus,
@@ -120,6 +121,11 @@ export function useComparisonLoader(
           // attributed correctly even if the user is fast.
           loadGitUser(),
         ]);
+        if (cancelled) return;
+
+        // Both the persisted decisions and the live diff are now loaded —
+        // carry decisions forward onto the current hunks (no extra git diff).
+        await reconcileReviewState();
         if (cancelled) return;
 
         // Sync worktreePath from loaded review state into the store,

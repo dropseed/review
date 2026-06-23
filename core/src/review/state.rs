@@ -319,13 +319,21 @@ impl ReviewState {
     ///   live hunk with the same [`DiffHunk::stable_hash`] — i.e. the same change
     ///   in the same file, just with shifted surrounding context.
     /// - Orphans with no stable match, or whose stable key maps to more than one
-    ///   live hunk (ambiguous), are dropped — keeping `to_summary` / `review
-    ///   list` honest rather than leaving meaningless entries behind.
+    ///   live hunk (ambiguous), are dropped when `drop_orphans` is set — keeping
+    ///   `to_summary` / `review list` honest rather than leaving meaningless
+    ///   entries behind. When it is clear, such orphans are **retained** as-is.
+    ///
+    /// `drop_orphans` must only be set when `live_hunks` is the *authoritative*,
+    /// complete diff for the comparison (e.g. the CLI computing it itself). The
+    /// desktop/web path reconciles against the hunks the UI happened to load,
+    /// which can be incomplete (skipped/build-artifact files, a per-file load
+    /// failure) — dropping there would silently delete decisions whose hunk was
+    /// merely absent, so it passes `false`.
     ///
     /// Carry-forward only kicks in for entries that were previously stamped with
-    /// a stable key; older entries (pre-`stable_key`) that orphan are simply
-    /// dropped, exactly as before.
-    pub fn reconcile(&mut self, live_hunks: &[DiffHunk]) -> Reconciliation {
+    /// a stable key; older entries (pre-`stable_key`) that orphan are dropped or
+    /// retained per `drop_orphans`, exactly as any other orphan.
+    pub fn reconcile(&mut self, live_hunks: &[DiffHunk], drop_orphans: bool) -> Reconciliation {
         // One stable hash per live hunk, computed once and reused throughout.
         let stable_by_id: HashMap<&str, String> = live_hunks
             .iter()
@@ -370,7 +378,13 @@ impl ReviewState {
                     next.insert(tid, hunk_state);
                     result.carried_forward += 1;
                 }
-                None => result.dropped += 1,
+                // No stable match. Drop only against an authoritative diff;
+                // otherwise retain the decision (its hunk may simply not be in
+                // this — possibly partial — hunk set).
+                None if drop_orphans => result.dropped += 1,
+                None => {
+                    next.insert(id, hunk_state);
+                }
             }
         }
 
@@ -862,7 +876,7 @@ mod tests {
             .insert(a.id.clone(), approved_entry(Some(a.stable_hash())));
 
         // The diff now contains `b` (same change, drifted context) instead of `a`.
-        let recon = state.reconcile(&[b.clone()]);
+        let recon = state.reconcile(&[b.clone()], true);
 
         assert_eq!(recon.carried_forward, 1);
         assert_eq!(recon.dropped, 0);
@@ -888,11 +902,29 @@ mod tests {
         // An old-style entry (no stable key), now orphaned with nothing live.
         state.hunks.insert(a.id.clone(), approved_entry(None));
 
-        let recon = state.reconcile(&[]);
+        let recon = state.reconcile(&[], true);
 
         assert_eq!(recon.carried_forward, 0);
         assert_eq!(recon.dropped, 1);
         assert!(state.hunks.is_empty());
+    }
+
+    #[test]
+    fn reconcile_retains_orphan_when_not_dropping() {
+        let a = hunk_from(DIFF_A);
+        let mut state = ReviewState::new(test_comparison());
+        state.hunks.insert(a.id.clone(), approved_entry(None));
+
+        // drop_orphans=false: the hunk is merely absent from this (possibly
+        // partial) set, so the decision must be retained, not deleted.
+        let recon = state.reconcile(&[], false);
+
+        assert_eq!(recon.carried_forward, 0);
+        assert_eq!(recon.dropped, 0);
+        assert!(
+            state.hunks.contains_key(&a.id),
+            "orphan retained against a non-authoritative hunk set"
+        );
     }
 
     #[test]
@@ -901,7 +933,7 @@ mod tests {
         let mut state = ReviewState::new(test_comparison());
         state.hunks.insert(a.id.clone(), approved_entry(None));
 
-        let recon = state.reconcile(&[a.clone()]);
+        let recon = state.reconcile(&[a.clone()], true);
 
         assert_eq!(recon.carried_forward, 0);
         assert_eq!(recon.dropped, 0);
@@ -924,7 +956,7 @@ mod tests {
             approved_entry(Some(a.stable_hash())),
         );
 
-        let recon = state.reconcile(&[a.clone(), b.clone()]);
+        let recon = state.reconcile(&[a.clone(), b.clone()], true);
 
         assert_eq!(recon.carried_forward, 0, "ambiguous match is not carried");
         assert_eq!(recon.dropped, 1);

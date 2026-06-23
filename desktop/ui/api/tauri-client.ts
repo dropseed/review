@@ -332,15 +332,26 @@ export class TauriClient implements ApiClient {
   async loadReviewState(
     repoPath: string,
     comparison: Comparison,
-  ): Promise<ReviewLoadResult> {
-    return invoke<ReviewLoadResult>("load_review_state", {
+  ): Promise<ReviewState> {
+    return invoke<ReviewState>("load_review_state", {
       repoPath,
       comparison,
     });
   }
 
-  async saveReviewState(repoPath: string, state: ReviewState): Promise<number> {
-    return invoke<number>("save_review_state", { repoPath, state });
+  async reconcileReviewState(
+    state: ReviewState,
+    hunks: DiffHunk[],
+  ): Promise<ReviewLoadResult> {
+    return invoke<ReviewLoadResult>("reconcile_review_state", { state, hunks });
+  }
+
+  async saveReviewState(
+    repoPath: string,
+    state: ReviewState,
+    hunks?: DiffHunk[],
+  ): Promise<number> {
+    return invoke<number>("save_review_state", { repoPath, state, hunks });
   }
 
   async listSavedReviews(repoPath: string): Promise<ReviewSummary[]> {

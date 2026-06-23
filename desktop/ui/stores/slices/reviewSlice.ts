@@ -69,6 +69,9 @@ export interface ReviewSlice {
 
   // Persistence
   loadReviewState: () => Promise<void>;
+  // Carry persisted decisions forward onto the loaded diff (call after the
+  // hunks are loaded); updates carriedForward for the banner.
+  reconcileReviewState: () => Promise<void>;
   saveReviewState: () => Promise<void>;
   loadSavedReviews: () => Promise<void>;
   deleteReview: (comparison: Comparison) => Promise<void>;
@@ -375,10 +378,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       const comparisonKey = comparison.key;
       try {
-        const { state, carriedForward } = await client.loadReviewState(
-          repoPath,
-          comparison,
-        );
+        const state = await client.loadReviewState(repoPath, comparison);
         // Discard result if comparison changed while loading
         if (get().comparison?.key !== comparisonKey) return;
         // Re-read current state after await — it may have been updated
@@ -391,7 +391,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
           if (latestState.updatedAt > state.updatedAt) return;
         }
         ensuredLocalReviews.add(makeReviewKey(repoPath, comparisonKey));
-        set({ reviewState: state, carriedForward });
+        set({ reviewState: state });
       } catch (err) {
         if (get().comparison?.key !== comparisonKey) return;
         console.error("Failed to load review state:", err);
@@ -412,11 +412,34 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       }
     },
 
+    reconcileReviewState: async () => {
+      const { repoPath, comparison, reviewState } = get();
+      if (!repoPath || !comparison || !reviewState) return;
+      // Nothing to carry forward without recorded decisions or a loaded diff.
+      if (Object.keys(reviewState.hunks).length === 0) return;
+      const hunks = getAllHunksFromState(get());
+      if (hunks.length === 0) return;
+
+      const comparisonKey = comparison.key;
+      try {
+        const { state, carriedForward } = await client.reconcileReviewState(
+          reviewState,
+          hunks,
+        );
+        // Discard if the comparison changed, or the user touched the review
+        // while reconciliation was in flight (avoid clobbering newer edits).
+        if (get().comparison?.key !== comparisonKey) return;
+        if (get().reviewState?.updatedAt !== reviewState.updatedAt) return;
+        set({ reviewState: state, carriedForward });
+      } catch (err) {
+        console.error("Failed to reconcile review state:", err);
+      }
+    },
+
     saveReviewState: async () => {
       let { repoPath, reviewState, comparison, readOnlyPreview } = get();
       if (readOnlyPreview) return;
       if (!repoPath || !reviewState || !comparison) return;
-      const hunks = getAllHunksFromState(get());
 
       // Skip saving if the review file hasn't been created yet and the state
       // is pristine (no human actions). This avoids creating review files for
@@ -453,6 +476,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // (catches races where a stale debounced save fires after switching)
       if (reviewState.comparison.key !== comparison.key) return;
 
+      // Computed only once we know there's something to save (skips the walk for
+      // pristine reviews that returned above).
+      const hunks = getAllHunksFromState(get());
+
       // Ensure totalDiffHunks is set from the actual diff hunk count
       if (hunks.length > 0 && reviewState.totalDiffHunks !== hunks.length) {
         reviewState = { ...reviewState, totalDiffHunks: hunks.length };
@@ -462,7 +489,13 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const saveAndUpdateVersion = async (
         state: ReviewState,
       ): Promise<void> => {
-        const newVersion = await client.saveReviewState(repoPath, state);
+        // Only reconcile against the diff when we actually have it loaded —
+        // passing an empty list would orphan every decision against zero hunks.
+        const newVersion = await client.saveReviewState(
+          repoPath,
+          state,
+          hunks.length > 0 ? hunks : undefined,
+        );
         lastSaveTimestamp = Date.now();
         set({ reviewState: { ...get().reviewState!, version: newVersion } });
       };
@@ -479,7 +512,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         try {
           const { comparison: currentComparison } = get();
           if (!currentComparison) return;
-          const { state: diskState } = await client.loadReviewState(
+          const diskState = await client.loadReviewState(
             repoPath,
             currentComparison,
           );
@@ -903,6 +936,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         loadFiles,
         loadAllFiles,
         loadReviewState,
+        reconcileReviewState,
         loadGitStatus,
         refreshCommits,
         classifyStaticHunks,
@@ -926,6 +960,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         checkReviewsFreshness(),
         repoPath ? refreshCommits(repoPath, range) : Promise.resolve(),
       ]);
+
+      // Carry decisions forward onto the refreshed diff (drift is most likely
+      // here, e.g. after a working-tree change).
+      await reconcileReviewState();
 
       // Run static (rule-based) classification on refresh
       classifyStaticHunks();

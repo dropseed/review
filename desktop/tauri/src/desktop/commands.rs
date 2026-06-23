@@ -304,19 +304,28 @@ pub fn resolve_review_target(
 }
 
 #[tauri::command]
-pub fn load_review_state(
-    repo_path: String,
-    comparison: Comparison,
+pub fn load_review_state(repo_path: String, comparison: Comparison) -> Result<ReviewState, String> {
+    let t0 = Instant::now();
+    let state = storage::load_review_state(&PathBuf::from(&repo_path), &comparison)
+        .map_err(|e| e.to_string())?;
+    info!("load_review_state {} in {:?}", comparison.key, t0.elapsed());
+    Ok(state)
+}
+
+/// Carry persisted decisions forward onto the live diff the UI just loaded, so a
+/// review reflects prior work even after edits shifted hunk IDs. Reconciles
+/// in-memory against the supplied hunks (no `git diff`); persistence happens on
+/// the next save.
+#[tauri::command]
+pub fn reconcile_review_state(
+    state: ReviewState,
+    hunks: Vec<DiffHunk>,
 ) -> Result<review::service::review_io::ReviewLoadResult, String> {
     let t0 = Instant::now();
-    // Carries decisions forward onto the current diff (best-effort) so the app
-    // reflects prior work even after edits shifted hunk IDs.
-    let result =
-        review::service::review_io::load_reconciled_review(&PathBuf::from(&repo_path), &comparison)
-            .map_err(|e| e.to_string())?;
+    let key = state.comparison.key.clone();
+    let result = review::service::review_io::reconcile_review(state, &hunks);
     info!(
-        "load_review_state {} carried={} in {:?}",
-        comparison.key,
+        "reconcile_review_state {key} carried={} in {:?}",
         result.carried_forward,
         t0.elapsed()
     );
@@ -324,13 +333,22 @@ pub fn load_review_state(
 }
 
 #[tauri::command]
-pub fn save_review_state(repo_path: String, state: ReviewState) -> Result<u64, String> {
+pub fn save_review_state(
+    repo_path: String,
+    state: ReviewState,
+    hunks: Option<Vec<DiffHunk>>,
+) -> Result<u64, String> {
     let t0 = Instant::now();
     let key = state.comparison.key.clone();
-    // Reconciles before persisting so stable keys are (re)stamped from the live
-    // diff and decisions carry across hunk-ID drift.
-    let version = review::service::review_io::reconcile_and_save(&PathBuf::from(&repo_path), state)
-        .map_err(|e| e.to_string())?;
+    // Reconciles against the hunks the UI already loaded (when present) so stable
+    // keys are (re)stamped and decisions carry across hunk-ID drift — without a
+    // second `git diff`.
+    let version = review::service::review_io::save_review(
+        &PathBuf::from(&repo_path),
+        state,
+        hunks.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
     info!("save_review_state {key} v{version} in {:?}", t0.elapsed());
     Ok(version)
 }

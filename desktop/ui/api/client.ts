@@ -243,14 +243,32 @@ export interface ApiClient {
     target: ReviewTarget,
   ): Promise<Comparison>;
 
-  /** Load review state for a comparison (with carry-forward count) */
+  /** Load persisted review state for a comparison (no reconciliation) */
   loadReviewState(
     repoPath: string,
     comparison: Comparison,
+  ): Promise<ReviewState>;
+
+  /**
+   * Carry persisted decisions forward onto the live diff `hunks` (already loaded
+   * for display), returning the reconciled state and how many were carried.
+   * In-memory only — persisted on the next save.
+   */
+  reconcileReviewState(
+    state: ReviewState,
+    hunks: DiffHunk[],
   ): Promise<ReviewLoadResult>;
 
-  /** Save review state (returns the new version number) */
-  saveReviewState(repoPath: string, state: ReviewState): Promise<number>;
+  /**
+   * Save review state (returns the new version number). Pass the live diff
+   * `hunks` so the save reconciles decisions across hunk-ID drift; omit them
+   * when no diff is in hand (e.g. a worktree-path-only save).
+   */
+  saveReviewState(
+    repoPath: string,
+    state: ReviewState,
+    hunks?: DiffHunk[],
+  ): Promise<number>;
 
   /** List all saved reviews for a repository */
   listSavedReviews(repoPath: string): Promise<ReviewSummary[]>;

@@ -2,27 +2,25 @@
 //! server, so reconciliation is wired in exactly one place rather than copied
 //! into each command.
 //!
-//! Both paths reconcile persisted decisions against the current diff (carrying
-//! them forward across hunk-ID drift) — on load for display, and before save so
-//! the stable keys are (re)stamped. Computing the diff is skipped when the review
-//! records no decisions: there is nothing to reconcile, and it avoids a `git
-//! diff` on every empty/fresh review.
+//! Reconciliation carries persisted decisions forward across hunk-ID drift. It
+//! runs against the live hunks the caller already has in hand — the UI loads the
+//! diff once for display, so we reconcile against *those* hunks rather than
+//! shelling out to a second `git diff`. (The CLI, which has no in-memory diff,
+//! reconciles directly via [`crate::review::state::ReviewState::reconcile`] with
+//! hunks it loaded itself.)
 
 use std::path::Path;
-use std::time::Instant;
 
-use log::debug;
 use serde::{Deserialize, Serialize};
 
+use crate::diff::parser::DiffHunk;
 use crate::review::state::ReviewState;
 use crate::review::storage;
-use crate::service::files::comparison_hunks;
-use crate::sources::traits::Comparison;
 
 /// A loaded review plus how many decisions reconciliation carried forward onto
 /// the current diff — so the UI can surface "N carried forward since the diff
-/// changed". The count is transient (not persisted); a later load after a save
-/// finds exact ID matches and reports 0.
+/// changed". The count is transient (not persisted); a later reconcile after a
+/// save finds exact ID matches and reports 0.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewLoadResult {
@@ -30,56 +28,40 @@ pub struct ReviewLoadResult {
     pub carried_forward: usize,
 }
 
-/// Load a review and carry its decisions forward onto the current diff. Skips the
-/// diff computation for a review with no recorded decisions. Reconcile is
-/// best-effort: if the diff can't be read, the state is returned unreconciled
-/// rather than failing the load.
-pub fn load_reconciled_review(
-    repo: &Path,
-    comparison: &Comparison,
-) -> anyhow::Result<ReviewLoadResult> {
-    let t0 = Instant::now();
-    let mut state = storage::load_review_state(repo, comparison)?;
-    let carried_forward = reconcile_against_diff(repo, &mut state);
-    debug!(
-        "[load_reconciled_review] {} carried={carried_forward} in {:?}",
-        comparison.key,
-        t0.elapsed()
-    );
-    Ok(ReviewLoadResult {
+/// Carry a loaded review's decisions forward onto the live diff, returning the
+/// reconciled state and how many decisions were carried. In-memory only — the
+/// caller persists later (on the next save). A review with no decisions is a
+/// no-op: there is nothing to carry forward.
+pub fn reconcile_review(mut state: ReviewState, live_hunks: &[DiffHunk]) -> ReviewLoadResult {
+    // drop_orphans=false: these are the hunks the UI loaded, which may be
+    // incomplete — never delete a decision just because its hunk is absent here.
+    let carried_forward = if state.hunks.is_empty() {
+        0
+    } else {
+        state.reconcile(live_hunks, false).carried_forward
+    };
+    ReviewLoadResult {
         state,
         carried_forward,
-    })
+    }
 }
 
-/// Reconcile a review against the current diff, then persist it; returns the new
-/// version. Skips the diff computation for a review with no recorded decisions.
-pub fn reconcile_and_save(repo: &Path, mut state: ReviewState) -> anyhow::Result<u64> {
-    let t0 = Instant::now();
-    reconcile_against_diff(repo, &mut state);
+/// Reconcile against the live hunks (when supplied), then persist; returns the
+/// new version. `live_hunks` is `None` only for callers with no diff in hand —
+/// e.g. saving a worktree-path change — where there is nothing to reconcile.
+pub fn save_review(
+    repo: &Path,
+    mut state: ReviewState,
+    live_hunks: Option<&[DiffHunk]>,
+) -> anyhow::Result<u64> {
+    if let Some(hunks) = live_hunks {
+        if !state.hunks.is_empty() {
+            state.reconcile(hunks, false);
+        }
+    }
     state.prepare_for_save();
     storage::save_review_state(repo, &state)?;
-    debug!(
-        "[reconcile_and_save] {} v{} in {:?}",
-        state.comparison.key,
-        state.version,
-        t0.elapsed()
-    );
     Ok(state.version)
-}
-
-/// Reconcile `state.hunks` against the comparison's live diff in place, returning
-/// how many decisions were carried forward. No-op (0) for an empty review
-/// (nothing to carry forward, so the diff isn't computed). Best-effort: a diff
-/// that can't be read leaves the state untouched.
-fn reconcile_against_diff(repo: &Path, state: &mut ReviewState) -> usize {
-    if state.hunks.is_empty() {
-        return 0;
-    }
-    match comparison_hunks(repo, &state.comparison, state.github_pr.as_ref()) {
-        Ok(hunks) => state.reconcile(&hunks).carried_forward,
-        Err(_) => 0,
-    }
 }
 
 #[cfg(test)]
@@ -87,90 +69,92 @@ mod tests {
     use super::*;
     use crate::review::central::tests::{setup_test, ENV_LOCK};
     use crate::review::state::{Attributed, HunkState, HunkStatus, Source};
-    use std::process::Command as Cmd;
+    use crate::sources::traits::Comparison;
 
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let out = Cmd::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "git {args:?} failed");
-        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    // Both diffs add the same line to `f.txt` with different surrounding context,
+    // so their content-hash IDs differ while their stable hashes match — the
+    // carry-forward case.
+    const DIFF_A: &str = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,3 +1,4 @@\n alpha\n beta\n+NEW\n gamma\n";
+    const DIFF_B: &str = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -10,3 +10,4 @@\n delta\n epsilon\n+NEW\n zeta\n";
+
+    fn hunk(diff: &str) -> DiffHunk {
+        crate::diff::parser::parse_multi_file_diff(diff)
+            .into_iter()
+            .next()
+            .expect("one hunk")
     }
 
-    /// A repo with one commit and an uncommitted addition, plus the working
-    /// comparison (`HEAD..<branch>`) covering exactly that change.
-    fn dirty_repo(dir: &Path) -> Comparison {
-        git(dir, &["init", "-q"]);
-        std::fs::write(dir.join("a.txt"), "a\nb\nc\n").unwrap();
-        git(dir, &["add", "."]);
-        git(dir, &["commit", "-qm", "base"]);
-        std::fs::write(dir.join("a.txt"), "a\nb\nc\nNEW\n").unwrap();
-        let branch = git(dir, &["rev-parse", "--abbrev-ref", "HEAD"]);
-        Comparison::new("HEAD", branch)
+    fn approved_with_key(key: Option<String>) -> HunkState {
+        HunkState {
+            status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
+            stable_key: key,
+            ..Default::default()
+        }
     }
 
     #[test]
-    fn reconcile_and_save_stamps_stable_key_then_loads() {
+    fn reconcile_review_carries_drifted_decision_forward() {
+        let a = hunk(DIFF_A);
+        let b = hunk(DIFF_B);
+        assert_ne!(a.id, b.id, "context drift changes the id");
+
+        let mut state = ReviewState::new(Comparison::new("HEAD", "branch"));
+        // Decision recorded against A, stamped with A's stable key.
+        state
+            .hunks
+            .insert(a.id.clone(), approved_with_key(Some(a.stable_hash())));
+
+        // Live diff now contains B (same change, shifted context).
+        let result = reconcile_review(state, &[b.clone()]);
+        assert_eq!(result.carried_forward, 1);
+        assert!(
+            result.state.hunks.contains_key(&b.id),
+            "decision carried onto the live hunk's new id"
+        );
+    }
+
+    #[test]
+    fn reconcile_review_no_decisions_is_a_noop() {
+        let state = ReviewState::new(Comparison::new("HEAD", "branch"));
+        let result = reconcile_review(state, &[hunk(DIFF_A)]);
+        assert_eq!(result.carried_forward, 0);
+        assert!(result.state.hunks.is_empty());
+    }
+
+    #[test]
+    fn save_review_stamps_stable_key_from_live_hunks() {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         let p = repo.path();
-        let comparison = dirty_repo(p);
+        let comparison = Comparison::new("HEAD", "branch");
+        let a = hunk(DIFF_A);
 
-        let id = comparison_hunks(p, &comparison, None).unwrap()[0]
-            .id
-            .clone();
-        let mut state = storage::load_review_state(p, &comparison).unwrap();
-        state.hunks.insert(
-            id.clone(),
-            HunkState {
-                status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
-                ..Default::default()
-            },
-        );
-        let version = reconcile_and_save(p, state).unwrap();
+        let mut state = ReviewState::new(comparison.clone());
+        // Decision with no stable key yet (as if just recorded in the UI).
+        state.hunks.insert(a.id.clone(), approved_with_key(None));
+
+        let version = save_review(p, state, Some(&[a.clone()])).unwrap();
         assert_eq!(version, 1);
 
-        let loaded = load_reconciled_review(p, &comparison).unwrap();
-        // No drift since save → exact-match, nothing carried.
-        assert_eq!(loaded.carried_forward, 0);
-        let hunk_state = loaded
-            .state
-            .hunks
-            .get(&id)
-            .expect("approved hunk persisted");
-        assert!(matches!(
-            hunk_state.status.as_ref().map(|s| &s.value),
-            Some(HunkStatus::Approved)
-        ));
-        assert!(
-            hunk_state.stable_key.is_some(),
-            "save should stamp the stable key from the live diff"
+        let loaded = storage::load_review_state(p, &comparison).unwrap();
+        assert_eq!(
+            loaded.hunks[&a.id].stable_key.as_deref(),
+            Some(a.stable_hash().as_str()),
+            "save reconciled against the live hunk and stamped its stable key"
         );
     }
 
     #[test]
-    fn empty_review_round_trips_without_a_diff() {
+    fn save_review_without_hunks_persists_unreconciled() {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         let p = repo.path();
-        let comparison = dirty_repo(p);
+        let comparison = Comparison::new("HEAD", "branch");
 
-        // No decisions recorded: the short-circuit skips reconcile but still saves.
-        let state = storage::load_review_state(p, &comparison).unwrap();
-        assert!(state.hunks.is_empty());
-        assert_eq!(reconcile_and_save(p, state).unwrap(), 1);
+        let state = ReviewState::new(comparison.clone());
+        assert_eq!(save_review(p, state, None).unwrap(), 1);
 
-        let loaded = load_reconciled_review(p, &comparison).unwrap();
-        assert!(loaded.state.hunks.is_empty());
-        assert_eq!(loaded.state.version, 1);
-        assert_eq!(loaded.carried_forward, 0);
+        let loaded = storage::load_review_state(p, &comparison).unwrap();
+        assert_eq!(loaded.version, 1);
     }
 }
