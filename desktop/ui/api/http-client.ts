@@ -29,10 +29,6 @@ import type {
   RepoFileSymbols,
   GitHubPrRef,
   GitStatusSummary,
-  GroupingEvent,
-  GroupingInput,
-  HunkGroup,
-  ModifiedSymbolEntry,
   PullRequest,
   RemoteInfo,
   RepoLocalActivity,
@@ -53,7 +49,6 @@ import type {
 export class HttpClient implements ApiClient {
   // ----- Streaming callback registries -----
 
-  private groupingCallbacks = new Map<string, (event: GroupingEvent) => void>();
   private commitCallbacks = new Map<string, (line: CommitOutputLine) => void>();
   private commitMessageCallbacks = new Map<string, (chunk: string) => void>();
 
@@ -489,45 +484,6 @@ export class HttpClient implements ApiClient {
 
   async detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse> {
     return this.post("/api/classify/move-pairs", { hunks });
-  }
-
-  // ----- Grouping -----
-
-  async generateGrouping(
-    repoPath: string,
-    hunks: GroupingInput[],
-    options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
-  ): Promise<HunkGroup[]> {
-    const requestId = options?.requestId ?? crypto.randomUUID();
-    const resp = await fetch("/api/streaming/generate-grouping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        repoPath,
-        hunks,
-        modifiedSymbols: options?.modifiedSymbols ?? null,
-        requestId,
-      }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    return this.consumeSSE<HunkGroup[]>(resp, (event) => {
-      const cb = this.groupingCallbacks.get(requestId);
-      if (cb) cb(event as GroupingEvent);
-    });
-  }
-
-  onGroupingEvent(
-    requestId: string,
-    callback: (event: GroupingEvent) => void,
-  ): () => void {
-    this.groupingCallbacks.set(requestId, callback);
-    return () => {
-      this.groupingCallbacks.delete(requestId);
-    };
-  }
-
-  async cancelGrouping(requestId: string): Promise<void> {
-    await this.post("/api/streaming/cancel-grouping", { requestId });
   }
 
   // ----- Commit -----

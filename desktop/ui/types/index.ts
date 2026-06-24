@@ -451,48 +451,15 @@ export interface ClassifyResponse {
   classifications: Record<string, ClassificationResult>;
 }
 
-export interface HunkSymbolDef {
-  name: string;
-  kind?: string;
-  changeType: string;
-}
-
-export interface HunkSymbolRef {
-  name: string;
-}
-
-export interface ModifiedSymbolEntry {
-  name: string;
-  kind?: string;
-  changeType: string;
-  filePath: string;
-}
-
-export interface GroupingInput {
-  id: string;
-  filePath: string;
-  content: string;
-  label?: string[];
-  symbols?: HunkSymbolDef[];
-  references?: HunkSymbolRef[];
-  hasGrammar?: boolean;
-}
-
 export interface HunkGroup {
   title: string;
   description?: string;
   hunkIds: string[];
-  phase?: string;
-  /** True when this group was created by client-side patching, not AI grouping. */
+  /** True when this group was created by client-side patching, not the authored guide. */
   ungrouped?: boolean;
   /** Optional short label displayed next to the title (e.g. "Trust pattern"). */
   badgeLabel?: string;
 }
-
-/** A single event emitted during streaming grouping. */
-export type GroupingEvent =
-  | { type: "partialTitle"; title: string }
-  | ({ type: "group" } & HunkGroup);
 
 export interface GuideGenerated {
   groups: HunkGroup[];
@@ -501,7 +468,6 @@ export interface GuideGenerated {
 }
 
 export interface Guide {
-  autoStart?: boolean;
   state?: GuideGenerated;
 }
 

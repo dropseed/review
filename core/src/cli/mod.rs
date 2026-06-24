@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 
 mod comments;
 mod common;
+mod guide;
 mod review_state;
 mod skill;
 mod staging;
@@ -133,6 +134,9 @@ pub enum Commands {
 
     /// Add, edit, resolve, or delete a line-level comment
     Comment(comments::CommentArgs),
+
+    /// Show, author, or clear the review guide (an agent-authored hunk grouping)
+    Guide(guide::GuideArgs),
 
     /// Print a `review://` deep link for a file or hunk
     Url(url::UrlArgs),
@@ -262,6 +266,11 @@ pub fn run(cli: Cli) -> Result<(), String> {
             comments::CommentAction::Resolve(a) => comments::run_resolve(args.target, a),
             comments::CommentAction::Unresolve(a) => comments::run_unresolve(args.target, a),
             comments::CommentAction::Delete(a) => comments::run_delete(args.target, a),
+        },
+        Some(Commands::Guide(args)) => match args.action {
+            guide::GuideAction::Show(a) => guide::run_show(a),
+            guide::GuideAction::Add(a) => guide::run_add(a),
+            guide::GuideAction::Clear(a) => guide::run_clear(a),
         },
         Some(Commands::Url(args)) => url::run_url(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),

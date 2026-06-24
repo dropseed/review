@@ -21,7 +21,7 @@ pub(crate) fn default_schema_version() -> u32 {
     0
 }
 
-/// A group of related hunks identified by Claude.
+/// A group of related hunks in the review guide.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HunkGroup {
     pub title: String,
@@ -29,11 +29,11 @@ pub struct HunkGroup {
     pub description: String,
     #[serde(rename = "hunkIds")]
     pub hunk_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub phase: Option<String>,
 }
 
-/// Generated guide data (grouping output from Claude).
+/// The authored guide state: the walkthrough `groups`, plus a snapshot of the
+/// hunk IDs present when it was last written (`hunk_ids`) so readers can tell
+/// when the diff has drifted out from under it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuideGenerated {
     pub groups: Vec<HunkGroup>,
@@ -43,11 +43,13 @@ pub struct GuideGenerated {
     pub generated_at: String,
 }
 
-/// Guide configuration and generated state.
+/// The review guide — an agent-authored grouping of a comparison's hunks into a
+/// walkthrough (written via `review guide`, rendered by the desktop app). A thin
+/// wrapper over [`GuideGenerated`], kept as its own object so the on-disk
+/// `guide.state` shape stays stable and older files (which also carried an
+/// `autoStart` flag, now ignored) still deserialize.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Guide {
-    #[serde(rename = "autoStart", default)]
-    pub auto_start: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<GuideGenerated>,
 }

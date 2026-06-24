@@ -128,9 +128,6 @@ export interface ReviewSlice {
   // Auto-approve staged
   setAutoApproveStaged: (enabled: boolean) => void;
 
-  // Auto-start guide
-  setAutoStartGuide: (enabled: boolean) => void;
-
   // Sync total diff hunk count into review state
   syncTotalDiffHunks: () => void;
 
@@ -797,12 +794,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     setAutoApproveStaged: (enabled) => {
       patchReviewState(get, set, { autoApproveStaged: enabled });
-    },
-
-    setAutoStartGuide: (enabled) => {
-      patchReviewState(get, set, {
-        guide: { ...get().reviewState?.guide, autoStart: enabled },
-      });
     },
 
     syncTotalDiffHunks: () => {

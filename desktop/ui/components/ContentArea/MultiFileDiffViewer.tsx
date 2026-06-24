@@ -2,7 +2,6 @@ import { type ReactNode, useCallback } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
-import { Spinner } from "../ui/spinner";
 
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
@@ -10,8 +9,6 @@ export function MultiFileDiffViewer(): ReactNode {
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
   const reviewGroups = activeEntry.reviewGroups;
-  const groupingLoading = activeEntry.groupingLoading;
-  const groupingPartialTitle = activeEntry.groupingPartialTitle;
   const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
   const adhocGroup = useReviewStore((s) => s.adhocGroup);
 
@@ -22,29 +19,6 @@ export function MultiFileDiffViewer(): ReactNode {
       adhocGroup: null,
     });
   }, []);
-
-  if (
-    groupingLoading &&
-    reviewGroups.length === 0 &&
-    guideContentMode !== "adhoc-group"
-  ) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="max-w-md w-full text-center space-y-4">
-          <div className="flex items-center justify-center">
-            <Spinner className="h-8 w-8 border-2 border-edge-default border-t-guide" />
-          </div>
-          <h2 className="text-lg font-semibold text-fg-secondary">
-            Analyzing changes...
-          </h2>
-          <p className="text-sm text-fg-muted">
-            {groupingPartialTitle ||
-              "Claude is organizing hunks into logical groups for review."}
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Resolve which group and optional index to render
   const isAdhoc = guideContentMode === "adhoc-group";

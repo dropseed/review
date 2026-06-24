@@ -372,11 +372,7 @@ export function ReviewTabContent({
   const { guideActive } = useGuideGroupState();
   const startGuide = useReviewStore((s) => s.startGuide);
   const exitGuide = useReviewStore((s) => s.exitGuide);
-  const generateGrouping = useReviewStore((s) => s.generateGrouping);
   const clearGrouping = useReviewStore((s) => s.clearGrouping);
-  const groupingLoading = useReviewStore(
-    (s) => s.getActiveGroupingEntry().groupingLoading,
-  );
 
   const {
     pending: pendingHunkIds,
@@ -845,20 +841,9 @@ export function ReviewTabContent({
           }
           additionalMenuContent={
             guideActive ? (
-              <>
-                <DropdownMenuItem
-                  onClick={() => generateGrouping()}
-                  disabled={groupingLoading}
-                >
-                  Regenerate
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={clearGrouping}
-                  disabled={groupingLoading}
-                >
-                  Clear grouping
-                </DropdownMenuItem>
-              </>
+              <DropdownMenuItem onClick={clearGrouping}>
+                Clear guide
+              </DropdownMenuItem>
             ) : undefined
           }
         >

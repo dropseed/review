@@ -1,5 +1,4 @@
 pub mod commit_message;
-pub mod grouping;
 
 use log::warn;
 use std::io::{BufRead, BufReader, Write};
@@ -8,74 +7,6 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
-
-// ---------------------------------------------------------------------------
-// Shared AI response parsing helpers
-// ---------------------------------------------------------------------------
-
-/// Extract the JSON substring from Claude's output, handling markdown fences
-/// and other surrounding text.
-pub(crate) fn extract_json_str(output: &str) -> Result<&str, ClaudeError> {
-    let trimmed = output.trim();
-
-    if let Some(start) = trimmed.find("```json") {
-        let after_marker = &trimmed[start + 7..];
-        if let Some(end) = after_marker.find("```") {
-            return Ok(after_marker[..end].trim());
-        }
-        return Ok(after_marker.trim());
-    }
-
-    if let Some(start) = trimmed.find("```") {
-        let after_marker = &trimmed[start + 3..];
-        let after_newline = after_marker
-            .find('\n')
-            .map_or(after_marker, |i| &after_marker[i + 1..]);
-        if let Some(end) = after_newline.find("```") {
-            return Ok(after_newline[..end].trim());
-        }
-        return Ok(after_newline.trim());
-    }
-
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        return Ok(trimmed);
-    }
-
-    if let Some(start) = trimmed.find('{') {
-        if let Some(end) = trimmed.rfind('}') {
-            return Ok(&trimmed[start..=end]);
-        }
-        return Err(ClaudeError::ParseError(
-            "Could not find complete JSON object".to_owned(),
-        ));
-    }
-
-    // Also try array-style JSON
-    if let Some(start) = trimmed.find('[') {
-        if let Some(end) = trimmed.rfind(']') {
-            return Ok(&trimmed[start..=end]);
-        }
-        return Err(ClaudeError::ParseError(
-            "Could not find complete JSON array".to_owned(),
-        ));
-    }
-
-    Err(ClaudeError::ParseError(format!(
-        "No JSON found in output: {}",
-        &trimmed[..trimmed.len().min(200)]
-    )))
-}
-
-/// Parse a JSON string into a value, wrapping parse errors with context.
-pub(crate) fn parse_json<T: serde::de::DeserializeOwned>(json_str: &str) -> Result<T, ClaudeError> {
-    serde_json::from_str(json_str).map_err(|e| {
-        ClaudeError::ParseError(format!(
-            "JSON parse error: {}. Input: {}",
-            e,
-            &json_str[..json_str.len().min(500)]
-        ))
-    })
-}
 
 #[derive(Error, Debug)]
 pub enum ClaudeError {
@@ -186,69 +117,12 @@ fn format_exit_error(stderr: &str, stdout: &str, status: &std::process::ExitStat
     }
 }
 
-/// Run the Claude CLI with the given prompt and model.
-///
-/// The prompt is piped via stdin to avoid OS argument length limits
-/// (`ARG_MAX` ~1MB on macOS) which caused failures on large reviews.
-pub(crate) fn run_claude_with_model(
-    prompt: &str,
-    cwd: &Path,
-    model: &str,
-    allowed_tools: &[&str],
-) -> Result<String, ClaudeError> {
-    let mut cmd = build_claude_command(model, allowed_tools)?;
-
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .current_dir(cwd)
-        .env_remove("CLAUDECODE")
-        .spawn()
-        .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes()).map_err(|e| {
-            ClaudeError::CommandFailed(format!("Failed to write prompt to stdin: {e}"))
-        })?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| ClaudeError::CommandFailed(e.to_string()))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(ClaudeError::CommandFailed(format_exit_error(
-            &stderr,
-            &stdout,
-            &output.status,
-        )));
-    }
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-    if !stderr_str.trim().is_empty() {
-        warn!("[run_claude_with_model] stderr (command succeeded): {stderr_str}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    if stdout.trim().is_empty() {
-        return Err(ClaudeError::EmptyResponse);
-    }
-
-    Ok(stdout)
-}
-
 /// Run the Claude CLI with streaming stdout via `--output-format stream-json`.
 ///
 /// Uses NDJSON streaming output so that each token is flushed immediately
 /// (avoids pipe-buffering that defeats streaming with plain `--print`).
 /// Calls `on_text` with each text delta as it arrives.
 /// Returns the full accumulated text output when the process exits.
-///
-/// Large diffs that use temp files + Read tool fall back to `run_claude_with_model`
-/// since tool calls break the JSON stream.
 pub fn run_claude_streaming(
     prompt: &str,
     cwd: &Path,

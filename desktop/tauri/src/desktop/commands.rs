@@ -10,12 +10,11 @@
 )]
 
 use log::{debug, error, info};
-use review::ai::grouping::{GroupingInput, ModifiedSymbolEntry};
 use review::classify::{self, ClassifyResponse};
 use review::diff::parser::{detect_move_pairs, DiffHunk};
 use review::lsp::client::LspClient;
 use review::lsp::registry;
-use review::review::state::{HunkGroup, ReviewState, ReviewSummary};
+use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
 use review::service::{
     CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
@@ -49,14 +48,7 @@ const MIN_WINDOW_HEIGHT: f64 = 600.0;
 
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Instant;
-
-/// Managed state holding cancel flags for active grouping operations,
-/// keyed by request ID. Setting the flag to `true` signals the streaming
-/// loop to kill the Claude child process and return `Cancelled`.
-pub struct ActiveGroupings(pub std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>);
 
 /// Server status for LSP servers.
 #[derive(Debug, Clone, Serialize)]
@@ -1265,123 +1257,6 @@ pub fn update_menu_state(
 #[tauri::command]
 pub fn set_sentry_consent(enabled: bool, state: tauri::State<'_, super::SentryConsent>) {
     state.0.store(enabled, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Base timeout in seconds for single-call Claude operations (grouping, summary).
-const CLAUDE_CALL_BASE_TIMEOUT_SECS: u64 = 180;
-/// Additional timeout seconds per hunk for single-call Claude operations.
-const CLAUDE_CALL_SECS_PER_HUNK: u64 = 2;
-
-/// Compute a timeout that scales with the number of hunks being processed.
-fn claude_call_timeout_secs(num_hunks: usize) -> u64 {
-    CLAUDE_CALL_BASE_TIMEOUT_SECS + num_hunks as u64 * CLAUDE_CALL_SECS_PER_HUNK
-}
-
-#[tauri::command]
-pub async fn generate_hunk_grouping(
-    app: tauri::AppHandle,
-    repo_path: String,
-    hunks: Vec<GroupingInput>,
-    modified_symbols: Option<Vec<ModifiedSymbolEntry>>,
-    request_id: Option<String>,
-    active_groupings: tauri::State<'_, ActiveGroupings>,
-) -> Result<Vec<HunkGroup>, String> {
-    use std::time::Duration;
-    use tauri::Emitter;
-    use tokio::time::timeout;
-
-    let t0 = Instant::now();
-    let symbols = modified_symbols.unwrap_or_default();
-
-    debug!(
-        "[generate_hunk_grouping] repo_path={}, hunks={}, symbols={}",
-        repo_path,
-        hunks.len(),
-        symbols.len()
-    );
-
-    let repo_path_buf = PathBuf::from(&repo_path);
-    let timeout_secs = claude_call_timeout_secs(hunks.len());
-
-    // Streaming mode: emit each event (group or partial title) as a Tauri event.
-    // When a request_id is provided, scope events to that invocation to
-    // prevent cross-talk between concurrent groupings for different reviews.
-    let event_name = match &request_id {
-        Some(id) => format!("grouping:event:{}", id),
-        None => "grouping:event".to_string(),
-    };
-
-    // Register a cancel flag so `cancel_hunk_grouping` can signal this operation.
-    let cancel = Arc::new(AtomicBool::new(false));
-    if let Some(ref id) = request_id {
-        active_groupings
-            .0
-            .lock()
-            .unwrap()
-            .insert(id.clone(), cancel.clone());
-    }
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<review::ai::grouping::GroupingEvent>(128);
-
-    // Forward events from the channel to Tauri events
-    let emit_handle = app.clone();
-    let emit_task = tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            let _ = emit_handle.emit(&event_name, &event);
-        }
-    });
-
-    let cancel_clone = cancel.clone();
-    let result = timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::task::spawn_blocking(move || {
-            let mut on_event = |event: review::ai::grouping::GroupingEvent| {
-                let _ = tx.blocking_send(event);
-            };
-            review::ai::grouping::generate_grouping_streaming(
-                &hunks,
-                &repo_path_buf,
-                &symbols,
-                &mut on_event,
-                Some(&cancel_clone),
-            )
-        }),
-    )
-    .await;
-
-    // Always clean up the cancel flag, even on error/timeout
-    if let Some(ref id) = request_id {
-        active_groupings.0.lock().unwrap().remove(id);
-    }
-
-    // Wait for all events to be emitted
-    let _ = emit_task.await;
-
-    let result = result
-        .map_err(|_| format!("Hunk grouping generation timed out after {timeout_secs} seconds"))?
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-
-    info!(
-        "[generate_hunk_grouping] SUCCESS: {} groups in {:?}",
-        result.len(),
-        t0.elapsed()
-    );
-    Ok(result)
-}
-
-#[tauri::command]
-pub fn cancel_hunk_grouping(
-    request_id: String,
-    active_groupings: tauri::State<'_, ActiveGroupings>,
-) {
-    if let Some(flag) = active_groupings.0.lock().unwrap().get(&request_id) {
-        info!(
-            "[cancel_hunk_grouping] Cancelling request_id={}",
-            request_id
-        );
-        flag.store(true, Ordering::Relaxed);
-    }
 }
 
 #[tauri::command]

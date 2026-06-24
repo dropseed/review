@@ -2,9 +2,7 @@ import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
 import type { Comparison, GlobalReviewSummary } from "../../types";
 import { useReviewStore } from "../../stores";
-import { Spinner } from "../ui/spinner";
 import { WarningIcon } from "../ui/icons";
-import { makeReviewKey } from "../../stores/slices/groupingSlice";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 
 /** Format a branch comparison for display. */
@@ -79,10 +77,6 @@ export const TabRailItem = memo(function TabRailItem({
       s.activeReviewKey?.repoPath === review.repoPath &&
       s.activeReviewKey?.comparisonKey === review.comparison.key,
   );
-  const reviewKey = makeReviewKey(review.repoPath, review.comparison.key);
-  const isBusy = useReviewStore(
-    useCallback((s) => s.isReviewBusy(reviewKey), [reviewKey]),
-  );
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [showChangeBase, setShowChangeBase] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
@@ -154,10 +148,7 @@ export const TabRailItem = memo(function TabRailItem({
         title={titleText}
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          {isBusy && (
-            <Spinner className="h-3 w-3 shrink-0 border-[1.5px] border-edge-strong border-t-status-modified" />
-          )}
-          {isPr && !isBusy && (
+          {isPr && (
             <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
           )}
           <span

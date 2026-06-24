@@ -21,9 +21,6 @@ scripts/dev-web          # Run UI in browser (Axum backend + Vite) — no Tauri 
 # Testing
 scripts/test             # TypeScript type check + Rust tests (fast, no API calls)
 
-# Integration tests (require `claude` CLI, make real API calls, ~10s each)
-cargo test -p review --test test_streaming -- --nocapture --ignored
-
 # Linting/Formatting
 scripts/fix              # Auto-fix: prettier + cargo fmt
 scripts/pre-commit       # Check only: prettier --check + cargo fmt --check
@@ -126,6 +123,9 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 - `review comments [--file GLOB] [--unresolved|--resolved] [--author NAME] [--json]`
 - `review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file] [--author NAME] [--source ui|cli|agent|github|gitlab]`
 - `review comment edit|resolve|unresolve|delete <comment-id>`
+- `review guide show [--json]` · `review guide add "<title>" <hunk-id>... [--desc TEXT]` · `review guide clear`
+
+The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
 
@@ -134,7 +134,7 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 
 **Skill**: `review skill install` writes the bundled `review-guide` skill into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). The skill's canonical source is `core/resources/skills/review-guide/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

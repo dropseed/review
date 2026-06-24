@@ -71,6 +71,30 @@ decision; it just steers attention.
 Export `REVIEW_SOURCE=agent` (or pass `--source agent`) so the risk *you* set is
 attributed to you, not mistaken for the human's own marks.
 
+### 2c. For a tangled diff, lay out a guide
+
+Most diffs decompose cleanly by file, and the file-by-file walk below is enough.
+But when the changes are *interleaved* — one concern smeared across many files,
+or several unrelated concerns mixed together — a **guide** is worth building. It
+groups hunks by theme so the human walks the change the way it was actually
+made, not the way the filesystem happens to lay it out. The desktop app renders
+the guide and lets them step through it group by group.
+
+You build the guide; the app only displays it. Compose it from the hunk IDs you
+already pulled with `review hunks`:
+
+```
+review guide clear                              # start fresh
+review guide add "Refactor the auth module" auth.rs:1a2b core/session.rs:9f3c
+review guide add "Wire the new flag through callers" cli.rs:4d5e api.rs:77a0
+review guide show                               # what's grouped, what's left
+```
+
+Each `add` lands live in the app — the human watches the guide fill in. `show`
+reports any hunks you haven't placed yet as `ungrouped`, so you can tell when the
+layout is complete. Skip this for small or cleanly-per-file diffs; it's overhead
+that only pays off when the structure is genuinely hard to follow.
+
 ### 3. Walk the rest as a small queue
 
 For everything that's left, work **file by file** in small batches (≈5–10
@@ -193,6 +217,9 @@ review trust list|add|remove [<pattern>]
 review comments [--file GLOB] [--unresolved|--resolved] [--author NAME]
 review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file]
 review comment edit|resolve|unresolve|delete <comment-id>
+review guide show [--json]             # the guided-review grouping + ungrouped hunks
+review guide add "<title>" <hunk-id>... [--desc TEXT]
+review guide clear                     # drop the guide
 ```
 
 Git index (working tree):

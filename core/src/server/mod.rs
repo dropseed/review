@@ -6,29 +6,16 @@
 mod handlers;
 
 use axum::Router;
-use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
-
-/// Shared state across all handlers.
-#[derive(Clone)]
-pub struct AppState {
-    pub active_groupings: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
-}
 
 /// Build the full router with all API routes.
 fn build_router() -> Router {
-    let state = AppState {
-        active_groupings: Arc::new(Mutex::new(HashMap::new())),
-    };
-
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    handlers::build_api_router(state).layer(cors)
+    handlers::build_api_router().layer(cors)
 }
 
 /// Start the HTTP server on the given port.

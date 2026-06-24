@@ -33,7 +33,6 @@ export { useFileHunkStatusMap } from "./useFileHunkStatusMap";
 export { useIsFocusedHunk } from "./useIsFocusedHunk";
 export { useListContinuation } from "./useListContinuation";
 export { suppressScrollTracking, suppressScrollForNav } from "./scrollState";
-export { useAutoStartGuide } from "./useAutoStartGuide";
 export { useWordHighlight } from "./useWordHighlight";
 export { useLspClient } from "./useLspClient";
 export { useHoverInfo } from "./useHoverInfo";

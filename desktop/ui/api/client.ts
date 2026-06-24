@@ -36,10 +36,6 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   RemoteInfo,
-  GroupingInput,
-  HunkGroup,
-  GroupingEvent,
-  ModifiedSymbolEntry,
   RepoLocalActivity,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
@@ -309,24 +305,6 @@ export interface ApiClient {
 
   /** Detect move pairs in hunks */
   detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse>;
-
-  // ----- Grouping -----
-
-  /** Generate logical grouping of hunks using Claude */
-  generateGrouping(
-    repoPath: string,
-    hunks: GroupingInput[],
-    options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
-  ): Promise<HunkGroup[]>;
-
-  /** Listen for streaming grouping events (returns unsubscribe fn) */
-  onGroupingEvent(
-    requestId: string,
-    callback: (event: GroupingEvent) => void,
-  ): () => void;
-
-  /** Cancel an in-flight grouping generation by request ID */
-  cancelGrouping(requestId: string): Promise<void>;
 
   // ----- Commit -----
 

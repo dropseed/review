@@ -252,9 +252,6 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(SentryConsent(consent.clone()))
-        .manage(commands::ActiveGroupings(std::sync::Mutex::new(
-            std::collections::HashMap::new(),
-        )))
         .manage(commands::LspServers(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
@@ -709,8 +706,6 @@ pub fn run() {
             commands::get_file_symbols,
             commands::get_repo_symbols,
             commands::find_symbol_definitions,
-            commands::generate_hunk_grouping,
-            commands::cancel_hunk_grouping,
             commands::generate_commit_message,
             commands::is_dev_mode,
             commands::is_git_repo,

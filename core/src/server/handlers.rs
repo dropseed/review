@@ -1,6 +1,6 @@
 //! HTTP handlers for the Axum server.
 
-use axum::extract::{Json, Query, State};
+use axum::extract::{Json, Query};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
@@ -8,8 +8,6 @@ use axum::Router;
 use serde::Deserialize;
 use std::convert::Infallible;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::classify::{self, ClassifyResponse};
@@ -27,8 +25,6 @@ use crate::sources::traits::{
 };
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
-
-use super::AppState;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -48,7 +44,7 @@ async fn blocking<T: Send + 'static>(
 }
 
 /// Build the API router with all routes.
-pub fn build_api_router(state: AppState) -> Router {
+pub fn build_api_router() -> Router {
     Router::new()
         // Git operations
         .route("/api/git/current-repo", post(git_current_repo))
@@ -134,14 +130,6 @@ pub fn build_api_router(state: AppState) -> Router {
         .route("/api/misc/vscode-theme", post(misc_vscode_theme))
         .route("/api/misc/resolve-repo-path", post(misc_resolve_repo_path))
         // Streaming
-        .route(
-            "/api/streaming/generate-grouping",
-            post(streaming_generate_grouping),
-        )
-        .route(
-            "/api/streaming/cancel-grouping",
-            post(streaming_cancel_grouping),
-        )
         .route("/api/streaming/git-commit", post(streaming_git_commit))
         .route(
             "/api/streaming/generate-commit-message",
@@ -149,7 +137,6 @@ pub fn build_api_router(state: AppState) -> Router {
         )
         // File watcher SSE
         .route("/api/events", get(events_sse))
-        .with_state(state)
 }
 
 // ============================================================
@@ -377,21 +364,6 @@ struct WorkingTreeFileContentRequest {
 struct GitCommitRequest {
     repo_path: String,
     message: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GenerateGroupingRequest {
-    repo_path: String,
-    hunks: Vec<crate::ai::grouping::GroupingInput>,
-    modified_symbols: Option<Vec<crate::ai::grouping::ModifiedSymbolEntry>>,
-    request_id: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CancelGroupingRequest {
-    request_id: String,
 }
 
 #[derive(Deserialize)]
@@ -1084,83 +1056,6 @@ async fn misc_resolve_repo_path(
 // ============================================================
 // Streaming handlers (SSE)
 // ============================================================
-
-async fn streaming_generate_grouping(
-    State(state): State<AppState>,
-    Json(req): Json<GenerateGroupingRequest>,
-) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
-    use tokio_stream::wrappers::ReceiverStream;
-    use tokio_stream::StreamExt;
-
-    let (tx, rx) = tokio::sync::mpsc::channel::<serde_json::Value>(128);
-
-    let cancel = Arc::new(AtomicBool::new(false));
-    if let Some(ref id) = req.request_id {
-        state
-            .active_groupings
-            .lock()
-            .unwrap()
-            .insert(id.clone(), cancel.clone());
-    }
-
-    let request_id = req.request_id.clone();
-    let active_groupings = state.active_groupings.clone();
-    let symbols = req.modified_symbols.unwrap_or_default();
-    let repo_path_buf = PathBuf::from(&req.repo_path);
-    let hunks = req.hunks;
-
-    tokio::task::spawn_blocking(move || {
-        let cancel_clone = cancel.clone();
-        let mut on_event = |event: crate::ai::grouping::GroupingEvent| {
-            let _ = tx.blocking_send(serde_json::to_value(&event).unwrap_or_default());
-        };
-        let result = crate::ai::grouping::generate_grouping_streaming(
-            &hunks,
-            &repo_path_buf,
-            &symbols,
-            &mut on_event,
-            Some(&cancel_clone),
-        );
-
-        // Send result or error as a final event
-        match result {
-            Ok(groups) => {
-                let _ = tx.blocking_send(serde_json::json!({"type": "done", "groups": groups}));
-            }
-            Err(e) => {
-                let _ =
-                    tx.blocking_send(serde_json::json!({"type": "error", "error": e.to_string()}));
-            }
-        }
-
-        // Clean up cancel flag
-        if let Some(ref id) = request_id {
-            active_groupings.lock().unwrap().remove(id);
-        }
-    });
-
-    let stream = ReceiverStream::new(rx).map(|value| {
-        Ok(Event::default()
-            .json_data(value)
-            .unwrap_or_else(|_| Event::default().data("null")))
-    });
-
-    Sse::new(stream).keep_alive(
-        axum::response::sse::KeepAlive::new()
-            .interval(Duration::from_secs(15))
-            .text("keep-alive"),
-    )
-}
-
-async fn streaming_cancel_grouping(
-    State(state): State<AppState>,
-    Json(req): Json<CancelGroupingRequest>,
-) -> Json<()> {
-    if let Some(flag) = state.active_groupings.lock().unwrap().get(&req.request_id) {
-        flag.store(true, Ordering::Relaxed);
-    }
-    Json(())
-}
 
 async fn streaming_git_commit(
     Json(req): Json<GitCommitRequest>,

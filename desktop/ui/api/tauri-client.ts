@@ -32,10 +32,6 @@ import type {
   RepoFileSymbols,
   GitHubPrRef,
   GitStatusSummary,
-  GroupingEvent,
-  GroupingInput,
-  HunkGroup,
-  ModifiedSymbolEntry,
   PullRequest,
   RemoteInfo,
   RepoLocalActivity,
@@ -448,32 +444,6 @@ export class TauriClient implements ApiClient {
     callback: (chunk: string) => void,
   ): () => void {
     return this.listenForEvent(`commit-message:chunk:${requestId}`, callback);
-  }
-
-  // ----- Grouping -----
-
-  async generateGrouping(
-    repoPath: string,
-    hunks: GroupingInput[],
-    options?: { modifiedSymbols?: ModifiedSymbolEntry[]; requestId?: string },
-  ): Promise<HunkGroup[]> {
-    return invoke<HunkGroup[]>("generate_hunk_grouping", {
-      repoPath,
-      hunks,
-      modifiedSymbols: options?.modifiedSymbols ?? null,
-      requestId: options?.requestId ?? null,
-    });
-  }
-
-  onGroupingEvent(
-    requestId: string,
-    callback: (event: GroupingEvent) => void,
-  ): () => void {
-    return this.listenForEvent(`grouping:event:${requestId}`, callback);
-  }
-
-  async cancelGrouping(requestId: string): Promise<void> {
-    await invoke("cancel_hunk_grouping", { requestId });
   }
 
   // ----- Trust patterns -----

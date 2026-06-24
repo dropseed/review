@@ -17,7 +17,6 @@ import {
   useKeyboardNavigation,
   useReviewProgress,
   useCelebration,
-  useAutoStartGuide,
   useLspClient,
   useDeepLinkFocus,
 } from "../hooks";
@@ -212,9 +211,6 @@ export function ReviewView({
 
   // Celebration on 100% reviewed
   useCelebration();
-
-  // Auto-start guided review
-  useAutoStartGuide();
 
   const repoName =
     remoteInfo?.name ||
