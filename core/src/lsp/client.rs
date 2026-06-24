@@ -56,11 +56,24 @@ impl LspClient {
             ..Default::default()
         };
 
-        let result = client
+        let result = match client
             .transport
             .send_request("initialize", serde_json::to_value(init_params)?)
             .await
-            .context("LSP initialize failed")?;
+        {
+            Ok(result) => result,
+            Err(e) => {
+                // A server that dies on startup (e.g. a rust-analyzer rustup
+                // shim with the component missing) usually says why on stderr.
+                // Give the drain task a beat to flush, then include it.
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                let stderr = client.transport.recent_stderr().await;
+                if stderr.trim().is_empty() {
+                    return Err(e).context("LSP initialize failed");
+                }
+                return Err(e).context(format!("LSP initialize failed; server stderr:\n{stderr}"));
+            }
+        };
 
         let _init_result: InitializeResult = serde_json::from_value(result)?;
         debug!("[lsp client] initialized successfully");

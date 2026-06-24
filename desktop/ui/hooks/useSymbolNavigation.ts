@@ -15,111 +15,7 @@ import {
   type SymbolReferenceInDiff,
 } from "../utils/findSymbolReferencesInDiff";
 import { getUrlAtClick } from "../utils/getUrlAtClick";
-
-// Language keywords to filter out (combined across JS/TS, Rust, Python, Go)
-const KEYWORDS = new Set([
-  // JS/TS
-  "if",
-  "else",
-  "for",
-  "while",
-  "do",
-  "switch",
-  "case",
-  "break",
-  "continue",
-  "return",
-  "throw",
-  "try",
-  "catch",
-  "finally",
-  "new",
-  "delete",
-  "typeof",
-  "instanceof",
-  "void",
-  "in",
-  "of",
-  "let",
-  "const",
-  "var",
-  "function",
-  "class",
-  "extends",
-  "super",
-  "this",
-  "import",
-  "export",
-  "from",
-  "default",
-  "as",
-  "async",
-  "await",
-  "yield",
-  "true",
-  "false",
-  "null",
-  "undefined",
-  "with",
-  "debugger",
-  "enum",
-  "implements",
-  "interface",
-  "package",
-  "private",
-  "protected",
-  "public",
-  "static",
-  "type",
-  // Rust
-  "fn",
-  "mut",
-  "ref",
-  "pub",
-  "use",
-  "mod",
-  "crate",
-  "self",
-  "Self",
-  "struct",
-  "trait",
-  "impl",
-  "where",
-  "match",
-  "loop",
-  "move",
-  "unsafe",
-  "extern",
-  "dyn",
-  "macro",
-  // Python
-  "def",
-  "and",
-  "or",
-  "not",
-  "is",
-  "lambda",
-  "pass",
-  "raise",
-  "global",
-  "nonlocal",
-  "assert",
-  "elif",
-  "except",
-  "None",
-  "True",
-  "False",
-  // Go
-  "func",
-  "map",
-  "chan",
-  "go",
-  "defer",
-  "select",
-  "range",
-  "fallthrough",
-  "goto",
-]);
+import { isNavigableIdentifier } from "../utils/isNavigableIdentifier";
 
 /** A definition enriched with its change status from the diff (if available). */
 export interface EnrichedDefinition extends SymbolDefinition {
@@ -307,17 +203,12 @@ export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
         const references = findSymbolReferencesInDiff(word, hunks);
 
         const api = getApiClient();
-        const treeSitterPromise = api.findSymbolDefinitions(
-          repoPath,
-          word,
-          comparison.head,
-        );
 
         const { selectedFile, externalFilePath } = useReviewStore.getState();
         const currentFile = externalFilePath ?? selectedFile;
-        const lspPromise =
+        const lspDefs =
           lsp && currentFile
-            ? api
+            ? await api
                 .lspGotoDefinition(
                   repoPath,
                   currentFile,
@@ -328,36 +219,51 @@ export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
                   console.error("[lsp] goto_definition failed:", err);
                   return [] as SymbolDefinition[];
                 })
-            : Promise.resolve([] as SymbolDefinition[]);
-
-        const [backendDefs, lspDefs] = await Promise.all([
-          treeSitterPromise,
-          lspPromise,
-        ]);
+            : [];
 
         if (controller.signal.aborted) return;
 
-        const diffDefs = findDefinitionsFromSymbolDiffs(word, symbolDiffs);
-        const seen = new Set(
-          backendDefs.map((d) => `${d.filePath}:${d.startLine}`),
-        );
-        const mergedBackend: EnrichedDefinition[] = backendDefs.map((d) => ({
-          ...d,
-          changeType: findChangeType(d, symbolDiffs),
-        }));
-        for (const lspDef of lspDefs) {
-          const key = `${lspDef.filePath}:${lspDef.startLine}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            mergedBackend.push({ ...lspDef });
-          }
+        // LSP wins: when a language server resolves the symbol it knows the
+        // exact definition, so use its results alone and skip the noisy
+        // tree-sitter name matches. The repo-wide tree-sitter scan (+ diff) is
+        // the fallback, run only when no LSP server resolved the symbol.
+        const fromLsp = lspDefs.length > 0;
+        let definitions: EnrichedDefinition[];
+        if (fromLsp) {
+          definitions = lspDefs.map((d) => ({
+            ...d,
+            // LSP goto returns locations without a name; carry the clicked
+            // identifier so the popover shows something meaningful.
+            name: d.name || word,
+            changeType: findChangeType({ ...d, name: word }, symbolDiffs),
+          }));
+        } else {
+          const backendDefs = await api.findSymbolDefinitions(
+            repoPath,
+            word,
+            comparison.head,
+          );
+          if (controller.signal.aborted) return;
+          const diffDefs = findDefinitionsFromSymbolDiffs(word, symbolDiffs);
+          const seen = new Set(
+            backendDefs.map((d) => `${d.filePath}:${d.startLine}`),
+          );
+          definitions = backendDefs.map((d) => ({
+            ...d,
+            changeType: findChangeType(d, symbolDiffs),
+          }));
+          definitions.push(
+            ...diffDefs.filter(
+              (d) => !seen.has(`${d.filePath}:${d.startLine}`),
+            ),
+          );
         }
-        const definitions: EnrichedDefinition[] = [
-          ...mergedBackend,
-          ...diffDefs.filter((d) => !seen.has(`${d.filePath}:${d.startLine}`)),
-        ];
 
-        if (definitions.length === 1 && references.length === 0) {
+        // Jump straight to an unambiguous definition rather than making the
+        // user click through a one-item popover. When LSP resolved it, the
+        // result is authoritative so we jump even if the diff has references;
+        // for the fuzzier tree-sitter fallback we still surface references.
+        if (definitions.length === 1 && (fromLsp || references.length === 0)) {
           navigateToDefinition(definitions[0]);
           return;
         }
@@ -409,12 +315,4 @@ export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
     navigateToDefinition,
     navigateToReference,
   };
-}
-
-function isNavigableIdentifier(text: string): boolean {
-  if (!text) return false;
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(text)) return false;
-  if (text.length < 3) return false;
-  if (KEYWORDS.has(text)) return false;
-  return true;
 }

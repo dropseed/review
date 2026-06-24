@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::{debug, error, warn};
+use log::{debug, error};
 use serde_json::Value;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
@@ -19,6 +19,13 @@ use super::jsonrpc::{self, Message, RpcError};
 
 /// A pending request awaiting a response.
 type PendingMap = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, RpcError>>>>>;
+
+/// How long to wait for a response before giving up, so a hung or
+/// still-indexing server can never block the UI indefinitely.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Last N stderr lines kept for diagnostics when a server fails to start.
+const STDERR_BUFFER_LINES: usize = 40;
 
 /// The low-level LSP transport: manages a subprocess, routes responses, and
 /// forwards server notifications.
@@ -31,6 +38,10 @@ pub struct LspTransport {
     next_id: AtomicI64,
     /// Channel for server-initiated notifications.
     notification_tx: mpsc::UnboundedSender<Message>,
+    /// Rolling buffer of the server's most recent stderr lines. A broken
+    /// server (e.g. a rust-analyzer rustup shim with no component installed)
+    /// explains itself here before exiting.
+    stderr: Arc<Mutex<Vec<String>>>,
     /// Handle to the read loop task (kept alive).
     _read_task: tokio::task::JoinHandle<()>,
     /// The child process (kept alive — dropping kills the server).
@@ -58,17 +69,34 @@ impl LspTransport {
             .current_dir(cwd)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .with_context(|| format!("Failed to spawn LSP server: {command}"))?;
 
         let stdin = child.stdin.take().context("No stdin on child process")?;
         let stdout = child.stdout.take().context("No stdout on child process")?;
+        let stderr = child.stderr.take().context("No stderr on child process")?;
 
         let stdin = Arc::new(Mutex::new(stdin));
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let (notification_tx, notification_rx) = mpsc::unbounded_channel();
+
+        // Drain stderr into a rolling buffer so a server that dies on startup
+        // can explain why (see `recent_stderr`).
+        let stderr_buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stderr_buf_clone = stderr_buf.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut buf = stderr_buf_clone.lock().await;
+                buf.push(line);
+                if buf.len() > STDERR_BUFFER_LINES {
+                    let overflow = buf.len() - STDERR_BUFFER_LINES;
+                    buf.drain(0..overflow);
+                }
+            }
+        });
 
         let pending_clone = pending.clone();
         let notification_tx_clone = notification_tx.clone();
@@ -136,6 +164,7 @@ impl LspTransport {
                 pending,
                 next_id: AtomicI64::new(1),
                 notification_tx,
+                stderr: stderr_buf,
                 _read_task: read_task,
                 _child: child,
             },
@@ -143,7 +172,14 @@ impl LspTransport {
         ))
     }
 
-    /// Send a JSON-RPC request and wait for the response.
+    /// The server's most recent stderr output, if any. Empty when the server
+    /// printed nothing (or hasn't flushed yet).
+    pub async fn recent_stderr(&self) -> String {
+        self.stderr.lock().await.join("\n")
+    }
+
+    /// Send a JSON-RPC request and wait for the response (bounded by
+    /// `REQUEST_TIMEOUT`).
     pub async fn send_request(&self, method: &str, params: Value) -> anyhow::Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
@@ -166,8 +202,20 @@ impl LspTransport {
             stdin.flush().await?;
         }
 
-        let result = rx.await.context("Response channel closed")?;
-        result.map_err(|e| anyhow::anyhow!("{e}"))
+        match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
+            Ok(received) => {
+                let result = received.context("Response channel closed")?;
+                result.map_err(|e| anyhow::anyhow!("{e}"))
+            }
+            Err(_) => {
+                // Stop tracking the abandoned request so the map doesn't grow.
+                self.pending.lock().await.remove(&id);
+                anyhow::bail!(
+                    "LSP request '{method}' timed out after {}s",
+                    REQUEST_TIMEOUT.as_secs()
+                )
+            }
+        }
     }
 
     /// Send a JSON-RPC notification (no response expected).
