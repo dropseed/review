@@ -26,9 +26,9 @@ import {
   revealItemInDir as openerRevealItemInDir,
 } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getVersion } from "@tauri-apps/api/app";
 import { platform } from "@tauri-apps/plugin-os";
-import { listen } from "@tauri-apps/api/event";
 
 import type {
   ClipboardService,
@@ -296,13 +296,21 @@ class TauriMenuEventService implements MenuEventService {
       // Capture the Set in a const so the listen callback can reference it
       // directly rather than re-looking up the map each time.
       const callbacks = subscribers;
-      listen(event, (e) => {
-        for (const cb of callbacks) {
-          cb(e.payload);
-        }
-      }).catch((err) => {
-        console.error(`Failed to listen for ${event}:`, err);
-      });
+      // Scope the listener to this window. Menu accelerators fire an app-global
+      // menu event that the Rust side targets at the focused window via
+      // `emit_to`; a window-scoped listener (target WebviewWindow{label}) is
+      // required for that targeting to take effect. A plain `listen()`
+      // registers with target `Any`, which receives every emit regardless of
+      // target, so the menu action would fire in all open windows.
+      getCurrentWebviewWindow()
+        .listen(event, (e) => {
+          for (const cb of callbacks) {
+            cb(e.payload);
+          }
+        })
+        .catch((err) => {
+          console.error(`Failed to listen for ${event}:`, err);
+        });
     }
 
     subscribers.add(callback);

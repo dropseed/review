@@ -124,6 +124,27 @@ fn emit_cli_open_review(
     }
 }
 
+/// Emit a menu event to the focused window only.
+///
+/// On macOS the menu bar is app-global, so a single accelerator press (e.g.
+/// Cmd+Shift+F) fires `on_menu_event` once. Using `app.emit` would broadcast
+/// the event to every open window, so each window would react (open search,
+/// zoom, refresh, etc.). We target the focused window instead, falling back to
+/// a broadcast if none reports focus.
+#[cfg(desktop)]
+fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: P) {
+    let focused = app
+        .webview_windows()
+        .into_iter()
+        .find(|(_, w)| w.is_focused().unwrap_or(false))
+        .map(|(label, _)| label);
+    if let Some(label) = focused {
+        let _ = app.emit_to(label, event, payload);
+    } else {
+        let _ = app.emit(event, payload);
+    }
+}
+
 /// Parse a `review://open?repo=&compare=&file=&hunk=` URL into the parts
 /// `emit_cli_open_review` needs. Returns `None` for unrecognized URLs
 /// (wrong scheme, missing or unknown repo id, etc.).
@@ -551,49 +572,21 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             match id {
-                "close" => {
-                    let _: Result<(), _> = app.emit("menu:close", ());
-                }
-                "new_tab" => {
-                    let _: Result<(), _> = app.emit("menu:new-tab", ());
-                }
-                "new_window" => {
-                    let _: Result<(), _> = app.emit("menu:new-window", ());
-                }
-                "open_repo" => {
-                    let _: Result<(), _> = app.emit("menu:open-repo", ());
-                }
-                "refresh" => {
-                    let _: Result<(), _> = app.emit("menu:refresh", ());
-                }
-                "actual_size" => {
-                    let _: Result<(), _> = app.emit("menu:zoom-reset", ());
-                }
-                "zoom_in" => {
-                    let _: Result<(), _> = app.emit("menu:zoom-in", ());
-                }
-                "zoom_out" => {
-                    let _: Result<(), _> = app.emit("menu:zoom-out", ());
-                }
-                "show_debug" => {
-                    let _: Result<(), _> = app.emit("menu:show-debug", ());
-                }
-                "restart_lsp" => {
-                    let _: Result<(), _> = app.emit("menu:restart-lsp", ());
-                }
-                "settings" => {
-                    let _: Result<(), _> = app.emit("menu:open-settings", ());
-                }
-                "check_for_updates" => {
-                    let _: Result<(), _> = app.emit("menu:check-for-updates", ());
-                }
+                "close" => emit_menu_event(app, "menu:close", ()),
+                "new_tab" => emit_menu_event(app, "menu:new-tab", ()),
+                "new_window" => emit_menu_event(app, "menu:new-window", ()),
+                "open_repo" => emit_menu_event(app, "menu:open-repo", ()),
+                "refresh" => emit_menu_event(app, "menu:refresh", ()),
+                "actual_size" => emit_menu_event(app, "menu:zoom-reset", ()),
+                "zoom_in" => emit_menu_event(app, "menu:zoom-in", ()),
+                "zoom_out" => emit_menu_event(app, "menu:zoom-out", ()),
+                "show_debug" => emit_menu_event(app, "menu:show-debug", ()),
+                "restart_lsp" => emit_menu_event(app, "menu:restart-lsp", ()),
+                "settings" => emit_menu_event(app, "menu:open-settings", ()),
+                "check_for_updates" => emit_menu_event(app, "menu:check-for-updates", ()),
                 "install_cli" => match commands::install_cli(app.clone()) {
-                    Ok(_) => {
-                        let _: Result<(), _> = app.emit("cli:installed", ());
-                    }
-                    Err(e) => {
-                        let _: Result<(), _> = app.emit("cli:install-error", e);
-                    }
+                    Ok(_) => emit_menu_event(app, "cli:installed", ()),
+                    Err(e) => emit_menu_event(app, "cli:install-error", e),
                 },
                 "review_help" => {
                     let _ = app
@@ -605,24 +598,12 @@ pub fn run() {
                         .opener()
                         .open_url("https://github.com/dropseed/review/issues", None::<&str>);
                 }
-                "find_file" => {
-                    let _: Result<(), _> = app.emit("menu:find-file", ());
-                }
-                "find_symbols" => {
-                    let _: Result<(), _> = app.emit("menu:find-symbols", ());
-                }
-                "search_in_files" => {
-                    let _: Result<(), _> = app.emit("menu:search-in-files", ());
-                }
-                "toggle_sidebar" => {
-                    let _: Result<(), _> = app.emit("menu:toggle-sidebar", ());
-                }
-                "reveal_in_browse" => {
-                    let _: Result<(), _> = app.emit("menu:reveal-in-browse", ());
-                }
-                "new_review" => {
-                    let _: Result<(), _> = app.emit("menu:new-review", ());
-                }
+                "find_file" => emit_menu_event(app, "menu:find-file", ()),
+                "find_symbols" => emit_menu_event(app, "menu:find-symbols", ()),
+                "search_in_files" => emit_menu_event(app, "menu:search-in-files", ()),
+                "toggle_sidebar" => emit_menu_event(app, "menu:toggle-sidebar", ()),
+                "reveal_in_browse" => emit_menu_event(app, "menu:reveal-in-browse", ()),
+                "new_review" => emit_menu_event(app, "menu:new-review", ()),
                 _ => {}
             }
         });
