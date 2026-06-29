@@ -60,6 +60,11 @@ echo "  desktop/tauri/tauri.conf.json: $(grep '"version"' desktop/tauri/tauri.co
 
 # Fetch signing secrets from 1Password
 echo ""
+# Pin the 1Password account that holds the Dropseed vault. Two accounts share
+# the same email, so the account User ID is the only unambiguous identifier;
+# without this, `op read` targets whatever account is currently active and
+# fails with "Dropseed isn't a vault in this account".
+export OP_ACCOUNT="7ZLPC2L3AJGXDDAMZG5Q44NZGE"
 echo "Fetching signing secrets from 1Password..."
 TAURI_SIGNING_PRIVATE_KEY=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/review.key")
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/password")
