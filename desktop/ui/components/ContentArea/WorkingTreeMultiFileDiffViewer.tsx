@@ -18,8 +18,7 @@ import { FileDiffStackItem } from "../ui/file-diff-stack-item";
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
 type FileLoadState =
-  | { kind: "ok"; content: FileContent }
-  | { kind: "error"; message: string };
+  { kind: "ok"; content: FileContent } | { kind: "error"; message: string };
 
 export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   const view = useReviewStore((s) => s.workingTreeMultiView);

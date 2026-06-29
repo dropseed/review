@@ -25,10 +25,7 @@ import type { RepoMetadata } from "../stores/slices/tabRailSlice";
 import { splitRoutePrefix } from "./repo-identity";
 
 export type SidebarItemKind =
-  | "working-tree"
-  | "worktree"
-  | "review-branch"
-  | "branch";
+  "working-tree" | "worktree" | "review-branch" | "branch";
 
 export interface SidebarBranchEntry {
   kind: SidebarItemKind;
@@ -57,9 +54,7 @@ export interface SidebarRemoteEntry {
 }
 
 export type SidebarEntry =
-  | SidebarBranchEntry
-  | SidebarReviewEntry
-  | SidebarRemoteEntry;
+  SidebarBranchEntry | SidebarReviewEntry | SidebarRemoteEntry;
 
 export interface RepoGroup {
   repoPath: string;

@@ -39,11 +39,7 @@ function HighRiskTriangle({ className }: { className?: string }) {
 }
 
 type ReviewStatus =
-  | "approved"
-  | "rejected"
-  | "saved_for_later"
-  | "trusted"
-  | "pending";
+  "approved" | "rejected" | "saved_for_later" | "trusted" | "pending";
 
 function getReviewStatus(
   hunkState: HunkState | undefined,

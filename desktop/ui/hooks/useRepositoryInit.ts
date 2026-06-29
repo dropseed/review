@@ -126,11 +126,7 @@ async function validateGitRepo(path: string): Promise<boolean> {
 
 // Repository status for distinguishing loading states
 export type RepoStatus =
-  | "loading"
-  | "found"
-  | "not_found"
-  | "welcome"
-  | "error";
+  "loading" | "found" | "not_found" | "welcome" | "error";
 
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;

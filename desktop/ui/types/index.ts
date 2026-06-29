@@ -368,11 +368,7 @@ export function isHunkTrusted(
 // the CLI's EffectiveStatus mirrors and every status consumer should route
 // through.
 export type EffectiveStatusValue =
-  | "unreviewed"
-  | "trusted"
-  | "approved"
-  | "rejected"
-  | "saved";
+  "unreviewed" | "trusted" | "approved" | "rejected" | "saved";
 
 export function effectiveHunkStatus(
   hunkState: HunkState | undefined,
