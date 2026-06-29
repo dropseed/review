@@ -133,6 +133,8 @@ fn emit_cli_open_review(
 /// a broadcast if none reports focus.
 #[cfg(desktop)]
 fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: P) {
+    // `Manager::get_focused_window` would be cleaner but is gated behind Tauri's
+    // `unstable` feature, so find the focused window via the stable API instead.
     let focused = app
         .webview_windows()
         .into_iter()
