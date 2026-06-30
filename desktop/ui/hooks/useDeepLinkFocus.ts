@@ -9,13 +9,18 @@ import { useFileDiff } from "../stores/selectors/hunks";
  *
  * Runs at the review-shell level so it works whether the deep link arrives
  * on cold start (signal file) or warm (cli:open-review event).
+ *
+ * Pass `enabled = false` to hold the pending target instead of consuming it
+ * (e.g. while the compared branch is gone and the only loaded diff is the
+ * bogus all-deleted one). The link is then resolved against the real diff once
+ * the branch — and `enabled` — come back.
  */
-export function useDeepLinkFocus(): void {
+export function useDeepLinkFocus(enabled = true): void {
   const pending = useReviewStore((s) => s.pendingDeepLinkFocus);
   const fileDiff = useFileDiff(pending?.filePath ?? null);
 
   useEffect(() => {
-    if (!pending || !fileDiff?.hunks) return;
+    if (!enabled || !pending || !fileDiff?.hunks) return;
 
     const { hunkHash, filePath } = pending;
     const hunkId = hunkHash ? `${filePath}:${hunkHash}` : null;
@@ -28,5 +33,5 @@ export function useDeepLinkFocus(): void {
       scrollTarget: hunkExists ? { type: "hunk", hunkId } : null,
       pendingDeepLinkFocus: null,
     });
-  }, [pending, fileDiff]);
+  }, [enabled, pending, fileDiff]);
 }

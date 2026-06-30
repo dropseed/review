@@ -219,7 +219,9 @@ export function ReviewView({
   });
 
   useKeyboardNavigation();
-  useDeepLinkFocus();
+  // Hold deep-link focus until the diff is real again — consuming it against the
+  // all-deleted diff behind the notice would drop the requested hunk.
+  useDeepLinkFocus(!compareRefMissing);
 
   useMenuEvents({
     handleClose,
@@ -230,6 +232,8 @@ export function ReviewView({
     setShowFileFinder,
     setShowContentSearch: setContentSearchOpen,
     setShowSymbolSearch,
+    // No diff to search while the compared branch is gone.
+    searchEnabled: !compareRefMissing,
   });
 
   useFileWatcher(comparisonReady);

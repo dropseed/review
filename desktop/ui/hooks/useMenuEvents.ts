@@ -19,6 +19,9 @@ interface UseMenuEventsOptions {
   setShowFileFinder: (show: boolean) => void;
   setShowContentSearch: (show: boolean) => void;
   setShowSymbolSearch: (show: boolean) => void;
+  /** When false, the file/symbol/content search openers are no-ops (there is
+   *  no diff to search — e.g. the compared branch was deleted). */
+  searchEnabled?: boolean;
 }
 
 /**
@@ -34,9 +37,13 @@ export function useMenuEvents({
   setShowFileFinder,
   setShowContentSearch,
   setShowSymbolSearch,
+  searchEnabled = true,
 }: UseMenuEventsOptions) {
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
+  // Ref so the menu listeners (registered once) read the current value without
+  // re-registering whenever it flips.
+  const searchEnabledRef = useRef(searchEnabled);
 
   const codeFontSize = useReviewStore((s) => s.codeFontSize);
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
@@ -58,6 +65,7 @@ export function useMenuEvents({
     codeFontSizeRef.current = codeFontSize;
     setCodeFontSizeRef.current = setCodeFontSize;
     navigateRef.current = navigate;
+    searchEnabledRef.current = searchEnabled;
   }, [
     handleClose,
     handleNewTab,
@@ -66,6 +74,7 @@ export function useMenuEvents({
     codeFontSize,
     setCodeFontSize,
     navigate,
+    searchEnabled,
   ]);
 
   // Listen for menu events (setup once, use refs for current values)
@@ -133,10 +142,19 @@ export function useMenuEvents({
         "menu:zoom-reset",
         () => setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT),
       ],
-      // View menu actions
-      ["menu:find-file", () => setShowFileFinder(true)],
-      ["menu:find-symbols", () => setShowSymbolSearch(true)],
-      ["menu:search-in-files", () => setShowContentSearch(true)],
+      // View menu actions — no-ops when there is no diff to search
+      [
+        "menu:find-file",
+        () => searchEnabledRef.current && setShowFileFinder(true),
+      ],
+      [
+        "menu:find-symbols",
+        () => searchEnabledRef.current && setShowSymbolSearch(true),
+      ],
+      [
+        "menu:search-in-files",
+        () => searchEnabledRef.current && setShowContentSearch(true),
+      ],
       ["menu:toggle-sidebar", () => toggleTabRail()],
       [
         "menu:new-review",

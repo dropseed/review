@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Comparison } from "../types";
 import { useReviewStore } from "../stores";
@@ -26,6 +26,7 @@ export function CompareRefDeletedNotice({
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const navigate = useNavigate();
   const [changeBaseOpen, setChangeBaseOpen] = useState(false);
+  const removingRef = useRef(false);
 
   const baseMissing = missingRefs.includes(comparison.base);
   const headMissing = missingRefs.includes(comparison.head);
@@ -43,7 +44,11 @@ export function CompareRefDeletedNotice({
 
   // This notice only renders for the active comparison, so leaving its now-gone
   // review on screen makes no sense — drop back to the home view after removing.
+  // The ref guards against a double-click firing the delete twice before the
+  // navigate unmounts this component.
   const handleRemove = (): void => {
+    if (removingRef.current) return;
+    removingRef.current = true;
     deleteGlobalReview(repoPath, comparison);
     navigate("/");
   };
