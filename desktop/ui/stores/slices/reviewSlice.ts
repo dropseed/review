@@ -54,6 +54,16 @@ export function shouldIgnoreReviewStateReload(): boolean {
 // so we don't call ensureReviewExists on every debounced save.
 const ensuredLocalReviews = new Set<string>();
 
+/**
+ * Forget that a review's file exists on disk. Call this when a review is
+ * deleted: otherwise the key lingers, the pristine-save guard in
+ * `saveReviewState` is skipped, and a stray save (e.g. classification after a
+ * refresh) silently re-creates the just-deleted review file.
+ */
+export function forgetEnsuredReview(key: string): void {
+  ensuredLocalReviews.delete(key);
+}
+
 export interface ReviewSlice {
   // Review state
   reviewState: ReviewState | null;

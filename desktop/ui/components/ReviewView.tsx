@@ -100,13 +100,23 @@ export function ReviewView({
   const prevCompareRefState = useRef({ missing: false, key: comparisonKey });
   useEffect(() => {
     const prev = prevCompareRefState.current;
-    if (prev.missing && !compareRefMissing && prev.key === comparisonKey) {
-      useReviewStore.getState().refresh();
-    }
     prevCompareRefState.current = {
       missing: compareRefMissing,
       key: comparisonKey,
     };
+    if (!prev.missing || compareRefMissing || prev.key !== comparisonKey)
+      return;
+    // Only a genuine recovery (the branch returned for a review we're still
+    // viewing) should reload. Deleting the review also clears its missing-refs
+    // flag, but it nulls activeReviewKey in the same update — refreshing there
+    // would reload (and re-create) the review we just removed.
+    const { activeReviewKey, repoPath: activeRepo } = useReviewStore.getState();
+    const stillActive =
+      activeReviewKey?.repoPath === activeRepo &&
+      activeReviewKey?.comparisonKey === comparisonKey;
+    if (stillActive) {
+      useReviewStore.getState().refresh();
+    }
   }, [compareRefMissing, comparisonKey]);
 
   // Read-only preview mode

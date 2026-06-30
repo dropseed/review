@@ -11,6 +11,7 @@ import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { jsonEqual } from "../../utils/equality";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
+import { forgetEnsuredReview } from "./reviewSlice";
 
 /** Snapshot of navigation state saved when switching away from a review. */
 export interface NavigationSnapshot {
@@ -168,6 +169,9 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         const key = makeReviewKey(repoPath, comparison.key);
         const { [key]: _, ...rest } = get().navigationSnapshots;
         set({ navigationSnapshots: rest });
+        // Forget the on-disk marker so a stray save (e.g. classification after
+        // a refresh) can't silently re-create the file we just deleted.
+        forgetEnsuredReview(key);
         // Drop the cached missing-refs entry. checkReviewsFreshness only
         // revisits reviews still in the global list, so without this a deleted
         // deleted-branch review would keep its stale entry and flash the
