@@ -1,7 +1,7 @@
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
-import type { HunkGroup } from "../../types";
+import type { Comparison, HunkGroup } from "../../types";
 
 /** Per-review guide state stored in the keyed Map. */
 export interface GroupingEntry {
@@ -16,6 +16,27 @@ const EMPTY_ENTRY: GroupingEntry = Object.freeze({
 /** Build a unique key for a review (repo + comparison). */
 export function makeReviewKey(repoPath: string, comparisonKey: string): string {
   return `${repoPath}:${comparisonKey}`;
+}
+
+/** Stable empty result so callers can use this in selectors/memos. */
+const NO_MISSING_REFS: string[] = [];
+
+/**
+ * The deleted refs (base/compare branches that no longer resolve) recorded for
+ * a comparison by the freshness check. Returns a stable empty array when the
+ * comparison is unset or all its refs resolve. Shared by every consumer of the
+ * "this review's branch is gone" signal (review view, keyboard nav, tab rail).
+ */
+export function getMissingRefs(
+  reviewMissingRefs: Record<string, string[]>,
+  repoPath: string | null,
+  comparison: Comparison | null,
+): string[] {
+  if (!repoPath || !comparison) return NO_MISSING_REFS;
+  return (
+    reviewMissingRefs[makeReviewKey(repoPath, comparison.key)] ??
+    NO_MISSING_REFS
+  );
 }
 
 /** Immutable Map update helper: applies `updater` to the entry at `key`. */

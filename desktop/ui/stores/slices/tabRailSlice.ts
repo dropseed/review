@@ -168,6 +168,15 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         const key = makeReviewKey(repoPath, comparison.key);
         const { [key]: _, ...rest } = get().navigationSnapshots;
         set({ navigationSnapshots: rest });
+        // Drop the cached missing-refs entry. checkReviewsFreshness only
+        // revisits reviews still in the global list, so without this a deleted
+        // deleted-branch review would keep its stale entry and flash the
+        // "branch deleted" notice if the same comparison is re-opened later.
+        if (key in get().reviewMissingRefs) {
+          const { [key]: _missing, ...remainingMissing } =
+            get().reviewMissingRefs;
+          set({ reviewMissingRefs: remainingMissing });
+        }
         // If the deleted review was active, clear the active key
         const { activeReviewKey } = get();
         if (

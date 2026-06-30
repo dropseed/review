@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useReviewStore } from "../stores";
+import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getAllHunksFromState } from "../stores/selectors/hunks";
 import type { Comparison } from "../types";
 import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
@@ -190,6 +191,21 @@ export function useKeyboardNavigation() {
 
       // Don't handle single-key shortcuts when modifier keys are held
       if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      // When the active comparison's branch is gone, its diff is hidden behind
+      // the deleted-ref notice but the stale all-deleted hunks are still in the
+      // store. Skip the single-key hunk shortcuts (j/k/a/r/s/H/L/z) so they
+      // can't navigate or approve/reject hunks the user can't see. Review
+      // switching (Cmd+1-9) and Escape above stay live so they can leave.
+      if (
+        getMissingRefs(
+          state.reviewMissingRefs,
+          state.repoPath,
+          state.comparison,
+        ).length > 0
+      ) {
         return;
       }
 

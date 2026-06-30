@@ -7,8 +7,12 @@ import { playCelebrationSound } from "../utils/sounds";
 /**
  * Fires a celebration (confetti + sound) on the transition to 100% reviewed.
  * Resets when totalHunks changes (new review = fresh celebration).
+ *
+ * Pass `enabled = false` to suppress firing (e.g. while the compared branch is
+ * gone and the progress is computed over a bogus all-deleted diff). Percent
+ * tracking still advances so a real later completion isn't double-counted.
  */
-export function useCelebration(): void {
+export function useCelebration(enabled = true): void {
   const { reviewedPercent, totalHunks, state } = useReviewProgress();
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -29,6 +33,7 @@ export function useCelebration(): void {
 
     // Only fire on the transition to 100% (not on mount if already complete)
     const justCompleted =
+      enabled &&
       prevPercent !== null &&
       prevPercent < 100 &&
       reviewedPercent === 100 &&
@@ -42,5 +47,5 @@ export function useCelebration(): void {
       }
       playCelebrationSound();
     }
-  }, [reviewedPercent, totalHunks, state, prefersReducedMotion]);
+  }, [enabled, reviewedPercent, totalHunks, state, prefersReducedMotion]);
 }
