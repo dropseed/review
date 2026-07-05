@@ -169,11 +169,13 @@ A few rules the CLI enforces strictly, so a script doesn't fail silently:
 
 ```
 review status                         # final tally
-review note set "…"                   # what's done, what's saved, what's blocked
 ```
 
-The note shows up in the app. End by telling the human exactly what's left
-for them and where to find it (the saved hunks are in the app's filters).
+End by telling the human exactly what's left for them and where to find it
+(the saved hunks are in the app's filters). The review note is the human's
+own space — read it for context (`review note show`) but never write it.
+Anything you need to persist belongs in agent-attributed surfaces: comments
+or `save --reason`.
 
 ## Two reflexes to maintain
 
@@ -212,7 +214,7 @@ review risk set low|high <hunk-id>... [--reason TEXT] [--source ui|cli|agent]
 review risk clear <hunk-id>...
 review status                          # progress + overall state
 review list                            # all saved reviews
-review note set|append|show [<text>]
+review note show                       # the human's note — read-only for agents
 review trust list|add|remove [<pattern>]
 review comments [--file GLOB] [--unresolved|--resolved] [--author NAME]
 review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file]

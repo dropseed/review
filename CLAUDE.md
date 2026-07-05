@@ -132,7 +132,10 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 - `review changes [--staged|--unstaged|--file GLOB] [--json] [--diff]`
 - `review stage|unstage <hunk-id|file>...`
 
-**Skill**: `review skill install` writes the bundled `review-guide` skill into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). The skill's canonical source is `core/resources/skills/review-guide/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it.
+**Skills**: `review skill install` writes the bundled skills into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). Canonical sources live in `core/resources/skills/*/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries them:
+
+- `review-guide` — reviewer-side: help a human work through a large diff.
+- `pre-review` — submitter-side: run AI quality/bug-hunt passes at the end of a dev loop, fix or defer each finding with evidence, and persist the results as agent comments so the human starts from a record. The review note is human-only — agents read it, never write it.
 
 Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
