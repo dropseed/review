@@ -1,4 +1,4 @@
-import { isHunkTrusted } from "../../types";
+import { effectiveHunkStatus } from "../../types";
 import type { DiffHunk, FileDiff, ReviewState } from "../../types";
 import { useReviewStore } from "../index";
 
@@ -142,12 +142,15 @@ export interface HunkIdsByStatus {
   reviewed: string[];
   /** Marked saved-for-later. */
   savedForLater: string[];
+  /** Auto-approved via a trust pattern (no explicit user action). */
+  trusted: string[];
 }
 
 const EMPTY_HUNK_IDS_BY_STATUS: HunkIdsByStatus = {
   pending: [],
   reviewed: [],
   savedForLater: [],
+  trusted: [],
 };
 
 let hunkIdsByStatusCache: {
@@ -182,20 +185,27 @@ export function getHunkIdsByStatus(
   const pending: string[] = [];
   const reviewed: string[] = [];
   const savedForLater: string[] = [];
+  const trusted: string[] = [];
   const hunkStates = reviewState?.hunks;
   const trustList = reviewState?.trustList ?? [];
   for (const hunk of allHunks) {
     const state = hunkStates?.[hunk.id];
-    const status = state?.status?.value;
-    if (status === "approved" || status === "rejected") {
-      reviewed.push(hunk.id);
-    } else if (status === "saved_for_later") {
-      savedForLater.push(hunk.id);
-    } else if (!reviewState || !isHunkTrusted(state, trustList)) {
-      pending.push(hunk.id);
+    switch (effectiveHunkStatus(state, trustList)) {
+      case "approved":
+      case "rejected":
+        reviewed.push(hunk.id);
+        break;
+      case "saved":
+        savedForLater.push(hunk.id);
+        break;
+      case "trusted":
+        trusted.push(hunk.id);
+        break;
+      default:
+        pending.push(hunk.id);
     }
   }
-  const output: HunkIdsByStatus = { pending, reviewed, savedForLater };
+  const output: HunkIdsByStatus = { pending, reviewed, savedForLater, trusted };
   hunkIdsByStatusCache = { allHunks, reviewState, output };
   return output;
 }

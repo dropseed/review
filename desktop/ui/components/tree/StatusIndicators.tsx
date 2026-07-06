@@ -43,7 +43,7 @@ export function HunkCount({
   hideOnHover = false,
 }: {
   status: FileHunkStatus;
-  context: "needs-review" | "reviewed" | "all";
+  context: "needs-review" | "reviewed" | "trusted" | "all";
   hideOnHover?: boolean;
 }): ReactNode {
   if (status.total === 0) return null;
@@ -61,11 +61,20 @@ export function HunkCount({
     );
   }
 
+  if (context === "trusted") {
+    if (status.trusted === 0) return null;
+    return (
+      <span
+        className={`font-mono text-xxs tabular-nums text-status-trusted ${hoverClass}`}
+      >
+        {status.trusted}
+      </span>
+    );
+  }
+
   if (context === "reviewed") {
-    // Show individual color-coded counts for each status
+    // Trusted is its own section now — only show explicit human decisions here.
     const segments: { count: number; color: string }[] = [];
-    if (status.trusted > 0)
-      segments.push({ count: status.trusted, color: "text-status-trusted" });
     if (status.approved > 0)
       segments.push({ count: status.approved, color: "text-status-approved" });
     if (status.rejected > 0)

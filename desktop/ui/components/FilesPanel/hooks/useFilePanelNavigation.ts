@@ -7,6 +7,7 @@ interface UseFilePanelNavigationOptions {
   sectionedFiles: {
     needsReview: ProcessedFileEntry[];
     reviewed: ProcessedFileEntry[];
+    trusted: ProcessedFileEntry[];
   };
 }
 
@@ -153,7 +154,8 @@ export function useFilePanelNavigation({
 
     const existsInChanges =
       directoryExistsInTree(directoryToReveal, sectionedFiles.needsReview) ||
-      directoryExistsInTree(directoryToReveal, sectionedFiles.reviewed);
+      directoryExistsInTree(directoryToReveal, sectionedFiles.reviewed) ||
+      directoryExistsInTree(directoryToReveal, sectionedFiles.trusted);
 
     if (!existsInChanges && viewMode !== "browse") {
       setFilesPanelTab("browse");

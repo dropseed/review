@@ -279,19 +279,20 @@ interface SectionedFilesGroup {
   needsReview: ProcessedFileEntry[];
   savedForLater: ProcessedFileEntry[];
   reviewed: ProcessedFileEntry[];
+  trusted: ProcessedFileEntry[];
 }
 
 interface FlatSectionedFilesGroup {
   needsReview: string[];
   savedForLater: string[];
   reviewed: string[];
+  trusted: string[];
 }
 
 interface ReviewStats {
   pending: number;
   approved: number;
   trusted: number;
-  reviewed: number;
   total: number;
   rejected: number;
   savedForLater: number;
@@ -322,7 +323,7 @@ export interface ReviewTabContentProps {
 
 /**
  * The "Review" tab inside the FilesPanel: four collapsible sections
- * (Reviewed, Needs Review, Saved for Later, Trust) plus the review notes,
+ * (Trusted, Needs Review, Reviewed, Saved for Later) plus the review notes,
  * comments, action bar, and the filename quick-action modal.
  *
  * Owns its own collapse, modal, and quick-action derivation state. All
@@ -379,6 +380,7 @@ export function ReviewTabContent({
     pending: pendingHunkIds,
     reviewed: reviewedHunkIds,
     savedForLater: savedForLaterHunkIds,
+    trusted: trustedHunkIds,
   } = useHunkIdsByStatus();
 
   const handleApproveAllHunks = useCallback(() => {
@@ -673,6 +675,10 @@ export function ReviewTabContent({
     () => collectDirPaths(sectionedFiles.reviewed),
     [sectionedFiles.reviewed],
   );
+  const trustedDirPaths = useMemo(
+    () => collectDirPaths(sectionedFiles.trusted),
+    [sectionedFiles.trusted],
+  );
 
   // Combined dir paths across all change sections (for auto-expand)
   const allChangesDirPaths = useMemo(() => {
@@ -680,8 +686,14 @@ export function ReviewTabContent({
     for (const p of needsReviewDirPaths) combined.add(p);
     for (const p of savedForLaterDirPaths) combined.add(p);
     for (const p of reviewedDirPaths) combined.add(p);
+    for (const p of trustedDirPaths) combined.add(p);
     return combined;
-  }, [needsReviewDirPaths, savedForLaterDirPaths, reviewedDirPaths]);
+  }, [
+    needsReviewDirPaths,
+    savedForLaterDirPaths,
+    reviewedDirPaths,
+    trustedDirPaths,
+  ]);
 
   // Auto-expand tree when switching to tree mode or loading a new comparison.
   const hasAutoExpandedChanges = useRef(false);
@@ -696,13 +708,17 @@ export function ReviewTabContent({
     }
   }, [changesDisplayMode, allChangesDirPaths, renamedDirPaths, expandAll]);
 
+  const hasTrustedFiles =
+    sectionedFiles.trusted.length > 0 || flatSectionedFiles.trusted.length > 0;
+
   const hasChanges =
     sectionedFiles.needsReview.length > 0 ||
     sectionedFiles.savedForLater.length > 0 ||
     sectionedFiles.reviewed.length > 0 ||
     flatSectionedFiles.needsReview.length > 0 ||
     flatSectionedFiles.savedForLater.length > 0 ||
-    flatSectionedFiles.reviewed.length > 0;
+    flatSectionedFiles.reviewed.length > 0 ||
+    hasTrustedFiles;
 
   if (!hasChanges) {
     return (
@@ -734,44 +750,53 @@ export function ReviewTabContent({
 
         <ReviewFindingsPanel />
 
-        {/* Reviewed section */}
-        <SectionHeader
-          title="Reviewed"
-          icon={REVIEWED_ICON}
-          badge={stats.reviewed + stats.rejected}
-          badgeColor="status-approved"
-          isOpen={reviewedOpen}
-          onToggle={() => setReviewedOpen(!reviewedOpen)}
-          onUnapproveAll={
-            reviewedHunkIds.length > 0 ? handleUnapproveAllHunks : undefined
-          }
-          quickActions={reviewedQuickActions}
-          onExpandAll={
-            changesDisplayMode === "tree"
-              ? () => expandAll(reviewedDirPaths, renamedDirPaths)
-              : undefined
-          }
-          onCollapseAll={
-            changesDisplayMode === "tree" ? collapseAll : undefined
-          }
-          actionContent={
-            reviewedHunkIds.length > 0 ? (
-              <RollingDiffButton
-                label="View as rolling diff"
-                onClick={() => openRollingDiff("Reviewed", reviewedHunkIds)}
-              />
-            ) : undefined
-          }
-          additionalMenuContent={viewOptionsMenuContent}
-        >
-          <FileListSection
-            treeEntries={sectionedFiles.reviewed}
-            flatFilePaths={flatSectionedFiles.reviewed}
-            displayMode={changesDisplayMode}
-            hunkContext="reviewed"
-            emptyMessage="No files reviewed yet"
-          />
-        </SectionHeader>
+        {/* Trusted section — auto-approved hunks, kept out of Reviewed so it
+            stays re-reviewable. Folds in the trust-pattern controls below.
+            Shown whenever there are trusted files to list (which now live
+            nowhere else) OR trustable patterns to manage — the two are counted
+            differently, so gating on both keeps trusted files from hiding. */}
+        {(hasTrustedFiles || trustableHunkCount > 0) && (
+          <SectionHeader
+            title="Trusted"
+            icon={TRUST_ICON}
+            badge={`${trustedHunkCount}/${trustableHunkCount}`}
+            badgeColor="status-trusted"
+            isOpen={trustOpen}
+            onToggle={() => setTrustOpen(!trustOpen)}
+            quickActions={trustQuickActions}
+            onExpandAll={
+              hasTrustedFiles && changesDisplayMode === "tree"
+                ? () => expandAll(trustedDirPaths, renamedDirPaths)
+                : undefined
+            }
+            onCollapseAll={
+              hasTrustedFiles && changesDisplayMode === "tree"
+                ? collapseAll
+                : undefined
+            }
+            actionContent={
+              trustedHunkIds.length > 0 ? (
+                <RollingDiffButton
+                  label="View as rolling diff"
+                  onClick={() => openRollingDiff("Trusted", trustedHunkIds)}
+                />
+              ) : undefined
+            }
+          >
+            {hasTrustedFiles && (
+              <div className="mb-1 border-b border-edge-default/40 pb-1">
+                <FileListSection
+                  treeEntries={sectionedFiles.trusted}
+                  flatFilePaths={flatSectionedFiles.trusted}
+                  displayMode={changesDisplayMode}
+                  hunkContext="trusted"
+                  emptyMessage="No trusted hunks"
+                />
+              </div>
+            )}
+            <TrustSection />
+          </SectionHeader>
+        )}
 
         {/* Needs Review section */}
         <SectionHeader
@@ -864,6 +889,45 @@ export function ReviewTabContent({
           )}
         </SectionHeader>
 
+        {/* Reviewed section */}
+        <SectionHeader
+          title="Reviewed"
+          icon={REVIEWED_ICON}
+          badge={stats.approved + stats.rejected}
+          badgeColor="status-approved"
+          isOpen={reviewedOpen}
+          onToggle={() => setReviewedOpen(!reviewedOpen)}
+          onUnapproveAll={
+            reviewedHunkIds.length > 0 ? handleUnapproveAllHunks : undefined
+          }
+          quickActions={reviewedQuickActions}
+          onExpandAll={
+            changesDisplayMode === "tree"
+              ? () => expandAll(reviewedDirPaths, renamedDirPaths)
+              : undefined
+          }
+          onCollapseAll={
+            changesDisplayMode === "tree" ? collapseAll : undefined
+          }
+          actionContent={
+            reviewedHunkIds.length > 0 ? (
+              <RollingDiffButton
+                label="View as rolling diff"
+                onClick={() => openRollingDiff("Reviewed", reviewedHunkIds)}
+              />
+            ) : undefined
+          }
+          additionalMenuContent={viewOptionsMenuContent}
+        >
+          <FileListSection
+            treeEntries={sectionedFiles.reviewed}
+            flatFilePaths={flatSectionedFiles.reviewed}
+            displayMode={changesDisplayMode}
+            hunkContext="reviewed"
+            emptyMessage="No files reviewed yet"
+          />
+        </SectionHeader>
+
         {/* Saved for Later section */}
         {(sectionedFiles.savedForLater.length > 0 ||
           flatSectionedFiles.savedForLater.length > 0) && (
@@ -904,21 +968,6 @@ export function ReviewTabContent({
               hunkContext="needs-review"
               emptyMessage="No files saved for later"
             />
-          </SectionHeader>
-        )}
-
-        {/* Trust section */}
-        {trustableHunkCount > 0 && (
-          <SectionHeader
-            title="Trust"
-            icon={TRUST_ICON}
-            badge={`${trustedHunkCount}/${trustableHunkCount}`}
-            badgeColor="status-trusted"
-            isOpen={trustOpen}
-            onToggle={() => setTrustOpen(!trustOpen)}
-            quickActions={trustQuickActions}
-          >
-            <TrustSection />
           </SectionHeader>
         )}
       </div>

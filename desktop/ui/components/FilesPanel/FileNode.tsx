@@ -27,7 +27,7 @@ import {
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
 import { useFilesPanelContext } from "./FilesPanelContext";
 
-export type HunkContext = "needs-review" | "reviewed" | "all";
+export type HunkContext = "needs-review" | "reviewed" | "trusted" | "all";
 
 function SizeBar({
   totalSize,

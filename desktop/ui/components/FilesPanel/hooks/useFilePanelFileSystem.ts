@@ -84,7 +84,6 @@ export function useFilePanelFileSystem() {
     let pendingHunks = 0;
     let approvedHunks = 0;
     let trustedHunks = 0;
-    let reviewedHunks = 0;
     let rejectedHunks = 0;
     let savedForLaterHunks = 0;
 
@@ -93,7 +92,6 @@ export function useFilePanelFileSystem() {
       pendingHunks += status.pending;
       approvedHunks += status.approved;
       trustedHunks += status.trusted;
-      reviewedHunks += status.approved + status.trusted;
       rejectedHunks += status.rejected;
       savedForLaterHunks += status.savedForLater;
 
@@ -110,7 +108,6 @@ export function useFilePanelFileSystem() {
       pending: pendingHunks,
       approved: approvedHunks,
       trusted: trustedHunks,
-      reviewed: reviewedHunks,
       total: totalHunks,
       rejected: rejectedHunks,
       savedForLater: savedForLaterHunks,
@@ -141,6 +138,7 @@ export function useFilePanelFileSystem() {
     const needsReview: string[] = [];
     const savedForLater: string[] = [];
     const reviewed: string[] = [];
+    const trusted: string[] = [];
     const seenPaths = new Set<string>();
 
     // First, add files with hunks
@@ -149,8 +147,8 @@ export function useFilePanelFileSystem() {
       seenPaths.add(filePath);
       if (status.pending > 0) needsReview.push(filePath);
       if (status.savedForLater > 0) savedForLater.push(filePath);
-      if (status.approved + status.trusted + status.rejected > 0)
-        reviewed.push(filePath);
+      if (status.trusted > 0) trusted.push(filePath);
+      if (status.approved + status.rejected > 0) reviewed.push(filePath);
     }
 
     // Also add entries with status changes but no hunks (e.g., symlink directories)
@@ -193,7 +191,8 @@ export function useFilePanelFileSystem() {
     sortPaths(needsReview);
     sortPaths(savedForLater);
     sortPaths(reviewed);
-    return { needsReview, savedForLater, reviewed };
+    sortPaths(trusted);
+    return { needsReview, savedForLater, reviewed, trusted };
   }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap]);
 
   const fileStatusMap = useMemo(() => {
@@ -250,6 +249,7 @@ export function useFilePanelFileSystem() {
     collect(sectionedFiles.needsReview);
     collect(sectionedFiles.savedForLater);
     collect(sectionedFiles.reviewed);
+    collect(sectionedFiles.trusted);
     collect(allFilesTree);
     return { allDirPaths: paths, renamedDirPaths: renamed };
   }, [allFilesTree, sectionedFiles]);

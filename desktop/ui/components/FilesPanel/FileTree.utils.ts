@@ -279,9 +279,10 @@ export interface SectionedTreeResult {
   needsReview: ProcessedFileEntry[];
   savedForLater: ProcessedFileEntry[];
   reviewed: ProcessedFileEntry[];
+  trusted: ProcessedFileEntry[];
 }
 
-/** Process tree and split into needs-review, saved-for-later, and reviewed sections. */
+/** Process tree and split into trusted, needs-review, saved-for-later, and reviewed sections. */
 export function processTreeWithSections(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
@@ -336,16 +337,22 @@ export function processTreeWithSections(
     compactTree(filterSection(processed, (status) => status.savedForLater > 0)),
   );
 
+  // Reviewed = explicit human decisions only. Trusted (auto-approved) hunks are
+  // split into their own section so the Reviewed list stays re-reviewable.
   const reviewed = annotateSiblingMax(
     compactTree(
       filterSection(
         processed,
-        (status) => status.approved + status.trusted + status.rejected > 0,
+        (status) => status.approved + status.rejected > 0,
       ),
     ),
   );
 
-  return { needsReview, savedForLater, reviewed };
+  const trusted = annotateSiblingMax(
+    compactTree(filterSection(processed, (status) => status.trusted > 0)),
+  );
+
+  return { needsReview, savedForLater, reviewed, trusted };
 }
 
 function annotateSiblingMax(
