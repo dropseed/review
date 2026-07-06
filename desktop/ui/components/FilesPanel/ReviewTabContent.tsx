@@ -323,7 +323,7 @@ export interface ReviewTabContentProps {
 
 /**
  * The "Review" tab inside the FilesPanel: four collapsible sections
- * (Trusted, Needs Review, Reviewed, Saved for Later) plus the review notes,
+ * (Trusted, Reviewed, Needs Review, Saved for Later) plus the review notes,
  * comments, action bar, and the filename quick-action modal.
  *
  * Owns its own collapse, modal, and quick-action derivation state. All
@@ -750,10 +750,11 @@ export function ReviewTabContent({
         <ReviewFindingsPanel />
 
         {/* Trusted section — auto-approved hunks, kept out of Reviewed so it
-            stays re-reviewable. Folds in the trust-pattern controls below.
-            Shown whenever there are trusted files to list (which now live
-            nowhere else) OR trustable patterns to manage — the two are counted
-            differently, so gating on both keeps trusted files from hiding. */}
+            stays re-reviewable. The trust-pattern controls live in this
+            section's overflow menu. Shown whenever there are trusted files to
+            list (which now live nowhere else) OR trustable patterns to manage —
+            the two are counted differently, so gating on both keeps trusted
+            files from hiding. */}
         {(hasTrustedFiles || trustableHunkCount > 0) && (
           <SectionHeader
             title="Trusted"
@@ -781,20 +782,63 @@ export function ReviewTabContent({
                 />
               ) : undefined
             }
-          >
-            {hasTrustedFiles && (
-              <div className="mb-1 border-b border-edge-default/40 pb-1">
-                <FileListSection
-                  treeEntries={sectionedFiles.trusted}
-                  flatFilePaths={flatSectionedFiles.trusted}
-                  displayMode={changesDisplayMode}
-                  hunkContext="trusted"
-                />
+            additionalMenuContent={
+              <div className="max-h-[50vh] w-64 overflow-y-auto">
+                <div className="px-2 pb-1 pt-1.5 text-xxs font-medium uppercase tracking-wider text-fg-faint">
+                  Trust patterns
+                </div>
+                <TrustSection />
               </div>
-            )}
-            <TrustSection />
+            }
+          >
+            <FileListSection
+              treeEntries={sectionedFiles.trusted}
+              flatFilePaths={flatSectionedFiles.trusted}
+              displayMode={changesDisplayMode}
+              hunkContext="trusted"
+              emptyMessage="No trusted hunks"
+            />
           </SectionHeader>
         )}
+
+        {/* Reviewed section */}
+        <SectionHeader
+          title="Reviewed"
+          icon={REVIEWED_ICON}
+          badge={stats.approved + stats.rejected}
+          badgeColor="status-approved"
+          isOpen={reviewedOpen}
+          onToggle={() => setReviewedOpen(!reviewedOpen)}
+          onUnapproveAll={
+            reviewedHunkIds.length > 0 ? handleUnapproveAllHunks : undefined
+          }
+          quickActions={reviewedQuickActions}
+          onExpandAll={
+            changesDisplayMode === "tree"
+              ? () => expandAll(reviewedDirPaths, renamedDirPaths)
+              : undefined
+          }
+          onCollapseAll={
+            changesDisplayMode === "tree" ? collapseAll : undefined
+          }
+          actionContent={
+            reviewedHunkIds.length > 0 ? (
+              <RollingDiffButton
+                label="View as rolling diff"
+                onClick={() => openRollingDiff("Reviewed", reviewedHunkIds)}
+              />
+            ) : undefined
+          }
+          additionalMenuContent={viewOptionsMenuContent}
+        >
+          <FileListSection
+            treeEntries={sectionedFiles.reviewed}
+            flatFilePaths={flatSectionedFiles.reviewed}
+            displayMode={changesDisplayMode}
+            hunkContext="reviewed"
+            emptyMessage="No files reviewed yet"
+          />
+        </SectionHeader>
 
         {/* Needs Review section */}
         <SectionHeader
@@ -885,45 +929,6 @@ export function ReviewTabContent({
               emptyMessage="No files need review"
             />
           )}
-        </SectionHeader>
-
-        {/* Reviewed section */}
-        <SectionHeader
-          title="Reviewed"
-          icon={REVIEWED_ICON}
-          badge={stats.approved + stats.rejected}
-          badgeColor="status-approved"
-          isOpen={reviewedOpen}
-          onToggle={() => setReviewedOpen(!reviewedOpen)}
-          onUnapproveAll={
-            reviewedHunkIds.length > 0 ? handleUnapproveAllHunks : undefined
-          }
-          quickActions={reviewedQuickActions}
-          onExpandAll={
-            changesDisplayMode === "tree"
-              ? () => expandAll(reviewedDirPaths, renamedDirPaths)
-              : undefined
-          }
-          onCollapseAll={
-            changesDisplayMode === "tree" ? collapseAll : undefined
-          }
-          actionContent={
-            reviewedHunkIds.length > 0 ? (
-              <RollingDiffButton
-                label="View as rolling diff"
-                onClick={() => openRollingDiff("Reviewed", reviewedHunkIds)}
-              />
-            ) : undefined
-          }
-          additionalMenuContent={viewOptionsMenuContent}
-        >
-          <FileListSection
-            treeEntries={sectionedFiles.reviewed}
-            flatFilePaths={flatSectionedFiles.reviewed}
-            displayMode={changesDisplayMode}
-            hunkContext="reviewed"
-            emptyMessage="No files reviewed yet"
-          />
         </SectionHeader>
 
         {/* Saved for Later section */}
