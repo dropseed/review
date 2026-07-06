@@ -9,7 +9,6 @@
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use clap::{Args, Subcommand};
 use serde::Serialize;
@@ -18,7 +17,7 @@ use crate::review::state::{now_iso8601, AnnotationSide, LineAnnotation, ReviewSt
 use crate::review::storage;
 
 use super::common::{
-    load_for_mutation, mutate_review, print_json, resolve_comparison_arg, ReviewTarget,
+    line_range, load_for_mutation, mutate_review, print_json, resolve_comparison_arg, ReviewTarget,
 };
 use super::get_repo_path;
 
@@ -265,10 +264,7 @@ fn print_comments_human(comparison: &str, total: usize, rows: &[&LineAnnotation]
             println!("{}", row.file_path);
             current_file = row.file_path.as_str();
         }
-        let range = match row.end_line_number {
-            Some(end) if end != row.line_number => format!("{}-{}", row.line_number, end),
-            _ => row.line_number.to_string(),
-        };
+        let range = line_range(row.line_number, row.end_line_number);
         let author = row.author.as_deref().unwrap_or("?");
         let resolved = if row.resolved_at.is_some() {
             " [resolved]"
@@ -613,7 +609,7 @@ pub(super) fn parse_source_str(value: &str) -> Option<Source> {
     }
 }
 
-fn default_git_user(repo: &Path) -> Option<String> {
+pub(super) fn default_git_user(repo: &Path) -> Option<String> {
     // Pass `-C <repo>` so the lookup respects the target repository's
     // per-repo `user.name`, not whatever cwd the CLI happens to run in.
     let output = Command::new("git")
@@ -638,13 +634,10 @@ fn default_git_user(repo: &Path) -> Option<String> {
 /// a comment ID for a hunk hash, and the per-process counter guarantees
 /// uniqueness across rapid creations within the same millisecond.
 fn new_annotation_id(file_path: &str, line_number: u32, side: &str) -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{file_path}:{line_number}:{side}:t{epoch}-{counter}")
+    format!(
+        "{file_path}:{line_number}:{side}:{}",
+        super::common::new_id_suffix()
+    )
 }
 
 #[cfg(test)]

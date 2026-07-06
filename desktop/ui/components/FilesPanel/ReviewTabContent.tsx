@@ -26,6 +26,7 @@ import { GuideGroupList, useGuideGroupState } from "./GuideGroupList";
 import { FilenameModal } from "./FilenameModal";
 import { ReviewNotesPanel } from "./ReviewNotesPanel";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
+import { ReviewFindingsPanel } from "./ReviewFindingsPanel";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
@@ -730,6 +731,8 @@ export function ReviewTabContent({
         <ReviewNotesPanel />
 
         <ReviewCommentsPanel />
+
+        <ReviewFindingsPanel />
 
         {/* Reviewed section */}
         <SectionHeader

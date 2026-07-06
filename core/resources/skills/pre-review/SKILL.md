@@ -1,5 +1,5 @@
 ---
-description: Prepare a change for human review — run AI quality and bug-hunt passes, fix or defer each finding with evidence, and persist the results into the Review app so the human starts from a record instead of a raw diff. Use at the end of a dev loop, before handing work to a human reviewer.
+description: Prepare a change for human review — run AI quality and bug-hunt passes, fix or defer each finding with evidence, and submit the results to the Review app as a review run so the human starts from a record instead of a raw diff. Use at the end of a dev loop, before handing work to a human reviewer.
 user_invocable: true
 ---
 
@@ -11,9 +11,10 @@ review*, not scrolled away in a chat transcript. This skill is the last step of
 a dev loop: sweep the change, fix what you can prove, record what you can't,
 and hand over a prepared review.
 
-The one hard rule: **nothing you learn here is allowed to evaporate.** Every
-finding ends up either fixed (and recorded as fixed) or deferred to the human
-(and recorded as deferred). The transcript is not a record.
+The one hard rule: **nothing you learn here is allowed to evaporate.** The
+whole pass ends in one `review findings submit` — a run record (proof the
+review happened, and of what) plus every finding, fixed or deferred. The
+transcript is not a record.
 
 Run `review --help` first to confirm the CLI is installed.
 
@@ -40,8 +41,8 @@ If your harness has a dedicated cleanup skill (e.g. `/simplify`), run it and
 apply the fixes. Otherwise, make an equivalent pass yourself — reuse,
 simplification, efficiency — and apply what's clearly right.
 
-Quality cleanups don't get per-finding records: they just become part of the
-diff the human reviews. Records are for findings that carry a *decision*.
+Quality cleanups don't get findings: they just become part of the diff the
+human reviews. Findings are for issues that carry a *decision*.
 
 ### 3. Bug hunt
 
@@ -49,56 +50,88 @@ Run your harness's review skill (e.g. `/code-review`), or an equivalent
 careful pass over the diff. Then — and this is the part that earns the
 human's trust — **verify each candidate finding before recording it**:
 reproduce it with a failing test, a one-off script, or a trace through real
-inputs. A finding you couldn't verify must say so. Speculation dressed up as
-a finding is how reviewers learn to ignore the whole channel.
+inputs. That verification is the finding's `evidence`, and its result is your
+`confidence` (`confirmed` = you reproduced it; `plausible` = you couldn't, say
+why). Speculation dressed up as a finding is how reviewers learn to ignore
+the whole channel.
 
-Triage each verified finding:
+Triage each finding:
 
-- **You can fix it and the fix is uncontroversial** → fix it, keep the
-  evidence, and record it as fixed (below).
+- **You can fix it and the fix is uncontroversial** → fix it, re-run the
+  evidence to prove the fix, and submit it with a `resolution`.
 - **It needs a call you shouldn't make alone** — product behavior, acceptable
-  risk, a refactor beyond this change's scope → defer it to the human.
+  risk, a refactor beyond this change's scope → submit it open, with a
+  `suggestion` and your reasoning in `body`.
 
-### 4. Record everything in the review
+### 4. Submit the run
 
-Findings are comments, attributed to you. One comment per finding, on the
-exact line, following this convention (it's a format the app will grow into —
-keep it):
-
-- First line: `<type>/<severity>: <summary>` — type is one of
-  `bug` | `risk` | `question` | `improvement`; severity is `high` | `medium` | `low`.
-- `Evidence:` — how you verified it (the command, the test, the trace).
-  Write `Evidence: unverified — <why>` honestly if you couldn't.
-- `Suggested:` — what you think should happen (deferred findings), or
-- `Fixed:` — what you did (fixed findings).
-- `Deferred:` — one line on why this is the human's decision, not yours.
-
-Deferred finding — the comment stays open:
+One submit records the run and all findings together. Build the JSON and pipe
+it in:
 
 ```
-review comment add src/auth.rs:142 "bug/high: expiry compared in ms vs s — sessions never expire. Evidence: test_session_expiry fails against real timestamps (repro included). Suggested: compare epoch seconds. Deferred: fix changes session semantics — your call." --source agent
+review findings submit --source agent <<'EOF'
+{
+  "run": {
+    "tool": "claude-code/code-review",
+    "model": "<model id>",
+    "summary": "simplify + code-review over the working tree. 3 findings: 2 fixed (evidence re-run), 1 deferred (session-expiry semantics)."
+  },
+  "findings": [
+    {
+      "kind": "bug", "severity": "high", "confidence": "confirmed",
+      "title": "expiry compared in ms vs s — sessions never expire",
+      "body": "token.expires_at is epoch seconds; the comparison uses Date.now() milliseconds.",
+      "suggestion": "compare epoch seconds",
+      "anchor": { "path": "src/auth.rs", "line": 142 },
+      "evidence": [
+        { "kind": "test", "command": "cargo test test_session_expiry", "output": "FAILED: expected expired, got active" }
+      ]
+    },
+    {
+      "kind": "bug", "severity": "medium", "confidence": "confirmed",
+      "title": "TOCTOU between stat and read on the cache file",
+      "anchor": { "path": "src/cache.rs", "line": 57 },
+      "evidence": [
+        { "kind": "command", "command": "./scripts/race-repro.sh", "output": "raced in 48 iterations" }
+      ],
+      "resolution": {
+        "action": "fixed",
+        "reason": "hold the read lock across stat+read; regression test added",
+        "evidence": { "kind": "command", "command": "./scripts/race-repro.sh", "output": "clean after 5000 iterations" }
+      }
+    }
+  ]
+}
+EOF
 ```
 
-Fixed finding — same comment, then resolve it, so the record shows
-found-and-fixed rather than nothing at all:
+What matters in that shape:
 
-```
-review comment add src/cache.rs:57 "bug/medium: TOCTOU between stat and read on the cache file. Evidence: repro script raced it in ~50 iterations. Fixed: hold the read lock across both; regression test added." --source agent
-review comment resolve <comment-id>
-```
+- `run.summary` is the run's own record — what you examined, what ran
+  against it, the headline numbers. It belongs here, not in the chat alone.
+  Name the files/areas you actually reviewed; this prose is the coverage
+  story (there is no per-hunk coverage field).
+- Fixed findings carry a `resolution` with **proof-of-fix evidence** — the
+  same repro, re-run, now passing. Found-and-fixed with receipts.
+- Deferred findings have no `resolution`; they arrive open, which is the
+  human's queue.
+- `kind`: `bug` | `risk` | `question` | `improvement` · `severity`:
+  `high` | `medium` | `low` · `confidence`: `confirmed` | `plausible`.
+- A clean pass still gets submitted — a run with `"findings": []` is the
+  record that review happened and found nothing.
+
+Afterwards, `review findings` / `review finding show <id>` to double-check
+what landed. Use `review comment add` only for line-level *conversation*
+(questions about intent, naming); findings are for issues with a lifecycle.
 
 **Never write `review note`.** The note is the human's own space — read it
 for context if it exists (`review note show`), never write it.
 
 ### 5. Hand off in chat
 
-The run summary has no home in the app yet, so it goes in the conversation.
-Keep it short:
-
-- what passes ran, and against what state of the diff
-- findings verified: how many fixed (resolved comments), how many deferred
-  (open comments)
-- the one or two things the human should look at first
+The record is in the app; the chat handoff is just orientation. Keep it
+short: what ran, the open-findings count, and the one or two things the human
+should look at first.
 
 If the diff is large, offer to also compose a walkthrough with
 `review guide add` (see the `review-guide` skill) — but that's their call,
@@ -110,8 +143,12 @@ not part of this pass.
 review status                          # progress + overall state
 review start [spec] [--working|--staged|--commit REF|--stash N|--patch FILE]
 review hunks [--file|--label|--risk] [--json] [--diff]
-review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file] --source agent
-review comment resolve <comment-id>
-review comments [--unresolved|--resolved] [--author NAME]
+review findings submit [FILE] [--source agent] [--json]   # stdin or FILE
+review findings [--open|--resolved] [--kind K] [--severity S] [--json]
+review finding show <id> [--json]
+review finding resolve <id> --as fixed|false-positive|accepted-risk|deferred [--reason TEXT] [--evidence TEXT]
+review finding reopen <id> [--reason TEXT]
+review runs [--json]
+review comment add <file>:<line>[:<end>] "<text>" --source agent   # conversation, not findings
 review note show                       # the human's note — read-only for agents
 ```

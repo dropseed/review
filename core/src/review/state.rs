@@ -5,6 +5,13 @@ use crate::trust::patterns::get_all_pattern_ids;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Re-exported so the review runs/findings model can be reached via
+// `crate::review::state::{...}`, alongside the rest of the review state types.
+pub use super::findings::{
+    DerivedStatus, DispositionAction, DispositionEvent, Evidence, EvidenceKind, Finding,
+    FindingAnchor, FindingConfidence, FindingKind, FindingSeverity, ReviewRun,
+};
+
 /// The on-disk format version for a serialized [`ReviewState`].
 ///
 /// This is the *schema* version — distinct from [`ReviewState::version`], which
@@ -118,12 +125,23 @@ pub struct LineAnnotation {
     pub resolved_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AnnotationSide {
     Old,
+    #[default]
     New,
     File,
+}
+
+impl AnnotationSide {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AnnotationSide::Old => "old",
+            AnnotationSide::New => "new",
+            AnnotationSide::File => "file",
+        }
+    }
 }
 
 /// Where a value came from — the producer that set a classification, status,
@@ -143,6 +161,20 @@ pub enum Source {
     Agent,
     Github,
     Gitlab,
+}
+
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Static => "static",
+            Source::Ai => "ai",
+            Source::Ui => "ui",
+            Source::Cli => "cli",
+            Source::Agent => "agent",
+            Source::Github => "github",
+            Source::Gitlab => "gitlab",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +221,12 @@ pub struct ReviewState {
         skip_serializing_if = "Option::is_none"
     )]
     pub worktree_path: Option<String>,
+    /// Review passes recorded against this comparison (proof of coverage).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<ReviewRun>,
+    /// Issues raised by runs or agents, each with an append-only disposition log.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<Finding>,
 }
 
 /// Risk level for a hunk — how costly a mistake here would be, independent of
@@ -298,6 +336,8 @@ impl ReviewState {
             total_diff_hunks: 0,
             github_pr: None,
             worktree_path: None,
+            runs: Vec::new(),
+            findings: Vec::new(),
         }
     }
 
@@ -944,6 +984,120 @@ mod tests {
             Some(a.stable_hash().as_str()),
             "exact-match entries get their stable key stamped for next time"
         );
+    }
+
+    // --- runs + findings serde ---
+
+    fn sample_finding(events: Vec<DispositionEvent>) -> Finding {
+        Finding {
+            id: "finding:t1-0".to_owned(),
+            producer_id: Some("cr-001".to_owned()),
+            run_id: Some("run:t1-0".to_owned()),
+            kind: FindingKind::Bug,
+            severity: FindingSeverity::High,
+            confidence: Some(FindingConfidence::Confirmed),
+            title: "expiry compared in ms vs s".to_owned(),
+            body: Some("body".to_owned()),
+            suggestion: Some("compare epoch seconds".to_owned()),
+            evidence: vec![Evidence {
+                kind: EvidenceKind::Test,
+                description: None,
+                command: Some("cargo test test_expiry".to_owned()),
+                output: Some("FAILED".to_owned()),
+            }],
+            anchor: FindingAnchor {
+                file_path: "src/auth.rs".to_owned(),
+                line_number: Some(142),
+                end_line_number: None,
+                side: AnnotationSide::New,
+                hunk_id: Some("src/auth.rs:deadbeef".to_owned()),
+                stable_key: None,
+            },
+            events,
+            author: Some("claude".to_owned()),
+            source: Source::Agent,
+            created_at: now_iso8601(),
+        }
+    }
+
+    #[test]
+    fn runs_and_findings_round_trip() {
+        let mut state = ReviewState::new(test_comparison());
+        state.runs.push(ReviewRun {
+            id: "run:t1-0".to_owned(),
+            tool: "claude-code/code-review".to_owned(),
+            model: Some("m".to_owned()),
+            summary: Some("s".to_owned()),
+            author: Some("claude".to_owned()),
+            source: Source::Agent,
+            created_at: now_iso8601(),
+        });
+        // Exercise every disposition action across the log.
+        state.findings.push(sample_finding(vec![
+            DispositionEvent {
+                action: DispositionAction::Fixed,
+                actor: Some("dave".to_owned()),
+                source: Source::Cli,
+                at: now_iso8601(),
+                reason: Some("held lock".to_owned()),
+                evidence: Some(Evidence {
+                    kind: EvidenceKind::Test,
+                    description: None,
+                    command: Some("cargo test".to_owned()),
+                    output: Some("ok".to_owned()),
+                }),
+            },
+            DispositionEvent {
+                action: DispositionAction::Reopened,
+                actor: None,
+                source: Source::Cli,
+                at: now_iso8601(),
+                reason: None,
+                evidence: None,
+            },
+            DispositionEvent {
+                action: DispositionAction::AcceptedRisk,
+                actor: None,
+                source: Source::Cli,
+                at: now_iso8601(),
+                reason: None,
+                evidence: None,
+            },
+        ]));
+
+        let json = serde_json::to_string(&state).unwrap();
+        let back: ReviewState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.runs.len(), 1);
+        assert_eq!(back.runs[0].tool, "claude-code/code-review");
+        assert_eq!(back.findings.len(), 1);
+        assert_eq!(back.findings[0].events.len(), 3);
+        // Camel-case wire names for the anchor, matching annotations; kebab-case
+        // for the disposition actions.
+        assert!(json.contains("\"filePath\":\"src/auth.rs\""));
+        assert!(json.contains("\"accepted-risk\""));
+        // Derived status survives the round trip.
+        assert_eq!(
+            back.findings[0].derived_status(),
+            DerivedStatus::Resolved(DispositionAction::AcceptedRisk)
+        );
+    }
+
+    #[test]
+    fn pre_findings_json_loads_without_runs_or_findings() {
+        // A review file written before findings existed has no `runs`/`findings`
+        // keys; it must still deserialize, defaulting both to empty.
+        let json = r#"{
+            "schemaVersion": 1,
+            "comparison": { "base": "main", "head": "HEAD", "key": "main..HEAD" },
+            "hunks": {},
+            "trustList": [],
+            "notes": "",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z"
+        }"#;
+        let state: ReviewState = serde_json::from_str(json).unwrap();
+        assert!(state.runs.is_empty());
+        assert!(state.findings.is_empty());
     }
 
     #[test]

@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use clap::Args;
 use serde::Serialize;
@@ -69,6 +70,30 @@ pub fn parse_hunk_target(arg: &str) -> HunkTarget {
     }
     HunkTarget::File {
         path: arg.to_owned(),
+    }
+}
+
+/// A unique ID suffix of the form `t{epoch_ms}-{pid}-{counter}`. The `t`
+/// prefix keeps `parse_hunk_target`'s all-hex heuristic from mistaking a
+/// store-assigned ID for a hunk hash; the per-process counter guarantees
+/// uniqueness across rapid creations within the same millisecond, and the
+/// process id discriminates between two processes minting IDs in that same
+/// millisecond (which would otherwise collide).
+pub fn new_id_suffix() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("t{epoch}-{}-{counter}", std::process::id())
+}
+
+/// A "42" or "42-48" line reference; never the redundant "42-42".
+pub fn line_range(start: u32, end: Option<u32>) -> String {
+    match end {
+        Some(e) if e != start => format!("{start}-{e}"),
+        _ => start.to_string(),
     }
 }
 

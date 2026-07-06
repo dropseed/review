@@ -6,6 +6,7 @@ import {
   computeReviewProgress,
   type ReviewProgress,
 } from "./useReviewProgress";
+import { lineRangeRef } from "../utils/line-range";
 import type { Comparison, DiffHunk, LineAnnotation } from "../types";
 
 /** Returns a human-readable line range string for a hunk (e.g. "10" or "10-15"). */
@@ -27,13 +28,6 @@ function isAnnotationInHunk(a: LineAnnotation, hunk: DiffHunk): boolean {
  * Markdown list item instead of breaking out into top-level blocks. */
 function indentContinuation(text: string, indent: string): string {
   return text.replace(/\n/g, `\n${indent}`);
-}
-
-/** A "42" or "42-48" line reference, never the redundant "42-42". */
-function annotationLineRef(a: LineAnnotation): string {
-  return a.endLineNumber && a.endLineNumber !== a.lineNumber
-    ? `${a.lineNumber}-${a.endLineNumber}`
-    : `${a.lineNumber}`;
 }
 
 /** Human-readable label for the review's overall state. */
@@ -96,7 +90,7 @@ function generateReviewMarkdown(
     lines.push("## Comments");
     lines.push("");
     for (const annotation of standaloneAnnotations) {
-      const ref = annotationLineRef(annotation);
+      const ref = lineRangeRef(annotation.lineNumber, annotation.endLineNumber);
       const author = annotation.author ? ` _(${annotation.author})_` : "";
       const body = indentContinuation(annotation.content, "  ");
       lines.push(`- **${annotation.filePath}:${ref}** — ${body}${author}`);

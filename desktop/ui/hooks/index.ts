@@ -24,6 +24,7 @@ export { useCodeFont, useVirtualFileMetrics } from "./useCodeFont";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
 export { useFeedbackPanel } from "./useFeedbackPanel";
+export { useFindingsPanel } from "./useFindingsPanel";
 export { useMenuState } from "./useMenuState";
 export { useSymbolNavigation } from "./useSymbolNavigation";
 export { useDebounce } from "./useDebounce";

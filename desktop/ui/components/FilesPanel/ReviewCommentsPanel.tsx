@@ -9,6 +9,8 @@ import { useFeedbackPanel } from "../../hooks";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
 import { SimpleTooltip } from "../ui/tooltip";
+import { FilePathLabel } from "./file-path-label";
+import { lineRangeRef } from "../../utils/line-range";
 import type { Source, LineAnnotation } from "../../types";
 
 const COMMENTS_ICON = (
@@ -25,32 +27,6 @@ const COMMENTS_ICON = (
   </svg>
 );
 
-/** Split a file path into its directory prefix and filename. */
-function splitFilePath(filePath: string): {
-  dirPath: string;
-  fileName: string;
-} {
-  const lastSlash = filePath.lastIndexOf("/");
-  if (lastSlash < 0) return { dirPath: "", fileName: filePath };
-  return {
-    dirPath: filePath.substring(0, lastSlash + 1),
-    fileName: filePath.substring(lastSlash + 1),
-  };
-}
-
-/** Renders a file path with the directory dimmed and the filename highlighted. */
-function FilePathLabel({ filePath }: { filePath: string }): ReactNode {
-  const { dirPath, fileName } = splitFilePath(filePath);
-  return (
-    <span className="min-w-0 truncate text-[11px]">
-      {dirPath && <span className="text-fg-muted/40">{dirPath}</span>}
-      <span className="text-fg-secondary group-hover/c:text-fg">
-        {fileName}
-      </span>
-    </span>
-  );
-}
-
 /** Tone for an author tag, keyed on where the comment came from. */
 function authorTone(source: Source | undefined): string {
   switch (source) {
@@ -62,13 +38,6 @@ function authorTone(source: Source | undefined): string {
     default:
       return "text-fg-muted/60";
   }
-}
-
-/** A 1-or-2 line reference like "42" or "42-48". */
-function lineRef(a: LineAnnotation): string {
-  return a.endLineNumber && a.endLineNumber !== a.lineNumber
-    ? `${a.lineNumber}-${a.endLineNumber}`
-    : `${a.lineNumber}`;
 }
 
 interface CommentRowProps {
@@ -97,7 +66,10 @@ function CommentRow({
       <button onClick={onGoTo} className="w-full text-left pl-1.5 pr-11 py-1">
         <div className="flex items-center gap-1.5">
           <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-            <FilePathLabel filePath={annotation.filePath} />
+            <FilePathLabel
+              filePath={annotation.filePath}
+              filenameHoverClass="group-hover/c:text-fg"
+            />
             {annotation.author && (
               <span
                 className={`shrink-0 truncate text-[9px] ${authorTone(
@@ -109,7 +81,7 @@ function CommentRow({
             )}
           </span>
           <span className="shrink-0 rounded bg-surface-raised/60 px-1 py-px text-[9px] tabular-nums text-fg-muted/40">
-            {lineRef(annotation)}
+            {lineRangeRef(annotation.lineNumber, annotation.endLineNumber)}
           </span>
         </div>
         <p className="mt-0.5 line-clamp-3 whitespace-pre-wrap text-[10px] leading-snug text-fg-muted/80">

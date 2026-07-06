@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 
 mod comments;
 mod common;
+mod findings;
 mod guide;
 mod review_state;
 mod skill;
@@ -134,6 +135,15 @@ pub enum Commands {
 
     /// Add, edit, resolve, or delete a line-level comment
     Comment(comments::CommentArgs),
+
+    /// Submit a review run, or list findings (an AI review pass's record)
+    Findings(findings::FindingsArgs),
+
+    /// Show, resolve, or reopen an individual finding
+    Finding(findings::FindingArgs),
+
+    /// List recorded review runs
+    Runs(findings::RunsArgs),
 
     /// Show, author, or clear the review guide (an agent-authored hunk grouping)
     Guide(guide::GuideArgs),
@@ -267,6 +277,16 @@ pub fn run(cli: Cli) -> Result<(), String> {
             comments::CommentAction::Unresolve(a) => comments::run_unresolve(args.target, a),
             comments::CommentAction::Delete(a) => comments::run_delete(args.target, a),
         },
+        Some(Commands::Findings(args)) => match args.action {
+            Some(findings::FindingsAction::Submit(a)) => findings::run_submit(a),
+            None => findings::run_list(args),
+        },
+        Some(Commands::Finding(args)) => match args.action {
+            findings::FindingAction::Show(a) => findings::run_show(args.target, a),
+            findings::FindingAction::Resolve(a) => findings::run_resolve(args.target, a),
+            findings::FindingAction::Reopen(a) => findings::run_reopen(args.target, a),
+        },
+        Some(Commands::Runs(args)) => findings::run_runs(args),
         Some(Commands::Guide(args)) => match args.action {
             guide::GuideAction::Show(a) => guide::run_show(a),
             guide::GuideAction::Add(a) => guide::run_add(a),
