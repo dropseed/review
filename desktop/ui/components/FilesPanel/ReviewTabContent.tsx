@@ -790,7 +790,6 @@ export function ReviewTabContent({
                   flatFilePaths={flatSectionedFiles.trusted}
                   displayMode={changesDisplayMode}
                   hunkContext="trusted"
-                  emptyMessage="No trusted hunks"
                 />
               </div>
             )}

@@ -13,7 +13,9 @@ interface FileListSectionProps {
   displayMode: ChangesDisplayMode;
   hunkContext: HunkContext;
   emptyIcon?: ReactNode;
-  emptyMessage: string;
+  // Optional: callers that only mount this when non-empty (e.g. the Trusted
+  // section, guarded by hasTrustedFiles) never hit the empty state.
+  emptyMessage?: string;
 }
 
 export const CHECK_ICON = (
@@ -33,7 +35,7 @@ function EmptyState({
   message,
 }: {
   icon?: ReactNode;
-  message: string;
+  message?: string;
 }): ReactNode {
   return (
     <div className="py-4 text-center">
