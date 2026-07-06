@@ -546,8 +546,7 @@ export function ReviewTabContent({
 
   // Trust section
   const knownPatternIds = useKnownPatternIds();
-  const { trustedHunkCount, trustableHunkCount } =
-    useTrustCounts(knownPatternIds);
+  const { trustableHunkCount } = useTrustCounts(knownPatternIds);
   const isClassificationStale = useReviewStore((s) => s.isClassificationStale);
 
   const unlabeledCount = useMemo(
@@ -759,7 +758,7 @@ export function ReviewTabContent({
           <SectionHeader
             title="Trusted"
             icon={TRUST_ICON}
-            badge={`${trustedHunkCount}/${trustableHunkCount}`}
+            badge={stats.trusted}
             badgeColor="status-trusted"
             isOpen={trustOpen}
             onToggle={() => setTrustOpen(!trustOpen)}
