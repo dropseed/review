@@ -153,6 +153,27 @@ pub enum Commands {
 
     /// Install the review-guide skill for Claude Code and Codex
     Skill(skill::SkillArgs),
+
+    /// Set (or show/clear) the default comparison so commands don't need `-s`
+    Use(UseArgs),
+}
+
+/// `review use [spec]` — the repo's stored default comparison. With a spec,
+/// set it; with `--clear`, remove it; with neither, show it. Every data
+/// command falls back to this when `--spec`/`$REVIEW_SPEC` are absent.
+#[derive(Debug, clap::Args)]
+pub struct UseArgs {
+    /// Repository path (defaults to the current directory)
+    #[arg(short, long)]
+    pub repo: Option<String>,
+    /// Comparison spec to make the default (omit to show the current default)
+    pub spec: Option<String>,
+    /// Clear the stored default comparison
+    #[arg(long, conflicts_with = "spec")]
+    pub clear: bool,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 /// Walk up from `start` to find a directory containing `.git/`.
@@ -179,6 +200,51 @@ pub(crate) fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
     find_repo_root(&cwd)
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Not a git repository. Use --repo to specify a repository path.".to_owned())
+}
+
+/// `review use` — get, set, or clear the repo's default comparison.
+fn run_use(args: UseArgs) -> Result<(), String> {
+    use serde_json::json;
+    let repo = PathBuf::from(get_repo_path(&args.repo)?);
+
+    if args.clear {
+        let had = storage::clear_default_spec(&repo).map_err(|e| e.to_string())?;
+        if args.json {
+            common::print_json(&json!({ "cleared": had, "default": null }));
+        } else if had {
+            println!("Cleared the default comparison.");
+        } else {
+            println!("No default comparison was set.");
+        }
+        return Ok(());
+    }
+
+    match args.spec {
+        Some(spec) => {
+            // Validate that the spec resolves before storing it, so `review use`
+            // can't leave every later command pointed at an unparseable ref.
+            let comparison = parse_comparison_spec(&repo, &spec)?;
+            storage::write_default_spec(&repo, &spec).map_err(|e| e.to_string())?;
+            if args.json {
+                common::print_json(&json!({ "default": spec, "comparison": comparison.key }));
+            } else {
+                println!("Default comparison set to {} ({}).", spec, comparison.key);
+                println!("Commands now target it without `-s`; `review use --clear` to undo.");
+            }
+        }
+        None => {
+            let current = storage::read_default_spec(&repo);
+            if args.json {
+                common::print_json(&json!({ "default": current }));
+            } else {
+                match current {
+                    Some(spec) => println!("Default comparison: {spec}"),
+                    None => println!("No default comparison set (using auto-detection)."),
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Resolve a potentially relative path to an absolute one.
@@ -269,7 +335,12 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::ChangeBase(args)) => review_state::run_change_base(args),
         Some(Commands::Trust(args)) => review_state::run_trust(args),
         Some(Commands::Note(args)) => review_state::run_note(args),
-        Some(Commands::Comments(args)) => comments::run_comments(args),
+        Some(Commands::Comments(mut args)) => match args.action.take() {
+            Some(comments::CommentsAction::Submit(a)) => {
+                comments::run_submit_comments(args.target, a)
+            }
+            None => comments::run_comments(args),
+        },
         Some(Commands::Comment(args)) => match args.action {
             comments::CommentAction::Add(a) => comments::run_add(args.target, a),
             comments::CommentAction::Edit(a) => comments::run_edit(args.target, a),
@@ -277,16 +348,21 @@ pub fn run(cli: Cli) -> Result<(), String> {
             comments::CommentAction::Unresolve(a) => comments::run_unresolve(args.target, a),
             comments::CommentAction::Delete(a) => comments::run_delete(args.target, a),
         },
-        Some(Commands::Findings(args)) => match args.action {
-            Some(findings::FindingsAction::Submit(a)) => findings::run_submit(a),
+        Some(Commands::Findings(mut args)) => match args.action.take() {
+            Some(findings::FindingsAction::Submit(a)) => findings::run_submit(args.target, a),
+            Some(findings::FindingsAction::Move(a)) => findings::run_move(args.target, a),
             None => findings::run_list(args),
         },
         Some(Commands::Finding(args)) => match args.action {
             findings::FindingAction::Show(a) => findings::run_show(args.target, a),
             findings::FindingAction::Resolve(a) => findings::run_resolve(args.target, a),
             findings::FindingAction::Reopen(a) => findings::run_reopen(args.target, a),
+            findings::FindingAction::Delete(a) => findings::run_delete_finding(args.target, a),
         },
-        Some(Commands::Runs(args)) => findings::run_runs(args),
+        Some(Commands::Runs(mut args)) => match args.action.take() {
+            Some(findings::RunsAction::Delete(a)) => findings::run_delete_run(args.target, a),
+            None => findings::run_runs(args),
+        },
         Some(Commands::Guide(args)) => match args.action {
             guide::GuideAction::Show(a) => guide::run_show(a),
             guide::GuideAction::Add(a) => guide::run_add(a),
@@ -294,6 +370,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
         },
         Some(Commands::Url(args)) => url::run_url(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),
+        Some(Commands::Use(args)) => run_use(args),
         None => run_open(cli.path, has_home_override),
     }
 }

@@ -118,12 +118,22 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 - `review hunks [-s base..head] [--status|--file|--label|--hunk] [--json] [--diff]`
 - `review approve|reject|save|unmark <hunk-id>... [--reason TEXT]`
 - `review status` · `review list [--all]` · `review delete` · `review change-base <new-base>`
+- `review use [<spec>] [--clear]` — set/show the repo's default comparison. Every data command resolves its spec as `-s` flag → `$REVIEW_SPEC` → this default → auto-detect. `-s`/`--repo` are global (accepted in any position within a command).
 - `review trust list|add|remove [<pattern>]`
 - `review note show|set|append [<text>]`
 - `review comments [--file GLOB] [--unresolved|--resolved] [--author NAME] [--json]`
+- `review comments submit [FILE] [--author NAME] [--source ...] [--example]` — add many comments from a JSON array (stdin or FILE) in one write
 - `review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file] [--author NAME] [--source ui|cli|agent|github|gitlab]`
 - `review comment edit|resolve|unresolve|delete <comment-id>`
 - `review guide show [--json]` · `review guide add "<title>" <hunk-id>... [--desc TEXT]` · `review guide clear`
+
+**Findings & runs** — the persistent record of an (AI) review pass. A `submit` records one run plus its findings; each finding carries an append-only disposition log (status is derived from the last event, not mutated).
+
+- `review findings submit [FILE] [--source agent] [--example] [--dry-run] [--json]` — `--example` prints a JSON skeleton (no repo/writes); `--dry-run` validates and shows each finding's anchor resolution without persisting
+- `review findings [--open|--resolved] [--kind K] [--severity S] [--run ID] [--file GLOB] [--json]`
+- `review findings move --from <spec> --to <spec> [--run <id>]` — carry runs/findings onto another comparison, re-anchoring each finding (re-homes a working-diff review after a commit)
+- `review finding show|resolve|reopen|delete <id>` — `resolve --as fixed|false-positive|accepted-risk|deferred`; `delete` drops a finding (cleanup, not disposition)
+- `review runs [--json]` · `review runs delete <id> [--keep-findings]`
 
 The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
@@ -135,9 +145,9 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 **Skills**: `review skill install` writes the bundled skills into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). Canonical sources live in `core/resources/skills/*/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries them:
 
 - `review-guide` — reviewer-side: help a human work through a large diff.
-- `pre-review` — submitter-side: run AI quality/bug-hunt passes at the end of a dev loop, fix or defer each finding with evidence, and persist the results as agent comments so the human starts from a record. The review note is human-only — agents read it, never write it.
+- `pre-review` — submitter-side: run AI quality/bug-hunt passes at the end of a dev loop, fix or defer each finding with evidence, and persist the results as findings on a review run so the human starts from a record. The review note is human-only — agents read it, never write it.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `findings.rs` (runs, findings, `submit`/`move`/delete); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

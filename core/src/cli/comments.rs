@@ -7,22 +7,26 @@
 //! comments can coexist in the same review.
 
 use std::cell::Cell;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Args, Subcommand};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::review::state::{now_iso8601, AnnotationSide, LineAnnotation, ReviewState, Source};
 use crate::review::storage;
 
 use super::common::{
-    line_range, load_for_mutation, mutate_review, print_json, resolve_comparison_arg, ReviewTarget,
+    line_range, load_for_mutation, mutate_review, print_json, resolve_comparison_arg,
+    resolve_source, ReviewTarget,
 };
 use super::get_repo_path;
 
 #[derive(Debug, Args)]
 pub struct CommentsArgs {
+    #[command(subcommand)]
+    pub action: Option<CommentsAction>,
     #[command(flatten)]
     pub target: ReviewTarget,
     /// Filter to a file-path glob (e.g. "src/*.rs")
@@ -37,6 +41,30 @@ pub struct CommentsArgs {
     /// Filter by author name (exact match)
     #[arg(long)]
     pub author: Option<String>,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CommentsAction {
+    /// Add many comments at once from a JSON array (FILE, or stdin)
+    Submit(CommentsSubmitArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CommentsSubmitArgs {
+    /// JSON file to read — an array of comments (defaults to stdin; "-" too)
+    pub file: Option<String>,
+    /// Override the author for every comment (default: $REVIEW_AUTHOR or git user)
+    #[arg(long)]
+    pub author: Option<String>,
+    /// Override the source for every comment (default: $REVIEW_SOURCE or `cli`)
+    #[arg(long)]
+    pub source: Option<SourceArg>,
+    /// Print a ready-to-edit JSON skeleton and exit, writing nothing
+    #[arg(long)]
+    pub example: bool,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -330,6 +358,154 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+/// One comment in a `review comments submit` batch. `line` is 1-based (like
+/// `comment add`); `side` defaults to `new`.
+#[derive(Debug, Deserialize)]
+struct CommentInput {
+    path: String,
+    line: u32,
+    #[serde(default, rename = "endLine")]
+    end_line: Option<u32>,
+    #[serde(default)]
+    side: AnnotationSide,
+    content: String,
+}
+
+/// A ready-to-edit skeleton for `review comments submit --example`.
+const COMMENTS_EXAMPLE: &str = r#"[
+  {
+    "path": "src/auth.rs",
+    "line": 142,
+    "side": "new",
+    "content": "Why compare against Date.now() here rather than the token's issued-at?"
+  },
+  {
+    "path": "src/cache.rs",
+    "line": 57,
+    "endLine": 60,
+    "content": "This range reads clean now — leaving a note for the human reviewer."
+  }
+]
+"#;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommentsSubmitJson {
+    comparison: String,
+    added: usize,
+    ids: Vec<String>,
+    version: u64,
+}
+
+/// `review comments submit` — add many comments in a single mutation, so a
+/// batch of review notes doesn't race the store one write at a time.
+pub fn run_submit_comments(target: ReviewTarget, args: CommentsSubmitArgs) -> Result<(), String> {
+    if args.example {
+        print!("{COMMENTS_EXAMPLE}");
+        return Ok(());
+    }
+
+    let repo = PathBuf::from(get_repo_path(&target.repo)?);
+    let raw = read_stdin_or_file(args.file.as_deref())?;
+    let inputs: Vec<CommentInput> = serde_json::from_str(&raw)
+        .map_err(|e| format!("Invalid comments JSON (expected an array): {e}"))?;
+    if inputs.is_empty() {
+        return Err("No comments to submit (the array is empty).".to_owned());
+    }
+
+    let author = args
+        .author
+        .or_else(|| std::env::var("REVIEW_AUTHOR").ok())
+        .or_else(|| default_git_user(&repo));
+    let source = resolve_source(args.source)?;
+    let created_at = now_iso8601();
+
+    // Build every annotation up front so IDs are stable across mutate retries.
+    let mut annotations: Vec<LineAnnotation> = Vec::with_capacity(inputs.len());
+    for (index, input) in inputs.into_iter().enumerate() {
+        validate_comment_input(&input).map_err(|e| format!("comment[{index}]: {e}"))?;
+        let side_str = input.side.as_str();
+        // Drop a redundant end == start, matching `parse_location`.
+        let end_line = input.end_line.filter(|e| *e != input.line);
+        annotations.push(LineAnnotation {
+            id: new_annotation_id(&input.path, input.line, side_str),
+            file_path: input.path,
+            line_number: input.line,
+            end_line_number: end_line,
+            side: input.side,
+            content: input.content,
+            created_at: created_at.clone(),
+            author: author.clone(),
+            source: Some(source),
+            updated_at: None,
+            resolved_at: None,
+            resolved_by: None,
+        });
+    }
+
+    let ids: Vec<String> = annotations.iter().map(|a| a.id.clone()).collect();
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+        state.annotations.extend(annotations.iter().cloned());
+        true
+    })?;
+
+    if args.json {
+        print_json(&CommentsSubmitJson {
+            comparison: comparison.key.clone(),
+            added: ids.len(),
+            ids,
+            version: state.version,
+        });
+    } else {
+        println!(
+            "Added {} comment(s) on {} (review v{})",
+            ids.len(),
+            comparison.key,
+            state.version
+        );
+    }
+    Ok(())
+}
+
+/// Validate a batch comment: line numbers are 1-based and ranges non-inverted,
+/// matching `parse_location`'s rules for the single-comment path.
+fn validate_comment_input(input: &CommentInput) -> Result<(), String> {
+    if input.path.is_empty() {
+        return Err("empty path".to_owned());
+    }
+    if input.content.trim().is_empty() {
+        return Err("empty content".to_owned());
+    }
+    if input.line == 0 {
+        return Err("line 0 is invalid (line numbers are 1-based)".to_owned());
+    }
+    if let Some(end) = input.end_line {
+        if end < input.line {
+            return Err(format!(
+                "end line {end} is before start line {}",
+                input.line
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn read_stdin_or_file(file: Option<&str>) -> Result<String, String> {
+    match file {
+        None | Some("-") => {
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .map_err(|e| format!("Could not read comments from stdin: {e}"))?;
+            Ok(buf)
+        }
+        Some(path) => {
+            std::fs::read_to_string(path).map_err(|e| format!("Could not read '{path}': {e}"))
+        }
+    }
 }
 
 /// `review comment edit` — replace the content of an existing comment.
@@ -706,6 +882,54 @@ mod tests {
         let a = new_annotation_id("f.rs", 1, "new");
         let b = new_annotation_id("f.rs", 1, "new");
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn comments_example_parses_as_batch_input() {
+        // The `comments submit --example` skeleton must be valid batch input.
+        let inputs: Vec<CommentInput> = serde_json::from_str(COMMENTS_EXAMPLE).unwrap();
+        assert_eq!(inputs.len(), 2);
+        for input in &inputs {
+            assert!(validate_comment_input(input).is_ok());
+        }
+    }
+
+    #[test]
+    fn comment_input_defaults_side_to_new() {
+        let input: CommentInput =
+            serde_json::from_str(r#"{ "path": "a.rs", "line": 1, "content": "hi" }"#).unwrap();
+        assert!(matches!(input.side, AnnotationSide::New));
+        assert_eq!(input.end_line, None);
+    }
+
+    #[test]
+    fn validate_comment_input_rejects_bad_lines() {
+        let zero = CommentInput {
+            path: "a.rs".into(),
+            line: 0,
+            end_line: None,
+            side: AnnotationSide::New,
+            content: "x".into(),
+        };
+        assert!(validate_comment_input(&zero).is_err());
+
+        let inverted = CommentInput {
+            path: "a.rs".into(),
+            line: 10,
+            end_line: Some(5),
+            side: AnnotationSide::New,
+            content: "x".into(),
+        };
+        assert!(validate_comment_input(&inverted).is_err());
+
+        let empty = CommentInput {
+            path: "a.rs".into(),
+            line: 1,
+            end_line: None,
+            side: AnnotationSide::New,
+            content: "   ".into(),
+        };
+        assert!(validate_comment_input(&empty).is_err());
     }
 
     #[test]

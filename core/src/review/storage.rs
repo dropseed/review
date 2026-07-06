@@ -59,6 +59,46 @@ fn get_storage_dir(repo_path: &Path) -> Result<PathBuf, StorageError> {
     Ok(central::get_repo_storage_dir(repo_path)?.join("reviews"))
 }
 
+/// Path to the repo's stored default-comparison marker (`review use`).
+fn default_spec_path(repo_path: &Path) -> Result<PathBuf, StorageError> {
+    Ok(central::get_repo_storage_dir(repo_path)?.join("default-spec"))
+}
+
+/// The repo's stored default comparison spec, if `review use` set one. A blank
+/// or missing file (or any read error) reads as "no default".
+pub fn read_default_spec(repo_path: &Path) -> Option<String> {
+    let path = default_spec_path(repo_path).ok()?;
+    let content = fs::read_to_string(path).ok()?;
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
+}
+
+/// Persist the repo's default comparison spec (`review use <spec>`). The raw
+/// spec string is stored and re-resolved on each use, so it stays valid as
+/// branches move.
+pub fn write_default_spec(repo_path: &Path, spec: &str) -> Result<(), StorageError> {
+    let path = default_spec_path(repo_path)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, spec.trim())?;
+    Ok(())
+}
+
+/// Clear the repo's stored default comparison. Returns whether a default existed.
+pub fn clear_default_spec(repo_path: &Path) -> Result<bool, StorageError> {
+    let path = default_spec_path(repo_path)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// A review summary tagged with repo information (for cross-repo listing).
 #[derive(Debug, Clone, Serialize)]
 pub struct GlobalReviewSummary {

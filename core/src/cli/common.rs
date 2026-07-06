@@ -15,13 +15,20 @@ use crate::review::storage::{self, StorageError};
 use crate::sources::traits::Comparison;
 
 /// The `--repo` / `--spec` flags shared by the review-state subcommands.
+///
+/// Both are `global`, so they parse in any position within a command — e.g.
+/// `review finding -s X resolve …` and `review finding resolve … -s X` are
+/// equivalent. (This requires that no command flatten `ReviewTarget` at both a
+/// parent and a child level, which would define the global twice; keep it on
+/// the parent only.)
 #[derive(Debug, Args)]
 pub struct ReviewTarget {
     /// Repository path (defaults to the current directory)
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub repo: Option<String>,
-    /// Comparison spec ("base..head" or a single ref); auto-detected if omitted
-    #[arg(short, long)]
+    /// Comparison spec ("base..head" or a single ref); falls back to
+    /// `$REVIEW_SPEC`, then the `review use` default, then auto-detection
+    #[arg(short, long, global = true)]
     pub spec: Option<String>,
 }
 
@@ -97,13 +104,30 @@ pub fn line_range(start: u32, end: Option<u32>) -> String {
     }
 }
 
-/// Resolve the comparison for a data command from an optional `--spec`,
-/// falling back to the repo's default and current branches.
+/// Resolve the comparison for a data command. Precedence for the spec:
+/// explicit `--spec` flag → `$REVIEW_SPEC` → the `review use` stored default →
+/// auto-detection from the repo's default and current branches.
 pub fn resolve_comparison_arg(repo: &Path, spec: Option<&str>) -> Result<Comparison, String> {
-    match spec {
-        Some(spec) => super::parse_comparison_spec(repo, spec),
+    match effective_spec(repo, spec) {
+        Some(spec) => super::parse_comparison_spec(repo, &spec),
         None => super::resolve_comparison(repo, None, None),
     }
+}
+
+/// The spec a command should use before falling back to auto-detection:
+/// the explicit `--spec` flag, else `$REVIEW_SPEC`, else the repo's stored
+/// `review use` default. `None` means "auto-detect".
+pub fn effective_spec(repo: &Path, spec: Option<&str>) -> Option<String> {
+    if let Some(spec) = spec {
+        return Some(spec.to_owned());
+    }
+    if let Ok(env) = std::env::var("REVIEW_SPEC") {
+        let env = env.trim();
+        if !env.is_empty() {
+            return Some(env.to_owned());
+        }
+    }
+    storage::read_default_spec(repo)
 }
 
 /// Count `(added, removed)` lines in a hunk.

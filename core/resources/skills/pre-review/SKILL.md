@@ -35,6 +35,20 @@ desktop app). Then get the shape of what you're preparing:
 review hunks --json          # files, hunks, classifications — no --diff yet
 ```
 
+**Pick a comparison that survives the commit.** A working diff
+(`HEAD..diff-workspace`) evaporates the moment you commit, orphaning the run
+you recorded against it. If the change is already committed, review the
+committed spec (e.g. `master..HEAD`). If you must run before committing and
+then commit, re-home the record afterward:
+
+```
+review findings move --from HEAD..diff-workspace --to master..HEAD
+```
+
+`move` carries the run and every finding onto the new comparison and re-anchors
+each finding against the committed diff. To avoid passing `-s` on every command,
+set the active comparison once: `review use master..HEAD`.
+
 ### 2. Quality pass
 
 If your harness has a dedicated cleanup skill (e.g. `/simplify`), run it and
@@ -65,8 +79,11 @@ Triage each finding:
 
 ### 4. Submit the run
 
-One submit records the run and all findings together. Build the JSON and pipe
-it in:
+One submit records the run and all findings together. Two flags make the shape
+safe to get right: `review findings submit --example` prints a ready-to-edit
+JSON skeleton, and `--dry-run` validates your JSON and shows how each finding
+anchors (which hunk it lands in, or none) **without writing anything** — probe
+freely, then drop `--dry-run` to persist. Build the JSON and pipe it in:
 
 ```
 review findings submit --source agent <<'EOF'
@@ -142,13 +159,18 @@ not part of this pass.
 ```
 review status                          # progress + overall state
 review start [spec] [--working|--staged|--commit REF|--stash N|--patch FILE]
+review use [spec] [--clear]            # set/show the default comparison (skip -s)
 review hunks [--file|--label|--risk] [--json] [--diff]
-review findings submit [FILE] [--source agent] [--json]   # stdin or FILE
+review findings submit [FILE] [--source agent] [--example] [--dry-run] [--json]
 review findings [--open|--resolved] [--kind K] [--severity S] [--json]
+review findings move --from <spec> --to <spec> [--run <id>]   # re-home after a commit
 review finding show <id> [--json]
 review finding resolve <id> --as fixed|false-positive|accepted-risk|deferred [--reason TEXT] [--evidence TEXT]
 review finding reopen <id> [--reason TEXT]
+review finding delete <id>             # drop a mistaken/probe finding (not a decision)
 review runs [--json]
+review runs delete <id> [--keep-findings]   # clear a probe run and its findings
 review comment add <file>:<line>[:<end>] "<text>" --source agent   # conversation, not findings
+review comments submit [FILE] [--source agent] [--example]   # many comments at once
 review note show                       # the human's note — read-only for agents
 ```

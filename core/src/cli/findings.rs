@@ -8,7 +8,7 @@
 //! derived from the last event.
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -25,8 +25,8 @@ use crate::review::storage;
 
 use super::comments::default_git_user;
 use super::common::{
-    line_range, load_for_mutation, mutate_review, print_json, resolve_comparison_arg,
-    resolve_source, ReviewTarget,
+    line_range, load_comparison_hunks, load_for_mutation, mutate_review, print_json,
+    resolve_comparison_arg, resolve_source, ReviewTarget,
 };
 use super::get_repo_path;
 
@@ -72,12 +72,13 @@ pub struct FindingsArgs {
 pub enum FindingsAction {
     /// Submit a review run and its findings from JSON (FILE, or stdin)
     Submit(SubmitArgs),
+    /// Move runs and findings from one comparison onto another, re-anchoring
+    /// them (e.g. after committing a working-diff review)
+    Move(MoveArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct SubmitArgs {
-    #[command(flatten)]
-    pub target: ReviewTarget,
     /// JSON file to read (defaults to stdin; "-" also reads stdin)
     pub file: Option<String>,
     /// Override the author (default: $REVIEW_AUTHOR or `git config user.name`)
@@ -86,6 +87,30 @@ pub struct SubmitArgs {
     /// Override the source (default: $REVIEW_SOURCE or `cli`)
     #[arg(long)]
     pub source: Option<super::comments::SourceArg>,
+    /// Print a ready-to-edit JSON skeleton and exit, writing nothing
+    #[arg(long, conflicts_with_all = ["file", "dry_run"])]
+    pub example: bool,
+    /// Validate the JSON and show how each finding anchors, without persisting
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// `review findings move` — re-home a comparison's runs and findings onto
+/// another comparison.
+#[derive(Debug, Args)]
+pub struct MoveArgs {
+    /// Source comparison to move FROM (e.g. "HEAD..diff-workspace")
+    #[arg(long)]
+    pub from: String,
+    /// Destination comparison to move TO (e.g. "master..diff-workspace")
+    #[arg(long)]
+    pub to: String,
+    /// Move only this run and its findings (default: move every run and finding)
+    #[arg(long)]
+    pub run: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -108,6 +133,18 @@ pub enum FindingAction {
     Resolve(ResolveArgs),
     /// Append a Reopened event, returning the finding to open
     Reopen(ReopenArgs),
+    /// Permanently delete a finding (drops its history — for cleanup, not
+    /// disposition; use `resolve` to record a real decision)
+    Delete(DeleteFindingArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DeleteFindingArgs {
+    /// Finding ID
+    pub id: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -149,11 +186,32 @@ pub struct ReopenArgs {
     pub json: bool,
 }
 
-/// `review runs` — list the recorded review passes.
+/// `review runs` — list the recorded review passes, or (with a subcommand)
+/// operate on one.
 #[derive(Debug, Args)]
 pub struct RunsArgs {
+    #[command(subcommand)]
+    pub action: Option<RunsAction>,
     #[command(flatten)]
     pub target: ReviewTarget,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RunsAction {
+    /// Delete a run and (by default) its findings — for clearing probe runs
+    Delete(DeleteRunArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DeleteRunArgs {
+    /// Run ID
+    pub id: String,
+    /// Keep the run's findings (delete only the run record)
+    #[arg(long)]
+    pub keep_findings: bool,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -353,6 +411,92 @@ struct RunsListJson<'a> {
     runs: Vec<RunJson<'a>>,
 }
 
+/// One finding's anchor resolution, for `--dry-run` output.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DryRunFindingJson<'a> {
+    title: &'a str,
+    kind: &'static str,
+    severity: &'static str,
+    location: String,
+    side: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hunk_id: Option<&'a str>,
+    anchored: bool,
+    resolved: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DryRunJson<'a> {
+    comparison: String,
+    dry_run: bool,
+    tool: &'a str,
+    total: usize,
+    anchored: usize,
+    pre_resolved: usize,
+    findings: Vec<DryRunFindingJson<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MoveResultJson {
+    from: String,
+    to: String,
+    runs_moved: usize,
+    findings_moved: usize,
+    findings_reanchored: usize,
+    from_version: u64,
+    to_version: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteRunJson<'a> {
+    comparison: &'a str,
+    id: &'a str,
+    findings_removed: usize,
+    version: u64,
+}
+
+/// A ready-to-edit skeleton printed by `review findings submit --example`. Two
+/// findings: one open/deferred, one fixed with proof-of-fix. Kept in sync with
+/// the shape `run_submit` parses.
+const SUBMIT_EXAMPLE: &str = r#"{
+  "run": {
+    "tool": "claude-code/code-review",
+    "model": "<model id>",
+    "summary": "What ran, over what, and the headline result. The run's own record."
+  },
+  "findings": [
+    {
+      "kind": "bug",
+      "severity": "high",
+      "confidence": "confirmed",
+      "title": "One-line summary of the issue",
+      "body": "What's wrong and why it matters.",
+      "suggestion": "What to do about it.",
+      "anchor": { "path": "src/auth.rs", "line": 142, "side": "new" },
+      "evidence": [
+        { "kind": "test", "command": "cargo test test_x", "output": "FAILED: ..." }
+      ]
+    },
+    {
+      "kind": "bug",
+      "severity": "medium",
+      "confidence": "confirmed",
+      "title": "A finding you fixed — carries a resolution with proof-of-fix",
+      "anchor": { "path": "src/cache.rs", "line": 57 },
+      "resolution": {
+        "action": "fixed",
+        "reason": "how it was fixed",
+        "evidence": { "kind": "command", "command": "./repro.sh", "output": "clean" }
+      }
+    }
+  ]
+}
+"#;
+
 // ---------------------------------------------------------------------------
 // ID generation (annotation style: non-hex `t{epoch}-{counter}` suffix)
 // ---------------------------------------------------------------------------
@@ -396,8 +540,14 @@ fn anchor_hunk<'a>(
 // ---------------------------------------------------------------------------
 
 /// `review findings submit` — record a run and its findings in one transaction.
-pub fn run_submit(args: SubmitArgs) -> Result<(), String> {
-    let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
+pub fn run_submit(target: ReviewTarget, args: SubmitArgs) -> Result<(), String> {
+    // `--example` prints a skeleton and exits — no repo, no review, no writes.
+    if args.example {
+        print!("{SUBMIT_EXAMPLE}");
+        return Ok(());
+    }
+
+    let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let raw = read_input(args.file.as_deref())?;
     let input: SubmitInput =
         serde_json::from_str(&raw).map_err(|e| format!("Invalid findings JSON: {e}"))?;
@@ -408,7 +558,7 @@ pub fn run_submit(args: SubmitArgs) -> Result<(), String> {
         .or_else(|| default_git_user(&repo));
     let source = resolve_source(args.source)?;
 
-    let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
 
     let now = now_iso8601();
     let run = ReviewRun {
@@ -478,6 +628,11 @@ pub fn run_submit(args: SubmitArgs) -> Result<(), String> {
         });
     }
 
+    if args.dry_run {
+        print_dry_run(&comparison.key, &run, &findings, pre_resolved, args.json);
+        return Ok(());
+    }
+
     let state = mutate_review(&repo, &comparison, &hunks, |state| {
         state.runs.push(run.clone());
         state.findings.extend(findings.iter().cloned());
@@ -517,6 +672,84 @@ fn read_input(file: Option<&str>) -> Result<String, String> {
         Some(path) => {
             std::fs::read_to_string(path).map_err(|e| format!("Could not read '{path}': {e}"))
         }
+    }
+}
+
+/// Report what a `--dry-run` submit *would* write, including how each finding
+/// anchored against the current diff — without persisting anything.
+fn print_dry_run(
+    comparison: &str,
+    run: &ReviewRun,
+    findings: &[Finding],
+    pre_resolved: usize,
+    json: bool,
+) {
+    let anchored = findings
+        .iter()
+        .filter(|f| f.anchor.hunk_id.is_some())
+        .count();
+
+    if json {
+        print_json(&DryRunJson {
+            comparison: comparison.to_owned(),
+            dry_run: true,
+            tool: &run.tool,
+            total: findings.len(),
+            anchored,
+            pre_resolved,
+            findings: findings
+                .iter()
+                .map(|f| DryRunFindingJson {
+                    title: &f.title,
+                    kind: f.kind.as_str(),
+                    severity: f.severity.as_str(),
+                    location: anchor_location(f),
+                    side: f.anchor.side.as_str(),
+                    hunk_id: f.anchor.hunk_id.as_deref(),
+                    anchored: f.anchor.hunk_id.is_some(),
+                    resolved: !f.events.is_empty(),
+                })
+                .collect(),
+        });
+        return;
+    }
+
+    println!(
+        "DRY RUN — nothing written. Would submit run ({}) on {comparison}: {} finding(s), {anchored} anchored to a hunk, {pre_resolved} pre-resolved.\n",
+        run.tool,
+        findings.len(),
+    );
+    for f in findings {
+        let anchor = if f.anchor.hunk_id.is_some() {
+            "anchored"
+        } else {
+            "no hunk"
+        };
+        let resolved = if f.events.is_empty() {
+            "open"
+        } else {
+            "resolved"
+        };
+        println!(
+            "  [{resolved}]  {}/{}  {}  {} ({}) — {anchor}",
+            f.kind.as_str(),
+            f.severity.as_str(),
+            f.title,
+            anchor_location(f),
+            f.anchor.side.as_str(),
+        );
+    }
+}
+
+/// A finding's anchor as `path:line` (or just `path` for a file-level anchor).
+fn anchor_location(f: &Finding) -> String {
+    match f.anchor.line_number {
+        Some(line) => format!(
+            "{}:{}",
+            f.anchor.file_path,
+            line_range(line, f.anchor.end_line_number)
+        ),
+        None => f.anchor.file_path.clone(),
     }
 }
 
@@ -919,6 +1152,172 @@ fn find_finding_mut<'a>(state: &'a mut ReviewState, id: &str) -> Option<&'a mut 
 }
 
 // ---------------------------------------------------------------------------
+// delete
+// ---------------------------------------------------------------------------
+
+/// `review finding delete` — drop a finding entirely. Unlike `resolve` (which
+/// appends to the history), this removes the record — for clearing mistaken or
+/// probe findings, not for recording a decision.
+pub fn run_delete_finding(target: ReviewTarget, args: DeleteFindingArgs) -> Result<(), String> {
+    let repo = PathBuf::from(get_repo_path(&target.repo)?);
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+
+    let id = args.id.clone();
+    let found = Cell::new(false);
+    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+        let before = state.findings.len();
+        state.findings.retain(|f| f.id != id);
+        let removed = state.findings.len() != before;
+        found.set(removed);
+        removed
+    })?;
+
+    if !found.get() {
+        return Err(format!(
+            "Finding {} not found in {} (may have been deleted concurrently)",
+            args.id, comparison.key
+        ));
+    }
+    if args.json {
+        print_json(&FindingResultJson {
+            comparison: &comparison.key,
+            action: "delete",
+            id: &args.id,
+            status: "deleted",
+            resolution: None,
+            already: false,
+            version: state.version,
+        });
+    } else {
+        println!(
+            "Deleted finding {} from {} (review v{})",
+            args.id, comparison.key, state.version
+        );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// move
+// ---------------------------------------------------------------------------
+
+/// `review findings move` — carry runs and findings from one comparison onto
+/// another, re-anchoring each finding against the destination's diff. The
+/// motivating case: `/pre-review` runs on a working diff (`HEAD..diff-workspace`),
+/// which vanishes the moment you commit; this re-homes that record onto the
+/// committed spec (`master..diff-workspace`) instead of re-submitting it.
+pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
+    let repo = PathBuf::from(get_repo_path(&target.repo)?);
+    let from = super::parse_comparison_spec(&repo, &args.from)?;
+    let to = super::parse_comparison_spec(&repo, &args.to)?;
+    if from.key == to.key {
+        return Err(format!(
+            "--from and --to resolve to the same comparison ({})",
+            from.key
+        ));
+    }
+
+    let from_state = storage::load_review_state(&repo, &from).map_err(|e| e.to_string())?;
+
+    // Select the runs and findings to move.
+    let (moved_runs, source_findings): (Vec<ReviewRun>, Vec<Finding>) = match &args.run {
+        Some(run_id) => {
+            if !from_state.runs.iter().any(|r| &r.id == run_id) {
+                return Err(format!("Run {run_id} not found in {}", from.key));
+            }
+            let runs = from_state
+                .runs
+                .iter()
+                .filter(|r| &r.id == run_id)
+                .cloned()
+                .collect();
+            let findings = from_state
+                .findings
+                .iter()
+                .filter(|f| f.run_id.as_deref() == Some(run_id.as_str()))
+                .cloned()
+                .collect();
+            (runs, findings)
+        }
+        None => (from_state.runs.clone(), from_state.findings.clone()),
+    };
+
+    if moved_runs.is_empty() && source_findings.is_empty() {
+        return Err(format!(
+            "Nothing to move: no runs or findings on {}",
+            from.key
+        ));
+    }
+
+    // Re-anchor each finding against the destination diff.
+    let (to_comparison, to_hunks) = load_comparison_hunks(&repo, Some(&args.to))?;
+    let mut reanchored = 0usize;
+    let moved_findings: Vec<Finding> = source_findings
+        .into_iter()
+        .map(|mut f| {
+            let matched = f
+                .anchor
+                .line_number
+                .and_then(|line| anchor_hunk(&to_hunks, &f.anchor.file_path, line, f.anchor.side));
+            let new_hunk = matched.map(|h| h.id.clone());
+            if new_hunk != f.anchor.hunk_id {
+                reanchored += 1;
+            }
+            f.anchor.hunk_id = new_hunk;
+            f.anchor.stable_key = matched.map(|h| h.stable_hash());
+            f
+        })
+        .collect();
+
+    let moved_run_ids: HashSet<String> = moved_runs.iter().map(|r| r.id.clone()).collect();
+    let moved_finding_ids: HashSet<String> = moved_findings.iter().map(|f| f.id.clone()).collect();
+
+    // Write into the destination first, then remove from the source. If the
+    // second step fails, the records exist in both places (re-runnable) rather
+    // than being lost.
+    let to_state = mutate_review(&repo, &to_comparison, &to_hunks, |state| {
+        state.runs.extend(moved_runs.iter().cloned());
+        state.findings.extend(moved_findings.iter().cloned());
+        true
+    })?;
+
+    let (from_comparison, from_hunks, _) = load_for_mutation(&repo, Some(&args.from))?;
+    let from_state = mutate_review(&repo, &from_comparison, &from_hunks, |state| {
+        state.runs.retain(|r| !moved_run_ids.contains(&r.id));
+        state
+            .findings
+            .retain(|f| !moved_finding_ids.contains(&f.id));
+        true
+    })?;
+
+    if args.json {
+        print_json(&MoveResultJson {
+            from: from.key.clone(),
+            to: to.key.clone(),
+            runs_moved: moved_run_ids.len(),
+            findings_moved: moved_finding_ids.len(),
+            findings_reanchored: reanchored,
+            from_version: from_state.version,
+            to_version: to_state.version,
+        });
+    } else {
+        println!(
+            "Moved {} run(s) and {} finding(s) from {} to {} ({} re-anchored).\n  {} v{} · {} v{}",
+            moved_run_ids.len(),
+            moved_finding_ids.len(),
+            from.key,
+            to.key,
+            reanchored,
+            from.key,
+            from_state.version,
+            to.key,
+            to_state.version,
+        );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // runs
 // ---------------------------------------------------------------------------
 
@@ -963,6 +1362,61 @@ pub fn run_runs(args: RunsArgs) -> Result<(), String> {
                 count_for(&run.id),
             );
         }
+    }
+    Ok(())
+}
+
+/// `review runs delete` — remove a run and, unless `--keep-findings`, the
+/// findings it produced. For clearing probe/mistaken runs, not disposition.
+pub fn run_delete_run(target: ReviewTarget, args: DeleteRunArgs) -> Result<(), String> {
+    let repo = PathBuf::from(get_repo_path(&target.repo)?);
+    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+
+    let id = args.id.clone();
+    let keep_findings = args.keep_findings;
+    let found = Cell::new(false);
+    let removed_findings = Cell::new(0usize);
+    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+        if !state.runs.iter().any(|r| r.id == id) {
+            found.set(false);
+            return false;
+        }
+        found.set(true);
+        state.runs.retain(|r| r.id != id);
+        if !keep_findings {
+            let before = state.findings.len();
+            state
+                .findings
+                .retain(|f| f.run_id.as_deref() != Some(id.as_str()));
+            removed_findings.set(before - state.findings.len());
+        }
+        true
+    })?;
+
+    if !found.get() {
+        return Err(format!(
+            "Run {} not found in {} (may have been deleted concurrently)",
+            args.id, comparison.key
+        ));
+    }
+    let removed = removed_findings.get();
+    if args.json {
+        print_json(&DeleteRunJson {
+            comparison: &comparison.key,
+            id: &args.id,
+            findings_removed: removed,
+            version: state.version,
+        });
+    } else {
+        let tail = if keep_findings {
+            " (findings kept)".to_owned()
+        } else {
+            format!(" and {removed} finding(s)")
+        };
+        println!(
+            "Deleted run {}{tail} from {} (review v{})",
+            args.id, comparison.key, state.version
+        );
     }
     Ok(())
 }
@@ -1041,6 +1495,20 @@ mod tests {
     }
 
     #[test]
+    fn submit_example_is_valid_input() {
+        // The `--example` skeleton must parse as real submit input — otherwise
+        // we'd be handing users a template the tool rejects.
+        let input: SubmitInput = serde_json::from_str(SUBMIT_EXAMPLE).unwrap();
+        assert!(!input.run.tool.is_empty());
+        assert_eq!(input.findings.len(), 2);
+        for value in input.findings {
+            let parsed: FindingInput = serde_json::from_value(value).unwrap();
+            assert!(!parsed.title.is_empty());
+            assert!(!parsed.anchor.path.is_empty());
+        }
+    }
+
+    #[test]
     fn submit_run_only_has_no_findings() {
         let json = r#"{ "run": { "tool": "t" } }"#;
         let input: SubmitInput = serde_json::from_str(json).unwrap();
@@ -1107,18 +1575,110 @@ mod tests {
         let json_path = p.join("findings.json");
         std::fs::write(&json_path, json).unwrap();
 
+        let target = ReviewTarget {
+            repo: Some(p.to_string_lossy().into_owned()),
+            spec: Some("HEAD".to_owned()),
+        };
         let args = SubmitArgs {
-            target: ReviewTarget {
-                repo: Some(p.to_string_lossy().into_owned()),
-                spec: Some("HEAD".to_owned()),
-            },
             file: Some(json_path.to_string_lossy().into_owned()),
             author: Some("t".to_owned()),
             source: None,
+            example: false,
+            dry_run: false,
             json: false,
         };
-        let err = run_submit(args).unwrap_err();
+        let err = run_submit(target, args).unwrap_err();
         assert!(err.starts_with("finding[0]:"), "got: {err}");
         assert!(err.contains("cannot be \"reopened\""), "got: {err}");
+    }
+
+    /// Isolate a temp repo's git config from the developer's global config
+    /// (identity + no commit signing) so tests don't hang on a signing prompt.
+    fn init_repo(p: &std::path::Path) {
+        git(p, &["init", "-q", "-b", "master"]);
+        git(p, &["config", "user.email", "t@example.com"]);
+        git(p, &["config", "user.name", "t"]);
+        git(p, &["config", "commit.gpgsign", "false"]);
+    }
+
+    #[test]
+    fn move_relocates_runs_and_findings_and_reanchors() {
+        // A finding submitted on one comparison should move — run and all — onto
+        // another, re-anchored against the destination diff, and vanish from the
+        // source. Two branches (b1, b2) both change line 4, so the finding there
+        // anchors on both sides; b2 also changes line 2, giving it a distinct key.
+        // Serialize with every other test that swaps REVIEW_HOME.
+        let _lock = crate::review::central::tests::ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("REVIEW_HOME", home.path());
+        init_repo(p);
+        std::fs::write(p.join("a.txt"), "one\ntwo\nthree\nfour\nfive\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "first"]);
+        git(p, &["checkout", "-q", "-b", "b1"]);
+        std::fs::write(p.join("a.txt"), "one\ntwo\nthree\nFOUR\nfive\n").unwrap();
+        git(p, &["commit", "-aqm", "b1"]);
+        git(p, &["checkout", "-q", "-b", "b2"]);
+        std::fs::write(p.join("a.txt"), "one\nTWO\nthree\nFOUR\nfive\n").unwrap();
+        git(p, &["commit", "-aqm", "b2"]);
+
+        let repo = std::path::PathBuf::from(p);
+        let target = |spec: &str| ReviewTarget {
+            repo: Some(p.to_string_lossy().into_owned()),
+            spec: Some(spec.to_owned()),
+        };
+        let json = r#"{ "run": { "tool": "t" },
+          "findings": [ { "kind": "bug", "severity": "low", "title": "line 4",
+            "anchor": { "path": "a.txt", "line": 4 } } ] }"#;
+        let json_path = p.join("f.json");
+        std::fs::write(&json_path, json).unwrap();
+        run_submit(
+            target("master..b1"),
+            SubmitArgs {
+                file: Some(json_path.to_string_lossy().into_owned()),
+                author: Some("t".to_owned()),
+                source: None,
+                example: false,
+                dry_run: false,
+                json: false,
+            },
+        )
+        .unwrap();
+
+        run_move(
+            target("master..b1"),
+            MoveArgs {
+                from: "master..b1".to_owned(),
+                to: "master..b2".to_owned(),
+                run: None,
+                json: false,
+            },
+        )
+        .unwrap();
+
+        let from = resolve_comparison_arg(&repo, Some("master..b1")).unwrap();
+        let to = resolve_comparison_arg(&repo, Some("master..b2")).unwrap();
+        let from_state = storage::load_review_state(&repo, &from).unwrap();
+        let to_state = storage::load_review_state(&repo, &to).unwrap();
+
+        assert!(from_state.runs.is_empty(), "source runs should be empty");
+        assert!(
+            from_state.findings.is_empty(),
+            "source findings should be empty"
+        );
+        assert_eq!(to_state.runs.len(), 1, "dest gets the run");
+        assert_eq!(to_state.findings.len(), 1, "dest gets the finding");
+        let moved = &to_state.findings[0];
+        assert_eq!(moved.anchor.file_path, "a.txt");
+        assert_eq!(moved.anchor.line_number, Some(4));
+        // Line 4 is changed on b2 too, so it re-anchors to a real hunk there.
+        assert!(
+            moved.anchor.hunk_id.is_some(),
+            "finding should anchor to a hunk on the destination"
+        );
+
+        std::env::remove_var("REVIEW_HOME");
     }
 }
