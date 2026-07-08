@@ -329,6 +329,7 @@ export function AppRouter() {
             path="/:owner/:repo/review/:comparisonKey/*"
             element={<ReviewRoute />}
           />
+          <Route path="/standalone/browse/*" element={<ReviewRoute />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

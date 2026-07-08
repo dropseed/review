@@ -746,9 +746,30 @@ pub fn run() {
                     match url.scheme() {
                         "file" => {
                             if let Ok(path) = url.to_file_path() {
-                                let path_str = path.to_string_lossy().to_string();
-                                log::info!("Opened file via file association: {}", path_str);
-                                emit_cli_open_review(app_handle, &path_str, None, None, None);
+                                let (repo_path, focused_file) =
+                                    review::service::util::resolve_open_target(&path);
+                                log::info!(
+                                    "Opened file via file association: {} (repo: {}, file: {:?})",
+                                    path.to_string_lossy(),
+                                    repo_path,
+                                    focused_file
+                                );
+                                if app_handle.webview_windows().is_empty() {
+                                    write_open_request(
+                                        &repo_path,
+                                        None,
+                                        focused_file.as_deref(),
+                                        None,
+                                    );
+                                } else {
+                                    emit_cli_open_review(
+                                        app_handle,
+                                        &repo_path,
+                                        None,
+                                        focused_file.as_deref(),
+                                        None,
+                                    );
+                                }
                             }
                         }
                         "review" => {

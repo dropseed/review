@@ -379,6 +379,18 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           return;
         }
 
+        // Check if we were in standalone mode (non-git file/directory)
+        if (window.location.pathname.startsWith("/standalone/browse")) {
+          const fileMatch = window.location.pathname.match(
+            /\/standalone\/browse\/file\/(.+)$/,
+          );
+          const rawPath = fileMatch
+            ? `${storedPath}/${decodeURIComponent(fileMatch[1])}`
+            : storedPath;
+          await enterStandaloneMode(rawPath, { replace: true });
+          return;
+        }
+
         // Check if we were in browse mode
         if (window.location.pathname.includes("/browse")) {
           await openBrowseModeRef.current(storedPath, { replace: true });

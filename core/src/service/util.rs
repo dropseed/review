@@ -14,6 +14,53 @@ pub fn repo_relative_path(path: &Path, repo_root: &Path) -> String {
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
 
+/// Walk up from `start` to find a directory containing `.git/`.
+pub fn find_repo_root(start: &Path) -> Option<PathBuf> {
+    let mut current = start;
+    loop {
+        if current.join(".git").exists() {
+            return Some(current.to_path_buf());
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => return None,
+        }
+    }
+}
+
+/// Resolve an already-absolute path to an "open target": the repo it lives in
+/// (or the path itself if it's not inside a git repo) plus, when the target
+/// is a file inside a repo, its path relative to the repo root.
+///
+/// Returns `(repo_or_path, Option<relative_file_path>)`.
+pub fn resolve_open_target(target: &Path) -> (String, Option<String>) {
+    let target = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
+
+    // If it's a file, start searching from the parent directory
+    let search_start = if target.is_file() {
+        target.parent().unwrap_or(&target).to_path_buf()
+    } else {
+        target.clone()
+    };
+
+    match find_repo_root(&search_start) {
+        Some(repo_root) => {
+            let focused_file = if target.is_file() {
+                target
+                    .strip_prefix(&repo_root)
+                    .ok()
+                    .map(|rel| rel.to_string_lossy().to_string())
+            } else {
+                None
+            };
+            (repo_root.to_string_lossy().to_string(), focused_file)
+        }
+        None => (target.to_string_lossy().to_string(), None),
+    }
+}
+
 /// Return the MIME type for a known image extension, or None.
 pub fn get_image_mime_type(extension: &str) -> Option<&'static str> {
     match extension.to_lowercase().as_str() {
@@ -198,4 +245,39 @@ pub fn bytes_to_file_content(bytes: Vec<u8>, file_path: &str) -> anyhow::Result<
         image_data_url: None,
         old_image_data_url: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_open_target_finds_repo_root_and_relative_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("myrepo");
+        std::fs::create_dir_all(repo_root.join(".git")).unwrap();
+        let nested_dir = repo_root.join("src").join("nested");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        let file_path = nested_dir.join("file.txt");
+        std::fs::write(&file_path, "hello").unwrap();
+
+        let (repo, focused_file) = resolve_open_target(&file_path);
+
+        let expected_root = repo_root.canonicalize().unwrap();
+        assert_eq!(PathBuf::from(&repo), expected_root);
+        assert_eq!(focused_file.as_deref(), Some("src/nested/file.txt"));
+    }
+
+    #[test]
+    fn resolve_open_target_outside_repo_returns_path_with_no_focused_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("standalone.txt");
+        std::fs::write(&file_path, "hello").unwrap();
+
+        let (resolved, focused_file) = resolve_open_target(&file_path);
+
+        let expected = file_path.canonicalize().unwrap();
+        assert_eq!(PathBuf::from(&resolved), expected);
+        assert_eq!(focused_file, None);
+    }
 }

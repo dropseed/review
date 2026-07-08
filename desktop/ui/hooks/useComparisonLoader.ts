@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
+import { flattenFiles } from "../stores/types";
 
 /**
  * Coordinates loading of files and review state when comparison is ready.
@@ -56,7 +57,13 @@ export function useComparisonLoader(
       try {
         const files = await getApiClient().listDirectoryPlain(repoPath!);
         if (!cancelled) {
-          useReviewStore.setState({ allFiles: files, allFilesLoading: false });
+          // Also populate flatFileList so useFileRouteSync can resolve a
+          // deep-linked standalone file (e.g. /standalone/browse/file/<name>).
+          useReviewStore.setState({
+            allFiles: files,
+            allFilesLoading: false,
+            flatFileList: flattenFiles(files),
+          });
         }
       } catch (err) {
         if (!cancelled) console.error("Failed to load directory:", err);

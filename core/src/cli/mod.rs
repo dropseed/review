@@ -176,20 +176,6 @@ pub struct UseArgs {
     pub json: bool,
 }
 
-/// Walk up from `start` to find a directory containing `.git/`.
-fn find_repo_root(start: &Path) -> Option<PathBuf> {
-    let mut current = start;
-    loop {
-        if current.join(".git").exists() {
-            return Some(current.to_path_buf());
-        }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => return None,
-        }
-    }
-}
-
 /// Get the repository path from an explicit `--repo` flag, or walk up from cwd.
 pub(crate) fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
     if let Some(ref repo) = repo {
@@ -197,7 +183,7 @@ pub(crate) fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
     }
 
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    find_repo_root(&cwd)
+    crate::service::util::find_repo_root(&cwd)
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Not a git repository. Use --repo to specify a repository path.".to_owned())
 }
@@ -261,37 +247,11 @@ fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
 /// When no git repo is found, returns `(target_path, None)`.
 fn resolve_open_path(path: Option<String>) -> Result<(String, Option<String>), String> {
     let target = match path {
-        Some(p) => {
-            let abs = resolve_absolute(Path::new(&p))?;
-            abs.canonicalize().unwrap_or(abs)
-        }
+        Some(p) => resolve_absolute(Path::new(&p))?,
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
 
-    // If it's a file, start searching from the parent directory
-    let search_start = if target.is_file() {
-        target.parent().unwrap_or(&target).to_path_buf()
-    } else {
-        target.clone()
-    };
-
-    // Try to find a git repo root
-    match find_repo_root(&search_start) {
-        Some(repo_root) => {
-            // If the target is a file (or at least different from the repo root),
-            // compute the relative path from the repo root.
-            let focused_file = if target.is_file() {
-                target
-                    .strip_prefix(&repo_root)
-                    .ok()
-                    .map(|rel| rel.to_string_lossy().to_string())
-            } else {
-                None
-            };
-            Ok((repo_root.to_string_lossy().to_string(), focused_file))
-        }
-        None => Ok((target.to_string_lossy().to_string(), None)),
-    }
+    Ok(crate::service::util::resolve_open_target(&target))
 }
 
 /// Run the CLI: dispatch to the appropriate subcommand.
