@@ -4,6 +4,7 @@ import {
   hunkMatchesFilter,
   isEmptyFilter,
   selectHunkIds,
+  UNCOMMITTED_COMMIT,
   type HunkFilter,
 } from "./hunkFilter";
 import {
@@ -137,6 +138,141 @@ describe("hunkMatchesFilter", () => {
     expect(match(hs, { file: "src/*.ts" }, "test/a.ts")).toBe(false);
   });
 
+  it("filters by commit attribution", () => {
+    const hunkCommits = { "src/a.ts:1": ["sha1", "sha2"] };
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/a.ts:1",
+        hunkState: undefined,
+        filePath: "src/a.ts",
+        trustList,
+        filter: { commits: ["sha1"] },
+        hunkCommits,
+      }),
+    ).toBe(true);
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/a.ts:1",
+        hunkState: undefined,
+        filePath: "src/a.ts",
+        trustList,
+        filter: { commits: ["sha3"] },
+        hunkCommits,
+      }),
+    ).toBe(false);
+    // No attribution data / unattributed hunk -> fails closed, not matched
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/b.ts:2",
+        hunkState: undefined,
+        filePath: "src/b.ts",
+        trustList,
+        filter: { commits: ["sha1"] },
+        hunkCommits,
+      }),
+    ).toBe(false);
+  });
+
+  it("filters by multiple commits (union — matches any selected sha)", () => {
+    const hunkCommits = {
+      "src/a.ts:1": ["sha1"],
+      "src/b.ts:2": ["sha2"],
+      "test/c.ts:3": ["sha3"],
+    };
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/a.ts:1",
+        hunkState: undefined,
+        filePath: "src/a.ts",
+        trustList,
+        filter: { commits: ["sha1", "sha2"] },
+        hunkCommits,
+      }),
+    ).toBe(true);
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/b.ts:2",
+        hunkState: undefined,
+        filePath: "src/b.ts",
+        trustList,
+        filter: { commits: ["sha1", "sha2"] },
+        hunkCommits,
+      }),
+    ).toBe(true);
+    expect(
+      hunkMatchesFilter({
+        hunkId: "test/c.ts:3",
+        hunkState: undefined,
+        filePath: "test/c.ts",
+        trustList,
+        filter: { commits: ["sha1", "sha2"] },
+        hunkCommits,
+      }),
+    ).toBe(false);
+  });
+
+  it("filters by the uncommitted sentinel — matches hunks with no attribution", () => {
+    const hunkCommits = { "src/a.ts:1": ["sha1"], "src/b.ts:2": [] };
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/b.ts:2",
+        hunkState: undefined,
+        filePath: "src/b.ts",
+        trustList,
+        filter: { commits: [UNCOMMITTED_COMMIT] },
+        hunkCommits,
+      }),
+    ).toBe(true);
+    // A hunk missing from the map entirely (never seen by attribution) also
+    // counts as uncommitted.
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/c.ts:3",
+        hunkState: undefined,
+        filePath: "src/c.ts",
+        trustList,
+        filter: { commits: [UNCOMMITTED_COMMIT] },
+        hunkCommits,
+      }),
+    ).toBe(true);
+    // A hunk WITH attribution doesn't match the sentinel alone.
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/a.ts:1",
+        hunkState: undefined,
+        filePath: "src/a.ts",
+        trustList,
+        filter: { commits: [UNCOMMITTED_COMMIT] },
+        hunkCommits,
+      }),
+    ).toBe(false);
+  });
+
+  it("unions the uncommitted sentinel with real shas", () => {
+    const hunkCommits = { "src/a.ts:1": ["sha1"], "src/b.ts:2": [] };
+    const filter: HunkFilter = { commits: ["sha1", UNCOMMITTED_COMMIT] };
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/a.ts:1",
+        hunkState: undefined,
+        filePath: "src/a.ts",
+        trustList,
+        filter,
+        hunkCommits,
+      }),
+    ).toBe(true);
+    expect(
+      hunkMatchesFilter({
+        hunkId: "src/b.ts:2",
+        hunkState: undefined,
+        filePath: "src/b.ts",
+        trustList,
+        filter,
+        hunkCommits,
+      }),
+    ).toBe(true);
+  });
+
   it("AND-composes across axes", () => {
     const hs: HunkState = {
       classification: attributed(["imports:added"], "static"),
@@ -163,6 +299,7 @@ describe("isEmptyFilter", () => {
     expect(isEmptyFilter({ status: [], risk: [] })).toBe(true);
     expect(isEmptyFilter({ risk: ["high"] })).toBe(false);
     expect(isEmptyFilter({ file: "src/*" })).toBe(false);
+    expect(isEmptyFilter({ commits: ["abc123"] })).toBe(false);
   });
 });
 

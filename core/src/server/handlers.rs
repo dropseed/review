@@ -63,6 +63,7 @@ pub fn build_api_router() -> Router {
         .route("/api/git/unstage-hunks", post(git_unstage_hunks))
         .route("/api/git/commits", post(git_commits))
         .route("/api/git/commit-detail", post(git_commit_detail))
+        .route("/api/git/hunk-attribution", post(git_hunk_attribution))
         .route("/api/git/diff", post(git_diff))
         .route("/api/git/diff-shortstat", post(git_diff_shortstat))
         .route(
@@ -316,6 +317,13 @@ struct CommitsRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct HunkAttributionRequest {
+    repo_path: String,
+    comparison: Comparison,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CommitDetailRequest {
     repo_path: String,
     hash: String,
@@ -550,6 +558,18 @@ async fn git_commits(Json(req): Json<CommitsRequest>) -> ApiResult<Vec<CommitEnt
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source
             .list_commits(limit, req.branch.as_deref(), req.range.as_deref())
+            .map_err(Into::into)
+    })
+    .await
+}
+
+async fn git_hunk_attribution(
+    Json(req): Json<HunkAttributionRequest>,
+) -> ApiResult<crate::sources::local_git::HunkAttribution> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source
+            .attribute_hunks_to_commits(&req.comparison)
             .map_err(Into::into)
     })
     .await

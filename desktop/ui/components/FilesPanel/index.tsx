@@ -24,6 +24,7 @@ import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { ReviewTabContent } from "./ReviewTabContent";
 import { ReviewFilterBar } from "./ReviewFilterBar";
+import { CommitAttributionSection } from "./CommitAttributionSection";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 
 interface FilesPanelProps {
@@ -48,6 +49,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
   const [savedForLaterOpen, setSavedForLaterOpen] = useState(true);
   const [reviewedOpen, setReviewedOpen] = useState(true);
   const [trustOpen, setTrustOpen] = useState(false);
+  const [commitsOpen, setCommitsOpen] = useState(true);
 
   // File system data
   const {
@@ -320,6 +322,10 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             />
           ) : viewMode === "changes" ? (
             <>
+              <CommitAttributionSection
+                isOpen={commitsOpen}
+                onToggle={() => setCommitsOpen(!commitsOpen)}
+              />
               <ReviewFilterBar />
               <ReviewTabContent
                 sectionedFiles={sectionedFiles}

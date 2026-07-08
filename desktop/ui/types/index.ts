@@ -88,6 +88,8 @@ export interface CommitEntry {
   fileCount?: number;
   additions?: number;
   deletions?: number;
+  /** Commit message body, trimmed. Absent when the commit has no body. */
+  body?: string;
 }
 
 // Detailed commit information including changed files
@@ -100,6 +102,16 @@ export interface CommitDetail {
   date: string;
   files: CommitFileChange[];
   diff: string;
+}
+
+// Maps a comparison's net-diff hunks to the commit(s) that introduced their
+// lines. Derived on demand from `base..head` — never persisted.
+export interface HunkAttribution {
+  // Commits in base..head, oldest first (the author's narrative order).
+  commits: CommitEntry[];
+  // Hunk id -> full commit SHAs that touched it, oldest first. Empty when a
+  // hunk (typically a pure deletion) couldn't be attributed.
+  hunkCommits: Record<string, string[]>;
 }
 
 // A file changed in a commit

@@ -7,6 +7,7 @@ import type {
   MovePair,
   SearchMatch,
   CommitEntry,
+  HunkAttribution,
 } from "../../types";
 import { buildFileDiff } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
@@ -200,6 +201,9 @@ const comparisonResetState = {
   // History
   commits: [] as CommitEntry[],
   commitsLoaded: false,
+  attribution: null as HunkAttribution | null,
+  attributionLoading: false,
+  attributionLoaded: false,
   // Worktree
   worktreePath: null as string | null,
   worktreeStale: false,

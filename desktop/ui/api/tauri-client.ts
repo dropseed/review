@@ -19,6 +19,7 @@ import type {
   Comparison,
   CommitDetail,
   CommitEntry,
+  HunkAttribution,
   CommitOutputLine,
   CommitResult,
   DetectMovePairsResponse,
@@ -163,6 +164,17 @@ export class TauriClient implements ApiClient {
 
   async getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail> {
     return invoke<CommitDetail>("get_commit_detail", { repoPath, hash });
+  }
+
+  async getHunkAttribution(
+    repoPath: string,
+    base: string,
+    head: string,
+  ): Promise<HunkAttribution> {
+    return invoke<HunkAttribution>("get_hunk_attribution", {
+      repoPath,
+      comparison: { base, head, key: `${base}..${head}` },
+    });
   }
 
   // ----- GitHub -----

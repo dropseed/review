@@ -23,6 +23,7 @@ export function useFilePanelFileSystem() {
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
   const reviewFilter = useReviewStore((s) => s.reviewFilter);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
+  const hunkCommits = useReviewStore((s) => s.attribution?.hunkCommits);
 
   // The whole Review tab — sections, counts, and stats — derives from this
   // map. When a hunk filter is active we recount over only the matching hunks,
@@ -35,10 +36,12 @@ export function useFilePanelFileSystem() {
     const trustList = reviewState?.trustList ?? [];
     const matching = hunks.filter((h) =>
       hunkMatchesFilter({
+        hunkId: h.id,
         hunkState: reviewState?.hunks[h.id],
         filePath: h.filePath,
         trustList,
         filter: reviewFilter,
+        hunkCommits,
       }),
     );
     return calculateFileHunkStatus(matching, reviewState, {
@@ -52,6 +55,7 @@ export function useFilePanelFileSystem() {
     reviewState,
     reviewFilter,
     stagedFilePaths,
+    hunkCommits,
   ]);
 
   const movedFilePaths = useMemo(() => {

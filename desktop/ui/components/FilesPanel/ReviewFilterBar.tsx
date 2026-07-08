@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useReviewStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import type { HunkRisk } from "../../types";
-import { selectHunkIds } from "../../types/hunkFilter";
+import { selectHunkIds, UNCOMMITTED_COMMIT } from "../../types/hunkFilter";
 
 const RISK_OPTIONS: { value: HunkRisk; label: string }[] = [
   { value: "high", label: "High" },
@@ -22,6 +22,8 @@ export function ReviewFilterBar() {
   const reviewFilter = useReviewStore((s) => s.reviewFilter);
   const setReviewFilter = useReviewStore((s) => s.setReviewFilter);
   const reviewState = useReviewStore((s) => s.reviewState);
+  const hunkCommits = useReviewStore((s) => s.attribution?.hunkCommits);
+  const commits = useReviewStore((s) => s.attribution?.commits);
   const hunks = useAllHunks();
 
   const hasAnyRisk = useMemo(
@@ -43,12 +45,31 @@ export function ReviewFilterBar() {
 
   const activeRisk = reviewFilter.risk?.[0] ?? null;
   const activeLabel = reviewFilter.label ?? "";
-  const filterActive = activeRisk != null || activeLabel !== "";
+  const activeCommits = reviewFilter.commits ?? [];
+  const filterActive =
+    activeRisk != null || activeLabel !== "" || activeCommits.length > 0;
 
   const matchingIds = useMemo(
-    () => (filterActive ? selectHunkIds(hunks, reviewState, reviewFilter) : []),
-    [filterActive, hunks, reviewState, reviewFilter],
+    () =>
+      filterActive
+        ? selectHunkIds(hunks, reviewState, reviewFilter, hunkCommits)
+        : [],
+    [filterActive, hunks, reviewState, reviewFilter, hunkCommits],
   );
+
+  const commitChipLabel =
+    activeCommits.length === 1
+      ? activeCommits[0] === UNCOMMITTED_COMMIT
+        ? "Uncommitted changes"
+        : `Commit ${
+            commits?.find((c) => c.hash === activeCommits[0])?.shortHash ??
+            activeCommits[0].slice(0, 7)
+          }`
+      : activeCommits.length > 1
+        ? `${activeCommits.length} commits`
+        : null;
+  const clearCommits = () =>
+    setReviewFilter({ ...reviewFilter, commits: undefined });
 
   if (!hasAnyRisk && presentLabels.length < 2 && !filterActive) return null;
 
@@ -125,6 +146,20 @@ export function ReviewFilterBar() {
               ))}
             </select>
           </label>
+        )}
+
+        {commitChipLabel && (
+          <span className="ml-1 inline-flex items-center gap-1 rounded bg-surface-hover px-2 py-0.5 text-xxs text-fg-secondary">
+            {commitChipLabel}
+            <button
+              type="button"
+              onClick={clearCommits}
+              aria-label="Clear commit filter"
+              className="text-fg-faint hover:text-fg-secondary"
+            >
+              ×
+            </button>
+          </span>
         )}
       </div>
 

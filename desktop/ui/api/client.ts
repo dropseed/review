@@ -14,6 +14,7 @@ import type {
   PullRequest,
   CommitEntry,
   CommitDetail,
+  HunkAttribution,
   CommitOutputLine,
   CommitResult,
   FileEntry,
@@ -143,6 +144,13 @@ export interface ApiClient {
 
   /** Get detailed information about a specific commit */
   getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail>;
+
+  /** Attribute a comparison's net-diff hunks to the commits that introduced them */
+  getHunkAttribution(
+    repoPath: string,
+    base: string,
+    head: string,
+  ): Promise<HunkAttribution>;
 
   // ----- GitHub -----
 

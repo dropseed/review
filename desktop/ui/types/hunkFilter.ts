@@ -31,7 +31,16 @@ export interface HunkFilter {
   label?: string;
   /** Glob over the hunk's file path, e.g. "src/*.ts". */
   file?: string;
+  /**
+   * Full commit SHAs — matches hunks the commit-attribution map credits to
+   * any of them. Also accepts the {@link UNCOMMITTED_COMMIT} sentinel, which
+   * matches hunks with no attribution at all (empty/missing shas).
+   */
+  commits?: string[];
 }
+
+/** Sentinel `filter.commits` entry standing in for "not yet part of any commit". */
+export const UNCOMMITTED_COMMIT = "uncommitted";
 
 // True when the filter imposes no constraints (everything matches).
 export function isEmptyFilter(filter: HunkFilter): boolean {
@@ -39,17 +48,21 @@ export function isEmptyFilter(filter: HunkFilter): boolean {
     !filter.status?.length &&
     !filter.risk?.length &&
     !filter.label &&
-    !filter.file
+    !filter.file &&
+    !filter.commits?.length
   );
 }
 
 export function hunkMatchesFilter(args: {
+  hunkId?: string;
   hunkState: HunkState | undefined;
   filePath: string;
   trustList: string[];
   filter: HunkFilter;
+  /** Hunk id -> attributed commit SHAs, needed only when `filter.commits` is set. */
+  hunkCommits?: Record<string, string[]>;
 }): boolean {
-  const { hunkState, filePath, trustList, filter } = args;
+  const { hunkId, hunkState, filePath, trustList, filter, hunkCommits } = args;
 
   if (filter.status?.length) {
     if (!filter.status.includes(effectiveHunkStatus(hunkState, trustList))) {
@@ -73,6 +86,13 @@ export function hunkMatchesFilter(args: {
   if (filter.file) {
     if (!matchesPathGlob(filePath, filter.file)) return false;
   }
+  if (filter.commits?.length) {
+    const shas = hunkId ? hunkCommits?.[hunkId] : undefined;
+    const matchesUncommitted =
+      filter.commits.includes(UNCOMMITTED_COMMIT) && !shas?.length;
+    const matchesSha = shas?.some((sha) => filter.commits!.includes(sha));
+    if (!matchesUncommitted && !matchesSha) return false;
+  }
   return true;
 }
 
@@ -83,15 +103,18 @@ export function selectHunkIds(
   hunks: DiffHunk[],
   reviewState: ReviewState | null,
   filter: HunkFilter,
+  hunkCommits?: Record<string, string[]>,
 ): string[] {
   const trustList = reviewState?.trustList ?? [];
   return hunks
     .filter((h) =>
       hunkMatchesFilter({
+        hunkId: h.id,
         hunkState: reviewState?.hunks[h.id],
         filePath: h.filePath,
         trustList,
         filter,
+        hunkCommits,
       }),
     )
     .map((h) => h.id);

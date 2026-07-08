@@ -16,6 +16,7 @@ import type {
   Comparison,
   CommitDetail,
   CommitEntry,
+  HunkAttribution,
   CommitOutputLine,
   CommitResult,
   DetectMovePairsResponse,
@@ -242,6 +243,17 @@ export class HttpClient implements ApiClient {
 
   async getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail> {
     return this.post("/api/git/commit-detail", { repoPath, hash });
+  }
+
+  async getHunkAttribution(
+    repoPath: string,
+    base: string,
+    head: string,
+  ): Promise<HunkAttribution> {
+    return this.post("/api/git/hunk-attribution", {
+      repoPath,
+      comparison: { base, head, key: `${base}..${head}` },
+    });
   }
 
   // ----- GitHub -----

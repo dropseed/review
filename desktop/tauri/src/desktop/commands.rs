@@ -23,7 +23,8 @@ use review::service::{
 };
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
-    DiffShortStat, LocalBranchInfo, LocalGitSource, RemoteInfo, SearchMatch, WorktreeInfo,
+    DiffShortStat, HunkAttribution, LocalBranchInfo, LocalGitSource, RemoteInfo, SearchMatch,
+    WorktreeInfo,
 };
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
@@ -699,6 +700,21 @@ pub fn list_commits(
 pub fn get_commit_detail(repo_path: String, hash: String) -> Result<CommitDetail, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_commit_detail(&hash).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_hunk_attribution(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<HunkAttribution, String> {
+    tokio::task::spawn_blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+        source
+            .attribute_hunks_to_commits(&comparison)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

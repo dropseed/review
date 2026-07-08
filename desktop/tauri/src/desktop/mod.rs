@@ -650,6 +650,7 @@ pub fn run() {
             commands::get_working_tree_file_content,
             commands::list_commits,
             commands::get_commit_detail,
+            commands::get_hunk_attribution,
             commands::list_files,
             commands::list_all_files,
             commands::list_repo_files,

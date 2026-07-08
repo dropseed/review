@@ -2,13 +2,15 @@ use super::traits::{
     ChangeStatus, CommitEntry, Comparison, DiffSource, FileEntry, FileStatus, GitStatusSummary,
     StatusEntry,
 };
-use crate::diff::parser::parse_diff;
+use crate::diff::parser::{parse_diff, LineType};
 use crate::review::central;
+use log::info;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::time::Instant;
 use thiserror::Error;
 
 /// Information about the git remote (org/repo and browse URL)
@@ -61,6 +63,20 @@ pub struct SearchMatch {
     pub line_content: String,
     /// Tree-sitter verification result for this position.
     pub verified: VerifiedStatus,
+}
+
+/// Maps the hunks of a comparison's net diff to the commit(s) in `base..head`
+/// that introduced their lines. Attribution is derived on demand — never
+/// persisted — so it always reflects the current diff.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HunkAttribution {
+    /// Commits in `base..head`, oldest first (the author's narrative order).
+    pub commits: Vec<CommitEntry>,
+    /// Hunk id (`filepath:contentHash`) -> full commit SHAs that touched it,
+    /// ordered oldest first. Empty when a hunk (typically a pure deletion)
+    /// couldn't be attributed.
+    pub hunk_commits: HashMap<String, Vec<String>>,
 }
 
 /// Information about a local branch that is ahead of the default branch
@@ -1183,6 +1199,14 @@ impl LocalGitSource {
             &resolved_ref,
         ])?;
 
+        // Fetched via a separate call (see `commit_bodies`) rather than folded
+        // into the format string above: bodies are multi-line and can contain
+        // blank lines, which would break the positional, blank-line-filtered
+        // parsing below.
+        let bodies = self
+            .commit_bodies(&limit_str, &resolved_ref)
+            .unwrap_or_default();
+
         let mut commits = Vec::new();
 
         // Split on the --COMMIT-- delimiter; first chunk before any delimiter is empty
@@ -1202,8 +1226,11 @@ impl LocalGitSource {
                 (None, None, None)
             };
 
+            let hash = lines[0].to_owned();
+            let body = bodies.get(&hash).cloned().flatten();
+
             commits.push(CommitEntry {
-                hash: lines[0].to_owned(),
+                hash,
                 short_hash: lines[1].to_owned(),
                 message: lines[2].to_owned(),
                 author: lines[3].to_owned(),
@@ -1212,10 +1239,46 @@ impl LocalGitSource {
                 file_count,
                 additions,
                 deletions,
+                body,
             });
         }
 
         Ok(commits)
+    }
+
+    /// Fetch commit message bodies (`%b`, trimmed, `None` when empty) for the
+    /// same `<limit_str> <resolved_ref>` selection as `list_commits`, keyed by
+    /// full hash. A dedicated `git log` call with NUL/SOH control-byte
+    /// separators — bodies are multi-line, can themselves contain blank lines
+    /// or arbitrary punctuation, and so can't safely share `list_commits`'
+    /// blank-line-filtered, line-positional format.
+    fn commit_bodies(
+        &self,
+        limit_str: &str,
+        resolved_ref: &str,
+    ) -> Result<HashMap<String, Option<String>>, LocalGitError> {
+        let output = self.run_git(&["log", limit_str, "--format=%H%x00%b%x01", resolved_ref])?;
+
+        let mut map = HashMap::new();
+        for record in output.split('\x01') {
+            let record = record.trim_start_matches('\n');
+            if record.is_empty() {
+                continue;
+            }
+            let Some((hash, body)) = record.split_once('\x00') else {
+                continue;
+            };
+            let body = body.trim();
+            map.insert(
+                hash.to_owned(),
+                if body.is_empty() {
+                    None
+                } else {
+                    Some(body.to_owned())
+                },
+            );
+        }
+        Ok(map)
     }
 
     /// Get detailed information about a specific commit
@@ -1325,6 +1388,240 @@ impl LocalGitSource {
             files,
             diff: diff_patch,
         })
+    }
+
+    /// Attribute each hunk of a comparison's net diff to the commit(s) in
+    /// `base..head` that introduced its lines, via `git blame`. Pure-deletion
+    /// hunks (no added lines to blame) are attributed by matching their
+    /// removed-line content against each commit's own diff for the file.
+    pub fn attribute_hunks_to_commits(
+        &self,
+        comparison: &super::traits::Comparison,
+    ) -> anyhow::Result<HunkAttribution> {
+        let t0 = Instant::now();
+
+        let mut commits = self.list_commits(10_000, None, Some(&comparison.key))?;
+        commits.reverse(); // list_commits is newest-first; we want the author's narrative order
+        let commit_order: HashMap<&str, usize> = commits
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.hash.as_str(), i))
+            .collect();
+
+        let hunks = crate::service::files::comparison_hunks(&self.repo_path, comparison, None)?;
+
+        let mut by_file: HashMap<&str, Vec<&crate::diff::parser::DiffHunk>> = HashMap::new();
+        for hunk in &hunks {
+            by_file
+                .entry(hunk.file_path.as_str())
+                .or_default()
+                .push(hunk);
+        }
+
+        let mut hunk_commits: HashMap<String, Vec<String>> = HashMap::new();
+
+        // Blame must read the same content the hunks were diffed against:
+        // when the comparison head is checked out (main repo or a linked
+        // worktree), `comparison_hunks` above diffed the *working tree*
+        // (merge-base vs working tree, via `get_diff`/`working_tree_dir`), so
+        // an uncommitted edit would misalign a `base..head` blame of the
+        // committed head against those hunks' line numbers. Blame the working
+        // tree instead in that case (see `blame_new_lines`) — uncommitted
+        // lines come back with git's all-zero "not committed yet" sha, which
+        // isn't in `commit_order` and is dropped like any other out-of-range
+        // blame hit.
+        let wt_dir = self.working_tree_dir(comparison);
+        let blame_dir = wt_dir.as_deref().unwrap_or(&self.repo_path);
+        let blame_head = wt_dir.is_none().then_some(comparison.head.as_str());
+
+        for (file_path, file_hunks) in by_file {
+            let blame = self
+                .blame_new_lines(blame_dir, file_path, &comparison.base, blame_head)
+                .unwrap_or_default();
+
+            // Only computed if the file has a hunk with no added lines to blame.
+            let mut deletion_diffs: Option<HashMap<String, HashSet<String>>> = None;
+
+            for hunk in file_hunks {
+                // Whitespace-only lines are collected separately: a "wip"
+                // commit whose real changes were fully rewritten later can
+                // still leave a couple of blank lines blaming back to it, which
+                // would otherwise poison the hunk's attribution. They're only
+                // used as a last resort, for hunks that are purely whitespace
+                // (e.g. a formatting-only change) and would otherwise end up
+                // unattributed.
+                let mut shas: Vec<String> = Vec::new();
+                let mut whitespace_shas: Vec<String> = Vec::new();
+                for line in &hunk.lines {
+                    if line.line_type != LineType::Added {
+                        continue;
+                    }
+                    let Some(new_line) = line.new_line_number else {
+                        continue;
+                    };
+                    let Some(sha) = blame.get(&new_line) else {
+                        continue;
+                    };
+                    if !commit_order.contains_key(sha.as_str()) {
+                        continue;
+                    }
+                    let target = if line.content.trim().is_empty() {
+                        &mut whitespace_shas
+                    } else {
+                        &mut shas
+                    };
+                    if !target.contains(sha) {
+                        target.push(sha.clone());
+                    }
+                }
+                if shas.is_empty() {
+                    shas = whitespace_shas;
+                }
+
+                if shas.is_empty() {
+                    let non_ws_removed: Vec<&str> = hunk
+                        .lines
+                        .iter()
+                        .filter(|l| {
+                            l.line_type == LineType::Removed && !l.content.trim().is_empty()
+                        })
+                        .map(|l| l.content.as_str())
+                        .collect();
+                    let ws_removed: Vec<&str> = hunk
+                        .lines
+                        .iter()
+                        .filter(|l| l.line_type == LineType::Removed && l.content.trim().is_empty())
+                        .map(|l| l.content.as_str())
+                        .collect();
+                    // Same last-resort rule as above: prefer matching on
+                    // meaningful removed lines, falling back to whitespace-only
+                    // ones only if that's all the hunk removed.
+                    let removed = if !non_ws_removed.is_empty() {
+                        &non_ws_removed
+                    } else {
+                        &ws_removed
+                    };
+                    if !removed.is_empty() {
+                        let diffs = deletion_diffs.get_or_insert_with(|| {
+                            self.removed_lines_by_commit(file_path, &comparison.key)
+                                .unwrap_or_default()
+                        });
+                        for commit in &commits {
+                            if let Some(removed_by_commit) = diffs.get(&commit.hash) {
+                                if removed.iter().any(|l| removed_by_commit.contains(*l)) {
+                                    shas.push(commit.hash.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                shas.sort_by_key(|s| commit_order.get(s.as_str()).copied().unwrap_or(usize::MAX));
+                hunk_commits.insert(hunk.id.clone(), shas);
+            }
+        }
+
+        info!(
+            "[attribute_hunks_to_commits] {} commits, {} hunks attributed in {:?}",
+            commits.len(),
+            hunk_commits.len(),
+            t0.elapsed()
+        );
+
+        Ok(HunkAttribution {
+            commits,
+            hunk_commits,
+        })
+    }
+
+    /// Blame a file's new (post-range) lines, returning new-line-number ->
+    /// commit SHA. Lines whose blamed commit falls outside the caller's
+    /// `base..head` commit list (e.g. the boundary commit `base` itself, or
+    /// anything older) simply won't be in that list and get filtered out by
+    /// the caller — this function doesn't need to bound that itself.
+    ///
+    /// Runs in `dir` so a linked worktree's own working copy is blamed, not
+    /// the main repo's. When `head` is `Some`, blames the committed range
+    /// `base..head`. When `None`, blames with NO revision at all — which is
+    /// what makes `git blame` read the *working tree* at `dir` rather than a
+    /// committed tree (an open-ended `base..` range, despite appearances,
+    /// still blames the committed `HEAD`, not uncommitted edits). Working-tree
+    /// lines with no committed history come back tagged with git's all-zero
+    /// "not committed yet" sha, which likewise isn't in the caller's commit
+    /// list and gets filtered out.
+    fn blame_new_lines(
+        &self,
+        dir: &std::path::Path,
+        file_path: &str,
+        base: &str,
+        head: Option<&str>,
+    ) -> Result<HashMap<u32, String>, LocalGitError> {
+        let mut args = vec!["blame", "--porcelain"];
+        let range = head.map(|head| format!("{base}..{head}"));
+        if let Some(range) = &range {
+            args.push(range);
+        }
+        args.push("--");
+        args.push(file_path);
+        let output = self.run_git_in(dir, &args)?;
+
+        let mut map = HashMap::new();
+        let mut current_sha: Option<String> = None;
+        let mut current_new_line: Option<u32> = None;
+
+        for line in output.lines() {
+            let is_header = line.len() > 40
+                && line
+                    .split(' ')
+                    .next()
+                    .map(|tok| tok.len() == 40 && tok.bytes().all(|b| b.is_ascii_hexdigit()))
+                    .unwrap_or(false);
+
+            if is_header {
+                let mut parts = line.split_whitespace();
+                current_sha = parts.next().map(str::to_owned);
+                let _orig_line = parts.next();
+                current_new_line = parts.next().and_then(|s| s.parse().ok());
+            } else if let Some(rest) = line.strip_prefix('\t') {
+                let _ = rest;
+                if let (Some(sha), Some(new_line)) = (&current_sha, current_new_line) {
+                    map.insert(new_line, sha.clone());
+                }
+            }
+        }
+
+        Ok(map)
+    }
+
+    /// For each commit in `range` (a `base..head` spec), the set of line
+    /// contents it removed from `file_path`. Used to attribute pure-deletion
+    /// hunks, which have no surviving lines for `git blame` to point at.
+    fn removed_lines_by_commit(
+        &self,
+        file_path: &str,
+        range: &str,
+    ) -> Result<HashMap<String, HashSet<String>>, LocalGitError> {
+        let output = self.run_git(&[
+            "log",
+            "-p",
+            "--format=--COMMIT--%n%H",
+            range,
+            "--",
+            file_path,
+        ])?;
+
+        let mut map = HashMap::new();
+        for chunk in output.split("--COMMIT--\n").skip(1) {
+            let mut lines = chunk.lines();
+            let Some(sha) = lines.next() else { continue };
+            let removed: HashSet<String> = lines
+                .filter(|l| l.starts_with('-') && !l.starts_with("---"))
+                .map(|l| l[1..].to_owned())
+                .collect();
+            map.insert(sha.to_owned(), removed);
+        }
+
+        Ok(map)
     }
 
     fn run_git(&self, args: &[&str]) -> Result<String, LocalGitError> {
@@ -2729,6 +3026,169 @@ mod tests {
         assert!(
             paths.iter().any(|p| p == "tracked.txt"),
             "expected modified file in list_files: {paths:?}"
+        );
+    }
+
+    /// A "wip" commit whose real change is fully rewritten by a later commit
+    /// must not stay attributed just because a couple of blank lines it
+    /// introduced happen to survive unchanged.
+    #[test]
+    fn test_attribution_ignores_whitespace_only_lines() {
+        use crate::review::central::tests::ENV_LOCK;
+        use crate::sources::traits::Comparison;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        std::fs::write(repo_path.join("file.txt"), "line1\nline2\n").unwrap();
+        run_git_cmd(repo_path, &["add", "file.txt"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "base"]).unwrap();
+        let base_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // "wip" commit: inserts a blank line, a placeholder body, and another
+        // blank line between the two original lines.
+        std::fs::write(repo_path.join("file.txt"), "line1\n\nwip_body\n\nline2\n").unwrap();
+        run_git_cmd(repo_path, &["commit", "-am", "wip"]).unwrap();
+        let wip_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // Final commit rewrites the body only, leaving the surrounding blank
+        // lines untouched.
+        std::fs::write(repo_path.join("file.txt"), "line1\n\nfinal_body\n\nline2\n").unwrap();
+        run_git_cmd(repo_path, &["commit", "-am", "final"]).unwrap();
+        let final_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let comparison = Comparison::new(&base_sha, &final_sha);
+        let attribution = source.attribute_hunks_to_commits(&comparison).unwrap();
+
+        let shas: Vec<&str> = attribution
+            .hunk_commits
+            .values()
+            .flatten()
+            .map(|s| s.as_str())
+            .collect();
+        assert!(
+            shas.contains(&final_sha.as_str()),
+            "expected final commit attributed: {shas:?}"
+        );
+        assert!(
+            !shas.contains(&wip_sha.as_str()),
+            "wip commit should be excluded — it only survives via whitespace-only lines: {shas:?}"
+        );
+    }
+
+    /// A hunk that is purely whitespace (e.g. a formatting-only change) has no
+    /// non-whitespace added line to blame — it should still attribute via the
+    /// whitespace-only fallback rather than end up unattributed.
+    #[test]
+    fn test_attribution_whitespace_only_hunk_falls_back_to_blame() {
+        use crate::review::central::tests::ENV_LOCK;
+        use crate::sources::traits::Comparison;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        std::fs::write(repo_path.join("file.txt"), "a\nb\n").unwrap();
+        run_git_cmd(repo_path, &["add", "file.txt"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "base"]).unwrap();
+        let base_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // Pure formatting commit: inserts a single blank line, nothing else.
+        std::fs::write(repo_path.join("file.txt"), "a\n\nb\n").unwrap();
+        run_git_cmd(repo_path, &["commit", "-am", "formatting"]).unwrap();
+        let format_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let comparison = Comparison::new(&base_sha, &format_sha);
+        let attribution = source.attribute_hunks_to_commits(&comparison).unwrap();
+
+        assert_eq!(attribution.hunk_commits.len(), 1);
+        let shas = attribution.hunk_commits.values().next().unwrap();
+        assert_eq!(
+            shas,
+            &vec![format_sha],
+            "purely-whitespace hunk should still attribute via the whitespace fallback"
+        );
+    }
+
+    /// When the comparison head is checked out (so hunks are diffed against
+    /// the working tree), blame must follow suit — an uncommitted edit that
+    /// shifts line numbers must not misalign attribution against a
+    /// stale, committed-head blame.
+    #[test]
+    fn test_attribution_blames_working_tree_when_head_is_checked_out() {
+        use crate::review::central::tests::ENV_LOCK;
+        use crate::sources::traits::Comparison;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        std::fs::write(repo_path.join("file.txt"), "line1\nline2\nline3\n").unwrap();
+        run_git_cmd(repo_path, &["add", "file.txt"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "base"]).unwrap();
+        let base_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // Committed: insert a line in the middle of the file.
+        std::fs::write(
+            repo_path.join("file.txt"),
+            "line1\nadded_by_commit\nline2\nline3\n",
+        )
+        .unwrap();
+        run_git_cmd(repo_path, &["commit", "-am", "add middle line"]).unwrap();
+
+        let current_branch = source.get_current_branch().unwrap();
+
+        // Uncommitted: insert ANOTHER line at the very top, shifting every
+        // subsequent line's number down by one relative to the committed head.
+        std::fs::write(
+            repo_path.join("file.txt"),
+            "uncommitted_line\nline1\nadded_by_commit\nline2\nline3\n",
+        )
+        .unwrap();
+
+        let comparison = Comparison::new(&base_sha, &current_branch);
+        assert!(source.include_working_tree(&comparison));
+
+        let attribution = source.attribute_hunks_to_commits(&comparison).unwrap();
+
+        let expected_sha = attribution
+            .commits
+            .iter()
+            .find(|c| c.message == "add middle line")
+            .expect("committed commit should be in range")
+            .hash
+            .clone();
+
+        let shas: Vec<&str> = attribution
+            .hunk_commits
+            .values()
+            .flatten()
+            .map(|s| s.as_str())
+            .collect();
+        assert!(
+            shas.contains(&expected_sha.as_str()),
+            "expected middle-line commit to be attributed despite the uncommitted line shift: {shas:?}"
         );
     }
 }

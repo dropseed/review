@@ -5,7 +5,7 @@ import { Spinner } from "../../ui/spinner";
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
-function formatRelativeTime(isoDate: string): string {
+export function formatRelativeTime(isoDate: string): string {
   const date = new Date(isoDate);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -22,13 +22,13 @@ function formatRelativeTime(isoDate: string): string {
   return date.toLocaleDateString();
 }
 
-function getInitials(name: string): string {
+export function getInitials(name: string): string {
   const words = name.trim().split(/\s+/);
   if (words.length === 1) return words[0].substring(0, 2).toUpperCase();
   return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
 
-function emailToHue(email: string): number {
+export function emailToHue(email: string): number {
   let hash = 0;
   for (let i = 0; i < email.length; i++) {
     hash = email.charCodeAt(i) + ((hash << 5) - hash);
@@ -36,7 +36,7 @@ function emailToHue(email: string): number {
   return ((hash % 360) + 360) % 360;
 }
 
-const AVATAR_BASE_STYLE: React.CSSProperties = {
+export const AVATAR_BASE_STYLE: React.CSSProperties = {
   width: 14,
   height: 14,
   fontSize: 7,

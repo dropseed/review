@@ -116,6 +116,9 @@ pub struct CommitEntry {
     pub additions: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deletions: Option<u32>,
+    /// Commit message body (`%b`), trimmed. `None` when the commit has no body.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 /// Detailed commit information including changed files
