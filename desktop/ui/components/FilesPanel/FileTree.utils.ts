@@ -287,7 +287,17 @@ export function processTreeWithSections(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,
   sortOrder?: FileSortOrder,
+  options?: {
+    /**
+     * Treat changed files with no hunks in the map as pending (default true).
+     * Callers pass false when a hunk filter is active: there, "no hunks in the
+     * map" means "no *matching* hunks", and those files must drop out of the
+     * sections instead of ghosting into Needs Review.
+     */
+    implicitPending?: boolean;
+  },
 ): SectionedTreeResult {
+  const implicitPending = options?.implicitPending ?? true;
   const processed = processTree(entries, hunkStatusMap, "changes", sortOrder);
 
   function filterSection(
@@ -327,7 +337,8 @@ export function processTreeWithSections(
       filterSection(processed, (status, entry) => {
         if (status.pending > 0) return true;
         // Entries with status changes but no hunks are implicitly pending
-        if (status.total === 0 && entry.hasChanges) return true;
+        if (implicitPending && status.total === 0 && entry.hasChanges)
+          return true;
         return false;
       }),
     ),

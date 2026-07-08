@@ -72,8 +72,11 @@ export function useFilePanelFileSystem() {
   }, [hunks]);
 
   const sectionedFiles = useMemo(
-    () => processTreeWithSections(allFiles, hunkStatusMap, fileSortOrder),
-    [allFiles, hunkStatusMap, fileSortOrder],
+    () =>
+      processTreeWithSections(allFiles, hunkStatusMap, fileSortOrder, {
+        implicitPending: !filterActive,
+      }),
+    [allFiles, hunkStatusMap, fileSortOrder, filterActive],
   );
 
   const allFilesTree = useMemo(
@@ -155,7 +158,9 @@ export function useFilePanelFileSystem() {
       if (status.approved + status.rejected > 0) reviewed.push(filePath);
     }
 
-    // Also add entries with status changes but no hunks (e.g., symlink directories)
+    // Also add entries with status changes but no hunks (e.g., symlink
+    // directories). Skipped when a hunk filter is active: there, "no hunks"
+    // means "no matching hunks", and those files should drop out.
     function collectStatusChanges(entries: typeof allFiles) {
       for (const e of entries) {
         if (
@@ -169,7 +174,7 @@ export function useFilePanelFileSystem() {
         if (e.children) collectStatusChanges(e.children);
       }
     }
-    collectStatusChanges(allFiles);
+    if (!filterActive) collectStatusChanges(allFiles);
 
     function sortPaths(paths: string[]): void {
       switch (fileSortOrder) {
@@ -197,7 +202,7 @@ export function useFilePanelFileSystem() {
     sortPaths(reviewed);
     sortPaths(trusted);
     return { needsReview, savedForLater, reviewed, trusted };
-  }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap]);
+  }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap, filterActive]);
 
   const fileStatusMap = useMemo(() => {
     const map = new Map<string, string>();
