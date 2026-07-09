@@ -6,10 +6,10 @@ import type {
   FileDiff,
   MovePair,
   SearchMatch,
-  CommitEntry,
   HunkAttribution,
 } from "../../types";
 import { buildFileDiff } from "../../types";
+import type { ReviewScope } from "../../types/scope";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
@@ -185,7 +185,6 @@ const comparisonResetState = {
   flatFileList: [] as string[],
   loadingProgress: { phase: "pending" as const, current: 0, total: 0 },
   // Navigation
-  changesViewMode: "files" as const,
   selectedFile: null,
   focusedHunkId: null,
   scrollTarget: null,
@@ -194,13 +193,12 @@ const comparisonResetState = {
   focusedPane: "primary" as const,
   groupingSidebarOpen: false,
   workingTreeDiffFile: null,
+  scope: null as ReviewScope | null,
   // Review
   reviewState: null,
   carriedForward: 0,
   undoStack: [] as UndoEntry[],
   // History
-  commits: [] as CommitEntry[],
-  commitsLoaded: false,
   attribution: null as HunkAttribution | null,
   attributionLoading: false,
   attributionLoaded: false,

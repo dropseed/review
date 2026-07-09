@@ -2,11 +2,6 @@ import { type ReactNode, useState, useCallback, lazy, Suspense } from "react";
 import { useReviewStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
 import { ResizeHandle } from "./ResizeHandle";
-const CommitDiffContent = lazy(() =>
-  import("./CommitDiffContent").then((m) => ({
-    default: m.CommitDiffContent,
-  })),
-);
 const OverviewContent = lazy(() =>
   import("./OverviewContent").then((m) => ({ default: m.OverviewContent })),
 );
@@ -28,7 +23,6 @@ export function ContentArea(): ReactNode {
   const focusedPane = useReviewStore((s) => s.focusedPane);
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const viewingCommitHash = useReviewStore((s) => s.viewingCommitHash);
   const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
   const setFocusedPane = useReviewStore((s) => s.setFocusedPane);
 
@@ -49,15 +43,6 @@ export function ContentArea(): ReactNode {
 
   const isSplitActive = secondaryFile !== null;
   const isHorizontal = splitOrientation === "horizontal";
-
-  // Commit diff view takes highest priority
-  if (viewingCommitHash) {
-    return (
-      <Suspense fallback={null}>
-        <CommitDiffContent hash={viewingCommitHash} />
-      </Suspense>
-    );
-  }
 
   // Multi-file group view takes priority when active
   if (guideContentMode !== null) {

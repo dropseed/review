@@ -7,7 +7,6 @@ import { flattenFiles } from "../stores/types";
  * Coordinates loading of files and review state when comparison is ready.
  *
  * Data loaded lazily by their respective UI components:
- * - Commits: CommitsPanel triggers loadCommits on mount
  * - Symbols: FilesPanel triggers loadSymbols when flat mode is entered
  */
 export function useComparisonLoader(

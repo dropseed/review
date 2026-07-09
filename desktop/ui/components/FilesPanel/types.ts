@@ -3,7 +3,7 @@ import type { FileHunkStatus } from "../tree/types";
 
 export type { FileHunkStatus } from "../tree/types";
 
-export type FilesPanelTab = "changes" | "browse" | "commits" | "search" | "git";
+export type FilesPanelTab = "changes" | "browse" | "search" | "git";
 
 export interface ProcessedFileEntry extends FileEntry {
   hunkStatus: FileHunkStatus;

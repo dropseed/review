@@ -1,4 +1,4 @@
-import type { DiffHunk, HunkState, Source } from "../../../types";
+import type { CommitEntry, DiffHunk, HunkState, Source } from "../../../types";
 import { isHunkTrusted, hunkLabels } from "../../../types";
 import { useReviewStore } from "../../../stores";
 import { useIsFocusedHunk } from "../../../hooks";
@@ -11,6 +11,7 @@ import {
 import { SimpleTooltip } from "../../ui/tooltip";
 import { MovePairModal } from "./MovePairModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
+import { HunkCommitTags } from "./HunkCommitTags";
 
 /** "· set by agent" provenance suffix, shown only when something other than
  *  the human-in-this-app set the value (status and risk share this). */
@@ -95,6 +96,9 @@ interface HunkAnnotationPanelProps {
   onApproveAllSimilar: (hunkIds: string[]) => void;
   onRejectAllSimilar: (hunkIds: string[]) => void;
   onNavigateToHunk?: (hunkId: string) => void;
+  /** Commits that introduced this hunk, per the comparison's attribution. */
+  commitTags: CommitEntry[] | null;
+  onScopeToCommit: (sha: string) => void;
 }
 
 export function HunkAnnotationPanel({
@@ -123,6 +127,8 @@ export function HunkAnnotationPanel({
   onApproveAllSimilar,
   onRejectAllSimilar,
   onNavigateToHunk,
+  commitTags,
+  onScopeToCommit,
 }: HunkAnnotationPanelProps) {
   const reviewStatus = getReviewStatus(hunkState, trustList);
   const isApproved = reviewStatus === "approved";
@@ -432,6 +438,11 @@ export function HunkAnnotationPanel({
             </span>
           </SimpleTooltip>
         )}
+
+        <HunkCommitTags
+          commits={commitTags}
+          onScopeToCommit={onScopeToCommit}
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

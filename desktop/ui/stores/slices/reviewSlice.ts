@@ -1,7 +1,6 @@
 import type { ApiClient } from "../../api";
 import {
   attributed,
-  getComparisonRange,
   type Comparison,
   type FileDiff,
   type GlobalReviewSummary,
@@ -932,14 +931,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
     refresh: async () => {
       const {
-        repoPath,
         comparison,
         loadFiles,
         loadAllFiles,
         loadReviewState,
         reconcileReviewState,
         loadGitStatus,
-        refreshCommits,
         classifyStaticHunks,
         loadGlobalReviews,
         checkReviewsFreshness,
@@ -951,7 +948,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // indicators. `loadFiles(true)` writes idempotently and preserves
       // `filesByPath[path]` reference identity for files whose hunks didn't
       // change, so FileViewer subscribers for unaffected files don't re-run.
-      const range = getComparisonRange(comparison);
       await Promise.all([
         loadReviewState(),
         loadFiles(true),
@@ -959,7 +955,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         loadGitStatus(),
         loadGlobalReviews(),
         checkReviewsFreshness(),
-        repoPath ? refreshCommits(repoPath, range) : Promise.resolve(),
       ]);
 
       // Carry decisions forward onto the refreshed diff (drift is most likely

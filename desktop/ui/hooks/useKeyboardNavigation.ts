@@ -101,13 +101,8 @@ export function useKeyboardNavigation() {
 
       const state = useReviewStore.getState();
 
-      // Escape: dismiss overlay views in priority order (commit > working-tree
+      // Escape: dismiss overlay views in priority order (working-tree
       // rolling diff > split view).
-      if (event.key === "Escape" && state.viewingCommitHash !== null) {
-        event.preventDefault();
-        state.setViewingCommitHash(null);
-        return;
-      }
       if (event.key === "Escape" && state.workingTreeMultiView !== null) {
         event.preventDefault();
         state.closeWorkingTreeMultiView();

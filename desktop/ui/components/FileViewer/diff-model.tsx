@@ -11,8 +11,17 @@ import { useReviewStore } from "../../stores";
 import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import { getPlatformServices } from "../../platform";
 import { countLines } from "../../utils/count-lines";
-import type { DiffHunk, HunkState, LineAnnotation } from "../../types";
+import type {
+  CommitEntry,
+  DiffHunk,
+  HunkState,
+  LineAnnotation,
+} from "../../types";
 import { isHunkTrusted } from "../../types";
+import { isEmptyFilter } from "../../types/hunkFilter";
+import { hunkMatches } from "../../types/scope";
+import { computeCommitGroups } from "../../stores/selectors/groups";
+import { singleCommitScope } from "../FilesPanel/commitScope";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
 import {
   NewAnnotationEditor,
@@ -20,8 +29,10 @@ import {
   HunkAnnotationPanel,
   TrustedHunkBadge,
   WorkingTreeHunkPanel,
+  CollapsedHunkStrip,
 } from "./annotations";
 import { getLastChangedLine } from "./hunkUtils";
+import { truncateSubject } from "../FilesPanel/commitFormat";
 
 export type TokenHoverHandler = (
   props: TokenEventBase,
@@ -205,6 +216,41 @@ export function useDiffAnnotationModel({
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
   const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
+  const attribution = useReviewStore((s) => s.attribution);
+  const reviewFilter = useReviewStore((s) => s.reviewFilter);
+  const scope = useReviewStore((s) => s.scope);
+
+  const commitByHash = useMemo(() => {
+    const map = new Map<string, CommitEntry>();
+    attribution?.commits.forEach((c) => map.set(c.hash, c));
+    return map;
+  }, [attribution]);
+
+  // Scope to the clicked commit's group — looked up from the same commit
+  // grouping the Commits sidebar list and the walk bar use, so a provenance
+  // tag click lands on exactly the same hunk set as clicking that commit's
+  // group header would.
+  const handleScopeToCommit = useCallback(
+    (sha: string) => {
+      const group = computeCommitGroups(allHunks, attribution ?? null).find(
+        (g) => g.key === sha,
+      );
+      if (group) {
+        useReviewStore.getState().setScope(singleCommitScope(group));
+      }
+    },
+    [allHunks, attribution],
+  );
+
+  // Hunks outside the active review scope (e.g. a commit filter) collapse to
+  // a thin strip until explicitly expanded. Local + reset on file change —
+  // this is a per-viewing preference, not review state.
+  const [expandedHunkIds, setExpandedHunkIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    setExpandedHunkIds(new Set());
+  }, [filePath]);
 
   // Annotation editing state
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
@@ -248,6 +294,35 @@ export function useDiffAnnotationModel({
     }
     return changed ? states : undefined;
   }, [hunks, hunkStates]);
+
+  // Hunks in this file outside the active predicate filter/scope — the one
+  // pass over `hunks` both the collapsed-strip decision in renderAnnotation
+  // and scopeDimCSS's line-dimming need, computed once instead of each
+  // independently re-running the same hunkMatches predicate.
+  const outOfScopeHunkIds = useMemo(() => {
+    if (isEmptyFilter(reviewFilter) && !scope) return null;
+    const trustList = reviewState?.trustList ?? [];
+    const set = new Set<string>();
+    for (const hunk of hunks) {
+      const inScope = hunkMatches({
+        hunkId: hunk.id,
+        hunkState: fileHunkStates?.[hunk.id],
+        filePath,
+        trustList,
+        filter: reviewFilter,
+        scope,
+      });
+      if (!inScope) set.add(hunk.id);
+    }
+    return set;
+  }, [
+    hunks,
+    fileHunkStates,
+    filePath,
+    reviewFilter,
+    scope,
+    reviewState?.trustList,
+  ]);
 
   // Build line annotations for each hunk - position at last changed line
   // Memoized to preserve reference stability — @pierre/diffs uses reference
@@ -434,6 +509,12 @@ export function useDiffAnnotationModel({
     workingTreeDiffMode: typeof workingTreeDiffMode;
     isWorkingTreeFile: boolean;
     readOnlyPreview: boolean;
+    attribution: typeof attribution;
+    commitByHash: typeof commitByHash;
+    outOfScopeHunkIds: typeof outOfScopeHunkIds;
+    handleScopeToCommit: typeof handleScopeToCommit;
+    expandedHunkIds: typeof expandedHunkIds;
+    setExpandedHunkIds: typeof setExpandedHunkIds;
   }>(null!);
   renderAnnotationDepsRef.current = {
     handleSaveNewAnnotation,
@@ -451,6 +532,12 @@ export function useDiffAnnotationModel({
     workingTreeDiffMode,
     isWorkingTreeFile: workingTreeDiffFile === fileName,
     readOnlyPreview,
+    attribution,
+    commitByHash,
+    outOfScopeHunkIds,
+    handleScopeToCommit,
+    expandedHunkIds,
+    setExpandedHunkIds,
   };
 
   const renderAnnotation = useCallback(
@@ -530,14 +617,43 @@ export function useDiffAnnotationModel({
             );
           }
 
-          // Trusted hunk: compact badge instead of full panel
           const trustList = deps.reviewState?.trustList ?? [];
+          const hunkShas = deps.attribution?.hunkCommits[hunk.id];
+          const commitTags: CommitEntry[] | null = deps.attribution
+            ? (hunkShas ?? [])
+                .map((sha) => deps.commitByHash.get(sha))
+                .filter((c): c is CommitEntry => !!c)
+            : null;
+
+          // Scope-aware collapse: outside the active predicate filter or
+          // scope (e.g. a commit scope), a hunk renders as a thin strip
+          // until expanded.
+          const outOfScope = deps.outOfScopeHunkIds?.has(hunk.id) ?? false;
+          if (outOfScope && !deps.expandedHunkIds.has(hunk.id)) {
+            const firstCommit = commitTags?.[0];
+            const label = firstCommit
+              ? `hunk from ${firstCommit.shortHash} ${truncateSubject(firstCommit.message, 40)}`
+              : "uncommitted hunk";
+            return (
+              <CollapsedHunkStrip
+                hunk={hunk}
+                label={label}
+                onExpand={() =>
+                  deps.setExpandedHunkIds((prev) => new Set(prev).add(hunk.id))
+                }
+              />
+            );
+          }
+
+          // Trusted hunk: compact badge instead of full panel
           if (!hunkState?.status && isHunkTrusted(hunkState, trustList)) {
             return (
               <TrustedHunkBadge
                 hunk={hunk}
                 hunkState={hunkState}
                 trustList={trustList}
+                commitTags={commitTags}
+                onScopeToCommit={deps.handleScopeToCommit}
                 onApprove={(hunkId) => {
                   const s = useReviewStore.getState();
                   s.approveHunk(hunkId);
@@ -573,6 +689,8 @@ export function useDiffAnnotationModel({
               totalHunksInFile={deps.hunks.length}
               similarHunks={similarHunks}
               allHunkStates={deps.hunkStates ?? {}}
+              commitTags={commitTags}
+              onScopeToCommit={deps.handleScopeToCommit}
               onApprove={(hunkId) => {
                 const s = useReviewStore.getState();
                 s.approveHunk(hunkId);
@@ -722,6 +840,31 @@ export function useDiffAnnotationModel({
     `;
   }, [fileAnnotations]);
 
+  // Dim the changed lines of collapsed (out-of-scope) hunks. @pierre/diffs
+  // has no supported API to hide a hunk's lines outright, so this leans on
+  // the same [data-line] CSS-injection path as annotationHighlightCSS to at
+  // least visually recede them alongside the collapsed action panel. Reads
+  // the same `outOfScopeHunkIds` set the collapsed-strip decision in
+  // renderAnnotation uses, rather than recomputing the predicate.
+  const scopeDimCSS = useMemo(() => {
+    if (!outOfScopeHunkIds || outOfScopeHunkIds.size === 0) return "";
+    const lineSelectors: string[] = [];
+    for (const hunk of hunks) {
+      if (expandedHunkIds.has(hunk.id)) continue;
+      if (!outOfScopeHunkIds.has(hunk.id)) continue;
+      for (const line of hunk.lines) {
+        if (line.type === "added" && line.newLineNumber) {
+          lineSelectors.push(`[data-line="${line.newLineNumber}"]`);
+        } else if (line.type === "removed" && line.oldLineNumber) {
+          lineSelectors.push(`[data-line="${line.oldLineNumber}"]`);
+        }
+      }
+    }
+    if (lineSelectors.length === 0) return "";
+    const selector = [...new Set(lineSelectors)].join(", ");
+    return `:is(${selector}) { opacity: 0.4; }`;
+  }, [hunks, outOfScopeHunkIds, expandedHunkIds]);
+
   const renderRevisionRef = useRef(0);
   const renderRevision = useMemo(
     () => ++renderRevisionRef.current,
@@ -740,6 +883,9 @@ export function useDiffAnnotationModel({
       workingTreeDiffFile,
       fileName,
       readOnlyPreview,
+      attribution,
+      outOfScopeHunkIds,
+      expandedHunkIds,
     ],
   );
 
@@ -750,7 +896,7 @@ export function useDiffAnnotationModel({
     setNewAnnotationLine,
     handleLineSelectionEnd,
     handleGutterUtilityClick,
-    annotationHighlightCSS,
+    annotationHighlightCSS: annotationHighlightCSS + scopeDimCSS,
     renderRevision,
   };
 }

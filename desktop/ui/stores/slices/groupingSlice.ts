@@ -70,11 +70,6 @@ export interface GroupingSlice {
   /** Discard the guide from this review (and disk). */
   clearGrouping: () => void;
 
-  // Guide state
-  guideExpanded: boolean;
-  startGuide: () => void;
-  exitGuide: () => void;
-  isGuideStale: () => boolean;
   restoreGuideFromState: () => void;
 }
 
@@ -122,7 +117,6 @@ function patchStaleGroups(
 export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
   (_client: ApiClient) => (set, get) => ({
     groupingStates: new Map(),
-    guideExpanded: false,
 
     getActiveGroupingEntry: () => {
       const { repoPath, comparison, groupingStates } = get();
@@ -173,38 +167,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         if (!currentIds.has(id)) removed++;
       }
       return { stale: added > 0 || removed > 0, added, removed };
-    },
-
-    startGuide: () => {
-      const {
-        comparison,
-        repoPath,
-        classifyStaticHunks,
-        restoreGuideFromState,
-        getActiveGroupingEntry,
-      } = get();
-      const hunks = getAllHunksFromState(get());
-      if (hunks.length === 0 || !repoPath || !comparison) return;
-
-      // Restore from disk if nothing is in memory. restoreGuideFromState patches
-      // staleness internally — it drops vanished hunks and buckets new ones.
-      if (getActiveGroupingEntry().reviewGroups.length === 0) {
-        restoreGuideFromState();
-      }
-
-      set({ guideExpanded: true, guideContentMode: null });
-
-      // Best-effort: make sure hunks are classified for the guide view.
-      void classifyStaticHunks();
-    },
-
-    exitGuide: () => {
-      set({ guideExpanded: false, guideContentMode: null });
-    },
-
-    isGuideStale: () => {
-      const { isGroupingStale, isClassificationStale } = get();
-      return isGroupingStale() || isClassificationStale();
     },
 
     clearGrouping: () => {

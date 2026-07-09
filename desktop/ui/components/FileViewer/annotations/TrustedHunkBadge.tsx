@@ -1,4 +1,4 @@
-import type { DiffHunk, HunkState } from "../../../types";
+import type { CommitEntry, DiffHunk, HunkState } from "../../../types";
 import { hunkLabels } from "../../../types";
 import {
   DropdownMenu,
@@ -6,6 +6,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "../../ui/dropdown-menu";
+import { HunkCommitTags } from "./HunkCommitTags";
 
 interface TrustedHunkBadgeProps {
   hunk: DiffHunk;
@@ -15,6 +16,9 @@ interface TrustedHunkBadgeProps {
   onReject: (hunkId: string) => void;
   onRemoveTrustPattern: (pattern: string) => void;
   onCopyHunk: (hunk: DiffHunk) => void;
+  /** Commits that introduced this hunk, per the comparison's attribution. */
+  commitTags: CommitEntry[] | null;
+  onScopeToCommit: (sha: string) => void;
 }
 
 export function TrustedHunkBadge({
@@ -25,6 +29,8 @@ export function TrustedHunkBadge({
   onReject,
   onRemoveTrustPattern,
   onCopyHunk,
+  commitTags,
+  onScopeToCommit,
 }: TrustedHunkBadgeProps) {
   const labels = hunkLabels(hunkState);
   const trustedLabels = labels.filter((lbl) => trustList.includes(lbl));
@@ -58,7 +64,11 @@ export function TrustedHunkBadge({
         ))}
       </div>
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        <HunkCommitTags
+          commits={commitTags}
+          onScopeToCommit={onScopeToCommit}
+        />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

@@ -1,8 +1,19 @@
 import { useMemo } from "react";
 import { useReviewStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
+import {
+  computeCommitGroups,
+  computeGuideGroups,
+  computeStatusGroups,
+  countGroupUnreviewed,
+  countUnreviewed,
+  type Group,
+} from "../../stores/selectors/groups";
 import type { HunkRisk } from "../../types";
-import { selectHunkIds, UNCOMMITTED_COMMIT } from "../../types/hunkFilter";
+import { isEmptyFilter } from "../../types/hunkFilter";
+import { selectHunkIds } from "../../types/scope";
+import { truncateSubject } from "./commitFormat";
+import { jumpToGroup } from "./jumpToGroup";
 
 const RISK_OPTIONS: { value: HunkRisk; label: string }[] = [
   { value: "high", label: "High" },
@@ -10,20 +21,26 @@ const RISK_OPTIONS: { value: HunkRisk; label: string }[] = [
 ];
 
 /**
- * The Review tab's filter + bulk-action bar. Filtering (risk and/or label)
- * writes the `reviewFilter` the file sections read, so a choice scopes the
- * whole tab; the action row then approves/rejects/saves exactly the matching
- * set. This is the "select by predicate → act on selection" surface the
- * per-angle bulk buttons collapse into — another axis is a control, not a new
- * button. Hidden until there's actually something to filter on (a risk-tagged
- * hunk or more than one label), to stay out of the way otherwise.
+ * The Review tab's single filter/scope row: the risk filter (its own
+ * toggles), whatever `scope` a group header or the commit/guide pickers have
+ * set (a status bucket, a commit or commit range, the uncommitted bucket, or
+ * a guide group's exact hunk set), and — once that scope is fully reviewed —
+ * a "Next: <group> →" advance button that replaces the old persistent walk
+ * bar. The row beneath acts on exactly the matching set — predicate filter
+ * AND scope — source-independent. Hidden until there's actually something to
+ * filter or an active scope, to stay out of the way otherwise.
  */
 export function ReviewFilterBar() {
   const reviewFilter = useReviewStore((s) => s.reviewFilter);
   const setReviewFilter = useReviewStore((s) => s.setReviewFilter);
+  const scope = useReviewStore((s) => s.scope);
+  const setScope = useReviewStore((s) => s.setScope);
+  const setGuideContentMode = useReviewStore((s) => s.setGuideContentMode);
   const reviewState = useReviewStore((s) => s.reviewState);
-  const hunkCommits = useReviewStore((s) => s.attribution?.hunkCommits);
-  const commits = useReviewStore((s) => s.attribution?.commits);
+  const attribution = useReviewStore((s) => s.attribution);
+  const guideReviewGroups = useReviewStore(
+    (s) => s.getActiveGroupingEntry().reviewGroups,
+  );
   const hunks = useAllHunks();
 
   const hasAnyRisk = useMemo(
@@ -33,50 +50,90 @@ export function ReviewFilterBar() {
         : false,
     [reviewState],
   );
-  const presentLabels = useMemo(() => {
-    const set = new Set<string>();
-    if (reviewState) {
-      for (const h of Object.values(reviewState.hunks)) {
-        for (const l of h.classification?.value ?? []) set.add(l);
-      }
-    }
-    return [...set].sort();
-  }, [reviewState]);
-
   const activeRisk = reviewFilter.risk?.[0] ?? null;
-  const activeLabel = reviewFilter.label ?? "";
-  const activeCommits = reviewFilter.commits ?? [];
-  const filterActive =
-    activeRisk != null || activeLabel !== "" || activeCommits.length > 0;
+  const filterActive = !isEmptyFilter(reviewFilter) || scope !== null;
 
   const matchingIds = useMemo(
     () =>
       filterActive
-        ? selectHunkIds(hunks, reviewState, reviewFilter, hunkCommits)
+        ? selectHunkIds(hunks, reviewState, reviewFilter, scope)
         : [],
-    [filterActive, hunks, reviewState, reviewFilter, hunkCommits],
+    [filterActive, hunks, reviewState, reviewFilter, scope],
   );
 
-  const commitChipLabel =
-    activeCommits.length === 1
-      ? activeCommits[0] === UNCOMMITTED_COMMIT
-        ? "Uncommitted changes"
-        : `Commit ${
-            commits?.find((c) => c.hash === activeCommits[0])?.shortHash ??
-            activeCommits[0].slice(0, 7)
-          }`
-      : activeCommits.length > 1
-        ? `${activeCommits.length} commits`
-        : null;
-  const clearCommits = () =>
-    setReviewFilter({ ...reviewFilter, commits: undefined });
+  const clearScope = () => {
+    setScope(null);
+    if (scope?.source === "guide") setGuideContentMode(null);
+  };
 
-  if (!hasAnyRisk && presentLabels.length < 2 && !filterActive) return null;
+  // The group sequence "Next" advances through — same source as the active
+  // scope, so a commit scope advances through commits (then Uncommitted), a
+  // guide scope through guide groups, and a status scope through the status
+  // sections. Mirrors the grouping the old ReviewWalkBar walked. Split into
+  // one memo per source so a commit- or guide-scoped session doesn't get a
+  // new `sequenceGroups` reference (and re-derive `nextGroup`) on every hunk
+  // approve/reject — only computeStatusGroups actually depends on
+  // `reviewState`.
+  const commitSequence = useMemo(
+    () =>
+      computeCommitGroups(hunks, attribution ?? null).filter(
+        (g) => g.hunkIds.length > 0,
+      ),
+    [hunks, attribution],
+  );
+  const guideSequence = useMemo(
+    () =>
+      computeGuideGroups(guideReviewGroups, hunks).filter(
+        (g) => g.hunkIds.length > 0,
+      ),
+    [guideReviewGroups, hunks],
+  );
+  const statusSequence = useMemo(
+    () =>
+      computeStatusGroups(hunks, reviewState).filter(
+        (g) => g.hunkIds.length > 0,
+      ),
+    [hunks, reviewState],
+  );
+  const sequenceGroups: Group[] = !scope
+    ? []
+    : scope.source === "commit" || scope.source === "uncommitted"
+      ? commitSequence
+      : scope.source === "guide"
+        ? guideSequence
+        : statusSequence;
+
+  const scopeComplete =
+    scope !== null &&
+    scope.hunkIds.length > 0 &&
+    countUnreviewed(scope.hunkIds, reviewState) === 0;
+
+  const nextGroup = useMemo(() => {
+    if (!scopeComplete || !scope) return undefined;
+    // A commit range/set spans several commit-group keys at once —
+    // resolve its position from the highest-ordinal member instead of an
+    // exact key match against a single group.
+    let afterIndex = -1;
+    if (scope.source === "commit" && scope.commitKeys?.length) {
+      const keys = new Set(scope.commitKeys);
+      sequenceGroups.forEach((g, i) => {
+        if (keys.has(g.key)) afterIndex = Math.max(afterIndex, i);
+      });
+    } else {
+      afterIndex = sequenceGroups.findIndex(
+        (g) => g.source === scope.source && g.key === scope.key,
+      );
+    }
+    if (afterIndex === -1) return undefined;
+    return sequenceGroups
+      .slice(afterIndex + 1)
+      .find((g) => countGroupUnreviewed(g, reviewState) > 0);
+  }, [scopeComplete, scope, sequenceGroups, reviewState]);
+
+  if (!hasAnyRisk && !filterActive) return null;
 
   const setRisk = (risk: HunkRisk | null) =>
     setReviewFilter({ ...reviewFilter, risk: risk ? [risk] : undefined });
-  const setLabel = (label: string) =>
-    setReviewFilter({ ...reviewFilter, label: label || undefined });
 
   const base = "rounded px-2 py-0.5 text-xxs font-medium transition-colors";
   const idle = "text-fg-muted hover:bg-surface-hover";
@@ -125,42 +182,38 @@ export function ReviewFilterBar() {
           </>
         )}
 
-        {presentLabels.length > 0 && (
-          <label className="ml-1 flex items-center gap-1">
-            <span className="text-xxs uppercase tracking-wide text-fg-faint">
-              Label
-            </span>
-            <select
-              value={activeLabel}
-              onChange={(e) => setLabel(e.target.value)}
-              aria-label="Filter by label"
-              className={`max-w-[12rem] rounded border border-edge-default/50 bg-surface-raised px-1 py-0.5 text-xxs ${
-                activeLabel ? "text-fg-secondary" : "text-fg-muted"
-              }`}
-            >
-              <option value="">All</option>
-              {presentLabels.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {commitChipLabel && (
+        {scope && (
           <span className="ml-1 inline-flex items-center gap-1 rounded bg-surface-hover px-2 py-0.5 text-xxs text-fg-secondary">
-            {commitChipLabel}
+            {truncateSubject(scope.title, 40)}
             <button
               type="button"
-              onClick={clearCommits}
-              aria-label="Clear commit filter"
+              onClick={clearScope}
+              aria-label={`Clear ${scope.title} filter`}
               className="text-fg-faint hover:text-fg-secondary"
             >
               ×
             </button>
           </span>
         )}
+
+        {scopeComplete &&
+          (nextGroup ? (
+            <button
+              type="button"
+              onClick={() => jumpToGroup(nextGroup)}
+              className={`${base} text-focus-ring hover:bg-focus-ring/10`}
+            >
+              Next: {truncateSubject(nextGroup.title, 28)} →
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={clearScope}
+              className={`${base} text-status-approved hover:bg-status-approved/15`}
+            >
+              Done
+            </button>
+          ))}
       </div>
 
       {filterActive && matchingIds.length > 0 && (

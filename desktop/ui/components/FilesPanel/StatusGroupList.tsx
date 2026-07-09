@@ -1,14 +1,16 @@
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { useReviewStore } from "../../stores";
 import { flattenFilesWithStatus } from "../../stores/types";
 import { useHunkIdsByStatus } from "../../stores/selectors/hunks";
+import { computeStatusGroups } from "../../stores/selectors/groups";
+import { toggleScope } from "../../types/scope";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import {
   isHunkTrusted,
@@ -17,17 +19,11 @@ import {
   type ReviewState,
 } from "../../types";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
-import { CollapsibleSection } from "../ui/collapsible-section";
-import { XIcon } from "../ui/icons";
-import { RollingDiffButton } from "../ui/rolling-diff-button";
+import { RollingDiffIcon } from "../ui/icons";
+import { GroupHeader } from "./GroupHeader";
 import { TrustSection } from "../GuideView/TrustSection";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
-import { GuideGroupList, useGuideGroupState } from "./GuideGroupList";
 import { FilenameModal } from "./FilenameModal";
-import { ReviewNotesPanel } from "./ReviewNotesPanel";
-import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
-import { ReviewFindingsPanel } from "./ReviewFindingsPanel";
-import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
 
@@ -89,13 +85,31 @@ const REVIEWED_ICON = (
   </svg>
 );
 
-const GUIDE_ICON = (
+const APPROVE_ICON = (
   <svg
-    className="h-3.5 w-3.5 text-guide"
+    className="h-3.5 w-3.5"
+    fill="none"
     viewBox="0 0 24 24"
-    fill="currentColor"
+    stroke="currentColor"
+    strokeWidth={2.5}
   >
-    <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+  </svg>
+);
+
+const UNDO_ICON = (
+  <svg
+    className="h-3.5 w-3.5"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+    />
   </svg>
 );
 
@@ -115,164 +129,21 @@ function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
 
 interface QuickActionItem {
   label: string;
-  /** Number of hunks the action affects. Omit for actions that open a tool. */
   count?: number;
   onAction: () => void;
 }
 
-interface SectionHeaderProps {
-  title: string;
-  icon?: ReactNode;
-  badge?: number | string;
-  badgeColor?:
-    | "status-modified"
-    | "status-approved"
-    | "status-trusted"
-    | "status-pending"
-    | "guide";
-  isOpen: boolean;
-  onToggle: () => void;
-  onApproveAll?: () => void;
-  onUnapproveAll?: () => void;
-  unapproveAllLabel?: string;
-  quickActions?: QuickActionItem[];
-  onExpandAll?: () => void;
-  onCollapseAll?: () => void;
-  additionalMenuContent?: ReactNode;
-  actionContent?: ReactNode;
-  statusBadge?: ReactNode;
-  children: ReactNode;
-}
-
-function SectionHeader({
-  title,
-  icon,
-  badge,
-  badgeColor = "status-modified",
-  isOpen,
-  onToggle,
-  onApproveAll,
-  onUnapproveAll,
-  unapproveAllLabel = "Unapprove all",
-  quickActions,
-  onExpandAll,
-  onCollapseAll,
-  additionalMenuContent,
-  actionContent,
-  statusBadge,
-  children,
-}: SectionHeaderProps) {
-  const badgeColors = {
-    "status-modified": "bg-status-modified/20 text-status-modified",
-    "status-approved": "bg-status-approved/20 text-status-approved",
-    "status-trusted": "bg-status-trusted/20 text-status-trusted",
-    "status-pending": "bg-status-pending/20 text-status-pending",
-    guide: "bg-guide/15 text-guide",
-  };
-
-  const hasExpandCollapse = onExpandAll || onCollapseAll;
-  const hasBaseMenuItems =
-    (quickActions && quickActions.length > 0) ||
-    onApproveAll ||
-    onUnapproveAll ||
-    hasExpandCollapse;
-  const hasMenuItems = hasBaseMenuItems || !!additionalMenuContent;
-
-  const menuContent = hasMenuItems ? (
-    <>
-      {(onApproveAll || onUnapproveAll) && (
-        <>
-          {onApproveAll && (
-            <DropdownMenuItem onClick={onApproveAll}>
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M5 13l4 4L19 7" />
-              </svg>
-              Approve all
-            </DropdownMenuItem>
-          )}
-          {onUnapproveAll && (
-            <DropdownMenuItem onClick={onUnapproveAll}>
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-              </svg>
-              {unapproveAllLabel}
-            </DropdownMenuItem>
-          )}
-        </>
+function quickActionMenuItems(actions: QuickActionItem[]): ReactNode {
+  return actions.map((qa) => (
+    <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
+      <span className="flex-1">{qa.label}</span>
+      {qa.count !== undefined && (
+        <span className="ml-2 text-xxs tabular-nums text-fg-muted">
+          {qa.count}
+        </span>
       )}
-
-      {quickActions && quickActions.length > 0 && (
-        <>
-          {(onApproveAll || onUnapproveAll) && <DropdownMenuSeparator />}
-          {quickActions.map((qa) => (
-            <DropdownMenuItem key={qa.label} onClick={qa.onAction}>
-              <span className="flex-1">{qa.label}</span>
-              {qa.count !== undefined && (
-                <span className="ml-2 text-xxs tabular-nums text-fg-muted">
-                  {qa.count}
-                </span>
-              )}
-            </DropdownMenuItem>
-          ))}
-        </>
-      )}
-
-      {hasExpandCollapse && (
-        <>
-          <DropdownMenuSeparator />
-          {onExpandAll && (
-            <DropdownMenuItem onClick={onExpandAll}>
-              Expand all
-            </DropdownMenuItem>
-          )}
-          {onCollapseAll && (
-            <DropdownMenuItem onClick={onCollapseAll}>
-              Collapse all
-            </DropdownMenuItem>
-          )}
-        </>
-      )}
-
-      {additionalMenuContent && (
-        <>
-          {hasBaseMenuItems && <DropdownMenuSeparator />}
-          {additionalMenuContent}
-        </>
-      )}
-    </>
-  ) : undefined;
-
-  return (
-    <CollapsibleSection
-      title={title}
-      icon={icon}
-      badge={badge}
-      badgeColor={badgeColors[badgeColor]}
-      statusBadge={statusBadge}
-      isOpen={isOpen}
-      onToggle={onToggle}
-      actionContent={actionContent}
-      menuContent={menuContent}
-    >
-      {children}
-    </CollapsibleSection>
-  );
+    </DropdownMenuItem>
+  ));
 }
 
 interface SectionedFilesGroup {
@@ -300,7 +171,7 @@ interface ReviewStats {
   reviewedFiles: number;
 }
 
-export interface ReviewTabContentProps {
+export interface StatusGroupListProps {
   sectionedFiles: SectionedFilesGroup;
   flatSectionedFiles: FlatSectionedFilesGroup;
   stats: ReviewStats;
@@ -322,15 +193,12 @@ export interface ReviewTabContentProps {
 }
 
 /**
- * The "Review" tab inside the FilesPanel: four collapsible sections
- * (Trusted, Reviewed, Needs Review, Saved for Later) plus the review notes,
- * comments, action bar, and the filename quick-action modal.
- *
- * Owns its own collapse, modal, and quick-action derivation state. All
- * heavy file-tree data is computed once in the parent and passed down so
- * we don't re-do the work for every tab switch.
+ * The Review tab's default "Status" grouping: four groups bucketed by
+ * effective review status (Trusted, Reviewed, Needs Review, Saved for
+ * Later), each rendered on the shared group-header contract. A peer of the
+ * Commits and Guide groupings — see FilesPanel/index.tsx.
  */
-export function ReviewTabContent({
+export function StatusGroupList({
   sectionedFiles,
   flatSectionedFiles,
   stats,
@@ -347,7 +215,7 @@ export function ReviewTabContent({
   setReviewedOpen,
   trustOpen,
   setTrustOpen,
-}: ReviewTabContentProps) {
+}: StatusGroupListProps) {
   const [filenameModalOpen, setFilenameModalOpen] = useState(false);
   const [filenameModalMode, setFilenameModalMode] = useState<
     "approve" | "unapprove"
@@ -358,6 +226,8 @@ export function ReviewTabContent({
   const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
   const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
+  const scope = useReviewStore((s) => s.scope);
+  const setScope = useReviewStore((s) => s.setScope);
 
   // Load symbols when switching to flat mode (flat view annotates rows with
   // changed-symbol counts pulled from the symbol diff cache).
@@ -371,17 +241,20 @@ export function ReviewTabContent({
     }
   }, [anyFlatMode, symbolsLoaded, symbolsLoading, files.length, loadSymbols]);
 
-  const { guideActive } = useGuideGroupState();
-  const startGuide = useReviewStore((s) => s.startGuide);
-  const exitGuide = useReviewStore((s) => s.exitGuide);
-  const clearGrouping = useReviewStore((s) => s.clearGrouping);
-
   const {
     pending: pendingHunkIds,
     reviewed: reviewedHunkIds,
     savedForLater: savedForLaterHunkIds,
     trusted: trustedHunkIds,
   } = useHunkIdsByStatus();
+
+  // The canonical status buckets — same identities ReviewWalkBar matches
+  // scope against. scopeToStatus below derives key/title/hunkIds from this
+  // rather than hand-maintaining a parallel set of literals.
+  const statusGroups = useMemo(
+    () => computeStatusGroups(hunks, reviewState),
+    [hunks, reviewState],
+  );
 
   const handleApproveAllHunks = useCallback(() => {
     if (pendingHunkIds.length > 0)
@@ -402,6 +275,28 @@ export function ReviewTabContent({
     if (hunkIds.length === 0) return;
     useReviewStore.getState().openAdhocGroup({ title, hunkIds });
   }, []);
+
+  const rollingDiffMenuItem = (title: string, hunkIds: string[]): ReactNode =>
+    hunkIds.length > 0 ? (
+      <DropdownMenuItem onClick={() => openRollingDiff(title, hunkIds)}>
+        <RollingDiffIcon />
+        View as rolling diff
+      </DropdownMenuItem>
+    ) : null;
+
+  // Click-to-scope: toggles `scope` to exactly this section, resolved from
+  // computeStatusGroups (../../stores/selectors/groups) so the filter row,
+  // walk bar, and bulk actions all agree on the same group.
+  const scopeToStatus = useCallback(
+    (key: string) => {
+      const group = statusGroups.find((g) => g.key === key);
+      if (!group) return;
+      setScope(toggleScope(scope, group));
+    },
+    [scope, setScope, statusGroups],
+  );
+  const isScopedTo = (key: string): boolean =>
+    scope?.source === "status" && scope.key === key;
 
   // Quick actions: approve/unapprove by file status (deleted, renamed, added)
   const quickActionData = useMemo(() => {
@@ -460,8 +355,6 @@ export function ReviewTabContent({
         });
       }
     }
-    // Opens a glob-driven modal (matches by pattern, not just literal dupes),
-    // so it's offered whenever there are hunks to target.
     if (hunks.length > 0) {
       actions.push({
         label: "Approve by filename…",
@@ -474,7 +367,6 @@ export function ReviewTabContent({
     return actions;
   }, [quickActionData, hunks.length]);
 
-  // Count of approved + trusted hunks (for "Stage approved" action)
   const approvedOrTrustedCount = useMemo(() => {
     return hunks.filter((h) => {
       const state = reviewState?.hunks[h.id];
@@ -629,7 +521,6 @@ export function ReviewTabContent({
     reviewState?.trustList,
   ]);
 
-  // Sort menu items + view options shown in the per-section "view" menu
   const sortMenuItems = useMemo(
     () =>
       (["name", "size", "modified"] as const).map((order) => (
@@ -679,7 +570,6 @@ export function ReviewTabContent({
     [sectionedFiles.trusted],
   );
 
-  // Combined dir paths across all change sections (for auto-expand)
   const allChangesDirPaths = useMemo(() => {
     const combined = new Set<string>();
     for (const p of needsReviewDirPaths) combined.add(p);
@@ -694,7 +584,6 @@ export function ReviewTabContent({
     trustedDirPaths,
   ]);
 
-  // Auto-expand tree when switching to tree mode or loading a new comparison.
   const hasAutoExpandedChanges = useRef(false);
   useEffect(() => {
     if (changesDisplayMode !== "tree" || allChangesDirPaths.size === 0) {
@@ -743,52 +632,46 @@ export function ReviewTabContent({
   return (
     <>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <ReviewNotesPanel />
-
-        <ReviewCommentsPanel />
-
-        <ReviewFindingsPanel />
-
-        {/* Trusted section — auto-approved hunks, kept out of Reviewed so it
-            stays re-reviewable. The trust-pattern controls live in this
-            section's overflow menu. Shown whenever there are trusted files to
-            list (which now live nowhere else) OR trustable patterns to manage —
-            the two are counted differently, so gating on both keeps trusted
-            files from hiding. */}
+        {/* Trusted — auto-approved hunks, kept out of Reviewed so it stays
+            re-reviewable. Shown whenever there are trusted files to list (which
+            now live nowhere else) OR trustable patterns to manage. */}
         {(hasTrustedFiles || trustableHunkCount > 0) && (
-          <SectionHeader
+          <GroupHeader
+            leading={TRUST_ICON}
             title="Trusted"
-            icon={TRUST_ICON}
-            badge={stats.trusted}
-            badgeColor="status-trusted"
-            isOpen={trustOpen}
-            onToggle={() => setTrustOpen(!trustOpen)}
-            quickActions={trustQuickActions}
-            onExpandAll={
-              hasTrustedFiles && changesDisplayMode === "tree"
-                ? () => expandAll(trustedDirPaths, renamedDirPaths)
-                : undefined
-            }
-            onCollapseAll={
-              hasTrustedFiles && changesDisplayMode === "tree"
-                ? collapseAll
-                : undefined
-            }
-            actionContent={
-              trustedHunkIds.length > 0 ? (
-                <RollingDiffButton
-                  label="View as rolling diff"
-                  onClick={() => openRollingDiff("Trusted", trustedHunkIds)}
-                />
-              ) : undefined
-            }
-            additionalMenuContent={
-              <div className="max-h-[50vh] w-64 overflow-y-auto">
-                <div className="px-2 pb-1 pt-1.5 text-xxs font-medium uppercase tracking-wider text-fg-faint">
-                  Trust patterns
+            progress={{ done: stats.trusted, total: stats.trusted }}
+            isExpanded={trustOpen}
+            onToggleExpanded={() => setTrustOpen(!trustOpen)}
+            onScopeClick={() => scopeToStatus("trusted")}
+            isScoped={isScopedTo("trusted")}
+            menuContent={
+              <>
+                {quickActionMenuItems(trustQuickActions)}
+                {trustQuickActions.length > 0 && <DropdownMenuSeparator />}
+                {hasTrustedFiles && changesDisplayMode === "tree" && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        expandAll(trustedDirPaths, renamedDirPaths)
+                      }
+                    >
+                      Expand all
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={collapseAll}>
+                      Collapse all
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {rollingDiffMenuItem("Trusted", trustedHunkIds)}
+                <DropdownMenuSeparator />
+                <div className="max-h-[50vh] w-64 overflow-y-auto">
+                  <div className="px-2 pb-1 pt-1.5 text-xxs font-medium uppercase tracking-wider text-fg-faint">
+                    Trust patterns
+                  </div>
+                  <TrustSection />
                 </div>
-                <TrustSection />
-              </div>
+              </>
             }
           >
             <FileListSection
@@ -798,38 +681,56 @@ export function ReviewTabContent({
               hunkContext="trusted"
               emptyMessage="No trusted hunks"
             />
-          </SectionHeader>
+          </GroupHeader>
         )}
 
-        {/* Reviewed section */}
-        <SectionHeader
+        {/* Reviewed */}
+        <GroupHeader
+          leading={REVIEWED_ICON}
           title="Reviewed"
-          icon={REVIEWED_ICON}
-          badge={stats.approved + stats.rejected}
-          badgeColor="status-approved"
-          isOpen={reviewedOpen}
-          onToggle={() => setReviewedOpen(!reviewedOpen)}
-          onUnapproveAll={
-            reviewedHunkIds.length > 0 ? handleUnapproveAllHunks : undefined
-          }
-          quickActions={reviewedQuickActions}
-          onExpandAll={
-            changesDisplayMode === "tree"
-              ? () => expandAll(reviewedDirPaths, renamedDirPaths)
+          progress={{
+            done: stats.approved + stats.rejected,
+            total: stats.approved + stats.rejected,
+          }}
+          isExpanded={reviewedOpen}
+          onToggleExpanded={() => setReviewedOpen(!reviewedOpen)}
+          onScopeClick={() => scopeToStatus("reviewed")}
+          isScoped={isScopedTo("reviewed")}
+          quickAction={
+            reviewedHunkIds.length > 0
+              ? {
+                  icon: UNDO_ICON,
+                  label: "Unapprove all",
+                  onClick: handleUnapproveAllHunks,
+                }
               : undefined
           }
-          onCollapseAll={
-            changesDisplayMode === "tree" ? collapseAll : undefined
+          // done===total by construction for this section (progress counts
+          // everything reviewed as "done") — without this the hover action
+          // never renders, since GroupHeader otherwise hides it once complete.
+          showQuickActionWhenComplete
+          menuContent={
+            <>
+              {quickActionMenuItems(reviewedQuickActions)}
+              {reviewedQuickActions.length > 0 && <DropdownMenuSeparator />}
+              {changesDisplayMode === "tree" && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => expandAll(reviewedDirPaths, renamedDirPaths)}
+                  >
+                    Expand all
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={collapseAll}>
+                    Collapse all
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {rollingDiffMenuItem("Reviewed", reviewedHunkIds)}
+              <DropdownMenuSeparator />
+              {viewOptionsMenuContent}
+            </>
           }
-          actionContent={
-            reviewedHunkIds.length > 0 ? (
-              <RollingDiffButton
-                label="View as rolling diff"
-                onClick={() => openRollingDiff("Reviewed", reviewedHunkIds)}
-              />
-            ) : undefined
-          }
-          additionalMenuContent={viewOptionsMenuContent}
         >
           <FileListSection
             treeEntries={sectionedFiles.reviewed}
@@ -838,130 +739,99 @@ export function ReviewTabContent({
             hunkContext="reviewed"
             emptyMessage="No files reviewed yet"
           />
-        </SectionHeader>
+        </GroupHeader>
 
-        {/* Needs Review section */}
-        <SectionHeader
+        {/* Needs Review */}
+        <GroupHeader
+          leading={NEEDS_REVIEW_ICON}
           title="Needs Review"
-          icon={NEEDS_REVIEW_ICON}
-          badge={stats.pending}
-          badgeColor="status-pending"
-          statusBadge={
-            guideActive ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-guide/10 px-1.5 py-0.5 text-xxs font-medium text-guide">
-                <svg
-                  className="h-2.5 w-2.5"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                </svg>
-                Guided
-              </span>
-            ) : undefined
-          }
-          isOpen={needsReviewOpen}
-          onToggle={() => setNeedsReviewOpen(!needsReviewOpen)}
-          onApproveAll={
-            pendingHunkIds.length > 0 ? handleApproveAllHunks : undefined
-          }
-          quickActions={guideActive ? undefined : needsReviewQuickActions}
-          onExpandAll={
-            !guideActive && changesDisplayMode === "tree"
-              ? () => expandAll(needsReviewDirPaths, renamedDirPaths)
+          progress={{ done: 0, total: stats.pending }}
+          isExpanded={needsReviewOpen}
+          onToggleExpanded={() => setNeedsReviewOpen(!needsReviewOpen)}
+          onScopeClick={() => scopeToStatus("unreviewed")}
+          isScoped={isScopedTo("unreviewed")}
+          quickAction={
+            pendingHunkIds.length > 0
+              ? {
+                  icon: APPROVE_ICON,
+                  label: "Approve all",
+                  onClick: handleApproveAllHunks,
+                  tone: "approve",
+                }
               : undefined
           }
-          onCollapseAll={
-            !guideActive && changesDisplayMode === "tree"
-              ? collapseAll
-              : undefined
-          }
-          actionContent={
+          menuContent={
             <>
-              {!guideActive && pendingHunkIds.length > 0 && (
-                <RollingDiffButton
-                  label="View as rolling diff"
-                  onClick={() =>
-                    openRollingDiff("Needs Review", pendingHunkIds)
-                  }
-                />
+              {quickActionMenuItems(needsReviewQuickActions)}
+              {needsReviewQuickActions.length > 0 && <DropdownMenuSeparator />}
+              {changesDisplayMode === "tree" && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      expandAll(needsReviewDirPaths, renamedDirPaths)
+                    }
+                  >
+                    Expand all
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={collapseAll}>
+                    Collapse all
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
               )}
-              {guideActive ? (
-                <button
-                  type="button"
-                  onClick={exitGuide}
-                  className="flex items-center justify-center w-6 h-6 rounded
-                             text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
-                  aria-label="Exit guided review"
-                >
-                  <XIcon className="w-3.5 h-3.5" />
-                </button>
-              ) : pendingHunkIds.length >= 4 ? (
-                <button
-                  type="button"
-                  onClick={() => startGuide()}
-                  className="flex items-center justify-center w-6 h-6 rounded
-                             text-guide hover:bg-guide/10 transition-colors"
-                  aria-label="Start guided review"
-                >
-                  {GUIDE_ICON}
-                </button>
-              ) : null}
+              {rollingDiffMenuItem("Needs Review", pendingHunkIds)}
             </>
           }
-          additionalMenuContent={
-            guideActive ? (
-              <DropdownMenuItem onClick={clearGrouping}>
-                Clear guide
-              </DropdownMenuItem>
-            ) : undefined
-          }
         >
-          {guideActive ? (
-            <GuideGroupList />
-          ) : (
-            <FileListSection
-              treeEntries={sectionedFiles.needsReview}
-              flatFilePaths={flatSectionedFiles.needsReview}
-              displayMode={changesDisplayMode}
-              hunkContext="needs-review"
-              emptyIcon={CHECK_ICON}
-              emptyMessage="No files need review"
-            />
-          )}
-        </SectionHeader>
+          <FileListSection
+            treeEntries={sectionedFiles.needsReview}
+            flatFilePaths={flatSectionedFiles.needsReview}
+            displayMode={changesDisplayMode}
+            hunkContext="needs-review"
+            emptyIcon={CHECK_ICON}
+            emptyMessage="No files need review"
+          />
+        </GroupHeader>
 
-        {/* Saved for Later section */}
+        {/* Saved for Later */}
         {(sectionedFiles.savedForLater.length > 0 ||
           flatSectionedFiles.savedForLater.length > 0) && (
-          <SectionHeader
+          <GroupHeader
+            leading={SAVED_FOR_LATER_ICON}
             title="Saved for Later"
-            icon={SAVED_FOR_LATER_ICON}
-            badge={stats.savedForLater}
-            badgeColor="status-modified"
-            isOpen={savedForLaterOpen}
-            onToggle={() => setSavedForLaterOpen(!savedForLaterOpen)}
-            onUnapproveAll={
-              savedForLaterHunkIds.length > 0 ? handleUnsaveAll : undefined
-            }
-            unapproveAllLabel="Unsave all"
-            onExpandAll={
-              changesDisplayMode === "tree"
-                ? () => expandAll(savedForLaterDirPaths, renamedDirPaths)
+            progress={{ done: 0, total: stats.savedForLater }}
+            isExpanded={savedForLaterOpen}
+            onToggleExpanded={() => setSavedForLaterOpen(!savedForLaterOpen)}
+            onScopeClick={() => scopeToStatus("saved")}
+            isScoped={isScopedTo("saved")}
+            quickAction={
+              savedForLaterHunkIds.length > 0
+                ? {
+                    icon: UNDO_ICON,
+                    label: "Unsave all",
+                    onClick: handleUnsaveAll,
+                  }
                 : undefined
             }
-            onCollapseAll={
-              changesDisplayMode === "tree" ? collapseAll : undefined
-            }
-            actionContent={
-              savedForLaterHunkIds.length > 0 ? (
-                <RollingDiffButton
-                  label="View as rolling diff"
-                  onClick={() =>
-                    openRollingDiff("Saved for Later", savedForLaterHunkIds)
-                  }
-                />
-              ) : undefined
+            menuContent={
+              <>
+                {changesDisplayMode === "tree" && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        expandAll(savedForLaterDirPaths, renamedDirPaths)
+                      }
+                    >
+                      Expand all
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={collapseAll}>
+                      Collapse all
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {rollingDiffMenuItem("Saved for Later", savedForLaterHunkIds)}
+              </>
             }
           >
             <FileListSection
@@ -971,10 +841,9 @@ export function ReviewTabContent({
               hunkContext="needs-review"
               emptyMessage="No files saved for later"
             />
-          </SectionHeader>
+          </GroupHeader>
         )}
       </div>
-      <ReviewActionBar />
 
       <FilenameModal
         open={filenameModalOpen}

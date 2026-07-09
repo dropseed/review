@@ -6,3 +6,5 @@ export { WorkingTreeHunkPanel } from "./WorkingTreeHunkPanel";
 export { TrustedHunkBadge } from "./TrustedHunkBadge";
 export { HunkPreview } from "./HunkPreview";
 export { SimilarHunksModal } from "./SimilarHunksModal";
+export { HunkCommitTags } from "./HunkCommitTags";
+export { CollapsedHunkStrip } from "./CollapsedHunkStrip";

@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback } from "react";
-import { CommitsPanel } from "./CommitsPanel";
 import { FileNode } from "./FileNode";
 import {
   useFilePanelFileSystem,
@@ -10,46 +9,36 @@ import { useReviewStore } from "../../stores";
 import { Spinner } from "../ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import { CollapsibleSection } from "../../components/ui/collapsible-section";
-import type { CommitEntry, FileSymbolDiff } from "../../types";
+import type { FileSymbolDiff } from "../../types";
 import { ReviewDataProvider } from "../ReviewDataContext";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
-import { ReviewTabContent } from "./ReviewTabContent";
+import { StatusGroupList } from "./StatusGroupList";
+import { GuideBanner } from "./GuideBanner";
+import { CommitScopePicker } from "./CommitScopePicker";
+import { CommitScopeHeader } from "./CommitScopeHeader";
 import { ReviewFilterBar } from "./ReviewFilterBar";
-import { CommitAttributionSection } from "./CommitAttributionSection";
+import { AnnotationDock } from "./AnnotationDock";
+import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 
-interface FilesPanelProps {
-  onSelectCommit?: (commit: CommitEntry) => void;
-}
-
-export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
+export function FilesPanel() {
   const comparison = useReviewStore((s) => s.comparison);
-  const commits = useReviewStore((s) => s.commits);
-
-  // Track selected commit hash locally (for highlighting in CommitsPanel)
-  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
-    null,
-  );
 
   // Browse-tab section collapse
   const [browseFilesOpen, setBrowseFilesOpen] = useState(true);
 
-  // Review-tab section collapse — owned here (not in ReviewTabContent) so the
+  // Review-tab section collapse — owned here (not in StatusGroupList) so the
   // user's expand/collapse choices survive switching to another tab and back.
   const [needsReviewOpen, setNeedsReviewOpen] = useState(true);
   const [savedForLaterOpen, setSavedForLaterOpen] = useState(true);
   const [reviewedOpen, setReviewedOpen] = useState(true);
   const [trustOpen, setTrustOpen] = useState(false);
-  const [commitsOpen, setCommitsOpen] = useState(true);
 
   // File system data
   const {
@@ -82,15 +71,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
     collapseAll,
     registerRef,
   } = useFilePanelNavigation({ sectionedFiles });
-
-  // Wrap handleSelectFile to also clear commit selection
-  const handleSelectFileAndClearCommit = useCallback(
-    (path: string) => {
-      setSelectedCommitHash(null);
-      handleSelectFile(path);
-    },
-    [handleSelectFile],
-  );
 
   // Approval actions (used by FileListSection via context)
   const { handleApproveAll, handleUnapproveAll, handleRejectAll } =
@@ -160,7 +140,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       expandedPaths,
       togglePath,
       selectedFile,
-      handleSelectFile: handleSelectFileAndClearCommit,
+      handleSelectFile,
       repoPath,
       openInSplit,
       registerRef,
@@ -181,7 +161,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       expandedPaths,
       togglePath,
       selectedFile,
-      handleSelectFileAndClearCommit,
+      handleSelectFile,
       repoPath,
       openInSplit,
       registerRef,
@@ -197,18 +177,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
       collapseAll,
       viewMode,
     ],
-  );
-
-  // Handle commit selection
-  const handleCommitSelect = useCallback(
-    (hash: string) => {
-      setSelectedCommitHash(hash);
-      const commit = commits.find((c) => c.hash === hash);
-      if (commit && onSelectCommit) {
-        onSelectCommit(commit);
-      }
-    },
-    [commits, onSelectCommit],
   );
 
   if (allFilesLoading) {
@@ -251,60 +219,6 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            {/* Overflow menu for secondary views */}
-            {comparison && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className={`flex-shrink-0 flex items-center transition-colors ${
-                      viewMode === "commits"
-                        ? "gap-0.5 rounded bg-surface-hover px-2 py-1 text-xxs font-medium text-fg"
-                        : "p-1 rounded-md text-fg-muted hover:text-fg-secondary hover:bg-surface-hover"
-                    }`}
-                    title={viewMode !== "commits" ? "More views" : undefined}
-                  >
-                    {viewMode === "commits" ? (
-                      <>
-                        Commits
-                        <svg
-                          className="h-3 w-3 opacity-60"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </>
-                    ) : (
-                      <svg
-                        className="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="12" cy="5" r="1" />
-                        <circle cx="12" cy="12" r="1" />
-                        <circle cx="12" cy="19" r="1" />
-                      </svg>
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={() => setFilesPanelTab("commits")}
-                    className={viewMode === "commits" ? "bg-surface-hover" : ""}
-                  >
-                    Commits
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
           </div>
 
           {/* Panel content based on view mode */}
@@ -312,22 +226,16 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
             <SearchResultsPanel />
           ) : viewMode === "git" ? (
             <GitStatusPanel
-              onSelectFile={handleSelectFileAndClearCommit}
+              onSelectFile={handleSelectFile}
               onSelectWorkingTreeFile={selectWorkingTreeFile}
-            />
-          ) : viewMode === "commits" ? (
-            <CommitsPanel
-              onSelectCommit={handleCommitSelect}
-              selectedCommitHash={selectedCommitHash}
             />
           ) : viewMode === "changes" ? (
             <>
-              <CommitAttributionSection
-                isOpen={commitsOpen}
-                onToggle={() => setCommitsOpen(!commitsOpen)}
-              />
+              <GuideBanner />
+              <CommitScopePicker />
               <ReviewFilterBar />
-              <ReviewTabContent
+              <CommitScopeHeader />
+              <StatusGroupList
                 sectionedFiles={sectionedFiles}
                 flatSectionedFiles={flatSectionedFiles}
                 stats={stats}
@@ -345,6 +253,8 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                 trustOpen={trustOpen}
                 setTrustOpen={setTrustOpen}
               />
+              <AnnotationDock />
+              <ReviewActionBar />
             </>
           ) : (
             <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -378,7 +288,7 @@ export function FilesPanel({ onSelectCommit }: FilesPanelProps) {
                         depth={0}
                         onToggle={togglePath}
                         selectedFile={selectedFile}
-                        onSelectFile={handleSelectFileAndClearCommit}
+                        onSelectFile={handleSelectFile}
                         repoPath={repoPath}
                         onOpenInSplit={openInSplit}
                         registerRef={registerRef}

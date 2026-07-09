@@ -20,7 +20,7 @@ Single combined store in `stores/index.ts` via `useReviewStore` hook. State is s
 | `gitSlice` | Repo path, branches, comparison, git status |
 | `preferencesSlice` | Font size, theme, sidebar width (persisted via Tauri Store) |
 | `searchSlice` | Content search across files |
-| `historySlice` | Undo/redo for review actions |
+| `historySlice` | Commit attribution data (which commit(s) touched each hunk) |
 | `symbolsSlice` | Tree-sitter symbol extraction per file |
 | `narrativeSlice` | AI-generated narrative summary |
 | `undoSlice` | Undo stack for hunk approvals |

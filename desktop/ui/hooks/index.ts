@@ -39,3 +39,4 @@ export { useLspClient } from "./useLspClient";
 export { useHoverInfo } from "./useHoverInfo";
 export { useRepoGroups } from "./useRepoGroups";
 export { useDeepLinkFocus } from "./useDeepLinkFocus";
+export { useScopeReconciliation } from "./useScopeReconciliation";

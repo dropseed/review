@@ -1,13 +1,16 @@
-import { isHunkReviewed, isHunkTrusted } from "../../types";
+import { isHunkReviewed } from "../../types";
 import type { DiffHunk, HunkGroup } from "../../types";
 import type { HunkFilter } from "../../types/hunkFilter";
+import {
+  shouldSkipHunkForNavigation,
+  type ReviewScope,
+} from "../../types/scope";
 import type { ReviewStore, SliceCreator } from "../types";
 import { getHunkLocationMap } from "../selectors/hunks";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
 export type GuideContentMode = "group" | "adhoc-group" | null;
-export type ChangesViewMode = "files" | "guide";
 
 export type ScrollTarget =
   | { type: "hunk"; hunkId: string }
@@ -43,10 +46,6 @@ export interface NavigationSlice {
   // Guide content mode: what ContentArea shows when guide content is active
   guideContentMode: GuideContentMode;
   setGuideContentMode: (mode: GuideContentMode) => void;
-
-  // Sub-mode within the Changes tab
-  changesViewMode: ChangesViewMode;
-  setChangesViewMode: (mode: ChangesViewMode) => void;
 
   // Split view state
   secondaryFile: string | null;
@@ -104,6 +103,14 @@ export interface NavigationSlice {
   reviewFilter: HunkFilter;
   setReviewFilter: (filter: HunkFilter) => void;
 
+  // Review scope: a named, exact hunk-ID set (a status bucket, a commit, the
+  // uncommitted bucket, or a guide group). Set by clicking a group header,
+  // the walk bar, or a provenance tag; composes with `reviewFilter` (AND) to
+  // gate the Review-tab file list, navigation, and the diff viewer's
+  // out-of-scope collapsing.
+  scope: ReviewScope | null;
+  setScope: (scope: ReviewScope | null) => void;
+
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: string | null;
   workingTreeDiffMode: "staged" | "unstaged" | null;
@@ -134,10 +141,6 @@ export interface NavigationSlice {
     mode: "staged" | "unstaged";
   }) => void;
   closeWorkingTreeMultiView: () => void;
-
-  // Viewing a commit diff inline
-  viewingCommitHash: string | null;
-  setViewingCommitHash: (hash: string | null) => void;
 
   // Content search modal
   contentSearchOpen: boolean;
@@ -201,28 +204,34 @@ function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
   return fileHunks.some(isHunkUnreviewedFor(filePath, state));
 }
 
-/** Check if a hunk is trusted and has no explicit user action (skip in navigation). */
-function isHunkTrustedInState(hunkId: string, state: ReviewStore): boolean {
-  const reviewState = state.reviewState;
-  if (!reviewState) return false;
-  const hunkState = reviewState.hunks[hunkId];
-  // Only skip if trusted AND not explicitly actioned (approved/rejected/saved)
-  if (hunkState?.status) return false;
-  return isHunkTrusted(hunkState, reviewState.trustList);
+/** Bind {@link shouldSkipHunkForNavigation} to the current store state. */
+function shouldSkipHunkInState(
+  hunkId: string,
+  filePath: string,
+  state: ReviewStore,
+): boolean {
+  const { reviewState, reviewFilter, scope } = state;
+  return shouldSkipHunkForNavigation({
+    hunkId,
+    filePath,
+    hunkState: reviewState?.hunks[hunkId],
+    trustList: reviewState?.trustList ?? [],
+    filter: reviewFilter,
+    scope,
+  });
 }
 
 /**
  * Field set that nulls out every "overlay" view in the content area, used to
- * keep the overlays mutually exclusive. ContentArea picks viewingCommitHash >
- * guideContentMode > workingTreeMultiView > file viewer, but if two are set at
- * once the lower-priority one leaks state when the higher one is dismissed.
- * Any action that opens or dismisses one overlay should spread these in to
+ * keep the overlays mutually exclusive. ContentArea picks guideContentMode >
+ * workingTreeMultiView > file viewer, but if two are set at once the
+ * lower-priority one leaks state when the higher one is dismissed. Any
+ * action that opens or dismisses one overlay should spread these in to
  * clear the others.
  */
 const OVERLAYS_CLEARED = {
   guideContentMode: null,
   adhocGroup: null,
-  viewingCommitHash: null,
   workingTreeMultiView: null,
 } as const;
 
@@ -301,9 +310,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Guide content mode
   guideContentMode: null,
 
-  // Changes view mode
-  changesViewMode: "files",
-
   // Split view state
   secondaryFile: null,
   focusedPane: "primary",
@@ -319,7 +325,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       guideContentMode: null as GuideContentMode,
       workingTreeDiffFile: null as string | null,
       workingTreeDiffMode: null as "staged" | "unstaged" | null,
-      viewingCommitHash: null as string | null,
       externalFilePath: null as string | null,
     };
 
@@ -428,7 +433,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       if (!fileHunks) continue;
       const start = fi === startFileIdx ? startInFileIdx : 0;
       for (let i = start; i < fileHunks.length; i++) {
-        if (!isHunkTrustedInState(fileHunks[i].id, state)) {
+        if (!shouldSkipHunkInState(fileHunks[i].id, filePath, state)) {
           set({
             focusedHunkId: fileHunks[i].id,
             selectedFile: filePath,
@@ -461,7 +466,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       if (!fileHunks) continue;
       const start = fi === startFileIdx ? startInFileIdx : fileHunks.length - 1;
       for (let i = start; i >= 0; i--) {
-        if (!isHunkTrustedInState(fileHunks[i].id, state)) {
+        if (!shouldSkipHunkInState(fileHunks[i].id, filePath, state)) {
           set({
             focusedHunkId: fileHunks[i].id,
             selectedFile: filePath,
@@ -475,9 +480,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Guide content mode
   setGuideContentMode: (mode) => set({ guideContentMode: mode }),
-
-  // Changes view mode
-  setChangesViewMode: (mode) => set({ changesViewMode: mode }),
 
   navigateToBrowse: (filePath?, scrollTo?) => {
     if (filePath === undefined) {
@@ -570,14 +572,14 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   firstHunkInFile: () => jumpToFileEdge(get, set, "first"),
   lastHunkInFile: () => jumpToFileEdge(get, set, "last"),
 
-  // Advance to next hunk within the same file, skipping trusted hunks
+  // Advance to next hunk within the same file, skipping trusted/out-of-scope hunks
   nextHunkInFile: () => {
     const state = get();
     const loc = focusedHunkLocation(state);
     if (!loc) return;
     const fileHunks = state.filesByPath[loc.filePath]?.hunks ?? [];
     for (let i = loc.indexInFile + 1; i < fileHunks.length; i++) {
-      if (!isHunkTrustedInState(fileHunks[i].id, state)) {
+      if (!shouldSkipHunkInState(fileHunks[i].id, loc.filePath, state)) {
         set({
           focusedHunkId: fileHunks[i].id,
           scrollTarget: { type: "hunk", hunkId: fileHunks[i].id },
@@ -625,6 +627,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   reviewFilter: {},
   setReviewFilter: (filter) => set({ reviewFilter: filter }),
+
+  scope: null,
+  setScope: (scope) => set({ scope }),
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: null,
@@ -676,16 +681,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       workingTreeDiffMode: null,
     }),
   closeWorkingTreeMultiView: () => set({ workingTreeMultiView: null }),
-
-  // Viewing a commit diff inline
-  viewingCommitHash: null,
-  setViewingCommitHash: (hash) => {
-    if (hash === null) {
-      set({ viewingCommitHash: null });
-      return;
-    }
-    set({ ...OVERLAYS_CLEARED, viewingCommitHash: hash });
-  },
 
   // Content search modal
   contentSearchOpen: false,

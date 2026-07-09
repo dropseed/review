@@ -22,6 +22,7 @@ import {
   useCelebration,
   useLspClient,
   useDeepLinkFocus,
+  useScopeReconciliation,
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanel } from "./FilesPanel";
@@ -171,7 +172,6 @@ export function ReviewView({
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showFileFinder, setShowFileFinder] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
-  const setViewingCommitHash = useReviewStore((s) => s.setViewingCommitHash);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -187,12 +187,10 @@ export function ReviewView({
     }
   }, [isRefreshing]);
 
-  // Close handler: cascading close (commit view -> split -> file -> window)
+  // Close handler: cascading close (split -> file -> window)
   const handleClose = useCallback(async () => {
     const state = useReviewStore.getState();
-    if (state.viewingCommitHash !== null) {
-      state.setViewingCommitHash(null);
-    } else if (state.secondaryFile !== null) {
+    if (state.secondaryFile !== null) {
       state.closeSplit();
     } else if (state.selectedFile !== null) {
       useReviewStore.setState({ selectedFile: null });
@@ -248,6 +246,7 @@ export function ReviewView({
 
   useFileWatcher(comparisonReady);
   useLspClient();
+  useScopeReconciliation();
 
   // Review progress
   const {
@@ -455,9 +454,7 @@ export function ReviewView({
             style={{ width: `${sidebarWidth}rem` }}
           >
             <div className="flex-1 overflow-hidden">
-              <FilesPanel
-                onSelectCommit={(commit) => setViewingCommitHash(commit.hash)}
-              />
+              <FilesPanel />
             </div>
 
             <SidebarResizeHandle
