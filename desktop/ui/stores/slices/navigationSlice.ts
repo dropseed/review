@@ -111,6 +111,15 @@ export interface NavigationSlice {
   scope: ReviewScope | null;
   setScope: (scope: ReviewScope | null) => void;
 
+  // Guide mode: swaps the Review-tab sidebar to the guide's ordered-section
+  // walkthrough (back button + numbered sections), replacing the commit
+  // picker and status sections. Entered via GuideBanner (which also jumps
+  // into the first incomplete section), exited via the back button — which
+  // also clears any guide scope and guide content mode so the user lands
+  // back on a clean normal review.
+  guideMode: boolean;
+  setGuideMode: (on: boolean) => void;
+
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: string | null;
   workingTreeDiffMode: "staged" | "unstaged" | null;
@@ -630,6 +639,16 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   scope: null,
   setScope: (scope) => set({ scope }),
+
+  guideMode: false,
+  setGuideMode: (on) => {
+    if (on) return set({ guideMode: true });
+    set((state) => ({
+      guideMode: false,
+      guideContentMode: null,
+      scope: state.scope?.source === "guide" ? null : state.scope,
+    }));
+  },
 
   // Working tree diff (Git panel file selection)
   workingTreeDiffFile: null,

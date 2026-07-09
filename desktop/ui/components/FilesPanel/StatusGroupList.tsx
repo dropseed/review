@@ -9,8 +9,6 @@ import {
 import { useReviewStore } from "../../stores";
 import { flattenFilesWithStatus } from "../../stores/types";
 import { useHunkIdsByStatus } from "../../stores/selectors/hunks";
-import { computeStatusGroups } from "../../stores/selectors/groups";
-import { toggleScope } from "../../types/scope";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import {
   isHunkTrusted,
@@ -226,8 +224,6 @@ export function StatusGroupList({
   const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
   const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
-  const scope = useReviewStore((s) => s.scope);
-  const setScope = useReviewStore((s) => s.setScope);
 
   // Load symbols when switching to flat mode (flat view annotates rows with
   // changed-symbol counts pulled from the symbol diff cache).
@@ -247,14 +243,6 @@ export function StatusGroupList({
     savedForLater: savedForLaterHunkIds,
     trusted: trustedHunkIds,
   } = useHunkIdsByStatus();
-
-  // The canonical status buckets — same identities ReviewWalkBar matches
-  // scope against. scopeToStatus below derives key/title/hunkIds from this
-  // rather than hand-maintaining a parallel set of literals.
-  const statusGroups = useMemo(
-    () => computeStatusGroups(hunks, reviewState),
-    [hunks, reviewState],
-  );
 
   const handleApproveAllHunks = useCallback(() => {
     if (pendingHunkIds.length > 0)
@@ -283,20 +271,6 @@ export function StatusGroupList({
         View as rolling diff
       </DropdownMenuItem>
     ) : null;
-
-  // Click-to-scope: toggles `scope` to exactly this section, resolved from
-  // computeStatusGroups (../../stores/selectors/groups) so the filter row,
-  // walk bar, and bulk actions all agree on the same group.
-  const scopeToStatus = useCallback(
-    (key: string) => {
-      const group = statusGroups.find((g) => g.key === key);
-      if (!group) return;
-      setScope(toggleScope(scope, group));
-    },
-    [scope, setScope, statusGroups],
-  );
-  const isScopedTo = (key: string): boolean =>
-    scope?.source === "status" && scope.key === key;
 
   // Quick actions: approve/unapprove by file status (deleted, renamed, added)
   const quickActionData = useMemo(() => {
@@ -642,8 +616,6 @@ export function StatusGroupList({
             progress={{ done: stats.trusted, total: stats.trusted }}
             isExpanded={trustOpen}
             onToggleExpanded={() => setTrustOpen(!trustOpen)}
-            onScopeClick={() => scopeToStatus("trusted")}
-            isScoped={isScopedTo("trusted")}
             menuContent={
               <>
                 {quickActionMenuItems(trustQuickActions)}
@@ -694,8 +666,6 @@ export function StatusGroupList({
           }}
           isExpanded={reviewedOpen}
           onToggleExpanded={() => setReviewedOpen(!reviewedOpen)}
-          onScopeClick={() => scopeToStatus("reviewed")}
-          isScoped={isScopedTo("reviewed")}
           quickAction={
             reviewedHunkIds.length > 0
               ? {
@@ -748,8 +718,6 @@ export function StatusGroupList({
           progress={{ done: 0, total: stats.pending }}
           isExpanded={needsReviewOpen}
           onToggleExpanded={() => setNeedsReviewOpen(!needsReviewOpen)}
-          onScopeClick={() => scopeToStatus("unreviewed")}
-          isScoped={isScopedTo("unreviewed")}
           quickAction={
             pendingHunkIds.length > 0
               ? {
@@ -802,8 +770,6 @@ export function StatusGroupList({
             progress={{ done: 0, total: stats.savedForLater }}
             isExpanded={savedForLaterOpen}
             onToggleExpanded={() => setSavedForLaterOpen(!savedForLaterOpen)}
-            onScopeClick={() => scopeToStatus("saved")}
-            isScoped={isScopedTo("saved")}
             quickAction={
               savedForLaterHunkIds.length > 0
                 ? {

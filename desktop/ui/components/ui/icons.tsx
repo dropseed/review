@@ -127,3 +127,17 @@ export function RollingDiffIcon({ className = "h-3.5 w-3.5" }: IconProps) {
     </svg>
   );
 }
+
+/** Sparkle icon used by the agent-authored review guide's entry points. */
+export function SparkleIcon() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 shrink-0 text-guide"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
+      <path d="M12 2l1.8 5.6L19.5 9l-5.7 1.4L12 16l-1.8-5.6L4.5 9l5.7-1.4L12 2z" />
+      <path d="M19 14l.9 2.6L22.5 17l-2.6.9L19 20.5l-.9-2.6-2.6-.9 2.6-.9L19 14z" />
+    </svg>
+  );
+}

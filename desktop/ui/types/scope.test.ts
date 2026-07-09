@@ -39,7 +39,7 @@ describe("toggleScope", () => {
 
   it("switches when the key matches but the source differs", () => {
     const current: ReviewScope = {
-      source: "status",
+      source: "uncommitted",
       key: "reviewed",
       title: "Reviewed",
       hunkIds: [],
@@ -267,48 +267,6 @@ describe("shouldSkipHunkForNavigation", () => {
         scope: s,
       }),
     ).toBe(true);
-  });
-
-  it("does not skip a trusted hunk while scoped to the Trusted status bucket (walking the bucket must visit its own members)", () => {
-    const hunkState: HunkState = {
-      classification: attributed(["imports:added"], "static"),
-    };
-    const trustedScope: ReviewScope = {
-      source: "status",
-      key: "trusted",
-      title: "Trusted",
-      hunkIds: ["a.ts:1"],
-    };
-    expect(
-      shouldSkipHunkForNavigation({
-        hunkId: "a.ts:1",
-        filePath: "a.ts",
-        hunkState,
-        trustList,
-        filter: {},
-        scope: trustedScope,
-      }),
-    ).toBe(false);
-  });
-
-  it("does not skip a reviewed hunk while scoped to the Reviewed status bucket", () => {
-    const hunkState: HunkState = { status: attributed("approved", "ui") };
-    const reviewedScope: ReviewScope = {
-      source: "status",
-      key: "reviewed",
-      title: "Reviewed",
-      hunkIds: ["a.ts:1"],
-    };
-    expect(
-      shouldSkipHunkForNavigation({
-        hunkId: "a.ts:1",
-        filePath: "a.ts",
-        hunkState,
-        trustList,
-        filter: {},
-        scope: reviewedScope,
-      }),
-    ).toBe(false);
   });
 
   it("still skips a trusted hunk when scoped to a non-status source (e.g. a commit)", () => {

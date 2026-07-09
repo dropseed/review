@@ -20,6 +20,7 @@ import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { StatusGroupList } from "./StatusGroupList";
 import { GuideBanner } from "./GuideBanner";
+import { GuideModePanel } from "./GuideModePanel";
 import { CommitScopePicker } from "./CommitScopePicker";
 import { CommitScopeHeader } from "./CommitScopeHeader";
 import { ReviewFilterBar } from "./ReviewFilterBar";
@@ -29,6 +30,7 @@ import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 
 export function FilesPanel() {
   const comparison = useReviewStore((s) => s.comparison);
+  const guideMode = useReviewStore((s) => s.guideMode);
 
   // Browse-tab section collapse
   const [browseFilesOpen, setBrowseFilesOpen] = useState(true);
@@ -231,28 +233,34 @@ export function FilesPanel() {
             />
           ) : viewMode === "changes" ? (
             <>
-              <GuideBanner />
-              <CommitScopePicker />
-              <ReviewFilterBar />
-              <CommitScopeHeader />
-              <StatusGroupList
-                sectionedFiles={sectionedFiles}
-                flatSectionedFiles={flatSectionedFiles}
-                stats={stats}
-                renamedDirPaths={renamedDirPaths}
-                hunks={hunks}
-                reviewState={reviewState}
-                expandAll={expandAll}
-                collapseAll={collapseAll}
-                needsReviewOpen={needsReviewOpen}
-                setNeedsReviewOpen={setNeedsReviewOpen}
-                savedForLaterOpen={savedForLaterOpen}
-                setSavedForLaterOpen={setSavedForLaterOpen}
-                reviewedOpen={reviewedOpen}
-                setReviewedOpen={setReviewedOpen}
-                trustOpen={trustOpen}
-                setTrustOpen={setTrustOpen}
-              />
+              {guideMode ? (
+                <GuideModePanel />
+              ) : (
+                <>
+                  <GuideBanner />
+                  <CommitScopePicker />
+                  <ReviewFilterBar />
+                  <CommitScopeHeader />
+                  <StatusGroupList
+                    sectionedFiles={sectionedFiles}
+                    flatSectionedFiles={flatSectionedFiles}
+                    stats={stats}
+                    renamedDirPaths={renamedDirPaths}
+                    hunks={hunks}
+                    reviewState={reviewState}
+                    expandAll={expandAll}
+                    collapseAll={collapseAll}
+                    needsReviewOpen={needsReviewOpen}
+                    setNeedsReviewOpen={setNeedsReviewOpen}
+                    savedForLaterOpen={savedForLaterOpen}
+                    setSavedForLaterOpen={setSavedForLaterOpen}
+                    reviewedOpen={reviewedOpen}
+                    setReviewedOpen={setReviewedOpen}
+                    trustOpen={trustOpen}
+                    setTrustOpen={setTrustOpen}
+                  />
+                </>
+              )}
               <AnnotationDock />
               <ReviewActionBar />
             </>

@@ -236,7 +236,9 @@ export function useDiffAnnotationModel({
         (g) => g.key === sha,
       );
       if (group) {
-        useReviewStore.getState().setScope(singleCommitScope(group));
+        const state = useReviewStore.getState();
+        if (state.guideMode) state.setGuideMode(false);
+        state.setScope(singleCommitScope(group));
       }
     },
     [allHunks, attribution],

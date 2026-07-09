@@ -30,9 +30,6 @@ export interface GroupHeaderProps {
   progress: { done: number; total: number };
   isExpanded: boolean;
   onToggleExpanded: () => void;
-  /** Omit to opt this group out of click-to-scope (title renders as static text). */
-  onScopeClick?: () => void;
-  isScoped?: boolean;
   /** Secondary expandable info below the header row (commit body, guide description). */
   context?: GroupHeaderContext;
   /** Hover-revealed icon-only action — kept compact so it never fights the
@@ -55,11 +52,11 @@ export interface GroupHeaderProps {
 
 /**
  * The one group-header shape every Review-tab queue grouping renders through
- * (status sections, commit groups, guide groups): a collapse chevron, an
- * optional click-to-scope title, a `done/total` progress badge, a
- * hover-revealed quick action, and an overflow menu. Keeping one component
- * for all three is what makes "Approve remaining" stop fighting the subject
- * for width — it's an icon behind a tooltip here, not an always-visible label.
+ * (status sections, commit groups, guide groups): a collapse chevron, a
+ * title, a `done/total` progress badge, a hover-revealed quick action, and an
+ * overflow menu. Keeping one component for all three is what makes "Approve
+ * remaining" stop fighting the subject for width — it's an icon behind a
+ * tooltip here, not an always-visible label.
  */
 export function GroupHeader({
   leading,
@@ -68,8 +65,6 @@ export function GroupHeader({
   progress,
   isExpanded,
   onToggleExpanded,
-  onScopeClick,
-  isScoped = false,
   context,
   quickAction,
   showQuickActionWhenComplete = false,
@@ -94,11 +89,7 @@ export function GroupHeader({
 
   return (
     <div className="border-t border-t-edge/40">
-      <div
-        className={`group/header flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 transition-colors ${
-          isScoped ? "bg-focus-ring/10" : "hover:bg-surface-raised/50"
-        }`}
-      >
+      <div className="group/header flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 transition-colors hover:bg-surface-raised/50">
         <button
           type="button"
           onClick={onToggleExpanded}
@@ -109,19 +100,9 @@ export function GroupHeader({
           <TreeChevron expanded={isExpanded} visible={hasBody} />
         </button>
 
-        {onScopeClick ? (
-          <button
-            type="button"
-            onClick={onScopeClick}
-            className="flex flex-1 items-center gap-2 min-w-0 text-left"
-          >
-            {titleContent}
-          </button>
-        ) : (
-          <div className="flex flex-1 items-center gap-2 min-w-0">
-            {titleContent}
-          </div>
-        )}
+        <div className="flex flex-1 items-center gap-2 min-w-0">
+          {titleContent}
+        </div>
 
         {context && (
           <button

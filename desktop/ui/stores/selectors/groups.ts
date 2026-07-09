@@ -1,8 +1,8 @@
 // Pure reductions of "all hunks" into the Review tab's queue groupings. Each
-// grouping (status / commits / guide) produces the same `Group[]` shape so
-// the walk bar and the group-list components consume one contract regardless
-// of which grouping is active. Scoping to a group (see ../../types/scope)
-// is a separate step layered on top by the consumers.
+// grouping (commits / guide) produces the same `Group[]` shape so the walk
+// bar and the group-list components consume one contract regardless of which
+// grouping is active. Scoping to a group (see ../../types/scope) is a
+// separate step layered on top by the consumers.
 
 import { effectiveHunkStatus } from "../../types";
 import type {
@@ -13,7 +13,6 @@ import type {
   ReviewState,
 } from "../../types";
 import type { ScopeSource } from "../../types/scope";
-import { getHunkIdsByStatus } from "./hunks";
 
 export interface Group {
   key: string;
@@ -56,36 +55,6 @@ export function countGroupUnreviewed(
   reviewState: ReviewState | null,
 ): number {
   return countUnreviewed(group.hunkIds, reviewState);
-}
-
-/**
- * Status grouping: the four buckets by effective review status, in display
- * order (Trusted, Reviewed, Needs Review, Saved for Later).
- */
-export function computeStatusGroups(
-  hunks: DiffHunk[],
-  reviewState: ReviewState | null,
-): Group[] {
-  const { trusted, reviewed, pending, savedForLater } = getHunkIdsByStatus(
-    hunks,
-    reviewState,
-  );
-  return [
-    { key: "trusted", source: "status", title: "Trusted", hunkIds: trusted },
-    { key: "reviewed", source: "status", title: "Reviewed", hunkIds: reviewed },
-    {
-      key: "unreviewed",
-      source: "status",
-      title: "Needs Review",
-      hunkIds: pending,
-    },
-    {
-      key: "saved",
-      source: "status",
-      title: "Saved for Later",
-      hunkIds: savedForLater,
-    },
-  ];
 }
 
 let commitGroupsCache: {

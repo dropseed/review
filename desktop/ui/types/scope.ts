@@ -1,10 +1,10 @@
 // A review scope is a named, exact hunk-ID set — the selection axis behind
-// the Review tab's groupings (a status bucket, a commit, the "Uncommitted
-// changes" bucket, or a guide group), the walk bar, and the provenance-tag
-// click-to-scope affordance in the diff viewer. It composes with `HunkFilter`
-// (the predicate axes in ./hunkFilter) rather than folding into it:
-// predicates AND together, and scope further narrows the result to an exact
-// membership that has no natural predicate of its own.
+// the Review tab's groupings (a commit, the "Uncommitted changes" bucket, or
+// a guide group), the walk bar, and the provenance-tag click-to-scope
+// affordance in the diff viewer. It composes with `HunkFilter` (the
+// predicate axes in ./hunkFilter) rather than folding into it: predicates AND
+// together, and scope further narrows the result to an exact membership that
+// has no natural predicate of its own.
 
 import { isHunkTrusted } from "./index";
 import type { DiffHunk, HunkState, ReviewState } from "./index";
@@ -14,7 +14,7 @@ import {
   type HunkFilter,
 } from "./hunkFilter";
 
-export type ScopeSource = "status" | "commit" | "uncommitted" | "guide";
+export type ScopeSource = "commit" | "uncommitted" | "guide";
 
 export interface ReviewScope {
   source: ScopeSource;
@@ -107,11 +107,6 @@ export function selectHunkIds(
  * Whether hunk-to-hunk navigation (next/prev/nextInFile) should step over a
  * hunk: either it's trusted with no explicit user action (existing
  * behavior), or — once a filter or scope is active — it falls outside it.
- *
- * The trusted auto-skip is suppressed for a hunk that's inside an active
- * *status* scope (e.g. the Trusted or Reviewed section itself): the bucket
- * IS the user's selection, so walking it must actually visit its members
- * instead of skipping every one of them for being trusted/reviewed.
  */
 export function shouldSkipHunkForNavigation(args: {
   hunkId: string;
@@ -126,6 +121,5 @@ export function shouldSkipHunkForNavigation(args: {
     return !hunkState?.status && isHunkTrusted(hunkState, trustList);
   }
   if (!hunkMatches(args)) return true;
-  if (scope?.source === "status") return false;
   return !hunkState?.status && isHunkTrusted(hunkState, trustList);
 }

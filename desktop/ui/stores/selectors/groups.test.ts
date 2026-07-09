@@ -17,7 +17,6 @@ vi.mock("../../platform", () => ({
 import {
   computeCommitGroups,
   computeGuideGroups,
-  computeStatusGroups,
   countGroupUnreviewed,
   UNCOMMITTED_GROUP_KEY,
 } from "./groups";
@@ -33,34 +32,6 @@ const hunks = [
   { id: "b.ts:2", filePath: "b.ts" },
   { id: "c.ts:3", filePath: "c.ts" },
 ] as DiffHunk[];
-
-describe("computeStatusGroups", () => {
-  it("buckets hunks by effective status, Trusted/Reviewed/Needs Review/Saved order", () => {
-    const reviewState = {
-      trustList: ["imports:*"],
-      hunks: {
-        "a.ts:1": { classification: attributed(["imports:added"], "static") },
-        "b.ts:2": { status: attributed("approved", "ui") },
-        "c.ts:3": { status: attributed("saved_for_later", "ui") },
-      },
-    } as unknown as ReviewState;
-
-    const groups = computeStatusGroups(hunks, reviewState);
-    expect(groups.map((g) => g.key)).toEqual([
-      "trusted",
-      "reviewed",
-      "unreviewed",
-      "saved",
-    ]);
-    expect(groups.find((g) => g.key === "trusted")?.hunkIds).toEqual([
-      "a.ts:1",
-    ]);
-    expect(groups.find((g) => g.key === "reviewed")?.hunkIds).toEqual([
-      "b.ts:2",
-    ]);
-    expect(groups.find((g) => g.key === "saved")?.hunkIds).toEqual(["c.ts:3"]);
-  });
-});
 
 describe("computeCommitGroups", () => {
   it("buckets by attributed commit, oldest first, with a trailing uncommitted group", () => {

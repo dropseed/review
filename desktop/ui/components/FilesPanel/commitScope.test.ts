@@ -81,7 +81,7 @@ describe("scopeCommitKeys", () => {
   it("is empty for a non-commit scope", () => {
     expect(
       scopeCommitKeys({
-        source: "status",
+        source: "guide",
         key: "reviewed",
         title: "Reviewed",
         hunkIds: [],
@@ -109,7 +109,7 @@ describe("isCommitScope", () => {
     ).toBe(true);
     expect(
       isCommitScope({
-        source: "status",
+        source: "guide",
         key: "reviewed",
         title: "",
         hunkIds: [],

@@ -194,6 +194,8 @@ const comparisonResetState = {
   groupingSidebarOpen: false,
   workingTreeDiffFile: null,
   scope: null as ReviewScope | null,
+  guideMode: false,
+  activeGroupIndex: 0,
   // Review
   reviewState: null,
   carriedForward: 0,
