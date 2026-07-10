@@ -164,6 +164,16 @@ export interface NavigationSlice {
 
   // Whether there's a pushed history entry to go back to
   canGoBack: boolean;
+
+  // File-visit history for the mouse back/forward buttons: a linear stack of
+  // recently viewed file paths with a cursor. Mouse buttons 3/4 step it to
+  // jump back/forward between files.
+  fileNavHistory: string[];
+  fileNavIndex: number;
+  /** Record a file visit; dedupes the current entry and drops forward history. */
+  recordFileVisit: (path: string) => void;
+  /** Step the file-visit history back (-1) or forward (+1). */
+  navigateFileHistory: (direction: -1 | 1) => void;
 }
 
 /** Check whether a hunk is unreviewed for the given file's review context. */
@@ -714,4 +724,28 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Back navigation
   canGoBack: false,
+
+  // File-visit history (mouse back/forward buttons)
+  fileNavHistory: [],
+  fileNavIndex: -1,
+  recordFileVisit: (path) => {
+    const { fileNavHistory, fileNavIndex } = get();
+    // Already the current entry — re-selecting the same file, or the change
+    // came from navigateFileHistory itself (which moved the cursor first).
+    if (fileNavHistory[fileNavIndex] === path) return;
+    // Drop any forward history, append, and cap the stack.
+    const next = fileNavHistory.slice(0, fileNavIndex + 1);
+    next.push(path);
+    const capped = next.slice(-50);
+    set({ fileNavHistory: capped, fileNavIndex: capped.length - 1 });
+  },
+  navigateFileHistory: (direction) => {
+    const { fileNavHistory, fileNavIndex, navigateToBrowse } = get();
+    const target = fileNavIndex + direction;
+    if (target < 0 || target >= fileNavHistory.length) return;
+    // Move the cursor first so recordFileVisit sees the target as the current
+    // entry and skips re-recording when selectedFile updates below.
+    set({ fileNavIndex: target });
+    navigateToBrowse(fileNavHistory[target]);
+  },
 });

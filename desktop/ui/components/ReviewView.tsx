@@ -18,6 +18,7 @@ import {
   useMenuEvents,
   useFileWatcher,
   useKeyboardNavigation,
+  useMouseNavigation,
   useReviewProgress,
   useCelebration,
   useLspClient,
@@ -227,6 +228,7 @@ export function ReviewView({
   });
 
   useKeyboardNavigation();
+  useMouseNavigation();
   // Hold deep-link focus until the diff is real again — consuming it against the
   // all-deleted diff behind the notice would drop the requested hunk.
   useDeepLinkFocus(!compareRefMissing);

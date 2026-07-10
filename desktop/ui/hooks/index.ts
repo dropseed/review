@@ -10,6 +10,7 @@ export {
 } from "./useRepositoryInit";
 export { useComparisonLoader } from "./useComparisonLoader";
 export { useKeyboardNavigation } from "./useKeyboardNavigation";
+export { useMouseNavigation } from "./useMouseNavigation";
 export { useReviewProgress } from "./useReviewProgress";
 export { useHighlighter, getLanguageFromFilename } from "./useHighlighter";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";

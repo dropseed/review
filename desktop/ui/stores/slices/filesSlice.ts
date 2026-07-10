@@ -196,6 +196,10 @@ const comparisonResetState = {
   scope: null as ReviewScope | null,
   guideMode: false,
   activeGroupIndex: 0,
+  // Mouse back/forward file history is per-comparison — don't let it carry
+  // stale files across a switch.
+  fileNavHistory: [] as string[],
+  fileNavIndex: -1,
   // Review
   reviewState: null,
   carriedForward: 0,
