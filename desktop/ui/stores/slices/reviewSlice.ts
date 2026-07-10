@@ -545,9 +545,13 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       set({ savedReviewsLoading: true });
       try {
         const reviews = await client.listSavedReviews(repoPath);
+        // Guard against a stale response: if the repo changed while this
+        // request was in flight, don't clobber the new repo's reviews.
+        if (get().repoPath !== repoPath) return;
         set({ savedReviews: reviews, savedReviewsLoading: false });
       } catch (err) {
         console.error("Failed to load saved reviews:", err);
+        if (get().repoPath !== repoPath) return;
         set({ savedReviews: [], savedReviewsLoading: false });
       }
     },
