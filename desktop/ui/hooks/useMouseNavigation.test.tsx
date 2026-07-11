@@ -42,17 +42,7 @@ afterEach(() => {
 });
 
 describe("useMouseNavigation", () => {
-  it("navigates back on the mouse back button (3)", () => {
-    useReviewStore.getState().recordFileVisit("a.ts");
-    useReviewStore.getState().recordFileVisit("b.ts");
-    renderHook(() => useMouseNavigation());
-
-    navigate(3);
-
-    expect(useReviewStore.getState().selectedFile).toBe("a.ts");
-  });
-
-  it("does not navigate while a dialog is open", () => {
+  it("does not navigate while a dialog is open, but does once it closes", () => {
     useReviewStore.getState().recordFileVisit("a.ts");
     useReviewStore.getState().recordFileVisit("b.ts");
     renderHook(() => useMouseNavigation());
