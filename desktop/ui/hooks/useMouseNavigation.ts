@@ -33,6 +33,18 @@ export function useMouseNavigation() {
     const handleUp = (event: MouseEvent) => {
       if (!isNavButton(event.button)) return;
       event.preventDefault();
+      // Modals (Settings, Classifications, Finder, etc.) don't stop-propagate
+      // to these window listeners, so without this a side-button click while
+      // one is open would silently change the file underneath it. Scoped to
+      // `aria-modal` + open state so it doesn't also match a lightweight,
+      // non-modal Popover (which shares Radix's `role="dialog"`) or a dialog
+      // still finishing its close animation.
+      if (
+        document.querySelector(
+          '[role="dialog"][aria-modal="true"][data-state="open"]',
+        )
+      )
+        return;
       useReviewStore
         .getState()
         .navigateFileHistory(event.button === 3 ? -1 : 1);
