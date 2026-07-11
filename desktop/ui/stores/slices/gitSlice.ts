@@ -223,6 +223,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       if (!workingPath) return;
 
       const requestId = `commit-msg-${++commitNonce}`;
+      const previousMessage = get().commitMessage;
 
       set({ commitMessageGenerating: true, commitMessage: "" });
 
@@ -242,6 +243,16 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
         set({ commitMessage: finalMessage });
       } catch (err) {
         console.error("Failed to generate commit message:", err);
+        // Restore the user's draft rather than leaving the box empty with
+        // no explanation of what went wrong.
+        set({
+          commitMessage: previousMessage,
+          commitResult: {
+            success: false,
+            commitHash: null,
+            summary: `Failed to generate commit message: ${String(err)}`,
+          },
+        });
       } finally {
         unsubscribe();
         get().endActivity(requestId);
