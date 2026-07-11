@@ -440,7 +440,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                   githubPr,
                 );
                 allHunks.push(...content.hunks);
-              } catch {
+              } catch (err) {
+                console.warn(`Failed to load hunks for ${filePath}:`, err);
                 failedFiles.push(filePath);
               }
             }
@@ -470,6 +471,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
               );
               allHunks.push(...content.hunks);
             } catch (err) {
+              console.warn(`Failed to load hunks for ${filePath}:`, err);
               failedFiles.push(filePath);
             }
           }
