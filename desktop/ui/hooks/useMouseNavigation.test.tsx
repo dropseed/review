@@ -41,21 +41,59 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+function appendNode(attrs: Record<string, string>) {
+  const node = document.createElement("div");
+  for (const [key, value] of Object.entries(attrs))
+    node.setAttribute(key, value);
+  document.body.appendChild(node);
+  return node;
+}
+
 describe("useMouseNavigation", () => {
-  it("does not navigate while a dialog is open, but does once it closes", () => {
+  it("does not navigate while an open modal dialog is present, but does once it closes", () => {
     useReviewStore.getState().recordFileVisit("a.ts");
     useReviewStore.getState().recordFileVisit("b.ts");
     renderHook(() => useMouseNavigation());
 
-    const dialog = document.createElement("div");
-    dialog.setAttribute("role", "dialog");
-    document.body.appendChild(dialog);
+    const dialog = appendNode({
+      role: "dialog",
+      "aria-modal": "true",
+      "data-state": "open",
+    });
 
     navigate(3);
 
     expect(useReviewStore.getState().fileNavIndex).toBe(1);
 
     dialog.remove();
+    navigate(3);
+
+    expect(useReviewStore.getState().selectedFile).toBe("a.ts");
+  });
+
+  it("still navigates while a non-modal popover is open (shares role=dialog but no aria-modal)", () => {
+    useReviewStore.getState().recordFileVisit("a.ts");
+    useReviewStore.getState().recordFileVisit("b.ts");
+    renderHook(() => useMouseNavigation());
+
+    appendNode({ role: "dialog", "data-state": "open" });
+
+    navigate(3);
+
+    expect(useReviewStore.getState().selectedFile).toBe("a.ts");
+  });
+
+  it("still navigates once a dialog's close animation finishes (data-state=closed)", () => {
+    useReviewStore.getState().recordFileVisit("a.ts");
+    useReviewStore.getState().recordFileVisit("b.ts");
+    renderHook(() => useMouseNavigation());
+
+    appendNode({
+      role: "dialog",
+      "aria-modal": "true",
+      "data-state": "closed",
+    });
+
     navigate(3);
 
     expect(useReviewStore.getState().selectedFile).toBe("a.ts");

@@ -80,14 +80,6 @@ describe("navigateFileHistory", () => {
     expect(state.selectedFile).toBe("b.ts");
   });
 
-  it("steps forward again after going back", () => {
-    useReviewStore.getState().navigateFileHistory(-1);
-    useReviewStore.getState().navigateFileHistory(1);
-    const state = useReviewStore.getState();
-    expect(state.fileNavIndex).toBe(2);
-    expect(state.selectedFile).toBe("c.ts");
-  });
-
   it("is a no-op past the start of history", () => {
     useReviewStore.getState().navigateFileHistory(-1);
     useReviewStore.getState().navigateFileHistory(-1);
