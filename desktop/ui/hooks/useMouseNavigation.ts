@@ -33,6 +33,10 @@ export function useMouseNavigation() {
     const handleUp = (event: MouseEvent) => {
       if (!isNavButton(event.button)) return;
       event.preventDefault();
+      // Modals (Settings, Classifications, Finder, etc.) don't stop-propagate
+      // to these window listeners, so without this a side-button click while
+      // one is open would silently change the file underneath it.
+      if (document.querySelector('[role="dialog"]')) return;
       useReviewStore
         .getState()
         .navigateFileHistory(event.button === 3 ? -1 : 1);
