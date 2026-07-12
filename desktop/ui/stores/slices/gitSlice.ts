@@ -97,7 +97,8 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       try {
         const info = await client.getRemoteInfo(repoPath);
         set({ remoteInfo: info });
-      } catch {
+      } catch (err) {
+        console.error("Failed to load remote info:", err);
         set({ remoteInfo: null });
       }
     },
@@ -116,7 +117,8 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
         // request was in flight, don't clobber the new repo's identity.
         if (get().repoPath !== repoPath) return;
         set({ gitUser: user });
-      } catch {
+      } catch (err) {
+        console.error("Failed to load git user:", err);
         if (get().repoPath !== repoPath) return;
         set({ gitUser: null });
       }

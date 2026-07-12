@@ -631,8 +631,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         if (get().repoPath === repoPath) {
           set({ currentBranch: branch });
         }
-      } catch {
-        // Ignore — not critical
+      } catch (err) {
+        console.error("Failed to load current branch:", err);
       }
     },
 
