@@ -96,9 +96,13 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
       try {
         const info = await client.getRemoteInfo(repoPath);
+        // Guard against a stale response: if the repo changed while this
+        // request was in flight, don't clobber the new repo's remote info.
+        if (get().repoPath !== repoPath) return;
         set({ remoteInfo: info });
       } catch (err) {
         console.error("Failed to load remote info:", err);
+        if (get().repoPath !== repoPath) return;
         set({ remoteInfo: null });
       }
     },
