@@ -71,6 +71,10 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
       setSelectedRepoPath(selected);
     } catch (err) {
       console.error("Failed to open repository:", err);
+      await platform.dialogs.message(String(err), {
+        title: "Couldn't open repository",
+        kind: "error",
+      });
     }
   }, []);
 
