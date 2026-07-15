@@ -343,12 +343,53 @@ fn warn_home_override(has_home_override: bool) {
     }
 }
 
-/// `review [path]` — open a path in the app without creating a review.
+/// `review [path]` — open a path in the app.
+///
+/// Opening a repo root (no specific file) lands on its default comparison
+/// review — default branch .. current branch — so `review .` in a worktree or
+/// feature branch shows that branch's review, matching `review start` and
+/// launching the app in the repo. On the default branch the comparison is
+/// degenerate (base == head, nothing to diff), so we fall back to browse mode,
+/// which still has the file tree to show. A specific file also opens in browse
+/// mode, focused on that file.
 fn run_open(path: Option<String>, has_home_override: bool) -> Result<(), String> {
     let (repo_path, focused_file) = resolve_open_path(path)?;
-    open_app(&repo_path, None, focused_file.as_deref())?;
+
+    let comparison = if focused_file.is_none() {
+        default_open_comparison(&repo_path)
+    } else {
+        None
+    };
+
+    if let Some(comparison) = &comparison {
+        // Persist the review so it shows up under its parent in the sidebar,
+        // mirroring `review start`. Best-effort — a failure here shouldn't stop
+        // the app from opening.
+        let _ = storage::ensure_review_exists(Path::new(&repo_path), comparison, None);
+    }
+
+    open_app(
+        &repo_path,
+        comparison.as_ref().map(|c| c.key.as_str()),
+        focused_file.as_deref(),
+    )?;
     warn_home_override(has_home_override);
     Ok(())
+}
+
+/// The comparison `review [path]` opens a repo root to: default branch ..
+/// current branch. Returns `None` when `repo_path` isn't a git repo or there's
+/// nothing to diff, so the caller falls back to browse mode rather than opening
+/// an empty review. "Nothing to diff" means base == head (on the default
+/// branch), or the default branch couldn't be detected — `resolve_comparison`
+/// then yields a `"HEAD"` base, which is the current commit, so the diff would
+/// be empty.
+fn default_open_comparison(repo_path: &str) -> Option<Comparison> {
+    let comparison = resolve_comparison(Path::new(repo_path), None, None).ok()?;
+    if comparison.base == comparison.head || comparison.base == "HEAD" {
+        return None;
+    }
+    Some(comparison)
 }
 
 /// `review start [spec]` — resolve a comparison, persist review state, open the app.
@@ -814,6 +855,47 @@ mod tests {
         let c = parse_comparison_spec(p, "v1.0.0").unwrap();
         // Tag is a named ref → compared against the default branch, not reviewed alone.
         assert_eq!(c.head, "v1.0.0");
+    }
+
+    #[test]
+    fn open_on_default_branch_is_browse() {
+        // On the default branch base == head, so there is nothing to diff and
+        // `review .` falls back to browse mode (None).
+        let (dir, _first, _second) = two_commit_repo();
+        assert!(default_open_comparison(&dir.path().to_string_lossy()).is_none());
+    }
+
+    #[test]
+    fn open_on_feature_branch_opens_default_to_branch_review() {
+        // On a feature branch (as in a worktree), `review .` opens the
+        // default..branch review rather than browse mode.
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        let default_branch = git(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        git(p, &["checkout", "-q", "-b", "feature"]);
+        let c = default_open_comparison(&p.to_string_lossy())
+            .expect("feature branch should open a review");
+        assert_eq!(c.base, default_branch);
+        assert_eq!(c.head, "feature");
+        assert_eq!(c.key, format!("{default_branch}..feature"));
+    }
+
+    #[test]
+    fn open_non_git_path_is_browse() {
+        // A path that isn't a git repo has no comparison — browse mode (None).
+        let dir = tempfile::tempdir().unwrap();
+        assert!(default_open_comparison(&dir.path().to_string_lossy()).is_none());
+    }
+
+    #[test]
+    fn open_without_detectable_default_branch_is_browse() {
+        // No origin and no main/master ref → default-branch detection falls
+        // back to "HEAD" (the current commit), so there's nothing to diff and
+        // the open lands on browse mode rather than an empty review.
+        let (dir, _first, _second) = two_commit_repo();
+        let p = dir.path();
+        git(p, &["branch", "-m", "trunk"]); // rename default away from main/master
+        assert!(default_open_comparison(&p.to_string_lossy()).is_none());
     }
 
     #[test]
