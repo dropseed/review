@@ -412,14 +412,12 @@ impl LocalGitSource {
     ) -> Result<DiffShortStat, LocalGitError> {
         let wt_dir = self.working_tree_dir(comparison);
 
+        let merge_base = self.diff_base_ref(comparison);
         let output = if let Some(dir) = &wt_dir {
             // Net diff: merge_base vs working tree (single diff captures everything)
-            let resolved_head = self.resolve_head_in(dir);
-            let merge_base = self.merge_base_or_base(&comparison.base, &resolved_head);
             self.run_git_in(dir, &["diff", "--shortstat", &merge_base])?
         } else {
             // Committed diff between base and head refs
-            let merge_base = self.merge_base_or_base(&comparison.base, &comparison.head);
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             self.run_git(&["diff", "--shortstat", &range])?
@@ -1689,6 +1687,23 @@ impl LocalGitSource {
         }
     }
 
+    /// The left-hand ("old") ref that [`get_diff`](Self::get_diff) diffs against
+    /// for this comparison: the merge-base of `base` and the effective head, so
+    /// the hunks show only what `head` added since it diverged from `base`
+    /// (three-dot semantics). Anything rendering the "before" side (e.g. the file
+    /// content backing the diff view) must resolve its old content from this ref
+    /// rather than `comparison.base` — otherwise a `head` that is behind `base`
+    /// gets diffed against `base`'s newer tip and shows its unrelated changes as
+    /// noise.
+    pub fn diff_base_ref(&self, comparison: &Comparison) -> String {
+        if let Some(dir) = self.working_tree_dir(comparison) {
+            let resolved_head = self.resolve_head_in(&dir);
+            self.merge_base_or_base(&comparison.base, &resolved_head)
+        } else {
+            self.merge_base_or_base(&comparison.base, &comparison.head)
+        }
+    }
+
     fn get_changed_files(
         &self,
         comparison: &Comparison,
@@ -1696,15 +1711,13 @@ impl LocalGitSource {
         let mut changes = HashMap::new();
         let mut rename_map = HashMap::new();
 
+        let merge_base = self.diff_base_ref(comparison);
         if let Some(dir) = self.working_tree_dir(comparison) {
             // Net change status: merge_base vs working tree (single diff captures everything)
-            let resolved_head = self.resolve_head_in(&dir);
-            let merge_base = self.merge_base_or_base(&comparison.base, &resolved_head);
             let output = self.run_git_in(&dir, &["diff", "--name-status", &merge_base])?;
             self.parse_name_status(&output, &mut changes, &mut rename_map);
         } else {
             // Committed diff between base and head refs
-            let merge_base = self.merge_base_or_base(&comparison.base, &comparison.head);
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             let output = self.run_git(&["diff", "--name-status", &range])?;
@@ -2605,12 +2618,11 @@ impl DiffSource for LocalGitSource {
         file_path: Option<&str>,
     ) -> Result<String, Self::Error> {
         let mut all_diffs = String::new();
+        let merge_base = self.diff_base_ref(comparison);
 
         if let Some(dir) = self.working_tree_dir(comparison) {
             // Net diff: merge_base vs working tree (single diff avoids phantom hunks
             // when working tree changes revert committed changes)
-            let resolved_head = self.resolve_head_in(&dir);
-            let merge_base = self.merge_base_or_base(&comparison.base, &resolved_head);
             let mut args = vec![
                 "diff",
                 "--histogram",
@@ -2628,7 +2640,6 @@ impl DiffSource for LocalGitSource {
             }
         } else {
             // Committed diff between base and head refs
-            let merge_base = self.merge_base_or_base(&comparison.base, &comparison.head);
             let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
             let range = format!("{merge_base}..{resolved_head}");
             let mut args = vec![
@@ -3026,6 +3037,54 @@ mod tests {
         assert!(
             paths.iter().any(|p| p == "tracked.txt"),
             "expected modified file in list_files: {paths:?}"
+        );
+    }
+
+    /// The old side of a diff must be the merge-base, not the base branch's
+    /// tip: a head that is behind `base` should not show `base`'s newer commits
+    /// as diff noise.
+    #[test]
+    fn diff_base_ref_is_merge_base_when_head_is_behind_base() {
+        use crate::review::central::tests::ENV_LOCK;
+        use crate::sources::traits::Comparison;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        // Fork point both branches share.
+        std::fs::write(repo_path.join("shared.txt"), "base\n").unwrap();
+        run_git_cmd(repo_path, &["add", "."]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "fork point"]).unwrap();
+        let fork_point = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+        let default_branch = run_git_cmd(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // feat diverges from the fork point.
+        run_git_cmd(repo_path, &["checkout", "-b", "feat"]).unwrap();
+        std::fs::write(repo_path.join("feat.txt"), "feature\n").unwrap();
+        run_git_cmd(repo_path, &["add", "."]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "feat work"]).unwrap();
+
+        // The default branch advances past the fork point — feat is now behind it.
+        run_git_cmd(repo_path, &["checkout", &default_branch]).unwrap();
+        std::fs::write(repo_path.join("shared.txt"), "changed on default\n").unwrap();
+        run_git_cmd(repo_path, &["add", "."]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "default advances"]).unwrap();
+
+        run_git_cmd(repo_path, &["checkout", "feat"]).unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let comparison = Comparison::new(&default_branch, "feat");
+        assert_eq!(
+            source.diff_base_ref(&comparison),
+            fork_point,
+            "diff base should be the merge-base (fork point), not the default branch tip"
         );
     }
 

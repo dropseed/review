@@ -167,8 +167,8 @@ pub fn get_file_content(
             parse_diff(&diff_output, file_path)
         };
 
-        let old_ref = &comparison.base;
-        let old_content = match source.get_file_bytes(file_path, old_ref) {
+        let old_ref = source.diff_base_ref(comparison);
+        let old_content = match source.get_file_bytes(file_path, &old_ref) {
             Ok(bytes) => String::from_utf8(bytes).ok(),
             Err(_) => None,
         };
@@ -265,12 +265,7 @@ pub fn get_file_content(
         let old_image_data_url = if diff_output.is_empty() {
             None
         } else {
-            let old_ref = if source.include_working_tree(comparison) {
-                "HEAD".to_owned()
-            } else {
-                comparison.base.clone()
-            };
-
+            let old_ref = source.diff_base_ref(comparison);
             match source.get_file_bytes(file_path, &old_ref) {
                 Ok(old_bytes) => {
                     debug!(
@@ -346,8 +341,8 @@ pub fn get_file_content(
     let (old_content, final_content) = if diff_output.is_empty() {
         (None, content)
     } else if source.include_working_tree(comparison) {
-        let old_ref = &comparison.base;
-        let old = match source.get_file_bytes(file_path, old_ref) {
+        let old_ref = source.diff_base_ref(comparison);
+        let old = match source.get_file_bytes(file_path, &old_ref) {
             Ok(bytes) => {
                 debug!(
                     "[get_file_content] got old content from {old_ref}: {} bytes",
@@ -362,20 +357,17 @@ pub fn get_file_content(
         };
         (old, content)
     } else {
-        let old = match source.get_file_bytes(file_path, &comparison.base) {
+        let old_ref = source.diff_base_ref(comparison);
+        let old = match source.get_file_bytes(file_path, &old_ref) {
             Ok(bytes) => {
                 debug!(
-                    "[get_file_content] got old content from {}: {} bytes",
-                    comparison.base,
+                    "[get_file_content] got old content from {old_ref}: {} bytes",
                     bytes.len()
                 );
                 String::from_utf8(bytes).ok()
             }
             Err(e) => {
-                debug!(
-                    "[get_file_content] no old version at {}: {}",
-                    comparison.base, e
-                );
+                debug!("[get_file_content] no old version at {old_ref}: {e}");
                 None
             }
         };
@@ -996,5 +988,74 @@ mod tests {
         // attempt verification for them (yet).
         assert!(!is_identifier_query("café"));
         assert!(!is_identifier_query("Δfoo"));
+    }
+
+    /// The diff view renders from `old_content` vs the new content, so when the
+    /// head is behind its base, `old_content` must come from the merge-base —
+    /// otherwise the base's newer, unrelated changes show up as diff noise.
+    #[test]
+    fn get_file_content_old_side_uses_merge_base_not_base_tip() {
+        use crate::sources::traits::Comparison;
+        use std::process::Command as Cmd;
+
+        fn git(dir: &Path, args: &[&str]) {
+            let ok = Cmd::new("git")
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null")
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?} failed");
+        }
+        fn git_out(dir: &Path, args: &[&str]) -> String {
+            let out = Cmd::new("git")
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null")
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        git(p, &["init", "-q"]);
+
+        // Fork point: shared.txt has two lines.
+        std::fs::write(p.join("shared.txt"), "line1\nline2\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "fork"]);
+        let default_branch = git_out(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
+
+        // feat changes line2 only.
+        git(p, &["checkout", "-q", "-b", "feat"]);
+        std::fs::write(p.join("shared.txt"), "line1\nFEAT\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "feat changes line2"]);
+
+        // The default branch advances, changing line1 — feat never has this.
+        git(p, &["checkout", "-q", &default_branch]);
+        std::fs::write(p.join("shared.txt"), "DEFAULT\nline2\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "default changes line1"]);
+        git(p, &["checkout", "-q", "feat"]);
+
+        let comparison = Comparison::new(&default_branch, "feat");
+        let fc = get_file_content(p, "shared.txt", &comparison, None).unwrap();
+
+        // Old side is the merge-base version, so the rendered diff shows only
+        // feat's line2 change — not the default branch's line1 change.
+        assert_eq!(
+            fc.old_content.as_deref(),
+            Some("line1\nline2\n"),
+            "old content should come from the merge-base, not the default branch tip"
+        );
     }
 }
