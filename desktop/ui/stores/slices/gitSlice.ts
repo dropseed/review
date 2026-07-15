@@ -61,6 +61,12 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
 
       try {
         const status = await client.getGitStatus(workingPath);
+        // Guard against a stale response: if the repo/worktree changed
+        // while this request was in flight, don't clobber the new one's
+        // status (same race fixed for loadRemoteInfo/loadGitUser, keyed
+        // on getWorkingTreePath() here since status is worktree-scoped
+        // rather than repo-scoped).
+        if (get().getWorkingTreePath() !== workingPath) return;
         // Skip the set() when nothing changed — replacing references
         // re-renders every component selecting `gitStatus` or
         // `stagedFilePaths`, even when the data is identical. Cheap O(1)
@@ -84,6 +90,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
         set({ gitStatus: status, stagedFilePaths: staged });
       } catch (err) {
         console.error("Failed to load git status:", err);
+        if (get().getWorkingTreePath() !== workingPath) return;
         if (get().gitStatus !== null) {
           set({ gitStatus: null, stagedFilePaths: EMPTY_STAGED_SET });
         }
