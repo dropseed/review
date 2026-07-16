@@ -70,4 +70,40 @@ describe("loadAttribution", () => {
     expect(state.attributionLoading).toBe(false);
     expect(state.attributionLoaded).toBe(true);
   });
+
+  it("discards a rejection that resolves after the comparison changed", async () => {
+    let rejectFetch: (err: unknown) => void;
+    getHunkAttribution.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+
+    // Simulate switching to a different comparison while the request is in flight.
+    useReviewStore.setState({
+      comparison: { key: "c..d", base: "c", head: "d" },
+      attribution: null,
+      attributionLoading: false,
+      attributionLoaded: false,
+    } as never);
+
+    rejectFetch!(new Error("network error"));
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.attributionLoading).toBe(false);
+    expect(state.attributionLoaded).toBe(false);
+  });
+
+  it("settles loading/loaded when the comparison hasn't changed and the fetch fails", async () => {
+    getHunkAttribution.mockRejectedValue(new Error("network error"));
+
+    await useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+
+    const state = useReviewStore.getState();
+    expect(state.attributionLoading).toBe(false);
+    expect(state.attributionLoaded).toBe(true);
+  });
 });
