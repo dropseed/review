@@ -15,12 +15,18 @@ export interface HistorySlice {
 }
 
 export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
-  (client: ApiClient) => (set) => ({
+  (client: ApiClient) => (set, get) => ({
     attribution: null,
     attributionLoading: false,
     attributionLoaded: false,
 
     loadAttribution: async (repoPath: string, base: string, head: string) => {
+      const comparisonKey = get().comparison?.key;
+      // Discard a stale response: if the repo/comparison changed while
+      // this request was in flight, don't clobber the new one's state
+      // (same race fixed for loadGitStatus/loadRemoteInfo/loadGitUser).
+      const isStale = () =>
+        get().repoPath !== repoPath || get().comparison?.key !== comparisonKey;
       set({ attributionLoading: true });
       try {
         const attribution = await client.getHunkAttribution(
@@ -28,6 +34,7 @@ export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
           base,
           head,
         );
+        if (isStale()) return;
         set({
           attribution,
           attributionLoading: false,
@@ -35,6 +42,7 @@ export const createHistorySlice: SliceCreatorWithClient<HistorySlice> =
         });
       } catch (err) {
         console.error("Failed to load hunk attribution:", err);
+        if (isStale()) return;
         set({ attributionLoading: false, attributionLoaded: true });
       }
     },
