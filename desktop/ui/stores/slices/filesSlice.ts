@@ -14,7 +14,7 @@ import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
 import type { UndoEntry } from "./undoSlice";
-import { symbolsResetState } from "./symbolsSlice";
+import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
 import { EMPTY_STAGED_SET } from "./gitSlice";
 import { debouncedSave } from "./reviewSlice";
@@ -231,6 +231,8 @@ const repoResetState = {
   // Git
   gitStatus: null,
   stagedFilePaths: EMPTY_STAGED_SET,
+  // Other slices
+  ...repoSymbolsResetState,
 };
 
 export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =

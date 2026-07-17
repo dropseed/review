@@ -24,14 +24,19 @@ export const symbolsResetState = {
   symbolsLoaded: false,
 } satisfies Partial<SymbolsSlice>;
 
+/** Repo-wide symbol state that must be cleared when switching repositories. */
+export const repoSymbolsResetState = {
+  repoSymbols: [],
+  repoSymbolsLoading: false,
+  repoSymbolsLoaded: false,
+} satisfies Partial<SymbolsSlice>;
+
 export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
   (client: ApiClient) => (set, get) => ({
     ...symbolsResetState,
 
     // Repo-wide symbols (not reset on comparison change)
-    repoSymbols: [],
-    repoSymbolsLoading: false,
-    repoSymbolsLoaded: false,
+    ...repoSymbolsResetState,
 
     loadSymbols: async () => {
       const {
@@ -102,10 +107,15 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
       const { repoPath, repoSymbolsLoading, repoSymbolsLoaded } = get();
       if (!repoPath || repoSymbolsLoading || repoSymbolsLoaded) return;
 
+      // Discard a stale response: if the repo changed while this request
+      // was in flight, don't clobber the new repo's state (same race
+      // guarded against in loadGitStatus/loadRemoteInfo/loadAttribution).
+      const isStale = () => get().repoPath !== repoPath;
       set({ repoSymbolsLoading: true });
 
       try {
         const results = await client.getRepoSymbols(repoPath);
+        if (isStale()) return;
         set({
           repoSymbols: results,
           repoSymbolsLoading: false,
@@ -113,6 +123,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         });
       } catch (err) {
         console.error("Failed to load repo symbols:", err);
+        if (isStale()) return;
         set({
           repoSymbols: [],
           repoSymbolsLoading: false,
