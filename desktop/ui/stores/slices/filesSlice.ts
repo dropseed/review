@@ -639,7 +639,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     loadDirectoryContents: async (dirPath: string) => {
-      const { repoPath, allFiles, loadedGitIgnoredDirs } = get();
+      const { repoPath, loadedGitIgnoredDirs } = get();
       if (!repoPath) return;
 
       // Skip if already loaded
@@ -648,8 +648,11 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       try {
         const contents = await client.listDirectoryContents(repoPath, dirPath);
 
+        // Don't update if repo changed while loading
+        if (get().repoPath !== repoPath) return;
+
         // Mark as loaded
-        const newLoadedDirs = new Set(loadedGitIgnoredDirs);
+        const newLoadedDirs = new Set(get().loadedGitIgnoredDirs);
         newLoadedDirs.add(dirPath);
 
         // Merge contents into allFiles tree by finding the target directory
@@ -677,7 +680,11 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           });
         }
 
-        const updatedAllFiles = mergeIntoTree(allFiles, dirPath, contents);
+        const updatedAllFiles = mergeIntoTree(
+          get().allFiles,
+          dirPath,
+          contents,
+        );
         set({ allFiles: updatedAllFiles, loadedGitIgnoredDirs: newLoadedDirs });
       } catch (err) {
         console.error(`Failed to load directory contents for ${dirPath}:`, err);
