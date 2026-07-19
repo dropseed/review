@@ -50,9 +50,11 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
 
       set({ searchLoading: true, searchError: null });
 
-      // True if the repo or query changed while a request was in flight
+      // True if the repo, query, or case-sensitivity changed while a request was in flight
       const isStale = () =>
-        get().repoPath !== repoPath || get().searchQuery !== query;
+        get().repoPath !== repoPath ||
+        get().searchQuery !== query ||
+        get().searchCaseSensitive !== searchCaseSensitive;
 
       try {
         const results = await client.searchFileContents(

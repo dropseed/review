@@ -67,6 +67,26 @@ describe("performSearch", () => {
     expect(state.searchLoading).toBe(true);
   });
 
+  it("discards a response that resolves after case-sensitivity changed", async () => {
+    let resolveFetch: (value: SearchMatch[]) => void;
+    searchFileContents.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const promise = useReviewStore.getState().performSearch("foo");
+
+    // Simulate toggling case-sensitivity while the request is in flight.
+    useReviewStore.setState({ searchCaseSensitive: true } as never);
+
+    resolveFetch!(matches);
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.searchResults).toEqual([]);
+  });
+
   it("discards a response that resolves after the repo changed", async () => {
     let resolveFetch: (value: SearchMatch[]) => void;
     searchFileContents.mockReturnValue(
