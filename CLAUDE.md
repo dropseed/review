@@ -127,14 +127,6 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 - `review comment edit|resolve|unresolve|delete <comment-id>`
 - `review guide show [--json]` · `review guide add "<title>" <hunk-id>... [--desc TEXT]` · `review guide clear`
 
-**Findings & runs** — the persistent record of an (AI) review pass. A `submit` records one run plus its findings; each finding carries an append-only disposition log (status is derived from the last event, not mutated).
-
-- `review findings submit [FILE] [--source agent] [--example] [--dry-run] [--json]` — `--example` prints a JSON skeleton (no repo/writes); `--dry-run` validates and shows each finding's anchor resolution without persisting
-- `review findings [--open|--resolved] [--kind K] [--severity S] [--run ID] [--file GLOB] [--json]`
-- `review findings move --from <spec> --to <spec> [--run <id>]` — carry runs/findings onto another comparison, re-anchoring each finding (re-homes a working-diff review after a commit)
-- `review finding show|resolve|reopen|delete <id>` — `resolve --as fixed|false-positive|accepted-risk|deferred`; `delete` drops a finding (cleanup, not disposition)
-- `review runs [--json]` · `review runs delete <id> [--keep-findings]`
-
 The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
@@ -145,9 +137,8 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 **Skills**: `review skill install` writes the bundled skills into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). Canonical sources live in `core/resources/skills/*/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries them:
 
 - `review-guide` — reviewer-side: help a human work through a large diff.
-- `pre-review` — submitter-side: run AI quality/bug-hunt passes at the end of a dev loop, fix or defer each finding with evidence, and persist the results as findings on a review run so the human starts from a record. The review note is human-only — agents read it, never write it.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `findings.rs` (runs, findings, `submit`/`move`/delete); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

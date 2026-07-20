@@ -451,92 +451,6 @@ export interface LineAnnotation {
   resolvedBy?: string;
 }
 
-// --- Review runs + findings (displayed read-only in the desktop app) ---
-// Mirror core/src/review/findings.rs. Both structs serialize camelCase; the
-// disposition actions are kebab-case. Fields the Rust side skips when empty
-// (evidence, events, and the optionals) are optional here too.
-
-export type FindingKind = "bug" | "risk" | "question" | "improvement";
-export type FindingSeverity = "high" | "medium" | "low";
-export type FindingConfidence = "confirmed" | "plausible";
-export type EvidenceKind = "command" | "test" | "trace" | "reasoning";
-export type DispositionAction =
-  "fixed" | "false-positive" | "accepted-risk" | "deferred" | "reopened";
-
-export interface Evidence {
-  kind: EvidenceKind;
-  description?: string;
-  command?: string;
-  output?: string;
-}
-
-// One entry in a finding's append-only disposition log.
-export interface DispositionEvent {
-  action: DispositionAction;
-  actor?: string;
-  source: Source;
-  at: string;
-  reason?: string;
-  evidence?: Evidence;
-}
-
-// Where a finding is anchored in the diff. Absent lineNumber = file-level.
-export interface FindingAnchor {
-  filePath: string;
-  lineNumber?: number;
-  endLineNumber?: number;
-  side: "old" | "new" | "file";
-  hunkId?: string; // stable filepath:hash the anchor fell inside at submit time
-  stableKey?: string; // matched hunk's drift-stable identity at submit time
-}
-
-// A single issue raised by a review run (or a standalone agent).
-export interface Finding {
-  id: string;
-  producerId?: string;
-  runId?: string;
-  kind: FindingKind;
-  severity: FindingSeverity;
-  confidence?: FindingConfidence;
-  title: string;
-  body?: string;
-  suggestion?: string;
-  evidence?: Evidence[];
-  anchor: FindingAnchor;
-  events?: DispositionEvent[]; // append-only disposition log; absent = open
-  author?: string;
-  source: Source;
-  createdAt: string;
-}
-
-// A record that a review pass ran over the comparison: tool, model, and a
-// summary of what it examined and concluded. No per-hunk coverage field — see
-// the Rust ReviewRun doc for why (molten local diff; coverage is a PR concern).
-export interface ReviewRun {
-  id: string;
-  tool: string; // e.g. "claude-code/code-review"
-  model?: string;
-  summary?: string;
-  author?: string;
-  source: Source;
-  createdAt: string;
-}
-
-// A finding's status, derived from its event log — the TS mirror of
-// Finding::derived_status in Rust: open when the log is empty or the last event
-// is `reopened`; otherwise resolved, carrying that last event's action.
-export interface FindingStatus {
-  open: boolean;
-  resolution?: DispositionAction;
-}
-
-export function findingStatus(finding: Finding): FindingStatus {
-  const events = finding.events ?? [];
-  const last = events[events.length - 1];
-  if (!last || last.action === "reopened") return { open: true };
-  return { open: false, resolution: last.action };
-}
-
 // Rejection feedback for export
 export interface RejectionFeedback {
   comparison: Comparison;
@@ -596,8 +510,6 @@ export interface ReviewState {
   totalDiffHunks: number; // Total diff hunks (including unclassified) for accurate progress
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
   worktreePath?: string; // Path to review-managed worktree, if created
-  runs?: ReviewRun[]; // Review passes recorded against this comparison
-  findings?: Finding[]; // Issues raised by runs/agents, each with a disposition log
 }
 
 // Result of loading a review: the state plus how many decisions reconciliation

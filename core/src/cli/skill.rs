@@ -6,16 +6,10 @@ use clap::{Args, Subcommand};
 
 /// The bundled skills, embedded into the binary at build time so the shipped
 /// CLI can install them without the source repo present.
-const SKILLS: &[(&str, &str)] = &[
-    (
-        "review-guide",
-        include_str!("../../resources/skills/review-guide/SKILL.md"),
-    ),
-    (
-        "pre-review",
-        include_str!("../../resources/skills/pre-review/SKILL.md"),
-    ),
-];
+const SKILLS: &[(&str, &str)] = &[(
+    "review-guide",
+    include_str!("../../resources/skills/review-guide/SKILL.md"),
+)];
 
 #[derive(Debug, Args)]
 pub struct SkillArgs {
