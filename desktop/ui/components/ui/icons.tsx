@@ -89,6 +89,32 @@ export function WorktreeIcon({ className = "w-4 h-4" }: IconProps) {
   );
 }
 
+/** A tree whose limbs are git-graph lines ending in commit circles. */
+export function GitTreeIcon({ className = "w-4 h-4" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M8 15V10.8" />
+      <path d="M8 10.8C8 9.6 5.6 9.6 5 8" />
+      <path d="M8 10.8C8 9.6 10.4 9.6 11 8" />
+      <g fill="currentColor" stroke="none">
+        <circle cx="8" cy="3.2" r="1.7" />
+        <circle cx="4.6" cy="4.6" r="1.6" />
+        <circle cx="11.4" cy="4.6" r="1.6" />
+        <circle cx="2.8" cy="7.2" r="1.5" />
+        <circle cx="13.2" cy="7.2" r="1.5" />
+      </g>
+    </svg>
+  );
+}
+
 /** Sidebar panel icon — a rectangle with a vertical divider line. */
 export function SidebarPanelIcon({ className = "w-4 h-4" }: IconProps) {
   return (

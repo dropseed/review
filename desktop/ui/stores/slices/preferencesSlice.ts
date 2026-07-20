@@ -137,6 +137,9 @@ const defaults = {
   reviewSortOrder: "updated" as ReviewSortOrder,
   collapsedOrgs: {} as Record<string, boolean>,
   collapsedRepos: {} as Record<string, boolean>,
+  // Zone-1 "Working on" manual overrides, keyed `${repoPath}:${ref}`.
+  workingOnPinned: [] as string[],
+  workingOnDismissed: [] as string[],
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -188,6 +191,11 @@ export interface PreferencesSlice {
   // Empty record = everything expanded; entries with `true` are collapsed.
   collapsedOrgs: Record<string, boolean>;
   collapsedRepos: Record<string, boolean>;
+
+  // Zone-1 "Working on" manual overrides, keyed `${repoPath}:${ref}`.
+  // Pinned rows always show (ranked first); dismissed rows never show.
+  workingOnPinned: string[];
+  workingOnDismissed: string[];
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -253,6 +261,12 @@ export interface PreferencesSlice {
   toggleOrgCollapsed: (org: string) => void;
   setRepoCollapsed: (repoPath: string, collapsed: boolean) => void;
   toggleRepoCollapsed: (repoPath: string) => void;
+
+  // Zone-1 "Working on" actions (key = `${repoPath}:${ref}`)
+  pinWorkingOn: (key: string) => void;
+  unpinWorkingOn: (key: string) => void;
+  dismissWorkingOn: (key: string) => void;
+  undismissWorkingOn: (key: string) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -519,18 +533,56 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     },
 
     setRepoCollapsed: (repoPath, collapsed) => {
+      // Browse repos default to collapsed: absent/`true` = collapsed, explicit
+      // `false` = expanded. Store `false` to expand; drop the key to return to
+      // the collapsed default.
       const current = get().collapsedRepos;
-      if ((current[repoPath] === true) === collapsed) return;
+      const isCollapsedNow = current[repoPath] !== false;
+      if (isCollapsedNow === collapsed) return;
       const next = { ...current };
-      if (collapsed) next[repoPath] = true;
-      else delete next[repoPath];
+      if (collapsed) delete next[repoPath];
+      else next[repoPath] = false;
       set({ collapsedRepos: next });
       storage.set("collapsedRepos", next);
     },
 
     toggleRepoCollapsed: (repoPath) => {
-      const collapsed = get().collapsedRepos[repoPath] === true;
+      const collapsed = get().collapsedRepos[repoPath] !== false;
       get().setRepoCollapsed(repoPath, !collapsed);
+    },
+
+    pinWorkingOn: (key) => {
+      // Pinning wins over a prior dismiss — clear it from both sets, then add.
+      const pinned = get().workingOnPinned.filter((k) => k !== key);
+      pinned.push(key);
+      const dismissed = get().workingOnDismissed.filter((k) => k !== key);
+      set({ workingOnPinned: pinned, workingOnDismissed: dismissed });
+      storage.set("workingOnPinned", pinned);
+      storage.set("workingOnDismissed", dismissed);
+    },
+
+    unpinWorkingOn: (key) => {
+      if (!get().workingOnPinned.includes(key)) return;
+      const pinned = get().workingOnPinned.filter((k) => k !== key);
+      set({ workingOnPinned: pinned });
+      storage.set("workingOnPinned", pinned);
+    },
+
+    dismissWorkingOn: (key) => {
+      // Dismissing a pinned row un-pins it first.
+      const pinned = get().workingOnPinned.filter((k) => k !== key);
+      const dismissed = get().workingOnDismissed.filter((k) => k !== key);
+      dismissed.push(key);
+      set({ workingOnPinned: pinned, workingOnDismissed: dismissed });
+      storage.set("workingOnPinned", pinned);
+      storage.set("workingOnDismissed", dismissed);
+    },
+
+    undismissWorkingOn: (key) => {
+      if (!get().workingOnDismissed.includes(key)) return;
+      const dismissed = get().workingOnDismissed.filter((k) => k !== key);
+      set({ workingOnDismissed: dismissed });
+      storage.set("workingOnDismissed", dismissed);
     },
 
     setFileSortOrder: (order) => {

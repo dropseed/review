@@ -748,6 +748,8 @@ export interface LocalBranchInfo {
   hasWorkingTreeChanges: boolean;
   lastCommitDate: string;
   lastCommitMessage: string;
+  /** True when the tip commit's committer email matches the repo's `user.email`. */
+  lastCommitByUser: boolean;
   worktreePath: string | null;
   /** Most recent modification time of any changed file (Unix millis), only for working tree changes. */
   lastModifiedAt: number | null;

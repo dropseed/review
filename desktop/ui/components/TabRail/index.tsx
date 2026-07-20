@@ -93,8 +93,10 @@ import {
   type SidebarEntry,
   type RepoGroup,
   type OrgGroup,
+  isRepoCollapsed,
 } from "../../utils/sidebar-ordering";
-import { useOrgGroups } from "../../hooks/useRepoGroups";
+import { type WorkingOnEntry } from "../../utils/working-on";
+import { useOrgGroups, useWorkingOn } from "../../hooks/useRepoGroups";
 import { RemoteBranchItem } from "./RemoteBranchItem";
 
 interface SidebarListProps {
@@ -111,6 +113,7 @@ function SidebarList({
   onActivateLocalBranch,
 }: SidebarListProps): ReactNode {
   const orgGroups = useOrgGroups();
+  const workingOn = useWorkingOn();
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -200,13 +203,49 @@ function SidebarList({
     );
   }
 
+  /** Short repo name for a zone-1 `repo / branch` label (route-prefix aware). */
+  function repoDisplayName(repoPath: string, fallback: string): string {
+    const routePrefix = repoMetadata[repoPath]?.routePrefix;
+    return routePrefix
+      ? splitRoutePrefix(routePrefix).repo || fallback
+      : fallback;
+  }
+
+  /** Render a zone-1 "Working on" row, reusing the existing row components. */
+  function renderWorkingOn(wo: WorkingOnEntry): ReactNode {
+    const { entry } = wo;
+    if (entry.kind === "review") {
+      return (
+        <TabRailItem
+          key={`wo:${wo.reviewKey}`}
+          {...reviewItemPropsFor(entry.review)}
+          repoLabel={repoDisplayName(wo.repoPath, wo.repoName)}
+        />
+      );
+    }
+    return (
+      <LocalBranchItem
+        key={`wo:${wo.reviewKey}`}
+        branch={entry.branch}
+        repoPath={entry.repo.repoPath}
+        repoName={repoDisplayName(entry.repo.repoPath, entry.repo.repoName)}
+        defaultBranch={entry.repo.defaultBranch}
+        itemKind={entry.kind}
+        onActivate={onActivateLocalBranch}
+      />
+    );
+  }
+
   const totalItems = orgGroups.reduce(
     (n, org) => n + org.repos.reduce((m, r) => m + r.items.length, 0),
     0,
   );
 
   const isEmpty =
-    totalItems === 0 && !globalReviewsLoading && !localActivityLoading;
+    totalItems === 0 &&
+    workingOn.length === 0 &&
+    !globalReviewsLoading &&
+    !localActivityLoading;
 
   if (isEmpty) {
     return null;
@@ -217,15 +256,9 @@ function SidebarList({
     globalReviews.length === 0 &&
     localActivity.length === 0;
 
-  // Repos with no remote yet (or only one local repo total) should not get
-  // wrapped in a stutter "local" org header.
-  const suppressLocalOrgHeader =
-    orgGroups.length === 1 ||
-    (orgGroups.find((g) => g.isLocal)?.repos.length ?? 0) <= 1;
-
-  return (
-    <div role="tablist" className="pb-1">
-      {isLoading && (
+  if (isLoading) {
+    return (
+      <div role="tablist" className="pb-1">
         <div className="space-y-2 px-2 py-2">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse space-y-1">
@@ -234,17 +267,54 @@ function SidebarList({
             </div>
           ))}
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {orgGroups.map((org) => (
-        <OrgSection
-          key={org.org}
-          org={org}
-          suppressHeader={org.isLocal && suppressLocalOrgHeader}
-          renderEntry={renderEntry}
-          onActivateLocalBranch={onActivateLocalBranch}
-        />
-      ))}
+  // Repos with no remote yet (or only one local repo total) should not get
+  // wrapped in a stutter "local" org header.
+  const suppressLocalOrgHeader =
+    orgGroups.length === 1 ||
+    (orgGroups.find((g) => g.isLocal)?.repos.length ?? 0) <= 1;
+
+  return (
+    <div role="tablist" className="pb-1">
+      {/* Zone 1 — "Working on": flat, cross-repo, activity-derived. */}
+      <div className="pt-0.5">
+        <ZoneHeader label="Working on" />
+        {workingOn.length > 0 ? (
+          workingOn.map(renderWorkingOn)
+        ) : (
+          <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
+            Nothing in flight — changes and recent branches show up here.
+          </p>
+        )}
+      </div>
+
+      {/* Zone 2 — browse: the full org → repo tree, collapsed by default. */}
+      <div className="mt-2 border-t border-t-edge/40 pt-1.5">
+        <ZoneHeader label="Repositories" />
+        {orgGroups.map((org) => (
+          <OrgSection
+            key={org.org}
+            org={org}
+            suppressHeader={org.isLocal && suppressLocalOrgHeader}
+            renderEntry={renderEntry}
+            onActivateLocalBranch={onActivateLocalBranch}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Zone label — quiet uppercase header for the two top-level sidebar zones. */
+function ZoneHeader({ label }: { label: string }): ReactNode {
+  return (
+    <div className="px-2.5 pb-1 pt-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
+        {label}
+      </span>
     </div>
   );
 }
@@ -421,7 +491,8 @@ function RepoGroupHeader({
 }) {
   const collapsedRepos = useReviewStore((s) => s.collapsedRepos);
   const setRepoCollapsed = useReviewStore((s) => s.setRepoCollapsed);
-  const collapsed = collapsedRepos[group.repoPath] === true;
+  const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
+  const collapsed = isRepoCollapsed(collapsedRepos, group.repoPath);
 
   const currentHead = group.branches.find((e) => e.kind === "working-tree");
   const canActivate = !!(currentHead && group.defaultBranch);
@@ -442,7 +513,15 @@ function RepoGroupHeader({
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const willExpand = collapsed;
     setRepoCollapsed(group.repoPath, !collapsed);
+    if (willExpand) {
+      // Browse-zone reviews are outside the recurring (zone-1) freshness scope;
+      // check this repo's reviews once when the user opens it.
+      checkReviewsFreshness(group.items.map((it) => it.reviewKey)).catch(
+        () => {},
+      );
+    }
   };
 
   const headBranch = currentHead?.branch;

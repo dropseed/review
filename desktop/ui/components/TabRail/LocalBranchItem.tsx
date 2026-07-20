@@ -3,12 +3,13 @@ import { createPortal } from "react-dom";
 import { useReviewStore } from "../../stores";
 import type { LocalBranchInfo } from "../../types";
 import type { SidebarItemKind } from "../../utils/sidebar-ordering";
-import { XIcon } from "../ui/icons";
+import { GitTreeIcon, XIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
+import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
 
 interface LocalBranchItemProps {
   branch: LocalBranchInfo;
@@ -181,9 +182,9 @@ export const LocalBranchItem = memo(function LocalBranchItem({
                               : ""
                           }`}
             >
-              {isCheckedOut && (
-                <span className="text-[9px] rounded-full bg-fg/[0.08] text-fg-faint px-1.5 py-px">
-                  {itemKind === "working-tree" ? "local" : "worktree"}
+              {isCheckedOut && itemKind === "worktree" && (
+                <span className="text-fg-faint" title="worktree">
+                  <GitTreeIcon className="h-3.5 w-3.5" />
                 </span>
               )}
               {branch.hasWorkingTreeChanges && (
@@ -240,16 +241,24 @@ export const LocalBranchItem = memo(function LocalBranchItem({
                 }}
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => setShowChangeBase(true)}
-                className="w-full px-3 py-1.5 text-left text-xs text-fg-secondary hover:bg-fg/[0.08] transition-colors flex items-center justify-between"
-              >
-                <span>Change Base…</span>
-                <span className="text-[10px] text-fg-faint ml-3 truncate max-w-[80px]">
-                  {defaultBranch}
-                </span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowChangeBase(true)}
+                  className="w-full px-3 py-1.5 text-left text-xs text-fg-secondary hover:bg-fg/[0.08] transition-colors flex items-center justify-between"
+                >
+                  <span>Change Base…</span>
+                  <span className="text-[10px] text-fg-faint ml-3 truncate max-w-[80px]">
+                    {defaultBranch}
+                  </span>
+                </button>
+                <div className="my-1 border-t border-edge/30" />
+                <WorkingOnMenuItems
+                  repoPath={repoPath}
+                  reviewRef={reviewRef}
+                  onDone={() => setShowContextMenu(false)}
+                />
+              </>
             )}
           </div>,
           document.body,

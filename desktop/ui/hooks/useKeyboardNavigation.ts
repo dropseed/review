@@ -9,12 +9,24 @@ import {
   flattenOrgGroups,
   type SidebarEntry,
 } from "../utils/sidebar-ordering";
+import { buildWorkingOn, type WorkingOnEntry } from "../utils/working-on";
 
 interface SidebarItem {
   key: string;
   repoPath: string;
   ref: string;
   baseOverride?: string;
+}
+
+/** Zone-1 rows come first in the Cmd+1..9 order, matching their render order. */
+function workingOnToItems(entries: WorkingOnEntry[]): SidebarItem[] {
+  return entries.map((wo) => ({
+    key: wo.reviewKey,
+    repoPath: wo.repoPath,
+    ref: wo.ref,
+    baseOverride:
+      wo.entry.kind === "review" ? wo.entry.review.baseOverride : undefined,
+  }));
 }
 
 function entriesToItems(entries: SidebarEntry[]): SidebarItem[] {
@@ -170,13 +182,23 @@ export function useKeyboardNavigation() {
             state.reviewDiffStats,
           );
           const orgGroups = buildOrgGroups(repoGroups, state.repoMetadata);
-          const items = entriesToItems(
-            flattenOrgGroups(
-              orgGroups,
-              state.collapsedOrgs,
-              state.collapsedRepos,
-            ),
+          const workingOn = buildWorkingOn(
+            state.localActivity,
+            state.globalReviews,
+            state.workingOnPinned,
+            state.workingOnDismissed,
+            Date.now(),
           );
+          const items = [
+            ...workingOnToItems(workingOn),
+            ...entriesToItems(
+              flattenOrgGroups(
+                orgGroups,
+                state.collapsedOrgs,
+                state.collapsedRepos,
+              ),
+            ),
+          ];
           const target = items[digit - 1];
           if (target) activateSidebarItem(state, target);
           return;

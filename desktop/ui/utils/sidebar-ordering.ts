@@ -401,6 +401,18 @@ export function flattenRepoGroups(groups: RepoGroup[]): SidebarEntry[] {
 }
 
 /**
+ * Whether a zone-2 browse repo is collapsed. Browse repos default to collapsed
+ * — only an explicit `false` (the user expanded it) keeps it open. Absent or
+ * `true` both read as collapsed.
+ */
+export function isRepoCollapsed(
+  collapsedRepos: Record<string, boolean>,
+  repoPath: string,
+): boolean {
+  return collapsedRepos[repoPath] !== false;
+}
+
+/**
  * Flatten org groups respecting collapsed state. Used by keyboard navigation
  * so Cmd+1..9 walks the visible rows in render order.
  */
@@ -413,7 +425,7 @@ export function flattenOrgGroups(
   for (const org of orgs) {
     if (collapsedOrgs[org.org]) continue;
     for (const repo of org.repos) {
-      if (collapsedRepos[repo.repoPath]) {
+      if (isRepoCollapsed(collapsedRepos, repo.repoPath)) {
         // Collapsed repo: include only the working-tree entry (the row that
         // gets activated when the user clicks the collapsed repo header).
         const head = repo.branches.find((e) => e.kind === "working-tree");

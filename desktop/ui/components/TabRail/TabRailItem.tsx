@@ -4,6 +4,7 @@ import type { GlobalReviewSummary } from "../../types";
 import { useReviewStore } from "../../stores";
 import { WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
+import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
 
 /**
  * Label a review by its identity (ref) for display. Listing is git-free, so
@@ -40,6 +41,8 @@ interface TabRailItemProps {
   repoName: string;
   defaultBranch?: string;
   missingRefs?: string[];
+  /** When set, render `{repoLabel} / ` before the label (zone-1 "Working on"). */
+  repoLabel?: string;
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
 }
@@ -60,6 +63,7 @@ function arePropsEqual(
     return false;
   if (prev.review.githubPr?.title !== next.review.githubPr?.title) return false;
   if (prev.repoName !== next.repoName) return false;
+  if (prev.repoLabel !== next.repoLabel) return false;
   if (prev.defaultBranch !== next.defaultBranch) return false;
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
   if (prev.onActivate !== next.onActivate) return false;
@@ -72,6 +76,7 @@ export const TabRailItem = memo(function TabRailItem({
   repoName,
   defaultBranch,
   missingRefs,
+  repoLabel,
   onActivate,
   onDelete,
 }: TabRailItemProps) {
@@ -161,6 +166,7 @@ export const TabRailItem = memo(function TabRailItem({
                 : "text-fg-muted/70 group-hover:text-fg-muted"
             }`}
           >
+            {repoLabel && <span className="text-fg-muted">{repoLabel} / </span>}
             {primaryLabel}
             {isPr && ` #${pr.number}`}
           </span>
@@ -240,6 +246,12 @@ export const TabRailItem = memo(function TabRailItem({
                 >
                   Mark done
                 </button>
+                <div className="my-1 border-t border-edge/30" />
+                <WorkingOnMenuItems
+                  repoPath={review.repoPath}
+                  reviewRef={review.ref}
+                  onDone={() => setShowContextMenu(false)}
+                />
               </>
             )}
           </div>,

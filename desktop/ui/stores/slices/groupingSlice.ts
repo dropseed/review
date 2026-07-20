@@ -2,6 +2,9 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
 import type { HunkGroup } from "../../types";
+import { makeReviewKey } from "../../utils/review-key";
+
+export { makeReviewKey };
 
 /** Per-review guide state stored in the keyed Map. */
 export interface GroupingEntry {
@@ -12,12 +15,6 @@ export interface GroupingEntry {
 const EMPTY_ENTRY: GroupingEntry = Object.freeze({
   reviewGroups: [],
 });
-
-/** Build a unique key for a review (repo + ref). Matches the backend's
- *  freshness key `${repo_path}:${ref}`. */
-export function makeReviewKey(repoPath: string, ref: string): string {
-  return `${repoPath}:${ref}`;
-}
 
 /** Stable empty result so callers can use this in selectors/memos. */
 const NO_MISSING_REFS: string[] = [];

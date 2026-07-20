@@ -9,6 +9,7 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { jsonEqual } from "../../utils/equality";
+import { buildWorkingOn } from "../../utils/working-on";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
 import { forgetEnsuredReview } from "./reviewSlice";
@@ -65,7 +66,14 @@ export interface GlobalReviewsSlice {
     ref: string,
     baseOverride: string | null,
   ) => Promise<ResolvedReview | null>;
-  checkReviewsFreshness: () => Promise<void>;
+  /**
+   * Check which saved reviews are stale (diff SHAs moved, refs deleted) and
+   * refresh their cached diff stats. Scoped by default to the zone-1 "Working
+   * on" set (plus the active review) so the recurring pass stays cheap; pass
+   * explicit `scopeKeys` to check a specific set — e.g. one repo's reviews when
+   * its browse-zone row is expanded.
+   */
+  checkReviewsFreshness: (scopeKeys?: string[]) => Promise<void>;
   /** Save current navigation state before switching away from a review. */
   saveNavigationSnapshot: () => void;
   /** Restore navigation state when switching back to a review (after files load). */
@@ -263,17 +271,48 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       }
     },
 
-    checkReviewsFreshness: async () => {
-      if (freshnessInFlight) return freshnessInFlight;
+    checkReviewsFreshness: async (scopeKeys?: string[]) => {
+      // Zone-1 review keys (plus the active review) — the default scope.
+      const deriveWorkingOnScope = (): Set<string> => {
+        const {
+          localActivity,
+          globalReviews,
+          globalReviewsByKey,
+          workingOnPinned,
+          workingOnDismissed,
+          activeReviewKey,
+        } = get();
+        const entries = buildWorkingOn(
+          localActivity,
+          globalReviews,
+          workingOnPinned,
+          workingOnDismissed,
+          Date.now(),
+        );
+        const keys = new Set<string>();
+        for (const entry of entries) {
+          if (entry.reviewKey in globalReviewsByKey) keys.add(entry.reviewKey);
+        }
+        if (activeReviewKey) {
+          keys.add(
+            makeReviewKey(activeReviewKey.repoPath, activeReviewKey.ref),
+          );
+        }
+        return keys;
+      };
 
-      freshnessInFlight = (async () => {
+      // Run one freshness pass over the reviews whose key is in `scope`.
+      const runPass = async (scope: Set<string>): Promise<void> => {
         const { globalReviews, reviewCachedShas } = get();
-        if (globalReviews.length === 0) return;
+        const scoped = globalReviews.filter((review) =>
+          scope.has(makeReviewKey(review.repoPath, review.ref)),
+        );
+        if (scoped.length === 0) return;
 
         // Summaries carry the review identity; the backend resolves each ref
         // (honoring baseOverride) into the comparison it diffs, and flags any
         // ref that no longer resolves via missingRefs.
-        const inputs: ReviewFreshnessInput[] = globalReviews.map((review) => {
+        const inputs: ReviewFreshnessInput[] = scoped.map((review) => {
           const cached =
             reviewCachedShas[makeReviewKey(review.repoPath, review.ref)];
           return {
@@ -388,7 +427,19 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         } catch (err) {
           console.error("Failed to check reviews freshness:", err);
         }
-      })().finally(() => {
+      };
+
+      // Explicit scope (e.g. a repo expanding) runs immediately and additively —
+      // partial passes only touch the keys they cover. The default (unscoped)
+      // pass targets the zone-1 working set and is de-duped so overlapping
+      // triggers don't fan out twice.
+      if (scopeKeys !== undefined) {
+        return runPass(new Set(scopeKeys));
+      }
+
+      if (freshnessInFlight) return freshnessInFlight;
+
+      freshnessInFlight = runPass(deriveWorkingOnScope()).finally(() => {
         freshnessInFlight = null;
       });
 

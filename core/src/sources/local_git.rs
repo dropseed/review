@@ -90,6 +90,9 @@ pub struct LocalBranchInfo {
     pub has_working_tree_changes: bool,
     pub last_commit_date: String,
     pub last_commit_message: String,
+    /// True when the tip commit's committer email matches the repo's configured
+    /// `user.email`. False when `user.email` is unset or the emails differ.
+    pub last_commit_by_user: bool,
     pub worktree_path: Option<String>,
     /// Most recent modification time of any changed file (Unix millis), only set for working tree changes.
     pub last_modified_at: Option<u64>,
@@ -155,6 +158,9 @@ pub struct LocalGitSource {
     resolve_ref_cache: std::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
     working_tree_dir_cache: std::sync::Mutex<std::collections::HashMap<String, Option<PathBuf>>>,
     default_branch_cache: std::sync::OnceLock<String>,
+    /// Configured `git config user.email`, read once per source instance.
+    /// `None` means unset/blank; the outer `OnceLock` guards the read.
+    user_email_cache: std::sync::OnceLock<Option<String>>,
 }
 
 impl LocalGitSource {
@@ -168,6 +174,7 @@ impl LocalGitSource {
             resolve_ref_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             working_tree_dir_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             default_branch_cache: std::sync::OnceLock::new(),
+            user_email_cache: std::sync::OnceLock::new(),
         })
     }
 
@@ -253,6 +260,35 @@ impl LocalGitSource {
             .ok()
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty())
+    }
+
+    /// Get the configured git committer email (`git config user.email`),
+    /// cached for the life of this source. Returns `None` when unset or blank.
+    pub fn get_user_email(&self) -> Option<String> {
+        self.user_email_cache
+            .get_or_init(|| {
+                self.run_git(&["config", "user.email"])
+                    .ok()
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+            })
+            .clone()
+    }
+
+    /// Whether a committer email — as emitted by `%(committeremail)`, wrapped in
+    /// angle brackets — matches the repo's configured `user.email`. Comparison is
+    /// case-insensitive; returns false when either side is empty.
+    fn commit_is_by_user(&self, committer_email: &str) -> bool {
+        let email = committer_email
+            .trim()
+            .trim_start_matches('<')
+            .trim_end_matches('>')
+            .trim();
+        if email.is_empty() {
+            return false;
+        }
+        self.get_user_email()
+            .is_some_and(|user| user.eq_ignore_ascii_case(email))
     }
 
     /// Get remote info (org/repo name and browse URL) from the origin remote.
@@ -694,7 +730,7 @@ impl LocalGitSource {
         // Try batch approach first using %(ahead-behind:<ref>) (Git 2.36+)
         // This gets all ahead counts in a single git call instead of N+1
         let batch_format = format!(
-            "%(refname:short)\t%(ahead-behind:{default_branch})\t%(committerdate:iso-strict)\t%(subject)"
+            "%(refname:short)\t%(ahead-behind:{default_branch})\t%(committerdate:iso-strict)\t%(committeremail)\t%(subject)"
         );
         let mut branches = match self.run_git(&[
             "for-each-ref",
@@ -753,7 +789,7 @@ impl LocalGitSource {
                 continue;
             }
 
-            let parts: Vec<&str> = line.splitn(4, '\t').collect();
+            let parts: Vec<&str> = line.splitn(5, '\t').collect();
             if parts.len() < 2 {
                 continue;
             }
@@ -777,7 +813,8 @@ impl LocalGitSource {
             }
 
             let last_commit_date = parts.get(2).unwrap_or(&"").trim().to_owned();
-            let last_commit_message = parts.get(3).unwrap_or(&"").trim().to_owned();
+            let committer_email = parts.get(3).unwrap_or(&"").trim();
+            let last_commit_message = parts.get(4).unwrap_or(&"").trim().to_owned();
 
             branches.push(self.build_branch_info(
                 name,
@@ -785,6 +822,7 @@ impl LocalGitSource {
                 commits_ahead,
                 last_commit_date,
                 last_commit_message,
+                committer_email,
                 has_wt_changes,
                 wt_stats,
                 wt_last_modified,
@@ -803,6 +841,7 @@ impl LocalGitSource {
         commits_ahead: u32,
         last_commit_date: String,
         last_commit_message: String,
+        committer_email: &str,
         has_wt_changes: bool,
         wt_stats: &Option<DiffShortStat>,
         wt_last_modified: &Option<u64>,
@@ -826,6 +865,7 @@ impl LocalGitSource {
             commits_ahead,
             last_commit_date,
             last_commit_message,
+            last_commit_by_user: self.commit_is_by_user(committer_email),
             last_modified_at: last_mod,
             working_tree_stats: stats,
         }
@@ -844,7 +884,7 @@ impl LocalGitSource {
     ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
         let output = self.run_git(&[
             "for-each-ref",
-            "--format=%(refname:short)\t%(committerdate:iso-strict)\t%(subject)",
+            "--format=%(refname:short)\t%(committerdate:iso-strict)\t%(committeremail)\t%(subject)",
             "refs/heads/",
         ])?;
 
@@ -856,7 +896,7 @@ impl LocalGitSource {
                 continue;
             }
 
-            let parts: Vec<&str> = line.splitn(3, '\t').collect();
+            let parts: Vec<&str> = line.splitn(4, '\t').collect();
             if parts.is_empty() {
                 continue;
             }
@@ -864,7 +904,8 @@ impl LocalGitSource {
             let name = parts[0].trim().to_owned();
             let is_current = name == *current_branch;
             let last_commit_date = parts.get(1).unwrap_or(&"").trim().to_owned();
-            let last_commit_message = parts.get(2).unwrap_or(&"").trim().to_owned();
+            let committer_email = parts.get(2).unwrap_or(&"").trim();
+            let last_commit_message = parts.get(3).unwrap_or(&"").trim().to_owned();
 
             // Count commits ahead of default branch
             let commits_ahead = if name == default_branch {
@@ -902,6 +943,7 @@ impl LocalGitSource {
                 commits_ahead,
                 last_commit_date,
                 last_commit_message,
+                last_commit_by_user: self.commit_is_by_user(committer_email),
                 last_modified_at: last_mod,
                 working_tree_stats: stats,
             });
@@ -2886,6 +2928,61 @@ mod tests {
         let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
         let head_sha = source.resolve_ref_or_empty_tree("HEAD");
         (env, review_home, repo_dir, source, head_sha)
+    }
+
+    /// `last_commit_by_user` is true only when the tip commit's committer email
+    /// matches the repo's configured `user.email`.
+    #[test]
+    fn test_last_commit_by_user_flag() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+
+        run_git_cmd(repo_path, &["init"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.name", "Me"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.email", "me@example.com"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]).unwrap();
+        let default_branch = run_git_cmd(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // A branch whose tip commit is authored by the configured user.
+        run_git_cmd(repo_path, &["checkout", "-b", "mine"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "mine"]).unwrap();
+
+        // A branch whose tip commit is by someone else (override committer email).
+        run_git_cmd(repo_path, &["checkout", "-b", "theirs", &default_branch]).unwrap();
+        run_git_cmd(
+            repo_path,
+            &[
+                "-c",
+                "user.email=other@example.com",
+                "-c",
+                "user.name=Other",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "theirs",
+            ],
+        )
+        .unwrap();
+
+        run_git_cmd(repo_path, &["checkout", &default_branch]).unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        assert_eq!(source.get_user_email().as_deref(), Some("me@example.com"));
+
+        let branches = source.list_branches_ahead(&default_branch).unwrap();
+        let mine = branches.iter().find(|b| b.name == "mine").unwrap();
+        let theirs = branches.iter().find(|b| b.name == "theirs").unwrap();
+        assert!(mine.last_commit_by_user, "own-email tip should match");
+        assert!(
+            !theirs.last_commit_by_user,
+            "other-email tip should not match"
+        );
     }
 
     #[test]
