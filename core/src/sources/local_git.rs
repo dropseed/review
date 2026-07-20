@@ -352,6 +352,15 @@ impl LocalGitSource {
         })
     }
 
+    /// Count commits in `base..head` (e.g. how far a branch is ahead of its
+    /// base). Returns `None` on any git failure or unparseable output.
+    pub fn count_commits_in_range(&self, base: &str, head: &str) -> Option<u32> {
+        let range = format!("{base}..{head}");
+        self.run_git(&["rev-list", "--count", &range])
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+    }
+
     /// Resolve a ref to a SHA, falling back to `origin/<ref>` for
     /// remote-only branches. Results are cached per `LocalGitSource`.
     pub fn resolve_ref(&self, git_ref: &str) -> Option<String> {
@@ -911,11 +920,8 @@ impl LocalGitSource {
             let commits_ahead = if name == default_branch {
                 0 // default branch is 0 ahead of itself
             } else {
-                let ahead_arg = format!("{default_branch}..{name}");
-                match self.run_git(&["rev-list", "--count", &ahead_arg]) {
-                    Ok(count_str) => count_str.trim().parse::<u32>().unwrap_or(0),
-                    Err(_) => 0,
-                }
+                self.count_commits_in_range(default_branch, &name)
+                    .unwrap_or(0)
             };
 
             // Include branch if it's ahead, is the current branch, or is in a worktree

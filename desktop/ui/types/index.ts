@@ -183,6 +183,15 @@ export interface Comparison {
   key: string; // Always "{base}..{head}"
 }
 
+// Which arm of the backend resolution ladder produced a review's base — the
+// intent behind the bare `base..head`, so the UI can label it honestly.
+// Mirrors core's `service::targets::BaseReason`.
+export type BaseReason =
+  | "override" // an explicit base override is pinned
+  | "defaultVsRemote" // the default branch vs its remote tip (unpushed work)
+  | "branchVsDefault" // a non-default branch vs the default branch
+  | "singleCommit"; // any other rev reviewed as one commit
+
 // A resolved review: its identity (`ref` + optional `baseOverride`) alongside
 // the concrete Comparison the data endpoints diff. Returned by the identity
 // endpoints (`resolveReview`, `setBaseOverride`); the frontend keeps the
@@ -192,6 +201,10 @@ export interface ResolvedReview {
   ref: string;
   baseOverride?: string;
   comparison: Comparison;
+  baseReason: BaseReason;
+  // Commits in `base..head`, for labels like "N unpushed". Present only for
+  // `defaultVsRemote`.
+  aheadCount?: number;
 }
 
 /**

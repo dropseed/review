@@ -1,5 +1,6 @@
 import type { ApiClient } from "../../api";
 import type {
+  BaseReason,
   Comparison,
   ResolvedReview,
   FileEntry,
@@ -128,6 +129,10 @@ export interface FilesSlice {
   reviewRef: string | null;
   // The active review's explicit base override, if any (for the header control).
   reviewBaseOverride: string | null;
+  // Why the base was chosen — drives the breadcrumb's comparison label.
+  baseReason: BaseReason | null;
+  // Commits ahead of the base, for the "N unpushed" label (defaultVsRemote only).
+  reviewAheadCount: number | null;
   currentBranch: string | null;
   files: FileEntry[];
   allFiles: FileEntry[];
@@ -198,6 +203,8 @@ const comparisonResetState = {
   // Review identity — cleared on switch, set explicitly by setComparison/switchReview.
   reviewRef: null as string | null,
   reviewBaseOverride: null as string | null,
+  baseReason: null as BaseReason | null,
+  reviewAheadCount: null as number | null,
   // Navigation
   selectedFile: null,
   focusedHunkId: null,
@@ -255,6 +262,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     comparison: null,
     reviewRef: null,
     reviewBaseOverride: null,
+    baseReason: null,
+    reviewAheadCount: null,
     currentBranch: null,
     files: [],
     allFiles: [],
@@ -298,6 +307,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         comparison: resolved?.comparison ?? null,
         reviewRef: resolved?.ref ?? null,
         reviewBaseOverride: resolved?.baseOverride ?? null,
+        baseReason: resolved?.baseReason ?? null,
+        reviewAheadCount: resolved?.aheadCount ?? null,
       });
     },
 
@@ -317,6 +328,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         comparison: resolved.comparison,
         reviewRef: resolved.ref,
         reviewBaseOverride: resolved.baseOverride ?? null,
+        baseReason: resolved.baseReason ?? null,
+        reviewAheadCount: resolved.aheadCount ?? null,
       });
     },
 

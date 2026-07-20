@@ -15,6 +15,22 @@ use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 
+/// Which arm of the [`resolve_review`] ladder produced a review's base — the
+/// intent behind the bare `base..head`, so the UI can label the comparison
+/// honestly instead of showing raw refs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BaseReason {
+    /// An explicit base override is pinned (`base..ref` verbatim).
+    Override,
+    /// The default branch reviewed against its remote tip — i.e. unpushed work.
+    DefaultVsRemote,
+    /// A non-default branch reviewed against the default branch.
+    BranchVsDefault,
+    /// Any other rev (SHA, tag, `stash@{n}`, detached HEAD) reviewed as one commit.
+    SingleCommit,
+}
+
 /// A resolved review: its identity (`ref` + optional `baseOverride`) alongside
 /// the concrete [`Comparison`] the data endpoints diff. Returned by the identity
 /// endpoints; the frontend keeps the identity and passes the comparison onward.
@@ -26,6 +42,12 @@ pub struct ResolvedReview {
     #[serde(rename = "baseOverride", skip_serializing_if = "Option::is_none")]
     pub base_override: Option<String>,
     pub comparison: Comparison,
+    /// Why the base was chosen — lets the UI label the comparison.
+    pub base_reason: BaseReason,
+    /// Commits in `base..head`, for labels like "N unpushed". Only computed for
+    /// [`BaseReason::DefaultVsRemote`]; `None` elsewhere (or on a git failure).
+    #[serde(rename = "aheadCount", skip_serializing_if = "Option::is_none")]
+    pub ahead_count: Option<u32>,
 }
 
 /// Resolve a review's `ref` (+ optional `base_override`) into a [`Comparison`]
@@ -45,11 +67,20 @@ pub fn resolve(
     let effective_override = base_override.or(stored.as_deref());
 
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
-    let comparison = resolve_review(&source, ref_name, effective_override)?;
+    let (comparison, base_reason) = resolve_review(&source, ref_name, effective_override)?;
+    // Only the default-vs-remote case has a natural "N unpushed" count to show.
+    let ahead_count = match base_reason {
+        BaseReason::DefaultVsRemote => {
+            source.count_commits_in_range(&comparison.base, &comparison.head)
+        }
+        _ => None,
+    };
     Ok(ResolvedReview {
         ref_name: ref_name.to_owned(),
         base_override: effective_override.map(str::to_owned),
         comparison,
+        base_reason,
+        ahead_count,
     })
 }
 
@@ -79,10 +110,10 @@ pub fn resolve_review(
     source: &LocalGitSource,
     ref_name: &str,
     base_override: Option<&str>,
-) -> anyhow::Result<Comparison> {
+) -> anyhow::Result<(Comparison, BaseReason)> {
     // 1. Explicit override wins.
     if let Some(base) = base_override {
-        return Ok(Comparison::new(base, ref_name));
+        return Ok((Comparison::new(base, ref_name), BaseReason::Override));
     }
 
     // 2. A branch (checked specifically, so tags fall through to rule 3).
@@ -95,17 +126,84 @@ pub fn resolve_review(
             let base = source
                 .resolve_ref(&origin)
                 .map_or_else(|| "HEAD".to_owned(), |_| origin);
-            return Ok(Comparison::new(base, ref_name));
+            return Ok((Comparison::new(base, ref_name), BaseReason::DefaultVsRemote));
         }
-        return Ok(Comparison::new(default_branch, ref_name));
+        return Ok((
+            Comparison::new(default_branch, ref_name),
+            BaseReason::BranchVsDefault,
+        ));
     }
 
     // 3. Any other resolvable rev: review the one commit.
     if source.resolve_ref(ref_name).is_some() {
         let base = source.resolve_ref_or_empty_tree(&format!("{ref_name}^"));
-        return Ok(Comparison::new(base, ref_name));
+        return Ok((Comparison::new(base, ref_name), BaseReason::SingleCommit));
     }
 
     // 4. Nothing resolved.
     anyhow::bail!("Could not resolve review ref '{ref_name}'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("run git");
+        assert!(
+            status.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+    }
+
+    /// A repo on `main` with one commit, plus a `feature` branch a commit ahead.
+    fn repo() -> (tempfile::TempDir, LocalGitSource) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        git(path, &["init", "-b", "main"]);
+        git(path, &["config", "user.email", "me@example.com"]);
+        git(path, &["config", "user.name", "Me"]);
+        git(path, &["commit", "--allow-empty", "-m", "init"]);
+        git(path, &["checkout", "-b", "feature"]);
+        git(path, &["commit", "--allow-empty", "-m", "work"]);
+        git(path, &["checkout", "main"]);
+        let source = LocalGitSource::new(path.to_path_buf()).unwrap();
+        (dir, source)
+    }
+
+    #[test]
+    fn default_branch_resolves_as_default_vs_remote() {
+        let (_dir, source) = repo();
+        let (_c, reason) = resolve_review(&source, "main", None).unwrap();
+        assert_eq!(reason, BaseReason::DefaultVsRemote);
+    }
+
+    #[test]
+    fn feature_branch_resolves_vs_default() {
+        let (_dir, source) = repo();
+        let (comparison, reason) = resolve_review(&source, "feature", None).unwrap();
+        assert_eq!(reason, BaseReason::BranchVsDefault);
+        assert_eq!(comparison.base, "main");
+    }
+
+    #[test]
+    fn explicit_base_resolves_as_override() {
+        let (_dir, source) = repo();
+        let (_c, reason) = resolve_review(&source, "feature", Some("main")).unwrap();
+        assert_eq!(reason, BaseReason::Override);
+    }
+
+    #[test]
+    fn bare_sha_resolves_as_single_commit() {
+        let (_dir, source) = repo();
+        let sha = source.resolve_ref("feature").unwrap();
+        let (_c, reason) = resolve_review(&source, &sha, None).unwrap();
+        assert_eq!(reason, BaseReason::SingleCommit);
+    }
 }

@@ -34,8 +34,9 @@ function SidebarToggle(): ReactNode {
   );
 }
 
-/** The `base..head` (or `PR #n`) label. For a non-PR review the base portion is
- *  a subtle click target that opens the base-override menu. */
+/** The comparison label (or `PR #n`). For the default branch it reads as
+ *  "head · N unpushed"; otherwise it's the raw `base..head`. In both non-PR
+ *  cases the label opens the base-override menu, with the raw range on hover. */
 function ComparisonLabel({
   comparison,
 }: {
@@ -44,6 +45,8 @@ function ComparisonLabel({
   const githubPr = useReviewStore((s) => s.reviewState?.githubPr);
   const repoPath = useReviewStore((s) => s.repoPath);
   const reviewRef = useReviewStore((s) => s.reviewRef);
+  const baseReason = useReviewStore((s) => s.baseReason);
+  const aheadCount = useReviewStore((s) => s.reviewAheadCount);
   const [baseMenuOpen, setBaseMenuOpen] = useState(false);
 
   if (githubPr) {
@@ -54,36 +57,60 @@ function ComparisonLabel({
     );
   }
 
+  // The default branch reviewed against its remote tip: label it as unpushed
+  // work rather than the cryptic `origin/head..head` range.
+  const isUnpushed = baseReason === "defaultVsRemote";
+  const unpushedSuffix =
+    aheadCount && aheadCount > 0 ? `${aheadCount} unpushed` : "unpushed";
+
   const canChangeBase = !!repoPath && !!reviewRef && comparison.base !== "";
 
+  const label = isUnpushed ? (
+    <span className="font-medium">
+      {comparison.head} <span className="text-fg-faint">·</span>{" "}
+      {unpushedSuffix}
+    </span>
+  ) : (
+    <>
+      {comparison.base}..{comparison.head}
+    </>
+  );
+
+  const title = isUnpushed
+    ? `${comparison.base}..${comparison.head} — change base`
+    : "Change base";
+
+  const labelClass = isUnpushed
+    ? "shrink-0 text-xs text-fg-muted"
+    : "shrink-0 text-xs text-fg-muted font-mono";
+
+  if (!canChangeBase) {
+    return <span className={labelClass}>{label}</span>;
+  }
+
   return (
-    <span className="shrink-0 text-xs text-fg-muted font-mono">
-      {canChangeBase ? (
-        <Popover open={baseMenuOpen} onOpenChange={setBaseMenuOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="rounded text-fg-muted hover:text-fg-secondary hover:underline
-                         decoration-dotted underline-offset-2 focus:outline-hidden
-                         focus-visible:ring-1 focus-visible:ring-focus-ring/50"
-              title="Change base"
-            >
-              {comparison.base}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56 p-0" align="start">
-            <ChangeBaseMenu
-              repoPath={repoPath}
-              refName={reviewRef}
-              currentBase={comparison.base}
-              onClose={() => setBaseMenuOpen(false)}
-            />
-          </PopoverContent>
-        </Popover>
-      ) : (
-        comparison.base
-      )}
-      ..{comparison.head}
+    <span className={labelClass}>
+      <Popover open={baseMenuOpen} onOpenChange={setBaseMenuOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="rounded text-fg-muted hover:text-fg-secondary hover:underline
+                       decoration-dotted underline-offset-2 focus:outline-hidden
+                       focus-visible:ring-1 focus-visible:ring-focus-ring/50"
+            title={title}
+          >
+            {label}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-56 p-0" align="start">
+          <ChangeBaseMenu
+            repoPath={repoPath}
+            refName={reviewRef}
+            currentBase={comparison.base}
+            onClose={() => setBaseMenuOpen(false)}
+          />
+        </PopoverContent>
+      </Popover>
     </span>
   );
 }

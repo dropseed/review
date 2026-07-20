@@ -1,6 +1,6 @@
 use crate::review::state::HunkStatus;
 use crate::review::storage;
-use crate::service::targets::{self, ResolvedReview};
+use crate::service::targets::{self, BaseReason, ResolvedReview};
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 use clap::{Parser, Subcommand};
@@ -538,6 +538,9 @@ fn resolve_patch_review(repo_path: &Path, patch_src: &str) -> Result<ResolvedRev
         ref_name: tree.clone(),
         base_override: Some(base.clone()),
         comparison: Comparison::new(base, tree),
+        // A patch pins an explicit base, so it reads as an override.
+        base_reason: BaseReason::Override,
+        ahead_count: None,
     })
 }
 
