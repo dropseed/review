@@ -44,9 +44,18 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
     if (hunksToClassify.length === 0) return;
 
+    const { repoPath } = get();
+    const comparisonKey = get().comparison?.key;
+    // Discard a stale response: if the repo/comparison changed while this
+    // request was in flight, the classified hunk IDs no longer belong to
+    // the now-current review state (same race fixed elsewhere for
+    // loadGitStatus/loadAttribution/etc).
+    const isStale = () =>
+      get().repoPath !== repoPath || get().comparison?.key !== comparisonKey;
     startActivity("classify-static", "Classifying hunks", 50);
     try {
       const staticResponse = await client.classifyHunksStatic(hunksToClassify);
+      if (isStale()) return;
       const staticCount = Object.keys(staticResponse.classifications).length;
 
       if (staticCount > 0) {
@@ -78,6 +87,7 @@ export const createClassificationSlice: SliceCreatorWithClient<
 
           set({ reviewState: updatedState });
           await saveReviewState();
+          if (isStale()) return;
         }
       }
 
