@@ -137,6 +137,8 @@ const defaults = {
   reviewSortOrder: "updated" as ReviewSortOrder,
   collapsedOrgs: {} as Record<string, boolean>,
   collapsedRepos: {} as Record<string, boolean>,
+  // Top-level sidebar zones ("working-on", "repositories"). Absent = expanded.
+  collapsedZones: {} as Record<string, boolean>,
   // Zone-1 "Working on" manual overrides, keyed `${repoPath}:${ref}`.
   workingOnPinned: [] as string[],
   workingOnDismissed: [] as string[],
@@ -191,6 +193,9 @@ export interface PreferencesSlice {
   // Empty record = everything expanded; entries with `true` are collapsed.
   collapsedOrgs: Record<string, boolean>;
   collapsedRepos: Record<string, boolean>;
+
+  // Top-level sidebar zones ("working-on", "repositories"). Absent = expanded.
+  collapsedZones: Record<string, boolean>;
 
   // Zone-1 "Working on" manual overrides, keyed `${repoPath}:${ref}`.
   // Pinned rows always show (ranked first); dismissed rows never show.
@@ -261,6 +266,7 @@ export interface PreferencesSlice {
   toggleOrgCollapsed: (org: string) => void;
   setRepoCollapsed: (repoPath: string, collapsed: boolean) => void;
   toggleRepoCollapsed: (repoPath: string) => void;
+  toggleZoneCollapsed: (zone: string) => void;
 
   // Zone-1 "Working on" actions (key = `${repoPath}:${ref}`)
   pinWorkingOn: (key: string) => void;
@@ -549,6 +555,15 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     toggleRepoCollapsed: (repoPath) => {
       const collapsed = get().collapsedRepos[repoPath] !== false;
       get().setRepoCollapsed(repoPath, !collapsed);
+    },
+
+    toggleZoneCollapsed: (zone) => {
+      const current = get().collapsedZones;
+      const next = { ...current };
+      if (current[zone]) delete next[zone];
+      else next[zone] = true;
+      set({ collapsedZones: next });
+      storage.set("collapsedZones", next);
     },
 
     pinWorkingOn: (key) => {

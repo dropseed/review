@@ -17,6 +17,8 @@ interface LocalBranchItemProps {
   repoName?: string;
   defaultBranch: string;
   itemKind: SidebarItemKind;
+  /** Flat (zone-1) rows drop the nested indent so they align with review rows. */
+  flat?: boolean;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
 }
 
@@ -26,6 +28,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   repoName,
   defaultBranch,
   itemKind,
+  flat = false,
   onActivate,
 }: LocalBranchItemProps) {
   // The review's identity is the branch name.
@@ -157,8 +160,9 @@ export const LocalBranchItem = memo(function LocalBranchItem({
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
-        className={`group relative w-full text-left pl-4 pr-2.5 py-1 rounded cursor-default
+        className={`group relative w-full text-left py-1 rounded cursor-default
                     transition-colors duration-100
+                    ${flat ? "px-2.5" : "pl-4 pr-2.5"}
                     ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
         aria-current={isActive ? "true" : undefined}
         title={`${branch.name}${branch.worktreePath ? ` (worktree: ${branch.worktreePath})` : ""} — ${branch.commitsAhead} commit${branch.commitsAhead !== 1 ? "s" : ""} ahead of ${defaultBranch}`}

@@ -231,6 +231,7 @@ function SidebarList({
         repoName={repoDisplayName(entry.repo.repoPath, entry.repo.repoName)}
         defaultBranch={entry.repo.defaultBranch}
         itemKind={entry.kind}
+        flat
         onActivate={onActivateLocalBranch}
       />
     );
@@ -281,41 +282,65 @@ function SidebarList({
     <div role="tablist" className="pb-1">
       {/* Zone 1 — "Working on": flat, cross-repo, activity-derived. */}
       <div className="pt-0.5">
-        <ZoneHeader label="Working on" />
-        {workingOn.length > 0 ? (
-          workingOn.map(renderWorkingOn)
-        ) : (
-          <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
-            Nothing in flight — changes and recent branches show up here.
-          </p>
-        )}
+        <Zone zone="working-on" label="Working on">
+          {workingOn.length > 0 ? (
+            workingOn.map(renderWorkingOn)
+          ) : (
+            <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
+              Nothing in flight — changes and recent branches show up here.
+            </p>
+          )}
+        </Zone>
       </div>
 
       {/* Zone 2 — browse: the full org → repo tree, collapsed by default. */}
       <div className="mt-2 border-t border-t-edge/40 pt-1.5">
-        <ZoneHeader label="Repositories" />
-        {orgGroups.map((org) => (
-          <OrgSection
-            key={org.org}
-            org={org}
-            suppressHeader={org.isLocal && suppressLocalOrgHeader}
-            renderEntry={renderEntry}
-            onActivateLocalBranch={onActivateLocalBranch}
-          />
-        ))}
+        <Zone zone="repositories" label="Repositories">
+          {orgGroups.map((org) => (
+            <OrgSection
+              key={org.org}
+              org={org}
+              suppressHeader={org.isLocal && suppressLocalOrgHeader}
+              renderEntry={renderEntry}
+              onActivateLocalBranch={onActivateLocalBranch}
+            />
+          ))}
+        </Zone>
       </div>
     </div>
   );
 }
 
-/** Zone label — quiet uppercase header for the two top-level sidebar zones. */
-function ZoneHeader({ label }: { label: string }): ReactNode {
+/** Collapsible top-level sidebar zone with a quiet uppercase header. */
+function Zone({
+  zone,
+  label,
+  children,
+}: {
+  zone: string;
+  label: string;
+  children: ReactNode;
+}): ReactNode {
+  const collapsed = useReviewStore((s) => s.collapsedZones[zone] === true);
+  const toggleZoneCollapsed = useReviewStore((s) => s.toggleZoneCollapsed);
   return (
-    <div className="px-2.5 pb-1 pt-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
-        {label}
-      </span>
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => toggleZoneCollapsed(zone)}
+        className="flex items-center gap-1 w-full text-left px-2.5 pb-1 pt-1
+                   hover:bg-fg/[0.03] transition-colors duration-100 rounded-sm"
+        aria-expanded={!collapsed}
+      >
+        <span className="text-[8px] text-fg-faint/60 w-2 shrink-0">
+          {collapsed ? "▸" : "▾"}
+        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
+          {label}
+        </span>
+      </button>
+      {!collapsed && children}
+    </>
   );
 }
 
