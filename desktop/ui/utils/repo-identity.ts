@@ -1,6 +1,16 @@
 import { getApiClient } from "../api";
 
 /**
+ * Build the review route URL for a ref. The single place review URLs are
+ * constructed. The ref is `encodeURIComponent`-encoded because refs (branch
+ * names) contain "/", which must not split the `:ref` path segment.
+ * `routePrefix` is "owner/repo" (or "local/dirname").
+ */
+export function reviewUrl(routePrefix: string, ref: string): string {
+  return `/${routePrefix}/review/${encodeURIComponent(ref)}`;
+}
+
+/**
  * Split a route prefix ("owner/repo" or "local/dirname") into its org and repo
  * segments. Used by sidebar grouping and repo header display.
  */

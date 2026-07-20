@@ -14,7 +14,7 @@ import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores";
-import type { Comparison, GitHubPrRef } from "./types";
+import type { ReviewTarget } from "./types";
 import {
   useRepositoryInit,
   useComparisonLoader,
@@ -190,16 +190,8 @@ interface AppContext {
   handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
   handleSelectRepo: (path: string) => Promise<void>;
-  handleNewReview: (
-    path: string,
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ) => Promise<void>;
-  handleStartReview: (
-    repoPath: string,
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ) => Promise<void>;
+  handleNewReview: (path: string, target: ReviewTarget) => Promise<void>;
+  handleStartReview: (path: string, target: ReviewTarget) => Promise<void>;
 }
 
 export function useAppContext() {
@@ -296,7 +288,7 @@ function NewReviewRoute() {
   return <NewReviewView onNewReview={handleNewReview} />;
 }
 
-/** Review UI — shown at /:owner/:repo/review/:comparisonKey */
+/** Review UI — shown at /:owner/:repo/review/:ref (ref is encodeURIComponent-encoded) */
 function ReviewRoute() {
   const { repoPath, comparisonReady, handleNewWindow, handleStartReview } =
     useAppContext();
@@ -325,10 +317,7 @@ export function AppRouter() {
           <Route path="/" element={<EmptyTabState />} />
           <Route path="/new" element={<NewReviewRoute />} />
           <Route path="/:owner/:repo/browse/*" element={<ReviewRoute />} />
-          <Route
-            path="/:owner/:repo/review/:comparisonKey/*"
-            element={<ReviewRoute />}
-          />
+          <Route path="/:owner/:repo/review/:ref/*" element={<ReviewRoute />} />
           <Route path="/standalone/browse/*" element={<ReviewRoute />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

@@ -69,7 +69,9 @@ mod tests {
     use super::*;
     use crate::review::central::tests::{setup_test, ENV_LOCK};
     use crate::review::state::{Attributed, HunkState, HunkStatus, Source};
-    use crate::sources::traits::Comparison;
+
+    /// The ref a test review is keyed by.
+    const TEST_REF: &str = "branch";
 
     // Both diffs add the same line to `f.txt` with different surrounding context,
     // so their content-hash IDs differ while their stable hashes match — the
@@ -98,7 +100,7 @@ mod tests {
         let b = hunk(DIFF_B);
         assert_ne!(a.id, b.id, "context drift changes the id");
 
-        let mut state = ReviewState::new(Comparison::new("HEAD", "branch"));
+        let mut state = ReviewState::new(TEST_REF, None);
         // Decision recorded against A, stamped with A's stable key.
         state
             .hunks
@@ -115,7 +117,7 @@ mod tests {
 
     #[test]
     fn reconcile_review_no_decisions_is_a_noop() {
-        let state = ReviewState::new(Comparison::new("HEAD", "branch"));
+        let state = ReviewState::new(TEST_REF, None);
         let result = reconcile_review(state, &[hunk(DIFF_A)]);
         assert_eq!(result.carried_forward, 0);
         assert!(result.state.hunks.is_empty());
@@ -126,17 +128,16 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         let p = repo.path();
-        let comparison = Comparison::new("HEAD", "branch");
         let a = hunk(DIFF_A);
 
-        let mut state = ReviewState::new(comparison.clone());
+        let mut state = ReviewState::new(TEST_REF, None);
         // Decision with no stable key yet (as if just recorded in the UI).
         state.hunks.insert(a.id.clone(), approved_with_key(None));
 
         let version = save_review(p, state, Some(&[a.clone()])).unwrap();
         assert_eq!(version, 1);
 
-        let loaded = storage::load_review_state(p, &comparison).unwrap();
+        let loaded = storage::load_review_state(p, TEST_REF).unwrap();
         assert_eq!(
             loaded.hunks[&a.id].stable_key.as_deref(),
             Some(a.stable_hash().as_str()),
@@ -149,12 +150,11 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         let p = repo.path();
-        let comparison = Comparison::new("HEAD", "branch");
 
-        let state = ReviewState::new(comparison.clone());
+        let state = ReviewState::new(TEST_REF, None);
         assert_eq!(save_review(p, state, None).unwrap(), 1);
 
-        let loaded = storage::load_review_state(p, &comparison).unwrap();
+        let loaded = storage::load_review_state(p, TEST_REF).unwrap();
         assert_eq!(loaded.version, 1);
     }
 }

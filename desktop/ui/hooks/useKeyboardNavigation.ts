@@ -1,9 +1,8 @@
 import { useEffect } from "react";
+import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getAllHunksFromState } from "../stores/selectors/hunks";
-import type { Comparison } from "../types";
-import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
 import {
   buildOrgGroups,
   buildRepoGroups,
@@ -13,8 +12,9 @@ import {
 
 interface SidebarItem {
   key: string;
-  reviewKey: ActiveReviewKey;
-  comparison: Comparison;
+  repoPath: string;
+  ref: string;
+  baseOverride?: string;
 }
 
 function entriesToItems(entries: SidebarEntry[]): SidebarItem[] {
@@ -22,46 +22,45 @@ function entriesToItems(entries: SidebarEntry[]): SidebarItem[] {
     if (entry.kind === "review") {
       return {
         key: entry.reviewKey,
-        reviewKey: {
-          repoPath: entry.review.repoPath,
-          comparisonKey: entry.review.comparison.key,
-        },
-        comparison: entry.review.comparison,
+        repoPath: entry.review.repoPath,
+        ref: entry.review.ref,
+        baseOverride: entry.review.baseOverride,
       };
     }
     if (entry.kind === "remote-recent") {
       return {
         key: entry.reviewKey,
-        reviewKey: {
-          repoPath: entry.repoPath,
-          comparisonKey: entry.comparison.key,
-        },
-        comparison: entry.comparison,
+        repoPath: entry.repoPath,
+        ref: entry.ref,
       };
     }
     return {
       key: entry.reviewKey,
-      reviewKey: {
-        repoPath: entry.repo.repoPath,
-        comparisonKey: entry.comparison.key,
-      },
-      comparison: entry.comparison,
+      repoPath: entry.repo.repoPath,
+      ref: entry.ref,
     };
   });
 }
 
-/** Activate a sidebar item: save snapshot, switch review/comparison. */
+/** Activate a sidebar item: save snapshot, resolve the ref, switch review. */
 function activateSidebarItem(
   state: ReturnType<typeof useReviewStore.getState>,
   item: SidebarItem,
 ): void {
   state.saveNavigationSnapshot();
-  state.setActiveReviewKey(item.reviewKey);
-  if (item.reviewKey.repoPath !== state.repoPath) {
-    state.switchReview(item.reviewKey.repoPath, item.comparison);
-  } else {
-    state.setComparison(item.comparison);
-  }
+  void (async () => {
+    const resolved = await getApiClient().resolveReview(
+      item.repoPath,
+      item.ref,
+      item.baseOverride,
+    );
+    state.setActiveReviewKey({ repoPath: item.repoPath, ref: item.ref });
+    if (item.repoPath !== useReviewStore.getState().repoPath) {
+      state.switchReview(item.repoPath, resolved);
+    } else {
+      state.setComparison(resolved);
+    }
+  })();
 }
 
 /**
@@ -195,11 +194,8 @@ export function useKeyboardNavigation() {
       // can't navigate or approve/reject hunks the user can't see. Review
       // switching (Cmd+1-9) and Escape above stay live so they can leave.
       if (
-        getMissingRefs(
-          state.reviewMissingRefs,
-          state.repoPath,
-          state.comparison,
-        ).length > 0
+        getMissingRefs(state.reviewMissingRefs, state.repoPath, state.reviewRef)
+          .length > 0
       ) {
         return;
       }

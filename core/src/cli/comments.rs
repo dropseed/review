@@ -18,8 +18,8 @@ use crate::review::state::{now_iso8601, AnnotationSide, LineAnnotation, ReviewSt
 use crate::review::storage;
 
 use super::common::{
-    line_range, load_for_mutation, mutate_review, print_json, resolve_comparison_arg,
-    resolve_source, ReviewTarget,
+    line_range, load_for_mutation, mutate_review, print_json, resolve_review_arg, resolve_source,
+    ReviewTarget,
 };
 use super::get_repo_path;
 
@@ -212,8 +212,9 @@ struct CommentResultJson {
 /// `review comments` — list comments on a comparison.
 pub fn run_comments(args: CommentsArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
-    let state = storage::load_review_state(&repo, &comparison).map_err(|e| e.to_string())?;
+    let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
+    let state = storage::load_review_state(&repo, &review.ref_name).map_err(|e| e.to_string())?;
 
     let file_filter = match &args.file {
         Some(glob) => {
@@ -337,9 +338,10 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
         resolved_by: None,
     };
 
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
     let to_push = new_annotation.clone();
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         state.annotations.push(to_push.clone());
         true
     })?;
@@ -446,8 +448,9 @@ pub fn run_submit_comments(target: ReviewTarget, args: CommentsSubmitArgs) -> Re
     }
 
     let ids: Vec<String> = annotations.iter().map(|a| a.id.clone()).collect();
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         state.annotations.extend(annotations.iter().cloned());
         true
     })?;
@@ -511,14 +514,15 @@ fn read_stdin_or_file(file: Option<&str>) -> Result<String, String> {
 /// `review comment edit` — replace the content of an existing comment.
 pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let id = args.id.clone();
     let new_content = args.content.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
     let state = mutate_review(
         &repo,
-        &comparison,
+        &review.ref_name,
         &hunks,
         |state| match find_annotation_mut(state, &id) {
             Some(a) if a.content == new_content => {
@@ -553,7 +557,8 @@ pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
 /// `review comment resolve` — mark a comment as resolved.
 pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let by = args
         .by
@@ -562,7 +567,7 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
     let id = args.id.clone();
     let by_for_apply = by.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         match find_annotation_mut(state, &id) {
             Some(a) if a.resolved_at.is_some() => {
                 // Already resolved — keep the prior resolver's attribution
@@ -598,13 +603,14 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
 /// `review comment unresolve` — clear the resolved state.
 pub fn run_unresolve(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let id = args.id.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
     let state = mutate_review(
         &repo,
-        &comparison,
+        &review.ref_name,
         &hunks,
         |state| match find_annotation_mut(state, &id) {
             Some(a) if a.resolved_at.is_none() => {
@@ -639,11 +645,12 @@ pub fn run_unresolve(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
 /// `review comment delete` — remove a comment.
 pub fn run_delete(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let id = args.id.clone();
     let outcome = Cell::new(MutationOutcome::NotFound);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         let before = state.annotations.len();
         state.annotations.retain(|a| a.id != id);
         if state.annotations.len() == before {

@@ -37,7 +37,7 @@ import type {
   ReviewFreshnessResult,
   ReviewState,
   ReviewLoadResult,
-  ReviewTarget,
+  ResolvedReview,
   ReviewSummary,
   GlobalReviewSummary,
   SearchMatch,
@@ -146,7 +146,9 @@ export class HttpClient implements ApiClient {
 
   async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
     try {
-      return await this.post<RemoteInfo>("/api/git/remote-info", { repoPath });
+      return await this.post<RemoteInfo | null>("/api/git/remote-info", {
+        repoPath,
+      });
     } catch {
       return null;
     }
@@ -402,18 +404,20 @@ export class HttpClient implements ApiClient {
 
   // ----- Review state -----
 
-  async resolveReviewTarget(
+  async resolveReview(
     repoPath: string,
-    target: ReviewTarget,
-  ): Promise<Comparison> {
-    return this.post("/api/review/resolve-target", { repoPath, target });
+    ref: string,
+    baseOverride?: string,
+  ): Promise<ResolvedReview> {
+    return this.post("/api/review/resolve", {
+      repoPath,
+      ref,
+      baseOverride: baseOverride ?? null,
+    });
   }
 
-  async loadReviewState(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<ReviewState> {
-    return this.post("/api/review/load", { repoPath, comparison });
+  async loadReviewState(repoPath: string, ref: string): Promise<ReviewState> {
+    return this.post("/api/review/load", { repoPath, ref });
   }
 
   async reconcileReviewState(
@@ -435,37 +439,36 @@ export class HttpClient implements ApiClient {
     return this.post("/api/review/list", { repoPath });
   }
 
-  async changeReviewBase(
+  async setBaseOverride(
     repoPath: string,
-    oldComparison: Comparison,
-    newBase: string,
-  ): Promise<Comparison> {
-    return this.post("/api/review/change-base", {
+    ref: string,
+    baseOverride: string | null,
+  ): Promise<ResolvedReview> {
+    return this.post("/api/review/set-base-override", {
       repoPath,
-      oldComparison,
-      newBase,
+      ref,
+      baseOverride,
     });
   }
 
-  async deleteReview(repoPath: string, comparison: Comparison): Promise<void> {
-    await this.post("/api/review/delete", { repoPath, comparison });
+  async deleteReview(repoPath: string, ref: string): Promise<void> {
+    await this.post("/api/review/delete", { repoPath, ref });
   }
 
-  async reviewExists(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<boolean> {
-    return this.post("/api/review/exists", { repoPath, comparison });
+  async reviewExists(repoPath: string, ref: string): Promise<boolean> {
+    return this.post("/api/review/exists", { repoPath, ref });
   }
 
   async ensureReviewExists(
     repoPath: string,
-    comparison: Comparison,
+    ref: string,
+    baseOverride?: string,
     githubPr?: GitHubPrRef,
   ): Promise<void> {
     await this.post("/api/review/ensure-exists", {
       repoPath,
-      comparison,
+      ref,
+      baseOverride: baseOverride ?? null,
       githubPr: githubPr ?? null,
     });
   }
@@ -720,7 +723,7 @@ export class HttpClient implements ApiClient {
 
   async consumeCliRequest(): Promise<{
     repoPath: string;
-    comparisonKey: string | null;
+    ref: string | null;
     focusedFile: string | null;
     focusedHunkHash: string | null;
   } | null> {

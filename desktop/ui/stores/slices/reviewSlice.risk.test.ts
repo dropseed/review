@@ -25,7 +25,7 @@ import { attributed, type FileDiff, type ReviewState } from "../../types";
 
 function baseReviewState(): ReviewState {
   return {
-    comparison: { base: "main", head: "HEAD", key: "main..HEAD" },
+    ref: "HEAD",
     hunks: {
       "a.ts:1": { risk: attributed("low", "agent") },
       "a.ts:2": { risk: attributed("high", "agent") },

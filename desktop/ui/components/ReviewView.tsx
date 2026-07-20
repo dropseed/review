@@ -12,7 +12,7 @@ import { useReviewStore } from "../stores";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
-import type { Comparison, GitHubPrRef } from "../types";
+import type { ReviewTarget } from "../types";
 import {
   useSidebarResize,
   useMenuEvents,
@@ -57,11 +57,7 @@ const ClassificationsModal = lazy(() =>
 interface ReviewViewProps {
   onNewWindow: () => Promise<void>;
   comparisonReady: number;
-  onStartReview?: (
-    repoPath: string,
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ) => Promise<void>;
+  onStartReview?: (path: string, target: ReviewTarget) => Promise<void>;
 }
 
 export function ReviewView({
@@ -71,6 +67,8 @@ export function ReviewView({
 }: ReviewViewProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
+  const reviewRef = useReviewStore((s) => s.reviewRef);
+  const reviewBaseOverride = useReviewStore((s) => s.reviewBaseOverride);
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const classificationsModalOpen = useReviewStore(
@@ -86,8 +84,8 @@ export function ReviewView({
   // missing refs; surface them here instead of the bogus all-deleted diff.
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
   const missingRefs = useMemo(
-    () => getMissingRefs(reviewMissingRefs, repoPath, comparison),
-    [reviewMissingRefs, repoPath, comparison],
+    () => getMissingRefs(reviewMissingRefs, repoPath, reviewRef),
+    [reviewMissingRefs, repoPath, reviewRef],
   );
   const compareRefMissing = missingRefs.length > 0;
 
@@ -115,11 +113,11 @@ export function ReviewView({
     const { activeReviewKey, repoPath: activeRepo } = useReviewStore.getState();
     const stillActive =
       activeReviewKey?.repoPath === activeRepo &&
-      activeReviewKey?.comparisonKey === comparisonKey;
+      activeReviewKey?.ref === reviewRef;
     if (stillActive) {
       useReviewStore.getState().refresh();
     }
-  }, [compareRefMissing, comparisonKey]);
+  }, [compareRefMissing, comparisonKey, reviewRef]);
 
   // Read-only preview mode
   const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
@@ -151,9 +149,12 @@ export function ReviewView({
   );
 
   const startReviewAction = useCallback(async () => {
-    if (!repoPath || !comparison || !onStartReview) return;
-    await onStartReview(repoPath, comparison);
-  }, [repoPath, comparison, onStartReview]);
+    if (!repoPath || !reviewRef || !onStartReview) return;
+    await onStartReview(repoPath, {
+      ref: reviewRef,
+      baseOverride: reviewBaseOverride ?? undefined,
+    });
+  }, [repoPath, reviewRef, reviewBaseOverride, onStartReview]);
   const [handleStartReviewClick, startingReview] = useAsyncAction(
     startReviewAction,
     "start review",

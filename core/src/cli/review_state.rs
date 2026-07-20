@@ -12,13 +12,12 @@ use serde::Serialize;
 use crate::classify::classify_hunks_static;
 use crate::review::state::{overall_review_state, Attributed, HunkRisk, HunkStatus, Source};
 use crate::review::storage;
-use crate::sources::traits::Comparison;
 use crate::trust::matches_pattern;
 
 use super::comments::SourceArg;
 use super::common::{
     effective_status, hunk_labels, hunk_line_stats, load_for_mutation, load_review_view,
-    mutate_review, print_json, render_hunk_diff, resolve_comparison_arg, resolve_source,
+    mutate_review, print_json, render_hunk_diff, resolve_review_arg, resolve_source,
     sync_classification, EffectiveStatus, ReviewTarget,
 };
 use super::get_repo_path;
@@ -105,8 +104,13 @@ pub struct DeleteArgs {
 pub struct ChangeBaseArgs {
     #[command(flatten)]
     pub target: ReviewTarget,
-    /// New base ref (the branch the review should compare against)
-    pub new_base: String,
+    /// New base ref to pin (the ref the review should diff against). Omit with
+    /// `--clear` to drop the override and let the ladder derive the base again.
+    #[arg(required_unless_present = "clear")]
+    pub new_base: Option<String>,
+    /// Clear the base override, reverting to the derived base
+    #[arg(long, conflicts_with = "new_base")]
+    pub clear: bool,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -279,8 +283,11 @@ struct DeleteResultJson {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ChangeBaseResultJson {
-    old_comparison: String,
-    new_comparison: String,
+    #[serde(rename = "ref")]
+    reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_override: Option<String>,
+    comparison: String,
 }
 
 /// `review hunks` — list a comparison's hunks with their review status.
@@ -379,13 +386,18 @@ pub fn run_hunks(args: HunksArgs) -> Result<(), String> {
 
     if args.json {
         print_json(&HunksJson {
-            comparison: view.comparison.key.clone(),
+            comparison: view.review.comparison.key.clone(),
             total_hunks: view.hunks.len(),
             counts,
             hunks: rows,
         });
     } else {
-        print_hunks_human(&view.comparison.key, view.hunks.len(), &counts, &rows);
+        print_hunks_human(
+            &view.review.comparison.key,
+            view.hunks.len(),
+            &counts,
+            &rows,
+        );
     }
     Ok(())
 }
@@ -441,13 +453,14 @@ fn print_hunks_human(comparison: &str, total: usize, counts: &Counts, rows: &[Hu
 /// `review approve` / `reject` / `save` — set a status on hunks.
 pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let (comparison, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let (review, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
     let (known, unknown) = resolve_mark_targets(
         &repo,
-        &comparison,
+        &review.ref_name,
         &live_ids,
         &args.hunks,
         args.risk.as_deref(),
@@ -461,10 +474,10 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
         );
     }
 
-    let existed = storage::review_exists(&repo, &comparison).unwrap_or(false);
+    let existed = storage::review_exists(&repo, &review.ref_name).unwrap_or(false);
     let reason = args.reason.clone();
     let source = resolve_source(args.source)?;
-    let result = mutate_review(&repo, &comparison, &hunks, |state| {
+    let result = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         // Keep the total and per-hunk labels fresh so `review list` and the
         // desktop app show accurate progress.
         state.total_diff_hunks = total_hunks;
@@ -506,17 +519,18 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
 /// `review unmark` — clear the status of hunks.
 pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let (comparison, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let (review, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
-    if !storage::review_exists(&repo, &comparison).unwrap_or(false) {
+    if !storage::review_exists(&repo, &review.ref_name).unwrap_or(false) {
         return Err(format!("No review exists for {}.", comparison.key));
     }
 
     let (ids, unknown) = resolve_mark_targets(
         &repo,
-        &comparison,
+        &review.ref_name,
         &live_ids,
         &args.hunks,
         args.risk.as_deref(),
@@ -524,7 +538,7 @@ pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
     for id in &unknown {
         eprintln!("warning: hunk not found in {}: {id}", comparison.key);
     }
-    let result = mutate_review(&repo, &comparison, &hunks, |state| {
+    let result = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
         for id in &ids {
@@ -585,7 +599,7 @@ pub fn run_status(args: StatusArgs) -> Result<(), String> {
 
     if args.json {
         print_json(&StatusJson {
-            comparison: view.comparison.key.clone(),
+            comparison: view.review.comparison.key.clone(),
             total_hunks: total,
             reviewed,
             high_risk_pending,
@@ -593,7 +607,7 @@ pub fn run_status(args: StatusArgs) -> Result<(), String> {
             counts,
         });
     } else {
-        println!("{}", view.comparison.key);
+        println!("{}", view.review.comparison.key);
         println!("  total       {total}");
         println!("  unreviewed  {}", counts.unreviewed);
         println!("  trusted     {}", counts.trusted);
@@ -620,9 +634,13 @@ pub fn run_list(args: ListArgs) -> Result<(), String> {
         } else {
             println!("{} review(s) across all repos:\n", reviews.len());
             for review in &reviews {
+                let label = review_label(
+                    &review.summary.ref_name,
+                    review.summary.base_override.as_deref(),
+                );
                 println!(
                     "  {:<44}  {}/{} reviewed  {:<18}  {}",
-                    format!("{} · {}", review.repo_name, review.summary.comparison.key),
+                    format!("{} · {label}", review.repo_name),
                     review.summary.reviewed_hunks,
                     review.summary.total_hunks,
                     review.summary.state.as_deref().unwrap_or("in_progress"),
@@ -644,7 +662,7 @@ pub fn run_list(args: ListArgs) -> Result<(), String> {
         for review in &reviews {
             println!(
                 "  {:<32}  {}/{} reviewed  {:<18}  {}",
-                review.comparison.key,
+                review_label(&review.ref_name, review.base_override.as_deref()),
                 review.reviewed_hunks,
                 review.total_hunks,
                 review.state.as_deref().unwrap_or("in_progress"),
@@ -655,47 +673,70 @@ pub fn run_list(args: ListArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// A review's identity for listing: the ref, annotated with its base override
+/// when one is pinned ("feature (vs develop)", or "(snapshot)" for the empty
+/// tree).
+fn review_label(ref_name: &str, base_override: Option<&str>) -> String {
+    match base_override {
+        Some(base) if base.is_empty() => format!("{ref_name} (snapshot)"),
+        Some(base) => format!("{ref_name} (vs {base})"),
+        None => ref_name.to_owned(),
+    }
+}
+
 /// `review delete` — remove a saved review.
 pub fn run_delete(args: DeleteArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
-    if !storage::review_exists(&repo, &comparison).unwrap_or(false) {
-        return Err(format!("No review exists for {}.", comparison.key));
+    let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
+    if !storage::review_exists(&repo, &review.ref_name).unwrap_or(false) {
+        return Err(format!("No review exists for {}.", review.ref_name));
     }
-    storage::delete_review(&repo, &comparison).map_err(|e| e.to_string())?;
+    storage::delete_review(&repo, &review.ref_name).map_err(|e| e.to_string())?;
     if args.json {
         print_json(&DeleteResultJson {
-            comparison: comparison.key.clone(),
+            comparison: review.ref_name.clone(),
             deleted: true,
         });
     } else {
-        println!("Deleted review {}", comparison.key);
+        println!("Deleted review {}", review.ref_name);
     }
     Ok(())
 }
 
-/// `review change-base` — switch the comparison's base ref to another branch.
-/// The saved review is renamed under the new key; notes, trust, and per-hunk
-/// status carry over (orphans get pruned on the next mutation).
+/// `review change-base` — pin (or, with `--clear`, drop) a review's base
+/// override. The base is a derived setting, not identity, so this is a plain
+/// in-place edit: it sets the `base_override` field and re-resolves the diff.
+/// No re-key, no rename — the review's identity is its ref.
 pub fn run_change_base(args: ChangeBaseArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let old_comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
-    if !storage::review_exists(&repo, &old_comparison).unwrap_or(false) {
-        return Err(format!("No review exists for {}.", old_comparison.key));
+    let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
+    if !storage::review_exists(&repo, &review.ref_name).unwrap_or(false) {
+        return Err(format!("No review exists for {}.", review.ref_name));
     }
-    let new_comparison = storage::change_review_base(&repo, &old_comparison, &args.new_base)
-        .map_err(|e| e.to_string())?;
+    let new_base = if args.clear {
+        None
+    } else {
+        args.new_base.clone()
+    };
+    // Persist and re-resolve so we can report (and, in JSON, return) the effective diff.
+    let updated =
+        crate::service::targets::set_base_override(&repo, &review.ref_name, new_base.clone())
+            .map_err(|e| e.to_string())?;
     if args.json {
         print_json(&ChangeBaseResultJson {
-            old_comparison: old_comparison.key.clone(),
-            new_comparison: new_comparison.key.clone(),
+            reference: review.ref_name.clone(),
+            base_override: new_base.clone(),
+            comparison: updated.comparison.key.clone(),
         });
-    } else if new_comparison.key == old_comparison.key {
-        println!("Base is already {}", args.new_base);
+    } else if let Some(base) = &new_base {
+        println!(
+            "Pinned base of {} to {} ({})",
+            review.ref_name, base, updated.comparison.key
+        );
     } else {
         println!(
-            "Changed base: {} → {}",
-            old_comparison.key, new_comparison.key
+            "Cleared base override of {} (now {})",
+            review.ref_name, updated.comparison.key
         );
     }
     Ok(())
@@ -707,15 +748,15 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
 
     match args.action {
         TrustAction::List => {
-            let comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
+            let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
             let state =
-                storage::load_review_state(&repo, &comparison).map_err(|e| e.to_string())?;
+                storage::load_review_state(&repo, &review.ref_name).map_err(|e| e.to_string())?;
             let mut patterns = state.trust_list.clone();
             patterns.sort();
             println!(
                 "{} trusted pattern(s) for {}:",
                 patterns.len(),
-                comparison.key
+                review.comparison.key
             );
             for pattern in &patterns {
                 println!("  {pattern}");
@@ -727,8 +768,8 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             {
                 eprintln!("warning: '{pattern}' is not a known taxonomy pattern");
             }
-            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
-            let state = mutate_review(&repo, &comparison, &hunks, |state| {
+            let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
                 if state.trust_list.contains(&pattern) {
                     false
                 } else {
@@ -739,13 +780,13 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             println!(
                 "Trust list now has {} pattern(s) for {} (review v{})",
                 state.trust_list.len(),
-                comparison.key,
+                review.comparison.key,
                 state.version
             );
         }
         TrustAction::Remove { pattern } => {
-            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
-            let state = mutate_review(&repo, &comparison, &hunks, |state| {
+            let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
                 let before = state.trust_list.len();
                 state.trust_list.retain(|existing| existing != &pattern);
                 state.trust_list.len() != before
@@ -753,7 +794,7 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             println!(
                 "Trust list now has {} pattern(s) for {} (review v{})",
                 state.trust_list.len(),
-                comparison.key,
+                review.comparison.key,
                 state.version
             );
         }
@@ -767,18 +808,18 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
 
     match args.action {
         NoteAction::Show => {
-            let comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
+            let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
             let state =
-                storage::load_review_state(&repo, &comparison).map_err(|e| e.to_string())?;
+                storage::load_review_state(&repo, &review.ref_name).map_err(|e| e.to_string())?;
             if state.notes.trim().is_empty() {
-                println!("(no notes for {})", comparison.key);
+                println!("(no notes for {})", review.comparison.key);
             } else {
                 println!("{}", state.notes);
             }
         }
         NoteAction::Set { text } => {
-            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
-            mutate_review(&repo, &comparison, &hunks, |state| {
+            let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            mutate_review(&repo, &review.ref_name, &hunks, |state| {
                 if state.notes == text {
                     false
                 } else {
@@ -786,11 +827,11 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
                     true
                 }
             })?;
-            println!("Notes updated for {}", comparison.key);
+            println!("Notes updated for {}", review.comparison.key);
         }
         NoteAction::Append { text } => {
-            let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
-            mutate_review(&repo, &comparison, &hunks, |state| {
+            let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+            mutate_review(&repo, &review.ref_name, &hunks, |state| {
                 if state.notes.trim().is_empty() {
                     state.notes.clone_from(&text);
                 } else {
@@ -798,7 +839,7 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
                 }
                 true
             })?;
-            println!("Notes updated for {}", comparison.key);
+            println!("Notes updated for {}", review.comparison.key);
         }
     }
     Ok(())
@@ -816,11 +857,13 @@ fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let repo = repo.as_path();
     let level = parse_risk_level(&args.level)?;
-    let (comparison, hunks, live_ids) = load_for_mutation(repo, args.target.spec.as_deref())?;
+    let (review, hunks, live_ids) = load_for_mutation(repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
-    let (known, unknown) = resolve_mark_targets(repo, &comparison, &live_ids, &args.hunks, None)?;
+    let (known, unknown) =
+        resolve_mark_targets(repo, &review.ref_name, &live_ids, &args.hunks, None)?;
     for id in &unknown {
         eprintln!("warning: hunk not found in {}: {id}", comparison.key);
     }
@@ -828,10 +871,10 @@ fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
         return Err("No matching hunks to update.".to_owned());
     }
 
-    let existed = storage::review_exists(repo, &comparison).unwrap_or(false);
+    let existed = storage::review_exists(repo, &review.ref_name).unwrap_or(false);
     let source = resolve_source(args.source)?;
     let reason = args.reason.clone();
-    let result = mutate_review(repo, &comparison, &hunks, |state| {
+    let result = mutate_review(repo, &review.ref_name, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
         for id in &known {
@@ -871,16 +914,17 @@ fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
 fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let repo = repo.as_path();
-    let (comparison, hunks, _) = load_for_mutation(repo, args.target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
-    if !storage::review_exists(repo, &comparison).unwrap_or(false) {
+    if !storage::review_exists(repo, &review.ref_name).unwrap_or(false) {
         return Err(format!("No review exists for {}.", comparison.key));
     }
 
     let ids = args.hunks.clone();
-    let result = mutate_review(repo, &comparison, &hunks, |state| {
+    let result = mutate_review(repo, &review.ref_name, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
         for id in &ids {
@@ -922,14 +966,14 @@ fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
 /// hunk currently at that risk level. Returns `(targets, unknown_ids)`.
 fn resolve_mark_targets(
     repo: &Path,
-    comparison: &Comparison,
+    ref_name: &str,
     live_ids: &HashSet<String>,
     explicit: &[String],
     risk: Option<&str>,
 ) -> Result<(Vec<String>, Vec<String>), String> {
     if let Some(level) = risk {
         let want = parse_risk_level(level)?;
-        let state = storage::load_review_state(repo, comparison).map_err(|e| e.to_string())?;
+        let state = storage::load_review_state(repo, ref_name).map_err(|e| e.to_string())?;
         let mut targets: Vec<String> = state
             .hunks
             .iter()

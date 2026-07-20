@@ -134,12 +134,9 @@ function SidebarList({
 
   const handleDeleteReview = useCallback(
     (review: GlobalReviewSummary) => {
-      deleteGlobalReview(review.repoPath, review.comparison);
+      deleteGlobalReview(review.repoPath, review.ref);
       const active = useReviewStore.getState().activeReviewKey;
-      if (
-        active?.repoPath === review.repoPath &&
-        active?.comparisonKey === review.comparison.key
-      ) {
+      if (active?.repoPath === review.repoPath && active?.ref === review.ref) {
         navigateRef.current("/");
       }
     },
@@ -148,11 +145,11 @@ function SidebarList({
 
   function reviewItemPropsFor(review: GlobalReviewSummary) {
     const meta = repoMetadata[review.repoPath];
-    const key = makeReviewKey(review.repoPath, review.comparison.key);
+    const key = makeReviewKey(review.repoPath, review.ref);
 
     const isCurrentReview =
       activeReviewKey?.repoPath === review.repoPath &&
-      activeReviewKey?.comparisonKey === review.comparison.key;
+      activeReviewKey?.ref === review.ref;
 
     const effectiveReview =
       isCurrentReview && liveProgress ? { ...review, ...liveProgress } : review;
@@ -426,7 +423,7 @@ function RepoGroupHeader({
   const setRepoCollapsed = useReviewStore((s) => s.setRepoCollapsed);
   const collapsed = collapsedRepos[group.repoPath] === true;
 
-  const currentHead = group.local.find((e) => e.kind === "working-tree");
+  const currentHead = group.branches.find((e) => e.kind === "working-tree");
   const canActivate = !!(currentHead && group.defaultBranch);
 
   const handleActivate = () => {
@@ -453,12 +450,12 @@ function RepoGroupHeader({
     (s) =>
       !!currentHead &&
       s.activeReviewKey?.repoPath === group.repoPath &&
-      s.activeReviewKey?.comparisonKey === currentHead.comparison.key,
+      s.activeReviewKey?.ref === currentHead.ref,
   );
 
   // The working-tree entry is surfaced in the repo header, so exclude it from
-  // the Local section list (would otherwise render twice).
-  const localRest = group.local.filter((e) => e.kind !== "working-tree");
+  // the Branches section list (would otherwise render twice).
+  const branchesRest = group.branches.filter((e) => e.kind !== "working-tree");
 
   return (
     <div className="mt-0.5 first:mt-0">
@@ -513,16 +510,16 @@ function RepoGroupHeader({
       </div>
       {!collapsed && (
         <div className="ml-2 border-l border-l-fg/[0.06] pl-0.5">
-          {group.inReview.length > 0 && (
+          {branchesRest.length > 0 && (
             <>
-              <SectionHeader label="In review" />
-              {group.inReview.map(renderEntry)}
+              <SectionHeader label="Branches" />
+              {branchesRest.map(renderEntry)}
             </>
           )}
-          {localRest.length > 0 && (
+          {group.pinned.length > 0 && (
             <>
-              <SectionHeader label="Local" />
-              {localRest.map(renderEntry)}
+              <SectionHeader label="Pinned" />
+              {group.pinned.map(renderEntry)}
             </>
           )}
           {group.remoteRecent.length > 0 && (

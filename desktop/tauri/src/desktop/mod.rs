@@ -52,7 +52,7 @@ fn open_request_path() -> std::path::PathBuf {
 #[cfg(desktop)]
 pub struct OpenRequest {
     pub repo_path: String,
-    pub comparison_key: Option<String>,
+    pub ref_name: Option<String>,
     pub focused_file: Option<String>,
     pub focused_hunk_hash: Option<String>,
 }
@@ -74,7 +74,7 @@ fn read_open_request() -> Option<OpenRequest> {
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty())
     };
-    let comparison_key = take_optional(&mut lines);
+    let ref_name = take_optional(&mut lines);
     let focused_file = take_optional(&mut lines);
     let focused_hunk_hash = take_optional(&mut lines);
 
@@ -92,7 +92,7 @@ fn read_open_request() -> Option<OpenRequest> {
     } else {
         Some(OpenRequest {
             repo_path,
-            comparison_key,
+            ref_name,
             focused_file,
             focused_hunk_hash,
         })
@@ -105,7 +105,7 @@ fn read_open_request() -> Option<OpenRequest> {
 fn emit_cli_open_review(
     app: &tauri::AppHandle,
     repo_path: &str,
-    comparison_key: Option<&str>,
+    ref_name: Option<&str>,
     focused_file: Option<&str>,
     focused_hunk_hash: Option<&str>,
 ) {
@@ -114,7 +114,7 @@ fn emit_cli_open_review(
             "cli:open-review",
             serde_json::json!({
                 "repoPath": repo_path,
-                "comparisonKey": comparison_key,
+                "ref": ref_name,
                 "focusedFile": focused_file,
                 "focusedHunkHash": focused_hunk_hash,
             }),
@@ -147,7 +147,7 @@ fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &
     }
 }
 
-/// Parse a `review://open?repo=&compare=&file=&hunk=` URL into the parts
+/// Parse a `review://open?repo=&ref=&file=&hunk=` URL into the parts
 /// `emit_cli_open_review` needs. Returns `None` for unrecognized URLs
 /// (wrong scheme, missing or unknown repo id, etc.).
 #[cfg(desktop)]
@@ -158,14 +158,14 @@ fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>
     }
 
     let mut repo_id: Option<String> = None;
-    let mut compare: Option<String> = None;
+    let mut review_ref: Option<String> = None;
     let mut file: Option<String> = None;
     let mut hunk: Option<String> = None;
 
     for (key, value) in url.query_pairs() {
         match key.as_ref() {
             "repo" => repo_id = Some(value.into_owned()),
-            "compare" => compare = Some(value.into_owned()),
+            "ref" => review_ref = Some(value.into_owned()),
             "file" => file = Some(value.into_owned()),
             "hunk" => hunk = Some(value.into_owned()),
             _ => {}
@@ -177,7 +177,7 @@ fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>
         .ok()
         .flatten()?;
 
-    Some((entry.path, compare, file, hunk))
+    Some((entry.path, review_ref, file, hunk))
 }
 
 /// Handle a `review://` URL: parse it, then either navigate the running
@@ -186,7 +186,7 @@ fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>
 /// cold-start case where no webview exists yet.
 #[cfg(desktop)]
 fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
-    let Some((repo_path, comparison, file, hunk)) = parse_review_url(raw) else {
+    let Some((repo_path, review_ref, file, hunk)) = parse_review_url(raw) else {
         log::warn!("Ignoring unrecognized deep link: {}", raw);
         return;
     };
@@ -197,7 +197,7 @@ fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
         // startup code reads (matches the CLI's existing channel).
         write_open_request(
             &repo_path,
-            comparison.as_deref(),
+            review_ref.as_deref(),
             file.as_deref(),
             hunk.as_deref(),
         );
@@ -207,7 +207,7 @@ fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
     emit_cli_open_review(
         app,
         &repo_path,
-        comparison.as_deref(),
+        review_ref.as_deref(),
         file.as_deref(),
         hunk.as_deref(),
     );
@@ -219,7 +219,7 @@ fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
 #[cfg(desktop)]
 fn write_open_request(
     repo_path: &str,
-    comparison_key: Option<&str>,
+    ref_name: Option<&str>,
     focused_file: Option<&str>,
     focused_hunk_hash: Option<&str>,
 ) {
@@ -229,7 +229,7 @@ fn write_open_request(
         .as_secs();
     let content = format!(
         "{now}\n{repo_path}\n{}\n{}\n{}",
-        comparison_key.unwrap_or(""),
+        ref_name.unwrap_or(""),
         focused_file.unwrap_or(""),
         focused_hunk_hash.unwrap_or(""),
     );
@@ -295,7 +295,7 @@ pub fn run() {
 
                 // When a second instance is launched, its CLI args are forwarded here.
                 // Find non-flag args after the binary name: first is repo path,
-                // optional second is comparison key.
+                // optional second is the review ref.
                 let non_flag_args: Vec<String> = argv
                     .iter()
                     .skip(1)
@@ -303,12 +303,12 @@ pub fn run() {
                     .cloned()
                     .collect();
                 if let Some(repo) = non_flag_args.first().cloned() {
-                    let comparison_key = non_flag_args.get(1).cloned();
+                    let ref_name = non_flag_args.get(1).cloned();
                     let focused_file = non_flag_args.get(2).cloned();
                     emit_cli_open_review(
                         app,
                         &repo,
-                        comparison_key.as_deref(),
+                        ref_name.as_deref(),
                         focused_file.as_deref(),
                         None,
                     );
@@ -660,12 +660,12 @@ pub fn run() {
             commands::get_diff,
             commands::get_diff_shortstat,
             commands::get_expanded_context,
-            commands::resolve_review_target,
+            commands::resolve_review,
             commands::load_review_state,
             commands::reconcile_review_state,
             commands::save_review_state,
             commands::list_saved_reviews,
-            commands::change_review_base,
+            commands::set_base_override,
             commands::delete_review,
             commands::review_exists,
             commands::ensure_review_exists,
@@ -733,7 +733,7 @@ pub fn run() {
                     emit_cli_open_review(
                         app_handle,
                         &req.repo_path,
-                        req.comparison_key.as_deref(),
+                        req.ref_name.as_deref(),
                         req.focused_file.as_deref(),
                         req.focused_hunk_hash.as_deref(),
                     );

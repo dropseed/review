@@ -1,12 +1,12 @@
 import { type ReactNode, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { Comparison, GitHubPrRef, ReviewTarget } from "../types";
+import type { ReviewTarget } from "../types";
 import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { ComparisonPicker } from "./ComparisonPicker/ComparisonPicker";
 
-/** A one-click review target (e.g. uncommitted / staged changes). */
+/** A one-click review target (e.g. uncommitted changes). */
 function TargetCard({
   title,
   subtitle,
@@ -31,11 +31,7 @@ function TargetCard({
 }
 
 interface NewReviewViewProps {
-  onNewReview: (
-    path: string,
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ) => Promise<void>;
+  onNewReview: (path: string, target: ReviewTarget) => Promise<void>;
 }
 
 export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
@@ -43,7 +39,7 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
   const savedReviews = useReviewStore((s) => s.savedReviews);
   const recentRepositories = useReviewStore((s) => s.recentRepositories);
 
-  const existingComparisonKeys = savedReviews.map((r) => r.comparison.key);
+  const existingRefs = savedReviews.map((r) => r.ref);
 
   const [searchParams] = useSearchParams();
   const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(
@@ -78,34 +74,29 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
     }
   }, []);
 
-  const handleSelectComparison = useCallback(
-    async (comparison: Comparison, githubPr?: GitHubPrRef) => {
+  const handleSelectTarget = useCallback(
+    async (target: ReviewTarget) => {
       if (!selectedRepoPath) return;
-      await onNewReview(selectedRepoPath, comparison, githubPr);
+      await onNewReview(selectedRepoPath, target);
     },
     [selectedRepoPath, onNewReview],
   );
 
-  // Resolve a one-click target (uncommitted/staged/…) into a comparison and open it.
-  const handleQuickTarget = useCallback(
-    async (target: ReviewTarget) => {
-      if (!selectedRepoPath) return;
-      try {
-        const comparison = await getApiClient().resolveReviewTarget(
-          selectedRepoPath,
-          target,
-        );
-        await handleSelectComparison(comparison);
-      } catch (err) {
-        console.error("Failed to resolve review target:", err);
-        await getPlatformServices().dialogs.message(String(err), {
-          title: "Couldn't start review",
-          kind: "error",
-        });
-      }
-    },
-    [selectedRepoPath, handleSelectComparison],
-  );
+  // One-click "uncommitted work" — review the current branch (its working-tree
+  // changes are included by the resolution ladder).
+  const handleUncommitted = useCallback(async () => {
+    if (!selectedRepoPath) return;
+    try {
+      const branch = await getApiClient().getCurrentBranch(selectedRepoPath);
+      await handleSelectTarget({ ref: branch });
+    } catch (err) {
+      console.error("Failed to resolve current branch:", err);
+      await getPlatformServices().dialogs.message(String(err), {
+        title: "Couldn't start review",
+        kind: "error",
+      });
+    }
+  }, [selectedRepoPath, handleSelectTarget]);
 
   return (
     <div
@@ -257,18 +248,11 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
                   <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                     Your current work
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <TargetCard
-                      title="Uncommitted"
-                      subtitle="All working changes"
-                      onClick={() => handleQuickTarget({ kind: "working" })}
-                    />
-                    <TargetCard
-                      title="Staged"
-                      subtitle="What's in the index"
-                      onClick={() => handleQuickTarget({ kind: "staged" })}
-                    />
-                  </div>
+                  <TargetCard
+                    title="Uncommitted"
+                    subtitle="All working changes"
+                    onClick={handleUncommitted}
+                  />
                 </div>
 
                 {/* Divider */}
@@ -282,8 +266,8 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
 
                 <ComparisonPicker
                   repoPath={selectedRepoPath}
-                  onSelectReview={handleSelectComparison}
-                  existingComparisonKeys={existingComparisonKeys}
+                  onSelectReview={handleSelectTarget}
+                  existingRefs={existingRefs}
                 />
               </div>
             ) : (

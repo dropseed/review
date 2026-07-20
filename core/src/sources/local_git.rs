@@ -154,6 +154,7 @@ pub struct LocalGitSource {
     merge_base_cache: std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
     resolve_ref_cache: std::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
     working_tree_dir_cache: std::sync::Mutex<std::collections::HashMap<String, Option<PathBuf>>>,
+    default_branch_cache: std::sync::OnceLock<String>,
 }
 
 impl LocalGitSource {
@@ -166,6 +167,7 @@ impl LocalGitSource {
             merge_base_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             resolve_ref_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             working_tree_dir_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            default_branch_cache: std::sync::OnceLock::new(),
         })
     }
 
@@ -253,11 +255,16 @@ impl LocalGitSource {
             .filter(|s| !s.is_empty())
     }
 
-    /// Get remote info (org/repo name and browse URL) from the origin remote
-    pub fn get_remote_info(&self) -> Result<RemoteInfo, LocalGitError> {
+    /// Get remote info (org/repo name and browse URL) from the origin remote.
+    /// Returns `Ok(None)` for local-only repos with no `origin` remote; genuine
+    /// git failures still propagate as errors.
+    pub fn get_remote_info(&self) -> Result<Option<RemoteInfo>, LocalGitError> {
+        let remotes = self.run_git(&["remote"])?;
+        if !remotes.lines().any(|r| r.trim() == "origin") {
+            return Ok(None);
+        }
         let url = self.run_git(&["remote", "get-url", "origin"])?;
-        let url = url.trim();
-        parse_remote_url(url)
+        parse_remote_url(url.trim()).map(Some)
     }
 
     /// The well-known SHA for git's empty tree object.
@@ -291,6 +298,22 @@ impl LocalGitSource {
                 ])
                 .is_ok()
             })
+    }
+
+    /// Whether `git_ref` names a local or remote branch — checks `refs/heads/`
+    /// and `refs/remotes/`, deliberately *not* tags. Unlike [`Self::is_named_ref`],
+    /// tags fall through: the resolution ladder reviews a tag as a single commit
+    /// (against its parent), whereas a branch is diffed against the default branch.
+    pub fn is_branch(&self, git_ref: &str) -> bool {
+        ["refs/heads/", "refs/remotes/"].iter().any(|prefix| {
+            self.run_git(&[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("{prefix}{git_ref}"),
+            ])
+            .is_ok()
+        })
     }
 
     /// Resolve a ref to a SHA, falling back to `origin/<ref>` for
@@ -373,32 +396,40 @@ impl LocalGitSource {
         Ok(())
     }
 
-    /// Get the default branch name (main or master)
+    /// Get the default branch name (main or master). The result is stable for a
+    /// repo, so it's cached per source instance after the first resolution.
     pub fn get_default_branch(&self) -> Result<String, LocalGitError> {
+        Ok(self
+            .default_branch_cache
+            .get_or_init(|| self.compute_default_branch())
+            .clone())
+    }
+
+    fn compute_default_branch(&self) -> String {
         // Try to get from remote origin HEAD
         if let Ok(output) = self.run_git(&["symbolic-ref", "refs/remotes/origin/HEAD"]) {
             let trimmed = output.trim();
             if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/") {
-                return Ok(branch.to_owned());
+                return branch.to_owned();
             }
         }
         // Fall back to checking if main or master exists
         if self.ref_exists("main") {
-            return Ok("main".to_owned());
+            return "main".to_owned();
         }
         if self.ref_exists("master") {
-            return Ok("master".to_owned());
+            return "master".to_owned();
         }
         // Empty repo: no refs exist yet, check what HEAD points to
         if let Ok(output) = self.run_git(&["symbolic-ref", "HEAD"]) {
             if let Some(branch) = output.trim().strip_prefix("refs/heads/") {
                 if branch == "main" || branch == "master" {
-                    return Ok(branch.to_owned());
+                    return branch.to_owned();
                 }
             }
         }
         // Last resort: use HEAD
-        Ok("HEAD".to_owned())
+        "HEAD".to_owned()
     }
 
     /// Get lightweight diff statistics (file count, additions, deletions) via `--shortstat`.
@@ -651,10 +682,10 @@ impl LocalGitSource {
         if let Ok(reviews) = crate::review::storage::list_saved_reviews(&self.repo_path) {
             for r in reviews {
                 if let Some(wt_path) = r.worktree_path {
-                    if !worktree_map.contains_key(&r.comparison.head)
+                    if !worktree_map.contains_key(&r.ref_name)
                         && std::path::Path::new(&wt_path).exists()
                     {
-                        worktree_map.insert(r.comparison.head, wt_path);
+                        worktree_map.insert(r.ref_name, wt_path);
                     }
                 }
             }
@@ -1678,8 +1709,8 @@ impl LocalGitSource {
     /// The diff range's left side for `base`..`head`: their merge-base, falling
     /// back to `base` itself (resolved, or the empty tree) when no merge-base
     /// exists. That happens for unrelated histories, and — deliberately — when
-    /// `head` is a tree object rather than a commit (staged/index reviews via
-    /// `write_index_tree`), for which `git merge-base` legitimately fails.
+    /// `head` is a tree object rather than a commit (patch reviews via
+    /// `write_patched_tree`), for which `git merge-base` legitimately fails.
     fn merge_base_or_base(&self, base: &str, head: &str) -> String {
         match self.get_merge_base(base, head) {
             Ok(b) => b,
@@ -2015,15 +2046,6 @@ impl LocalGitSource {
                 String::from_utf8_lossy(&output.stderr).to_string(),
             ))
         }
-    }
-
-    /// Write the current index to a tree object and return its SHA, without
-    /// mutating any refs or the working tree. This lets the staged state be
-    /// reviewed as an ordinary object comparison: `HEAD..<index-tree>` is exactly
-    /// the staged changes, handled by the normal diff pipeline with no
-    /// staged-specific plumbing. The tree is a harmless dangling object.
-    pub fn write_index_tree(&self) -> Result<String, LocalGitError> {
-        Ok(self.run_git(&["write-tree"])?.trim().to_owned())
     }
 
     /// Apply a unified-diff patch on top of HEAD in a throwaway index — without

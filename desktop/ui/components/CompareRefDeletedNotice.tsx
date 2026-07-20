@@ -24,6 +24,9 @@ export function CompareRefDeletedNotice({
   missingRefs,
 }: CompareRefDeletedNoticeProps): ReactNode {
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
+  // This notice only renders for the active review, so its identity is the
+  // store's current review ref.
+  const reviewRef = useReviewStore((s) => s.reviewRef);
   const navigate = useNavigate();
   const [changeBaseOpen, setChangeBaseOpen] = useState(false);
   const removingRef = useRef(false);
@@ -47,9 +50,9 @@ export function CompareRefDeletedNotice({
   // The ref guards against a double-click firing the delete twice before the
   // navigate unmounts this component.
   const handleRemove = (): void => {
-    if (removingRef.current) return;
+    if (removingRef.current || !reviewRef) return;
     removingRef.current = true;
-    deleteGlobalReview(repoPath, comparison);
+    deleteGlobalReview(repoPath, reviewRef);
     navigate("/");
   };
 
@@ -80,7 +83,7 @@ export function CompareRefDeletedNotice({
         {/* Re-anchoring the base only recovers the review when the base is the
             ref that vanished and the head still exists; offering it for a
             deleted head would leave the comparison just as broken. */}
-        {baseMissing && !headMissing && (
+        {baseMissing && !headMissing && reviewRef && (
           <Popover open={changeBaseOpen} onOpenChange={setChangeBaseOpen}>
             <PopoverTrigger asChild>
               <button
@@ -94,7 +97,8 @@ export function CompareRefDeletedNotice({
             <PopoverContent align="center" className="w-auto p-0">
               <ChangeBaseMenu
                 repoPath={repoPath}
-                comparison={comparison}
+                refName={reviewRef}
+                currentBase={comparison.base}
                 onClose={() => setChangeBaseOpen(false)}
               />
             </PopoverContent>

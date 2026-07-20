@@ -1,6 +1,5 @@
 import { memo, useCallback } from "react";
 import { useReviewStore } from "../../stores";
-import { makeComparison } from "../../types";
 
 interface RemoteBranchItemProps {
   branchName: string;
@@ -24,11 +23,11 @@ export const RemoteBranchItem = memo(function RemoteBranchItem({
   lastCommitDate,
   onActivate,
 }: RemoteBranchItemProps) {
-  const comparisonKey = makeComparison(defaultBranch, branchName).key;
+  // A remote branch's review identity is its (unprefixed) branch name.
   const isActive = useReviewStore(
     (s) =>
       s.activeReviewKey?.repoPath === repoPath &&
-      s.activeReviewKey?.comparisonKey === comparisonKey,
+      s.activeReviewKey?.ref === branchName,
   );
 
   const handleClick = useCallback(() => {

@@ -3,7 +3,6 @@ use super::migrate;
 use super::state::{ReviewState, ReviewSummary};
 use crate::sources::github::GitHubPrRef;
 use crate::sources::local_git::DiffShortStat;
-use crate::sources::traits::Comparison;
 use serde::Serialize;
 use std::fs;
 use std::io;
@@ -33,25 +32,6 @@ fn deserialize_review(content: &str) -> Result<ReviewState, StorageError> {
     let raw: serde_json::Value = serde_json::from_str(content)?;
     let migrated = migrate::migrate(raw)?;
     Ok(serde_json::from_value(migrated)?)
-}
-
-/// Build a placeholder summary for an unreadable review file, recovering the
-/// comparison from the filename and the timestamp from the file's mtime.
-fn unreadable_summary(path: &Path) -> ReviewSummary {
-    // Inverts `comparison_filename`: the stem is the sanitized "base..head" key.
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-    let comparison = match stem.split_once("..") {
-        Some((base, head)) => Comparison::new(base, head),
-        None => Comparison::new("", stem),
-    };
-    let updated_at = fs::metadata(path)
-        .and_then(|m| m.modified())
-        .map(super::state::iso8601_from_system_time)
-        .unwrap_or_default();
-    ReviewSummary::unreadable(comparison, updated_at)
 }
 
 /// Get the storage directory for review state (centralized).
@@ -156,18 +136,15 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
     Ok(all)
 }
 
-/// Generate a filename for a comparison based on its key
-fn comparison_filename(comparison: &Comparison) -> String {
-    format!("{}.json", central::sanitize_path_component(&comparison.key))
+/// Generate a filename for a review keyed by its ref.
+fn review_filename(ref_name: &str) -> String {
+    format!("{}.json", central::sanitize_path_component(ref_name))
 }
 
-/// Load review state for a comparison
-pub fn load_review_state(
-    repo_path: &Path,
-    comparison: &Comparison,
-) -> Result<ReviewState, StorageError> {
+/// Load review state for a ref.
+pub fn load_review_state(repo_path: &Path, ref_name: &str) -> Result<ReviewState, StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
-    let filename = comparison_filename(comparison);
+    let filename = review_filename(ref_name);
     let path = storage_dir.join(&filename);
 
     if path.exists() {
@@ -176,7 +153,7 @@ pub fn load_review_state(
         Ok(state)
     } else {
         // Return a new empty state (not persisted — call ensure_review_exists for that)
-        Ok(ReviewState::new(comparison.clone()))
+        Ok(ReviewState::new(ref_name, None))
     }
 }
 
@@ -194,7 +171,7 @@ pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), St
     let storage_dir = get_storage_dir(repo_path)?;
     fs::create_dir_all(&storage_dir)?;
 
-    let filename = comparison_filename(&state.comparison);
+    let filename = review_filename(&state.ref_name);
     let path = storage_dir.join(&filename);
 
     // Check for version conflict if the file exists.
@@ -245,23 +222,21 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
                         summaries.push(state.to_summary());
                     }
                     Err(e) => {
-                        // Don't silently drop an unreadable review — that is the
-                        // failure mode this whole effort is undoing. Log loudly
-                        // and surface a placeholder so it stays visible; opening
-                        // it still fails loudly via `load_review_state`.
-                        log::error!(
-                            "[list_saved_reviews] Unreadable review {}: {e}",
+                        // Old-schema (pre-ref `{base}..{head}`) and otherwise
+                        // unreadable files are silently skipped — they carry no
+                        // usable identity in the new model. Logged for debugging,
+                        // never surfaced as a placeholder row.
+                        log::debug!(
+                            "[list_saved_reviews] Skipping unreadable review {}: {e}",
                             path.display()
                         );
-                        summaries.push(unreadable_summary(&path));
                     }
                 },
                 Err(e) => {
-                    log::error!(
-                        "[list_saved_reviews] Failed to read {}: {e}",
+                    log::debug!(
+                        "[list_saved_reviews] Skipping unreadable review {}: {e}",
                         path.display()
                     );
-                    summaries.push(unreadable_summary(&path));
                 }
             }
         }
@@ -277,15 +252,16 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
 /// Used to make new reviews immediately visible in the sidebar.
 pub fn ensure_review_exists(
     repo_path: &Path,
-    comparison: &Comparison,
+    ref_name: &str,
+    base_override: Option<String>,
     github_pr: Option<GitHubPrRef>,
 ) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
-    let filename = comparison_filename(comparison);
+    let filename = review_filename(ref_name);
     let path = storage_dir.join(&filename);
 
     if !path.exists() {
-        let mut state = ReviewState::new(comparison.clone());
+        let mut state = ReviewState::new(ref_name, base_override);
         state.github_pr = github_pr;
         save_review_state(repo_path, &state)?;
     }
@@ -293,75 +269,43 @@ pub fn ensure_review_exists(
     Ok(())
 }
 
-/// Check whether a review file exists on disk for the given comparison.
-pub fn review_exists(repo_path: &Path, comparison: &Comparison) -> Result<bool, StorageError> {
+/// Check whether a review file exists on disk for the given ref.
+pub fn review_exists(repo_path: &Path, ref_name: &str) -> Result<bool, StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
-    let filename = comparison_filename(comparison);
+    let filename = review_filename(ref_name);
     Ok(storage_dir.join(&filename).exists())
 }
 
-/// Change the base ref of an existing review, atomically renaming the file.
-///
-/// Loads the review for `old_comparison`, creates a new comparison with `new_base`
-/// and the same head, saves under the new filename, and deletes the old file.
-/// Returns the new comparison.
-pub fn change_review_base(
+/// Set (or clear, with `None`) a review's base override. Identity is the ref, so
+/// there is no rename or re-key: this loads the review, sets the field, and saves
+/// in place. A missing review file is created with the override applied.
+pub fn set_base_override(
     repo_path: &Path,
-    old_comparison: &Comparison,
-    new_base: &str,
-) -> Result<Comparison, StorageError> {
-    let new_comparison = Comparison::new(new_base, &old_comparison.head);
-
-    // Don't allow no-op
-    if new_comparison.key == old_comparison.key {
-        return Ok(new_comparison);
-    }
-
-    // Check target doesn't already exist
-    if review_exists(repo_path, &new_comparison)? {
-        return Err(StorageError::Io(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("A review for {} already exists", new_comparison.key),
-        )));
-    }
-
-    // Load existing state
+    ref_name: &str,
+    base_override: Option<String>,
+) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
-    let old_filename = comparison_filename(old_comparison);
-    let old_path = storage_dir.join(&old_filename);
+    let filename = review_filename(ref_name);
+    let path = storage_dir.join(&filename);
 
-    let mut state = if old_path.exists() {
-        let content = fs::read_to_string(&old_path)?;
+    let mut state = if path.exists() {
+        let content = fs::read_to_string(&path)?;
         deserialize_review(&content)?
     } else {
-        ReviewState::new(old_comparison.clone())
+        ReviewState::new(ref_name, None)
     };
 
-    // Update comparison in state
-    state.comparison = new_comparison.clone();
-    state.version = 0; // Fresh save, no conflict check
-    state.updated_at = super::state::now_iso8601();
-
-    // Update GitHub PR base if present
-    if let Some(ref mut pr) = state.github_pr {
-        pr.base_ref_name = new_base.to_string();
-    }
-
-    // Save under new filename
+    state.base_override = base_override;
+    state.prepare_for_save();
     save_review_state(repo_path, &state)?;
 
-    // Delete old file
-    if old_path.exists() {
-        fs::remove_file(&old_path)?;
-    }
-
-    Ok(new_comparison)
+    Ok(())
 }
 
 /// Delete a saved review
-pub fn delete_review(repo_path: &Path, comparison: &Comparison) -> Result<(), StorageError> {
+pub fn delete_review(repo_path: &Path, ref_name: &str) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
-    let filename = comparison_filename(comparison);
+    let filename = review_filename(ref_name);
     let path = storage_dir.join(&filename);
 
     if path.exists() {
@@ -380,9 +324,8 @@ mod tests {
     };
     use tempfile::TempDir;
 
-    fn create_test_comparison() -> Comparison {
-        Comparison::new("main", "HEAD")
-    }
+    /// The ref a test review is keyed by.
+    const TEST_REF: &str = "feature";
 
     /// Create a test repo and set REVIEW_HOME to a temp dir.
     /// Returns (repo_dir, review_home_dir) — both TempDirs kept alive.
@@ -398,11 +341,10 @@ mod tests {
     }
 
     #[test]
-    #[test]
-    fn test_comparison_filename() {
-        let comparison = create_test_comparison();
-        let filename = comparison_filename(&comparison);
-        assert_eq!(filename, "main..HEAD.json");
+    fn test_review_filename() {
+        assert_eq!(review_filename("feature"), "feature.json");
+        // Slashes in branch names get sanitized into a flat filename.
+        assert_eq!(review_filename("claude/foo"), "claude_foo.json");
     }
 
     #[test]
@@ -410,11 +352,10 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
-        let state = load_review_state(&repo_path, &comparison).unwrap();
+        let state = load_review_state(&repo_path, TEST_REF).unwrap();
 
-        assert_eq!(state.comparison.key, comparison.key);
+        assert_eq!(state.ref_name, TEST_REF);
         assert!(state.hunks.is_empty());
     }
 
@@ -423,10 +364,9 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
         // Create a state with some data
-        let mut state = ReviewState::new(comparison.clone());
+        let mut state = ReviewState::new(TEST_REF, Some("main".to_owned()));
         state.notes = "Test notes".to_string();
         state.trust_list = vec!["imports:*".to_string(), "formatting:*".to_string()];
         state.hunks.insert(
@@ -445,8 +385,9 @@ mod tests {
         save_review_state(&repo_path, &state).unwrap();
 
         // Load it back
-        let loaded_state = load_review_state(&repo_path, &comparison).unwrap();
+        let loaded_state = load_review_state(&repo_path, TEST_REF).unwrap();
 
+        assert_eq!(loaded_state.base_override.as_deref(), Some("main"));
         assert_eq!(loaded_state.notes, "Test notes");
         assert_eq!(loaded_state.trust_list.len(), 2);
         assert!(loaded_state.hunks.contains_key("file.rs:abc123"));
@@ -461,9 +402,8 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
-        let mut state = ReviewState::new(comparison.clone());
+        let mut state = ReviewState::new(TEST_REF, None);
         // A fully-populated, resolved annotation.
         state.annotations.push(LineAnnotation {
             id: "file.rs:42:new:t123-0".to_string(),
@@ -496,7 +436,7 @@ mod tests {
         });
 
         save_review_state(&repo_path, &state).unwrap();
-        let loaded = load_review_state(&repo_path, &comparison).unwrap();
+        let loaded = load_review_state(&repo_path, TEST_REF).unwrap();
 
         assert_eq!(loaded.annotations.len(), 2);
 
@@ -535,12 +475,9 @@ mod tests {
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
-        // Create and save two reviews
-        let comparison1 = Comparison::new("main", "feature-1");
-        let comparison2 = Comparison::new("main", "feature-2");
-
-        save_review_state(&repo_path, &ReviewState::new(comparison1)).unwrap();
-        save_review_state(&repo_path, &ReviewState::new(comparison2)).unwrap();
+        // Create and save two reviews, each keyed by a distinct ref.
+        save_review_state(&repo_path, &ReviewState::new("feature-1", None)).unwrap();
+        save_review_state(&repo_path, &ReviewState::new("feature-2", None)).unwrap();
 
         let reviews = list_saved_reviews(&repo_path).unwrap();
         assert_eq!(reviews.len(), 2);
@@ -551,17 +488,16 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
         // Save a review
-        save_review_state(&repo_path, &ReviewState::new(comparison.clone())).unwrap();
+        save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
 
         // Verify it exists
         let reviews = list_saved_reviews(&repo_path).unwrap();
         assert_eq!(reviews.len(), 1);
 
         // Delete it
-        delete_review(&repo_path, &comparison).unwrap();
+        delete_review(&repo_path, TEST_REF).unwrap();
 
         // Verify it's gone
         let reviews = list_saved_reviews(&repo_path).unwrap();
@@ -573,22 +509,45 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
         // Should not exist initially
-        assert!(!review_exists(&repo_path, &comparison).unwrap());
+        assert!(!review_exists(&repo_path, TEST_REF).unwrap());
 
         // Save a review
-        save_review_state(&repo_path, &ReviewState::new(comparison.clone())).unwrap();
+        save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
 
         // Should exist now
-        assert!(review_exists(&repo_path, &comparison).unwrap());
+        assert!(review_exists(&repo_path, TEST_REF).unwrap());
 
         // Delete it
-        delete_review(&repo_path, &comparison).unwrap();
+        delete_review(&repo_path, TEST_REF).unwrap();
 
         // Should not exist again
-        assert!(!review_exists(&repo_path, &comparison).unwrap());
+        assert!(!review_exists(&repo_path, TEST_REF).unwrap());
+    }
+
+    #[test]
+    fn test_set_base_override_updates_in_place() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // Start with a review that derives its base (no override).
+        save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
+
+        // Set an override — no rename, same ref/file.
+        set_base_override(&repo_path, TEST_REF, Some("develop".to_owned())).unwrap();
+        let loaded = load_review_state(&repo_path, TEST_REF).unwrap();
+        assert_eq!(loaded.ref_name, TEST_REF);
+        assert_eq!(loaded.base_override.as_deref(), Some("develop"));
+
+        // Still one review file, keyed by the same ref.
+        assert_eq!(list_saved_reviews(&repo_path).unwrap().len(), 1);
+
+        // Clearing removes the override.
+        set_base_override(&repo_path, TEST_REF, None).unwrap();
+        let cleared = load_review_state(&repo_path, TEST_REF).unwrap();
+        assert!(cleared.base_override.is_none());
     }
 
     #[test]
@@ -596,10 +555,9 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
-        save_review_state(&repo_path, &ReviewState::new(comparison.clone())).unwrap();
-        let loaded = load_review_state(&repo_path, &comparison).unwrap();
+        save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
+        let loaded = load_review_state(&repo_path, TEST_REF).unwrap();
         assert_eq!(loaded.schema_version, REVIEW_SCHEMA_VERSION);
     }
 
@@ -608,21 +566,20 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
         central::register_repo(&repo_path).unwrap();
         let dir = get_storage_dir(&repo_path).unwrap();
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(comparison_filename(&comparison));
+        let path = dir.join(review_filename(TEST_REF));
         // A review claiming a schema this build can't understand must fail
         // loudly, never load as empty (which would invite an overwrite).
         fs::write(
             &path,
-            r#"{"schemaVersion":9999,"comparison":{"base":"main","head":"HEAD","key":"main..HEAD"},"hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x","version":1}"#,
+            r#"{"schemaVersion":9999,"ref":"feature","hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x","version":1}"#,
         )
         .unwrap();
 
-        let err = load_review_state(&repo_path, &comparison).unwrap_err();
+        let err = load_review_state(&repo_path, TEST_REF).unwrap_err();
         assert!(matches!(err, StorageError::Migrate(_)));
     }
 
@@ -631,27 +588,26 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
         central::register_repo(&repo_path).unwrap();
         let dir = get_storage_dir(&repo_path).unwrap();
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(comparison_filename(&comparison));
+        let path = dir.join(review_filename(TEST_REF));
         // A too-new file already on disk must not be clobbered by a save.
         fs::write(
             &path,
-            r#"{"schemaVersion":9999,"comparison":{"base":"main","head":"HEAD","key":"main..HEAD"},"hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x","version":1}"#,
+            r#"{"schemaVersion":9999,"ref":"feature","hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x","version":1}"#,
         )
         .unwrap();
 
-        let mut state = ReviewState::new(comparison.clone());
+        let mut state = ReviewState::new(TEST_REF, None);
         state.version = 1; // not a fresh save
         let err = save_review_state(&repo_path, &state).unwrap_err();
         assert!(matches!(err, StorageError::Migrate(_)));
     }
 
     #[test]
-    fn test_list_surfaces_unreadable_review() {
+    fn test_list_skips_unreadable_review() {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
@@ -659,12 +615,17 @@ mod tests {
         central::register_repo(&repo_path).unwrap();
         let dir = get_storage_dir(&repo_path).unwrap();
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("main..broken.json"), "{ not valid json").unwrap();
+        // Both a garbage file and a pre-ref (old-schema) review are silently
+        // skipped — no placeholder rows.
+        fs::write(dir.join("broken.json"), "{ not valid json").unwrap();
+        fs::write(
+            dir.join("main..old.json"),
+            r#"{"schemaVersion":1,"comparison":{"base":"main","head":"old","key":"main..old"},"hunks":{},"trustList":[],"notes":"","createdAt":"x","updatedAt":"x"}"#,
+        )
+        .unwrap();
 
         let reviews = list_saved_reviews(&repo_path).unwrap();
-        assert_eq!(reviews.len(), 1);
-        assert!(reviews[0].unreadable);
-        assert_eq!(reviews[0].comparison.key, "main..broken");
+        assert!(reviews.is_empty());
     }
 
     #[test]
@@ -672,10 +633,9 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (temp_dir, _review_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
-        let comparison = create_test_comparison();
 
         // Should not error when deleting non-existent review
-        let result = delete_review(&repo_path, &comparison);
+        let result = delete_review(&repo_path, TEST_REF);
         assert!(result.is_ok());
     }
 }

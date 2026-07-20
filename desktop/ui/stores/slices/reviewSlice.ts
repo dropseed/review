@@ -1,7 +1,6 @@
 import type { ApiClient } from "../../api";
 import {
   attributed,
-  type Comparison,
   type FileDiff,
   type GlobalReviewSummary,
   type HunkRisk,
@@ -83,7 +82,7 @@ export interface ReviewSlice {
   reconcileReviewState: () => Promise<void>;
   saveReviewState: () => Promise<void>;
   loadSavedReviews: () => Promise<void>;
-  deleteReview: (comparison: Comparison) => Promise<void>;
+  deleteReview: (ref: string) => Promise<void>;
 
   // Hunk actions
   approveHunk: (hunkId: string) => void;
@@ -176,7 +175,7 @@ export interface ReviewSlice {
 function patchGlobalReviewProgress(
   get: () => {
     repoPath: string | null;
-    comparison: Comparison | null;
+    reviewRef: string | null;
     filesByPath: Record<string, FileDiff>;
     flatFileList: string[];
     globalReviews: GlobalReviewSummary[];
@@ -185,15 +184,15 @@ function patchGlobalReviewProgress(
   reviewState: ReviewState,
 ): void {
   const state = get();
-  const { repoPath, comparison, globalReviews } = state;
-  if (!repoPath || !comparison) return;
+  const { repoPath, reviewRef, globalReviews } = state;
+  if (!repoPath || !reviewRef) return;
 
   const progress = computeReviewProgress(
     getAllHunksFromState(state),
     reviewState,
   );
   const patched = globalReviews.map((r) => {
-    if (r.repoPath === repoPath && r.comparison.key === comparison.key) {
+    if (r.repoPath === repoPath && r.ref === reviewRef) {
       return {
         ...r,
         totalHunks: progress.totalHunks,
@@ -379,13 +378,14 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     dismissCarriedForward: () => set({ carriedForward: 0 }),
 
     loadReviewState: async () => {
-      const { repoPath, comparison } = get();
-      if (!repoPath || !comparison) return;
+      const { repoPath, comparison, reviewRef, reviewBaseOverride } = get();
+      if (!repoPath || !comparison || !reviewRef) return;
 
+      // Diff-currency guard: discard the load if the resolved comparison
+      // changed (ref switch or base-override) while it was in flight.
       const comparisonKey = comparison.key;
       try {
-        const state = await client.loadReviewState(repoPath, comparison);
-        // Discard result if comparison changed while loading
+        const state = await client.loadReviewState(repoPath, reviewRef);
         if (get().comparison?.key !== comparisonKey) return;
         // Re-read current state after await — it may have been updated
         // by user actions (e.g. setTrustList) while the load was in flight
@@ -396,7 +396,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
           // Skip if in-memory state is newer (unsaved changes pending)
           if (latestState.updatedAt > state.updatedAt) return;
         }
-        ensuredLocalReviews.add(makeReviewKey(repoPath, comparisonKey));
+        ensuredLocalReviews.add(makeReviewKey(repoPath, reviewRef));
         set({ reviewState: state });
       } catch (err) {
         if (get().comparison?.key !== comparisonKey) return;
@@ -404,7 +404,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         set({
           carriedForward: 0,
           reviewState: {
-            comparison,
+            ref: reviewRef,
+            baseOverride: reviewBaseOverride ?? undefined,
             hunks: {},
             trustList: [],
             notes: "",
@@ -443,14 +444,21 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      let { repoPath, reviewState, comparison, readOnlyPreview } = get();
+      let {
+        repoPath,
+        reviewState,
+        comparison,
+        reviewRef,
+        reviewBaseOverride,
+        readOnlyPreview,
+      } = get();
       if (readOnlyPreview) return;
-      if (!repoPath || !reviewState || !comparison) return;
+      if (!repoPath || !reviewState || !comparison || !reviewRef) return;
 
       // Skip saving if the review file hasn't been created yet and the state
       // is pristine (no human actions). This avoids creating review files for
-      // comparisons the user merely clicked on without taking any action.
-      const ensureKey = makeReviewKey(repoPath, comparison.key);
+      // reviews the user merely clicked on without taking any action.
+      const ensureKey = makeReviewKey(repoPath, reviewRef);
       if (!ensuredLocalReviews.has(ensureKey)) {
         const hasHunkActions = Object.values(reviewState.hunks).some(
           (h) => h.status != null,
@@ -471,16 +479,21 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
         // First meaningful action — ensure review exists on disk
         try {
-          await client.ensureReviewExists(repoPath, comparison);
+          await client.ensureReviewExists(
+            repoPath,
+            reviewRef,
+            reviewBaseOverride ?? undefined,
+          );
           ensuredLocalReviews.add(ensureKey);
         } catch (err) {
           console.error("Failed to create review file:", err);
         }
       }
 
-      // Defense-in-depth: skip save if review state belongs to a different comparison
-      // (catches races where a stale debounced save fires after switching)
-      if (reviewState.comparison.key !== comparison.key) return;
+      // Defense-in-depth: skip save if this review state belongs to a
+      // different review (catches races where a stale debounced save fires
+      // after switching).
+      if (reviewState.ref !== reviewRef) return;
 
       // Computed only once we know there's something to save (skips the walk for
       // pristine reviews that returned above).
@@ -516,12 +529,9 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
         // Version conflict: reload disk state for its version and retry
         try {
-          const { comparison: currentComparison } = get();
-          if (!currentComparison) return;
-          const diskState = await client.loadReviewState(
-            repoPath,
-            currentComparison,
-          );
+          const { reviewRef: currentRef } = get();
+          if (!currentRef) return;
+          const diskState = await client.loadReviewState(repoPath, currentRef);
           const currentState = get().reviewState!;
           await saveAndUpdateVersion({
             ...currentState,
@@ -556,12 +566,12 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       }
     },
 
-    deleteReview: async (comparison) => {
+    deleteReview: async (ref) => {
       const { repoPath, loadSavedReviews } = get();
       if (!repoPath) return;
 
       try {
-        await client.deleteReview(repoPath, comparison);
+        await client.deleteReview(repoPath, ref);
         await loadSavedReviews();
       } catch (err) {
         console.error("Failed to delete review:", err);
@@ -877,16 +887,17 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const {
         reviewState,
         repoPath,
-        comparison,
+        reviewRef,
         saveReviewState,
         refresh,
         removeGroupingEntry,
       } = get();
-      if (!reviewState || !comparison) return;
+      if (!reviewState || !reviewRef) return;
 
       const now = new Date().toISOString();
       const newState: ReviewState = {
-        comparison: reviewState.comparison,
+        ref: reviewState.ref,
+        baseOverride: reviewState.baseOverride ?? undefined,
         hunks: {},
         trustList: reviewState.trustList,
         notes: "",
@@ -899,16 +910,16 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       set({ reviewState: newState });
       if (repoPath) {
-        removeGroupingEntry(makeReviewKey(repoPath, comparison.key));
+        removeGroupingEntry(makeReviewKey(repoPath, reviewRef));
       }
       await saveReviewState();
       await refresh();
     },
 
     exportRejectionFeedback: () => {
-      const { reviewState } = get();
+      const { reviewState, comparison } = get();
       const hunks = getAllHunksFromState(get());
-      if (!reviewState) return null;
+      if (!reviewState || !comparison) return null;
 
       const rejections: RejectionFeedback["rejections"] = [];
       for (const [hunkId, hunkState] of Object.entries(reviewState.hunks)) {
@@ -927,7 +938,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       if (rejections.length === 0) return null;
 
       return {
-        comparison: reviewState.comparison,
+        comparison,
         exportedAt: new Date().toISOString(),
         rejections,
       };

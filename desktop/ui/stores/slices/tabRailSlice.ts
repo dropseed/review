@@ -1,8 +1,8 @@
 import type {
-  Comparison,
   DiffShortStat,
   GitHubPrRef,
   GlobalReviewSummary,
+  ResolvedReview,
   ReviewFreshnessInput,
 } from "../../types";
 import type { ApiClient } from "../../api";
@@ -20,7 +20,7 @@ export interface NavigationSnapshot {
 
 export interface ActiveReviewKey {
   repoPath: string;
-  comparisonKey: string;
+  ref: string;
 }
 
 export interface RepoMetadata {
@@ -50,18 +50,21 @@ export interface GlobalReviewsSlice {
   setActiveReviewKey: (key: ActiveReviewKey | null) => void;
   ensureReviewExists: (
     repoPath: string,
-    comparison: Comparison,
+    ref: string,
+    baseOverride?: string,
     githubPr?: GitHubPrRef,
   ) => Promise<void>;
-  deleteGlobalReview: (
+  deleteGlobalReview: (repoPath: string, ref: string) => Promise<void>;
+  /**
+   * Set (or clear, when null) a review's base override in place. Identity is
+   * unchanged — no re-key. When the review is active, refreshes the store's
+   * resolved comparison, which reloads the diff. Returns the re-resolved review.
+   */
+  setBaseOverride: (
     repoPath: string,
-    comparison: Comparison,
-  ) => Promise<void>;
-  changeReviewBase: (
-    repoPath: string,
-    oldComparison: Comparison,
-    newBase: string,
-  ) => Promise<Comparison | null>;
+    ref: string,
+    baseOverride: string | null,
+  ) => Promise<ResolvedReview | null>;
   checkReviewsFreshness: () => Promise<void>;
   /** Save current navigation state before switching away from a review. */
   saveNavigationSnapshot: () => void;
@@ -122,7 +125,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         // Build indexed map for O(1) lookup by key
         const reviewsByKey: Record<string, GlobalReviewSummary> = {};
         for (const review of reviews) {
-          const key = makeReviewKey(review.repoPath, review.comparison.key);
+          const key = makeReviewKey(review.repoPath, review.ref);
           reviewsByKey[key] = review;
         }
 
@@ -152,21 +155,21 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       set({ activeReviewKey: key });
     },
 
-    ensureReviewExists: async (repoPath, comparison, githubPr) => {
+    ensureReviewExists: async (repoPath, ref, baseOverride, githubPr) => {
       try {
-        await client.ensureReviewExists(repoPath, comparison, githubPr);
+        await client.ensureReviewExists(repoPath, ref, baseOverride, githubPr);
       } catch (err) {
         console.error("Failed to ensure review exists:", err);
       }
     },
 
-    deleteGlobalReview: async (repoPath, comparison) => {
+    deleteGlobalReview: async (repoPath, ref) => {
       try {
-        await client.deleteReview(repoPath, comparison);
+        await client.deleteReview(repoPath, ref);
         // Evict the keyed grouping entry for the deleted review
-        get().removeGroupingEntry(makeReviewKey(repoPath, comparison.key));
+        get().removeGroupingEntry(makeReviewKey(repoPath, ref));
         // Clean up navigation snapshot
-        const key = makeReviewKey(repoPath, comparison.key);
+        const key = makeReviewKey(repoPath, ref);
         const { [key]: _, ...rest } = get().navigationSnapshots;
         set({ navigationSnapshots: rest });
         // Forget the on-disk marker so a stray save (e.g. classification after
@@ -185,7 +188,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         const { activeReviewKey } = get();
         if (
           activeReviewKey?.repoPath === repoPath &&
-          activeReviewKey?.comparisonKey === comparison.key
+          activeReviewKey?.ref === ref
         ) {
           set({ activeReviewKey: null });
         }
@@ -196,59 +199,39 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       }
     },
 
-    changeReviewBase: async (repoPath, oldComparison, newBase) => {
+    setBaseOverride: async (repoPath, ref, baseOverride) => {
       try {
-        // Ensure the review file exists (for local branches that haven't been opened yet)
-        await client.ensureReviewExists(repoPath, oldComparison);
-
-        const newComparison = await client.changeReviewBase(
+        const resolved = await client.setBaseOverride(
           repoPath,
-          oldComparison,
-          newBase,
+          ref,
+          baseOverride,
         );
 
-        const oldKey = makeReviewKey(repoPath, oldComparison.key);
-        const newKey = makeReviewKey(repoPath, newComparison.key);
-
-        // Migrate grouping entry
-        get().migrateGroupingEntry(oldKey, newKey);
-
-        // Migrate navigation snapshot
-        const snapshots = { ...get().navigationSnapshots };
-        if (snapshots[oldKey]) {
-          snapshots[newKey] = snapshots[oldKey];
-          delete snapshots[oldKey];
-        }
-        set({ navigationSnapshots: snapshots });
-
-        // Update active review key if this was the active review
+        // Identity is unchanged — no re-key. When this is the active review,
+        // swap in the newly-resolved comparison, which re-runs the loader
+        // (keyed on comparison.key) and reloads the diff.
         const { activeReviewKey } = get();
         if (
           activeReviewKey?.repoPath === repoPath &&
-          activeReviewKey?.comparisonKey === oldComparison.key
+          activeReviewKey?.ref === ref
         ) {
-          set({
-            activeReviewKey: {
-              repoPath,
-              comparisonKey: newComparison.key,
-            },
-          });
+          get().setComparison(resolved);
         }
 
         // Refresh sidebar
         await get().loadGlobalReviews();
 
-        return newComparison;
+        return resolved;
       } catch (err) {
-        console.error("Failed to change review base:", err);
+        console.error("Failed to set base override:", err);
         return null;
       }
     },
 
     saveNavigationSnapshot: () => {
-      const { repoPath, comparison, selectedFile } = get();
-      if (!repoPath || !comparison) return;
-      const key = makeReviewKey(repoPath, comparison.key);
+      const { repoPath, reviewRef, selectedFile } = get();
+      if (!repoPath || !reviewRef) return;
+      const key = makeReviewKey(repoPath, reviewRef);
       set({
         navigationSnapshots: {
           ...get().navigationSnapshots,
@@ -259,9 +242,9 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
 
     restoreNavigationSnapshot: () => {
       const state = get();
-      const { repoPath, comparison, flatFileList } = state;
-      if (!repoPath || !comparison) return;
-      const key = makeReviewKey(repoPath, comparison.key);
+      const { repoPath, reviewRef, flatFileList } = state;
+      if (!repoPath || !reviewRef) return;
+      const key = makeReviewKey(repoPath, reviewRef);
       const snapshot = state.navigationSnapshots[key];
       if (!snapshot) return;
 
@@ -287,12 +270,17 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
         const { globalReviews, reviewCachedShas } = get();
         if (globalReviews.length === 0) return;
 
+        // Summaries carry the review identity; the backend resolves each ref
+        // (honoring baseOverride) into the comparison it diffs, and flags any
+        // ref that no longer resolves via missingRefs.
         const inputs: ReviewFreshnessInput[] = globalReviews.map((review) => {
-          const key = makeReviewKey(review.repoPath, review.comparison.key);
-          const cached = reviewCachedShas[key];
+          const cached =
+            reviewCachedShas[makeReviewKey(review.repoPath, review.ref)];
           return {
             repoPath: review.repoPath,
-            comparison: review.comparison,
+            ref: review.ref,
+            baseOverride: review.baseOverride,
+            githubPr: review.githubPr,
             cachedOldSha: cached?.oldSha ?? null,
             cachedNewSha: cached?.newSha ?? null,
           };

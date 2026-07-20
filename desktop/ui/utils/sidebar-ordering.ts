@@ -5,18 +5,21 @@
  * (Cmd+1..9 shortcuts) to ensure consistent item order.
  *
  * Two-level grouping: orgs (e.g., "dropseed") contain repos; each repo has
- * three sections: In review, Local, Remote (recent). The "current HEAD" lives
- * at the top of Local and is what gets activated when the user clicks a
- * collapsed repo row.
+ * three sections: Branches (all local branches, review progress shown when a
+ * review exists), Pinned (reviews whose ref is not a local branch — SHAs,
+ * tags, stashes, deleted branches), and Remote (recent). The "current
+ * HEAD" lives at the top of Branches and is what gets activated when the user
+ * clicks a collapsed repo row.
+ *
+ * A review's identity is its ref, so a branch and its review match iff
+ * `review.ref === branch.name`.
  */
 
 import {
-  makeComparison,
   type LocalBranchInfo,
   type RepoLocalActivity,
   type RecentRemoteBranch,
   type GlobalReviewSummary,
-  type Comparison,
   type DiffShortStat,
 } from "../types";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
@@ -31,7 +34,8 @@ export interface SidebarBranchEntry {
   kind: SidebarItemKind;
   branch: LocalBranchInfo;
   repo: RepoLocalActivity;
-  comparison: Comparison;
+  /** The review ref this branch maps to — its name. */
+  ref: string;
   reviewKey: string;
 }
 
@@ -49,7 +53,8 @@ export interface SidebarRemoteEntry {
   repoPath: string;
   repoName: string;
   defaultBranch: string;
-  comparison: Comparison;
+  /** The review ref this remote branch maps to — its (unprefixed) name. */
+  ref: string;
   reviewKey: string;
 }
 
@@ -60,13 +65,16 @@ export interface RepoGroup {
   repoPath: string;
   repoName: string;
   defaultBranch: string;
-  /** Saved reviews + branches that have a saved review backing them. */
-  inReview: SidebarEntry[];
-  /** Working-tree first, then worktrees, then plain local branches. */
-  local: SidebarBranchEntry[];
-  /** Remote-tracking branches with recent activity (deduped against local). */
+  /** All local branches — working-tree first, then worktrees, then review-
+   *  backed branches, then plain branches. Review progress is shown per row
+   *  when a review exists for that branch. */
+  branches: SidebarBranchEntry[];
+  /** Reviews whose ref is not a local branch (SHAs, tags, stashes,
+   *  deleted/remote-only branches). */
+  pinned: SidebarReviewEntry[];
+  /** Remote-tracking branches with recent activity (deduped against branches). */
   remoteRecent: SidebarRemoteEntry[];
-  /** Flattened in section order: inReview → local → remoteRecent. */
+  /** Flattened in section order: branches → pinned → remoteRecent. */
   items: SidebarEntry[];
   /** Whether any item in this repo has uncommitted changes. */
   hasChanges: boolean;
@@ -148,8 +156,7 @@ export function buildRepoGroups(
     const bucket = getOrCreateRepo(repo);
 
     for (const branch of repo.branches) {
-      const comparison = makeComparison(repo.defaultBranch, branch.name);
-      const key = makeReviewKey(repo.repoPath, comparison.key);
+      const key = makeReviewKey(repo.repoPath, branch.name);
       localKeys.add(key);
 
       const hasWorktree = branch.isCurrent || branch.worktreePath != null;
@@ -165,7 +172,7 @@ export function buildRepoGroups(
               : "branch",
         branch,
         repo,
-        comparison,
+        ref: branch.name,
         reviewKey: key,
       };
 
@@ -194,9 +201,9 @@ export function buildRepoGroups(
     }
   }
 
-  // 2. Add orphan reviews (not backed by local branches)
+  // 2. Add orphan reviews (refs that are not local branches — pinned section)
   const filteredOrphans = globalReviews.filter(
-    (r) => !localKeys.has(makeReviewKey(r.repoPath, r.comparison.key)),
+    (r) => !localKeys.has(makeReviewKey(r.repoPath, r.ref)),
   );
 
   for (const review of filteredOrphans) {
@@ -222,7 +229,7 @@ export function buildRepoGroups(
     bucket.orphanReviews.push({
       kind: "review" as const,
       review,
-      reviewKey: makeReviewKey(review.repoPath, review.comparison.key),
+      reviewKey: makeReviewKey(review.repoPath, review.ref),
     });
 
     const updatedTime = new Date(review.updatedAt).getTime();
@@ -266,56 +273,48 @@ export function buildRepoGroups(
       }
     });
 
-    // In review = review-backed branches + orphan reviews, sorted by updatedAt
-    const inReview: SidebarEntry[] = [
-      ...bucket.reviewBranches,
-      ...bucket.orphanReviews,
-    ].sort((a, b) => {
-      const tA = getEntryUpdatedAt(a, globalReviewsByKey);
-      const tB = getEntryUpdatedAt(b, globalReviewsByKey);
-      return tB - tA;
-    });
-
-    // Local = checked-out + plain branches (working-tree pinned first)
-    const local: SidebarBranchEntry[] = [
+    // One merged branch list: checked-out (working-tree first, then worktrees
+    // by recency) → review-backed branches (by review updatedAt) → plain
+    // branches (by recency). Progress is shown per row when a review exists.
+    const branches: SidebarBranchEntry[] = [
       ...bucket.checkedOut,
+      ...bucket.reviewBranches,
       ...bucket.branches,
     ];
 
+    // Pinned = orphan reviews (refs that aren't local branches).
+    const pinned = bucket.orphanReviews;
+
     // Remote (recent) — dedupe against any branch name already represented
     const claimedNames = new Set<string>();
-    for (const e of inReview) {
-      const name = getEntryBranchName(e);
-      if (name) claimedNames.add(name);
-    }
-    for (const e of local) {
+    for (const e of branches) {
       claimedNames.add(e.branch.name);
+    }
+    for (const e of pinned) {
+      claimedNames.add(e.review.ref);
     }
     const remoteRecent: SidebarRemoteEntry[] = bucket.recentRemote
       .filter((r) => !claimedNames.has(r.branchName))
-      .map((r) => {
-        const comparison = makeComparison(bucket.defaultBranch, r.branchName);
-        return {
-          kind: "remote-recent" as const,
-          remoteRef: r.remoteRef,
-          branchName: r.branchName,
-          lastCommitDate: r.lastCommitDate,
-          repoPath: bucket.repoPath,
-          repoName: bucket.repoName,
-          defaultBranch: bucket.defaultBranch,
-          comparison,
-          reviewKey: makeReviewKey(bucket.repoPath, comparison.key),
-        };
-      });
+      .map((r) => ({
+        kind: "remote-recent" as const,
+        remoteRef: r.remoteRef,
+        branchName: r.branchName,
+        lastCommitDate: r.lastCommitDate,
+        repoPath: bucket.repoPath,
+        repoName: bucket.repoName,
+        defaultBranch: bucket.defaultBranch,
+        ref: r.branchName,
+        reviewKey: makeReviewKey(bucket.repoPath, r.branchName),
+      }));
 
-    const items: SidebarEntry[] = [...inReview, ...local, ...remoteRecent];
+    const items: SidebarEntry[] = [...branches, ...pinned, ...remoteRecent];
 
     groups.push({
       repoPath: bucket.repoPath,
       repoName: bucket.repoName,
       defaultBranch: bucket.defaultBranch,
-      inReview,
-      local,
+      branches,
+      pinned,
       remoteRecent,
       items,
       hasChanges: bucket.hasChanges,
@@ -336,28 +335,6 @@ export function buildRepoGroups(
   });
 
   return groups;
-}
-
-function getEntryBranchName(entry: SidebarEntry): string | null {
-  if (entry.kind === "review") return entry.review.comparison.head;
-  if (entry.kind === "remote-recent") return entry.branchName;
-  return entry.branch.name;
-}
-
-function getEntryUpdatedAt(
-  entry: SidebarEntry,
-  globalReviewsByKey: Record<string, GlobalReviewSummary>,
-): number {
-  if (entry.kind === "review") {
-    return new Date(entry.review.updatedAt).getTime();
-  }
-  if (entry.kind === "remote-recent") {
-    return new Date(entry.lastCommitDate).getTime();
-  }
-  // Branch entry — prefer backing review's updatedAt if present
-  const review = globalReviewsByKey[entry.reviewKey];
-  if (review) return new Date(review.updatedAt).getTime();
-  return new Date(entry.branch.lastCommitDate).getTime();
 }
 
 /**
@@ -439,7 +416,7 @@ export function flattenOrgGroups(
       if (collapsedRepos[repo.repoPath]) {
         // Collapsed repo: include only the working-tree entry (the row that
         // gets activated when the user clicks the collapsed repo header).
-        const head = repo.local.find((e) => e.kind === "working-tree");
+        const head = repo.branches.find((e) => e.kind === "working-tree");
         if (head) out.push(head);
         continue;
       }

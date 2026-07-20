@@ -156,6 +156,7 @@ function byLocation(a: LineAnnotation, b: LineAnnotation): number {
  */
 export function useFeedbackPanel(): FeedbackPanelState {
   const reviewState = useReviewStore((s) => s.reviewState);
+  const comparison = useReviewStore((s) => s.comparison);
   const hunks = useAllHunks();
   const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
   const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
@@ -260,7 +261,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
 
   const copyReviewToClipboard = useCallback(async () => {
     const markdown = generateReviewMarkdown(
-      reviewState?.comparison ?? null,
+      comparison,
       progress,
       rejectedHunks,
       standaloneAnnotations,
@@ -277,13 +278,7 @@ export function useFeedbackPanel(): FeedbackPanelState {
     setCopied(true);
     if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
     copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [
-    reviewState?.comparison,
-    progress,
-    rejectedHunks,
-    standaloneAnnotations,
-    notes,
-  ]);
+  }, [comparison, progress, rejectedHunks, standaloneAnnotations, notes]);
 
   return {
     notes,

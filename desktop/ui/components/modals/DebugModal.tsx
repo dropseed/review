@@ -37,6 +37,7 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
 
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
+  const reviewRef = useReviewStore((s) => s.reviewRef);
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const files = useReviewStore((s) => s.files);
   const hunks = useAllHunks();
@@ -75,12 +76,12 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
     [isOpen, inMemoryJsonString],
   );
 
-  // Construct the review state file path (centralized in ~/.review/)
+  // Construct the review state file path (centralized in ~/.review/). The file
+  // is named by the review's ref (sanitized on the backend).
   const reviewStatePath = useMemo(() => {
-    if (!repoPath || !comparison) return null;
-    const comparisonKey = comparison.key || "unknown";
-    return `~/.review/repos/<repo-id>/reviews/${comparisonKey}.json`;
-  }, [repoPath, comparison]);
+    if (!repoPath || !reviewRef) return null;
+    return `~/.review/repos/<repo-id>/reviews/${reviewRef}.json`;
+  }, [repoPath, reviewRef]);
 
   const handleCopy = useCallback(() => {
     const combined = {

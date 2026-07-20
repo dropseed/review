@@ -42,7 +42,9 @@ describe("loadAttribution", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+    const promise = useReviewStore
+      .getState()
+      .loadAttribution("/repo-a", "a", "b");
 
     // Simulate switching to a different comparison while the request is in flight.
     useReviewStore.setState({
@@ -79,7 +81,9 @@ describe("loadAttribution", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+    const promise = useReviewStore
+      .getState()
+      .loadAttribution("/repo-a", "a", "b");
 
     // Simulate switching to a different comparison while the request is in flight.
     useReviewStore.setState({

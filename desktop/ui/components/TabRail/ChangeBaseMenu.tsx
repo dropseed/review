@@ -1,17 +1,22 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import type { Comparison } from "../../types";
 import { useReviewStore } from "../../stores";
 import { Spinner } from "../ui/spinner";
 import { getApiClient } from "../../api";
 
-/** Inline branch picker for changing the base ref of a review. */
+/**
+ * Inline branch picker for overriding the base ref of a review. The review is
+ * identified by its `refName`; selecting a branch sets it as the base override
+ * (identity is unchanged). `currentBase`, when known, marks the active base.
+ */
 export function ChangeBaseMenu({
   repoPath,
-  comparison,
+  refName,
+  currentBase,
   onClose,
 }: {
   repoPath: string;
-  comparison: Comparison;
+  refName: string;
+  currentBase?: string;
   onClose: () => void;
 }): ReactNode {
   const [branches, setBranches] = useState<string[]>([]);
@@ -20,7 +25,7 @@ export function ChangeBaseMenu({
   const [changing, setChanging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const changeReviewBase = useReviewStore((s) => s.changeReviewBase);
+  const setBaseOverride = useReviewStore((s) => s.setBaseOverride);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +33,7 @@ export function ChangeBaseMenu({
       .listBranches(repoPath)
       .then((list) => {
         if (cancelled) return;
-        const all = list.local.filter((b) => b !== comparison.head);
+        const all = list.local.filter((b) => b !== refName);
         setBranches(all);
         setLoading(false);
       })
@@ -38,7 +43,7 @@ export function ChangeBaseMenu({
     return () => {
       cancelled = true;
     };
-  }, [repoPath, comparison.head]);
+  }, [repoPath, refName]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -49,17 +54,15 @@ export function ChangeBaseMenu({
     : branches;
 
   const handleSelect = async (newBase: string) => {
-    if (newBase === comparison.base) {
+    if (newBase === currentBase) {
       onClose();
       return;
     }
     setChanging(true);
     setError(null);
-    const result = await changeReviewBase(repoPath, comparison, newBase);
+    const result = await setBaseOverride(repoPath, refName, newBase);
     if (!result) {
-      setError(
-        `A review for ${newBase}..${comparison.head} may already exist.`,
-      );
+      setError(`Could not set base ${newBase} for ${refName}.`);
       setChanging(false);
     } else {
       onClose();
@@ -101,9 +104,9 @@ export function ChangeBaseMenu({
               onClick={() => handleSelect(b)}
               className={`w-full px-3 py-1.5 text-left text-xs hover:bg-fg/[0.08]
                          transition-colors disabled:opacity-50 flex items-center gap-1.5
-                         ${b === comparison.base ? "text-fg font-medium" : "text-fg-secondary"}`}
+                         ${b === currentBase ? "text-fg font-medium" : "text-fg-secondary"}`}
             >
-              {b === comparison.base && (
+              {b === currentBase && (
                 <svg
                   className="h-3 w-3 shrink-0"
                   viewBox="0 0 24 24"

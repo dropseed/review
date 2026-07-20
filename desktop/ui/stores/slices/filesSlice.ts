@@ -1,6 +1,7 @@
 import type { ApiClient } from "../../api";
 import type {
   Comparison,
+  ResolvedReview,
   FileEntry,
   DiffHunk,
   FileDiff,
@@ -117,7 +118,16 @@ export interface LoadingProgress {
 export interface FilesSlice {
   // Core state
   repoPath: string | null;
+  // The resolved base..head pair the data endpoints diff (plumbing). Derived
+  // from the review identity via `resolveReview`; changes when the base
+  // override changes without changing the review's identity.
   comparison: Comparison | null;
+  // The active review's identity: the ref being reviewed. Store keys and
+  // keyed records (grouping, navigation snapshots, activeReviewKey) derive from
+  // this, so they survive a base-override change.
+  reviewRef: string | null;
+  // The active review's explicit base override, if any (for the header control).
+  reviewBaseOverride: string | null;
   currentBranch: string | null;
   files: FileEntry[];
   allFiles: FileEntry[];
@@ -146,9 +156,10 @@ export interface FilesSlice {
 
   // Actions
   setRepoPath: (path: string | null) => void;
-  setComparison: (comparison: Comparison | null) => void;
-  /** Atomically set both repoPath and comparison in one update, preventing phantom review entries. */
-  switchReview: (path: string, comparison: Comparison) => void;
+  /** Set the active review (comparison + identity) within the current repo. */
+  setComparison: (resolved: ResolvedReview | null) => void;
+  /** Atomically set repoPath and the active review in one update, preventing phantom review entries. */
+  switchReview: (path: string, resolved: ResolvedReview) => void;
   setFiles: (files: FileEntry[]) => void;
   /** Replace a single file's FileDiff in one set(). Skips if contentHash is unchanged. */
   syncFileHunks: (filePath: string, freshHunks: DiffHunk[]) => void;
@@ -184,6 +195,9 @@ const comparisonResetState = {
   movePairs: [] as MovePair[],
   flatFileList: [] as string[],
   loadingProgress: { phase: "pending" as const, current: 0, total: 0 },
+  // Review identity — cleared on switch, set explicitly by setComparison/switchReview.
+  reviewRef: null as string | null,
+  reviewBaseOverride: null as string | null,
   // Navigation
   selectedFile: null,
   focusedHunkId: null,
@@ -239,6 +253,8 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
   (client: ApiClient) => (set, get) => ({
     repoPath: null,
     comparison: null,
+    reviewRef: null,
+    reviewBaseOverride: null,
     currentBranch: null,
     files: [],
     allFiles: [],
@@ -270,32 +286,37 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       });
     },
 
-    setComparison: (comparison) => {
+    setComparison: (resolved) => {
       get().flushSidebarProgress();
       cancelPendingSaves();
       get().saveNavigationSnapshot();
       get().clearAllActivities();
-      // Clear stale data and signal that new data is loading.
+      // Clear stale data and signal that new data is loading. Identity fields
+      // are set after the reset spread so they win.
       set({
-        comparison,
         ...comparisonResetState,
+        comparison: resolved?.comparison ?? null,
+        reviewRef: resolved?.ref ?? null,
+        reviewBaseOverride: resolved?.baseOverride ?? null,
       });
     },
 
-    switchReview: (path, comparison) => {
+    switchReview: (path, resolved) => {
       get().flushSidebarProgress();
       cancelPendingSaves();
       get().saveNavigationSnapshot();
       get().clearAllActivities();
 
-      // Atomic update: sets both repoPath and comparison together with the
+      // Atomic update: sets repoPath and the active review together with the
       // union of resets from setRepoPath and setComparison, preventing the
       // intermediate state that caused phantom review entries.
       set({
-        repoPath: path,
-        comparison,
         ...comparisonResetState,
         ...repoResetState,
+        repoPath: path,
+        comparison: resolved.comparison,
+        reviewRef: resolved.ref,
+        reviewBaseOverride: resolved.baseOverride ?? null,
       });
     },
 

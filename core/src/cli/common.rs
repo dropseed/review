@@ -12,7 +12,7 @@ use crate::classify::{classify_hunks_static, ClassifyResponse};
 use crate::diff::parser::{DiffHunk, LineType};
 use crate::review::state::{Attributed, HunkStatus, ReviewState, Source};
 use crate::review::storage::{self, StorageError};
-use crate::sources::traits::Comparison;
+use crate::service::targets::{self, ResolvedReview};
 
 /// The `--repo` / `--spec` flags shared by the review-state subcommands.
 ///
@@ -104,14 +104,29 @@ pub fn line_range(start: u32, end: Option<u32>) -> String {
     }
 }
 
-/// Resolve the comparison for a data command. Precedence for the spec:
-/// explicit `--spec` flag → `$REVIEW_SPEC` → the `review use` stored default →
-/// auto-detection from the repo's default and current branches.
-pub fn resolve_comparison_arg(repo: &Path, spec: Option<&str>) -> Result<Comparison, String> {
-    match effective_spec(repo, spec) {
-        Some(spec) => super::parse_comparison_spec(repo, &spec),
-        None => super::resolve_comparison(repo, None, None),
-    }
+/// Resolve the review a data command targets — its identity (`ref` +
+/// `baseOverride`) and the concrete `Comparison` to diff.
+///
+/// Precedence for the spec: explicit `--spec` flag → `$REVIEW_SPEC` → the
+/// `review use` stored default → auto-detection (the current branch as the
+/// ref). The spec is parsed into `(ref, base?)` via [`parse_review_spec`].
+///
+/// Base resolution then layers three sources, most specific first: an explicit
+/// base on the spec (`base..ref`) wins; otherwise the review's stored
+/// `base_override` (set by `change-base`) applies; otherwise the ladder in
+/// [`targets::resolve_review`] derives it.
+pub fn resolve_review_arg(repo: &Path, spec: Option<&str>) -> Result<ResolvedReview, String> {
+    let (ref_name, spec_base) = match effective_spec(repo, spec) {
+        Some(spec) => super::parse_review_spec(&spec)?,
+        None => (super::auto_detect_ref(repo)?, None),
+    };
+    let base_override = match spec_base {
+        Some(base) => Some(base),
+        None => storage::load_review_state(repo, &ref_name)
+            .ok()
+            .and_then(|state| state.base_override),
+    };
+    targets::resolve(repo, &ref_name, base_override.as_deref()).map_err(|e| e.to_string())
 }
 
 /// The spec a command should use before falling back to auto-detection:
@@ -231,30 +246,32 @@ pub fn effective_status(hunk_id: &str, labels: &[String], state: &ReviewState) -
     }
 }
 
-/// Enumerate every hunk in a comparison (matching what the desktop app shows).
+/// Resolve the review and enumerate every hunk in its comparison (matching
+/// what the desktop app shows).
 pub fn load_comparison_hunks(
     repo: &Path,
     spec: Option<&str>,
-) -> Result<(Comparison, Vec<DiffHunk>), String> {
-    let comparison = resolve_comparison_arg(repo, spec)?;
-    let hunks = crate::service::files::comparison_hunks(repo, &comparison, None)
+) -> Result<(ResolvedReview, Vec<DiffHunk>), String> {
+    let review = resolve_review_arg(repo, spec)?;
+    let hunks = crate::service::files::comparison_hunks(repo, &review.comparison, None)
         .map_err(|e| format!("Failed to read hunks: {e}"))?;
-    Ok((comparison, hunks))
+    Ok((review, hunks))
 }
 
-/// A comparison's hunks joined with its classification and saved review state.
+/// A review's resolved identity and hunks joined with its classification and
+/// saved review state.
 pub struct ReviewView {
-    pub comparison: Comparison,
+    pub review: ResolvedReview,
     pub hunks: Vec<DiffHunk>,
     pub classification: ClassifyResponse,
     pub state: ReviewState,
 }
 
-/// Enumerate a comparison's hunks, classify them, and load its review state.
+/// Enumerate a review's hunks, classify them, and load its saved state.
 pub fn load_review_view(repo: &Path, spec: Option<&str>) -> Result<ReviewView, String> {
-    let (comparison, hunks) = load_comparison_hunks(repo, spec)?;
+    let (review, hunks) = load_comparison_hunks(repo, spec)?;
     let classification = classify_hunks_static(&hunks);
-    let mut state = storage::load_review_state(repo, &comparison)
+    let mut state = storage::load_review_state(repo, &review.ref_name)
         .map_err(|e| format!("Failed to load review: {e}"))?;
     // Carry decisions forward onto the current diff for display (not persisted
     // until the next mutation), so `review hunks`/`status` reflect prior work
@@ -262,7 +279,7 @@ pub fn load_review_view(repo: &Path, spec: Option<&str>) -> Result<ReviewView, S
     // authoritative full diff the CLI just computed.
     state.reconcile(&hunks, true);
     Ok(ReviewView {
-        comparison,
+        review,
         hunks,
         classification,
         state,
@@ -276,15 +293,15 @@ pub fn live_hunk_ids(hunks: &[DiffHunk]) -> HashSet<String> {
     hunks.iter().map(|h| h.id.clone()).collect()
 }
 
-/// Resolve a comparison, enumerate its hunks, and derive the live-ID set —
-/// the prelude every mutating subcommand needs before `mutate_review`.
+/// Resolve a review, enumerate its hunks, and derive the live-ID set — the
+/// prelude every mutating subcommand needs before `mutate_review`.
 pub fn load_for_mutation(
     repo: &Path,
     spec: Option<&str>,
-) -> Result<(Comparison, Vec<DiffHunk>, HashSet<String>), String> {
-    let (comparison, hunks) = load_comparison_hunks(repo, spec)?;
+) -> Result<(ResolvedReview, Vec<DiffHunk>, HashSet<String>), String> {
+    let (review, hunks) = load_comparison_hunks(repo, spec)?;
     let live_ids = live_hunk_ids(&hunks);
-    Ok((comparison, hunks, live_ids))
+    Ok((review, hunks, live_ids))
 }
 
 /// Load a review, apply a mutation, reconcile `state.hunks` against the live
@@ -302,7 +319,7 @@ pub fn load_for_mutation(
 /// `to_summary` and `review list` honest.
 pub fn mutate_review<F>(
     repo: &Path,
-    comparison: &Comparison,
+    ref_name: &str,
     live_hunks: &[DiffHunk],
     apply: F,
 ) -> Result<ReviewState, String>
@@ -310,7 +327,7 @@ where
     F: Fn(&mut ReviewState) -> bool,
 {
     for attempt in 0..MAX_SAVE_RETRIES {
-        let mut state = storage::load_review_state(repo, comparison)
+        let mut state = storage::load_review_state(repo, ref_name)
             .map_err(|e| format!("Failed to load review: {e}"))?;
         let changed = apply(&mut state);
         if !changed {

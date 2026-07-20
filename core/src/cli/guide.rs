@@ -143,13 +143,13 @@ pub fn run_show(args: ShowArgs) -> Result<(), String> {
 
     if args.json {
         print_json(&GuideShowJson {
-            comparison: view.comparison.key.clone(),
+            comparison: view.review.comparison.key.clone(),
             groups: &display_groups,
             ungrouped,
             generated_at,
         });
     } else {
-        print_guide_human(&view.comparison.key, &display_groups, &ungrouped);
+        print_guide_human(&view.review.comparison.key, &display_groups, &ungrouped);
     }
     Ok(())
 }
@@ -197,7 +197,8 @@ fn print_guide_human(comparison: &str, groups: &[HunkGroup], ungrouped: &[String
 /// `review guide add` — append a group to the guide.
 pub fn run_add(args: AddArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let (comparison, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let (review, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     // Keep only IDs that exist in the current diff, de-duplicated in order; warn
     // about the rest so a stale or mistyped ID doesn't silently vanish.
@@ -238,7 +239,7 @@ pub fn run_add(args: AddArgs) -> Result<(), String> {
     };
 
     let group_count = Cell::new(0usize);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         let guide = state.guide.get_or_insert_with(|| Guide { state: None });
         let generated = guide.state.get_or_insert_with(|| GuideGenerated {
             groups: Vec::new(),
@@ -275,10 +276,11 @@ pub fn run_add(args: AddArgs) -> Result<(), String> {
 /// `review guide clear` — drop the guide entirely.
 pub fn run_clear(args: ClearArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let existed = Cell::new(false);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         if state.guide.is_some() {
             state.guide = None;
             existed.set(true);

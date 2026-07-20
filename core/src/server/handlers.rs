@@ -96,12 +96,15 @@ pub fn build_api_router() -> Router {
         .route("/api/files/raw-content", post(files_raw_content))
         .route("/api/files/directory-plain", post(files_directory_plain))
         // Review
-        .route("/api/review/resolve-target", post(review_resolve_target))
+        .route("/api/review/resolve", post(review_resolve))
         .route("/api/review/load", post(review_load))
         .route("/api/review/reconcile", post(review_reconcile))
         .route("/api/review/save", post(review_save))
         .route("/api/review/list", post(review_list))
-        .route("/api/review/change-base", post(review_change_base))
+        .route(
+            "/api/review/set-base-override",
+            post(review_set_base_override),
+        )
         .route("/api/review/delete", post(review_delete))
         .route("/api/review/exists", post(review_exists))
         .route("/api/review/ensure-exists", post(review_ensure_exists))
@@ -222,18 +225,22 @@ struct DirContentsRequest {
     dir_path: String,
 }
 
+/// Identifies a review by its ref (branch/SHA/tag/stash).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewLoadRequest {
+struct RepoRefRequest {
     repo_path: String,
-    comparison: Comparison,
+    #[serde(rename = "ref")]
+    ref_name: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ResolveTargetRequest {
+struct ResolveReviewRequest {
     repo_path: String,
-    target: crate::service::targets::ReviewTarget,
+    #[serde(rename = "ref")]
+    ref_name: String,
+    base_override: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -254,24 +261,21 @@ struct ReviewSaveRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewChangeBaseRequest {
+struct SetBaseOverrideRequest {
     repo_path: String,
-    old_comparison: Comparison,
-    new_base: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ReviewDeleteRequest {
-    repo_path: String,
-    comparison: Comparison,
+    #[serde(rename = "ref")]
+    ref_name: String,
+    /// New base override, or `null` to clear it (revert to the derived base).
+    base_override: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EnsureReviewRequest {
     repo_path: String,
-    comparison: Comparison,
+    #[serde(rename = "ref")]
+    ref_name: String,
+    base_override: Option<String>,
     github_pr: Option<GitHubPrRef>,
 }
 
@@ -460,7 +464,7 @@ async fn git_user(Json(req): Json<RepoPathRequest>) -> ApiResult<Option<String>>
     .await
 }
 
-async fn git_remote_info(Json(req): Json<RepoPathRequest>) -> ApiResult<RemoteInfo> {
+async fn git_remote_info(Json(req): Json<RepoPathRequest>) -> ApiResult<Option<RemoteInfo>> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.get_remote_info().map_err(Into::into)
@@ -798,18 +802,22 @@ async fn files_directory_plain(Json(req): Json<FilePathRequest>) -> ApiResult<Ve
 // Review handlers
 // ============================================================
 
-async fn review_resolve_target(
-    Json(req): Json<ResolveTargetRequest>,
-) -> ApiResult<crate::sources::traits::Comparison> {
+async fn review_resolve(
+    Json(req): Json<ResolveReviewRequest>,
+) -> ApiResult<crate::service::targets::ResolvedReview> {
     blocking(move || {
-        crate::service::targets::resolve_target(&PathBuf::from(&req.repo_path), &req.target)
+        crate::service::targets::resolve(
+            &PathBuf::from(&req.repo_path),
+            &req.ref_name,
+            req.base_override.as_deref(),
+        )
     })
     .await
 }
 
-async fn review_load(Json(req): Json<ReviewLoadRequest>) -> ApiResult<ReviewState> {
+async fn review_load(Json(req): Json<RepoRefRequest>) -> ApiResult<ReviewState> {
     blocking(move || {
-        storage::load_review_state(&PathBuf::from(&req.repo_path), &req.comparison)
+        storage::load_review_state(&PathBuf::from(&req.repo_path), &req.ref_name)
             .map_err(Into::into)
     })
     .await
@@ -844,28 +852,31 @@ async fn review_list(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec<ReviewSu
     .await
 }
 
-async fn review_change_base(Json(req): Json<ReviewChangeBaseRequest>) -> ApiResult<Comparison> {
+/// Set (or clear) a review's base override in place — no re-key — and return the
+/// re-resolved review so the caller can refresh its diff.
+async fn review_set_base_override(
+    Json(req): Json<SetBaseOverrideRequest>,
+) -> ApiResult<crate::service::targets::ResolvedReview> {
     blocking(move || {
-        storage::change_review_base(
+        crate::service::targets::set_base_override(
             &PathBuf::from(&req.repo_path),
-            &req.old_comparison,
-            &req.new_base,
+            &req.ref_name,
+            req.base_override,
         )
-        .map_err(Into::into)
     })
     .await
 }
 
-async fn review_delete(Json(req): Json<ReviewDeleteRequest>) -> ApiResult<()> {
+async fn review_delete(Json(req): Json<RepoRefRequest>) -> ApiResult<()> {
     blocking(move || {
-        storage::delete_review(&PathBuf::from(&req.repo_path), &req.comparison).map_err(Into::into)
+        storage::delete_review(&PathBuf::from(&req.repo_path), &req.ref_name).map_err(Into::into)
     })
     .await
 }
 
-async fn review_exists(Json(req): Json<ReviewLoadRequest>) -> ApiResult<bool> {
+async fn review_exists(Json(req): Json<RepoRefRequest>) -> ApiResult<bool> {
     blocking(move || {
-        storage::review_exists(&PathBuf::from(&req.repo_path), &req.comparison).map_err(Into::into)
+        storage::review_exists(&PathBuf::from(&req.repo_path), &req.ref_name).map_err(Into::into)
     })
     .await
 }
@@ -874,7 +885,8 @@ async fn review_ensure_exists(Json(req): Json<EnsureReviewRequest>) -> ApiResult
     blocking(move || {
         storage::ensure_review_exists(
             &PathBuf::from(&req.repo_path),
-            &req.comparison,
+            &req.ref_name,
+            req.base_override,
             req.github_pr,
         )
         .map_err(Into::into)
@@ -1062,7 +1074,7 @@ async fn misc_resolve_repo_path(
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            if let Ok(info) = source.get_remote_info() {
+            if let Ok(Some(info)) = source.get_remote_info() {
                 if info.name == req.route_prefix {
                     return Ok(Some(repo_entry.path.clone()));
                 }

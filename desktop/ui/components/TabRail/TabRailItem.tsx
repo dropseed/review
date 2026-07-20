@@ -1,22 +1,24 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
-import type { Comparison, GlobalReviewSummary } from "../../types";
+import type { GlobalReviewSummary } from "../../types";
 import { useReviewStore } from "../../stores";
 import { WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 
-/** Format a branch comparison for display. */
-function formatBranchComparison(
-  comparison: Comparison,
+/**
+ * Label a review by its identity (ref) for display. Listing is git-free, so
+ * there's no resolved base — an explicit override that differs from the default
+ * branch is shown as `base..ref`; otherwise just the ref.
+ */
+function formatReviewLabel(
+  review: GlobalReviewSummary,
   defaultBranch?: string,
 ): string {
-  const baseIsDefault =
-    defaultBranch !== undefined && comparison.base === defaultBranch;
-
-  if (baseIsDefault) {
-    return comparison.head;
+  const { ref, baseOverride } = review;
+  if (baseOverride != null && baseOverride !== defaultBranch) {
+    return `${baseOverride}..${ref}`;
   }
-  return `${comparison.base}..${comparison.head}`;
+  return ref;
 }
 
 /** GitHub pull request icon (open state style). */
@@ -48,7 +50,8 @@ function arePropsEqual(
   next: TabRailItemProps,
 ): boolean {
   if (prev.review.repoPath !== next.review.repoPath) return false;
-  if (prev.review.comparison.key !== next.review.comparison.key) return false;
+  if (prev.review.ref !== next.review.ref) return false;
+  if (prev.review.baseOverride !== next.review.baseOverride) return false;
   if (prev.review.updatedAt !== next.review.updatedAt) return false;
   if (prev.review.totalHunks !== next.review.totalHunks) return false;
   if (prev.review.reviewedHunks !== next.review.reviewedHunks) return false;
@@ -75,7 +78,7 @@ export const TabRailItem = memo(function TabRailItem({
   const isActive = useReviewStore(
     (s) =>
       s.activeReviewKey?.repoPath === review.repoPath &&
-      s.activeReviewKey?.comparisonKey === review.comparison.key,
+      s.activeReviewKey?.ref === review.ref,
   );
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [showChangeBase, setShowChangeBase] = useState(false);
@@ -120,13 +123,13 @@ export const TabRailItem = memo(function TabRailItem({
   // Line 1: the most identifying info
   const primaryLabel = isPr
     ? pr.title || `PR #${pr.number}`
-    : formatBranchComparison(review.comparison, defaultBranch);
+    : formatReviewLabel(review, defaultBranch);
 
   const titleText = hasMissingRefs
     ? `Branch deleted: ${missingRefs.join(", ")}`
     : isPr
       ? `${repoName} - PR #${pr.number}: ${pr.title}`
-      : `${repoName} - ${formatBranchComparison(review.comparison, defaultBranch)}`;
+      : `${repoName} - ${formatReviewLabel(review, defaultBranch)}`;
 
   return (
     <>
@@ -207,7 +210,8 @@ export const TabRailItem = memo(function TabRailItem({
             {showChangeBase ? (
               <ChangeBaseMenu
                 repoPath={review.repoPath}
-                comparison={review.comparison}
+                refName={review.ref}
+                currentBase={review.baseOverride}
                 onClose={() => {
                   setShowContextMenu(false);
                   setShowChangeBase(false);
@@ -222,7 +226,7 @@ export const TabRailItem = memo(function TabRailItem({
                 >
                   <span>Change Base…</span>
                   <span className="text-[10px] text-fg-faint ml-3 truncate max-w-[80px]">
-                    {review.comparison.base}
+                    {review.baseOverride ?? defaultBranch ?? "auto"}
                   </span>
                 </button>
                 <div className="my-1 border-t border-edge/30" />

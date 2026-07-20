@@ -1,5 +1,4 @@
 use crate::diff::parser::DiffHunk;
-use crate::sources::traits::Comparison;
 use crate::trust::matches_pattern;
 use crate::trust::patterns::get_all_pattern_ids;
 use serde::{Deserialize, Serialize};
@@ -20,7 +19,7 @@ pub use super::findings::{
 /// in [`super::migrate`]. Files are migrated forward on read; a file written by
 /// a newer schema than this binary understands is rejected loudly rather than
 /// silently dropped.
-pub const REVIEW_SCHEMA_VERSION: u32 = 1;
+pub const REVIEW_SCHEMA_VERSION: u32 = 2;
 
 /// Default for the `schema_version` field when absent — i.e. a file written
 /// before schema versioning existed. Such files go through the migration path.
@@ -183,7 +182,20 @@ pub struct ReviewState {
     /// on read; not to be confused with `version` (the concurrency counter).
     #[serde(rename = "schemaVersion", default = "default_schema_version")]
     pub schema_version: u32,
-    pub comparison: Comparison,
+    /// The subject of the review: a ref (branch name, SHA, tag, or `stash@{n}`).
+    /// This is the review's identity — its storage
+    /// filename and store key derive from it. The base is *derived* at read time
+    /// via the resolution ladder in [`crate::service::targets::resolve_review`].
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    /// Optional explicit base override. When set, it wins over the derived base
+    /// (`""` means the empty tree — a snapshot review). Absent means "derive".
+    #[serde(
+        rename = "baseOverride",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub base_override: Option<String>,
     pub hunks: HashMap<String, HunkState>,
     #[serde(rename = "trustList")]
     pub trust_list: Vec<String>,
@@ -320,11 +332,12 @@ pub struct Reconciliation {
 }
 
 impl ReviewState {
-    pub fn new(comparison: Comparison) -> Self {
+    pub fn new(ref_name: impl Into<String>, base_override: Option<String>) -> Self {
         let now = now_iso8601();
         Self {
             schema_version: REVIEW_SCHEMA_VERSION,
-            comparison,
+            ref_name: ref_name.into(),
+            base_override,
             hunks: HashMap::new(),
             trust_list: get_all_pattern_ids(),
             notes: String::new(),
@@ -478,7 +491,8 @@ impl ReviewState {
             .map(ToOwned::to_owned);
 
         ReviewSummary {
-            comparison: self.comparison.clone(),
+            ref_name: self.ref_name.clone(),
+            base_override: self.base_override.clone(),
             total_hunks,
             trusted_hunks,
             approved_hunks,
@@ -487,33 +501,9 @@ impl ReviewState {
             saved_for_later_hunks,
             high_risk_pending_hunks,
             state,
-            unreadable: false,
             updated_at: self.updated_at.clone(),
             github_pr: self.github_pr.clone(),
             worktree_path: self.worktree_path.clone(),
-        }
-    }
-}
-
-impl ReviewSummary {
-    /// A placeholder summary for a review file that could not be read. Keeps the
-    /// review visible in listings (flagged `unreadable`) instead of dropping it.
-    /// `comparison` is recovered best-effort from the filename.
-    pub fn unreadable(comparison: Comparison, updated_at: String) -> Self {
-        ReviewSummary {
-            comparison,
-            total_hunks: 0,
-            trusted_hunks: 0,
-            approved_hunks: 0,
-            reviewed_hunks: 0,
-            rejected_hunks: 0,
-            saved_for_later_hunks: 0,
-            high_risk_pending_hunks: 0,
-            state: None,
-            unreadable: true,
-            updated_at,
-            github_pr: None,
-            worktree_path: None,
         }
     }
 }
@@ -592,7 +582,16 @@ fn is_leap_year(year: i32) -> bool {
 /// Summary information about a saved review (for listing on start screen)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewSummary {
-    pub comparison: Comparison,
+    /// The reviewed ref (identity). Listing stays git-free — no resolved base is
+    /// carried here; resolution happens on activation via `resolve_review`.
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    #[serde(
+        rename = "baseOverride",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub base_override: Option<String>,
     #[serde(rename = "totalHunks")]
     pub total_hunks: usize,
     #[serde(rename = "trustedHunks")]
@@ -610,11 +609,6 @@ pub struct ReviewSummary {
     pub high_risk_pending_hunks: usize,
     /// Review state: "approved", "changes_requested", or null (in progress)
     pub state: Option<String>,
-    /// True when the review file exists but could not be read (parse/migration
-    /// failure). Surfaced so a broken review stays visible instead of silently
-    /// vanishing from the list; opening it still fails loudly.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub unreadable: bool,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
     /// Optional GitHub PR reference
@@ -636,16 +630,16 @@ mod tests {
     // Pattern matching tests are now in crate::trust::matching::tests
     // These tests verify ReviewState integration with pattern matching
 
-    fn test_comparison() -> Comparison {
-        Comparison::new("main", "HEAD")
+    fn new_state() -> ReviewState {
+        ReviewState::new("feature", Some("main".to_owned()))
     }
 
     #[test]
     fn test_review_state_new() {
-        let comparison = test_comparison();
-        let state = ReviewState::new(comparison.clone());
+        let state = new_state();
 
-        assert_eq!(state.comparison.key, "main..HEAD");
+        assert_eq!(state.ref_name, "feature");
+        assert_eq!(state.base_override.as_deref(), Some("main"));
         assert!(state.hunks.is_empty());
         // All taxonomy patterns are enabled by default
         assert!(!state.trust_list.is_empty());
@@ -659,7 +653,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_empty() {
-        let state = ReviewState::new(test_comparison());
+        let state = new_state();
         let summary = state.to_summary();
 
         assert_eq!(summary.total_hunks, 0);
@@ -668,7 +662,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_with_approved_hunks() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.total_diff_hunks = 2;
 
         // Add an approved hunk
@@ -692,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_with_trusted_labels() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.total_diff_hunks = 2;
         state.trust_list = vec!["imports:*".to_string()];
 
@@ -727,7 +721,7 @@ mod tests {
 
     #[test]
     fn test_high_risk_vetoes_trust_in_summary() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.total_diff_hunks = 2;
         state.trust_list = vec!["imports:*".to_string()];
 
@@ -763,7 +757,7 @@ mod tests {
 
     #[test]
     fn test_high_risk_pending_counted_in_summary() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.total_diff_hunks = 3;
         state.trust_list = vec!["imports:*".to_string()];
 
@@ -805,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_uses_total_diff_hunks() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         // Simulate 200 total hunks in the diff but only 2 classified
         state.total_diff_hunks = 200;
         state.trust_list = vec!["imports:*".to_string()];
@@ -844,7 +838,7 @@ mod tests {
 
     #[test]
     fn test_review_state_to_summary_without_total_diff_hunks_defaults_to_zero() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         // total_diff_hunks defaults to 0 — progress shows empty until synced
 
         state.hunks.insert(
@@ -912,7 +906,7 @@ mod tests {
     fn reconcile_carries_decision_forward_on_context_drift() {
         let a = hunk_from(DIFF_A);
         let b = hunk_from(DIFF_B);
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state
             .hunks
             .insert(a.id.clone(), approved_entry(Some(a.stable_hash())));
@@ -940,7 +934,7 @@ mod tests {
     #[test]
     fn reconcile_drops_orphan_without_stable_match() {
         let a = hunk_from(DIFF_A);
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         // An old-style entry (no stable key), now orphaned with nothing live.
         state.hunks.insert(a.id.clone(), approved_entry(None));
 
@@ -954,7 +948,7 @@ mod tests {
     #[test]
     fn reconcile_retains_orphan_when_not_dropping() {
         let a = hunk_from(DIFF_A);
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.hunks.insert(a.id.clone(), approved_entry(None));
 
         // drop_orphans=false: the hunk is merely absent from this (possibly
@@ -972,7 +966,7 @@ mod tests {
     #[test]
     fn reconcile_keeps_exact_match_and_stamps_stable_key() {
         let a = hunk_from(DIFF_A);
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.hunks.insert(a.id.clone(), approved_entry(None));
 
         let recon = state.reconcile(&[a.clone()], true);
@@ -1022,7 +1016,7 @@ mod tests {
 
     #[test]
     fn runs_and_findings_round_trip() {
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         state.runs.push(ReviewRun {
             id: "run:t1-0".to_owned(),
             tool: "claude-code/code-review".to_owned(),
@@ -1087,8 +1081,9 @@ mod tests {
         // A review file written before findings existed has no `runs`/`findings`
         // keys; it must still deserialize, defaulting both to empty.
         let json = r#"{
-            "schemaVersion": 1,
-            "comparison": { "base": "main", "head": "HEAD", "key": "main..HEAD" },
+            "schemaVersion": 2,
+            "ref": "feature",
+            "baseOverride": "main",
             "hunks": {},
             "trustList": [],
             "notes": "",
@@ -1105,7 +1100,7 @@ mod tests {
         let a = hunk_from(DIFF_A);
         let b = hunk_from(DIFF_B);
         assert_eq!(a.stable_hash(), b.stable_hash());
-        let mut state = ReviewState::new(test_comparison());
+        let mut state = new_state();
         // An orphan whose stable key matches *two* live hunks — can't safely pick.
         state.hunks.insert(
             "f.txt:deadbeefdeadbeef".to_owned(),

@@ -345,7 +345,7 @@ export function GroupDiffViewer({
   onClose,
 }: GroupDiffViewerProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
-  const comparison = useReviewStore((s) => s.reviewState?.comparison);
+  const comparison = useReviewStore((s) => s.comparison);
   const reviewState = useReviewStore((s) => s.reviewState);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
 

@@ -278,30 +278,31 @@ pub fn get_diff_shortstat(
         .map_err(|e| e.to_string())
 }
 
-/// Resolve a review target (uncommitted/staged/stash/commit/snapshot) into a
-/// `Comparison` the normal review flow can open.
+/// Resolve a review's `ref` (+ optional base override) into a `ResolvedReview`
+/// (identity + concrete `Comparison`) the normal review flow can open.
 #[tauri::command]
-pub fn resolve_review_target(
+pub fn resolve_review(
     repo_path: String,
-    target: review::service::targets::ReviewTarget,
-) -> Result<Comparison, String> {
+    r#ref: String,
+    base_override: Option<String>,
+) -> Result<review::service::targets::ResolvedReview, String> {
     let t0 = Instant::now();
-    let comparison = review::service::targets::resolve_target(&PathBuf::from(&repo_path), &target)
-        .map_err(|e| e.to_string())?;
-    info!(
-        "resolve_review_target {} in {:?}",
-        comparison.key,
-        t0.elapsed()
-    );
-    Ok(comparison)
+    let resolved = review::service::targets::resolve(
+        &PathBuf::from(&repo_path),
+        &r#ref,
+        base_override.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+    info!("resolve_review {} in {:?}", r#ref, t0.elapsed());
+    Ok(resolved)
 }
 
 #[tauri::command]
-pub fn load_review_state(repo_path: String, comparison: Comparison) -> Result<ReviewState, String> {
+pub fn load_review_state(repo_path: String, r#ref: String) -> Result<ReviewState, String> {
     let t0 = Instant::now();
-    let state = storage::load_review_state(&PathBuf::from(&repo_path), &comparison)
+    let state = storage::load_review_state(&PathBuf::from(&repo_path), &r#ref)
         .map_err(|e| e.to_string())?;
-    info!("load_review_state {} in {:?}", comparison.key, t0.elapsed());
+    info!("load_review_state {} in {:?}", r#ref, t0.elapsed());
     Ok(state)
 }
 
@@ -315,7 +316,7 @@ pub fn reconcile_review_state(
     hunks: Vec<DiffHunk>,
 ) -> Result<review::service::review_io::ReviewLoadResult, String> {
     let t0 = Instant::now();
-    let key = state.comparison.key.clone();
+    let key = state.ref_name.clone();
     let result = review::service::review_io::reconcile_review(state, &hunks);
     info!(
         "reconcile_review_state {key} carried={} in {:?}",
@@ -332,7 +333,7 @@ pub fn save_review_state(
     hunks: Option<Vec<DiffHunk>>,
 ) -> Result<u64, String> {
     let t0 = Instant::now();
-    let key = state.comparison.key.clone();
+    let key = state.ref_name.clone();
     // Reconciles against the hunks the UI already loaded (when present) so stable
     // keys are (re)stamped and decisions carry across hunk-ID drift — without a
     // second `git diff`.
@@ -351,33 +352,36 @@ pub fn list_saved_reviews(repo_path: String) -> Result<Vec<ReviewSummary>, Strin
     storage::list_saved_reviews(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
 }
 
+/// Set (or clear) a review's base override in place — no re-key — and return the
+/// re-resolved review so the UI can refresh its diff.
 #[tauri::command]
-pub fn change_review_base(
+pub fn set_base_override(
     repo_path: String,
-    old_comparison: Comparison,
-    new_base: String,
-) -> Result<Comparison, String> {
-    storage::change_review_base(&PathBuf::from(&repo_path), &old_comparison, &new_base)
+    r#ref: String,
+    base_override: Option<String>,
+) -> Result<review::service::targets::ResolvedReview, String> {
+    review::service::targets::set_base_override(&PathBuf::from(&repo_path), &r#ref, base_override)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn delete_review(repo_path: String, comparison: Comparison) -> Result<(), String> {
-    storage::delete_review(&PathBuf::from(&repo_path), &comparison).map_err(|e| e.to_string())
+pub fn delete_review(repo_path: String, r#ref: String) -> Result<(), String> {
+    storage::delete_review(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn review_exists(repo_path: String, comparison: Comparison) -> Result<bool, String> {
-    storage::review_exists(&PathBuf::from(&repo_path), &comparison).map_err(|e| e.to_string())
+pub fn review_exists(repo_path: String, r#ref: String) -> Result<bool, String> {
+    storage::review_exists(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn ensure_review_exists(
     repo_path: String,
-    comparison: Comparison,
+    r#ref: String,
+    base_override: Option<String>,
     github_pr: Option<GitHubPrRef>,
 ) -> Result<(), String> {
-    storage::ensure_review_exists(&PathBuf::from(&repo_path), &comparison, github_pr)
+    storage::ensure_review_exists(&PathBuf::from(&repo_path), &r#ref, base_override, github_pr)
         .map_err(|e| e.to_string())
 }
 
@@ -413,7 +417,7 @@ pub fn get_git_user(repo_path: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub fn get_remote_info(repo_path: String) -> Result<RemoteInfo, String> {
+pub fn get_remote_info(repo_path: String) -> Result<Option<RemoteInfo>, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_remote_info().map_err(|e| e.to_string())
 }
@@ -847,7 +851,7 @@ pub fn consume_cli_request() -> Option<CliOpenRequest> {
     let req = super::read_open_request()?;
     Some(CliOpenRequest {
         repo_path: req.repo_path,
-        comparison_key: req.comparison_key,
+        ref_name: req.ref_name,
         focused_file: req.focused_file,
         focused_hunk_hash: req.focused_hunk_hash,
     })
@@ -857,8 +861,8 @@ pub fn consume_cli_request() -> Option<CliOpenRequest> {
 pub struct CliOpenRequest {
     #[serde(rename = "repoPath")]
     pub repo_path: String,
-    #[serde(rename = "comparisonKey")]
-    pub comparison_key: Option<String>,
+    #[serde(rename = "ref")]
+    pub ref_name: Option<String>,
     #[serde(rename = "focusedFile")]
     pub focused_file: Option<String>,
     #[serde(rename = "focusedHunkHash")]
@@ -870,7 +874,7 @@ pub struct CliOpenRequest {
 pub async fn open_repo_window(
     app: tauri::AppHandle,
     repo_path: String,
-    comparison_key: Option<String>,
+    ref_name: Option<String>,
 ) -> Result<(), String> {
     use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -921,9 +925,9 @@ pub async fn open_repo_window(
 
     // If a window already exists for this repo, reuse it
     if let Some(existing) = app.get_webview_window(&label) {
-        // If a comparison key was provided, tell the frontend to switch
-        if let Some(ref key) = comparison_key {
-            let _ = existing.emit("cli:switch-comparison", key.clone());
+        // If a review ref was provided, tell the frontend to switch
+        if let Some(ref r) = ref_name {
+            let _ = existing.emit("cli:switch-ref", r.clone());
         }
         existing
             .set_focus()
@@ -936,12 +940,12 @@ pub async fn open_repo_window(
         |s| s.to_string_lossy().to_string(),
     );
 
-    let url = if let Some(ref key) = comparison_key {
+    let url = if let Some(ref r) = ref_name {
         WebviewUrl::App(
             format!(
-                "index.html?repo={}&comparison={}",
+                "index.html?repo={}&ref={}",
                 urlencoding::encode(&repo_path),
-                urlencoding::encode(key)
+                urlencoding::encode(r)
             )
             .into(),
         )

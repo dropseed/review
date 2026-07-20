@@ -106,7 +106,12 @@ pub const EVENT_REPO_ACTIVITY_CHANGED: &str = "repo-activity-changed";
 #[serde(rename_all = "camelCase")]
 pub struct ReviewFreshnessInput {
     pub repo_path: String,
-    pub comparison: crate::sources::traits::Comparison,
+    /// Review identity — the freshness result is keyed by `{repo_path}:{ref}`.
+    /// The backend resolves it (honoring `base_override`) into the comparison it
+    /// diffs, so callers pass identity, not a pre-resolved comparison.
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    pub base_override: Option<String>,
     pub github_pr: Option<crate::sources::github::GitHubPrRef>,
     pub cached_old_sha: Option<String>,
     pub cached_new_sha: Option<String>,

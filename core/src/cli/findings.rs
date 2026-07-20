@@ -26,7 +26,7 @@ use crate::review::storage;
 use super::comments::default_git_user;
 use super::common::{
     line_range, load_comparison_hunks, load_for_mutation, mutate_review, print_json,
-    resolve_comparison_arg, resolve_source, ReviewTarget,
+    resolve_review_arg, resolve_source, ReviewTarget,
 };
 use super::get_repo_path;
 
@@ -558,7 +558,8 @@ pub fn run_submit(target: ReviewTarget, args: SubmitArgs) -> Result<(), String> 
         .or_else(|| default_git_user(&repo));
     let source = resolve_source(args.source)?;
 
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let now = now_iso8601();
     let run = ReviewRun {
@@ -633,7 +634,7 @@ pub fn run_submit(target: ReviewTarget, args: SubmitArgs) -> Result<(), String> 
         return Ok(());
     }
 
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         state.runs.push(run.clone());
         state.findings.extend(findings.iter().cloned());
         true
@@ -760,8 +761,9 @@ fn anchor_location(f: &Finding) -> String {
 /// `review findings` — list findings with their derived status.
 pub fn run_list(args: FindingsArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
-    let state = storage::load_review_state(&repo, &comparison).map_err(|e| e.to_string())?;
+    let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
+    let state = storage::load_review_state(&repo, &review.ref_name).map_err(|e| e.to_string())?;
 
     let file_filter = match &args.file {
         Some(glob) => {
@@ -868,8 +870,9 @@ fn print_findings_human(comparison: &str, total: usize, rows: &[&Finding]) {
 /// `review finding show` — full detail and event log for one finding.
 pub fn run_show(target: ReviewTarget, args: ShowArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let comparison = resolve_comparison_arg(&repo, target.spec.as_deref())?;
-    let state = storage::load_review_state(&repo, &comparison).map_err(|e| e.to_string())?;
+    let review = resolve_review_arg(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
+    let state = storage::load_review_state(&repo, &review.ref_name).map_err(|e| e.to_string())?;
 
     let finding = state
         .findings
@@ -983,7 +986,8 @@ fn print_evidence(e: &Evidence, indent: &str) {
 /// log is the history), but notes when the finding was already resolved.
 pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let actor = std::env::var("REVIEW_AUTHOR")
         .ok()
@@ -1000,8 +1004,11 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
     let id = args.id.clone();
     // `None` = finding not found; `Some(was_resolved)` = event appended.
     let outcome: Cell<Option<bool>> = Cell::new(None);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
-        match find_finding_mut(state, &id) {
+    let state = mutate_review(
+        &repo,
+        &review.ref_name,
+        &hunks,
+        |state| match find_finding_mut(state, &id) {
             Some(f) => {
                 let was_resolved = !f.is_open();
                 f.events.push(DispositionEvent {
@@ -1019,8 +1026,8 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
                 outcome.set(None);
                 false
             }
-        }
-    })?;
+        },
+    )?;
 
     match outcome.into_inner() {
         None => Err(format!(
@@ -1067,7 +1074,8 @@ enum ReopenOutcome {
 /// already-open finding is a no-op.
 pub fn run_reopen(target: ReviewTarget, args: ReopenArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let actor = std::env::var("REVIEW_AUTHOR")
         .ok()
@@ -1076,8 +1084,11 @@ pub fn run_reopen(target: ReviewTarget, args: ReopenArgs) -> Result<(), String> 
 
     let id = args.id.clone();
     let outcome: Cell<ReopenOutcome> = Cell::new(ReopenOutcome::NotFound);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
-        match find_finding_mut(state, &id) {
+    let state = mutate_review(
+        &repo,
+        &review.ref_name,
+        &hunks,
+        |state| match find_finding_mut(state, &id) {
             Some(f) if f.is_open() => {
                 outcome.set(ReopenOutcome::AlreadyOpen);
                 false
@@ -1098,8 +1109,8 @@ pub fn run_reopen(target: ReviewTarget, args: ReopenArgs) -> Result<(), String> 
                 outcome.set(ReopenOutcome::NotFound);
                 false
             }
-        }
-    })?;
+        },
+    )?;
 
     match outcome.into_inner() {
         ReopenOutcome::NotFound => Err(format!(
@@ -1160,11 +1171,12 @@ fn find_finding_mut<'a>(state: &'a mut ReviewState, id: &str) -> Option<&'a mut 
 /// probe findings, not for recording a decision.
 pub fn run_delete_finding(target: ReviewTarget, args: DeleteFindingArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let id = args.id.clone();
     let found = Cell::new(false);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         let before = state.findings.len();
         state.findings.retain(|f| f.id != id);
         let removed = state.findings.len() != before;
@@ -1201,29 +1213,31 @@ pub fn run_delete_finding(target: ReviewTarget, args: DeleteFindingArgs) -> Resu
 // move
 // ---------------------------------------------------------------------------
 
-/// `review findings move` — carry runs and findings from one comparison onto
-/// another, re-anchoring each finding against the destination's diff. The
-/// motivating case: `/pre-review` runs on a working diff (`HEAD..diff-workspace`),
-/// which vanishes the moment you commit; this re-homes that record onto the
-/// committed spec (`master..diff-workspace`) instead of re-submitting it.
+/// `review findings move` — carry runs and findings from one review onto
+/// another, re-anchoring each finding against the destination's diff.
+///
+/// Niche now that branch reviews survive commits natively (identity is the ref,
+/// base derived): the remaining use is moving a record off a transient review —
+/// a bare-SHA review — onto the branch that later carries the work.
 pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let from = super::parse_comparison_spec(&repo, &args.from)?;
-    let to = super::parse_comparison_spec(&repo, &args.to)?;
-    if from.key == to.key {
+    let from = resolve_review_arg(&repo, Some(&args.from))?;
+    let to = resolve_review_arg(&repo, Some(&args.to))?;
+    if from.ref_name == to.ref_name {
         return Err(format!(
-            "--from and --to resolve to the same comparison ({})",
-            from.key
+            "--from and --to resolve to the same review ({})",
+            from.ref_name
         ));
     }
 
-    let from_state = storage::load_review_state(&repo, &from).map_err(|e| e.to_string())?;
+    let from_state =
+        storage::load_review_state(&repo, &from.ref_name).map_err(|e| e.to_string())?;
 
     // Select the runs and findings to move.
     let (moved_runs, source_findings): (Vec<ReviewRun>, Vec<Finding>) = match &args.run {
         Some(run_id) => {
             if !from_state.runs.iter().any(|r| &r.id == run_id) {
-                return Err(format!("Run {run_id} not found in {}", from.key));
+                return Err(format!("Run {run_id} not found in {}", from.ref_name));
             }
             let runs = from_state
                 .runs
@@ -1245,12 +1259,12 @@ pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
     if moved_runs.is_empty() && source_findings.is_empty() {
         return Err(format!(
             "Nothing to move: no runs or findings on {}",
-            from.key
+            from.ref_name
         ));
     }
 
     // Re-anchor each finding against the destination diff.
-    let (to_comparison, to_hunks) = load_comparison_hunks(&repo, Some(&args.to))?;
+    let (to_review, to_hunks) = load_comparison_hunks(&repo, Some(&args.to))?;
     let mut reanchored = 0usize;
     let moved_findings: Vec<Finding> = source_findings
         .into_iter()
@@ -1275,14 +1289,14 @@ pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
     // Write into the destination first, then remove from the source. If the
     // second step fails, the records exist in both places (re-runnable) rather
     // than being lost.
-    let to_state = mutate_review(&repo, &to_comparison, &to_hunks, |state| {
+    let to_state = mutate_review(&repo, &to_review.ref_name, &to_hunks, |state| {
         state.runs.extend(moved_runs.iter().cloned());
         state.findings.extend(moved_findings.iter().cloned());
         true
     })?;
 
-    let (from_comparison, from_hunks, _) = load_for_mutation(&repo, Some(&args.from))?;
-    let from_state = mutate_review(&repo, &from_comparison, &from_hunks, |state| {
+    let (from_review, from_hunks, _) = load_for_mutation(&repo, Some(&args.from))?;
+    let from_state = mutate_review(&repo, &from_review.ref_name, &from_hunks, |state| {
         state.runs.retain(|r| !moved_run_ids.contains(&r.id));
         state
             .findings
@@ -1292,8 +1306,8 @@ pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
 
     if args.json {
         print_json(&MoveResultJson {
-            from: from.key.clone(),
-            to: to.key.clone(),
+            from: from.ref_name.clone(),
+            to: to.ref_name.clone(),
             runs_moved: moved_run_ids.len(),
             findings_moved: moved_finding_ids.len(),
             findings_reanchored: reanchored,
@@ -1305,12 +1319,12 @@ pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
             "Moved {} run(s) and {} finding(s) from {} to {} ({} re-anchored).\n  {} v{} · {} v{}",
             moved_run_ids.len(),
             moved_finding_ids.len(),
-            from.key,
-            to.key,
+            from.ref_name,
+            to.ref_name,
             reanchored,
-            from.key,
+            from.ref_name,
             from_state.version,
-            to.key,
+            to.ref_name,
             to_state.version,
         );
     }
@@ -1324,8 +1338,9 @@ pub fn run_move(target: ReviewTarget, args: MoveArgs) -> Result<(), String> {
 /// `review runs` — list recorded review passes.
 pub fn run_runs(args: RunsArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let comparison = resolve_comparison_arg(&repo, args.target.spec.as_deref())?;
-    let state = storage::load_review_state(&repo, &comparison).map_err(|e| e.to_string())?;
+    let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
+    let comparison = &review.comparison;
+    let state = storage::load_review_state(&repo, &review.ref_name).map_err(|e| e.to_string())?;
 
     let mut findings_by_run: HashMap<&str, usize> = HashMap::new();
     for f in &state.findings {
@@ -1370,13 +1385,14 @@ pub fn run_runs(args: RunsArgs) -> Result<(), String> {
 /// findings it produced. For clearing probe/mistaken runs, not disposition.
 pub fn run_delete_run(target: ReviewTarget, args: DeleteRunArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
-    let (comparison, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
+    let comparison = &review.comparison;
 
     let id = args.id.clone();
     let keep_findings = args.keep_findings;
     let found = Cell::new(false);
     let removed_findings = Cell::new(0usize);
-    let state = mutate_review(&repo, &comparison, &hunks, |state| {
+    let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         if !state.runs.iter().any(|r| r.id == id) {
             found.set(false);
             return false;
@@ -1658,10 +1674,9 @@ mod tests {
         )
         .unwrap();
 
-        let from = resolve_comparison_arg(&repo, Some("master..b1")).unwrap();
-        let to = resolve_comparison_arg(&repo, Some("master..b2")).unwrap();
-        let from_state = storage::load_review_state(&repo, &from).unwrap();
-        let to_state = storage::load_review_state(&repo, &to).unwrap();
+        // Reviews are keyed by ref (b1, b2), regardless of the pinned base.
+        let from_state = storage::load_review_state(&repo, "b1").unwrap();
+        let to_state = storage::load_review_state(&repo, "b2").unwrap();
 
         assert!(from_state.runs.is_empty(), "source runs should be empty");
         assert!(

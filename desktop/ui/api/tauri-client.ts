@@ -40,7 +40,7 @@ import type {
   ReviewFreshnessResult,
   ReviewState,
   ReviewLoadResult,
-  ReviewTarget,
+  ResolvedReview,
   ReviewSummary,
   GlobalReviewSummary,
   SearchMatch,
@@ -72,7 +72,7 @@ export class TauriClient implements ApiClient {
 
   async getRemoteInfo(repoPath: string): Promise<RemoteInfo | null> {
     try {
-      return await invoke<RemoteInfo>("get_remote_info", { repoPath });
+      return await invoke<RemoteInfo | null>("get_remote_info", { repoPath });
     } catch {
       return null;
     }
@@ -330,20 +330,22 @@ export class TauriClient implements ApiClient {
 
   // ----- Review state -----
 
-  async resolveReviewTarget(
+  async resolveReview(
     repoPath: string,
-    target: ReviewTarget,
-  ): Promise<Comparison> {
-    return invoke<Comparison>("resolve_review_target", { repoPath, target });
+    ref: string,
+    baseOverride?: string,
+  ): Promise<ResolvedReview> {
+    return invoke<ResolvedReview>("resolve_review", {
+      repoPath,
+      ref,
+      baseOverride: baseOverride ?? null,
+    });
   }
 
-  async loadReviewState(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<ReviewState> {
+  async loadReviewState(repoPath: string, ref: string): Promise<ReviewState> {
     return invoke<ReviewState>("load_review_state", {
       repoPath,
-      comparison,
+      ref,
     });
   }
 
@@ -366,37 +368,36 @@ export class TauriClient implements ApiClient {
     return invoke<ReviewSummary[]>("list_saved_reviews", { repoPath });
   }
 
-  async changeReviewBase(
+  async setBaseOverride(
     repoPath: string,
-    oldComparison: Comparison,
-    newBase: string,
-  ): Promise<Comparison> {
-    return invoke<Comparison>("change_review_base", {
+    ref: string,
+    baseOverride: string | null,
+  ): Promise<ResolvedReview> {
+    return invoke<ResolvedReview>("set_base_override", {
       repoPath,
-      oldComparison,
-      newBase,
+      ref,
+      baseOverride,
     });
   }
 
-  async deleteReview(repoPath: string, comparison: Comparison): Promise<void> {
-    await invoke("delete_review", { repoPath, comparison });
+  async deleteReview(repoPath: string, ref: string): Promise<void> {
+    await invoke("delete_review", { repoPath, ref });
   }
 
-  async reviewExists(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<boolean> {
-    return invoke<boolean>("review_exists", { repoPath, comparison });
+  async reviewExists(repoPath: string, ref: string): Promise<boolean> {
+    return invoke<boolean>("review_exists", { repoPath, ref });
   }
 
   async ensureReviewExists(
     repoPath: string,
-    comparison: Comparison,
+    ref: string,
+    baseOverride?: string,
     githubPr?: GitHubPrRef,
   ): Promise<void> {
     await invoke("ensure_review_exists", {
       repoPath,
-      comparison,
+      ref,
+      baseOverride: baseOverride ?? null,
       githubPr: githubPr ?? null,
     });
   }
@@ -592,7 +593,7 @@ export class TauriClient implements ApiClient {
 
   async consumeCliRequest(): Promise<{
     repoPath: string;
-    comparisonKey: string | null;
+    ref: string | null;
     focusedFile: string | null;
     focusedHunkHash: string | null;
   } | null> {

@@ -22,7 +22,7 @@ import type { FileDiff, ReviewState } from "../types";
 
 function seed() {
   const reviewState: ReviewState = {
-    comparison: { base: "main", head: "HEAD", key: "main..HEAD" },
+    ref: "HEAD",
     hunks: { "a.ts:1": {} },
     trustList: [],
     notes: "",

@@ -10,8 +10,8 @@ use clap::Args;
 
 use crate::review::central::compute_repo_id;
 
-use super::common::{parse_hunk_target, HunkTarget};
-use super::{get_repo_path, parse_comparison_spec, resolve_comparison};
+use super::common::{parse_hunk_target, resolve_review_arg, HunkTarget};
+use super::get_repo_path;
 
 #[derive(Debug, Args)]
 pub struct UrlArgs {
@@ -19,9 +19,9 @@ pub struct UrlArgs {
     #[arg(short, long)]
     pub repo: Option<String>,
 
-    /// Comparison spec ("base..head" or a single ref); defaults to the
-    /// current branch vs the repo's default branch. Pass `--no-comparison`
-    /// to produce a browse-mode URL instead.
+    /// Review spec (a ref, or "base..ref" to pin the base); defaults to the
+    /// current branch. Pass `--no-comparison` to produce a browse-mode URL
+    /// instead.
     #[arg(short, long)]
     pub spec: Option<String>,
 
@@ -57,22 +57,17 @@ pub fn run_url(args: UrlArgs) -> Result<(), String> {
         _ => unreachable!("clap conflicts_with prevents this combination"),
     };
 
-    let comparison_key = if args.no_comparison {
+    let review_ref = if args.no_comparison {
         None
     } else {
-        let comparison = if let Some(spec) = args.spec {
-            parse_comparison_spec(&repo, &spec)?
-        } else {
-            resolve_comparison(&repo, None, None)?
-        };
-        Some(comparison.key)
+        Some(resolve_review_arg(&repo, args.spec.as_deref())?.ref_name)
     };
 
     println!(
         "{}",
         build_review_url(
             &repo_id,
-            comparison_key.as_deref(),
+            review_ref.as_deref(),
             file.as_deref(),
             hunk.as_deref()
         )
@@ -80,17 +75,18 @@ pub fn run_url(args: UrlArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Construct `review://open?repo=...&compare=...&file=...&hunk=...` with the
-/// given parts. All parameters are URL-encoded; missing parts are omitted.
+/// Construct `review://open?repo=...&ref=...&file=...&hunk=...` with the
+/// given parts. The `ref` value is the review ref (identity). All parameters
+/// are URL-encoded; missing parts are omitted.
 pub fn build_review_url(
     repo_id: &str,
-    comparison_key: Option<&str>,
+    review_ref: Option<&str>,
     file: Option<&str>,
     hunk: Option<&str>,
 ) -> String {
     let mut url = format!("review://open?repo={}", urlencoding::encode(repo_id));
-    if let Some(key) = comparison_key {
-        url.push_str(&format!("&compare={}", urlencoding::encode(key)));
+    if let Some(review_ref) = review_ref {
+        url.push_str(&format!("&ref={}", urlencoding::encode(review_ref)));
     }
     if let Some(file) = file {
         url.push_str(&format!("&file={}", urlencoding::encode(file)));
@@ -115,7 +111,7 @@ mod tests {
         );
         assert_eq!(
             url,
-            "review://open?repo=abc123&compare=main..feature&file=src%2Fmain.rs&hunk=deadbeef"
+            "review://open?repo=abc123&ref=main..feature&file=src%2Fmain.rs&hunk=deadbeef"
         );
     }
 

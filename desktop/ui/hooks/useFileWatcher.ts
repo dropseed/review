@@ -152,7 +152,10 @@ export function useFileWatcher(comparisonReady: number) {
           if (activeKey && comp) {
             let exists = false;
             try {
-              exists = await apiClient.reviewExists(eventRepoPath, comp);
+              exists = await apiClient.reviewExists(
+                eventRepoPath,
+                activeKey.ref,
+              );
             } catch {
               // If the check fails, fall back to reloading
             }

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useReviewStore } from "../stores";
+import { reviewUrl } from "../utils/repo-identity";
 
 /**
  * Bidirectional sync between the URL file path and the Zustand store.
  *
- * URL format: /:owner/:repo/review/:comparisonKey/file/path/to/File.tsx
+ * URL format: /:owner/:repo/review/:ref/file/path/to/File.tsx
  *
  * - URL → Store: On mount or browser back/forward, reads the file path from
  *   the URL splat and calls navigateToBrowse.
@@ -39,7 +40,8 @@ export function useFileRouteSync() {
 
   const owner = params.owner;
   const repo = params.repo;
-  const comparisonKey = params.comparisonKey;
+  // Decoded ref for the active review route (react-router decodes params).
+  const reviewRef = params.ref;
 
   // Extract file path from URL splat (everything after /file/)
   const splat = params["*"] || "";
@@ -79,11 +81,11 @@ export function useFileRouteSync() {
     if (guideContentMode !== null) return;
     if (workingTreeMultiView !== null) return;
     if (!owner || !repo) return;
-    if (!isBrowseRoute && !comparisonKey) return;
+    if (!isBrowseRoute && !reviewRef) return;
 
     const basePath = isBrowseRoute
       ? `/${owner}/${repo}/browse`
-      : `/${owner}/${repo}/review/${comparisonKey}`;
+      : reviewUrl(`${owner}/${repo}`, reviewRef!);
 
     const targetPath = selectedFile
       ? `${basePath}/file/${selectedFile}`
@@ -105,7 +107,7 @@ export function useFileRouteSync() {
     workingTreeMultiView,
     owner,
     repo,
-    comparisonKey,
+    reviewRef,
     isBrowseRoute,
     location.pathname,
     navigate,

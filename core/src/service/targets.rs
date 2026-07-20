@@ -1,91 +1,111 @@
-//! Resolve a "review target" — a *kind* of thing to review — into a `Comparison`.
+//! Resolve a review's identity — a ref plus an optional base override — into a
+//! concrete [`Comparison`] for the diff pipeline.
 //!
-//! These mirror the `review start` flags but live in the service layer so the
-//! desktop app and HTTP server can offer the same targets, not just the CLI.
-//! Each resolves to an ordinary `Comparison` that flows through the normal diff
-//! pipeline (resolving the index/commit/stash to a concrete git object).
+//! A review is *of one thing*: a ref (branch, SHA, tag, or `stash@{n}`). The
+//! base is derived at read time by the ladder in [`resolve_review`], so a branch
+//! review re-baselines naturally as the branch and its default branch move. An
+//! explicit `base_override` short-circuits the ladder for the cases a human
+//! wants to pin (e.g. a snapshot, or "vs develop").
 
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::review::storage;
 use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 
-/// A kind of thing to review, chosen in the UI (or via `review start` flags).
+/// A resolved review: its identity (`ref` + optional `baseOverride`) alongside
+/// the concrete [`Comparison`] the data endpoints diff. Returned by the identity
+/// endpoints; the frontend keeps the identity and passes the comparison onward.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ReviewTarget {
-    /// Uncommitted changes only (staged + unstaged + untracked) on the current branch.
-    Working,
-    /// Staged changes only — the git index, captured as a tree object.
-    Staged,
-    /// A stash entry's changes vs the commit it was based on.
-    Stash { index: u32 },
-    /// A single commit, reviewed against its parent.
-    Commit { rev: String },
-    /// The full tree state at a ref, diffed against the empty tree.
-    Snapshot { rev: String },
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedReview {
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    #[serde(rename = "baseOverride", skip_serializing_if = "Option::is_none")]
+    pub base_override: Option<String>,
+    pub comparison: Comparison,
 }
 
-/// Resolve a target into a `Comparison` for the repo at `repo_path`.
-pub fn resolve_target(repo_path: &Path, target: &ReviewTarget) -> anyhow::Result<Comparison> {
+/// Resolve a review's `ref` (+ optional `base_override`) into a [`Comparison`]
+/// against the repo at `repo_path`, and return it wrapped as a [`ResolvedReview`].
+pub fn resolve(
+    repo_path: &Path,
+    ref_name: &str,
+    base_override: Option<&str>,
+) -> anyhow::Result<ResolvedReview> {
+    // Fall back to the persisted override so callers can resolve by ref alone.
+    let stored = match base_override {
+        Some(_) => None,
+        None => storage::load_review_state(repo_path, ref_name)
+            .ok()
+            .and_then(|state| state.base_override),
+    };
+    let effective_override = base_override.or(stored.as_deref());
+
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
-    match target {
-        ReviewTarget::Working => Ok(working_comparison(&source)),
-        ReviewTarget::Staged => staged_comparison(&source),
-        ReviewTarget::Stash { index } => stash_comparison(&source, *index),
-        ReviewTarget::Commit { rev } => commit_comparison(&source, rev),
-        ReviewTarget::Snapshot { rev } => snapshot_comparison(&source, rev),
-    }
+    let comparison = resolve_review(&source, ref_name, effective_override)?;
+    Ok(ResolvedReview {
+        ref_name: ref_name.to_owned(),
+        base_override: effective_override.map(str::to_owned),
+        comparison,
+    })
 }
 
-/// Uncommitted changes only: base is `HEAD` (kept relative so this is a single
-/// live review per branch) and head is the current branch, which folds the
-/// working tree into the diff.
-pub(crate) fn working_comparison(source: &LocalGitSource) -> Comparison {
-    let head = source
-        .get_current_branch()
-        .unwrap_or_else(|_| "HEAD".to_owned());
-    Comparison::new("HEAD", head)
+/// Set (or clear) a review's persisted `base_override` and return the freshly
+/// resolved review. The single writer behind the desktop command, HTTP handler,
+/// and CLI — a missing review file is created by [`storage::set_base_override`].
+pub fn set_base_override(
+    repo_path: &Path,
+    ref_name: &str,
+    base: Option<String>,
+) -> anyhow::Result<ResolvedReview> {
+    storage::set_base_override(repo_path, ref_name, base.clone())?;
+    resolve(repo_path, ref_name, base.as_deref())
 }
 
-/// Staged changes only: the index captured via `git write-tree`, reviewed as
-/// `HEAD..<index-tree>`. A frozen snapshot of the index at resolution time.
-pub(crate) fn staged_comparison(source: &LocalGitSource) -> anyhow::Result<Comparison> {
-    let base = source.resolve_ref_or_empty_tree("HEAD");
-    let tree = source.write_index_tree()?;
-    Ok(Comparison::new(base, tree))
-}
-
-/// A stash entry's changes against the commit it was created on (`stash@{n}^1`).
-pub(crate) fn stash_comparison(source: &LocalGitSource, index: u32) -> anyhow::Result<Comparison> {
-    let stash_ref = format!("stash@{{{index}}}");
-    let head = source
-        .resolve_ref(&stash_ref)
-        .ok_or_else(|| anyhow::anyhow!("No stash entry {stash_ref}"))?;
-    let base = source.resolve_ref_or_empty_tree(&format!("{stash_ref}^1"));
-    Ok(Comparison::new(base, head))
-}
-
-/// A single commit (`parent..rev`), both sides resolved to concrete SHAs. A root
-/// commit is compared against the empty tree; a merge against its first parent.
-pub(crate) fn commit_comparison(source: &LocalGitSource, rev: &str) -> anyhow::Result<Comparison> {
-    let head = source
-        .resolve_ref(rev)
-        .ok_or_else(|| anyhow::anyhow!("Could not resolve commit '{rev}'"))?;
-    let base = source.resolve_ref_or_empty_tree(&format!("{rev}^"));
-    Ok(Comparison::new(base, head))
-}
-
-/// The full tree at a ref, diffed against the empty tree (every file shows as
-/// added). Empty-string base is the empty-tree convention.
-pub(crate) fn snapshot_comparison(
+/// The base-resolution ladder — the single source of truth for turning a review
+/// identity into a diff:
+///
+/// 1. `base_override` set → `base..ref` verbatim (`""` = empty tree, a snapshot).
+/// 2. `ref` is a branch → vs the default branch (or, *for* the default branch,
+///    vs `origin/<default>` else `HEAD`). Merge-base is applied later at diff
+///    time by [`LocalGitSource::diff_base_ref`], so rebases re-baseline for free.
+/// 3. any other resolvable rev (SHA, tag, `stash@{n}`, detached HEAD) → reviewed
+///    as a single commit: `{ref}^..{ref}`.
+/// 4. otherwise → error.
+pub fn resolve_review(
     source: &LocalGitSource,
-    rev: &str,
+    ref_name: &str,
+    base_override: Option<&str>,
 ) -> anyhow::Result<Comparison> {
-    let head = source
-        .resolve_ref(rev)
-        .ok_or_else(|| anyhow::anyhow!("Could not resolve '{rev}'"))?;
-    Ok(Comparison::new("", head))
+    // 1. Explicit override wins.
+    if let Some(base) = base_override {
+        return Ok(Comparison::new(base, ref_name));
+    }
+
+    // 2. A branch (checked specifically, so tags fall through to rule 3).
+    if source.is_branch(ref_name) {
+        let default_branch = source.get_default_branch()?;
+        if ref_name == default_branch {
+            // The default branch itself has no branch to diff against; show its
+            // working-tree changes vs the remote tip when we have one.
+            let origin = format!("origin/{default_branch}");
+            let base = source
+                .resolve_ref(&origin)
+                .map_or_else(|| "HEAD".to_owned(), |_| origin);
+            return Ok(Comparison::new(base, ref_name));
+        }
+        return Ok(Comparison::new(default_branch, ref_name));
+    }
+
+    // 3. Any other resolvable rev: review the one commit.
+    if source.resolve_ref(ref_name).is_some() {
+        let base = source.resolve_ref_or_empty_tree(&format!("{ref_name}^"));
+        return Ok(Comparison::new(base, ref_name));
+    }
+
+    // 4. Nothing resolved.
+    anyhow::bail!("Could not resolve review ref '{ref_name}'")
 }

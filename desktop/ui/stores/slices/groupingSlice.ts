@@ -1,7 +1,7 @@
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
-import type { Comparison, HunkGroup } from "../../types";
+import type { HunkGroup } from "../../types";
 
 /** Per-review guide state stored in the keyed Map. */
 export interface GroupingEntry {
@@ -13,9 +13,10 @@ const EMPTY_ENTRY: GroupingEntry = Object.freeze({
   reviewGroups: [],
 });
 
-/** Build a unique key for a review (repo + comparison). */
-export function makeReviewKey(repoPath: string, comparisonKey: string): string {
-  return `${repoPath}:${comparisonKey}`;
+/** Build a unique key for a review (repo + ref). Matches the backend's
+ *  freshness key `${repo_path}:${ref}`. */
+export function makeReviewKey(repoPath: string, ref: string): string {
+  return `${repoPath}:${ref}`;
 }
 
 /** Stable empty result so callers can use this in selectors/memos. */
@@ -23,19 +24,18 @@ const NO_MISSING_REFS: string[] = [];
 
 /**
  * The deleted refs (base/compare branches that no longer resolve) recorded for
- * a comparison by the freshness check. Returns a stable empty array when the
- * comparison is unset or all its refs resolve. Shared by every consumer of the
- * "this review's branch is gone" signal (review view, keyboard nav, tab rail).
+ * a review by the freshness check. Returns a stable empty array when the review
+ * ref is unset or all its refs resolve. Shared by every consumer of the "this
+ * review's branch is gone" signal (review view, keyboard nav, tab rail).
  */
 export function getMissingRefs(
   reviewMissingRefs: Record<string, string[]>,
   repoPath: string | null,
-  comparison: Comparison | null,
+  reviewRef: string | null,
 ): string[] {
-  if (!repoPath || !comparison) return NO_MISSING_REFS;
+  if (!repoPath || !reviewRef) return NO_MISSING_REFS;
   return (
-    reviewMissingRefs[makeReviewKey(repoPath, comparison.key)] ??
-    NO_MISSING_REFS
+    reviewMissingRefs[makeReviewKey(repoPath, reviewRef)] ?? NO_MISSING_REFS
   );
 }
 
@@ -119,9 +119,9 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     groupingStates: new Map(),
 
     getActiveGroupingEntry: () => {
-      const { repoPath, comparison, groupingStates } = get();
-      if (!repoPath || !comparison) return EMPTY_ENTRY;
-      const key = makeReviewKey(repoPath, comparison.key);
+      const { repoPath, reviewRef, groupingStates } = get();
+      if (!repoPath || !reviewRef) return EMPTY_ENTRY;
+      const key = makeReviewKey(repoPath, reviewRef);
       return groupingStates.get(key) ?? EMPTY_ENTRY;
     },
 
@@ -170,10 +170,10 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     clearGrouping: () => {
-      const { repoPath, comparison, reviewState, saveReviewState } = get();
-      if (!reviewState || !repoPath || !comparison) return;
+      const { repoPath, reviewRef, reviewState, saveReviewState } = get();
+      if (!reviewState || !repoPath || !reviewRef) return;
 
-      const reviewKey = makeReviewKey(repoPath, comparison.key);
+      const reviewKey = makeReviewKey(repoPath, reviewRef);
       const updatedState = {
         ...reviewState,
         guide: undefined,
@@ -189,8 +189,8 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
     },
 
     restoreGuideFromState: () => {
-      const { reviewState, isGroupingStale, repoPath, comparison } = get();
-      if (!repoPath || !comparison) return;
+      const { reviewState, isGroupingStale, repoPath, reviewRef } = get();
+      if (!repoPath || !reviewRef) return;
       const hunks = getAllHunksFromState(get());
       const generated = reviewState?.guide?.state;
       if (!generated || generated.groups.length === 0) return;
@@ -201,7 +201,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         ? patchStaleGroups(generated.groups, new Set(hunks.map((h) => h.id)))
         : generated.groups;
 
-      const reviewKey = makeReviewKey(repoPath, comparison.key);
+      const reviewKey = makeReviewKey(repoPath, reviewRef);
       set((prev) => ({
         groupingStates: updateGroupingEntry(
           prev.groupingStates,

@@ -204,7 +204,8 @@ After staging, commit with normal `git`.
 
 ## Command reference
 
-Review state (operates on a `base..head` comparison):
+Review state (operates on a review of a ref; the base is derived automatically,
+override with a `base..ref` spec or `review change-base`):
 
 ```
 review hunks   [--status|--file|--label|--risk|--hunk] [--json] [--diff]

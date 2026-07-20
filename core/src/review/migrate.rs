@@ -25,6 +25,8 @@ pub enum MigrateError {
     TooNew { found: u64, supported: u32 },
     #[error("review document is not a JSON object")]
     NotAnObject,
+    #[error("review uses an obsolete pre-ref schema (v{found}) that is no longer supported")]
+    Obsolete { found: u64 },
 }
 
 /// A single forward step: transform a `Value` at version N into the shape for
@@ -38,7 +40,12 @@ type Step = fn(&mut Value) -> Result<(), MigrateError>;
 /// `0 -> 1`: adopt schema versioning. Pre-versioning files are already in the
 /// v1 shape (older on-disk formats were never carried forward), so this only
 /// stamps the version field — done centrally in [`migrate`].
-const STEPS: &[Step] = &[step_0_to_1];
+///
+/// `1 -> 2`: switch review identity from a `{base}..{head}` comparison to a
+/// single `ref` + optional `baseOverride`. There is deliberately no forward
+/// migration — the old key doesn't map cleanly onto a ref — so this step errors,
+/// which callers treat as "skip this file silently."
+const STEPS: &[Step] = &[step_0_to_1, step_1_to_2];
 
 // Slice indexing in `migrate` relies on this; a compile-time assert turns a
 // schema bump without a matching step into a build error rather than a release
@@ -47,6 +54,10 @@ const _: () = assert!(STEPS.len() == REVIEW_SCHEMA_VERSION as usize);
 
 fn step_0_to_1(_value: &mut Value) -> Result<(), MigrateError> {
     Ok(())
+}
+
+fn step_1_to_2(_value: &mut Value) -> Result<(), MigrateError> {
+    Err(MigrateError::Obsolete { found: 1 })
 }
 
 /// Read `schemaVersion`, defaulting to 0 when absent (a file written before
@@ -105,10 +116,20 @@ mod tests {
     }
 
     #[test]
-    fn versionless_doc_is_stamped_current() {
-        let doc = json!({ "hunks": {} });
-        let out = migrate(doc).unwrap();
-        assert_eq!(read_version(&out), REVIEW_SCHEMA_VERSION as u64);
+    fn obsolete_pre_ref_schema_is_rejected() {
+        // A versionless (v0) or v1 document is a pre-ref `{base}..{head}` review;
+        // the 1->2 step errors so callers skip it silently rather than crash.
+        let versionless = json!({ "hunks": {} });
+        assert!(matches!(
+            migrate(versionless).unwrap_err(),
+            MigrateError::Obsolete { .. }
+        ));
+
+        let v1 = json!({ "schemaVersion": 1, "hunks": {} });
+        assert!(matches!(
+            migrate(v1).unwrap_err(),
+            MigrateError::Obsolete { .. }
+        ));
     }
 
     #[test]

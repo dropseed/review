@@ -26,7 +26,7 @@ import { ReviewFilterBar } from "./ReviewFilterBar";
 
 function reviewStateWith(hunks: Record<string, HunkState>): ReviewState {
   return {
-    comparison: { base: "main", head: "HEAD", key: "main..HEAD" },
+    ref: "HEAD",
     hunks,
     trustList: [],
     notes: "",

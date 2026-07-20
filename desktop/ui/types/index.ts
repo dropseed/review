@@ -172,21 +172,27 @@ export interface PullRequest {
   body: string;
 }
 
-// Comparison - what we're reviewing
+// Comparison - the resolved base..head pair the data endpoints diff. This is
+// *plumbing*, not identity: a review is identified by its `ref` (see
+// ResolvedReview / ReviewState), and the base is derived at read time. The
+// frontend obtains a Comparison from `resolveReview` and passes it to the data
+// endpoints (list_files, get_all_hunks, get_diff*, symbols, freshness, ...).
 export interface Comparison {
   base: string; // Base ref (e.g., "main")
   head: string; // Head ref (e.g., "feature")
   key: string; // Always "{base}..{head}"
 }
 
-// A kind of thing to review that the backend resolves into a Comparison.
-// Mirrors core's `service::targets::ReviewTarget` (serde tag = "kind").
-export type ReviewTarget =
-  | { kind: "working" } // uncommitted changes only
-  | { kind: "staged" } // the git index
-  | { kind: "stash"; index: number }
-  | { kind: "commit"; rev: string }
-  | { kind: "snapshot"; rev: string };
+// A resolved review: its identity (`ref` + optional `baseOverride`) alongside
+// the concrete Comparison the data endpoints diff. Returned by the identity
+// endpoints (`resolveReview`, `setBaseOverride`); the frontend keeps the
+// identity and passes the comparison onward. Mirrors core's
+// `service::targets::ResolvedReview`.
+export interface ResolvedReview {
+  ref: string;
+  baseOverride?: string;
+  comparison: Comparison;
+}
 
 /**
  * Return the git range string for a comparison, or undefined when
@@ -202,13 +208,20 @@ export function makeComparison(base: string, head: string): Comparison {
   return { base, head, key };
 }
 
-// Helper to create a Comparison and GitHubPrRef from a PullRequest
-export function makeComparisonFromPr(pr: PullRequest): {
-  comparison: Comparison;
-  githubPr: GitHubPrRef;
-} {
+// A review target the picker hands off: the ref to review plus an optional base
+// override and GitHub PR reference. `resolveReview(repoPath, ref, baseOverride)`
+// turns it into a ResolvedReview.
+export interface ReviewTarget {
+  ref: string;
+  baseOverride?: string;
+  githubPr?: GitHubPrRef;
+}
+
+// A PR reviews its head branch, with the PR's base branch as the base override.
+export function prReviewTarget(pr: PullRequest): ReviewTarget {
   return {
-    comparison: makeComparison(pr.baseRefName, pr.headRefName),
+    ref: pr.headRefName,
+    baseOverride: pr.baseRefName,
     githubPr: {
       number: pr.number,
       title: pr.title,
@@ -567,7 +580,10 @@ export interface Guide {
 
 export interface ReviewState {
   schemaVersion?: number; // On-disk format version (migrated forward on read)
-  comparison: Comparison;
+  // The review's identity: the ref being reviewed (branch/SHA/tag/stash).
+  ref: string;
+  // Optional explicit base override; absent means "derive the base".
+  baseOverride?: string;
   hunks: Record<string, HunkState>; // keyed by hunk id
   trustList: string[]; // List of trusted patterns
   notes: string; // Overall review notes
@@ -598,9 +614,12 @@ export interface GlobalReviewSummary extends ReviewSummary {
   diffStats?: DiffShortStat;
 }
 
-// Summary of a saved review (for start screen listing)
+// Summary of a saved review (for start screen listing). Listing stays git-free:
+// the summary carries the review's `ref` (+ optional base override) as identity,
+// never a resolved comparison — resolution happens on activation.
 export interface ReviewSummary {
-  comparison: Comparison;
+  ref: string;
+  baseOverride?: string;
   totalHunks: number;
   trustedHunks: number;
   approvedHunks: number;
@@ -609,7 +628,6 @@ export interface ReviewSummary {
   savedForLaterHunks: number;
   highRiskPendingHunks?: number; // High-risk hunks still awaiting a decision
   state: "approved" | "changes_requested" | null;
-  unreadable?: boolean; // File exists but couldn't be parsed; opening fails loudly
   updatedAt: string;
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
   worktreePath?: string; // Path to review-managed worktree, if created
@@ -758,7 +776,10 @@ export interface RemoteInfo {
 // Review freshness checking
 export interface ReviewFreshnessInput {
   repoPath: string;
-  comparison: Comparison;
+  // Review identity — the freshness result is keyed by `${repoPath}:${ref}`.
+  // The backend resolves it (honoring baseOverride) into the comparison it diffs.
+  ref: string;
+  baseOverride?: string;
   githubPr?: GitHubPrRef;
   cachedOldSha: string | null;
   cachedNewSha: string | null;

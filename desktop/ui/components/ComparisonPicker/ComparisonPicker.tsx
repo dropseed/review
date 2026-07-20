@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import type {
-  Comparison,
-  GitHubPrRef,
-  BranchList,
-  PullRequest,
-} from "../../types";
-import { makeComparison, makeComparisonFromPr } from "../../types";
+import type { ReviewTarget, BranchList, PullRequest } from "../../types";
+import { prReviewTarget } from "../../types";
 import { BranchSelect, BranchIcon, PR_PREFIX } from "./BranchSelect";
 import { Input } from "../ui/input";
 import {
@@ -35,30 +30,28 @@ function relativeDate(iso: string): string {
 
 interface ComparisonPickerProps {
   repoPath: string;
-  onSelectReview: (comparison: Comparison, githubPr?: GitHubPrRef) => void;
-  existingComparisonKeys: string[];
+  onSelectReview: (target: ReviewTarget) => void;
+  /** Refs of existing reviews, to disable rows already under review. */
+  existingRefs: string[];
 }
 
 /**
  * Pick the best default compare branch: prefer the current branch if it
  * doesn't already have a review, otherwise pick the first local branch
- * (sorted by most recent commit) without an existing review.
+ * (sorted by most recent commit) without an existing review. Reviews are keyed
+ * by ref, so a branch is "reviewed" iff its name is a review ref.
  */
 function pickSmartDefault(
   defaultBranch: string,
   localBranches: string[],
   currentBranch: string | null,
-  reviewKeys: Set<string>,
+  reviewRefs: Set<string>,
 ): string | null {
-  if (currentBranch) {
-    const key = `${defaultBranch}..${currentBranch}`;
-    if (!reviewKeys.has(key)) return currentBranch;
-  }
+  if (currentBranch && !reviewRefs.has(currentBranch)) return currentBranch;
 
   for (const branch of localBranches) {
     if (branch === defaultBranch) continue;
-    const key = `${defaultBranch}..${branch}`;
-    if (!reviewKeys.has(key)) return branch;
+    if (!reviewRefs.has(branch)) return branch;
   }
 
   return null;
@@ -146,7 +139,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 export function ComparisonPicker({
   repoPath,
   onSelectReview,
-  existingComparisonKeys,
+  existingRefs,
 }: ComparisonPickerProps) {
   const [branches, setBranches] = useState<BranchList>({
     local: [],
@@ -155,11 +148,17 @@ export function ComparisonPicker({
   });
   const [loading, setLoading] = useState(false);
   const [baseRef, setBaseRef] = useState("");
+  // The repo's default branch — the natural base. When the chosen base equals
+  // it, no override is stored (the resolution ladder derives it).
+  const [defaultBranch, setDefaultBranch] = useState("");
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [smartDefault, setSmartDefault] = useState<string | null>(null);
   const [branchSearch, setBranchSearch] = useState("");
   const [remoteOpen, setRemoteOpen] = useState(false);
+  // The base defaults to the repo's default branch and stays hidden behind a
+  // quiet "vs <base>" affordance; expanded only when the user wants to override.
+  const [baseExpanded, setBaseExpanded] = useState(false);
 
   // Reset state when repoPath changes
   useEffect(() => {
@@ -170,6 +169,7 @@ export function ComparisonPicker({
     setBranches({ local: [], remote: [], stashes: [] });
     setBranchSearch("");
     setRemoteOpen(false);
+    setBaseExpanded(false);
   }, [repoPath]);
 
   useEffect(() => {
@@ -193,13 +193,14 @@ export function ComparisonPicker({
       .then(([branchList, defBranch, curBranch, reviews]) => {
         setBranches(branchList);
         setBaseRef(defBranch);
+        setDefaultBranch(defBranch);
 
-        const reviewKeys = new Set(reviews.map((r) => r.comparison.key));
+        const reviewRefs = new Set(reviews.map((r) => r.ref));
         const smart = pickSmartDefault(
           defBranch,
           branchList.local,
           curBranch,
-          reviewKeys,
+          reviewRefs,
         );
         if (smart) {
           setSmartDefault(smart);
@@ -214,19 +215,16 @@ export function ComparisonPicker({
       .finally(() => setLoading(false));
   }, [repoPath]);
 
-  const existingKeys = useMemo(
-    () => new Set(existingComparisonKeys),
-    [existingComparisonKeys],
-  );
+  const existingRefsSet = useMemo(() => new Set(existingRefs), [existingRefs]);
 
   const isExisting = useCallback(
     (kind: SelectionKind, value: string, pr?: PullRequest): boolean => {
-      if (kind === "pr" && pr) {
-        return existingKeys.has(`pr-${pr.number}`);
-      }
-      return existingKeys.has(`${baseRef}..${value}`);
+      // A review is identified by its ref: the head branch for a PR, otherwise
+      // the selected value (branch name or stash ref).
+      if (kind === "pr" && pr) return existingRefsSet.has(pr.headRefName);
+      return existingRefsSet.has(value);
     },
-    [baseRef, existingKeys],
+    [existingRefsSet],
   );
 
   const filteredPrs = useMemo(
@@ -253,34 +251,27 @@ export function ComparisonPicker({
     });
   }, []);
 
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(() => {
     if (!selection || !baseRef) return;
 
     if (selection.kind === "pr" && selection.pr) {
-      const { comparison, githubPr } = makeComparisonFromPr(selection.pr);
-      onSelectReview(comparison, githubPr);
+      onSelectReview(prReviewTarget(selection.pr));
       return;
     }
 
     if (selection.kind === "stash") {
-      // Review the stash's own changes (stash@{n}^1..stash@{n}), matching the
-      // CLI — not the stash vs the default branch.
-      const index = Number(selection.value.match(/stash@\{(\d+)\}/)?.[1] ?? 0);
-      try {
-        const comparison = await getApiClient().resolveReviewTarget(repoPath, {
-          kind: "stash",
-          index,
-        });
-        onSelectReview(comparison);
-      } catch (err) {
-        console.error("Failed to resolve stash:", err);
-      }
+      // Review the stash's own changes — the stash ref is the review identity;
+      // the base is derived by the resolution ladder (stash@{n}^).
+      onSelectReview({ ref: selection.value });
       return;
     }
 
-    const comparison = makeComparison(baseRef, selection.value);
-    onSelectReview(comparison);
-  }, [selection, baseRef, repoPath, onSelectReview]);
+    // Branch/remote: the ref is the selected branch. Only record a base
+    // override when the chosen base differs from the default branch.
+    const baseOverride =
+      baseRef && baseRef !== defaultBranch ? baseRef : undefined;
+    onSelectReview({ ref: selection.value, baseOverride });
+  }, [selection, baseRef, defaultBranch, onSelectReview]);
 
   const handleBaseChange = useCallback(
     (newBase: string) => {
@@ -307,18 +298,37 @@ export function ComparisonPicker({
   return (
     <div className="rounded-xl border border-edge/60 bg-gradient-to-br from-surface-panel/60 to-surface/80 shadow-inner shadow-black/20 overflow-hidden">
       <div className="flex items-center justify-between border-b border-edge/40 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
-            Base
-          </span>
-          <BranchSelect
-            value={baseRef}
-            onChange={handleBaseChange}
-            label="Base branch"
-            branches={branches}
-            variant="base"
-            disabled={loading}
-          />
+        <div className="flex min-w-0 items-center gap-2">
+          {baseExpanded ? (
+            <>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+                Base
+              </span>
+              <BranchSelect
+                value={baseRef}
+                onChange={handleBaseChange}
+                label="Base branch"
+                branches={branches}
+                variant="base"
+                disabled={loading}
+              />
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setBaseExpanded(true)}
+              disabled={loading}
+              className="group flex min-w-0 items-center gap-1 text-xs text-fg-faint
+                         transition-colors duration-100 hover:text-fg-secondary
+                         focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
+              title="Change base"
+            >
+              <span>vs</span>
+              <span className="truncate font-mono text-fg-muted group-hover:text-fg-secondary">
+                {baseRef || defaultBranch || "…"}
+              </span>
+            </button>
+          )}
         </div>
 
         <button

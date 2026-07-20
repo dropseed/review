@@ -21,7 +21,7 @@ import type {
   FileContent,
   ReviewState,
   ReviewLoadResult,
-  ReviewTarget,
+  ResolvedReview,
   ReviewSummary,
   GlobalReviewSummary,
   TrustCategory,
@@ -241,17 +241,19 @@ export interface ApiClient {
 
   // ----- Review state -----
 
-  /** Resolve a review target (uncommitted/staged/stash/commit/snapshot) into a comparison */
-  resolveReviewTarget(
+  /**
+   * Resolve a review's `ref` (+ optional base override) into a ResolvedReview
+   * (identity + concrete Comparison). The ref is a branch name, SHA, tag,
+   * or "stash@{N}".
+   */
+  resolveReview(
     repoPath: string,
-    target: ReviewTarget,
-  ): Promise<Comparison>;
+    ref: string,
+    baseOverride?: string,
+  ): Promise<ResolvedReview>;
 
-  /** Load persisted review state for a comparison (no reconciliation) */
-  loadReviewState(
-    repoPath: string,
-    comparison: Comparison,
-  ): Promise<ReviewState>;
+  /** Load persisted review state for a ref (no reconciliation) */
+  loadReviewState(repoPath: string, ref: string): Promise<ReviewState>;
 
   /**
    * Carry persisted decisions forward onto the live diff `hunks` (already loaded
@@ -277,23 +279,27 @@ export interface ApiClient {
   /** List all saved reviews for a repository */
   listSavedReviews(repoPath: string): Promise<ReviewSummary[]>;
 
-  /** Change the base ref of an existing review (returns the new comparison) */
-  changeReviewBase(
+  /**
+   * Set (or clear, when null) a review's base override in place — no re-key —
+   * and return the re-resolved review so the UI can refresh its diff.
+   */
+  setBaseOverride(
     repoPath: string,
-    oldComparison: Comparison,
-    newBase: string,
-  ): Promise<Comparison>;
+    ref: string,
+    baseOverride: string | null,
+  ): Promise<ResolvedReview>;
 
   /** Delete a saved review */
-  deleteReview(repoPath: string, comparison: Comparison): Promise<void>;
+  deleteReview(repoPath: string, ref: string): Promise<void>;
 
   /** Check whether a review file exists on disk */
-  reviewExists(repoPath: string, comparison: Comparison): Promise<boolean>;
+  reviewExists(repoPath: string, ref: string): Promise<boolean>;
 
   /** Create an empty review file on disk if it doesn't already exist */
   ensureReviewExists(
     repoPath: string,
-    comparison: Comparison,
+    ref: string,
+    baseOverride?: string,
     githubPr?: GitHubPrRef,
   ): Promise<void>;
 
@@ -414,7 +420,7 @@ export interface ApiClient {
   /** Consume a pending CLI open request (cold start from `review` CLI) */
   consumeCliRequest(): Promise<{
     repoPath: string;
-    comparisonKey: string | null;
+    ref: string | null;
     focusedFile: string | null;
     focusedHunkHash: string | null;
   } | null>;

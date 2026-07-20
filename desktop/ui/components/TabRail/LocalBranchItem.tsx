@@ -1,8 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useReviewStore } from "../../stores";
-import type { Comparison, LocalBranchInfo } from "../../types";
-import { makeComparison } from "../../types";
+import type { LocalBranchInfo } from "../../types";
 import type { SidebarItemKind } from "../../utils/sidebar-ordering";
 import { XIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
@@ -28,20 +27,20 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   itemKind,
   onActivate,
 }: LocalBranchItemProps) {
-  const comparison: Comparison = makeComparison(defaultBranch, branch.name);
-  const comparisonKey = comparison.key;
+  // The review's identity is the branch name.
+  const reviewRef = branch.name;
 
   const isActive = useReviewStore(
     (s) =>
       s.activeReviewKey?.repoPath === repoPath &&
-      s.activeReviewKey?.comparisonKey === comparisonKey,
+      s.activeReviewKey?.ref === reviewRef,
   );
 
   // Show stale badge only for the active worktree review
   const isWorktreeStale = useReviewStore(
     (s) =>
       s.activeReviewKey?.repoPath === repoPath &&
-      s.activeReviewKey?.comparisonKey === comparisonKey &&
+      s.activeReviewKey?.ref === reviewRef &&
       s.worktreeStale,
   );
 
@@ -118,7 +117,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
     if (
       state.reviewState &&
       state.activeReviewKey?.repoPath === repoPath &&
-      state.activeReviewKey?.comparisonKey === comparisonKey
+      state.activeReviewKey?.ref === reviewRef
     ) {
       const updatedState = { ...state.reviewState, worktreePath: undefined };
       state.setReviewState(updatedState);
@@ -126,7 +125,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
     }
 
     await Promise.all([state.loadLocalActivity(), state.loadGlobalReviews()]);
-  }, [branch.worktreePath, branch.name, repoPath, comparisonKey]);
+  }, [branch.worktreePath, branch.name, repoPath, reviewRef]);
   const [handleRemoveWorktreeClick, removing] = useAsyncAction(
     removeWorktreeAction,
     "remove worktree",
@@ -234,7 +233,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
             {showChangeBase ? (
               <ChangeBaseMenu
                 repoPath={repoPath}
-                comparison={comparison}
+                refName={reviewRef}
                 onClose={() => {
                   setShowContextMenu(false);
                   setShowChangeBase(false);

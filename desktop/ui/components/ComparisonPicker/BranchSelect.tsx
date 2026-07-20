@@ -19,8 +19,7 @@ interface BranchSelectProps {
   variant: "base" | "compare";
   disabled?: boolean;
   excludeValue?: string; // For compare selector to exclude base branch
-  baseValue?: string; // Current base value (for filtering existing comparisons)
-  existingComparisonKeys?: string[]; // Keys of existing reviews to filter out
+  baseValue?: string; // Current base value (for filtering PRs by their base)
   placeholder?: string; // Placeholder text when value is empty
   pullRequests?: PullRequest[]; // PRs to show in compare dropdown
 }
@@ -126,15 +125,6 @@ function getDisplayName(
   return value;
 }
 
-// Helper to generate comparison key (must match makeComparison logic)
-function getComparisonKey(base: string, compareValue: string): string {
-  if (compareValue.startsWith(PR_PREFIX)) {
-    const prNumber = parseInt(compareValue.slice(PR_PREFIX.length, -2), 10);
-    return `pr-${prNumber}`;
-  }
-  return `${base}..${compareValue}`;
-}
-
 export const BranchSelect = memo(function BranchSelect({
   value,
   onChange,
@@ -144,7 +134,6 @@ export const BranchSelect = memo(function BranchSelect({
   disabled = false,
   excludeValue,
   baseValue,
-  existingComparisonKeys = [],
   placeholder,
   pullRequests,
 }: BranchSelectProps) {
@@ -154,23 +143,12 @@ export const BranchSelect = memo(function BranchSelect({
   const listboxRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Check if a compare option would create an existing comparison
-  const isExistingComparison = useCallback(
-    (compareValue: string): boolean => {
-      if (!baseValue || existingComparisonKeys.length === 0) return false;
-      const key = getComparisonKey(baseValue, compareValue);
-      return existingComparisonKeys.includes(key);
-    },
-    [baseValue, existingComparisonKeys],
-  );
-
   // Build flat list of options
   const options = useMemo(() => {
     const opts: BranchOption[] = [];
 
-    // Add stashes (filter out existing)
+    // Add stashes
     branches.stashes.forEach((stash: StashEntry) => {
-      if (isExistingComparison(stash.ref)) return;
       const shortMessage =
         stash.message.length > 20
           ? stash.message.slice(0, 20) + "…"
@@ -187,7 +165,6 @@ export const BranchSelect = memo(function BranchSelect({
     if (pullRequests && baseValue) {
       pullRequests
         .filter((pr) => pr.baseRefName === baseValue)
-        .filter((pr) => !isExistingComparison(`${PR_PREFIX}${pr.number}__`))
         .forEach((pr) => {
           const draftPrefix = pr.isDraft ? "[Draft] " : "";
           opts.push({
@@ -200,9 +177,9 @@ export const BranchSelect = memo(function BranchSelect({
         });
     }
 
-    // Add local branches (filter out excluded and existing)
+    // Add local branches (filter out excluded)
     branches.local
-      .filter((b) => b !== excludeValue && !isExistingComparison(b))
+      .filter((b) => b !== excludeValue)
       .forEach((branch) => {
         opts.push({
           value: branch,
@@ -212,9 +189,9 @@ export const BranchSelect = memo(function BranchSelect({
         });
       });
 
-    // Add remote branches (filter out excluded and existing)
+    // Add remote branches (filter out excluded)
     branches.remote
-      .filter((b) => b !== excludeValue && !isExistingComparison(b))
+      .filter((b) => b !== excludeValue)
       .forEach((branch) => {
         opts.push({
           value: branch,
@@ -225,7 +202,7 @@ export const BranchSelect = memo(function BranchSelect({
       });
 
     return opts;
-  }, [branches, excludeValue, isExistingComparison, pullRequests, baseValue]);
+  }, [branches, excludeValue, pullRequests, baseValue]);
 
   // Filter options based on search
   const filteredOptions = useMemo(() => {

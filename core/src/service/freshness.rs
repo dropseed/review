@@ -3,6 +3,7 @@
 use log::error;
 use std::path::PathBuf;
 
+use crate::service::targets::resolve_review;
 use crate::sources::github::GhCliProvider;
 use crate::sources::local_git::{DiffShortStat, LocalGitSource};
 use crate::sources::traits::Comparison;
@@ -34,7 +35,7 @@ pub fn missing_refs_from_resolved(
 
 /// Check freshness for a single review.
 pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFreshnessResult {
-    let key = format!("{}:{}", input.repo_path, input.comparison.key);
+    let key = format!("{}:{}", input.repo_path, input.ref_name);
 
     // PR comparisons: check state via gh CLI
     if let Some(ref pr) = input.github_pr {
@@ -81,7 +82,10 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         };
                     }
                 };
-                let stats = source.get_diff_shortstat(&input.comparison).ok();
+                let stats =
+                    resolve_review(&source, &input.ref_name, input.base_override.as_deref())
+                        .ok()
+                        .and_then(|comparison| source.get_diff_shortstat(&comparison).ok());
                 return ReviewFreshnessResult {
                     key,
                     is_active: is_diff_active(&stats),
@@ -119,9 +123,26 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
         }
     };
 
+    // Resolve the review identity into a comparison. An unresolvable ref (e.g. a
+    // deleted branch) takes the missing-refs path so the UI still flags it.
+    let comparison = match resolve_review(&source, &input.ref_name, input.base_override.as_deref())
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return ReviewFreshnessResult {
+                key,
+                is_active: false,
+                old_sha: None,
+                new_sha: None,
+                diff_stats: None,
+                missing_refs: vec![input.ref_name.clone()],
+            };
+        }
+    };
+
     // Working tree comparisons always need re-check
-    if source.include_working_tree(&input.comparison) {
-        let stats = source.get_diff_shortstat(&input.comparison).ok();
+    if source.include_working_tree(&comparison) {
+        let stats = source.get_diff_shortstat(&comparison).ok();
         return ReviewFreshnessResult {
             key,
             is_active: is_diff_active(&stats),
@@ -133,10 +154,10 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
     }
 
     // Non-working-tree local comparisons: resolve SHAs
-    let resolved_old = source.resolve_ref_or_empty_tree(&input.comparison.base);
-    let resolved_new = source.resolve_ref_or_empty_tree(&input.comparison.head);
+    let resolved_old = source.resolve_ref_or_empty_tree(&comparison.base);
+    let resolved_new = source.resolve_ref_or_empty_tree(&comparison.head);
 
-    let missing_refs = missing_refs_from_resolved(&input.comparison, &resolved_old, &resolved_new);
+    let missing_refs = missing_refs_from_resolved(&comparison, &resolved_old, &resolved_new);
     if !missing_refs.is_empty() {
         return ReviewFreshnessResult {
             key,
@@ -169,7 +190,7 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
     }
 
     // SHAs changed — re-check diff stats
-    let stats = source.get_diff_shortstat(&input.comparison).ok();
+    let stats = source.get_diff_shortstat(&comparison).ok();
     ReviewFreshnessResult {
         key,
         is_active: is_diff_active(&stats),

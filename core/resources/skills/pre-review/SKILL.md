@@ -26,28 +26,25 @@ Run `review --help` first to confirm the CLI is installed.
 review status                # is there a review for this change already?
 ```
 
-If there isn't one for the comparison you're preparing, start it
-(`review start` resolves the default comparison; `review start --working`,
-`--staged`, a `base..head` spec, etc. for anything else — it also opens the
-desktop app). Then get the shape of what you're preparing:
+If there isn't one for the change you're preparing, start it
+(`review start` reviews the current branch; a bare ref, a `base..ref` spec, etc.
+for anything else — it also opens the desktop app).
+Then get the shape of what you're preparing:
 
 ```
 review hunks --json          # files, hunks, classifications — no --diff yet
 ```
 
-**Pick a comparison that survives the commit.** A working diff
-(`HEAD..diff-workspace`) evaporates the moment you commit, orphaning the run
-you recorded against it. If the change is already committed, review the
-committed spec (e.g. `master..HEAD`). If you must run before committing and
-then commit, re-home the record afterward:
+**A review is of a ref, and survives its commits.** Identity is the ref (the
+branch, usually); the base is derived automatically and re-derives as you commit
+and rebase, so recording findings on your branch now and committing later keeps
+them anchored — no re-homing needed. Prefer preparing a *branch*: work you'll
+commit belongs to the branch, not to a transient working diff. To avoid passing
+`-s` on every command, set the active ref once: `review use my-branch`.
 
-```
-review findings move --from HEAD..diff-workspace --to master..HEAD
-```
-
-`move` carries the run and every finding onto the new comparison and re-anchors
-each finding against the committed diff. To avoid passing `-s` on every command,
-set the active comparison once: `review use master..HEAD`.
+(`review findings move --from <ref> --to <ref>` still exists for the rare case
+of carrying a record off a throwaway review — a bare-SHA review — onto the
+branch that ends up carrying the work.)
 
 ### 2. Quality pass
 
@@ -158,12 +155,13 @@ not part of this pass.
 
 ```
 review status                          # progress + overall state
-review start [spec] [--working|--staged|--commit REF|--stash N|--patch FILE]
-review use [spec] [--clear]            # set/show the default comparison (skip -s)
+review start [spec] [--working|--commit REF|--stash N|--patch FILE]
+review use [spec] [--clear]            # set/show the default ref (skip -s)
+review change-base <base> | --clear    # pin/clear the base a ref diffs against
 review hunks [--file|--label|--risk] [--json] [--diff]
 review findings submit [FILE] [--source agent] [--example] [--dry-run] [--json]
 review findings [--open|--resolved] [--kind K] [--severity S] [--json]
-review findings move --from <spec> --to <spec> [--run <id>]   # re-home after a commit
+review findings move --from <ref> --to <ref> [--run <id>]   # niche: off a throwaway review
 review finding show <id> [--json]
 review finding resolve <id> --as fixed|false-positive|accepted-risk|deferred [--reason TEXT] [--evidence TEXT]
 review finding reopen <id> [--reason TEXT]
