@@ -914,7 +914,7 @@ fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
 fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let repo = repo.as_path();
-    let (review, hunks, _) = load_for_mutation(repo, args.target.spec.as_deref())?;
+    let (review, hunks, live_ids) = load_for_mutation(repo, args.target.spec.as_deref())?;
     let comparison = &review.comparison;
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
@@ -923,7 +923,11 @@ fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
         return Err(format!("No review exists for {}.", comparison.key));
     }
 
-    let ids = args.hunks.clone();
+    let (ids, unknown) =
+        resolve_mark_targets(repo, &review.ref_name, &live_ids, &args.hunks, None)?;
+    for id in &unknown {
+        eprintln!("warning: hunk not found in {}: {id}", comparison.key);
+    }
     let result = mutate_review(repo, &review.ref_name, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
@@ -947,7 +951,7 @@ fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
             comparison: comparison.key.clone(),
             action: "risk-clear".to_owned(),
             updated: ids,
-            unknown: Vec::new(),
+            unknown,
             version: result.version,
         });
     } else {
