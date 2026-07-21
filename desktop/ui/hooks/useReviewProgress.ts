@@ -14,8 +14,6 @@ export interface ReviewProgress {
   savedForLaterHunks: number;
   reviewedHunks: number;
   pendingHunks: number;
-  /** High-risk hunks with no explicit decision yet — the ones to look at. */
-  highRiskPendingHunks: number;
   reviewedPercent: number;
   state: ReviewStateValue;
 }
@@ -32,7 +30,6 @@ export function computeReviewProgress(
   let approvedHunks = 0;
   let rejectedHunks = 0;
   let savedForLaterHunks = 0;
-  let highRiskPendingHunks = 0;
 
   if (reviewState) {
     for (const h of hunks) {
@@ -50,12 +47,6 @@ export function computeReviewProgress(
         case "trusted":
           trustedHunks++;
           break;
-      }
-      // High-risk hunks awaiting an explicit decision — independent of the
-      // status buckets above (high risk vetoes auto-trust, so these never
-      // count as trusted/done until reviewed).
-      if (state?.risk?.value === "high" && !state?.status) {
-        highRiskPendingHunks++;
       }
     }
   }
@@ -80,7 +71,6 @@ export function computeReviewProgress(
     savedForLaterHunks,
     reviewedHunks,
     pendingHunks,
-    highRiskPendingHunks,
     reviewedPercent,
     state,
   };

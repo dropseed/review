@@ -3,7 +3,7 @@ import { renderHook, cleanup } from "@testing-library/react";
 
 // useScopeReconciliation.ts imports the store, which wires a real backend
 // client at module load (tripping on HMR internals under vitest). Stub
-// backend+platform, same as useKeyboardNavigation.risk.test.tsx.
+// backend+platform, same as the other store-backed hook tests.
 vi.mock("../api", () => ({
   getApiClient: () =>
     new Proxy({}, { get: () => () => Promise.resolve(undefined) }),

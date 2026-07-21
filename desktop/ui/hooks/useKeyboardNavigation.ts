@@ -265,24 +265,6 @@ export function useKeyboardNavigation() {
           }
           break;
         }
-        case "H":
-        case "L": {
-          // Shift+H / Shift+L flag the focused hunk's risk (the annotation
-          // counterpart to a/r/s); pressing the active level again clears it.
-          const focusedHunk = state.focusedHunkId
-            ? getAllHunksFromState(state).find(
-                (h) => h.id === state.focusedHunkId,
-              )
-            : null;
-          if (!focusedHunk) break;
-          const level = event.key === "H" ? "high" : "low";
-          if (state.reviewState?.hunks[focusedHunk.id]?.risk?.value === level) {
-            state.clearHunkRisk(focusedHunk.id);
-          } else {
-            state.setHunkRisk(focusedHunk.id, level);
-          }
-          break;
-        }
         case "z":
           state.undo();
           break;

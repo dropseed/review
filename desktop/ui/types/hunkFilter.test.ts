@@ -63,26 +63,9 @@ describe("effectiveHunkStatus", () => {
     expect(effectiveHunkStatus(undefined, trustList)).toBe("unreviewed");
   });
 
-  it("high risk vetoes auto-trust — stays unreviewed despite a trusted label", () => {
+  it("an explicit approve wins over a trusted label", () => {
     const hs: HunkState = {
       classification: attributed(["imports:added"], "static"),
-      risk: attributed("high", "agent"),
-    };
-    expect(effectiveHunkStatus(hs, trustList)).toBe("unreviewed");
-  });
-
-  it("low risk does not veto trust", () => {
-    const hs: HunkState = {
-      classification: attributed(["imports:added"], "static"),
-      risk: attributed("low", "agent"),
-    };
-    expect(effectiveHunkStatus(hs, trustList)).toBe("trusted");
-  });
-
-  it("an explicit approve still wins over high risk", () => {
-    const hs: HunkState = {
-      classification: attributed(["imports:added"], "static"),
-      risk: attributed("high", "agent"),
       status: attributed("approved", "ui"),
     };
     expect(effectiveHunkStatus(hs, trustList)).toBe("approved");
@@ -92,17 +75,7 @@ describe("effectiveHunkStatus", () => {
 describe("hunkMatchesFilter", () => {
   it("empty filter matches everything", () => {
     expect(match(undefined, {})).toBe(true);
-    expect(match({ risk: attributed("high", "agent") }, {})).toBe(true);
-  });
-
-  it("filters by risk", () => {
-    const high: HunkState = { risk: attributed("high", "agent") };
-    const low: HunkState = { risk: attributed("low", "ui") };
-    expect(match(high, { risk: ["high"] })).toBe(true);
-    expect(match(low, { risk: ["high"] })).toBe(false);
-    expect(match(undefined, { risk: ["high"] })).toBe(false);
-    // values within an axis OR together
-    expect(match(low, { risk: ["low", "high"] })).toBe(true);
+    expect(match({ status: attributed("approved", "ui") }, {})).toBe(true);
   });
 
   it("filters by effective status", () => {
@@ -117,7 +90,7 @@ describe("hunkMatchesFilter", () => {
   });
 
   it("filters by file glob", () => {
-    const hs: HunkState = { risk: attributed("high", "agent") };
+    const hs: HunkState = { status: attributed("approved", "ui") };
     expect(match(hs, { file: "src/*.ts" }, "src/a.ts")).toBe(true);
     expect(match(hs, { file: "src/*.ts" }, "test/a.ts")).toBe(false);
   });
@@ -125,28 +98,27 @@ describe("hunkMatchesFilter", () => {
   it("AND-composes across axes", () => {
     const hs: HunkState = {
       classification: attributed(["imports:added"], "static"),
-      risk: attributed("high", "agent"),
     };
-    // high-risk AND in src/ → matches
-    expect(match(hs, { risk: ["high"], file: "src/*.ts" }, "src/a.ts")).toBe(
-      true,
-    );
-    // high-risk AND in test/ → fails the file axis
-    expect(match(hs, { risk: ["high"], file: "src/*.ts" }, "test/a.ts")).toBe(
-      false,
-    );
-    // low-risk filter → fails the risk axis even though file matches
-    expect(match(hs, { risk: ["low"], file: "src/*.ts" }, "src/a.ts")).toBe(
-      false,
-    );
+    // trusted AND in src/ → matches
+    expect(
+      match(hs, { status: ["trusted"], file: "src/*.ts" }, "src/a.ts"),
+    ).toBe(true);
+    // trusted AND in test/ → fails the file axis
+    expect(
+      match(hs, { status: ["trusted"], file: "src/*.ts" }, "test/a.ts"),
+    ).toBe(false);
+    // unreviewed filter → fails the status axis even though file matches
+    expect(
+      match(hs, { status: ["unreviewed"], file: "src/*.ts" }, "src/a.ts"),
+    ).toBe(false);
   });
 });
 
 describe("isEmptyFilter", () => {
   it("recognizes the empty filter", () => {
     expect(isEmptyFilter({})).toBe(true);
-    expect(isEmptyFilter({ status: [], risk: [] })).toBe(true);
-    expect(isEmptyFilter({ risk: ["high"] })).toBe(false);
+    expect(isEmptyFilter({ status: [] })).toBe(true);
+    expect(isEmptyFilter({ status: ["approved"] })).toBe(false);
     expect(isEmptyFilter({ file: "src/*" })).toBe(false);
   });
 });

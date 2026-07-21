@@ -98,7 +98,7 @@ export interface NavigationSlice {
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
 
-  // Review-scoped hunk filter (risk / status / label / file). Drives the
+  // Review-scoped hunk filter (status / label / file). Drives the
   // Review-tab file list and the "act on the current filter" bulk actions.
   reviewFilter: HunkFilter;
   setReviewFilter: (filter: HunkFilter) => void;

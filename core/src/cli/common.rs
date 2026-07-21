@@ -236,10 +236,7 @@ pub fn effective_status(hunk_id: &str, labels: &[String], state: &ReviewState) -
             };
         }
     }
-    // High risk vetoes auto-trust: a risky hunk stays unreviewed until it's
-    // explicitly decided, even when its label is trust-listed.
-    let high_risk = hunk_state.map(|h| h.is_high_risk()).unwrap_or(false);
-    if !high_risk && state.labels_trusted(labels) {
+    if state.labels_trusted(labels) {
         EffectiveStatus::Trusted
     } else {
         EffectiveStatus::Unreviewed
@@ -348,7 +345,7 @@ where
 }
 
 /// Resolve a `--source` flag (or `$REVIEW_SOURCE`) to a [`Source`], defaulting
-/// to `cli`. Shared by the comment, status, and risk commands so an agent
+/// to `cli`. Shared by the comment and status commands so an agent
 /// harness can export `REVIEW_SOURCE=agent` once and have every mutation it
 /// makes attributed correctly.
 pub fn resolve_source(arg: Option<super::comments::SourceArg>) -> Result<Source, String> {

@@ -15,7 +15,7 @@ interface HunkCommitTagsProps {
 /**
  * Quiet per-hunk provenance chrome: which commit(s) introduced this hunk's
  * lines, derived from the comparison's hunk-to-commit attribution. Lives in
- * the hunk header/annotation panel next to the other badges (risk, labels).
+ * the hunk header/annotation panel next to the other badges (labels).
  */
 export function HunkCommitTags({
   commits,

@@ -103,9 +103,6 @@ pub enum Commands {
     /// Clear the review status of hunks
     Unmark(review_state::MarkArgs),
 
-    /// Set or clear the risk level on hunks
-    Risk(review_state::RiskArgs),
-
     /// Show review progress for a comparison
     Status(review_state::StatusArgs),
 
@@ -272,7 +269,6 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Reject(args)) => review_state::run_mark(args, HunkStatus::Rejected),
         Some(Commands::Save(args)) => review_state::run_mark(args, HunkStatus::SavedForLater),
         Some(Commands::Unmark(args)) => review_state::run_unmark(args),
-        Some(Commands::Risk(args)) => review_state::run_risk(args),
         Some(Commands::Status(args)) => review_state::run_status(args),
         Some(Commands::List(args)) => review_state::run_list(args),
         Some(Commands::Delete(args)) => review_state::run_delete(args),

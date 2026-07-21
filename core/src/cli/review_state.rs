@@ -4,13 +4,13 @@
 //! These commands read and write the saved review JSON under `~/.review/`.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
 use crate::classify::classify_hunks_static;
-use crate::review::state::{overall_review_state, Attributed, HunkRisk, HunkStatus, Source};
+use crate::review::state::{overall_review_state, Attributed, HunkStatus};
 use crate::review::storage;
 use crate::trust::matches_pattern;
 
@@ -41,9 +41,6 @@ pub struct HunksArgs {
     /// Filter by label pattern (e.g. "imports:*")
     #[arg(long)]
     pub label: Option<String>,
-    /// Filter by risk level: low or high
-    #[arg(long)]
-    pub risk: Option<String>,
     /// Show only the hunk with this ID
     #[arg(long)]
     pub hunk: Option<String>,
@@ -53,11 +50,9 @@ pub struct HunksArgs {
 pub struct MarkArgs {
     #[command(flatten)]
     pub target: ReviewTarget,
-    /// Hunk IDs to mark (optional when `--risk` selects them)
+    /// Hunk IDs to mark
+    #[arg(required = true)]
     pub hunks: Vec<String>,
-    /// Select all hunks at this risk level instead of listing IDs (low|high)
-    #[arg(long)]
-    pub risk: Option<String>,
     /// Reason recorded on each hunk (ignored by `unmark`)
     #[arg(long)]
     pub reason: Option<String>,
@@ -152,52 +147,6 @@ pub enum NoteAction {
     Append { text: String },
 }
 
-#[derive(Debug, Args)]
-pub struct RiskArgs {
-    #[command(subcommand)]
-    pub action: RiskAction,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum RiskAction {
-    /// Set the risk level on hunks
-    Set(RiskSetArgs),
-    /// Clear the risk level on hunks
-    Clear(RiskClearArgs),
-}
-
-#[derive(Debug, Args)]
-pub struct RiskSetArgs {
-    #[command(flatten)]
-    pub target: ReviewTarget,
-    /// Risk level: low or high
-    pub level: String,
-    /// Hunk IDs to mark
-    #[arg(required = true)]
-    pub hunks: Vec<String>,
-    /// Rationale recorded on each hunk (e.g. "touches the auth boundary")
-    #[arg(long)]
-    pub reason: Option<String>,
-    /// Who is setting the risk (ui|cli|agent|github|gitlab); defaults to cli
-    #[arg(long)]
-    pub source: Option<SourceArg>,
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct RiskClearArgs {
-    #[command(flatten)]
-    pub target: ReviewTarget,
-    /// Hunk IDs whose risk should be cleared
-    #[arg(required = true)]
-    pub hunks: Vec<String>,
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
-}
-
 /// Per-status hunk counts for a comparison.
 #[derive(Debug, Default, Serialize)]
 struct Counts {
@@ -234,12 +183,6 @@ struct HunkJson {
     status: EffectiveStatus,
     labels: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    risk: Option<HunkRisk>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    risk_source: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    risk_reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     reasoning: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     diff: Option<String>,
@@ -260,7 +203,6 @@ struct StatusJson {
     comparison: String,
     total_hunks: usize,
     reviewed: usize,
-    high_risk_pending: usize,
     state: String,
     counts: Counts,
 }
@@ -305,10 +247,6 @@ pub fn run_hunks(args: HunksArgs) -> Result<(), String> {
         }
         None => None,
     };
-    let risk_filter = match &args.risk {
-        Some(value) => Some(parse_risk_level(value)?),
-        None => None,
-    };
 
     // Counts always reflect the whole comparison; the printed list is filtered.
     let mut counts = Counts::default();
@@ -341,17 +279,7 @@ pub fn run_hunks(args: HunksArgs) -> Result<(), String> {
         }
 
         let hunk_state = view.state.hunks.get(&hunk.id);
-        let risk_attr = hunk_state.and_then(|h| h.risk.as_ref());
-        let risk = risk_attr.map(|r| r.value);
-        if let Some(want) = risk_filter {
-            if risk != Some(want) {
-                continue;
-            }
-        }
-
         let (additions, deletions) = hunk_line_stats(hunk);
-        let risk_source = risk_attr.map(|r| r.source);
-        let risk_reasoning = risk_attr.and_then(|r| r.reasoning.clone());
         // Show the most relevant rationale: the decision reason if reviewed,
         // otherwise why it was classified.
         let reasoning = hunk_state.and_then(|h| {
@@ -371,9 +299,6 @@ pub fn run_hunks(args: HunksArgs) -> Result<(), String> {
             deletions,
             status,
             labels,
-            risk,
-            risk_source,
-            risk_reasoning,
             reasoning,
             // A single-hunk query always includes the diff.
             diff: if args.diff || args.hunk.is_some() {
@@ -422,25 +347,16 @@ fn print_hunks_human(comparison: &str, total: usize, counts: &Counts, rows: &[Hu
         } else {
             format!("  {}", row.labels.join(","))
         };
-        let risk = match row.risk {
-            Some(HunkRisk::High) => "  risk:high",
-            Some(HunkRisk::Low) => "  risk:low",
-            None => "",
-        };
         println!(
-            "  {:<10}  {}  +{} -{}{}{}",
+            "  {:<10}  {}  +{} -{}{}",
             row.status.as_str(),
             row.id,
             row.additions,
             row.deletions,
-            risk,
             labels
         );
         if let Some(reason) = &row.reasoning {
             println!("              reason: {reason}");
-        }
-        if let Some(reason) = &row.risk_reasoning {
-            println!("              risk: {reason}");
         }
         if let Some(diff) = &row.diff {
             for line in diff.lines() {
@@ -458,20 +374,12 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
-    let (known, unknown) = resolve_mark_targets(
-        &repo,
-        &review.ref_name,
-        &live_ids,
-        &args.hunks,
-        args.risk.as_deref(),
-    )?;
+    let (known, unknown) = resolve_mark_targets(&live_ids, &args.hunks);
     for id in &unknown {
         eprintln!("warning: hunk not found in {}: {id}", comparison.key);
     }
     if known.is_empty() {
-        return Err(
-            "No matching hunks to update. Specify hunk IDs or --risk <low|high>.".to_owned(),
-        );
+        return Err("No matching hunks to update.".to_owned());
     }
 
     let existed = storage::review_exists(&repo, &review.ref_name).unwrap_or(false);
@@ -528,13 +436,7 @@ pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
         return Err(format!("No review exists for {}.", comparison.key));
     }
 
-    let (ids, unknown) = resolve_mark_targets(
-        &repo,
-        &review.ref_name,
-        &live_ids,
-        &args.hunks,
-        args.risk.as_deref(),
-    )?;
+    let (ids, unknown) = resolve_mark_targets(&live_ids, &args.hunks);
     for id in &unknown {
         eprintln!("warning: hunk not found in {}: {id}", comparison.key);
     }
@@ -583,15 +485,9 @@ pub fn run_status(args: StatusArgs) -> Result<(), String> {
     let view = load_review_view(&repo, args.target.spec.as_deref())?;
 
     let mut counts = Counts::default();
-    let mut high_risk_pending = 0usize;
     for hunk in &view.hunks {
         let labels = hunk_labels(&hunk.id, &view.state, &view.classification);
         counts.tally(effective_status(&hunk.id, &labels, &view.state));
-        if let Some(hs) = view.state.hunks.get(&hunk.id) {
-            if hs.is_high_risk() && hs.status.is_none() {
-                high_risk_pending += 1;
-            }
-        }
     }
     let total = view.hunks.len();
     let reviewed = counts.trusted + counts.approved + counts.rejected;
@@ -602,7 +498,6 @@ pub fn run_status(args: StatusArgs) -> Result<(), String> {
             comparison: view.review.comparison.key.clone(),
             total_hunks: total,
             reviewed,
-            high_risk_pending,
             state: state.to_owned(),
             counts,
         });
@@ -614,9 +509,6 @@ pub fn run_status(args: StatusArgs) -> Result<(), String> {
         println!("  approved    {}", counts.approved);
         println!("  rejected    {}", counts.rejected);
         println!("  saved       {}", counts.saved);
-        if high_risk_pending > 0 {
-            println!("  high-risk   {high_risk_pending}  (to review)");
-        }
         println!("  reviewed    {reviewed} / {total}");
         println!("  state       {state}");
     }
@@ -845,178 +737,22 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review risk` — set or clear the risk level on hunks.
-pub fn run_risk(args: RiskArgs) -> Result<(), String> {
-    match args.action {
-        RiskAction::Set(set) => run_risk_set(set),
-        RiskAction::Clear(clear) => run_risk_clear(clear),
-    }
-}
-
-fn run_risk_set(args: RiskSetArgs) -> Result<(), String> {
-    let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let repo = repo.as_path();
-    let level = parse_risk_level(&args.level)?;
-    let (review, hunks, live_ids) = load_for_mutation(repo, args.target.spec.as_deref())?;
-    let comparison = &review.comparison;
-    let total_hunks = hunks.len();
-    let classification = classify_hunks_static(&hunks);
-
-    let (known, unknown) =
-        resolve_mark_targets(repo, &review.ref_name, &live_ids, &args.hunks, None)?;
-    for id in &unknown {
-        eprintln!("warning: hunk not found in {}: {id}", comparison.key);
-    }
-    if known.is_empty() {
-        return Err("No matching hunks to update.".to_owned());
-    }
-
-    let existed = storage::review_exists(repo, &review.ref_name).unwrap_or(false);
-    let source = resolve_source(args.source)?;
-    let reason = args.reason.clone();
-    let result = mutate_review(repo, &review.ref_name, &hunks, |state| {
-        state.total_diff_hunks = total_hunks;
-        sync_classification(state, &classification);
-        for id in &known {
-            let entry = state.hunks.entry(id.clone()).or_default();
-            entry.risk = Some(Attributed {
-                value: level,
-                source,
-                reasoning: reason.clone(),
-            });
-        }
-        true
-    })?;
-
-    if args.json {
-        print_json(&MarkResultJson {
-            comparison: comparison.key.clone(),
-            action: format!("risk:{}", risk_str(level)),
-            updated: known,
-            unknown,
-            version: result.version,
-        });
-    } else {
-        if !existed {
-            println!("Created review {}", comparison.key);
-        }
-        println!(
-            "Set risk={} on {} hunk(s) in {} (review v{})",
-            risk_str(level),
-            known.len(),
-            comparison.key,
-            result.version
-        );
-    }
-    Ok(())
-}
-
-fn run_risk_clear(args: RiskClearArgs) -> Result<(), String> {
-    let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
-    let repo = repo.as_path();
-    let (review, hunks, live_ids) = load_for_mutation(repo, args.target.spec.as_deref())?;
-    let comparison = &review.comparison;
-    let total_hunks = hunks.len();
-    let classification = classify_hunks_static(&hunks);
-
-    if !storage::review_exists(repo, &review.ref_name).unwrap_or(false) {
-        return Err(format!("No review exists for {}.", comparison.key));
-    }
-
-    let (ids, unknown) =
-        resolve_mark_targets(repo, &review.ref_name, &live_ids, &args.hunks, None)?;
-    for id in &unknown {
-        eprintln!("warning: hunk not found in {}: {id}", comparison.key);
-    }
-    let result = mutate_review(repo, &review.ref_name, &hunks, |state| {
-        state.total_diff_hunks = total_hunks;
-        sync_classification(state, &classification);
-        for id in &ids {
-            let drop_entry = match state.hunks.get_mut(id) {
-                Some(hunk_state) => {
-                    hunk_state.risk = None;
-                    hunk_state.is_empty()
-                }
-                None => false,
-            };
-            if drop_entry {
-                state.hunks.remove(id);
-            }
-        }
-        true
-    })?;
-
-    if args.json {
-        print_json(&MarkResultJson {
-            comparison: comparison.key.clone(),
-            action: "risk-clear".to_owned(),
-            updated: ids,
-            unknown,
-            version: result.version,
-        });
-    } else {
-        println!(
-            "Cleared risk on {} hunk(s) in {} (review v{})",
-            ids.len(),
-            comparison.key,
-            result.version
-        );
-    }
-    Ok(())
-}
-
-/// Resolve the hunk IDs a mark/unmark should act on: either the explicit list
-/// (validated against the live diff), or — when `--risk` is given — every live
-/// hunk currently at that risk level. Returns `(targets, unknown_ids)`.
+/// Split the requested hunk IDs into those present in the live diff and those
+/// that aren't. Returns `(targets, unknown_ids)`.
 fn resolve_mark_targets(
-    repo: &Path,
-    ref_name: &str,
     live_ids: &HashSet<String>,
     explicit: &[String],
-    risk: Option<&str>,
-) -> Result<(Vec<String>, Vec<String>), String> {
-    if let Some(level) = risk {
-        let want = parse_risk_level(level)?;
-        let state = storage::load_review_state(repo, ref_name).map_err(|e| e.to_string())?;
-        let mut targets: Vec<String> = state
-            .hunks
-            .iter()
-            .filter(|(id, h)| {
-                live_ids.contains(id.as_str()) && h.risk.as_ref().map(|r| r.value) == Some(want)
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        targets.sort();
-        Ok((targets, Vec::new()))
-    } else {
-        let mut known = Vec::new();
-        let mut unknown = Vec::new();
-        for id in explicit {
-            if live_ids.contains(id) {
-                known.push(id.clone());
-            } else {
-                unknown.push(id.clone());
-            }
+) -> (Vec<String>, Vec<String>) {
+    let mut known = Vec::new();
+    let mut unknown = Vec::new();
+    for id in explicit {
+        if live_ids.contains(id) {
+            known.push(id.clone());
+        } else {
+            unknown.push(id.clone());
         }
-        Ok((known, unknown))
     }
-}
-
-/// Parse a risk level (`low`/`high`).
-fn parse_risk_level(value: &str) -> Result<HunkRisk, String> {
-    match value.to_ascii_lowercase().as_str() {
-        "low" => Ok(HunkRisk::Low),
-        "high" => Ok(HunkRisk::High),
-        other => Err(format!("Invalid risk '{other}' (valid: low, high)")),
-    }
-}
-
-/// Lowercase name for a risk level, used in confirmation output.
-fn risk_str(risk: HunkRisk) -> &'static str {
-    match risk {
-        HunkRisk::Low => "low",
-        HunkRisk::High => "high",
-    }
+    (known, unknown)
 }
 
 /// Normalize a `--status` filter value.

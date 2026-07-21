@@ -81,8 +81,8 @@ describe("hunkMatches", () => {
   });
 
   it("AND-composes the predicate filter with scope", () => {
-    const high: HunkState = { risk: attributed("high", "agent") };
-    const low: HunkState = { risk: attributed("low", "ui") };
+    const high: HunkState = { status: attributed("approved", "ui") };
+    const low: HunkState = { status: attributed("rejected", "ui") };
     const s = scope(["a.ts:1"]);
 
     expect(
@@ -91,7 +91,7 @@ describe("hunkMatches", () => {
         hunkState: high,
         filePath: "a.ts",
         trustList,
-        filter: { risk: ["high"] },
+        filter: { status: ["approved"] },
         scope: s,
       }),
     ).toBe(true);
@@ -103,7 +103,7 @@ describe("hunkMatches", () => {
         hunkState: high,
         filePath: "b.ts",
         trustList,
-        filter: { risk: ["high"] },
+        filter: { status: ["approved"] },
         scope: s,
       }),
     ).toBe(false);
@@ -115,7 +115,7 @@ describe("hunkMatches", () => {
         hunkState: low,
         filePath: "a.ts",
         trustList,
-        filter: { risk: ["high"] },
+        filter: { status: ["approved"] },
         scope: s,
       }),
     ).toBe(false);
@@ -145,15 +145,15 @@ describe("selectHunkIds", () => {
     const reviewState = {
       trustList,
       hunks: {
-        "a.ts:1": { risk: attributed("high", "agent") },
-        "b.ts:2": { risk: attributed("high", "agent") },
+        "a.ts:1": { status: attributed("approved", "ui") },
+        "b.ts:2": { status: attributed("approved", "ui") },
       },
     } as unknown as ReviewState;
     expect(
       selectHunkIds(
         hunks,
         reviewState,
-        { risk: ["high"] },
+        { status: ["approved"] },
         scope(["a.ts:1", "c.ts:3"]),
       ),
     ).toEqual(["a.ts:1"]);
@@ -255,7 +255,7 @@ describe("shouldSkipHunkForNavigation", () => {
   });
 
   it("skips a hunk inside scope that fails the predicate filter", () => {
-    const hunkState: HunkState = { risk: attributed("low", "ui") };
+    const hunkState: HunkState = { status: attributed("rejected", "ui") };
     const s = scope(["a.ts:1"]);
     expect(
       shouldSkipHunkForNavigation({
@@ -263,7 +263,7 @@ describe("shouldSkipHunkForNavigation", () => {
         filePath: "a.ts",
         hunkState,
         trustList,
-        filter: { risk: ["high"] },
+        filter: { status: ["approved"] },
         scope: s,
       }),
     ).toBe(true);

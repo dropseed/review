@@ -335,7 +335,7 @@ export interface DiffLine {
 // Review state
 
 // Where a value came from — the producer that set a classification, status,
-// risk level, or annotation. One provenance vocabulary across the whole model.
+// or annotation. One provenance vocabulary across the whole model.
 export type Source =
   | "static" // rule-based classifier
   | "ai" // the app's built-in Claude classification pass
@@ -346,7 +346,7 @@ export type Source =
   | "gitlab";
 
 // A value paired with its provenance and an optional rationale. Each axis of a
-// HunkState — classification, status, risk — is an Attributed<T>.
+// HunkState — classification, status — is an Attributed<T>.
 export interface Attributed<T> {
   value: T;
   source: Source;
@@ -354,15 +354,13 @@ export interface Attributed<T> {
 }
 
 export type HunkStatusValue = "approved" | "rejected" | "saved_for_later";
-export type HunkRisk = "low" | "high";
 
 // The review record for a single hunk. Each field is an independent axis:
-// classification (what kind of change), status (the review decision), and risk
-// (blast radius). All optional — absent means "not set".
+// classification (what kind of change) and status (the review decision).
+// All optional — absent means "not set".
 export interface HunkState {
   classification?: Attributed<string[]>;
   status?: Attributed<HunkStatusValue>;
-  risk?: Attributed<HunkRisk>;
 }
 
 // Construct an attributed value, omitting reasoning when not provided.
@@ -385,24 +383,21 @@ export function isHunkUnclassified(hunkState: HunkState | undefined): boolean {
 }
 
 // Whether a hunk is auto-approved by the trust list — i.e. its label is
-// trust-listed AND it is not flagged high-risk. High risk vetoes auto-trust:
-// a risky change is never silently approved by a trust-listed label; it must
-// be reviewed explicitly. (An explicit approve/reject still wins — callers
-// check `status` before this.) This is the single chokepoint every "is it
+// trust-listed. (An explicit approve/reject still wins — callers check
+// `status` before this.) This is the single chokepoint every "is it
 // effectively reviewed/trusted" consumer routes through.
 export function isHunkTrusted(
   hunkState: HunkState | undefined,
   trustList: string[],
 ): boolean {
-  if (hunkState?.risk?.value === "high") return false;
   const labels = hunkState?.classification?.value;
   if (!labels || labels.length === 0) return false;
   return anyLabelMatchesAnyPattern(labels, trustList);
 }
 
 // The effective review status of a hunk, collapsing the axes into one label:
-// an explicit decision wins; otherwise a trust-listed label (not vetoed by high
-// risk) reads as "trusted"; otherwise "unreviewed". The single source of truth
+// an explicit decision wins; otherwise a trust-listed label reads as
+// "trusted"; otherwise "unreviewed". The single source of truth
 // the CLI's EffectiveStatus mirrors and every status consumer should route
 // through.
 export type EffectiveStatusValue =
@@ -551,7 +546,6 @@ export interface ReviewSummary {
   reviewedHunks: number;
   rejectedHunks: number;
   savedForLaterHunks: number;
-  highRiskPendingHunks?: number; // High-risk hunks still awaiting a decision
   state: "approved" | "changes_requested" | null;
   updatedAt: string;
   githubPr?: GitHubPrRef; // Optional GitHub PR reference

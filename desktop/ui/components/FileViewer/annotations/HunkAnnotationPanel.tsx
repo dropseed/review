@@ -14,29 +14,9 @@ import { SimilarHunksModal } from "./SimilarHunksModal";
 import { HunkCommitTags } from "./HunkCommitTags";
 
 /** "· set by agent" provenance suffix, shown only when something other than
- *  the human-in-this-app set the value (status and risk share this). */
+ *  the human-in-this-app set the value. */
 function setBySuffix(source: Source | undefined): string {
   return source && source !== "ui" ? ` · set by ${source}` : "";
-}
-
-/** The high-risk warning triangle, shared by the risk badge and its menu item. */
-function HighRiskTriangle({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-      />
-    </svg>
-  );
 }
 
 type ReviewStatus =
@@ -136,8 +116,7 @@ export function HunkAnnotationPanel({
   const isSavedForLater = reviewStatus === "saved_for_later";
   const isTrusted = reviewStatus === "trusted";
   // Provenance of the decision: surface who set it when it wasn't the human in
-  // this app (e.g. an agent that approved via the CLI), the symmetric twin of
-  // the risk badge's agent styling.
+  // this app (e.g. an agent that approved via the CLI).
   const statusBy = setBySuffix(hunkState?.status?.source);
   // Drives tabIndex only. Visual focus (border, ring, button visibility)
   // uses the data-scroll-focused DOM attribute to avoid React re-renders
@@ -338,33 +317,6 @@ export function HunkAnnotationPanel({
       )}
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {hunkState?.risk && (
-          <SimpleTooltip
-            content={
-              `${hunkState.risk.value === "high" ? "High" : "Low"} risk` +
-              setBySuffix(hunkState.risk.source) +
-              (hunkState.risk.reasoning ? ` — ${hunkState.risk.reasoning}` : "")
-            }
-          >
-            <span
-              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xxs font-semibold ${
-                hunkState.risk.value === "high"
-                  ? "bg-status-rejected/15 text-status-rejected"
-                  : "bg-surface-hover/50 text-fg-muted"
-              } ${
-                hunkState.risk.source !== "ui"
-                  ? "border border-dashed border-edge-strong/50"
-                  : ""
-              }`}
-            >
-              {hunkState.risk.value === "high" && (
-                <HighRiskTriangle className="h-3 w-3" />
-              )}
-              {hunkState.risk.value === "high" ? "High" : "Low"}
-            </span>
-          </SimpleTooltip>
-        )}
-
         {hunkLabels(hunkState).length > 0 && (
           <div className="flex items-center gap-1.5">
             <SimpleTooltip
@@ -522,54 +474,6 @@ export function HunkAnnotationPanel({
               </svg>
               Copy hunk
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                useReviewStore.getState().setHunkRisk(hunk.id, "high")
-              }
-            >
-              <HighRiskTriangle />
-              Mark high risk
-              <span className="ml-auto pl-4 text-xxs text-fg-faint">⇧H</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                useReviewStore.getState().setHunkRisk(hunk.id, "low")
-              }
-            >
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              Mark low risk
-              <span className="ml-auto pl-4 text-xxs text-fg-faint">⇧L</span>
-            </DropdownMenuItem>
-            {hunkState?.risk && (
-              <DropdownMenuItem
-                onClick={() => useReviewStore.getState().clearHunkRisk(hunk.id)}
-              >
-                <svg
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-                Clear risk
-              </DropdownMenuItem>
-            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

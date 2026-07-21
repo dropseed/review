@@ -64,56 +64,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("ReviewFilterBar", () => {
-  it("stays hidden when no hunk carries a risk", () => {
+  it("stays hidden with no active filter or scope", () => {
     seed({ "a:1": {} });
     const { container } = render(<ReviewFilterBar />);
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders the toggles once a hunk is risk-tagged", () => {
-    seed({ "a:1": { risk: attributed("high", "agent") } });
-    render(<ReviewFilterBar />);
-    expect(screen.getByText("All")).toBeTruthy();
-    expect(screen.getByText("High")).toBeTruthy();
-    expect(screen.getByText("Low")).toBeTruthy();
-  });
-
-  it("toggles the risk filter on and off", () => {
-    seed({ "a:1": { risk: attributed("high", "agent") } });
-    render(<ReviewFilterBar />);
-
-    fireEvent.click(screen.getByText("High"));
-    expect(useReviewStore.getState().reviewFilter.risk).toEqual(["high"]);
-
-    // Clicking the active toggle clears it.
-    fireEvent.click(screen.getByText("High"));
-    expect(useReviewStore.getState().reviewFilter.risk).toBeUndefined();
-  });
-
-  it("switching to Low replaces the active risk", () => {
-    seed({ "a:1": { risk: attributed("high", "agent") } });
-    render(<ReviewFilterBar />);
-    fireEvent.click(screen.getByText("High"));
-    fireEvent.click(screen.getByText("Low"));
-    expect(useReviewStore.getState().reviewFilter.risk).toEqual(["low"]);
-  });
-
   it("acts on exactly the matching set", () => {
     seed({
-      "a.ts:1": { risk: attributed("low", "agent") },
-      "a.ts:2": { risk: attributed("high", "agent") },
+      "a.ts:1": { status: attributed("rejected", "ui") },
+      "a.ts:2": {},
     });
+    useReviewStore.setState({
+      reviewFilter: { status: ["unreviewed"] },
+    } as never);
     render(<ReviewFilterBar />);
-
-    // No action row until a filter is active.
-    expect(screen.queryByTestId("review-filter-actions")).toBeNull();
-
-    fireEvent.click(screen.getByText("High"));
     expect(screen.getByText("1 matching")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Approve"));
     const hunks = useReviewStore.getState().reviewState!.hunks;
-    expect(hunks["a.ts:2"].status?.value).toBe("approved"); // high → approved
-    expect(hunks["a.ts:1"].status?.value).toBeUndefined(); // low → untouched
+    expect(hunks["a.ts:2"].status?.value).toBe("approved"); // unreviewed → approved
+    expect(hunks["a.ts:1"].status?.value).toBe("rejected"); // untouched
   });
 });

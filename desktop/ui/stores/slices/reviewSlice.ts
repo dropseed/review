@@ -3,7 +3,6 @@ import {
   attributed,
   type FileDiff,
   type GlobalReviewSummary,
-  type HunkRisk,
   type HunkState,
   type HunkStatusValue,
   type ReviewState,
@@ -104,12 +103,6 @@ export interface ReviewSlice {
   saveHunkIdsForLater: (hunkIds: string[]) => void;
   saveAllDirHunksForLater: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
-
-  // Risk actions
-  setHunkRisk: (hunkId: string, risk: HunkRisk) => void;
-  clearHunkRisk: (hunkId: string) => void;
-  /** Set (or clear, when null) the risk on a set of hunks in one action. */
-  setRiskForHunks: (hunkIds: string[], risk: HunkRisk | null) => void;
 
   // Feedback export
   exportRejectionFeedback: () => RejectionFeedback | null;
@@ -345,8 +338,8 @@ function patchReviewState(
 
 /**
  * Merge a partial HunkState into a single hunk entry and trigger a debounced
- * save. The shared shape behind setHunkLabel / setHunkRisk / clearHunkRisk —
- * each axis of the attributed model patches one field the same way.
+ * save. The shared shape behind setHunkLabel — each axis of the attributed
+ * model patches one field the same way.
  */
 function patchHunk(
   get: () => {
@@ -677,25 +670,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     setHunkLabel: (hunkId, label) => {
       const labels = Array.isArray(label) ? label : [label];
       patchHunk(get, set, hunkId, { classification: attributed(labels, "ui") });
-    },
-
-    setHunkRisk: (hunkId, risk) => get().setRiskForHunks([hunkId], risk),
-
-    clearHunkRisk: (hunkId) => get().setRiskForHunks([hunkId], null),
-
-    setRiskForHunks: (hunkIds, risk) => {
-      const { reviewState } = get();
-      if (!reviewState || hunkIds.length === 0) return;
-      const newHunks = { ...reviewState.hunks };
-      for (const id of hunkIds) {
-        if (risk === null) {
-          if (!newHunks[id]) continue;
-          newHunks[id] = { ...newHunks[id], risk: undefined };
-        } else {
-          newHunks[id] = { ...newHunks[id], risk: attributed(risk, "ui") };
-        }
-      }
-      patchReviewState(get, set, { hunks: newHunks });
     },
 
     setReviewNotes: (notes) => {
