@@ -23,7 +23,6 @@ import { GuideBanner } from "./GuideBanner";
 import { GuideModePanel } from "./GuideModePanel";
 import { CommitScopePicker } from "./CommitScopePicker";
 import { CommitScopeHeader } from "./CommitScopeHeader";
-import { ReviewFilterBar } from "./ReviewFilterBar";
 import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
@@ -239,7 +238,6 @@ export function FilesPanel() {
                 <>
                   <GuideBanner />
                   <CommitScopePicker />
-                  <ReviewFilterBar />
                   <CommitScopeHeader />
                   <StatusGroupList
                     sectionedFiles={sectionedFiles}

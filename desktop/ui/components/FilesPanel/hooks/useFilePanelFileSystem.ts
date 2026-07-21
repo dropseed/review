@@ -2,8 +2,7 @@ import { useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { useAllHunks } from "../../../stores/selectors/hunks";
 import { useFileHunkStatusMap } from "../../../hooks/useFileHunkStatusMap";
-import { isEmptyFilter } from "../../../types/hunkFilter";
-import { hunkMatches } from "../../../types/scope";
+import { hunkInScope } from "../../../types/scope";
 import {
   calculateFileHunkStatus,
   hasChangeStatus,
@@ -22,43 +21,22 @@ export function useFilePanelFileSystem() {
   const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
-  const reviewFilter = useReviewStore((s) => s.reviewFilter);
   const scope = useReviewStore((s) => s.scope);
   const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
 
   // The whole Review tab — sections, counts, and stats — derives from this
-  // map. When a filter or scope is active we recount over only the matching
-  // hunks, so files with no matching hunk drop out of the sections and the
-  // counts scope to it (the same "select by predicate + scope" the bulk
-  // actions use).
+  // map. When a scope is active we recount over only its hunks, so files with
+  // no hunk in scope drop out of the sections and the counts narrow to it.
   const sharedHunkStatusMap = useFileHunkStatusMap();
-  const filterActive = !isEmptyFilter(reviewFilter) || scope !== null;
+  const scopeActive = scope !== null;
   const hunkStatusMap = useMemo(() => {
-    if (!filterActive) return sharedHunkStatusMap;
-    const trustList = reviewState?.trustList ?? [];
-    const matching = hunks.filter((h) =>
-      hunkMatches({
-        hunkId: h.id,
-        hunkState: reviewState?.hunks[h.id],
-        filePath: h.filePath,
-        trustList,
-        filter: reviewFilter,
-        scope,
-      }),
-    );
+    if (scope === null) return sharedHunkStatusMap;
+    const matching = hunks.filter((h) => hunkInScope(scope, h.id));
     return calculateFileHunkStatus(matching, reviewState, {
       autoApproveStaged: reviewState?.autoApproveStaged,
       stagedFilePaths,
     });
-  }, [
-    filterActive,
-    sharedHunkStatusMap,
-    hunks,
-    reviewState,
-    reviewFilter,
-    scope,
-    stagedFilePaths,
-  ]);
+  }, [sharedHunkStatusMap, hunks, reviewState, scope, stagedFilePaths]);
 
   const movedFilePaths = useMemo(() => {
     const allPaths = new Set<string>();
@@ -76,9 +54,9 @@ export function useFilePanelFileSystem() {
   const sectionedFiles = useMemo(
     () =>
       processTreeWithSections(allFiles, hunkStatusMap, fileSortOrder, {
-        implicitPending: !filterActive,
+        implicitPending: !scopeActive,
       }),
-    [allFiles, hunkStatusMap, fileSortOrder, filterActive],
+    [allFiles, hunkStatusMap, fileSortOrder, scopeActive],
   );
 
   const allFilesTree = useMemo(
@@ -176,7 +154,7 @@ export function useFilePanelFileSystem() {
         if (e.children) collectStatusChanges(e.children);
       }
     }
-    if (!filterActive) collectStatusChanges(allFiles);
+    if (!scopeActive) collectStatusChanges(allFiles);
 
     function sortPaths(paths: string[]): void {
       switch (fileSortOrder) {
@@ -204,7 +182,7 @@ export function useFilePanelFileSystem() {
     sortPaths(reviewed);
     sortPaths(trusted);
     return { needsReview, savedForLater, reviewed, trusted };
-  }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap, filterActive]);
+  }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap, scopeActive]);
 
   const fileStatusMap = useMemo(() => {
     const map = new Map<string, string>();

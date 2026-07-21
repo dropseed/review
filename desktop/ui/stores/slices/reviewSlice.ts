@@ -100,7 +100,6 @@ export interface ReviewSlice {
   saveHunkForLater: (hunkId: string) => void;
   unsaveHunkForLater: (hunkId: string) => void;
   saveAllFileHunksForLater: (filePath: string) => void;
-  saveHunkIdsForLater: (hunkIds: string[]) => void;
   saveAllDirHunksForLater: (dirPath: string) => void;
   setHunkLabel: (hunkId: string, label: string | string[]) => void;
 
@@ -656,10 +655,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     saveAllFileHunksForLater: (filePath) => {
       const ids = getFileHunkIds(get().filesByPath, filePath);
       updateHunkStatuses(get, set, ids, "saved_for_later");
-    },
-
-    saveHunkIdsForLater: (hunkIds) => {
-      updateHunkStatuses(get, set, hunkIds, "saved_for_later");
     },
 
     saveAllDirHunksForLater: (dirPath) => {

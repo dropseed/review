@@ -18,8 +18,7 @@ import type {
   LineAnnotation,
 } from "../../types";
 import { isHunkTrusted } from "../../types";
-import { isEmptyFilter } from "../../types/hunkFilter";
-import { hunkMatches } from "../../types/scope";
+import { hunkInScope } from "../../types/scope";
 import { computeCommitGroups } from "../../stores/selectors/groups";
 import { singleCommitScope } from "../FilesPanel/commitScope";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -217,7 +216,6 @@ export function useDiffAnnotationModel({
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
   const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
   const attribution = useReviewStore((s) => s.attribution);
-  const reviewFilter = useReviewStore((s) => s.reviewFilter);
   const scope = useReviewStore((s) => s.scope);
 
   const commitByHash = useMemo(() => {
@@ -297,34 +295,18 @@ export function useDiffAnnotationModel({
     return changed ? states : undefined;
   }, [hunks, hunkStates]);
 
-  // Hunks in this file outside the active predicate filter/scope — the one
-  // pass over `hunks` both the collapsed-strip decision in renderAnnotation
-  // and scopeDimCSS's line-dimming need, computed once instead of each
-  // independently re-running the same hunkMatches predicate.
+  // Hunks in this file outside the active scope — the one pass over `hunks`
+  // both the collapsed-strip decision in renderAnnotation and scopeDimCSS's
+  // line-dimming need, computed once instead of each independently
+  // re-walking the scope membership.
   const outOfScopeHunkIds = useMemo(() => {
-    if (isEmptyFilter(reviewFilter) && !scope) return null;
-    const trustList = reviewState?.trustList ?? [];
+    if (!scope) return null;
     const set = new Set<string>();
     for (const hunk of hunks) {
-      const inScope = hunkMatches({
-        hunkId: hunk.id,
-        hunkState: fileHunkStates?.[hunk.id],
-        filePath,
-        trustList,
-        filter: reviewFilter,
-        scope,
-      });
-      if (!inScope) set.add(hunk.id);
+      if (!hunkInScope(scope, hunk.id)) set.add(hunk.id);
     }
     return set;
-  }, [
-    hunks,
-    fileHunkStates,
-    filePath,
-    reviewFilter,
-    scope,
-    reviewState?.trustList,
-  ]);
+  }, [hunks, scope]);
 
   // Build line annotations for each hunk - position at last changed line
   // Memoized to preserve reference stability — @pierre/diffs uses reference

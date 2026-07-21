@@ -1,18 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   hunkInScope,
-  hunkMatches,
-  selectHunkIds,
   shouldSkipHunkForNavigation,
   toggleScope,
   type ReviewScope,
 } from "./scope";
-import {
-  attributed,
-  type DiffHunk,
-  type HunkState,
-  type ReviewState,
-} from "./index";
+import { attributed, type HunkState } from "./index";
 
 const trustList = ["imports:*", "formatting:whitespace"];
 
@@ -66,113 +59,13 @@ describe("hunkInScope", () => {
   });
 });
 
-describe("hunkMatches", () => {
-  it("a null scope imposes no additional constraint", () => {
-    expect(
-      hunkMatches({
-        hunkId: "a.ts:1",
-        hunkState: undefined,
-        filePath: "a.ts",
-        trustList,
-        filter: {},
-        scope: null,
-      }),
-    ).toBe(true);
-  });
-
-  it("AND-composes the predicate filter with scope", () => {
-    const high: HunkState = { status: attributed("approved", "ui") };
-    const low: HunkState = { status: attributed("rejected", "ui") };
-    const s = scope(["a.ts:1"]);
-
-    expect(
-      hunkMatches({
-        hunkId: "a.ts:1",
-        hunkState: high,
-        filePath: "a.ts",
-        trustList,
-        filter: { status: ["approved"] },
-        scope: s,
-      }),
-    ).toBe(true);
-
-    // Matches the predicate but falls outside scope.
-    expect(
-      hunkMatches({
-        hunkId: "b.ts:2",
-        hunkState: high,
-        filePath: "b.ts",
-        trustList,
-        filter: { status: ["approved"] },
-        scope: s,
-      }),
-    ).toBe(false);
-
-    // Inside scope but fails the predicate.
-    expect(
-      hunkMatches({
-        hunkId: "a.ts:1",
-        hunkState: low,
-        filePath: "a.ts",
-        trustList,
-        filter: { status: ["approved"] },
-        scope: s,
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("selectHunkIds", () => {
-  const hunks = [
-    { id: "a.ts:1", filePath: "a.ts" },
-    { id: "b.ts:2", filePath: "b.ts" },
-    { id: "c.ts:3", filePath: "c.ts" },
-  ] as DiffHunk[];
-
-  it("selects everything with no filter or scope", () => {
-    const reviewState = { trustList, hunks: {} } as unknown as ReviewState;
-    expect(selectHunkIds(hunks, reviewState, {})).toHaveLength(3);
-  });
-
-  it("narrows to a scope's exact membership", () => {
-    const reviewState = { trustList, hunks: {} } as unknown as ReviewState;
-    expect(
-      selectHunkIds(hunks, reviewState, {}, scope(["a.ts:1", "c.ts:3"])),
-    ).toEqual(["a.ts:1", "c.ts:3"]);
-  });
-
-  it("composes a predicate filter with a scope", () => {
-    const reviewState = {
-      trustList,
-      hunks: {
-        "a.ts:1": { status: attributed("approved", "ui") },
-        "b.ts:2": { status: attributed("approved", "ui") },
-      },
-    } as unknown as ReviewState;
-    expect(
-      selectHunkIds(
-        hunks,
-        reviewState,
-        { status: ["approved"] },
-        scope(["a.ts:1", "c.ts:3"]),
-      ),
-    ).toEqual(["a.ts:1"]);
-  });
-
-  it("tolerates a null review state", () => {
-    expect(selectHunkIds(hunks, null, {})).toHaveLength(3);
-  });
-});
-
 describe("shouldSkipHunkForNavigation", () => {
-  it("does not skip an untrusted hunk with no filter or scope", () => {
+  it("does not skip an untrusted hunk with no scope", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState: undefined,
         trustList,
-        filter: {},
         scope: null,
       }),
     ).toBe(false);
@@ -185,10 +78,8 @@ describe("shouldSkipHunkForNavigation", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState,
         trustList,
-        filter: {},
         scope: null,
       }),
     ).toBe(true);
@@ -202,10 +93,8 @@ describe("shouldSkipHunkForNavigation", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState,
         trustList,
-        filter: {},
         scope: null,
       }),
     ).toBe(false);
@@ -216,10 +105,8 @@ describe("shouldSkipHunkForNavigation", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState: undefined,
         trustList,
-        filter: {},
         scope: s,
       }),
     ).toBe(true);
@@ -230,10 +117,8 @@ describe("shouldSkipHunkForNavigation", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState: undefined,
         trustList,
-        filter: {},
         scope: s,
       }),
     ).toBe(false);
@@ -245,25 +130,8 @@ describe("shouldSkipHunkForNavigation", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState,
         trustList,
-        filter: {},
-        scope: s,
-      }),
-    ).toBe(true);
-  });
-
-  it("skips a hunk inside scope that fails the predicate filter", () => {
-    const hunkState: HunkState = { status: attributed("rejected", "ui") };
-    const s = scope(["a.ts:1"]);
-    expect(
-      shouldSkipHunkForNavigation({
-        hunkId: "a.ts:1",
-        filePath: "a.ts",
-        hunkState,
-        trustList,
-        filter: { status: ["approved"] },
         scope: s,
       }),
     ).toBe(true);
@@ -277,10 +145,8 @@ describe("shouldSkipHunkForNavigation", () => {
     expect(
       shouldSkipHunkForNavigation({
         hunkId: "a.ts:1",
-        filePath: "a.ts",
         hunkState,
         trustList,
-        filter: {},
         scope: s,
       }),
     ).toBe(true);

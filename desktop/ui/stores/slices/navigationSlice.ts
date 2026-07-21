@@ -1,6 +1,5 @@
 import { isHunkReviewed } from "../../types";
 import type { DiffHunk, HunkGroup } from "../../types";
-import type { HunkFilter } from "../../types/hunkFilter";
 import {
   shouldSkipHunkForNavigation,
   type ReviewScope,
@@ -97,11 +96,6 @@ export interface NavigationSlice {
   // Modal state
   classificationsModalOpen: boolean;
   setClassificationsModalOpen: (open: boolean) => void;
-
-  // Review-scoped hunk filter (status / label / file). Drives the
-  // Review-tab file list and the "act on the current filter" bulk actions.
-  reviewFilter: HunkFilter;
-  setReviewFilter: (filter: HunkFilter) => void;
 
   // Review scope: a named, exact hunk-ID set (a status bucket, a commit, the
   // uncommitted bucket, or a guide group). Set by clicking a group header,
@@ -224,18 +218,12 @@ function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
 }
 
 /** Bind {@link shouldSkipHunkForNavigation} to the current store state. */
-function shouldSkipHunkInState(
-  hunkId: string,
-  filePath: string,
-  state: ReviewStore,
-): boolean {
-  const { reviewState, reviewFilter, scope } = state;
+function shouldSkipHunkInState(hunkId: string, state: ReviewStore): boolean {
+  const { reviewState, scope } = state;
   return shouldSkipHunkForNavigation({
     hunkId,
-    filePath,
     hunkState: reviewState?.hunks[hunkId],
     trustList: reviewState?.trustList ?? [],
-    filter: reviewFilter,
     scope,
   });
 }
@@ -452,7 +440,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       if (!fileHunks) continue;
       const start = fi === startFileIdx ? startInFileIdx : 0;
       for (let i = start; i < fileHunks.length; i++) {
-        if (!shouldSkipHunkInState(fileHunks[i].id, filePath, state)) {
+        if (!shouldSkipHunkInState(fileHunks[i].id, state)) {
           set({
             focusedHunkId: fileHunks[i].id,
             selectedFile: filePath,
@@ -485,7 +473,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       if (!fileHunks) continue;
       const start = fi === startFileIdx ? startInFileIdx : fileHunks.length - 1;
       for (let i = start; i >= 0; i--) {
-        if (!shouldSkipHunkInState(fileHunks[i].id, filePath, state)) {
+        if (!shouldSkipHunkInState(fileHunks[i].id, state)) {
           set({
             focusedHunkId: fileHunks[i].id,
             selectedFile: filePath,
@@ -598,7 +586,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     if (!loc) return;
     const fileHunks = state.filesByPath[loc.filePath]?.hunks ?? [];
     for (let i = loc.indexInFile + 1; i < fileHunks.length; i++) {
-      if (!shouldSkipHunkInState(fileHunks[i].id, loc.filePath, state)) {
+      if (!shouldSkipHunkInState(fileHunks[i].id, state)) {
         set({
           focusedHunkId: fileHunks[i].id,
           scrollTarget: { type: "hunk", hunkId: fileHunks[i].id },
@@ -643,9 +631,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   classificationsModalOpen: false,
   setClassificationsModalOpen: (open) =>
     set({ classificationsModalOpen: open }),
-
-  reviewFilter: {},
-  setReviewFilter: (filter) => set({ reviewFilter: filter }),
 
   scope: null,
   setScope: (scope) => set({ scope }),
