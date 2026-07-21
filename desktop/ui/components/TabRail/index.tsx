@@ -19,6 +19,12 @@ import { TabRailItem } from "./TabRailItem";
 import { type GlobalReviewSummary } from "../../types";
 import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { SidebarPanelIcon } from "../ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "../ui/dropdown-menu";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
@@ -517,7 +523,28 @@ function RepoGroupHeader({
   const collapsedRepos = useReviewStore((s) => s.collapsedRepos);
   const setRepoCollapsed = useReviewStore((s) => s.setRepoCollapsed);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
+  const unregisterRepo = useReviewStore((s) => s.unregisterRepo);
+  const removeRecentRepository = useReviewStore(
+    (s) => s.removeRecentRepository,
+  );
   const collapsed = isRepoCollapsed(collapsedRepos, group.repoPath);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuOpen(true);
+  };
+
+  const handleRemove = () => {
+    unregisterRepo(group.repoPath).catch((err) =>
+      console.error("Failed to remove repo from sidebar:", err),
+    );
+    // Removing it from the sidebar should drop it from the welcome-page
+    // recents too, or it reappears the moment the user opens it from there.
+    removeRecentRepository(group.repoPath);
+  };
 
   const currentHead = group.branches.find((e) => e.kind === "working-tree");
   const canActivate = !!(currentHead && group.defaultBranch);
@@ -573,6 +600,7 @@ function RepoGroupHeader({
             handleActivate();
           }
         }}
+        onContextMenu={handleContextMenu}
         className={`group relative flex items-center gap-1.5 w-full text-left px-2.5 py-1
                     transition-colors duration-100 rounded-sm cursor-default
                     ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}`}
@@ -601,6 +629,34 @@ function RepoGroupHeader({
           </span>
         )}
         <span className="flex-1" />
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className={`items-center justify-center w-4 h-4 shrink-0 rounded
+                         text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]
+                         ${menuOpen ? "flex" : "hidden group-hover:flex"}`}
+              aria-label="Repository options"
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleRemove}>
+              Remove from sidebar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
           onClick={handleToggle}

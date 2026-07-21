@@ -30,6 +30,8 @@ export interface LocalActivitySlice {
     branch: string,
     stats: DiffShortStat | null,
   ) => void;
+  /** Add a repo to the central index so it shows in the sidebar. */
+  registerRepo: (repoPath: string) => Promise<void>;
   unregisterRepo: (repoPath: string) => Promise<void>;
 }
 
@@ -138,6 +140,19 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
       };
       set({ lastSeenDiffStats: updated });
       storage.set("lastSeenDiffStats", updated).catch(() => {});
+    },
+
+    registerRepo: async (repoPath) => {
+      if (!repoPath) return;
+      // Registration is an idempotent upsert (it also bumps last-accessed), so
+      // always call it; only the first appearance needs an activity reload.
+      const known = get().localActivity.some((r) => r.repoPath === repoPath);
+      try {
+        const registered = await client.registerRepo(repoPath);
+        if (registered && !known) await get().loadLocalActivity();
+      } catch (err) {
+        console.error("Failed to register repo:", err);
+      }
     },
 
     unregisterRepo: async (repoPath) => {

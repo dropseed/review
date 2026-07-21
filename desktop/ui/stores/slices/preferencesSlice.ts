@@ -478,6 +478,9 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
 
       set({ recentRepositories: updated });
       storage.set("recentRepositories", updated);
+
+      // Opening a repo is enough to keep it in the sidebar — no review needed.
+      get().registerRepo(path);
     },
 
     removeRecentRepository: (path) => {
