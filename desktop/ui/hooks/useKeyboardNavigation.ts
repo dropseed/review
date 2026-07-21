@@ -9,7 +9,11 @@ import {
   flattenOrgGroups,
   type SidebarEntry,
 } from "../utils/sidebar-ordering";
-import { buildWorkingOn, type WorkingOnEntry } from "../utils/working-on";
+import {
+  buildWorkingOn,
+  flattenWorkingOn,
+  type WorkingOnEntry,
+} from "../utils/working-on";
 
 interface SidebarItem {
   key: string;
@@ -190,7 +194,7 @@ export function useKeyboardNavigation() {
             Date.now(),
           );
           const items = [
-            ...workingOnToItems(workingOn),
+            ...workingOnToItems(flattenWorkingOn(workingOn)),
             ...entriesToItems(
               flattenOrgGroups(
                 orgGroups,

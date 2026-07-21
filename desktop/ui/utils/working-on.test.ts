@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildWorkingOn,
+  groupWorkingOnByRepo,
   COMMIT_BY_USER_WINDOW_MS,
   REVIEW_ACTIVE_WINDOW_MS,
   type WorkingOnEntry,
@@ -249,5 +250,71 @@ describe("buildWorkingOn — dedup across repos", () => {
     const out = buildWorkingOn(activity, reviews, [], [], NOW);
     expect(keys(out)).toEqual(["/r:feat"]);
     expect(out[0].entry.kind).not.toBe("review"); // rendered as the branch row
+  });
+});
+
+describe("groupWorkingOnByRepo", () => {
+  it("buckets rows by repo, repos in best-ranked-row order", () => {
+    const activity = [
+      repo("/a", [
+        branch({
+          name: "old",
+          lastCommitByUser: true,
+          lastCommitDate: iso(5 * 86_400_000),
+        }),
+      ]),
+      repo("/b", [
+        branch({
+          name: "new",
+          lastCommitByUser: true,
+          lastCommitDate: iso(1 * 86_400_000),
+        }),
+        branch({
+          name: "mid",
+          lastCommitByUser: true,
+          lastCommitDate: iso(3 * 86_400_000),
+        }),
+      ]),
+    ];
+    const groups = groupWorkingOnByRepo(
+      buildWorkingOn(activity, [], [], [], NOW),
+    );
+    expect(groups.map((g) => g.repoPath)).toEqual(["/b", "/a"]);
+    expect(keys(groups[1].entries)).toEqual(["/a:old"]);
+    expect(keys(groups[0].entries)).toEqual(["/b:new", "/b:mid"]);
+  });
+
+  it("hoists the default branch to lead its group", () => {
+    const activity = [
+      repo("/r", [
+        branch({
+          name: "feat",
+          lastCommitByUser: true,
+          lastCommitDate: iso(1 * 86_400_000),
+        }),
+        branch({
+          name: "main",
+          lastCommitByUser: true,
+          lastCommitDate: iso(4 * 86_400_000),
+        }),
+      ]),
+    ];
+    const groups = groupWorkingOnByRepo(
+      buildWorkingOn(activity, [], [], [], NOW),
+    );
+    expect(groups[0].defaultBranch).toBe("main");
+    expect(keys(groups[0].entries)).toEqual(["/r:main", "/r:feat"]);
+  });
+
+  it("leaves an all-reviews group in ranked order", () => {
+    const reviews = [
+      review("/r", "pr-2", 1 * 86_400_000),
+      review("/r", "pr-1", 3 * 86_400_000),
+    ];
+    const groups = groupWorkingOnByRepo(
+      buildWorkingOn([], reviews, [], [], NOW),
+    );
+    expect(groups[0].defaultBranch).toBeNull();
+    expect(keys(groups[0].entries)).toEqual(["/r:pr-2", "/r:pr-1"]);
   });
 });

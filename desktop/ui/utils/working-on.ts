@@ -181,6 +181,71 @@ export function buildWorkingOn(
   return entries;
 }
 
+/** A repo bucket of zone-1 rows, so branches/worktrees stay together. */
+export interface WorkingOnRepoGroup {
+  repoPath: string;
+  repoName: string;
+  /** Null for a repo whose rows are all orphan reviews (no local branch info). */
+  defaultBranch: string | null;
+  /** Ranked rows, with the default branch (if present) leading. */
+  entries: WorkingOnEntry[];
+}
+
+/**
+ * Bucket a ranked zone-1 list by repo, preserving rank order: repos appear in
+ * the order of their best-ranked row, and rows keep their order within a repo
+ * — except the repo's default branch, which is hoisted to lead the group so
+ * it can render as the group's `repo / branch` line.
+ */
+export function groupWorkingOnByRepo(
+  entries: WorkingOnEntry[],
+): WorkingOnRepoGroup[] {
+  const groups: WorkingOnRepoGroup[] = [];
+  const byPath = new Map<string, WorkingOnRepoGroup>();
+
+  for (const entry of entries) {
+    let group = byPath.get(entry.repoPath);
+    if (!group) {
+      group = {
+        repoPath: entry.repoPath,
+        repoName: entry.repoName,
+        defaultBranch: null,
+        entries: [],
+      };
+      byPath.set(entry.repoPath, group);
+      groups.push(group);
+    }
+    // Only branch rows carry the repo's git info; an orphan review can't say
+    // what the default branch is.
+    if (group.defaultBranch == null && entry.entry.kind !== "review") {
+      group.defaultBranch = entry.entry.repo.defaultBranch;
+    }
+    group.entries.push(entry);
+  }
+
+  for (const group of groups) {
+    const i = group.entries.findIndex((e) => e.ref === group.defaultBranch);
+    if (i > 0) {
+      group.entries = [
+        group.entries[i],
+        ...group.entries.slice(0, i),
+        ...group.entries.slice(i + 1),
+      ];
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * The zone-1 rows in the order they are rendered — grouped by repo, default
+ * branch leading. Keyboard navigation walks this so Cmd+N hits the Nth
+ * visible row.
+ */
+export function flattenWorkingOn(entries: WorkingOnEntry[]): WorkingOnEntry[] {
+  return groupWorkingOnByRepo(entries).flatMap((group) => group.entries);
+}
+
 /**
  * Membership precedence: pinned wins, then dismiss excludes, then any derived
  * rule includes.

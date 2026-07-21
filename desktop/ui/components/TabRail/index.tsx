@@ -217,15 +217,19 @@ function SidebarList({
       : fallback;
   }
 
-  /** Render a zone-1 "Working on" row, reusing the existing row components. */
-  function renderWorkingOn(wo: WorkingOnEntry): ReactNode {
+  /**
+   * Render a zone-1 "Working on" row, reusing the existing row components.
+   * `repoLabel` prefixes the row with `repo / `; the group's lead row passes
+   * it, the rows nested under it don't.
+   */
+  function renderWorkingOn(wo: WorkingOnEntry, repoLabel?: string): ReactNode {
     const { entry } = wo;
     if (entry.kind === "review") {
       return (
         <TabRailItem
           key={`wo:${wo.reviewKey}`}
           {...reviewItemPropsFor(entry.review)}
-          repoLabel={repoDisplayName(wo.repoPath, wo.repoName)}
+          repoLabel={repoLabel}
         />
       );
     }
@@ -234,7 +238,7 @@ function SidebarList({
         key={`wo:${wo.reviewKey}`}
         branch={entry.branch}
         repoPath={entry.repo.repoPath}
-        repoName={repoDisplayName(entry.repo.repoPath, entry.repo.repoName)}
+        repoName={repoLabel}
         defaultBranch={entry.repo.defaultBranch}
         itemKind={entry.kind}
         flat
@@ -286,11 +290,27 @@ function SidebarList({
 
   return (
     <div role="tablist" className="pb-1">
-      {/* Zone 1 — "Working on": flat, cross-repo, activity-derived. */}
+      {/* Zone 1 — "Working on": activity-derived, bucketed by repo. */}
       <div className="pt-0.5">
         <Zone zone="working-on" label="Working on">
           {workingOn.length > 0 ? (
-            workingOn.map(renderWorkingOn)
+            workingOn.map((group) => (
+              // The group's lead row (its default branch when it has one)
+              // doubles as the header: a `repo / branch` line, with the repo's
+              // other branches indented beneath it. A repo with a single row
+              // is just this line on its own.
+              <div key={group.repoPath} className="mt-1.5 first:mt-0">
+                {renderWorkingOn(
+                  group.entries[0],
+                  repoDisplayName(group.repoPath, group.repoName),
+                )}
+                {group.entries.length > 1 && (
+                  <div className="ml-2 border-l border-l-fg/[0.06] pl-0.5">
+                    {group.entries.slice(1).map((wo) => renderWorkingOn(wo))}
+                  </div>
+                )}
+              </div>
+            ))
           ) : (
             <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
               Nothing in flight — changes and recent branches show up here.
