@@ -34,9 +34,10 @@ function SidebarToggle(): ReactNode {
   );
 }
 
-/** The comparison label (or `PR #n`). For the default branch it reads as
- *  "head · N unpushed"; otherwise it's the raw `base..head`. In both non-PR
- *  cases the label opens the base-override menu, with the raw range on hover. */
+/** The comparison label (or `PR #n`). The trunk's own working tree reads as
+ *  "head · uncommitted" — `head..head` would say nothing — otherwise it's the
+ *  raw `base..head`. In both non-PR cases the label opens the base-override
+ *  menu, with the raw range on hover. */
 function ComparisonLabel({
   comparison,
 }: {
@@ -46,7 +47,6 @@ function ComparisonLabel({
   const repoPath = useReviewStore((s) => s.repoPath);
   const reviewRef = useReviewStore((s) => s.reviewRef);
   const baseReason = useReviewStore((s) => s.baseReason);
-  const aheadCount = useReviewStore((s) => s.reviewAheadCount);
   const [baseMenuOpen, setBaseMenuOpen] = useState(false);
 
   if (githubPr) {
@@ -57,18 +57,15 @@ function ComparisonLabel({
     );
   }
 
-  // The default branch reviewed against its remote tip: label it as unpushed
-  // work rather than the cryptic `origin/head..head` range.
-  const isUnpushed = baseReason === "defaultVsRemote";
-  const unpushedSuffix =
-    aheadCount && aheadCount > 0 ? `${aheadCount} unpushed` : "unpushed";
+  // The trunk reviewed against itself: `main..main` is the working tree, which
+  // the raw range doesn't convey.
+  const isWorkingTree = baseReason === "trunkWorkingTree";
 
   const canChangeBase = !!repoPath && !!reviewRef && comparison.base !== "";
 
-  const label = isUnpushed ? (
+  const label = isWorkingTree ? (
     <span className="font-medium">
-      {comparison.head} <span className="text-fg-faint">·</span>{" "}
-      {unpushedSuffix}
+      {comparison.head} <span className="text-fg-faint">·</span> uncommitted
     </span>
   ) : (
     <>
@@ -76,11 +73,11 @@ function ComparisonLabel({
     </>
   );
 
-  const title = isUnpushed
-    ? `${comparison.base}..${comparison.head} — change base`
+  const title = isWorkingTree
+    ? `${comparison.head} working tree — change base`
     : "Change base";
 
-  const labelClass = isUnpushed
+  const labelClass = isWorkingTree
     ? "shrink-0 text-xs text-fg-muted"
     : "shrink-0 text-xs text-fg-muted font-mono";
 

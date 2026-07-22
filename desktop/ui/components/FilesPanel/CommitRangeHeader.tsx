@@ -1,19 +1,17 @@
 import { type ReactNode } from "react";
 import { useReviewStore } from "../../stores";
-import { commitsInScope } from "./commitScope";
+import { commitsInRange } from "../../types/commitRange";
 
 /**
- * Commit context shown beneath the filter row when the queue is scoped to a
- * commit (CommitScopePicker): a single commit's full subject + body — the
- * same context a commit group's expandable blurb used to show — or, for a
- * range, a compact one-line-per-commit list.
+ * Commit context shown beneath the filter row when the review is narrowed to a
+ * commit range (CommitRangePicker): a single commit's full subject + body, or,
+ * for a multi-commit range, a compact one-line-per-commit list.
  */
-export function CommitScopeHeader(): ReactNode {
-  const scope = useReviewStore((s) => s.scope);
+export function CommitRangeHeader(): ReactNode {
+  const commitRange = useReviewStore((s) => s.commitRange);
   const attribution = useReviewStore((s) => s.attribution);
 
-  if (!scope || scope.source !== "commit") return null;
-  const commits = commitsInScope(scope, attribution ?? null);
+  const commits = commitsInRange(commitRange, attribution ?? null);
   if (commits.length === 0) return null;
 
   if (commits.length === 1) {

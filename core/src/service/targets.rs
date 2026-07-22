@@ -23,8 +23,8 @@ use crate::sources::traits::Comparison;
 pub enum BaseReason {
     /// An explicit base override is pinned (`base..ref` verbatim).
     Override,
-    /// The default branch reviewed against its remote tip — i.e. unpushed work.
-    DefaultVsRemote,
+    /// The default branch reviewed against itself — its uncommitted work.
+    TrunkWorkingTree,
     /// A non-default branch reviewed against the default branch.
     BranchVsDefault,
     /// Any other rev (SHA, tag, `stash@{n}`, detached HEAD) reviewed as one commit.
@@ -44,10 +44,6 @@ pub struct ResolvedReview {
     pub comparison: Comparison,
     /// Why the base was chosen — lets the UI label the comparison.
     pub base_reason: BaseReason,
-    /// Commits in `base..head`, for labels like "N unpushed". Only computed for
-    /// [`BaseReason::DefaultVsRemote`]; `None` elsewhere (or on a git failure).
-    #[serde(rename = "aheadCount", skip_serializing_if = "Option::is_none")]
-    pub ahead_count: Option<u32>,
 }
 
 /// Resolve a review's `ref` (+ optional `base_override`) into a [`Comparison`]
@@ -68,19 +64,11 @@ pub fn resolve(
 
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
     let (comparison, base_reason) = resolve_review(&source, ref_name, effective_override)?;
-    // Only the default-vs-remote case has a natural "N unpushed" count to show.
-    let ahead_count = match base_reason {
-        BaseReason::DefaultVsRemote => {
-            source.count_commits_in_range(&comparison.base, &comparison.head)
-        }
-        _ => None,
-    };
     Ok(ResolvedReview {
         ref_name: ref_name.to_owned(),
         base_override: effective_override.map(str::to_owned),
         comparison,
         base_reason,
-        ahead_count,
     })
 }
 
@@ -120,13 +108,17 @@ pub fn resolve_review(
     if source.is_branch(ref_name) {
         let default_branch = source.get_default_branch()?;
         if ref_name == default_branch {
-            // The default branch itself has no branch to diff against; show its
-            // working-tree changes vs the remote tip when we have one.
-            let origin = format!("origin/{default_branch}");
-            let base = source
-                .resolve_ref(&origin)
-                .map_or_else(|| "HEAD".to_owned(), |_| origin);
-            return Ok((Comparison::new(base, ref_name), BaseReason::DefaultVsRemote));
+            // The trunk has no fork point to diff from, so reviewing it means
+            // reviewing its uncommitted work: `ref..ref`, which the diff layer
+            // resolves against the working tree when the trunk is checked out.
+            // Defaulting to `origin/<default>` instead would let push state
+            // decide what you review — pushing would silently empty the review
+            // and committing would silently grow it. "vs origin" is still one
+            // base override away; it just isn't the default.
+            return Ok((
+                Comparison::new(ref_name, ref_name),
+                BaseReason::TrunkWorkingTree,
+            ));
         }
         return Ok((
             Comparison::new(default_branch, ref_name),
@@ -178,10 +170,26 @@ mod tests {
     }
 
     #[test]
-    fn default_branch_resolves_as_default_vs_remote() {
+    fn default_branch_resolves_to_its_own_working_tree() {
         let (_dir, source) = repo();
-        let (_c, reason) = resolve_review(&source, "main", None).unwrap();
-        assert_eq!(reason, BaseReason::DefaultVsRemote);
+        let (comparison, reason) = resolve_review(&source, "main", None).unwrap();
+        assert_eq!(reason, BaseReason::TrunkWorkingTree);
+        // `main..main` — the diff layer reads this as "uncommitted work".
+        assert_eq!(comparison.base, "main");
+        assert_eq!(comparison.head, "main");
+    }
+
+    /// Push state must not pick the trunk's contents: a repo with an
+    /// `origin/main` behind the local tip still reviews only uncommitted work.
+    #[test]
+    fn default_branch_ignores_the_remote_tip() {
+        let (dir, source) = repo();
+        let path = dir.path();
+        git(path, &["update-ref", "refs/remotes/origin/main", "main"]);
+        git(path, &["commit", "--allow-empty", "-m", "unpushed"]);
+        let (comparison, reason) = resolve_review(&source, "main", None).unwrap();
+        assert_eq!(reason, BaseReason::TrunkWorkingTree);
+        assert_eq!(comparison.base, "main");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
+import { CheckIcon } from "../ui/icons";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -19,17 +20,7 @@ export const SORT_LABELS: Record<FileSortOrder, string> = {
 };
 
 export const SELECTED_CHECK = (
-  <svg
-    className="h-3 w-3 text-fg-secondary"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M5 13l4 4L19 7" />
-  </svg>
+  <CheckIcon className="h-3 w-3 text-fg-secondary" />
 );
 
 /** Overflow menu with sort options and optional extra sections. */

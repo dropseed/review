@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   hunkInScope,
   shouldSkipHunkForNavigation,
-  toggleScope,
   type ReviewScope,
 } from "./scope";
 import { attributed, type HunkState } from "./index";
@@ -12,40 +11,6 @@ const trustList = ["imports:*", "formatting:whitespace"];
 function scope(hunkIds: string[]): ReviewScope {
   return { source: "commit", key: "sha1", title: "Add feature", hunkIds };
 }
-
-describe("toggleScope", () => {
-  it("sets the scope when nothing is active", () => {
-    const s = scope(["a.ts:1"]);
-    expect(toggleScope(null, s)).toBe(s);
-  });
-
-  it("clears the scope when clicking the already-active one (same source + key)", () => {
-    const s = scope(["a.ts:1"]);
-    expect(toggleScope(s, { ...s, hunkIds: ["a.ts:1", "b.ts:2"] })).toBeNull();
-  });
-
-  it("switches to a different scope even with the same source", () => {
-    const current = scope(["a.ts:1"]);
-    const next: ReviewScope = { ...current, key: "sha2" };
-    expect(toggleScope(current, next)).toBe(next);
-  });
-
-  it("switches when the key matches but the source differs", () => {
-    const current: ReviewScope = {
-      source: "uncommitted",
-      key: "reviewed",
-      title: "Reviewed",
-      hunkIds: [],
-    };
-    const next: ReviewScope = {
-      source: "guide",
-      key: "reviewed",
-      title: "Reviewed",
-      hunkIds: [],
-    };
-    expect(toggleScope(current, next)).toBe(next);
-  });
-});
 
 describe("hunkInScope", () => {
   it("a null scope matches everything", () => {

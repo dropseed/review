@@ -12,6 +12,8 @@ import type {
 } from "../../types";
 import { buildFileDiff } from "../../types";
 import type { ReviewScope } from "../../types/scope";
+import type { CommitRange } from "../../types/commitRange";
+import { sameRange } from "../../types/commitRange";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
@@ -123,6 +125,13 @@ export interface FilesSlice {
   // from the review identity via `resolveReview`; changes when the base
   // override changes without changing the review's identity.
   comparison: Comparison | null;
+  // The review's own base..head, unaffected by commit-range narrowing. Kept
+  // alongside `comparison` because a range replaces `comparison` wholesale:
+  // this is what "All commits" restores, and what commit attribution (the
+  // branch's full commit list) is always loaded from.
+  reviewComparison: Comparison | null;
+  // The commit sub-range `comparison` is currently narrowed to, if any.
+  commitRange: CommitRange | null;
   // The active review's identity: the ref being reviewed. Store keys and
   // keyed records (grouping, navigation snapshots, activeReviewKey) derive from
   // this, so they survive a base-override change.
@@ -131,8 +140,6 @@ export interface FilesSlice {
   reviewBaseOverride: string | null;
   // Why the base was chosen — drives the breadcrumb's comparison label.
   baseReason: BaseReason | null;
-  // Commits ahead of the base, for the "N unpushed" label (defaultVsRemote only).
-  reviewAheadCount: number | null;
   currentBranch: string | null;
   files: FileEntry[];
   allFiles: FileEntry[];
@@ -163,6 +170,13 @@ export interface FilesSlice {
   setRepoPath: (path: string | null) => void;
   /** Set the active review (comparison + identity) within the current repo. */
   setComparison: (resolved: ResolvedReview | null) => void;
+  /**
+   * Narrow the review to a commit sub-range, or restore the full review
+   * comparison with `null`. Re-diffs (the range *is* the comparison), so it
+   * clears loaded files/hunks — but keeps the review's identity and its commit
+   * attribution, which describe the branch rather than the current range.
+   */
+  setCommitRange: (range: CommitRange | null) => void;
   /** Atomically set repoPath and the active review in one update, preventing phantom review entries. */
   switchReview: (path: string, resolved: ResolvedReview) => void;
   setFiles: (files: FileEntry[]) => void;
@@ -189,8 +203,11 @@ export interface FilesSlice {
   applyFileWatcherEvent: (changedPaths: string[]) => Promise<void>;
 }
 
-/** State reset shared between comparison and repo switches. */
-const comparisonResetState = {
+/**
+ * Everything derived from one `base..head` diff. Cleared whenever the diff
+ * being shown changes — including a commit-range narrowing, which re-diffs.
+ */
+const diffDataResetState = {
   // Files
   files: [] as FileEntry[],
   allFiles: [] as FileEntry[],
@@ -200,11 +217,6 @@ const comparisonResetState = {
   movePairs: [] as MovePair[],
   flatFileList: [] as string[],
   loadingProgress: { phase: "pending" as const, current: 0, total: 0 },
-  // Review identity — cleared on switch, set explicitly by setComparison/switchReview.
-  reviewRef: null as string | null,
-  reviewBaseOverride: null as string | null,
-  baseReason: null as BaseReason | null,
-  reviewAheadCount: null as number | null,
   // Navigation
   selectedFile: null,
   focusedHunkId: null,
@@ -222,9 +234,27 @@ const comparisonResetState = {
   fileNavHistory: [] as string[],
   fileNavIndex: -1,
   // Review
-  reviewState: null,
   carriedForward: 0,
   undoStack: [] as UndoEntry[],
+  readOnlyPreview: false,
+  // Other slices
+  ...symbolsResetState,
+  ...classificationResetState,
+};
+
+/**
+ * What identifies *which review* is open, plus the branch-scoped data hanging
+ * off it (persisted decisions, the commit list, the worktree). Survives a
+ * commit-range narrowing — the range changes the diff, not the review — so
+ * only the review/repo switches below clear it.
+ */
+const reviewIdentityResetState = {
+  reviewRef: null as string | null,
+  reviewBaseOverride: null as string | null,
+  baseReason: null as BaseReason | null,
+  reviewComparison: null as Comparison | null,
+  commitRange: null as CommitRange | null,
+  reviewState: null,
   // History
   attribution: null as HunkAttribution | null,
   attributionLoading: false,
@@ -232,10 +262,12 @@ const comparisonResetState = {
   // Worktree
   worktreePath: null as string | null,
   worktreeStale: false,
-  readOnlyPreview: false,
-  // Other slices
-  ...symbolsResetState,
-  ...classificationResetState,
+};
+
+/** State reset shared between comparison and repo switches. */
+const comparisonResetState = {
+  ...diffDataResetState,
+  ...reviewIdentityResetState,
 };
 
 /** Additional state reset only needed when switching repositories. */
@@ -260,10 +292,11 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
   (client: ApiClient) => (set, get) => ({
     repoPath: null,
     comparison: null,
+    reviewComparison: null,
+    commitRange: null,
     reviewRef: null,
     reviewBaseOverride: null,
     baseReason: null,
-    reviewAheadCount: null,
     currentBranch: null,
     files: [],
     allFiles: [],
@@ -305,10 +338,30 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       set({
         ...comparisonResetState,
         comparison: resolved?.comparison ?? null,
+        reviewComparison: resolved?.comparison ?? null,
         reviewRef: resolved?.ref ?? null,
         reviewBaseOverride: resolved?.baseOverride ?? null,
         baseReason: resolved?.baseReason ?? null,
-        reviewAheadCount: resolved?.aheadCount ?? null,
+      });
+    },
+
+    setCommitRange: (range) => {
+      const { reviewComparison, commitRange } = get();
+      if (!reviewComparison) return;
+      if (sameRange(range, commitRange)) return;
+
+      get().flushSidebarProgress();
+      cancelPendingSaves();
+      get().saveNavigationSnapshot();
+      get().clearAllActivities();
+
+      // Only the diff data resets. The review's identity — and with it the
+      // branch's commit list, which is what the picker offers ranges from —
+      // is untouched by construction, not carried forward field by field.
+      set({
+        ...diffDataResetState,
+        comparison: range ? range.comparison : reviewComparison,
+        commitRange: range,
       });
     },
 
@@ -326,10 +379,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         ...repoResetState,
         repoPath: path,
         comparison: resolved.comparison,
+        reviewComparison: resolved.comparison,
         reviewRef: resolved.ref,
         reviewBaseOverride: resolved.baseOverride ?? null,
         baseReason: resolved.baseReason ?? null,
-        reviewAheadCount: resolved.aheadCount ?? null,
       });
     },
 

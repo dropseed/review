@@ -19,8 +19,7 @@ import type {
 } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { hunkInScope } from "../../types/scope";
-import { computeCommitGroups } from "../../stores/selectors/groups";
-import { singleCommitScope } from "../FilesPanel/commitScope";
+import { commitRangeForSha } from "../../types/commitRange";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
 import {
   NewAnnotationEditor,
@@ -224,25 +223,24 @@ export function useDiffAnnotationModel({
     return map;
   }, [attribution]);
 
-  // Scope to the clicked commit's group — looked up from the same commit
-  // grouping the Commits sidebar list and the walk bar use, so a provenance
-  // tag click lands on exactly the same hunk set as clicking that commit's
-  // group header would.
-  const handleScopeToCommit = useCallback(
-    (sha: string) => {
-      const group = computeCommitGroups(allHunks, attribution ?? null).find(
-        (g) => g.key === sha,
-      );
-      if (group) {
-        const state = useReviewStore.getState();
-        if (state.guideMode) state.setGuideMode(false);
-        state.setScope(singleCommitScope(group));
-      }
-    },
-    [allHunks, attribution],
-  );
+  // Narrow the review to the clicked commit — the same single-commit range the
+  // Commits picker builds, so a provenance tag lands on exactly the diff that
+  // commit's row would.
+  const handleScopeToCommit = useCallback((sha: string) => {
+    const state = useReviewStore.getState();
+    const base = state.reviewComparison?.base;
+    if (!base) return;
+    const range = commitRangeForSha(
+      state.attribution?.commits ?? [],
+      base,
+      sha,
+    );
+    if (!range) return;
+    if (state.guideMode) state.setGuideMode(false);
+    state.setCommitRange(range);
+  }, []);
 
-  // Hunks outside the active review scope (e.g. a commit filter) collapse to
+  // Hunks outside the active review scope (e.g. a guide group) collapse to
   // a thin strip until explicitly expanded. Local + reset on file change —
   // this is a per-viewing preference, not review state.
   const [expandedHunkIds, setExpandedHunkIds] = useState<Set<string>>(

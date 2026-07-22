@@ -1,8 +1,10 @@
-// A review scope is a named, exact hunk-ID set — the selection axis behind
-// the Review tab's groupings (a commit, the "Uncommitted changes" bucket, or
-// a guide group), the walk bar, and the provenance-tag click-to-scope
-// affordance in the diff viewer. It is the one way hunks get narrowed: an
-// exact membership set that has no natural predicate of its own.
+// A review scope is a named, exact hunk-ID set carved out of one already-
+// computed diff — the selection axis behind guide groups and the walk bar.
+//
+// Commits are NOT a scope: narrowing to a commit re-diffs rather than
+// filtering, so it names a `base..head` instead (see ./commitRange). The
+// `commit`/`uncommitted` sources below have no producer left; they remain in
+// the union only because `Group.source` still spans them.
 
 import { isHunkTrusted } from "./index";
 import type { HunkState } from "./index";
@@ -17,13 +19,6 @@ export interface ReviewScope {
   title: string;
   /** Exact hunk-ID membership, computed when the scope was set. */
   hunkIds: string[];
-  /**
-   * Commit-group keys this scope spans — a single commit, a contiguous
-   * range, or a non-contiguous cmd/ctrl-click set (see
-   * ../components/FilesPanel/commitScope). Only set for `source: "commit"`.
-   * Structured membership instead of parsing it back out of `key`.
-   */
-  commitKeys?: string[];
 }
 
 // Cached on `scope` reference identity so a navigation scan — which holds the
@@ -35,21 +30,6 @@ function scopeHunkIdSet(scope: ReviewScope): Set<string> {
   const set = new Set(scope.hunkIds);
   scopeSetCache = { scope, set };
   return set;
-}
-
-/**
- * Click-to-scope toggle: clear `current` if `next` is already the active
- * scope (same source + key), otherwise set `next`. Shared by every group
- * header's click handler so they agree on what "already scoped" means.
- */
-export function toggleScope(
-  current: ReviewScope | null,
-  next: ReviewScope,
-): ReviewScope | null {
-  if (current?.source === next.source && current.key === next.key) {
-    return null;
-  }
-  return next;
 }
 
 export function hunkInScope(

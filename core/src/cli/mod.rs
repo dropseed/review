@@ -536,7 +536,6 @@ fn resolve_patch_review(repo_path: &Path, patch_src: &str) -> Result<ResolvedRev
         comparison: Comparison::new(base, tree),
         // A patch pins an explicit base, so it reads as an override.
         base_reason: BaseReason::Override,
-        ahead_count: None,
     })
 }
 
@@ -901,12 +900,12 @@ mod tests {
     #[test]
     fn working_reviews_the_current_branch() {
         // `--working` is sugar for the current branch. On the default branch the
-        // ladder yields HEAD..branch (working-tree changes only).
+        // ladder yields branch..branch — working-tree changes only.
         let (dir, _first, _second) = two_commit_repo();
         let p = dir.path();
         let branch = git(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
         let c = start_comparison(p, StartTarget::Working);
-        assert_eq!(c.base, "HEAD");
+        assert_eq!(c.base, branch);
         assert_eq!(c.head, branch);
     }
 

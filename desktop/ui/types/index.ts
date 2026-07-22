@@ -188,7 +188,7 @@ export interface Comparison {
 // Mirrors core's `service::targets::BaseReason`.
 export type BaseReason =
   | "override" // an explicit base override is pinned
-  | "defaultVsRemote" // the default branch vs its remote tip (unpushed work)
+  | "trunkWorkingTree" // the default branch vs itself (its uncommitted work)
   | "branchVsDefault" // a non-default branch vs the default branch
   | "singleCommit"; // any other rev reviewed as one commit
 
@@ -202,17 +202,6 @@ export interface ResolvedReview {
   baseOverride?: string;
   comparison: Comparison;
   baseReason: BaseReason;
-  // Commits in `base..head`, for labels like "N unpushed". Present only for
-  // `defaultVsRemote`.
-  aheadCount?: number;
-}
-
-/**
- * Return the git range string for a comparison, or undefined when
- * base and head are identical (no divergent range to query).
- */
-export function getComparisonRange(c: Comparison): string | undefined {
-  return c.base !== c.head ? c.key : undefined;
 }
 
 // Helper to create a Comparison object

@@ -21,8 +21,8 @@ import { FilesPanelProvider } from "./FilesPanelContext";
 import { StatusGroupList } from "./StatusGroupList";
 import { GuideBanner } from "./GuideBanner";
 import { GuideModePanel } from "./GuideModePanel";
-import { CommitScopePicker } from "./CommitScopePicker";
-import { CommitScopeHeader } from "./CommitScopeHeader";
+import { CommitRangePicker } from "./CommitRangePicker";
+import { CommitRangeHeader } from "./CommitRangeHeader";
 import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
@@ -237,8 +237,8 @@ export function FilesPanel() {
               ) : (
                 <>
                   <GuideBanner />
-                  <CommitScopePicker />
-                  <CommitScopeHeader />
+                  <CommitRangePicker />
+                  <CommitRangeHeader />
                   <StatusGroupList
                     sectionedFiles={sectionedFiles}
                     flatSectionedFiles={flatSectionedFiles}

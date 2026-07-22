@@ -1,17 +1,11 @@
-// Pure reductions of "all hunks" into the Review tab's queue groupings. Each
-// grouping (commits / guide) produces the same `Group[]` shape so the walk
-// bar and the group-list components consume one contract regardless of which
-// grouping is active. Scoping to a group (see ../../types/scope) is a
+// Pure reductions of "all hunks" into the Review tab's queue grouping. Commit
+// grouping used to live here too; narrowing to a commit now re-diffs instead
+// of filtering an existing diff (see ../../types/commitRange), so the guide is
+// the only grouping left. Scoping to a group (see ../../types/scope) is a
 // separate step layered on top by the consumers.
 
 import { effectiveHunkStatus } from "../../types";
-import type {
-  CommitEntry,
-  DiffHunk,
-  HunkAttribution,
-  HunkGroup,
-  ReviewState,
-} from "../../types";
+import type { DiffHunk, HunkGroup, ReviewState } from "../../types";
 import type { ScopeSource } from "../../types/scope";
 
 export interface Group {
@@ -21,14 +15,9 @@ export interface Group {
   /** Secondary expandable info (commit body, guide description). */
   context?: string;
   hunkIds: string[];
-  /** Muted styling for synthetic/catch-all groups ("Uncommitted", "Other changes"). */
+  /** Muted styling for synthetic/catch-all groups ("Other changes"). */
   isPlaceholder?: boolean;
-  /** The commit this group represents — commit-source groups only. */
-  commit?: CommitEntry;
 }
-
-/** The scope key the "Uncommitted changes" commit-grouping bucket uses. */
-export const UNCOMMITTED_GROUP_KEY = "uncommitted";
 
 /** Count of hunks (by id) still unreviewed — the shared reduction behind
  * `countGroupUnreviewed` and anything that only has a raw hunk-id list (e.g.
@@ -57,66 +46,6 @@ export function countGroupUnreviewed(
   return countUnreviewed(group.hunkIds, reviewState);
 }
 
-let commitGroupsCache: {
-  hunks: DiffHunk[];
-  attribution: HunkAttribution | null;
-  output: Group[];
-} | null = null;
-
-/**
- * Commit grouping: one group per attribution commit, oldest first, plus a
- * trailing "Uncommitted changes" group for anything attribution couldn't
- * place. Cached on (hunks, attribution) identity so the walk bar, the
- * Commits group list, and the provenance-tag click handler — all mounted
- * together — share one computation.
- */
-export function computeCommitGroups(
-  hunks: DiffHunk[],
-  attribution: HunkAttribution | null,
-): Group[] {
-  if (
-    commitGroupsCache &&
-    commitGroupsCache.hunks === hunks &&
-    commitGroupsCache.attribution === attribution
-  ) {
-    return commitGroupsCache.output;
-  }
-  if (!attribution) {
-    commitGroupsCache = { hunks, attribution, output: [] };
-    return [];
-  }
-  const byCommit = new Map<string, string[]>();
-  for (const c of attribution.commits) byCommit.set(c.hash, []);
-  const uncommitted: string[] = [];
-  for (const hunk of hunks) {
-    const shas = attribution.hunkCommits[hunk.id];
-    if (!shas || shas.length === 0) {
-      uncommitted.push(hunk.id);
-      continue;
-    }
-    for (const sha of shas) byCommit.get(sha)?.push(hunk.id);
-  }
-  const result: Group[] = attribution.commits.map((c) => ({
-    key: c.hash,
-    source: "commit",
-    title: c.message,
-    context: c.body,
-    hunkIds: byCommit.get(c.hash) ?? [],
-    commit: c,
-  }));
-  if (uncommitted.length > 0) {
-    result.push({
-      key: UNCOMMITTED_GROUP_KEY,
-      source: "uncommitted",
-      title: "Uncommitted changes",
-      hunkIds: uncommitted,
-      isPlaceholder: true,
-    });
-  }
-  commitGroupsCache = { hunks, attribution, output: result };
-  return result;
-}
-
 let guideGroupsCache: {
   reviewGroups: HunkGroup[];
   hunks: DiffHunk[];
@@ -129,8 +58,7 @@ let guideGroupsCache: {
  * in the loaded diff — a subset of a group's hunks can vanish out from
  * under it (amend/rebase) without the guide itself being reconciled, and an
  * unfiltered phantom id would otherwise strand that group's progress short
- * of complete forever. Cached on (reviewGroups, hunks) identity — see
- * {@link computeCommitGroups}.
+ * of complete forever. Cached on (reviewGroups, hunks) identity.
  */
 export function computeGuideGroups(
   reviewGroups: HunkGroup[],

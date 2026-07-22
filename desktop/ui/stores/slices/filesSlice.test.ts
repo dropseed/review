@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { FileEntry } from "../../types";
+import { makeComparison } from "../../types";
 
 const { listDirectoryContents } = vi.hoisted(() => ({
   listDirectoryContents: vi.fn(),
@@ -34,6 +35,70 @@ beforeEach(() => {
     allFiles: baseTree,
     loadedGitIgnoredDirs: new Set<string>(),
   } as never);
+});
+
+describe("setCommitRange", () => {
+  const range = (base: string, head: string, ordinal: number) => ({
+    kind: "commits" as const,
+    loOrdinal: ordinal,
+    hiOrdinal: ordinal,
+    title: `#${ordinal}`,
+    comparison: makeComparison(base, head),
+  });
+  const reviewComparison = {
+    base: "main",
+    head: "feature",
+    key: "main..feature",
+  };
+  const attribution = { commits: [], hunkCommits: {} };
+
+  const seed = (): void => {
+    useReviewStore.setState({
+      repoPath: "/repo-a",
+      comparison: reviewComparison,
+      reviewComparison,
+      reviewRef: "feature",
+      baseReason: "branchVsDefault",
+      commitRange: null,
+      attribution,
+      attributionLoaded: true,
+      files: [{ name: "a.ts", path: "a.ts", isDirectory: false }],
+    } as never);
+  };
+
+  it("swaps in the range as the comparison but keeps the review's identity", () => {
+    seed();
+    useReviewStore.getState().setCommitRange(range("main", "sha1", 1));
+
+    const s = useReviewStore.getState();
+    expect(s.comparison?.key).toBe("main..sha1");
+    expect(s.reviewComparison).toEqual(reviewComparison);
+    expect(s.reviewRef).toBe("feature");
+    expect(s.baseReason).toBe("branchVsDefault");
+    // Stale diff data is cleared so the range re-diffs from scratch.
+    expect(s.files).toEqual([]);
+  });
+
+  it("keeps commit attribution, which describes the branch and not the range", () => {
+    seed();
+    useReviewStore.getState().setCommitRange(range("sha1", "sha2", 2));
+
+    // Dropping this would leave the picker offering only the commit already
+    // selected, with no way back to the full list.
+    const s = useReviewStore.getState();
+    expect(s.attribution).toBe(attribution);
+    expect(s.attributionLoaded).toBe(true);
+  });
+
+  it("restores the review comparison when the range is cleared", () => {
+    seed();
+    useReviewStore.getState().setCommitRange(range("main", "sha1", 1));
+    useReviewStore.getState().setCommitRange(null);
+
+    const s = useReviewStore.getState();
+    expect(s.comparison).toEqual(reviewComparison);
+    expect(s.commitRange).toBeNull();
+  });
 });
 
 describe("loadDirectoryContents", () => {
