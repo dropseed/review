@@ -50,6 +50,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
       if (!repoPath || !comparison || symbolsLoading) return;
 
       const comparisonKey = comparison.key;
+      const isStale = () => get().comparison?.key !== comparisonKey;
       set({ symbolsLoading: true });
       startActivity("load-symbols", "Building symbols", 40);
 
@@ -74,7 +75,7 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         );
 
         // Don't update state if comparison changed while awaiting
-        if (get().comparison?.key !== comparisonKey) {
+        if (isStale()) {
           set({ symbolsLoading: false });
           return;
         }
@@ -86,6 +87,13 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
         });
       } catch (err) {
         console.error("Failed to load symbols:", err);
+
+        // Don't update state if comparison changed while awaiting
+        if (isStale()) {
+          set({ symbolsLoading: false });
+          return;
+        }
+
         set({
           symbolDiffs: [],
           symbolsLoading: false,
