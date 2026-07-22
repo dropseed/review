@@ -99,14 +99,14 @@ pub fn run_changes(args: ChangesArgs) -> Result<(), String> {
     // One `git diff` per side instead of one per file — scales cleanly to
     // large change sets.
     if want_unstaged {
-        let diff = source.get_unstaged_diff().unwrap_or_default();
+        let diff = source.get_unstaged_diff().map_err(|e| e.to_string())?;
         for hunk in parse_multi_file_diff(&diff) {
             hunks.push(hunk);
             staged_flags.push(false);
         }
     }
     if want_staged {
-        let diff = source.get_staged_diff().unwrap_or_default();
+        let diff = source.get_staged_diff().map_err(|e| e.to_string())?;
         for hunk in parse_multi_file_diff(&diff) {
             hunks.push(hunk);
             staged_flags.push(true);
@@ -220,6 +220,20 @@ fn print_changes_human(rows: &[ChangeRow]) {
     println!("Unstage: review unstage <hunk-id|file>...");
 }
 
+/// Record the same failure against every hash in `hashes`, e.g.
+/// `"src/main.rs:abc123 — <err>"`.
+fn push_hash_failures(
+    failed: &mut Vec<String>,
+    file: &str,
+    hashes: &[String],
+    err: impl std::fmt::Display,
+) {
+    let msg = err.to_string();
+    for hash in hashes {
+        failed.push(format!("{file}:{hash} — {}", msg.trim()));
+    }
+}
+
 /// `review stage` / `review unstage` — apply hunks (or whole files) to or
 /// from the git index. `unstage` reverses the direction.
 pub fn run_stage(args: StageArgs, unstage: bool) -> Result<(), String> {
@@ -243,7 +257,13 @@ pub fn run_stage(args: StageArgs, unstage: bool) -> Result<(), String> {
         // Fetch the working-tree diff once: it validates the requested hashes
         // and is passed straight through to apply them. `stage` reads the
         // unstaged diff; `unstage` reads the staged (`--cached`) diff.
-        let raw_diff = source.get_raw_file_diff(file, unstage).unwrap_or_default();
+        let raw_diff = match source.get_raw_file_diff(file, unstage) {
+            Ok(diff) => diff,
+            Err(e) => {
+                push_hash_failures(&mut failed, file, hashes, e);
+                continue;
+            }
+        };
         let available: Vec<String> = parse_diff(&raw_diff, file)
             .into_iter()
             .map(|h| h.content_hash)
@@ -270,12 +290,7 @@ pub fn run_stage(args: StageArgs, unstage: bool) -> Result<(), String> {
                     done.push(format!("{file}:{hash}"));
                 }
             }
-            Err(e) => {
-                let msg = e.to_string();
-                for hash in &present {
-                    failed.push(format!("{file}:{hash} — {}", msg.trim()));
-                }
-            }
+            Err(e) => push_hash_failures(&mut failed, file, &present, e),
         }
     }
 
