@@ -676,19 +676,24 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const { repoPath, comparison } = get();
       if (!repoPath || !comparison) return;
 
+      // Discard a stale response: if the comparison changed while this
+      // request was in flight, don't clobber the new comparison's loading
+      // state (same race guarded against in loadSymbols/loadRepoSymbols).
       const comparisonKey = comparison.key;
+      const isStale = () => get().comparison?.key !== comparisonKey;
       if (!isRefreshing) {
         set({ allFilesLoading: true });
       }
       try {
         const allFiles = await client.listAllFiles(repoPath, comparison);
-        if (get().comparison?.key !== comparisonKey) {
+        if (isStale()) {
           set({ allFilesLoading: false });
           return;
         }
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load all files:", err);
+        if (isStale()) return;
         set({ allFilesLoading: false });
       }
     },
@@ -697,17 +702,21 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const { repoPath } = get();
       if (!repoPath) return;
 
+      // Discard a stale response: if the repo changed while this request
+      // was in flight, don't clobber the new repo's loading state (same
+      // race guarded against in loadSymbols/loadRepoSymbols).
+      const isStale = () => get().repoPath !== repoPath;
       set({ allFilesLoading: true });
       try {
         const allFiles = await client.listRepoFiles(repoPath);
-        // Don't update if repo changed while loading
-        if (get().repoPath !== repoPath) {
+        if (isStale()) {
           set({ allFilesLoading: false });
           return;
         }
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load repo files:", err);
+        if (isStale()) return;
         set({ allFilesLoading: false });
       }
     },
