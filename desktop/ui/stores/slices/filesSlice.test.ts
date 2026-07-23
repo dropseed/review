@@ -2,17 +2,22 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { FileEntry } from "../../types";
 import { makeComparison } from "../../types";
 
-const { listDirectoryContents } = vi.hoisted(() => ({
-  listDirectoryContents: vi.fn(),
-}));
+const { listDirectoryContents, listAllFiles, listRepoFiles } = vi.hoisted(
+  () => ({
+    listDirectoryContents: vi.fn(),
+    listAllFiles: vi.fn(),
+    listRepoFiles: vi.fn(),
+  }),
+);
 
 // The store wires a real backend client at module load (which trips on HMR
 // internals under vitest). Stub the backend + platform — these tests drive
-// pure store logic, and only the directory-listing call is asserted.
+// pure store logic, and only the directory-listing/all-files calls are
+// asserted.
 vi.mock("../../api", () => ({
   getApiClient: () =>
     new Proxy(
-      { listDirectoryContents },
+      { listDirectoryContents, listAllFiles, listRepoFiles },
       { get: (target, prop) => target[prop as never] ?? (() => () => {}) },
     ),
 }));
@@ -30,10 +35,13 @@ const baseTree: FileEntry[] = [
 
 beforeEach(() => {
   listDirectoryContents.mockReset();
+  listAllFiles.mockReset();
+  listRepoFiles.mockReset();
   useReviewStore.setState({
     repoPath: "/repo-a",
     allFiles: baseTree,
     loadedGitIgnoredDirs: new Set<string>(),
+    allFilesLoading: false,
   } as never);
 });
 
@@ -144,5 +152,80 @@ describe("loadDirectoryContents", () => {
       },
     ]);
     expect(state.loadedGitIgnoredDirs.has("vendor")).toBe(true);
+  });
+});
+
+describe("loadAllFiles", () => {
+  const comparison = { base: "main", head: "a", key: "main..a" };
+
+  beforeEach(() => {
+    useReviewStore.setState({
+      comparison,
+      allFilesLoading: false,
+    } as never);
+  });
+
+  it("discards a rejection that resolves after the comparison changed", async () => {
+    let rejectFetch: (err: unknown) => void;
+    listAllFiles.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadAllFiles();
+
+    // Simulate switching comparisons while the request is in flight; the
+    // new comparison's own load claims the loading flag.
+    useReviewStore.setState({
+      comparison: { base: "main", head: "b", key: "main..b" },
+      allFilesLoading: true,
+    } as never);
+
+    rejectFetch!(new Error("network error"));
+    await promise;
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(true);
+  });
+
+  it("settles loading when the comparison hasn't changed and the fetch fails", async () => {
+    listAllFiles.mockRejectedValue(new Error("network error"));
+
+    await useReviewStore.getState().loadAllFiles();
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(false);
+  });
+});
+
+describe("loadRepoFiles", () => {
+  it("discards a rejection that resolves after the repo changed", async () => {
+    let rejectFetch: (err: unknown) => void;
+    listRepoFiles.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadRepoFiles();
+
+    // Simulate switching repos while the request is in flight; the new
+    // repo's own load claims the loading flag.
+    useReviewStore.setState({
+      repoPath: "/repo-b",
+      allFilesLoading: true,
+    } as never);
+
+    rejectFetch!(new Error("network error"));
+    await promise;
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(true);
+  });
+
+  it("settles loading when the repo hasn't changed and the fetch fails", async () => {
+    listRepoFiles.mockRejectedValue(new Error("network error"));
+
+    await useReviewStore.getState().loadRepoFiles();
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(false);
   });
 });
