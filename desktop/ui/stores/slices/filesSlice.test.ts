@@ -2,17 +2,22 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { FileEntry } from "../../types";
 import { makeComparison } from "../../types";
 
-const { listDirectoryContents } = vi.hoisted(() => ({
-  listDirectoryContents: vi.fn(),
-}));
+const { listDirectoryContents, listAllFiles, listRepoFiles, listFiles } =
+  vi.hoisted(() => ({
+    listDirectoryContents: vi.fn(),
+    listAllFiles: vi.fn(),
+    listRepoFiles: vi.fn(),
+    listFiles: vi.fn(),
+  }));
 
 // The store wires a real backend client at module load (which trips on HMR
 // internals under vitest). Stub the backend + platform — these tests drive
-// pure store logic, and only the directory-listing call is asserted.
+// pure store logic, and only the directory-listing/all-files calls are
+// asserted.
 vi.mock("../../api", () => ({
   getApiClient: () =>
     new Proxy(
-      { listDirectoryContents },
+      { listDirectoryContents, listAllFiles, listRepoFiles, listFiles },
       { get: (target, prop) => target[prop as never] ?? (() => () => {}) },
     ),
 }));
@@ -30,10 +35,14 @@ const baseTree: FileEntry[] = [
 
 beforeEach(() => {
   listDirectoryContents.mockReset();
+  listAllFiles.mockReset();
+  listRepoFiles.mockReset();
+  listFiles.mockReset();
   useReviewStore.setState({
     repoPath: "/repo-a",
     allFiles: baseTree,
     loadedGitIgnoredDirs: new Set<string>(),
+    allFilesLoading: false,
   } as never);
 });
 
@@ -144,5 +153,162 @@ describe("loadDirectoryContents", () => {
       },
     ]);
     expect(state.loadedGitIgnoredDirs.has("vendor")).toBe(true);
+  });
+});
+
+describe("loadFiles", () => {
+  const comparisonA = makeComparison("main", "a");
+  const comparisonB = makeComparison("main", "b");
+
+  beforeEach(() => {
+    useReviewStore.setState({
+      comparison: comparisonA,
+      loadingProgress: null,
+    } as never);
+  });
+
+  it("discards a rejection that resolves after the comparison changed", async () => {
+    let rejectFetch: (err: unknown) => void;
+    listFiles.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadFiles();
+
+    // Simulate switching comparisons while the request is in flight; the
+    // new comparison's own load claims the loading progress and activity.
+    useReviewStore.setState({
+      comparison: comparisonB,
+      loadingProgress: { current: 0, total: 1, phase: "files" },
+    } as never);
+    useReviewStore.getState().startActivity("load-files", "Loading files", 20);
+
+    rejectFetch!(new Error("network error"));
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.loadingProgress).toEqual({
+      current: 0,
+      total: 1,
+      phase: "files",
+    });
+    expect(state.activities.has("load-files")).toBe(true);
+  });
+
+  it("settles loading when the comparison hasn't changed and the fetch fails", async () => {
+    listFiles.mockRejectedValue(new Error("network error"));
+
+    await useReviewStore.getState().loadFiles();
+
+    expect(useReviewStore.getState().loadingProgress).toBeNull();
+  });
+
+  it("discards a success that resolves after the comparison changed", async () => {
+    let resolveFetch: (files: FileEntry[]) => void;
+    listFiles.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadFiles();
+
+    // Simulate switching comparisons while the request is in flight; the
+    // new comparison's own load claims the loading progress and activity.
+    useReviewStore.setState({
+      comparison: comparisonB,
+      loadingProgress: { current: 0, total: 1, phase: "files" },
+      files: [],
+    } as never);
+    useReviewStore.getState().startActivity("load-files", "Loading files", 20);
+
+    resolveFetch!([{ name: "a.ts", path: "a.ts", isDirectory: false }]);
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.loadingProgress).toEqual({
+      current: 0,
+      total: 1,
+      phase: "files",
+    });
+    expect(state.activities.has("load-files")).toBe(true);
+    expect(state.files).toEqual([]);
+  });
+});
+
+describe("loadAllFiles", () => {
+  const comparison = { base: "main", head: "a", key: "main..a" };
+
+  beforeEach(() => {
+    useReviewStore.setState({
+      comparison,
+      allFilesLoading: false,
+    } as never);
+  });
+
+  it("discards a rejection that resolves after the comparison changed", async () => {
+    let rejectFetch: (err: unknown) => void;
+    listAllFiles.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadAllFiles();
+
+    // Simulate switching comparisons while the request is in flight; the
+    // new comparison's own load claims the loading flag.
+    useReviewStore.setState({
+      comparison: { base: "main", head: "b", key: "main..b" },
+      allFilesLoading: true,
+    } as never);
+
+    rejectFetch!(new Error("network error"));
+    await promise;
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(true);
+  });
+
+  it("settles loading when the comparison hasn't changed and the fetch fails", async () => {
+    listAllFiles.mockRejectedValue(new Error("network error"));
+
+    await useReviewStore.getState().loadAllFiles();
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(false);
+  });
+});
+
+describe("loadRepoFiles", () => {
+  it("discards a rejection that resolves after the repo changed", async () => {
+    let rejectFetch: (err: unknown) => void;
+    listRepoFiles.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadRepoFiles();
+
+    // Simulate switching repos while the request is in flight; the new
+    // repo's own load claims the loading flag.
+    useReviewStore.setState({
+      repoPath: "/repo-b",
+      allFilesLoading: true,
+    } as never);
+
+    rejectFetch!(new Error("network error"));
+    await promise;
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(true);
+  });
+
+  it("settles loading when the repo hasn't changed and the fetch fails", async () => {
+    listRepoFiles.mockRejectedValue(new Error("network error"));
+
+    await useReviewStore.getState().loadRepoFiles();
+
+    expect(useReviewStore.getState().allFilesLoading).toBe(false);
   });
 });

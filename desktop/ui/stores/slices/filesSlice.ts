@@ -433,11 +433,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         const phase1Start = performance.now();
         const githubPr = get().reviewState?.githubPr;
         const files = await client.listFiles(repoPath, comparison, githubPr);
+        // Bail before touching any shared state: a newer comparison's own
+        // load may already own loadingProgress/the "load-files" activity.
+        if (isStale()) return;
         endActivity("load-files");
-        if (isStale()) {
-          set({ loadingProgress: null });
-          return;
-        }
         const flatFileList = flattenFiles(files);
         console.log(
           `[perf] Phase 1 (list files): ${(performance.now() - phase1Start).toFixed(0)}ms, ${flatFileList.length} files`,
@@ -566,6 +565,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           }
         }
 
+        // Bail before touching any shared state: a newer comparison's own
+        // load may already own loadingProgress/the "load-hunks" activity.
+        if (isStale()) return;
         endActivity("load-hunks");
         console.log(
           `[perf] Phase 2 (load hunks): ${(performance.now() - phase2Start).toFixed(0)}ms, ${allHunks.length} hunks from ${changedPaths.length} files`,
@@ -581,11 +583,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                   `... and ${failedFiles.length - 5} more`,
                 ],
           );
-        }
-
-        if (isStale()) {
-          set({ loadingProgress: null });
-          return;
         }
 
         // Commit results. We do per-path equality-by-contentHash so that file
@@ -663,6 +660,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
       } catch (err) {
         console.error("Failed to load files:", err);
+        if (isStale()) return;
         // Clean up any activities that may have been started but not ended
         endActivity("load-files");
         endActivity("load-hunks");
@@ -676,19 +674,24 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const { repoPath, comparison } = get();
       if (!repoPath || !comparison) return;
 
+      // Discard a stale response: if the comparison changed while this
+      // request was in flight, don't clobber the new comparison's loading
+      // state (same race guarded against in loadSymbols/loadRepoSymbols).
       const comparisonKey = comparison.key;
+      const isStale = () => get().comparison?.key !== comparisonKey;
       if (!isRefreshing) {
         set({ allFilesLoading: true });
       }
       try {
         const allFiles = await client.listAllFiles(repoPath, comparison);
-        if (get().comparison?.key !== comparisonKey) {
+        if (isStale()) {
           set({ allFilesLoading: false });
           return;
         }
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load all files:", err);
+        if (isStale()) return;
         set({ allFilesLoading: false });
       }
     },
@@ -697,17 +700,21 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       const { repoPath } = get();
       if (!repoPath) return;
 
+      // Discard a stale response: if the repo changed while this request
+      // was in flight, don't clobber the new repo's loading state (same
+      // race guarded against in loadSymbols/loadRepoSymbols).
+      const isStale = () => get().repoPath !== repoPath;
       set({ allFilesLoading: true });
       try {
         const allFiles = await client.listRepoFiles(repoPath);
-        // Don't update if repo changed while loading
-        if (get().repoPath !== repoPath) {
+        if (isStale()) {
           set({ allFilesLoading: false });
           return;
         }
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load repo files:", err);
+        if (isStale()) return;
         set({ allFilesLoading: false });
       }
     },
