@@ -3,8 +3,10 @@
 //! This module contains all Tauri-specific code including:
 //! - Command handlers (commands.rs)
 //! - File system watchers (watchers.rs)
+//! - Terminal daemon lifecycle (daemon.rs)
 
 pub mod commands;
+pub mod daemon;
 pub mod terminal_commands;
 pub mod watchers;
 
@@ -278,9 +280,6 @@ pub fn run() {
         .manage(SentryConsent(consent.clone()))
         .manage(commands::LspServers(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
-        )))
-        .manage(terminal_commands::TerminalState(Arc::new(
-            review::terminal::SessionManager::new(),
         )))
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
@@ -564,6 +563,17 @@ pub fn run() {
                 reveal_in_browse,
             });
 
+            // Terminals live in a separate `review-daemon` process so they
+            // survive quitting — or crashing — this app. Nothing is spawned or
+            // connected here: the daemon is attached to (or started) on the
+            // first terminal command, which keeps a respawn after an app update
+            // — seconds of quit-and-spawn — off the path the window waits on,
+            // and leaves a failed first attempt retryable. See
+            // `TerminalState::client`.
+            app.manage(terminal_commands::TerminalState::new(
+                review::daemon::socket_path().unwrap_or_default(),
+            ));
+
             // Start lightweight watchers for local activity on registered repos
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -727,6 +737,7 @@ pub fn run() {
             terminal_commands::terminal_list,
             terminal_commands::terminal_replay,
             terminal_commands::terminal_peek,
+            terminal_commands::terminal_shutdown_all_background,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -792,15 +803,11 @@ pub fn run() {
                     }
                 }
             }
-            tauri::RunEvent::Exit => {
-                // App is quitting: tear down every live terminal session. Never
-                // keyed on window close — macOS hides windows, and sessions must
-                // survive a hide.
-                app_handle
-                    .state::<terminal_commands::TerminalState>()
-                    .0
-                    .shutdown_all();
-            }
+            // `RunEvent::Exit` deliberately does nothing about terminals: the
+            // sessions belong to the `review-daemon` process and are meant to
+            // outlive the GUI. They end only through an explicit kill (or the
+            // "shut down all sessions" governance action), or when a version
+            // mismatch makes the app respawn the daemon on next launch.
             _ => {}
         }
     });

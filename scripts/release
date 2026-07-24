@@ -88,6 +88,21 @@ echo ""
 echo "Building sidecar binaries..."
 TAURI_TARGET_TRIPLE=aarch64-apple-darwin ./scripts/build-cli
 TAURI_TARGET_TRIPLE=x86_64-apple-darwin ./scripts/build-cli
+TAURI_TARGET_TRIPLE=aarch64-apple-darwin ./scripts/build-daemon-sidecar
+TAURI_TARGET_TRIPLE=x86_64-apple-darwin ./scripts/build-daemon-sidecar
+
+# The release-built daemon and the debug-built app must compute the same build
+# identity; if they don't, every launch respawns the daemon and no terminal
+# session ever survives. That test skips itself when no sidecar is on disk, so
+# REVIEW_REQUIRE_SIDECAR_TESTS turns the skip into a failure — and here is the
+# only place it can be enforced honestly: the sidecars above were just built
+# from the bumped version, so they and this test binary agree on the version.
+# (The scripts/test gate above runs before those builds, where the newest
+# sidecar on disk may still carry a previous version.)
+echo ""
+echo "Verifying the release daemon's build identity..."
+REVIEW_REQUIRE_SIDECAR_TESTS=1 cargo test -p review --features daemon,daemon-client \
+    a_release_built_daemon_reports_the_identity_we_expect
 
 # Build both targets
 echo ""

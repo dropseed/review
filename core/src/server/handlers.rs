@@ -8,10 +8,7 @@ use axum::Router;
 use serde::Deserialize;
 use std::convert::Infallible;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
-
-use crate::terminal::SessionManager;
 
 use crate::classify::{self, ClassifyResponse};
 use crate::diff::parser::{detect_move_pairs, DiffHunk};
@@ -46,9 +43,8 @@ pub(super) async fn blocking<T: Send + 'static>(
         .map(Json)
 }
 
-/// Build the API router with all routes. `manager` is shared with the terminal
-/// handlers (see [`super::terminal`]).
-pub fn build_api_router(manager: Arc<SessionManager>) -> Router {
+/// Build the API router with all routes.
+pub fn build_api_router() -> Router {
     Router::new()
         // Git operations
         .route("/api/git/current-repo", post(git_current_repo))
@@ -145,8 +141,6 @@ pub fn build_api_router(manager: Arc<SessionManager>) -> Router {
         )
         // File watcher SSE
         .route("/api/events", get(events_sse))
-        // Embedded terminal transport (HTTP control + WebSocket data channel)
-        .merge(super::terminal::routes(manager))
 }
 
 // ============================================================

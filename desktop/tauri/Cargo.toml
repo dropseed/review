@@ -15,7 +15,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Core library
-review = { path = "../../core", features = ["symbols-dev", "lsp", "terminal"] }
+# `terminal-types` is the wire contract only (TerminalSummary, SessionStatus) —
+# the PTYs themselves live in the `review-daemon` process, which this app talks
+# to through `daemon-client`, so none of the PTY crates are linked here.
+review = { path = "../../core", features = [
+    "symbols-dev",
+    "lsp",
+    "terminal-types",
+    "daemon-client",
+] }
 
 # Tauri and plugins
 tauri = { version = "2.10", features = ["devtools"] }
@@ -41,7 +49,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 urlencoding = "2"
-tokio = { version = "1", features = ["time", "sync", "rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = [
+    "time",
+    "sync",
+    "rt",
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "process",
+] }
 notify = "6.0"
 notify-debouncer-mini = "0.4"
 ignore = "0.4"

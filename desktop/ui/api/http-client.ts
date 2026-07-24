@@ -942,6 +942,10 @@ export class HttpClient implements ApiClient {
     return this.post("/api/terminal/list", { repoPath: repoPath ?? null });
   }
 
+  async terminalShutdownAllBackground(): Promise<void> {
+    throw new Error("Background session shutdown is not available in web mode");
+  }
+
   /** Web-mode replay: a one-shot POST returning the ring buffer plus status. */
   async terminalReplay(terminalId: string): Promise<TerminalReplay> {
     return this.post("/api/terminal/replay", { terminalId });

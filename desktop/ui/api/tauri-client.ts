@@ -775,6 +775,10 @@ export class TauriClient implements ApiClient {
     });
   }
 
+  async terminalShutdownAllBackground(): Promise<void> {
+    await invoke("terminal_shutdown_all_background");
+  }
+
   async terminalReplay(terminalId: string): Promise<TerminalReplay> {
     return invoke<TerminalReplay>("terminal_replay", { terminalId });
   }

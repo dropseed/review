@@ -28,9 +28,19 @@ pub mod service;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 
-// Embedded terminal sessions (feature-gated)
-#[cfg(feature = "terminal")]
+// Embedded terminal sessions (feature-gated). `terminal-types` is the wire
+// contract alone; `terminal` adds the PTY machinery. See `terminal::wire`.
+#[cfg(feature = "terminal-types")]
 pub mod terminal;
+
+// Terminal session daemon — server half (`daemon`), client half
+// (`daemon-client`), shared protocol under either.
+#[cfg(any(feature = "daemon", feature = "daemon-client"))]
+pub mod daemon;
+
+// Shutdown signalling for the processes that serve until told to stop.
+#[cfg(any(feature = "server", feature = "daemon"))]
+pub(crate) mod signal;
 
 // CLI module (feature-gated)
 #[cfg(feature = "cli")]

@@ -19,7 +19,7 @@ hex = "0.4"
 thiserror = "2"
 glob = "0.3"
 urlencoding = "2"
-tokio = { version = "1", features = ["time", "sync", "rt", "rt-multi-thread", "macros", "io-util", "process", "signal"] }
+tokio = { version = "1", features = ["time", "sync", "rt", "rt-multi-thread", "macros", "io-util", "process", "signal", "net"] }
 futures = "0.3"
 base64 = "0.22"
 ignore = "0.4"
@@ -101,9 +101,21 @@ symbols-all = [
     "symbols-markdown",
 ]
 lsp = ["dep:lsp-types"]
-terminal = ["dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:alacritty_terminal"]
+# Just the terminal wire contract (SessionStatus, TerminalSummary, …): plain
+# serde structs, no PTY dependencies. The desktop app decodes daemon payloads
+# with this and never links a PTY stack it does not own.
+terminal-types = []
+terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:alacritty_terminal"]
 cli = ["clap"]
-server = ["terminal", "axum", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger"]
+# Web-mode HTTP backend. Deliberately does NOT imply `terminal`: web mode has no
+# terminals — PTYs live in the `review-daemon` process and only the desktop app
+# reaches them.
+server = ["axum", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger"]
+# Terminal session daemon. `daemon` is the server half (owns the SessionManager,
+# so it implies `terminal`); `daemon-client` is the connect side and pulls in no
+# PTY dependencies. They compose freely with each other and with `server`.
+daemon = ["terminal", "tokio/net", "env_logger"]
+daemon-client = ["tokio/net"]
 
 [[bin]]
 name = "review"
@@ -114,6 +126,11 @@ required-features = ["cli"]
 name = "review-server"
 path = "src/bin/server.rs"
 required-features = ["server"]
+
+[[bin]]
+name = "review-daemon"
+path = "src/bin/daemon.rs"
+required-features = ["daemon"]
 
 [lints]
 workspace = true

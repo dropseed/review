@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+# Build the review daemon binary and place it in desktop/tauri/binaries/ with
+# the target-triple suffix required by Tauri's externalBin (sidecar) feature.
+
+TARGET="${TAURI_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/host: //p')}"
+
+echo "Building review daemon for $TARGET..."
+cargo build --release --target "$TARGET" -p review --features "daemon" --bin review-daemon
+
+mkdir -p desktop/tauri/binaries
+cp "target/$TARGET/release/review-daemon" "desktop/tauri/binaries/review-daemon-$TARGET"
+
+echo "Sidecar binary ready: desktop/tauri/binaries/review-daemon-$TARGET"

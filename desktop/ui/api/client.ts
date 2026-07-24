@@ -549,6 +549,13 @@ export interface ApiClient {
   terminalList(repoPath?: string): Promise<TerminalSessionInfo[]>;
 
   /**
+   * Kill every live session across every repo/window at once (governance
+   * action for the "background sessions" list) — the daemon itself keeps
+   * running, only its sessions are torn down.
+   */
+  terminalShutdownAllBackground(): Promise<void>;
+
+  /**
    * Fetch the scrollback ring buffer (raw bytes, base64) plus current status,
    * for replaying into a fresh xterm instance on reattach (new window, web
    * reload).

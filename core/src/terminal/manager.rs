@@ -1,7 +1,8 @@
 //! The single interface for creating and driving terminal sessions.
 //!
-//! [`SessionManager`] owns every [`Session`] keyed by [`TerminalId`]. Both the
-//! Tauri desktop and Axum web transports call into this one type.
+//! [`SessionManager`] owns every [`Session`] keyed by [`TerminalId`]. The
+//! `review-daemon` process owns the one instance and serves it to the desktop
+//! app over the daemon protocol.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -146,6 +147,13 @@ impl SessionManager {
     }
 
     /// Kill every session and clear the registry (app shutdown).
+    ///
+    /// **Every host process must call this on every death path.** portable-pty
+    /// spawns each child via `setsid`, so children are session leaders in their
+    /// own process groups — they are NOT in the host's group and would not be
+    /// reaped by a process-group signal on exit. (Closing the PTY master does
+    /// send SIGHUP as a backstop, but that only fires on an orderly fd
+    /// teardown.) Idempotent: a second call just drains an empty map.
     pub fn shutdown_all(&self) {
         // Stop the poller before tearing down sessions so it can't observe a
         // half-killed session.

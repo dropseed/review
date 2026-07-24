@@ -5,9 +5,9 @@
   "version": "0.0.123",
   "identifier": "com.dropseed.review",
   "build": {
-    "beforeDevCommand": "../scripts/build-cli && ../scripts/start-vite",
+    "beforeDevCommand": "../scripts/build-cli && ../scripts/build-daemon-sidecar && ../scripts/start-vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build && ../scripts/build-cli",
+    "beforeBuildCommand": "npm run build && ../scripts/build-cli && ../scripts/build-daemon-sidecar",
     "frontendDist": "../dist"
   },
   "app": {
@@ -32,7 +32,7 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
-    "externalBin": ["binaries/review-cli"],
+    "externalBin": ["binaries/review-cli", "binaries/review-daemon"],
     "createUpdaterArtifacts": "v1Compatible",
     "macOS": {
       "entitlements": "Entitlements.plist"

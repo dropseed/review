@@ -13,7 +13,10 @@ echo "TypeScript tests passed!"
 
 echo ""
 echo "=== Rust Tests ==="
-cargo test -p review --features symbols-all,cli,server
+cargo test -p review --features symbols-all,cli,server,daemon,daemon-client
+# The desktop crate owns the daemon lifecycle (attach-vs-spawn, version respawn)
+# and the terminal event payloads — both worth gating on.
+cargo test -p review-desktop
 echo "Rust tests passed!"
 
 echo ""

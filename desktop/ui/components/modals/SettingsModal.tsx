@@ -26,6 +26,12 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
 import { getAllUiThemes } from "../../lib/ui-themes";
 import { getApiClient } from "../../api";
+import { phaseDotClass } from "../TabRail/terminal-status-format";
+import {
+  toBackgroundSessionRow,
+  type BackgroundSessionRow,
+} from "./background-sessions";
+import type { TerminalSessionInfo } from "../../types";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -235,6 +241,7 @@ export function SettingsModal({
     (s) => s.setLspDisabledLanguages,
   );
   const repoPath = useReviewStore((s) => s.repoPath);
+  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
 
   const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
   const [terminalFontDraft, setTerminalFontDraft] =
@@ -289,6 +296,66 @@ export function SettingsModal({
         .catch(() => {});
     }
   }, [isOpen, repoPath]);
+
+  // Background sessions (governance) — every live terminal session across
+  // every repo/window, so forgotten sessions in the daemon don't accumulate
+  // invisibly.
+  const [backgroundSessions, setBackgroundSessions] = useState<
+    TerminalSessionInfo[]
+  >([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [confirmShutdownAll, setConfirmShutdownAll] = useState(false);
+
+  const refreshBackgroundSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    setSessionsError(null);
+    try {
+      setBackgroundSessions(await getApiClient().terminalList());
+    } catch (e) {
+      setSessionsError(String(e));
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && terminalsSupported) {
+      refreshBackgroundSessions();
+    }
+  }, [isOpen, terminalsSupported, refreshBackgroundSessions]);
+
+  // A closed modal shouldn't leave a stale "click again to confirm" armed for
+  // next time it opens.
+  useEffect(() => {
+    if (!isOpen) setConfirmShutdownAll(false);
+  }, [isOpen]);
+
+  // Both handlers resync the list inside the `try`, before the catch: the
+  // refresh clears `sessionsError` on entry, so setting the error first would
+  // wipe it again immediately.
+  async function handleKillSession(id: string) {
+    try {
+      await getApiClient().terminalKill(id);
+      await refreshBackgroundSessions();
+    } catch (e) {
+      setSessionsError(String(e));
+    }
+  }
+
+  async function handleShutdownAllSessions() {
+    if (!confirmShutdownAll) {
+      setConfirmShutdownAll(true);
+      return;
+    }
+    setConfirmShutdownAll(false);
+    try {
+      await getApiClient().terminalShutdownAllBackground();
+      await refreshBackgroundSessions();
+    } catch (e) {
+      setSessionsError(String(e));
+    }
+  }
 
   async function handleCliAction(command: "install_cli" | "uninstall_cli") {
     setCliLoading(true);
@@ -704,6 +771,110 @@ export function SettingsModal({
               </p>
             </div>
           </div>
+
+          {/* Background Sessions */}
+          {terminalsSupported && (
+            <div className="px-5 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg
+                    className="h-4 w-4 text-fg-muted"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="8" y1="6" x2="21" y2="6" />
+                    <line x1="8" y1="12" x2="21" y2="12" />
+                    <line x1="8" y1="18" x2="21" y2="18" />
+                    <line x1="3" y1="6" x2="3.01" y2="6" />
+                    <line x1="3" y1="12" x2="3.01" y2="12" />
+                    <line x1="3" y1="18" x2="3.01" y2="18" />
+                  </svg>
+                  <span className="text-xs font-medium text-fg-secondary">
+                    Background Sessions
+                  </span>
+                </div>
+                <button
+                  onClick={refreshBackgroundSessions}
+                  disabled={sessionsLoading}
+                  className="text-xxs text-fg-muted transition-colors hover:text-fg-secondary disabled:opacity-50"
+                >
+                  {sessionsLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+
+              {sessionsError && <ErrorBanner message={sessionsError} />}
+
+              {backgroundSessions.length === 0 ? (
+                <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+                  <span className="text-xs text-fg-muted">
+                    No background sessions.
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {backgroundSessions
+                    .map(toBackgroundSessionRow)
+                    .map((row: BackgroundSessionRow) => (
+                      <div
+                        key={row.id}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-surface-raised/30 px-3 py-2.5"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${phaseDotClass(row.phase)}`}
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate text-xs text-fg-secondary">
+                              {row.label}
+                            </div>
+                            <div className="truncate text-xxs text-fg-faint">
+                              {row.repoName}
+                              {row.cwdLabel ? ` · ${row.cwdLabel}` : ""}
+                              {row.lastExitCode != null && (
+                                <span
+                                  className={
+                                    row.lastExitCode === 0
+                                      ? "text-status-approved"
+                                      : "text-status-rejected"
+                                  }
+                                >
+                                  {" "}
+                                  · exit {row.lastExitCode}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleKillSession(row.id)}
+                          className="shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-status-rejected/15 hover:text-status-rejected"
+                        >
+                          Kill
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              <button
+                onClick={handleShutdownAllSessions}
+                disabled={backgroundSessions.length === 0}
+                className={`mt-3 w-full rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  confirmShutdownAll
+                    ? "bg-status-rejected/25 text-status-rejected"
+                    : "bg-status-rejected/15 text-status-rejected hover:bg-status-rejected/25"
+                }`}
+              >
+                {confirmShutdownAll
+                  ? "Click again to confirm"
+                  : "Shut down all background sessions"}
+              </button>
+            </div>
+          )}
 
           {/* Sound Effects + Crash Reporting */}
           <div className="px-5 py-4 space-y-3">
