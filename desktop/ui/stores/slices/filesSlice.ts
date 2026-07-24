@@ -433,11 +433,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         const phase1Start = performance.now();
         const githubPr = get().reviewState?.githubPr;
         const files = await client.listFiles(repoPath, comparison, githubPr);
+        // Bail before touching any shared state: a newer comparison's own
+        // load may already own loadingProgress/the "load-files" activity.
+        if (isStale()) return;
         endActivity("load-files");
-        if (isStale()) {
-          set({ loadingProgress: null });
-          return;
-        }
         const flatFileList = flattenFiles(files);
         console.log(
           `[perf] Phase 1 (list files): ${(performance.now() - phase1Start).toFixed(0)}ms, ${flatFileList.length} files`,
@@ -566,6 +565,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           }
         }
 
+        // Bail before touching any shared state: a newer comparison's own
+        // load may already own loadingProgress/the "load-hunks" activity.
+        if (isStale()) return;
         endActivity("load-hunks");
         console.log(
           `[perf] Phase 2 (load hunks): ${(performance.now() - phase2Start).toFixed(0)}ms, ${allHunks.length} hunks from ${changedPaths.length} files`,
@@ -581,11 +583,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                   `... and ${failedFiles.length - 5} more`,
                 ],
           );
-        }
-
-        if (isStale()) {
-          set({ loadingProgress: null });
-          return;
         }
 
         // Commit results. We do per-path equality-by-contentHash so that file
@@ -663,6 +660,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
       } catch (err) {
         console.error("Failed to load files:", err);
+        if (isStale()) return;
         // Clean up any activities that may have been started but not ended
         endActivity("load-files");
         endActivity("load-hunks");
