@@ -5,6 +5,15 @@ import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
 import { setSoundEnabled } from "../../utils/sounds";
 import {
+  applyLigaturesToAll,
+  applyRendererToAll,
+  refreshAllTerminalOptions,
+  refreshAllTerminalThemes,
+  type TerminalFontOptions,
+  type TerminalRenderer,
+} from "../../components/Terminal/registry";
+import type { FontWeight } from "@xterm/xterm";
+import {
   applyUiTheme,
   getUiTheme,
   setCustomThemes,
@@ -43,6 +52,7 @@ function applyResolvedVscodeTheme(
   storage: StorageService,
 ): void {
   applyUiTheme(theme);
+  refreshAllTerminalThemes();
   applyWindowBackgroundColor(theme.tokens.surface);
   storage.set("codeTheme", theme.codeTheme);
   console.log(
@@ -62,6 +72,24 @@ function applyFontSizeCssVariables(size: number): void {
     "--ui-scale",
     String(size / CODE_FONT_SIZE_DEFAULT),
   );
+}
+
+/** Collect the terminal font/spacing prefs into the shape the registry applies. */
+function buildTerminalFontOptions(s: {
+  terminalFontFamily: string;
+  terminalFontSize: number;
+  terminalFontWeight: FontWeight;
+  terminalLineHeight: number;
+  terminalLetterSpacing: number;
+}): TerminalFontOptions {
+  return {
+    fontFamily: s.terminalFontFamily,
+    fontSize: s.terminalFontSize,
+    fontWeight: s.terminalFontWeight,
+    fontWeightBold: TERMINAL_FONT_WEIGHT_BOLD,
+    lineHeight: s.terminalLineHeight,
+    letterSpacing: s.terminalLetterSpacing,
+  };
 }
 
 /**
@@ -85,6 +113,29 @@ export const CODE_FONT_SIZE_STEP = 1;
 
 export const CODE_FONT_FAMILY_DEFAULT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace";
+
+// Terminal font/rendering defaults. These are intentionally separate from the
+// code-font settings above so the embedded terminal can be tuned to read like a
+// native terminal without disturbing the diff/code viewer.
+export const TERMINAL_FONT_FAMILY_DEFAULT =
+  "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace";
+export const TERMINAL_FONT_SIZE_DEFAULT = 13;
+export const TERMINAL_FONT_SIZE_MIN = 8;
+export const TERMINAL_FONT_SIZE_MAX = 32;
+export const TERMINAL_FONT_SIZE_STEP = 1;
+export const TERMINAL_FONT_WEIGHT_DEFAULT: FontWeight = 400;
+/** Bold weight is fixed (not a user preference) — normal text carries the tuning. */
+export const TERMINAL_FONT_WEIGHT_BOLD: FontWeight = 700;
+export const TERMINAL_LINE_HEIGHT_DEFAULT = 1.0;
+export const TERMINAL_LINE_HEIGHT_MIN = 1.0;
+export const TERMINAL_LINE_HEIGHT_MAX = 1.6;
+export const TERMINAL_LINE_HEIGHT_STEP = 0.05;
+export const TERMINAL_LETTER_SPACING_DEFAULT = 0;
+export const TERMINAL_LETTER_SPACING_MIN = -2;
+export const TERMINAL_LETTER_SPACING_MAX = 4;
+export const TERMINAL_LETTER_SPACING_STEP = 0.5;
+export const TERMINAL_RENDERER_DEFAULT: TerminalRenderer = "dom";
+export const TERMINAL_LIGATURES_DEFAULT = false;
 
 const MAX_RECENT_REPOS = 5;
 
@@ -121,6 +172,13 @@ export type FileSortOrder = "name" | "size" | "modified";
 const defaults = {
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
   codeFontFamily: CODE_FONT_FAMILY_DEFAULT,
+  terminalFontFamily: TERMINAL_FONT_FAMILY_DEFAULT,
+  terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  terminalFontWeight: TERMINAL_FONT_WEIGHT_DEFAULT as FontWeight,
+  terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
+  terminalLetterSpacing: TERMINAL_LETTER_SPACING_DEFAULT,
+  terminalRenderer: TERMINAL_RENDERER_DEFAULT,
+  terminalLigatures: TERMINAL_LIGATURES_DEFAULT,
   codeTheme: "github-dark",
   uiTheme: "review-dark",
   recentRepositories: [] as RecentRepo[],
@@ -154,6 +212,16 @@ export interface PreferencesSlice {
   // UI settings
   codeFontSize: number;
   codeFontFamily: string;
+
+  // Terminal font/rendering settings (independent of the code font)
+  terminalFontFamily: string;
+  terminalFontSize: number;
+  terminalFontWeight: FontWeight;
+  terminalLineHeight: number;
+  terminalLetterSpacing: number;
+  terminalRenderer: TerminalRenderer;
+  terminalLigatures: boolean;
+
   codeTheme: string;
   uiTheme: string;
   fileToReveal: string | null;
@@ -226,6 +294,13 @@ export interface PreferencesSlice {
   // Actions
   setCodeFontSize: (size: number) => void;
   setCodeFontFamily: (family: string) => void;
+  setTerminalFontFamily: (family: string) => void;
+  setTerminalFontSize: (size: number) => void;
+  setTerminalFontWeight: (weight: FontWeight) => void;
+  setTerminalLineHeight: (lineHeight: number) => void;
+  setTerminalLetterSpacing: (spacing: number) => void;
+  setTerminalRenderer: (renderer: TerminalRenderer) => void;
+  setTerminalLigatures: (enabled: boolean) => void;
   setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
@@ -316,6 +391,57 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       applyFontFamilyCssVariables(family);
     },
 
+    setTerminalFontFamily: (family) => {
+      set({ terminalFontFamily: family });
+      storage.set("terminalFontFamily", family);
+      refreshAllTerminalOptions(buildTerminalFontOptions(get()));
+    },
+
+    setTerminalFontSize: (size) => {
+      set({ terminalFontSize: size });
+      storage.set("terminalFontSize", size);
+      refreshAllTerminalOptions(buildTerminalFontOptions(get()));
+    },
+
+    setTerminalFontWeight: (weight) => {
+      set({ terminalFontWeight: weight });
+      storage.set("terminalFontWeight", weight);
+      refreshAllTerminalOptions(buildTerminalFontOptions(get()));
+    },
+
+    setTerminalLineHeight: (lineHeight) => {
+      set({ terminalLineHeight: lineHeight });
+      storage.set("terminalLineHeight", lineHeight);
+      refreshAllTerminalOptions(buildTerminalFontOptions(get()));
+    },
+
+    setTerminalLetterSpacing: (spacing) => {
+      set({ terminalLetterSpacing: spacing });
+      storage.set("terminalLetterSpacing", spacing);
+      refreshAllTerminalOptions(buildTerminalFontOptions(get()));
+    },
+
+    setTerminalRenderer: (renderer) => {
+      set({ terminalRenderer: renderer });
+      storage.set("terminalRenderer", renderer);
+      // Ligatures only work under the DOM renderer. Switching to WebGL unloads
+      // them first; switching back to DOM re-loads them if the pref is on.
+      const ligatures = get().terminalLigatures;
+      if (renderer === "webgl") {
+        applyLigaturesToAll(ligatures, renderer);
+        applyRendererToAll(renderer);
+      } else {
+        applyRendererToAll(renderer);
+        applyLigaturesToAll(ligatures, renderer);
+      }
+    },
+
+    setTerminalLigatures: (enabled) => {
+      set({ terminalLigatures: enabled });
+      storage.set("terminalLigatures", enabled);
+      applyLigaturesToAll(enabled, get().terminalRenderer);
+    },
+
     setCodeTheme: (theme) => {
       set({ codeTheme: theme });
       storage.set("codeTheme", theme);
@@ -333,6 +459,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.set("codeTheme", theme.codeTheme);
       storage.set("matchVscodeTheme", false);
       applyUiTheme(theme);
+      refreshAllTerminalThemes();
     },
 
     setDiffLineDiffType: (type) => {
@@ -438,6 +565,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         applyResolvedVscodeTheme(resolvedVscode, storage);
       } else {
         applyUiTheme(getUiTheme(loaded.uiTheme));
+        refreshAllTerminalThemes();
       }
 
       set({ preferencesLoaded: true });
@@ -633,6 +761,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         set({ resolvedVscodeTheme: null, codeTheme: theme.codeTheme });
         storage.set("codeTheme", theme.codeTheme);
         applyUiTheme(theme);
+        refreshAllTerminalThemes();
       }
     },
 

@@ -20,6 +20,7 @@ import type { ActivitySlice } from "./slices/activitySlice";
 import type { LocalActivitySlice } from "./slices/localActivitySlice";
 import type { LspSlice } from "./slices/lspSlice";
 import type { WorktreeSlice } from "./slices/worktreeSlice";
+import type { TerminalSlice } from "./slices/terminalSlice";
 // Combined store type
 export type ReviewStore = PreferencesSlice &
   NavigationSlice &
@@ -36,7 +37,8 @@ export type ReviewStore = PreferencesSlice &
   ActivitySlice &
   LocalActivitySlice &
   LspSlice &
-  WorktreeSlice;
+  WorktreeSlice &
+  TerminalSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

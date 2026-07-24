@@ -1,0 +1,283 @@
+import { type ReactNode, useMemo } from "react";
+import { clsx } from "clsx";
+import { useReviewStore } from "../../stores";
+import { makeReviewKey } from "../../utils/review-key";
+import {
+  terminalSeverity,
+  type TerminalTab,
+} from "../../stores/slices/terminalSlice";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from "../ui/dropdown-menu";
+import { SimpleTooltip } from "../ui/tooltip";
+import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
+import { disposeTerminal } from "./registry";
+import { collectLeafIds, type SplitDirection } from "./pane-tree";
+import { PaneTree } from "./PaneTree";
+import type { TerminalStatus } from "../../types";
+
+interface CwdOption {
+  label: string;
+  cwd: string;
+}
+
+export function TerminalPanel(): ReactNode {
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const reviewRef = useReviewStore((s) => s.reviewRef);
+  const terminalSessions = useReviewStore((s) => s.terminalSessions);
+  const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
+  const terminalExited = useReviewStore((s) => s.terminalExited);
+  const terminalTabsByReviewKey = useReviewStore(
+    (s) => s.terminalTabsByReviewKey,
+  );
+  const activeTabIdByReviewKey = useReviewStore(
+    (s) => s.activeTabIdByReviewKey,
+  );
+  const localActivity = useReviewStore((s) => s.localActivity);
+
+  const startTerminal = useReviewStore((s) => s.startTerminal);
+  const splitTerminal = useReviewStore((s) => s.splitTerminal);
+  const killTerminal = useReviewStore((s) => s.killTerminal);
+  const removeTerminal = useReviewStore((s) => s.removeTerminal);
+  const setActiveTab = useReviewStore((s) => s.setActiveTab);
+  const setFocusedTerminalPane = useReviewStore(
+    (s) => s.setFocusedTerminalPane,
+  );
+  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
+  const toggleTerminalDockSide = useReviewStore(
+    (s) => s.toggleTerminalDockSide,
+  );
+
+  const reviewKey = repoPath ? makeReviewKey(repoPath, reviewRef ?? "") : "";
+
+  const tabs = useMemo<TerminalTab[]>(
+    () => (reviewKey ? (terminalTabsByReviewKey[reviewKey] ?? []) : []),
+    [reviewKey, terminalTabsByReviewKey],
+  );
+  const activeTabId = activeTabIdByReviewKey[reviewKey] ?? tabs[0]?.id ?? null;
+
+  // cwd choices for the "+" menu: repo root plus every worktree of this repo.
+  const cwdOptions = useMemo<CwdOption[]>(() => {
+    if (!repoPath) return [];
+    const options: CwdOption[] = [{ label: "Repo root", cwd: repoPath }];
+    const seen = new Set<string>([repoPath]);
+    const repo = localActivity.find((r) => r.repoPath === repoPath);
+    for (const branch of repo?.branches ?? []) {
+      const wt = branch.worktreePath;
+      if (wt && !seen.has(wt)) {
+        seen.add(wt);
+        options.push({ label: branch.name || basename(wt), cwd: wt });
+      }
+    }
+    return options;
+  }, [repoPath, localActivity]);
+
+  if (!repoPath) return null;
+
+  const handleNewTerminal = (cwd: string) => {
+    void startTerminal(reviewKey, repoPath, cwd, 80, 24);
+  };
+
+  const handleSplit = (
+    tabId: string,
+    targetTerminalId: string,
+    direction: SplitDirection,
+  ) => {
+    void splitTerminal(reviewKey, tabId, targetTerminalId, direction);
+  };
+
+  const handleClosePane = (id: string) => {
+    // Update store state first so the pane unmounts (and unsubscribes from
+    // output), THEN dispose the xterm — deferred to the next macrotask so the
+    // React unmount has committed. Disposing synchronously here would tear down
+    // the terminal while the pane is still mounted and PTY output could still
+    // arrive at it (the pane's write is also guarded, defense in depth).
+    const scheduleDispose = () => setTimeout(() => disposeTerminal(id), 0);
+    const isDead = id in terminalExited;
+    if (isDead) {
+      removeTerminal(id);
+      scheduleDispose();
+    } else {
+      void killTerminal(id).finally(scheduleDispose);
+    }
+  };
+
+  const handleCloseTab = (tab: TerminalTab) => {
+    for (const id of collectLeafIds(tab.root)) handleClosePane(id);
+  };
+
+  return (
+    <div
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl
+                 bg-surface-raised shadow-lg shadow-black/30 ring-1 ring-white/10"
+    >
+      {/* Tab strip */}
+      <div className="flex items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
+        <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+          {tabs.map((tab) => {
+            const leafIds = collectLeafIds(tab.root);
+            const leafStatuses = leafIds
+              .map((id) => terminalStatuses[id])
+              .filter((s): s is TerminalStatus => s != null);
+            const severity = terminalSeverity(leafStatuses);
+            const allDead = leafIds.every((id) => id in terminalExited);
+            const focusedSession = terminalSessions[tab.focused];
+            const focusedStatus = terminalStatuses[tab.focused];
+            const title =
+              focusedStatus?.title ||
+              focusedSession?.title ||
+              basename(focusedSession?.cwd ?? "") ||
+              "shell";
+            const isActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                className={clsx(
+                  "group flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+                  isActive
+                    ? "bg-surface-inset text-fg-secondary"
+                    : "text-fg-muted hover:bg-fg/[0.06]",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(reviewKey, tab.id)}
+                  className="flex items-center gap-1.5"
+                >
+                  <span
+                    className={clsx(
+                      "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+                      allDead
+                        ? "bg-fg-faint"
+                        : phaseDotClass(severity ?? "idle"),
+                    )}
+                  />
+                  <span className="max-w-[12rem] truncate">{title}</span>
+                  {leafIds.length > 1 && (
+                    <span className="text-xxs text-fg-faint tabular-nums">
+                      {leafIds.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCloseTab(tab)}
+                  aria-label="Close tab"
+                  className="rounded px-0.5 text-fg-faint opacity-0 transition-opacity
+                             hover:text-fg-secondary group-hover:opacity-100"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Dock-side swap */}
+        <SimpleTooltip
+          content={`Move terminal to ${
+            terminalDockSide === "left" ? "right" : "left"
+          }`}
+          side="bottom"
+        >
+          <button
+            type="button"
+            onClick={toggleTerminalDockSide}
+            aria-label={`Move terminal to ${
+              terminalDockSide === "left" ? "right" : "left"
+            }`}
+            className="shrink-0 rounded p-1 text-fg-muted
+                       hover:bg-fg/[0.06] hover:text-fg-secondary"
+          >
+            <DockSideIcon side={terminalDockSide} />
+          </button>
+        </SimpleTooltip>
+
+        {/* "+" new-tab menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="New terminal"
+              className="shrink-0 rounded px-2 py-1 text-sm text-fg-muted
+                         hover:bg-fg/[0.06] hover:text-fg-secondary"
+            >
+              +
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>New terminal in…</DropdownMenuLabel>
+            {cwdOptions.map((opt) => (
+              <DropdownMenuItem
+                key={opt.cwd}
+                onClick={() => handleNewTerminal(opt.cwd)}
+              >
+                <span className="truncate">{opt.label}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming. */}
+      <div className="relative flex-1 overflow-hidden p-1.5">
+        {tabs.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-xs text-fg-faint">
+            No terminals — use + to start one.
+          </div>
+        ) : (
+          tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={clsx(
+                "absolute inset-1.5",
+                tab.id === activeTabId ? "" : "hidden",
+              )}
+            >
+              <PaneTree
+                node={tab.root}
+                path={[]}
+                reviewKey={reviewKey}
+                tabId={tab.id}
+                focusedId={tab.focused}
+                tabActive={tab.id === activeTabId}
+                onFocus={(id) => setFocusedTerminalPane(reviewKey, tab.id, id)}
+                onSplit={(id, direction) => handleSplit(tab.id, id, direction)}
+                onClose={handleClosePane}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Panel-dock glyph: a frame with the filled bar on the terminal's current side. */
+function DockSideIcon({ side }: { side: "left" | "right" }): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      aria-hidden="true"
+    >
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      <rect
+        x={side === "left" ? 2 : 10}
+        y="2.5"
+        width="4"
+        height="11"
+        rx="1.5"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  );
+}

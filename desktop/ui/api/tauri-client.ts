@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { decodeBase64 } from "../components/Terminal/base64";
 import type {
   ApiClient,
   GitChangedPayload,
@@ -48,6 +49,11 @@ import type {
   LspServerStatus,
   TrustCategory,
   WorktreeInfo,
+  TerminalSessionInfo,
+  TerminalStatus,
+  TerminalOutput,
+  TerminalExit,
+  TerminalReplay,
 } from "../types";
 
 /** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
@@ -717,5 +723,97 @@ export class TauriClient implements ApiClient {
 
   async openSettingsFile(): Promise<void> {
     await invoke("open_settings_file");
+  }
+
+  // ----- Terminals -----
+
+  async terminalsAvailable(): Promise<boolean> {
+    try {
+      return await invoke<boolean>("terminals_available");
+    } catch {
+      return false;
+    }
+  }
+
+  async terminalStart(params: {
+    terminalId: string;
+    repoPath: string;
+    cwd: string;
+    cols: number;
+    rows: number;
+    shell?: string;
+  }): Promise<TerminalSessionInfo> {
+    return invoke<TerminalSessionInfo>("terminal_start", {
+      terminalId: params.terminalId,
+      repoPath: params.repoPath,
+      cwd: params.cwd,
+      cols: params.cols,
+      rows: params.rows,
+      shell: params.shell ?? null,
+    });
+  }
+
+  async terminalWrite(terminalId: string, data: string): Promise<void> {
+    await invoke("terminal_write", { terminalId, data });
+  }
+
+  async terminalResize(
+    terminalId: string,
+    cols: number,
+    rows: number,
+  ): Promise<void> {
+    await invoke("terminal_resize", { terminalId, cols, rows });
+  }
+
+  async terminalKill(terminalId: string): Promise<void> {
+    await invoke("terminal_kill", { terminalId });
+  }
+
+  async terminalList(repoPath?: string): Promise<TerminalSessionInfo[]> {
+    return invoke<TerminalSessionInfo[]>("terminal_list", {
+      repoPath: repoPath ?? null,
+    });
+  }
+
+  async terminalReplay(terminalId: string): Promise<TerminalReplay> {
+    return invoke<TerminalReplay>("terminal_replay", { terminalId });
+  }
+
+  async terminalPeek(terminalId: string): Promise<string> {
+    return invoke<string>("terminal_peek", { terminalId });
+  }
+
+  onTerminalOutput(
+    terminalId: string,
+    callback: (output: TerminalOutput) => void,
+  ): () => void {
+    // Rust emits raw PTY bytes base64-encoded with the scrollback byte cursor;
+    // decode once here at the event boundary so downstream consumers get a
+    // Uint8Array plus the `seq` cursor for replay deduplication.
+    return this.listenForEvent<{ id: string; dataB64: string; seq: number }>(
+      `terminal:output:${terminalId}`,
+      ({ id, dataB64, seq }) =>
+        callback({ id, data: decodeBase64(dataB64), seq }),
+    );
+  }
+
+  onTerminalStatus(
+    terminalId: string,
+    callback: (status: TerminalStatus) => void,
+  ): () => void {
+    return this.listenForEvent(`terminal:status:${terminalId}`, callback);
+  }
+
+  onTerminalStatusChanged(
+    callback: (status: TerminalStatus) => void,
+  ): () => void {
+    return this.listenForEvent("terminal:status-changed", callback);
+  }
+
+  onTerminalExit(
+    terminalId: string,
+    callback: (exit: TerminalExit) => void,
+  ): () => void {
+    return this.listenForEvent(`terminal:exit:${terminalId}`, callback);
   }
 }

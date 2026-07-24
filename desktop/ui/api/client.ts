@@ -41,6 +41,11 @@ import type {
   ReviewFreshnessInput,
   ReviewFreshnessResult,
   WorktreeInfo,
+  TerminalSessionInfo,
+  TerminalStatus,
+  TerminalOutput,
+  TerminalExit,
+  TerminalReplay,
 } from "../types";
 
 /**
@@ -507,6 +512,77 @@ export interface ApiClient {
 
   /** Resolve a route prefix (e.g., "owner/repo") to a local filesystem path */
   resolveRepoPath?(routePrefix: string): Promise<string | null>;
+
+  // ----- Terminals -----
+
+  /**
+   * Whether the current backend can host terminal sessions. Tauri returns true;
+   * web mode returns false until the WebSocket transport lands. Gates the whole
+   * terminal UI (panel toggle, badges).
+   */
+  terminalsAvailable(): Promise<boolean>;
+
+  /**
+   * Start a new terminal session. `terminalId` is client-generated
+   * (`crypto.randomUUID()`) so the caller can subscribe to its events BEFORE
+   * the session exists.
+   */
+  terminalStart(params: {
+    terminalId: string;
+    repoPath: string;
+    cwd: string;
+    cols: number;
+    rows: number;
+    shell?: string;
+  }): Promise<TerminalSessionInfo>;
+
+  /** Write UTF-8 input (keystrokes) to a session's PTY. */
+  terminalWrite(terminalId: string, data: string): Promise<void>;
+
+  /** Resize a session's PTY. */
+  terminalResize(terminalId: string, cols: number, rows: number): Promise<void>;
+
+  /** Kill a session (child + PTY teardown). */
+  terminalKill(terminalId: string): Promise<void>;
+
+  /** List live sessions, optionally scoped to a repo path. */
+  terminalList(repoPath?: string): Promise<TerminalSessionInfo[]>;
+
+  /**
+   * Fetch the scrollback ring buffer (raw bytes, base64) plus current status,
+   * for replaying into a fresh xterm instance on reattach (new window, web
+   * reload).
+   */
+  terminalReplay(terminalId: string): Promise<TerminalReplay>;
+
+  /** Fetch a fresh plain-text screen snapshot (for status popovers). */
+  terminalPeek(terminalId: string): Promise<string>;
+
+  /** Subscribe to raw PTY output for a session (returns unsubscribe fn). */
+  onTerminalOutput(
+    terminalId: string,
+    callback: (output: TerminalOutput) => void,
+  ): () => void;
+
+  /** Subscribe to status updates for a single session (returns unsubscribe fn). */
+  onTerminalStatus(
+    terminalId: string,
+    callback: (status: TerminalStatus) => void,
+  ): () => void;
+
+  /**
+   * Subscribe to the global status roll-up — status changes for ANY session,
+   * used to keep the store's status map fresh without per-session listeners.
+   */
+  onTerminalStatusChanged(
+    callback: (status: TerminalStatus) => void,
+  ): () => void;
+
+  /** Subscribe to a session's exit event (returns unsubscribe fn). */
+  onTerminalExit(
+    terminalId: string,
+    callback: (exit: TerminalExit) => void,
+  ): () => void;
 }
 
 /**

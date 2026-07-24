@@ -781,3 +781,70 @@ export interface LspServerStatus {
   language: string;
   state: LspServerState;
 }
+
+// --- Terminal types ---
+
+/**
+ * Per-session terminal phase, driven by the Rust status engine (OSC 133 marks
+ * when shell integration is active, foreground-process polling otherwise).
+ */
+export type TerminalPhase =
+  "working" | "waiting_for_input" | "needs_attention" | "idle";
+
+/**
+ * Status snapshot for a single terminal session. Mirrors the backend
+ * `SessionStatus` (serde camelCase). Screen content is pulled on demand via
+ * `terminalPeek`, never carried on the status.
+ */
+export interface TerminalStatus {
+  id: string;
+  phase: TerminalPhase;
+  runningCommand: string | null;
+  lastExitCode: number | null;
+  cwd: string | null;
+  title: string | null;
+  /** Epoch millis when the session entered its current phase. */
+  enteredStateAt: number;
+  shellIntegrationActive: boolean;
+}
+
+/** Metadata describing a live terminal session (returned by start/list). */
+export interface TerminalSessionInfo {
+  id: string;
+  repoPath: string;
+  cwd: string;
+  /** Terminal title (OSC 0/2); null until the session sets one. */
+  title: string | null;
+  cols: number;
+  rows: number;
+  status: TerminalStatus;
+}
+
+/**
+ * Payload of the `terminal:output:{id}` event — raw PTY bytes tagged with the
+ * scrollback byte cursor (`seq`) they end at. A cold-reattaching pane buffers
+ * live output by `seq` and drops any chunk with `seq <= replay.cursor`.
+ */
+export interface TerminalOutput {
+  id: string;
+  data: Uint8Array;
+  seq: number;
+}
+
+/** Payload of the `terminal:exit:{id}` event. */
+export interface TerminalExit {
+  id: string;
+  exitCode: number | null;
+}
+
+/** Result of `terminalReplay` — ring-buffer scrollback for xterm reattach. */
+export interface TerminalReplay {
+  dataB64: string;
+  /**
+   * Byte cursor the scrollback ends at. After writing the scrollback, a pane
+   * drops any buffered live chunk whose `seq` is `<=` this value so bytes
+   * captured in both the snapshot and the live stream render exactly once.
+   */
+  cursor: number;
+  status: TerminalStatus;
+}

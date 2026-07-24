@@ -5,6 +5,7 @@
 //! - File system watchers (watchers.rs)
 
 pub mod commands;
+pub mod terminal_commands;
 pub mod watchers;
 
 // Re-export commands for convenient access
@@ -277,6 +278,9 @@ pub fn run() {
         .manage(SentryConsent(consent.clone()))
         .manage(commands::LspServers(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
+        )))
+        .manage(terminal_commands::TerminalState(Arc::new(
+            review::terminal::SessionManager::new(),
         )))
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
@@ -715,6 +719,14 @@ pub fn run() {
             commands::lsp_goto_definition,
             commands::lsp_hover,
             commands::lsp_find_references,
+            terminal_commands::terminals_available,
+            terminal_commands::terminal_start,
+            terminal_commands::terminal_write,
+            terminal_commands::terminal_resize,
+            terminal_commands::terminal_kill,
+            terminal_commands::terminal_list,
+            terminal_commands::terminal_replay,
+            terminal_commands::terminal_peek,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -780,7 +792,15 @@ pub fn run() {
                     }
                 }
             }
-            tauri::RunEvent::Exit => {}
+            tauri::RunEvent::Exit => {
+                // App is quitting: tear down every live terminal session. Never
+                // keyed on window close — macOS hides windows, and sessions must
+                // survive a hide.
+                app_handle
+                    .state::<terminal_commands::TerminalState>()
+                    .0
+                    .shutdown_all();
+            }
             _ => {}
         }
     });

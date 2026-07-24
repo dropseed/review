@@ -19,6 +19,7 @@ import { createActivitySlice } from "./slices/activitySlice";
 import { createLocalActivitySlice } from "./slices/localActivitySlice";
 import { createLspSlice } from "./slices/lspSlice";
 import { createWorktreeSlice } from "./slices/worktreeSlice";
+import { createTerminalSlice } from "./slices/terminalSlice";
 // Get dependencies
 const apiClient = getApiClient();
 const platform = getPlatformServices();
@@ -41,4 +42,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createLocalActivitySlice(apiClient, platform.storage)(...args),
   ...createLspSlice(...args),
   ...createWorktreeSlice(...args),
+  ...createTerminalSlice(apiClient, platform.storage)(...args),
 }));

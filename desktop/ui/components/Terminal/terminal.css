@@ -1,0 +1,12 @@
+/*
+ * Terminal-scoped rendering tweaks. Scoped to `.xterm` so they never leak to
+ * the rest of the app. The DOM renderer draws real text nodes, so native macOS
+ * font smoothing applies here — antialiased + optimizeLegibility render heavier
+ * and crisper than the default subpixel/auto path, closer to a native terminal.
+ */
+.xterm,
+.xterm .xterm-rows {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}

@@ -28,6 +28,10 @@ pub mod service;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 
+// Embedded terminal sessions (feature-gated)
+#[cfg(feature = "terminal")]
+pub mod terminal;
+
 // CLI module (feature-gated)
 #[cfg(feature = "cli")]
 pub mod cli;

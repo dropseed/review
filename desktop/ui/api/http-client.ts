@@ -10,6 +10,7 @@ import type {
   GitChangedPayload,
   RepoActivityChangedPayload,
 } from "./client";
+import { TerminalSocket } from "./terminal-socket";
 import type {
   BranchList,
   ClassifyResponse,
@@ -45,6 +46,11 @@ import type {
   LspServerStatus,
   TrustCategory,
   WorktreeInfo,
+  TerminalSessionInfo,
+  TerminalStatus,
+  TerminalOutput,
+  TerminalExit,
+  TerminalReplay,
 } from "../types";
 
 export class HttpClient implements ApiClient {
@@ -61,6 +67,25 @@ export class HttpClient implements ApiClient {
   private repoActivityCallbacks: ((
     payload: RepoActivityChangedPayload,
   ) => void)[] = [];
+
+  // ----- Terminal transport (one WebSocket per session) -----
+
+  private terminalSockets = new Map<string, TerminalSocket>();
+  private terminalOutputCallbacks = new Map<
+    string,
+    Set<(output: TerminalOutput) => void>
+  >();
+  private terminalStatusCallbacks = new Map<
+    string,
+    Set<(status: TerminalStatus) => void>
+  >();
+  private terminalExitCallbacks = new Map<
+    string,
+    Set<(exit: TerminalExit) => void>
+  >();
+  private terminalStatusChangedCallbacks = new Set<
+    (status: TerminalStatus) => void
+  >();
 
   // ----- Private helpers -----
 
@@ -812,5 +837,185 @@ export class HttpClient implements ApiClient {
 
   async resolveRepoPath(routePrefix: string): Promise<string | null> {
     return this.post("/api/misc/resolve-repo-path", { routePrefix });
+  }
+
+  // ----- Terminals (web mode: WebSocket transport) -----
+  //
+  // PTY bytes flow over a per-session WebSocket (`/api/terminal/{id}/ws`);
+  // control (start/kill/list/peek/replay/available) stays plain POST. Each
+  // `TerminalSocket` fans its decoded frames into the callback registries
+  // above, mirroring the shapes TauriClient delivers so the rest of the app is
+  // transport-agnostic.
+
+  /**
+   * Get (creating if needed) the session's socket and make sure it's
+   * connecting. Only called from paths where the session already exists
+   * server-side (start / pane output subscribe), so we never open a socket to a
+   * session that hasn't been created yet.
+   */
+  private ensureTerminalSocket(terminalId: string): TerminalSocket {
+    let socket = this.terminalSockets.get(terminalId);
+    if (!socket) {
+      socket = new TerminalSocket(terminalId, {
+        onOutput: (data, seq) => {
+          const cbs = this.terminalOutputCallbacks.get(terminalId);
+          if (cbs) for (const cb of cbs) cb({ id: terminalId, data, seq });
+        },
+        onStatus: (status) => {
+          const cbs = this.terminalStatusCallbacks.get(status.id);
+          if (cbs) for (const cb of cbs) cb(status);
+          for (const cb of this.terminalStatusChangedCallbacks) cb(status);
+        },
+        onExit: (exitCode) => {
+          const cbs = this.terminalExitCallbacks.get(terminalId);
+          if (cbs) for (const cb of cbs) cb({ id: terminalId, exitCode });
+        },
+      });
+      this.terminalSockets.set(terminalId, socket);
+    }
+    socket.connect();
+    return socket;
+  }
+
+  async terminalsAvailable(): Promise<boolean> {
+    return this.post<boolean>("/api/terminal/available").catch(() => false);
+  }
+
+  async terminalStart(params: {
+    terminalId: string;
+    repoPath: string;
+    cwd: string;
+    cols: number;
+    rows: number;
+    shell?: string;
+  }): Promise<TerminalSessionInfo> {
+    const info = await this.post<TerminalSessionInfo>("/api/terminal/start", {
+      terminalId: params.terminalId,
+      repoPath: params.repoPath,
+      cwd: params.cwd,
+      cols: params.cols,
+      rows: params.rows,
+      shell: params.shell ?? null,
+    });
+    // Session exists now — open its socket so output/status start flowing.
+    this.ensureTerminalSocket(params.terminalId);
+    return info;
+  }
+
+  async terminalWrite(terminalId: string, data: string): Promise<void> {
+    const socket = this.terminalSockets.get(terminalId);
+    if (socket && socket.isOpen()) {
+      socket.sendInput(data);
+      return;
+    }
+    // Socket not up yet (rare race before the pane's replay opens it): fall
+    // back to the HTTP write so keystrokes aren't lost.
+    await this.post("/api/terminal/write", { terminalId, data });
+  }
+
+  async terminalResize(
+    terminalId: string,
+    cols: number,
+    rows: number,
+  ): Promise<void> {
+    const socket = this.terminalSockets.get(terminalId);
+    if (socket && socket.isOpen()) {
+      socket.sendResize(cols, rows);
+      return;
+    }
+    await this.post("/api/terminal/resize", { terminalId, cols, rows });
+  }
+
+  async terminalKill(terminalId: string): Promise<void> {
+    try {
+      await this.post("/api/terminal/kill", { terminalId });
+    } finally {
+      const socket = this.terminalSockets.get(terminalId);
+      if (socket) {
+        socket.close();
+        this.terminalSockets.delete(terminalId);
+      }
+    }
+  }
+
+  async terminalList(repoPath?: string): Promise<TerminalSessionInfo[]> {
+    return this.post("/api/terminal/list", { repoPath: repoPath ?? null });
+  }
+
+  /** Web-mode replay: a one-shot POST returning the ring buffer plus status. */
+  async terminalReplay(terminalId: string): Promise<TerminalReplay> {
+    return this.post("/api/terminal/replay", { terminalId });
+  }
+
+  async terminalPeek(terminalId: string): Promise<string> {
+    return this.post("/api/terminal/peek", { terminalId });
+  }
+
+  /**
+   * Add `callback` to a per-session callback registry, returning an
+   * unsubscribe that removes it. Shared by the output/status/exit subscribers.
+   */
+  private registerTerminalCallback<T>(
+    registry: Map<string, Set<(payload: T) => void>>,
+    terminalId: string,
+    callback: (payload: T) => void,
+  ): () => void {
+    let set = registry.get(terminalId);
+    if (!set) {
+      set = new Set();
+      registry.set(terminalId, set);
+    }
+    set.add(callback);
+    return () => {
+      set.delete(callback);
+    };
+  }
+
+  onTerminalOutput(
+    terminalId: string,
+    callback: (output: TerminalOutput) => void,
+  ): () => void {
+    const unsubscribe = this.registerTerminalCallback(
+      this.terminalOutputCallbacks,
+      terminalId,
+      callback,
+    );
+    // A mounted pane wants output, which means the session exists — open the
+    // socket so its live output reaches this callback.
+    this.ensureTerminalSocket(terminalId);
+    return unsubscribe;
+  }
+
+  onTerminalStatus(
+    terminalId: string,
+    callback: (status: TerminalStatus) => void,
+  ): () => void {
+    // Registration only — the socket is opened by start/output, never by a bare
+    // subscribe (which the slice does BEFORE the session exists).
+    return this.registerTerminalCallback(
+      this.terminalStatusCallbacks,
+      terminalId,
+      callback,
+    );
+  }
+
+  onTerminalStatusChanged(
+    callback: (status: TerminalStatus) => void,
+  ): () => void {
+    this.terminalStatusChangedCallbacks.add(callback);
+    return () => {
+      this.terminalStatusChangedCallbacks.delete(callback);
+    };
+  }
+
+  onTerminalExit(
+    terminalId: string,
+    callback: (exit: TerminalExit) => void,
+  ): () => void {
+    return this.registerTerminalCallback(
+      this.terminalExitCallbacks,
+      terminalId,
+      callback,
+    );
   }
 }

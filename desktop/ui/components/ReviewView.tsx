@@ -24,14 +24,17 @@ import {
   useLspClient,
   useDeepLinkFocus,
   useScopeReconciliation,
+  useTerminalEvents,
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
+import { ResizeHandle } from "./ContentArea/ResizeHandle";
+import { TerminalPanel } from "./Terminal/TerminalPanel";
 import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
 import { CircleProgress } from "./ui/circle-progress";
-import { WarningIcon } from "./ui/icons";
+import { WarningIcon, TerminalIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
 import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
@@ -250,6 +253,45 @@ export function ReviewView({
   useFileWatcher(comparisonReady);
   useLspClient();
   useScopeReconciliation();
+  useTerminalEvents();
+
+  // Terminal panel: left vertical pane inside the content region, sized via the
+  // horizontal ResizeHandle and persisted in the store.
+  const terminalPanelOpen = useReviewStore((s) => s.terminalPanelOpen);
+  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
+  const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
+  const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
+  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
+  const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
+  const contentRowRef = useRef<HTMLDivElement | null>(null);
+  const showTerminalPanel = terminalPanelOpen && terminalsSupported;
+
+  // ResizeHandle reports a fraction of the content row from its left edge. The
+  // width is always the terminal pane's own width, measured from whichever side
+  // it's docked on — so a right dock measures from the right edge (1 - fraction).
+  const handleTerminalResize = useCallback(
+    (fraction: number) => {
+      const rowWidth = contentRowRef.current?.clientWidth ?? 0;
+      if (rowWidth === 0) return;
+      const sideFraction =
+        terminalDockSide === "right" ? 1 - fraction : fraction;
+      setTerminalPanelWidth(Math.round(sideFraction * rowWidth));
+    },
+    [setTerminalPanelWidth, terminalDockSide],
+  );
+
+  // Cmd+` toggles the panel (when supported).
+  useEffect(() => {
+    if (!terminalsSupported) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.code === "Backquote") {
+        e.preventDefault();
+        toggleTerminalPanel();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [terminalsSupported, toggleTerminalPanel]);
 
   // Review progress
   const {
@@ -284,82 +326,101 @@ export function ReviewView({
             {/* Center: activity island (floating) */}
             {comparison && !compareRefMissing && <ActivityBar />}
 
-            {/* Right: review progress (hidden in read-only preview) */}
-            {comparison && !readOnlyPreview && !compareRefMissing && (
-              <div className="flex shrink-0 items-center gap-3">
-                {totalHunks > 0 ? (
+            {/* Right: terminal toggle + review progress */}
+            <div className="flex shrink-0 items-center gap-2">
+              {terminalsSupported && (
+                <SimpleTooltip content="Toggle terminal (⌘`)" side="bottom">
                   <button
                     type="button"
-                    onClick={() => {
-                      useReviewStore.setState({
-                        selectedFile: null,
-                        guideContentMode: null,
-                      });
-                    }}
-                    className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
-                             hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
+                    onClick={toggleTerminalPanel}
+                    aria-label="Toggle terminal panel"
+                    aria-pressed={showTerminalPanel}
+                    className={`p-1.5 rounded transition-colors duration-100 hover:bg-fg/[0.06] ${
+                      showTerminalPanel
+                        ? "text-fg-secondary"
+                        : "text-fg-faint hover:text-fg-muted"
+                    }`}
                   >
-                    <span className="font-mono text-xs tabular-nums text-fg-muted">
-                      {reviewedHunks}/{totalHunks}
-                    </span>
-                    <SimpleTooltip
-                      content={
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-status-trusted" />
-                            <span>Trusted: {trustedHunks}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-status-approved" />
-                            <span>Approved: {approvedHunks}</span>
-                          </div>
-                          {rejectedHunks > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-status-rejected" />
-                              <span>Rejected: {rejectedHunks}</span>
-                            </div>
-                          )}
-                        </div>
-                      }
-                    >
-                      <CircleProgress
-                        percent={
-                          totalHunks > 0
-                            ? Math.round((reviewedHunks / totalHunks) * 100)
-                            : 0
-                        }
-                        size={20}
-                        strokeWidth={2.5}
-                        className="shrink-0 cursor-default"
-                        segments={[
-                          {
-                            percent:
-                              totalHunks > 0
-                                ? (trustedHunks / totalHunks) * 100
-                                : 0,
-                            color: "var(--color-status-trusted)",
-                          },
-                          {
-                            percent:
-                              totalHunks > 0
-                                ? (approvedHunks / totalHunks) * 100
-                                : 0,
-                            color: "var(--color-status-approved)",
-                          },
-                          {
-                            percent:
-                              totalHunks > 0
-                                ? (rejectedHunks / totalHunks) * 100
-                                : 0,
-                            color: "var(--color-status-rejected)",
-                          },
-                        ]}
-                      />
-                    </SimpleTooltip>
+                    <TerminalIcon className="h-4 w-4" />
                   </button>
-                ) : null}
-              </div>
-            )}
+                </SimpleTooltip>
+              )}
+              {comparison && !readOnlyPreview && !compareRefMissing && (
+                <div className="flex shrink-0 items-center gap-3">
+                  {totalHunks > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        useReviewStore.setState({
+                          selectedFile: null,
+                          guideContentMode: null,
+                        });
+                      }}
+                      className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
+                             hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
+                    >
+                      <span className="font-mono text-xs tabular-nums text-fg-muted">
+                        {reviewedHunks}/{totalHunks}
+                      </span>
+                      <SimpleTooltip
+                        content={
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-status-trusted" />
+                              <span>Trusted: {trustedHunks}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-status-approved" />
+                              <span>Approved: {approvedHunks}</span>
+                            </div>
+                            {rejectedHunks > 0 && (
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-status-rejected" />
+                                <span>Rejected: {rejectedHunks}</span>
+                              </div>
+                            )}
+                          </div>
+                        }
+                      >
+                        <CircleProgress
+                          percent={
+                            totalHunks > 0
+                              ? Math.round((reviewedHunks / totalHunks) * 100)
+                              : 0
+                          }
+                          size={20}
+                          strokeWidth={2.5}
+                          className="shrink-0 cursor-default"
+                          segments={[
+                            {
+                              percent:
+                                totalHunks > 0
+                                  ? (trustedHunks / totalHunks) * 100
+                                  : 0,
+                              color: "var(--color-status-trusted)",
+                            },
+                            {
+                              percent:
+                                totalHunks > 0
+                                  ? (approvedHunks / totalHunks) * 100
+                                  : 0,
+                              color: "var(--color-status-approved)",
+                            },
+                            {
+                              percent:
+                                totalHunks > 0
+                                  ? (rejectedHunks / totalHunks) * 100
+                                  : 0,
+                              color: "var(--color-status-rejected)",
+                            },
+                          ]}
+                        />
+                      </SimpleTooltip>
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </div>
           {selectedFile && !compareRefMissing && <ReviewTitle />}
         </header>
@@ -430,18 +491,58 @@ export function ReviewView({
           </>
         )}
 
-        {/* Main content — the deleted-ref notice replaces the diff when the
-            compared branch no longer exists. */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">
-          {compareRefMissing ? (
-            <CompareRefDeletedNotice
-              repoPath={repoPath!}
-              comparison={comparison!}
-              missingRefs={missingRefs}
-            />
-          ) : (
-            <ContentArea />
-          )}
+        {/* Content region — a resizable terminal pane docked left or right of
+            the diff; docking side is persisted and swappable. The deleted-ref
+            notice replaces the diff when the compared branch no longer exists. */}
+        <main
+          ref={contentRowRef}
+          className="relative flex flex-1 flex-row overflow-hidden bg-surface"
+        >
+          {(() => {
+            const terminalPane = (
+              <div
+                className="shrink-0 overflow-hidden p-2"
+                style={{ width: `${terminalPanelWidth}px` }}
+              >
+                <TerminalPanel />
+              </div>
+            );
+            const terminalResize = (
+              <ResizeHandle
+                orientation="horizontal"
+                onResize={handleTerminalResize}
+              />
+            );
+            const dockLeft = showTerminalPanel && terminalDockSide === "left";
+            const dockRight = showTerminalPanel && terminalDockSide === "right";
+            return (
+              <>
+                {dockLeft && (
+                  <>
+                    {terminalPane}
+                    {terminalResize}
+                  </>
+                )}
+                <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+                  {compareRefMissing ? (
+                    <CompareRefDeletedNotice
+                      repoPath={repoPath!}
+                      comparison={comparison!}
+                      missingRefs={missingRefs}
+                    />
+                  ) : (
+                    <ContentArea />
+                  )}
+                </div>
+                {dockRight && (
+                  <>
+                    {terminalResize}
+                    {terminalPane}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </main>
       </div>
 

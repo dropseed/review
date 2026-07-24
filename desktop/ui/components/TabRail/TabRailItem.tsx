@@ -5,6 +5,7 @@ import { useReviewStore } from "../../stores";
 import { WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
+import { TerminalStatusBadge } from "./TerminalStatusBadge";
 
 /**
  * Label a review by its identity (ref) for display. Listing is git-free, so
@@ -170,6 +171,10 @@ export const TabRailItem = memo(function TabRailItem({
             {primaryLabel}
             {isPr && ` #${pr.number}`}
           </span>
+          <TerminalStatusBadge
+            repoPath={review.repoPath}
+            worktreePath={review.worktreePath}
+          />
           {/* Right side: contextual metadata / overflow — stacked grid for no layout shift */}
           <span className="relative grid shrink-0 justify-items-end items-center">
             <span

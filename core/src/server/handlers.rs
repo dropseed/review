@@ -8,7 +8,10 @@ use axum::Router;
 use serde::Deserialize;
 use std::convert::Infallible;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
+
+use crate::terminal::SessionManager;
 
 use crate::classify::{self, ClassifyResponse};
 use crate::diff::parser::{detect_move_pairs, DiffHunk};
@@ -26,14 +29,14 @@ use crate::sources::traits::{
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
 
-type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+pub(super) type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
-fn internal_err(e: impl std::fmt::Display) -> (StatusCode, String) {
+pub(super) fn internal_err(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
 
 /// Wrap a `spawn_blocking` + anyhow result into an API result.
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
 ) -> ApiResult<T> {
     tokio::task::spawn_blocking(f)
@@ -43,8 +46,9 @@ async fn blocking<T: Send + 'static>(
         .map(Json)
 }
 
-/// Build the API router with all routes.
-pub fn build_api_router() -> Router {
+/// Build the API router with all routes. `manager` is shared with the terminal
+/// handlers (see [`super::terminal`]).
+pub fn build_api_router(manager: Arc<SessionManager>) -> Router {
     Router::new()
         // Git operations
         .route("/api/git/current-repo", post(git_current_repo))
@@ -141,6 +145,8 @@ pub fn build_api_router() -> Router {
         )
         // File watcher SSE
         .route("/api/events", get(events_sse))
+        // Embedded terminal transport (HTTP control + WebSocket data channel)
+        .merge(super::terminal::routes(manager))
 }
 
 // ============================================================

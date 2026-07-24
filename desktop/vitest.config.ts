@@ -7,6 +7,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./ui"),
+      // @xterm/addon-ligatures ships only an ESM build (its CJS `main` file is
+      // missing), so vitest's Node resolution fails on the bare specifier.
+      // Point it at the `.mjs` the browser build already uses via `module`.
+      "@xterm/addon-ligatures": path.resolve(
+        __dirname,
+        "./node_modules/@xterm/addon-ligatures/lib/addon-ligatures.mjs",
+      ),
     },
   },
   test: {

@@ -26,7 +26,7 @@ export function getApiClient(): ApiClient {
   if (!apiClient) {
     apiClient = isTauriEnvironment() ? new TauriClient() : new HttpClient();
   }
-  if (import.meta.hot) {
+  if (import.meta.hot?.data) {
     import.meta.hot.data.apiClient = apiClient;
   }
   return apiClient;

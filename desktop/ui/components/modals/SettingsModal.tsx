@@ -7,7 +7,19 @@ import {
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_STEP,
   CODE_FONT_FAMILY_DEFAULT,
+  TERMINAL_FONT_FAMILY_DEFAULT,
+  TERMINAL_FONT_SIZE_MIN,
+  TERMINAL_FONT_SIZE_MAX,
+  TERMINAL_FONT_SIZE_STEP,
+  TERMINAL_LINE_HEIGHT_MIN,
+  TERMINAL_LINE_HEIGHT_MAX,
+  TERMINAL_LINE_HEIGHT_STEP,
+  TERMINAL_LETTER_SPACING_MIN,
+  TERMINAL_LETTER_SPACING_MAX,
+  TERMINAL_LETTER_SPACING_STEP,
 } from "../../utils/preferences";
+import type { FontWeight } from "@xterm/xterm";
+import type { TerminalRenderer } from "../Terminal/registry";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
@@ -83,6 +95,106 @@ function ErrorBanner({
   );
 }
 
+interface StepperProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+  onChange: (value: number) => void;
+}
+
+/** Labeled -/+ stepper for a bounded numeric preference. */
+function Stepper({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: StepperProps): ReactNode {
+  // Round to the step grid so float steps (e.g. 0.05) don't accumulate error.
+  const clamp = (n: number) =>
+    Math.min(max, Math.max(min, Math.round(n / step) * step));
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-fg-secondary">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => onChange(clamp(value - step))}
+          disabled={value <= min}
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg
+            className="h-3 w-3"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+          </svg>
+        </button>
+        <span className="font-mono text-xs font-semibold text-fg tabular-nums w-12 text-center">
+          {format(value)}
+        </span>
+        <button
+          onClick={() => onChange(clamp(value + step))}
+          disabled={value >= max}
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover/50 text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg
+            className="h-3 w-3"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface SegmentedProps<T extends string | number> {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}
+
+/** Compact segmented button group for a small set of choices. */
+function Segmented<T extends string | number>({
+  value,
+  options,
+  onChange,
+}: SegmentedProps<T>): ReactNode {
+  return (
+    <div className="flex gap-1 rounded-lg bg-surface-raised/30 p-1">
+      {options.map((opt) => (
+        <button
+          key={String(opt.value)}
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 rounded-md px-2.5 py-1.5 text-xxs font-medium transition-colors ${
+            value === opt.value
+              ? "bg-surface-raised text-fg ring-1 ring-focus-ring/50"
+              : "text-fg-muted hover:text-fg-secondary"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function SettingsModal({
   isOpen,
   onClose,
@@ -91,6 +203,22 @@ export function SettingsModal({
   const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
   const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
   const setCodeFontFamily = useReviewStore((s) => s.setCodeFontFamily);
+  const terminalFontFamily = useReviewStore((s) => s.terminalFontFamily);
+  const setTerminalFontFamily = useReviewStore((s) => s.setTerminalFontFamily);
+  const terminalFontSize = useReviewStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useReviewStore((s) => s.setTerminalFontSize);
+  const terminalFontWeight = useReviewStore((s) => s.terminalFontWeight);
+  const setTerminalFontWeight = useReviewStore((s) => s.setTerminalFontWeight);
+  const terminalLineHeight = useReviewStore((s) => s.terminalLineHeight);
+  const setTerminalLineHeight = useReviewStore((s) => s.setTerminalLineHeight);
+  const terminalLetterSpacing = useReviewStore((s) => s.terminalLetterSpacing);
+  const setTerminalLetterSpacing = useReviewStore(
+    (s) => s.setTerminalLetterSpacing,
+  );
+  const terminalRenderer = useReviewStore((s) => s.terminalRenderer);
+  const setTerminalRenderer = useReviewStore((s) => s.setTerminalRenderer);
+  const terminalLigatures = useReviewStore((s) => s.terminalLigatures);
+  const setTerminalLigatures = useReviewStore((s) => s.setTerminalLigatures);
   const uiTheme = useReviewStore((s) => s.uiTheme);
   const setUiTheme = useReviewStore((s) => s.setUiTheme);
   const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
@@ -109,6 +237,8 @@ export function SettingsModal({
   const repoPath = useReviewStore((s) => s.repoPath);
 
   const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
+  const [terminalFontDraft, setTerminalFontDraft] =
+    useState(terminalFontFamily);
   const [discoveredServers, setDiscoveredServers] = useState<
     { name: string; language: string }[]
   >([]);
@@ -116,6 +246,10 @@ export function SettingsModal({
   useEffect(() => {
     if (isOpen) setFontFamilyDraft(codeFontFamily);
   }, [isOpen, codeFontFamily]);
+
+  useEffect(() => {
+    if (isOpen) setTerminalFontDraft(terminalFontFamily);
+  }, [isOpen, terminalFontFamily]);
 
   // CLI install status (hidden in dev mode)
   const [devMode, setDevMode] = useState(false);
@@ -191,6 +325,15 @@ export function SettingsModal({
       setCodeFontFamily(trimmed);
     } else {
       setFontFamilyDraft(codeFontFamily);
+    }
+  }
+
+  function commitTerminalFontFamily() {
+    const trimmed = terminalFontDraft.trim();
+    if (trimmed && trimmed !== terminalFontFamily) {
+      setTerminalFontFamily(trimmed);
+    } else {
+      setTerminalFontDraft(terminalFontFamily);
     }
   }
 
@@ -431,6 +574,135 @@ export function SettingsModal({
             <p className="mt-1.5 text-xxs text-fg-faint">
               Comma-separated font names
             </p>
+          </div>
+
+          {/* Terminal */}
+          <div className="px-5 py-4 space-y-3">
+            <SectionHeader
+              label="Terminal"
+              icon={
+                <>
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" />
+                </>
+              }
+            />
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-fg-secondary">Font family</span>
+                {terminalFontFamily !== TERMINAL_FONT_FAMILY_DEFAULT && (
+                  <button
+                    onClick={() =>
+                      setTerminalFontFamily(TERMINAL_FONT_FAMILY_DEFAULT)
+                    }
+                    className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              <Input
+                value={terminalFontDraft}
+                onChange={(e) => setTerminalFontDraft(e.target.value)}
+                onBlur={commitTerminalFontFamily}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTerminalFontFamily();
+                }}
+                className="mt-1.5 w-full text-xs font-mono"
+                placeholder={TERMINAL_FONT_FAMILY_DEFAULT}
+              />
+              <p className="mt-1.5 text-xxs text-fg-faint">
+                Separate from the code font. Try a font like{" "}
+                <code className="text-fg-muted">JetBrains Mono</code>.
+              </p>
+            </div>
+
+            <Stepper
+              label="Font size"
+              value={terminalFontSize}
+              min={TERMINAL_FONT_SIZE_MIN}
+              max={TERMINAL_FONT_SIZE_MAX}
+              step={TERMINAL_FONT_SIZE_STEP}
+              format={(v) => `${v}px`}
+              onChange={setTerminalFontSize}
+            />
+
+            <div>
+              <span className="text-xs text-fg-secondary">Font weight</span>
+              <div className="mt-1.5">
+                <Segmented<FontWeight>
+                  value={terminalFontWeight}
+                  options={[
+                    { value: 300, label: "Light" },
+                    { value: 400, label: "Normal" },
+                    { value: 500, label: "Medium" },
+                    { value: 700, label: "Bold" },
+                  ]}
+                  onChange={setTerminalFontWeight}
+                />
+              </div>
+            </div>
+
+            <Stepper
+              label="Line height"
+              value={terminalLineHeight}
+              min={TERMINAL_LINE_HEIGHT_MIN}
+              max={TERMINAL_LINE_HEIGHT_MAX}
+              step={TERMINAL_LINE_HEIGHT_STEP}
+              format={(v) => v.toFixed(2)}
+              onChange={setTerminalLineHeight}
+            />
+
+            <Stepper
+              label="Letter spacing"
+              value={terminalLetterSpacing}
+              min={TERMINAL_LETTER_SPACING_MIN}
+              max={TERMINAL_LETTER_SPACING_MAX}
+              step={TERMINAL_LETTER_SPACING_STEP}
+              format={(v) => `${v}px`}
+              onChange={setTerminalLetterSpacing}
+            />
+
+            <div>
+              <span className="text-xs text-fg-secondary">Renderer</span>
+              <div className="mt-1.5">
+                <Segmented<TerminalRenderer>
+                  value={terminalRenderer}
+                  options={[
+                    { value: "dom", label: "DOM" },
+                    { value: "webgl", label: "WebGL" },
+                  ]}
+                  onChange={setTerminalRenderer}
+                />
+              </div>
+              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
+                DOM is crisper on macOS (native font smoothing); WebGL is faster
+                for heavy output.
+              </p>
+            </div>
+
+            <div>
+              <label
+                className={`flex items-center justify-between rounded-lg px-3 py-2.5 transition-colors ${
+                  terminalRenderer === "webgl"
+                    ? "cursor-not-allowed bg-surface-raised/20 opacity-50"
+                    : "bg-surface-raised/30 hover:bg-surface-raised/50"
+                }`}
+              >
+                <span className="text-xs text-fg-secondary">Ligatures</span>
+                <Switch
+                  checked={terminalLigatures}
+                  onCheckedChange={setTerminalLigatures}
+                  disabled={terminalRenderer === "webgl"}
+                />
+              </label>
+              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
+                {terminalRenderer === "webgl"
+                  ? "Requires the DOM renderer."
+                  : "Render combined glyphs (e.g. => and !==) when the font supports them."}
+              </p>
+            </div>
           </div>
 
           {/* Sound Effects + Crash Reporting */}
