@@ -311,6 +311,7 @@ fn print_comments_human(comparison: &str, total: usize, rows: &[&LineAnnotation]
 pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let (file_path, line_number, end_line_number) = parse_location(&args.location)?;
+    validate_content(&args.content)?;
 
     let author = args
         .author
@@ -473,15 +474,22 @@ pub fn run_submit_comments(target: ReviewTarget, args: CommentsSubmitArgs) -> Re
     Ok(())
 }
 
+/// Reject empty/whitespace-only comment content, shared by the single-comment
+/// (`run_add`) and batch (`comments submit`) paths.
+fn validate_content(content: &str) -> Result<(), String> {
+    if content.trim().is_empty() {
+        return Err("empty content".to_owned());
+    }
+    Ok(())
+}
+
 /// Validate a batch comment: line numbers are 1-based and ranges non-inverted,
 /// matching `parse_location`'s rules for the single-comment path.
 fn validate_comment_input(input: &CommentInput) -> Result<(), String> {
     if input.path.is_empty() {
         return Err("empty path".to_owned());
     }
-    if input.content.trim().is_empty() {
-        return Err("empty content".to_owned());
-    }
+    validate_content(&input.content)?;
     if input.line == 0 {
         return Err("line 0 is invalid (line numbers are 1-based)".to_owned());
     }
