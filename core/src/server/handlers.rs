@@ -144,6 +144,8 @@ pub fn build_api_router() -> Router {
         .route("/api/misc/path-is-file", post(misc_path_is_file))
         .route("/api/misc/vscode-theme", post(misc_vscode_theme))
         .route("/api/misc/resolve-repo-path", post(misc_resolve_repo_path))
+        // Agent usage
+        .route("/api/usage/agents", post(usage_agents))
         // Streaming
         .route("/api/streaming/git-commit", post(streaming_git_commit))
         .route(
@@ -1109,6 +1111,14 @@ async fn misc_resolve_repo_path(
         Ok(None)
     })
     .await
+}
+
+// ============================================================
+// Agent usage handlers
+// ============================================================
+
+async fn usage_agents() -> ApiResult<Vec<crate::service::usage::AgentUsage>> {
+    blocking(crate::service::usage::report).await
 }
 
 // ============================================================

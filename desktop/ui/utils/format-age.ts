@@ -1,5 +1,5 @@
-/** Format seconds-ago as a compact relative age string. */
-function formatSeconds(seconds: number): string {
+/** Format seconds-ago as a compact relative age string: "now", "2m", "3h", "5d" */
+export function formatSeconds(seconds: number): string {
   if (seconds < 60) return "now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;

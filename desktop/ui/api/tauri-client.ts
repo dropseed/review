@@ -33,6 +33,7 @@ import type {
   FileSymbolDiff,
   RepoFileSymbols,
   GitHubPrRef,
+  AgentUsage,
   ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
@@ -202,6 +203,10 @@ export class TauriClient implements ApiClient {
 
   async getReviewTier(repoPath: string, ref: string): Promise<ReviewTierInfo> {
     return invoke<ReviewTierInfo>("get_review_tier", { repoPath, ref });
+  }
+
+  async getAgentUsage(): Promise<AgentUsage[]> {
+    return invoke<AgentUsage[]>("get_agent_usage");
   }
 
   async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {

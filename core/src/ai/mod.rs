@@ -67,14 +67,20 @@ pub fn find_claude_executable() -> Option<String> {
         }
     }
 
-    // Fallback: check the standard installation path directly.
-    // macOS GUI apps get a minimal PATH that excludes ~/.local/bin,
-    // so `which` fails even though claude is installed.
+    // Fallback: check the standard installation paths directly.
+    // macOS GUI apps get a minimal PATH that excludes ~/.local/bin and
+    // Homebrew, so `which` fails even though claude is installed.
     #[cfg(not(target_os = "windows"))]
-    if let Some(home) = std::env::var_os("HOME") {
-        let fallback = std::path::PathBuf::from(home).join(".local/bin/claude");
-        if fallback.is_file() {
-            return Some(fallback.to_string_lossy().into_owned());
+    {
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+        let fallbacks = [
+            home.as_ref().map(|h| h.join(".local/bin/claude")),
+            home.as_ref().map(|h| h.join(".claude/local/claude")),
+            Some(std::path::PathBuf::from("/opt/homebrew/bin/claude")),
+            Some(std::path::PathBuf::from("/usr/local/bin/claude")),
+        ];
+        if let Some(found) = fallbacks.into_iter().flatten().find(|p| p.is_file()) {
+            return Some(found.to_string_lossy().into_owned());
         }
     }
 

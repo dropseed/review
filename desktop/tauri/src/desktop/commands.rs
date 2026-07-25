@@ -17,6 +17,7 @@ use review::lsp::registry;
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
 use review::service::pr::ReviewTierInfo;
+use review::service::usage::AgentUsage;
 use review::service::{
     CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
     RepoFileSymbols, RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult,
@@ -496,6 +497,14 @@ pub fn remove_review_worktree(repo_path: String, worktree_path: String) -> Resul
 #[tauri::command]
 pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInfo, String> {
     review::service::pr::tier(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
+}
+
+/// Rate-limit usage for the coding agents installed on this machine.
+#[tauri::command]
+pub async fn get_agent_usage() -> Result<Vec<AgentUsage>, String> {
+    tokio::task::spawn_blocking(|| review::service::usage::report().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Listed → Fetched: pull a PR's head (and base) so its diff can be read locally.

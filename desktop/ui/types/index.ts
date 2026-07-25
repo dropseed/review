@@ -233,6 +233,25 @@ export interface ReviewTierInfo {
   worktreePath?: string;
 }
 
+/** One rate-limit window for a coding agent (Claude's session, Codex's weekly). */
+export interface UsageWindow {
+  label: string;
+  usedPercent: number;
+  /** Unix seconds when the window resets, when the agent gives a timestamp. */
+  resetsAtUnix: number | null;
+  /** The agent's own reset wording, when that's all it gives (Claude). */
+  resetsAtText: string | null;
+}
+
+export interface AgentUsage {
+  id: string;
+  name: string;
+  windows: UsageWindow[];
+  plan: string | null;
+  /** When the snapshot was taken. `null` means it was read live. */
+  observedAtUnix: number | null;
+}
+
 // A PR reviews its head branch, with the PR's base branch as the base override.
 export function prReviewTarget(pr: PullRequest): ReviewTarget {
   return {

@@ -28,6 +28,7 @@ import {
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
+import { AgentUsageIndicator } from "../AgentUsageIndicator";
 import { SortMenu } from "../FilesPanel/SortMenu";
 import { LocalBranchItem } from "./LocalBranchItem";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
@@ -884,6 +885,8 @@ export const TabRail = memo(function TabRail({
               onActivateLocalBranch={onActivateLocalBranch}
             />
           </div>
+
+          <AgentUsageIndicator />
 
           <div className="shrink-0 px-3 py-3 border-t border-t-edge/40">
             <div className="flex items-center justify-between">

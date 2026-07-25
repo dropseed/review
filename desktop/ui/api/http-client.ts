@@ -30,6 +30,7 @@ import type {
   FileSymbolDiff,
   RepoFileSymbols,
   GitHubPrRef,
+  AgentUsage,
   ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
@@ -302,6 +303,10 @@ export class HttpClient implements ApiClient {
 
   async getReviewTier(repoPath: string, ref: string): Promise<ReviewTierInfo> {
     return this.post("/api/review/tier", { repoPath, ref });
+  }
+
+  async getAgentUsage(): Promise<AgentUsage[]> {
+    return this.post("/api/usage/agents");
   }
 
   async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {

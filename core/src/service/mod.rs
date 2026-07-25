@@ -13,6 +13,7 @@ pub mod pr;
 pub mod review_io;
 pub mod symbols;
 pub mod targets;
+pub mod usage;
 pub mod util;
 pub mod vscode;
 pub mod watcher_events;

@@ -638,6 +638,7 @@ pub fn run() {
             commands::check_github_available,
             commands::list_pull_requests,
             commands::get_review_tier,
+            commands::get_agent_usage,
             commands::fetch_pull_request,
             commands::materialize_review,
             commands::release_review_worktree,

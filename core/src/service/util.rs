@@ -220,6 +220,17 @@ pub fn bytes_to_file_content(bytes: Vec<u8>, file_path: &str) -> anyhow::Result<
     })
 }
 
+/// Codex's home directory: `$CODEX_HOME` when set, else `~/.codex`.
+///
+/// Codex honours the override for everything it stores, so anything reading or
+/// writing under its home has to resolve it the same way.
+pub fn codex_home() -> Option<PathBuf> {
+    match std::env::var_os("CODEX_HOME") {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => dirs::home_dir().map(|home| home.join(".codex")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

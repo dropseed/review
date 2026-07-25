@@ -1,7 +1,5 @@
 //! `review skill` — install the bundled skills for Claude Code and/or Codex.
 
-use std::path::PathBuf;
-
 use clap::{Args, Subcommand};
 
 /// The bundled skills, embedded into the binary at build time so the shipped
@@ -37,10 +35,9 @@ fn install_skill() -> Result<(), String> {
     let claude_dir = home.join(".claude").join("skills");
     write_skills("Claude Code", &claude_dir)?;
 
-    let codex_home = std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".codex"));
-    let codex_dir = codex_home.join("skills");
+    let codex_dir = crate::service::util::codex_home()
+        .ok_or("Could not determine the Codex home directory.")?
+        .join("skills");
     write_skills("Codex", &codex_dir)?;
 
     println!("Restart Claude Code or Codex to pick up the skills.");
