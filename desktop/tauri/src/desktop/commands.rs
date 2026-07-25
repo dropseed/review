@@ -16,6 +16,7 @@ use review::lsp::client::LspClient;
 use review::lsp::registry;
 use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
+use review::service::pr::ReviewTierInfo;
 use review::service::{
     CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
     RepoFileSymbols, RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult,
@@ -137,9 +138,8 @@ pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String>
 pub async fn list_files(
     repo_path: String,
     comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || list_files_sync(repo_path, comparison, github_pr))
+    tokio::task::spawn_blocking(move || list_files_sync(repo_path, comparison))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -148,9 +148,8 @@ pub async fn list_files(
 pub fn list_files_sync(
     repo_path: String,
     comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
 ) -> Result<Vec<FileEntry>, String> {
-    review::service::files::list_files(&PathBuf::from(&repo_path), &comparison, github_pr.as_ref())
+    review::service::files::list_files(&PathBuf::from(&repo_path), &comparison)
         .map_err(|e| e.to_string())
 }
 
@@ -209,14 +208,12 @@ pub async fn get_file_content(
     repo_path: String,
     file_path: String,
     comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
 ) -> Result<FileContent, String> {
     tokio::task::spawn_blocking(move || {
         review::service::files::get_file_content(
             &PathBuf::from(&repo_path),
             &file_path,
             &comparison,
-            github_pr.as_ref(),
         )
         .map_err(|e| e.to_string())
     })
@@ -247,19 +244,7 @@ pub fn get_all_hunks_sync(
 }
 
 #[tauri::command]
-pub fn get_diff(
-    repo_path: String,
-    comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
-) -> Result<String, String> {
-    // PR routing: use gh CLI to get diff
-    if let Some(ref pr) = github_pr {
-        let provider = GhCliProvider::new(PathBuf::from(&repo_path));
-        return provider
-            .get_pull_request_diff(pr.number)
-            .map_err(|e| e.to_string());
-    }
-
+pub fn get_diff(repo_path: String, comparison: Comparison) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
     source
@@ -495,6 +480,66 @@ pub fn remove_review_worktree(repo_path: String, worktree_path: String) -> Resul
         t0.elapsed()
     );
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInfo, String> {
+    review::service::pr::tier(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
+}
+
+/// Listed → Fetched: pull a PR's head (and base) so its diff can be read locally.
+#[tauri::command]
+pub async fn fetch_pull_request(repo_path: String, pr: GitHubPrRef) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        let result = review::service::pr::fetch(&PathBuf::from(&repo_path), &pr)
+            .map_err(|e| e.to_string())?;
+        info!(
+            "fetch_pull_request #{} -> {} in {:?}",
+            pr.number,
+            result,
+            t0.elapsed()
+        );
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Fetched → Materialized: provision a worktree so terminals, LSP, and staging
+/// have files on disk to work with.
+#[tauri::command]
+pub async fn materialize_review(repo_path: String, r#ref: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        let path = review::service::pr::materialize(&PathBuf::from(&repo_path), &r#ref)
+            .map_err(|e| e.to_string())?;
+        info!(
+            "materialize_review ref={} -> {} in {:?}",
+            r#ref,
+            path,
+            t0.elapsed()
+        );
+        Ok(path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Materialized → Fetched: drop the worktree, keep the review record.
+#[tauri::command]
+pub fn release_review_worktree(repo_path: String, r#ref: String) -> Result<(), String> {
+    review::service::pr::release(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
+}
+
+/// Reclaim disk from PR reviews whose PR has merged or closed.
+#[tauri::command]
+pub async fn reclaim_closed_prs(repo_path: String) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        review::service::pr::reclaim_closed(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -804,7 +849,6 @@ pub fn get_expanded_context(
     comparison: Comparison,
     start_line: u32,
     end_line: u32,
-    github_pr: Option<GitHubPrRef>,
 ) -> Result<ExpandedContextResult, String> {
     review::service::files::get_expanded_context(
         &PathBuf::from(&repo_path),
@@ -812,7 +856,6 @@ pub fn get_expanded_context(
         &comparison,
         start_line,
         end_line,
-        github_pr.as_ref(),
     )
     .map_err(|e| e.to_string())
 }

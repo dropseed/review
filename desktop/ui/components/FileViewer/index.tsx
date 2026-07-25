@@ -401,7 +401,6 @@ export function FileViewer({
         repoPath,
         filePath,
         effectiveComparison,
-        isWorkingTreeMode ? undefined : reviewState?.githubPr,
       );
     }
 

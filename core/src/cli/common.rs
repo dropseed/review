@@ -250,7 +250,7 @@ pub fn load_comparison_hunks(
     spec: Option<&str>,
 ) -> Result<(ResolvedReview, Vec<DiffHunk>), String> {
     let review = resolve_review_arg(repo, spec)?;
-    let hunks = crate::service::files::comparison_hunks(repo, &review.comparison, None)
+    let hunks = crate::service::files::comparison_hunks(repo, &review.comparison)
         .map_err(|e| format!("Failed to read hunks: {e}"))?;
     Ok((review, hunks))
 }

@@ -33,6 +33,7 @@ import type {
   FileSymbolDiff,
   RepoFileSymbols,
   GitHubPrRef,
+  ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
   RemoteInfo,
@@ -197,6 +198,28 @@ export class TauriClient implements ApiClient {
     return invoke<PullRequest[]>("list_pull_requests", { repoPath });
   }
 
+  // ----- Review tiers -----
+
+  async getReviewTier(repoPath: string, ref: string): Promise<ReviewTierInfo> {
+    return invoke<ReviewTierInfo>("get_review_tier", { repoPath, ref });
+  }
+
+  async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {
+    return invoke<string>("fetch_pull_request", { repoPath, pr });
+  }
+
+  async materializeReview(repoPath: string, ref: string): Promise<string> {
+    return invoke<string>("materialize_review", { repoPath, ref });
+  }
+
+  async releaseReviewWorktree(repoPath: string, ref: string): Promise<void> {
+    return invoke<void>("release_review_worktree", { repoPath, ref });
+  }
+
+  async reclaimClosedPrs(repoPath: string): Promise<string[]> {
+    return invoke<string[]>("reclaim_closed_prs", { repoPath });
+  }
+
   // ----- Worktree operations -----
 
   async createReviewWorktree(
@@ -246,13 +269,8 @@ export class TauriClient implements ApiClient {
   async listFiles(
     repoPath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
   ): Promise<FileEntry[]> {
-    return invoke<FileEntry[]>("list_files", {
-      repoPath,
-      comparison,
-      githubPr: githubPr ?? null,
-    });
+    return invoke<FileEntry[]>("list_files", { repoPath, comparison });
   }
 
   async listAllFiles(
@@ -280,13 +298,11 @@ export class TauriClient implements ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
   ): Promise<FileContent> {
     return invoke<FileContent>("get_file_content", {
       repoPath,
       filePath,
       comparison,
-      githubPr: githubPr ?? null,
     });
   }
 
@@ -308,7 +324,6 @@ export class TauriClient implements ApiClient {
     comparison: Comparison,
     startLine: number,
     endLine: number,
-    githubPr?: GitHubPrRef,
   ): Promise<ExpandedContext> {
     return invoke<ExpandedContext>("get_expanded_context", {
       repoPath,
@@ -316,7 +331,6 @@ export class TauriClient implements ApiClient {
       comparison,
       startLine,
       endLine,
-      githubPr: githubPr ?? null,
     });
   }
 

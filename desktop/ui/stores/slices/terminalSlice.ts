@@ -558,20 +558,55 @@ export function selectTerminalIdsForReview(
  * branch-level. Rows without one (e.g. the main checkout) fall back to every
  * live session for the repo — repo-level, and the default case.
  */
+/**
+ * The checkout a session belongs to: the longest known checkout root
+ * containing its cwd, or null if it started outside all of them.
+ *
+ * A shell is bound to a directory, so a *checkout* is what owns a session —
+ * not a branch name. That makes ownership survive everything a branch can't:
+ * a row disappearing, a branch being renamed, a review being deleted. The
+ * trade is that `git checkout` in the main working tree visibly moves its
+ * terminals to whichever row now holds that directory, which is honest —
+ * those shells really are sitting on the new branch.
+ *
+ * Matched against the session's *start* cwd, which never moves, rather than
+ * the live OSC 7 cwd, so `cd`-ing around inside a terminal doesn't reassign it.
+ */
+export function sessionCheckout(
+  cwd: string,
+  checkouts: readonly string[],
+): string | null {
+  let best: string | null = null;
+  for (const root of checkouts) {
+    if (cwd !== root && !cwd.startsWith(`${root}/`)) continue;
+    if (best === null || root.length > best.length) best = root;
+  }
+  return best;
+}
+
+/**
+ * Ids of the sessions belonging to one row.
+ *
+ * `checkoutPath` is the row's own directory — a linked worktree, or the repo
+ * root for the main working-tree row. Rows without a checkout own no sessions
+ * (they have nowhere to run one), so they get an empty list.
+ *
+ * `checkouts` is every checkout root in the repo, needed to attribute a
+ * session to the *innermost* one: worktrees can live under the repo root, so a
+ * plain prefix test would let the repo-root row claim every worktree's
+ * terminals as well as its own.
+ */
 export function selectTerminalIdsForRow(
   state: Pick<TerminalSlice, "terminalSessions">,
   repoPath: string,
-  worktreePath?: string | null,
+  checkoutPath: string | null | undefined,
+  checkouts: readonly string[],
 ): string[] {
-  const repoSessions = Object.values(state.terminalSessions).filter(
-    (s) => s.repoPath === repoPath,
-  );
-  const scoped = worktreePath
-    ? repoSessions.filter(
-        (s) => s.cwd === worktreePath || s.cwd.startsWith(`${worktreePath}/`),
-      )
-    : repoSessions;
-  return scoped.map((s) => s.id);
+  if (!checkoutPath) return [];
+  return Object.values(state.terminalSessions)
+    .filter((s) => s.repoPath === repoPath)
+    .filter((s) => sessionCheckout(s.cwd, checkouts) === checkoutPath)
+    .map((s) => s.id);
 }
 
 export const createTerminalSlice: SliceCreatorWithClientAndStorage<

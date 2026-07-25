@@ -7,6 +7,7 @@ import {
   ingestTerminalList,
   selectTerminalIdsForReview,
   selectTerminalIdsForRow,
+  sessionCheckout,
   terminalSeverity,
   activeFallback,
   addTabForTerminal,
@@ -246,26 +247,30 @@ describe("selectTerminalIdsForReview", () => {
 });
 
 describe("selectTerminalIdsForRow", () => {
-  it("falls back to every repo session when the row has no worktree", () => {
+  const CHECKOUTS = ["/r", "/r/.worktrees/feature"];
+
+  it("gives the repo-root row only the sessions started there", () => {
     let state = { ...emptyState() };
     state = {
       ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
+      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
     };
     state = {
       ...state,
       ...addTerminalToState(
         state,
-        session("b", "/r", { cwd: "/r/some/worktree" }),
+        session("b", "/r", { cwd: "/r/.worktrees/feature" }),
         "k1",
       ),
     };
-    expect(selectTerminalIdsForRow(state, "/r")).toEqual(
-      expect.arrayContaining(["a", "b"]),
-    );
+    // A prefix test would hand the worktree's session to the repo root too;
+    // the innermost checkout has to win.
+    expect(selectTerminalIdsForRow(state, "/r", "/r", CHECKOUTS)).toEqual([
+      "a",
+    ]);
   });
 
-  it("scopes to sessions under the row's worktree when one is set", () => {
+  it("scopes to sessions under the row's own worktree", () => {
     let state = { ...emptyState() };
     state = {
       ...state,
@@ -280,21 +285,70 @@ describe("selectTerminalIdsForRow", () => {
       ),
     };
     expect(
-      selectTerminalIdsForRow(state, "/r", "/r/.worktrees/feature"),
+      selectTerminalIdsForRow(state, "/r", "/r/.worktrees/feature", CHECKOUTS),
     ).toEqual(["b"]);
   });
 
-  it("excludes sessions from other repos even with no worktree", () => {
+  it("attributes a session started in a subdirectory to its checkout", () => {
     let state = { ...emptyState() };
     state = {
       ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
+      ...addTerminalToState(
+        state,
+        session("a", "/r", { cwd: "/r/.worktrees/feature/src/deep" }),
+        "k1",
+      ),
+    };
+    expect(
+      selectTerminalIdsForRow(state, "/r", "/r/.worktrees/feature", CHECKOUTS),
+    ).toEqual(["a"]);
+  });
+
+  it("gives a row with no checkout nothing", () => {
+    let state = { ...emptyState() };
+    state = {
+      ...state,
+      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
+    };
+    expect(selectTerminalIdsForRow(state, "/r", null, CHECKOUTS)).toEqual([]);
+  });
+
+  it("excludes sessions from other repos", () => {
+    let state = { ...emptyState() };
+    state = {
+      ...state,
+      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
     };
     state = {
       ...state,
-      ...addTerminalToState(state, session("b", "/other"), "k2"),
+      ...addTerminalToState(
+        state,
+        session("b", "/other", { cwd: "/other" }),
+        "k2",
+      ),
     };
-    expect(selectTerminalIdsForRow(state, "/r")).toEqual(["a"]);
+    expect(selectTerminalIdsForRow(state, "/r", "/r", CHECKOUTS)).toEqual([
+      "a",
+    ]);
+  });
+});
+
+describe("sessionCheckout", () => {
+  it("picks the innermost containing checkout", () => {
+    expect(
+      sessionCheckout("/r/.worktrees/feature/src", [
+        "/r",
+        "/r/.worktrees/feature",
+      ]),
+    ).toBe("/r/.worktrees/feature");
+  });
+
+  it("returns null for a cwd outside every checkout", () => {
+    expect(sessionCheckout("/elsewhere", ["/r"])).toBeNull();
+  });
+
+  it("does not treat a sibling path sharing a prefix as contained", () => {
+    expect(sessionCheckout("/r-other/src", ["/r"])).toBeNull();
   });
 });
 

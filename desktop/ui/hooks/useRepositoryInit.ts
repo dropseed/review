@@ -599,6 +599,16 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         return;
       }
 
+      // Listed -> Fetched, before resolving: a PR's comparison points at the
+      // fetched ref, so resolving first would pin the review to a base..head
+      // that doesn't exist yet. Fetching is idempotent and also picks up
+      // commits pushed since the last look, so it runs on every open.
+      if (review.githubPr) {
+        await useReviewStore
+          .getState()
+          .fetchPullRequestRef(review.repoPath, review.githubPr);
+      }
+
       const resolved = await getApiClient().resolveReview(
         review.repoPath,
         review.ref,
@@ -636,6 +646,22 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const state = useReviewStore.getState();
       const { routePrefix } = await resolveRepoIdentity(path);
 
+      // Order matters for PRs: fetch the head so the ref exists, then persist
+      // `githubPr` onto the review, and only then resolve. Resolution reads
+      // both — it points a PR's comparison at the fetched ref — so doing it
+      // first would produce a comparison against a ref that isn't there yet.
+      if (target.githubPr) {
+        await useReviewStore
+          .getState()
+          .fetchPullRequestRef(path, target.githubPr);
+      }
+      await ensureReviewExists(
+        path,
+        target.ref,
+        target.baseOverride,
+        target.githubPr,
+      );
+
       const resolved = await getApiClient().resolveReview(
         path,
         target.ref,
@@ -646,12 +672,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         repoPath: path,
         ref: resolved.ref,
       });
-      await ensureReviewExists(
-        path,
-        resolved.ref,
-        resolved.baseOverride,
-        target.githubPr,
-      );
 
       if (path !== state.repoPath) {
         // Different repo — atomic switch prevents phantom entries

@@ -219,6 +219,20 @@ export interface ReviewTarget {
   githubPr?: GitHubPrRef;
 }
 
+/**
+ * How much of a review is present locally.
+ *
+ * - `listed` — metadata only; the diff has not been fetched.
+ * - `fetched` — the diff reads locally; no working tree.
+ * - `materialized` — a worktree exists, so terminals, LSP, and staging work.
+ */
+export type ReviewTier = "listed" | "fetched" | "materialized";
+
+export interface ReviewTierInfo {
+  tier: ReviewTier;
+  worktreePath?: string;
+}
+
 // A PR reviews its head branch, with the PR's base branch as the base override.
 export function prReviewTarget(pr: PullRequest): ReviewTarget {
   return {
@@ -521,6 +535,11 @@ export interface GlobalReviewSummary extends ReviewSummary {
   repoPath: string;
   repoName: string;
   diffStats?: DiffShortStat;
+  /**
+   * For PR reviews, whether the PR head has been fetched locally. Always true
+   * for non-PR reviews, whose ref is already in the repo by definition.
+   */
+  prFetched: boolean;
 }
 
 // Summary of a saved review (for start screen listing). Listing stays git-free:

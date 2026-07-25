@@ -25,6 +25,7 @@ import {
   useDeepLinkFocus,
   useScopeReconciliation,
   useTerminalEvents,
+  useReviewTier,
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanel } from "./FilesPanel";
@@ -253,6 +254,7 @@ export function ReviewView({
   useLspClient();
   useScopeReconciliation();
   useTerminalEvents();
+  useReviewTier();
 
   // Terminal panel: left vertical pane inside the content region, sized via the
   // horizontal ResizeHandle and persisted in the store.

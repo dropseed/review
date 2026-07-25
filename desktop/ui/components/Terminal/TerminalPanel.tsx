@@ -22,7 +22,10 @@ import type { TerminalStatus } from "../../types";
 
 interface CwdOption {
   label: string;
-  cwd: string;
+  /** Null when the row has no checkout yet — picking it materializes one. */
+  cwd: string | null;
+  /** Extra line shown under the label, e.g. the cost of materializing. */
+  hint?: string;
 }
 
 export function TerminalPanel(): ReactNode {
@@ -38,6 +41,8 @@ export function TerminalPanel(): ReactNode {
     (s) => s.activeTabIdByReviewKey,
   );
   const localActivity = useReviewStore((s) => s.localActivity);
+  const reviewTier = useReviewStore((s) => s.reviewTier);
+  const ensureMaterialized = useReviewStore((s) => s.ensureMaterialized);
 
   const startTerminal = useReviewStore((s) => s.startTerminal);
   const splitTerminal = useReviewStore((s) => s.splitTerminal);
@@ -70,11 +75,33 @@ export function TerminalPanel(): ReactNode {
   // ⌘D / ⇧⌘D pane splits are dispatched by useKeyboardNavigation, which routes
   // the chord to whichever pane has focus.
 
-  // cwd choices for the "+" menu: repo root plus every worktree of this repo.
+  // cwd choices for the "+" menu. This review leads — a terminal opened from
+  // here belongs to the thing being reviewed, so the row's own checkout is the
+  // default even when it doesn't exist yet. Repo root and sibling worktrees
+  // follow for the times you want to step outside it.
   const cwdOptions = useMemo<CwdOption[]>(() => {
     if (!repoPath) return [];
-    const options: CwdOption[] = [{ label: "Repo root", cwd: repoPath }];
-    const seen = new Set<string>([repoPath]);
+    const options: CwdOption[] = [];
+    const seen = new Set<string>();
+
+    const reviewWorktree =
+      reviewTier?.tier === "materialized" ? reviewTier.worktreePath : undefined;
+    if (reviewRef && reviewWorktree) {
+      options.push({ label: reviewRef, cwd: reviewWorktree });
+      seen.add(reviewWorktree);
+    } else if (reviewRef) {
+      options.push({
+        label: reviewRef,
+        cwd: null,
+        hint: "checks out a worktree",
+      });
+    }
+
+    if (!seen.has(repoPath)) {
+      options.push({ label: "Repo root", cwd: repoPath });
+      seen.add(repoPath);
+    }
+
     const repo = localActivity.find((r) => r.repoPath === repoPath);
     for (const branch of repo?.branches ?? []) {
       const wt = branch.worktreePath;
@@ -84,12 +111,22 @@ export function TerminalPanel(): ReactNode {
       }
     }
     return options;
-  }, [repoPath, localActivity]);
+  }, [repoPath, reviewRef, reviewTier, localActivity]);
 
   if (!repoPath) return null;
 
-  const handleNewTerminal = (cwd: string) => {
-    void startTerminal(reviewKey, repoPath, cwd, 80, 24);
+  const handleNewTerminal = (option: CwdOption) => {
+    // A null cwd means this review has no checkout yet. Materializing asks
+    // first, so a declined prompt simply starts no terminal.
+    if (option.cwd === null) {
+      void ensureMaterialized("run a terminal in it").then((worktreePath) => {
+        if (worktreePath) {
+          void startTerminal(reviewKey, repoPath, worktreePath, 80, 24);
+        }
+      });
+      return;
+    }
+    void startTerminal(reviewKey, repoPath, option.cwd, 80, 24);
   };
 
   const handleSplit = (
@@ -200,10 +237,15 @@ export function TerminalPanel(): ReactNode {
             <DropdownMenuLabel>New terminal in…</DropdownMenuLabel>
             {cwdOptions.map((opt) => (
               <DropdownMenuItem
-                key={opt.cwd}
-                onClick={() => handleNewTerminal(opt.cwd)}
+                key={opt.cwd ?? `materialize:${opt.label}`}
+                onClick={() => handleNewTerminal(opt)}
               >
-                <span className="truncate">{opt.label}</span>
+                <span className="min-w-0 truncate">{opt.label}</span>
+                {opt.hint && (
+                  <span className="ml-2 shrink-0 text-xxs text-fg-faint">
+                    {opt.hint}
+                  </span>
+                )}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

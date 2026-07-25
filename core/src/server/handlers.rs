@@ -80,6 +80,17 @@ pub fn build_api_router() -> Router {
         // GitHub
         .route("/api/github/available", post(github_available))
         .route("/api/github/pull-requests", post(github_pull_requests))
+        .route("/api/review/tier", post(review_tier))
+        .route(
+            "/api/github/fetch-pull-request",
+            post(github_fetch_pull_request),
+        )
+        .route("/api/review/materialize", post(review_materialize))
+        .route(
+            "/api/review/release-worktree",
+            post(review_release_worktree),
+        )
+        .route("/api/github/reclaim-closed", post(github_reclaim_closed))
         // Files
         .route("/api/files/list", post(files_list))
         .route("/api/files/list-all", post(files_list_all))
@@ -172,7 +183,6 @@ struct GetFileContentRequest {
     repo_path: String,
     file_path: String,
     comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
 }
 
 #[derive(Deserialize)]
@@ -191,7 +201,6 @@ struct ExpandedContextRequest {
     comparison: Comparison,
     start_line: u32,
     end_line: u32,
-    github_pr: Option<GitHubPrRef>,
 }
 
 #[derive(Deserialize)]
@@ -208,7 +217,6 @@ struct SearchRequest {
 struct ListFilesRequest {
     repo_path: String,
     comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
 }
 
 #[derive(Deserialize)]
@@ -338,7 +346,6 @@ struct CommitDetailRequest {
 struct DiffRequest {
     repo_path: String,
     comparison: Comparison,
-    github_pr: Option<GitHubPrRef>,
 }
 
 #[derive(Deserialize)]
@@ -589,12 +596,6 @@ async fn git_commit_detail(Json(req): Json<CommitDetailRequest>) -> ApiResult<Co
 
 async fn git_diff(Json(req): Json<DiffRequest>) -> ApiResult<String> {
     blocking(move || {
-        if let Some(ref pr) = req.github_pr {
-            let provider = GhCliProvider::new(PathBuf::from(&req.repo_path));
-            return provider
-                .get_pull_request_diff(pr.number)
-                .map_err(Into::into);
-        }
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.get_diff(&req.comparison, None).map_err(Into::into)
     })
@@ -668,6 +669,45 @@ async fn worktree_update_head(Json(req): Json<WorktreeUpdateHeadRequest>) -> Api
     .await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewRefRequest {
+    repo_path: String,
+    #[serde(rename = "ref")]
+    ref_name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchPullRequestRequest {
+    repo_path: String,
+    pr: GitHubPrRef,
+}
+
+async fn review_tier(
+    Json(req): Json<ReviewRefRequest>,
+) -> ApiResult<crate::service::pr::ReviewTierInfo> {
+    blocking(move || crate::service::pr::tier(&PathBuf::from(&req.repo_path), &req.ref_name)).await
+}
+
+async fn github_fetch_pull_request(Json(req): Json<FetchPullRequestRequest>) -> ApiResult<String> {
+    blocking(move || crate::service::pr::fetch(&PathBuf::from(&req.repo_path), &req.pr)).await
+}
+
+async fn review_materialize(Json(req): Json<ReviewRefRequest>) -> ApiResult<String> {
+    blocking(move || crate::service::pr::materialize(&PathBuf::from(&req.repo_path), &req.ref_name))
+        .await
+}
+
+async fn review_release_worktree(Json(req): Json<ReviewRefRequest>) -> ApiResult<()> {
+    blocking(move || crate::service::pr::release(&PathBuf::from(&req.repo_path), &req.ref_name))
+        .await
+}
+
+async fn github_reclaim_closed(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec<String>> {
+    blocking(move || crate::service::pr::reclaim_closed(&PathBuf::from(&req.repo_path))).await
+}
+
 async fn git_resolve_ref(Json(req): Json<ResolveRefRequest>) -> ApiResult<String> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
@@ -699,11 +739,7 @@ async fn github_pull_requests(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec
 
 async fn files_list(Json(req): Json<ListFilesRequest>) -> ApiResult<Vec<FileEntry>> {
     blocking(move || {
-        crate::service::files::list_files(
-            &PathBuf::from(&req.repo_path),
-            &req.comparison,
-            req.github_pr.as_ref(),
-        )
+        crate::service::files::list_files(&PathBuf::from(&req.repo_path), &req.comparison)
     })
     .await
 }
@@ -737,7 +773,6 @@ async fn files_content(Json(req): Json<GetFileContentRequest>) -> ApiResult<File
             &PathBuf::from(&req.repo_path),
             &req.file_path,
             &req.comparison,
-            req.github_pr.as_ref(),
         )
     })
     .await
@@ -764,7 +799,6 @@ async fn files_expanded_context(
             &req.comparison,
             req.start_line,
             req.end_line,
-            req.github_pr.as_ref(),
         )
     })
     .await

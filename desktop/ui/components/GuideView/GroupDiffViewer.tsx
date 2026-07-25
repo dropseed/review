@@ -17,7 +17,6 @@ import type {
   DiffHunk,
   DiffLine,
   FileContent,
-  GitHubPrRef,
   HunkGroup,
   HunkState,
 } from "../../types";
@@ -421,7 +420,6 @@ export function GroupDiffViewer({
             repoPath,
             filePath,
             comparison,
-            reviewState?.githubPr,
           );
           return { filePath, content };
         } catch {
@@ -528,7 +526,6 @@ export function GroupDiffViewer({
           comparison as Comparison,
           requestStart,
           requestEnd,
-          reviewState?.githubPr as GitHubPrRef | undefined,
         );
         for (let i = 0; i < result.lines.length; i++) {
           lineCacheRef.current.set(

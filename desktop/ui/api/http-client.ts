@@ -30,6 +30,7 @@ import type {
   FileSymbolDiff,
   RepoFileSymbols,
   GitHubPrRef,
+  ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
   RemoteInfo,
@@ -297,6 +298,28 @@ export class HttpClient implements ApiClient {
     return this.post("/api/github/pull-requests", { repoPath });
   }
 
+  // ----- Review tiers -----
+
+  async getReviewTier(repoPath: string, ref: string): Promise<ReviewTierInfo> {
+    return this.post("/api/review/tier", { repoPath, ref });
+  }
+
+  async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {
+    return this.post("/api/github/fetch-pull-request", { repoPath, pr });
+  }
+
+  async materializeReview(repoPath: string, ref: string): Promise<string> {
+    return this.post("/api/review/materialize", { repoPath, ref });
+  }
+
+  async releaseReviewWorktree(repoPath: string, ref: string): Promise<void> {
+    return this.post("/api/review/release-worktree", { repoPath, ref });
+  }
+
+  async reclaimClosedPrs(repoPath: string): Promise<string[]> {
+    return this.post("/api/github/reclaim-closed", { repoPath });
+  }
+
   // ----- Worktree operations -----
 
   async createReviewWorktree(
@@ -342,12 +365,10 @@ export class HttpClient implements ApiClient {
   async listFiles(
     repoPath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
   ): Promise<FileEntry[]> {
     return this.post("/api/files/list", {
       repoPath,
       comparison,
-      githubPr: githubPr ?? null,
     });
   }
 
@@ -373,13 +394,11 @@ export class HttpClient implements ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
   ): Promise<FileContent> {
     return this.post("/api/files/content", {
       repoPath,
       filePath,
       comparison,
-      githubPr: githubPr ?? null,
     });
   }
 
@@ -401,7 +420,6 @@ export class HttpClient implements ApiClient {
     comparison: Comparison,
     startLine: number,
     endLine: number,
-    githubPr?: GitHubPrRef,
   ): Promise<ExpandedContext> {
     return this.post("/api/files/expanded-context", {
       repoPath,
@@ -409,7 +427,6 @@ export class HttpClient implements ApiClient {
       comparison,
       startLine,
       endLine,
-      githubPr: githubPr ?? null,
     });
   }
 

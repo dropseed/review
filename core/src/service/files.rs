@@ -14,44 +14,22 @@ use crate::diff::parser::{
     compute_content_hash, create_binary_hunk, create_untracked_hunk, parse_diff,
     parse_multi_file_diff, DiffHunk,
 };
-use crate::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider};
 use crate::sources::local_git::{LocalGitSource, SearchMatch, VerifiedStatus};
 use crate::sources::traits::{Comparison, DiffSource, FileEntry};
 
 use super::util::{
-    bytes_to_data_url, bytes_to_file_content, extract_file_diff, get_content_type,
-    get_image_mime_type,
+    bytes_to_data_url, bytes_to_file_content, get_content_type, get_image_mime_type,
 };
 use super::ExpandedContextResult;
 use super::FileContent;
 
 /// List files with changes in the comparison.
-pub fn list_files(
-    repo_path: &Path,
-    comparison: &Comparison,
-    github_pr: Option<&GitHubPrRef>,
-) -> anyhow::Result<Vec<FileEntry>> {
+pub fn list_files(repo_path: &Path, comparison: &Comparison) -> anyhow::Result<Vec<FileEntry>> {
     let t0 = Instant::now();
     debug!(
         "[list_files] repo_path={}, comparison={comparison:?}",
         repo_path.display()
     );
-
-    // PR routing: use gh CLI to get file list
-    if let Some(pr) = github_pr {
-        let provider = GhCliProvider::new(repo_path.to_path_buf());
-        let files = provider
-            .get_pull_request_files(pr.number)
-            .context("Failed to list PR files")?;
-        let result = crate::sources::github::pr_files_to_file_entries(files);
-        info!(
-            "[list_files] SUCCESS (PR #{}): {} entries in {:?}",
-            pr.number,
-            result.len(),
-            t0.elapsed()
-        );
-        return Ok(result);
-    }
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
     let result = source
@@ -122,18 +100,12 @@ pub fn get_file_content(
     repo_path: &Path,
     file_path: &str,
     comparison: &Comparison,
-    github_pr: Option<&GitHubPrRef>,
 ) -> anyhow::Result<FileContent> {
     let t0 = Instant::now();
     debug!(
         "[get_file_content] repo_path={}, file_path={file_path}, comparison={comparison:?}",
         repo_path.display()
     );
-
-    // PR routing: get diff from gh CLI and content from local git refs
-    if let Some(pr) = github_pr {
-        return get_file_content_for_pr(repo_path, file_path, pr);
-    }
 
     // Validate the logical path doesn't escape the repo.
     if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
@@ -412,86 +384,6 @@ pub fn get_file_content(
     Ok(result)
 }
 
-/// Get file content for a PR by extracting the file's diff from `gh pr diff`.
-pub fn get_file_content_for_pr(
-    repo_path: &Path,
-    file_path: &str,
-    pr: &GitHubPrRef,
-) -> anyhow::Result<FileContent> {
-    let provider = GhCliProvider::new(repo_path.to_path_buf());
-
-    // Get the full PR diff and extract this file's portion
-    let full_diff = provider
-        .get_pull_request_diff(pr.number)
-        .context("Failed to get PR diff")?;
-
-    // Extract the diff section for this specific file
-    let file_diff = extract_file_diff(&full_diff, file_path);
-
-    let hunks = if file_diff.is_empty() {
-        vec![]
-    } else {
-        parse_diff(&file_diff, file_path)
-    };
-
-    let content_type = get_content_type(file_path);
-
-    // For images, just return minimal info with the diff
-    if content_type == "image" {
-        return Ok(FileContent {
-            content: String::new(),
-            old_content: None,
-            diff_patch: file_diff,
-            hunks,
-            content_type,
-            image_data_url: None,
-            old_image_data_url: None,
-        });
-    }
-
-    // Try to get old/new content from local git refs
-    let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
-
-    let old_content = source
-        .get_file_bytes(file_path, &pr.base_ref_name)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok());
-
-    // Try the head ref first; if not available locally, try fetching
-    let new_content = source
-        .get_file_bytes(file_path, &pr.head_ref_name)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .or_else(|| {
-            // Try fetching the PR head ref
-            let fetch_ref = format!("pull/{}/head:refs/pr/{}", pr.number, pr.number);
-            let _ = std::process::Command::new("git")
-                .args(["fetch", "origin", &fetch_ref])
-                .current_dir(repo_path)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-
-            let pr_ref = format!("refs/pr/{}", pr.number);
-            source
-                .get_file_bytes(file_path, &pr_ref)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-        });
-
-    let content = new_content.unwrap_or_default();
-
-    Ok(FileContent {
-        content,
-        old_content,
-        diff_patch: file_diff,
-        hunks,
-        content_type,
-        image_data_url: None,
-        old_image_data_url: None,
-    })
-}
-
 /// Enumerate every hunk in a comparison: list its changed files, then parse
 /// their diffs. Shared by the CLI, the HTTP server, and the desktop app so they
 /// all see the same hunk set — in particular to feed
@@ -499,9 +391,8 @@ pub fn get_file_content_for_pr(
 pub fn comparison_hunks(
     repo_path: &Path,
     comparison: &Comparison,
-    github_pr: Option<&GitHubPrRef>,
 ) -> anyhow::Result<Vec<DiffHunk>> {
-    let files = list_files(repo_path, comparison, github_pr)?;
+    let files = list_files(repo_path, comparison)?;
     let mut paths = Vec::new();
     collect_file_paths(&files, &mut paths);
     get_all_hunks(repo_path, comparison, &paths)
@@ -680,7 +571,6 @@ pub fn get_expanded_context(
     comparison: &Comparison,
     start_line: u32,
     end_line: u32,
-    github_pr: Option<&GitHubPrRef>,
 ) -> anyhow::Result<ExpandedContextResult> {
     debug!(
         "[get_expanded_context] file={file_path}, lines {start_line}-{end_line}, comparison={comparison:?}"
@@ -688,10 +578,7 @@ pub fn get_expanded_context(
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
-    // For PRs, use the head ref name (best-effort)
-    let git_ref = if let Some(pr) = github_pr {
-        pr.head_ref_name.clone()
-    } else if source.include_working_tree(comparison) {
+    let git_ref = if source.include_working_tree(comparison) {
         "HEAD".to_owned()
     } else {
         comparison.head.clone()
@@ -1048,7 +935,7 @@ mod tests {
         git(p, &["checkout", "-q", "feat"]);
 
         let comparison = Comparison::new(&default_branch, "feat");
-        let fc = get_file_content(p, "shared.txt", &comparison, None).unwrap();
+        let fc = get_file_content(p, "shared.txt", &comparison).unwrap();
 
         // Old side is the merge-base version, so the rendered diff shows only
         // feat's line2 change — not the default branch's line1 change.

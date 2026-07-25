@@ -5,7 +5,11 @@ import { useReviewStore } from "../../stores";
 import { WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
-import { TerminalStatusBadge } from "./TerminalStatusBadge";
+import { CheckoutMenuItem } from "./CheckoutMenuItem";
+import { RowStatus } from "./RowStatus";
+import { PrPreviewCard } from "./PrPreviewCard";
+import { rowTier } from "../../stores/slices/tierSlice";
+import { SimpleTooltip } from "../ui/tooltip";
 
 /**
  * Label a review by its identity (ref) for display. Listing is git-free, so
@@ -126,6 +130,8 @@ export const TabRailItem = memo(function TabRailItem({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showContextMenu]);
 
+  const tier = rowTier(review);
+
   // Line 1: the most identifying info
   const primaryLabel = isPr
     ? pr.title || `PR #${pr.number}`
@@ -137,78 +143,94 @@ export const TabRailItem = memo(function TabRailItem({
       ? `${repoName} - PR #${pr.number}: ${pr.title}`
       : `${repoName} - ${formatReviewLabel(review, defaultBranch)}`;
 
-  return (
-    <>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => onActivate(review)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onActivate(review);
-          }
-        }}
-        onContextMenu={handleContextMenu}
-        className={`group relative w-full text-left px-2.5 py-1 rounded cursor-default
+  const row = (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onActivate(review)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onActivate(review);
+        }
+      }}
+      onContextMenu={handleContextMenu}
+      className={`group relative w-full text-left px-2.5 py-1 rounded cursor-default
                     transition-colors duration-100
                     ${isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]"}`}
-        aria-current={isActive ? "true" : undefined}
-        title={titleText}
-      >
-        <div className="flex items-center gap-1.5 min-w-0">
-          {isPr && (
-            <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
-          )}
+      aria-current={isActive ? "true" : undefined}
+      title={titleText}
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        {isPr && (
+          <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
+        )}
+        <span
+          className={`text-xs truncate flex-1 min-w-0 ${
+            isActive
+              ? "text-fg-secondary font-medium"
+              : "text-fg-muted/70 group-hover:text-fg-muted"
+          }`}
+        >
+          {repoLabel && <span className="text-fg-muted">{repoLabel} / </span>}
+          {primaryLabel}
+          {isPr && ` #${pr.number}`}
+        </span>
+        <RowStatus
+          repoPath={review.repoPath}
+          checkoutPath={review.worktreePath}
+          tier={tier}
+        />
+        {/* Right side: contextual metadata / overflow — stacked grid for no layout shift */}
+        <span className="relative grid shrink-0 justify-items-end items-center">
           <span
-            className={`text-xs truncate flex-1 min-w-0 ${
-              isActive
-                ? "text-fg-secondary font-medium"
-                : "text-fg-muted/70 group-hover:text-fg-muted"
-            }`}
-          >
-            {repoLabel && <span className="text-fg-muted">{repoLabel} / </span>}
-            {primaryLabel}
-            {isPr && ` #${pr.number}`}
-          </span>
-          <TerminalStatusBadge
-            repoPath={review.repoPath}
-            worktreePath={review.worktreePath}
-          />
-          {/* Right side: contextual metadata / overflow — stacked grid for no layout shift */}
-          <span className="relative grid shrink-0 justify-items-end items-center">
-            <span
-              className="col-start-1 row-start-1 flex items-center gap-1.5
+            className="col-start-1 row-start-1 flex items-center gap-1.5
                              transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none"
-            >
-              {hasMissingRefs && (
-                <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={handleOverflowClick}
-              className="col-start-1 row-start-1 flex items-center justify-center
+          >
+            {hasMissingRefs && (
+              <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={handleOverflowClick}
+            className="col-start-1 row-start-1 flex items-center justify-center
                          h-5 w-5 rounded text-fg-muted hover:text-fg-secondary
                          hover:bg-fg/[0.08] opacity-0 pointer-events-none
                          group-hover:opacity-100 group-hover:pointer-events-auto
                          transition-opacity duration-100"
-              aria-label="Review options"
+            aria-label="Review options"
+          >
+            <svg
+              className="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
             >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          </span>
-        </div>
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
+        </span>
       </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Metadata-only preview: answers "is this mine to review?" without
+          touching git. Only PR rows carry enough metadata to be worth it. */}
+      {isPr ? (
+        <SimpleTooltip
+          side="right"
+          content={<PrPreviewCard pr={pr} tier={tier} />}
+        >
+          {row}
+        </SimpleTooltip>
+      ) : (
+        row
+      )}
 
       {/* Context menu — portaled to body to escape backdrop-blur containing block */}
       {showContextMenu &&
@@ -252,6 +274,12 @@ export const TabRailItem = memo(function TabRailItem({
                   Mark done
                 </button>
                 <div className="my-1 border-t border-edge/30" />
+                <CheckoutMenuItem
+                  repoPath={review.repoPath}
+                  reviewRef={review.ref}
+                  checkoutPath={review.worktreePath}
+                  onDone={() => setShowContextMenu(false)}
+                />
                 <WorkingOnMenuItems
                   repoPath={review.repoPath}
                   reviewRef={review.ref}

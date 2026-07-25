@@ -11,6 +11,7 @@ import type {
   GitStatusSummary,
   Comparison,
   GitHubPrRef,
+  ReviewTierInfo,
   PullRequest,
   CommitEntry,
   CommitDetail,
@@ -165,6 +166,23 @@ export interface ApiClient {
   /** List open pull requests for the repository */
   listPullRequests(repoPath: string): Promise<PullRequest[]>;
 
+  // ----- Review tiers -----
+
+  /** How much of a review is present locally: listed, fetched, or materialized */
+  getReviewTier(repoPath: string, ref: string): Promise<ReviewTierInfo>;
+
+  /** Listed -> Fetched: pull a PR's head (and base) so its diff reads locally */
+  fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string>;
+
+  /** Fetched -> Materialized: provision a worktree. Returns its path. */
+  materializeReview(repoPath: string, ref: string): Promise<string>;
+
+  /** Materialized -> Fetched: drop the worktree, keep the review record */
+  releaseReviewWorktree(repoPath: string, ref: string): Promise<void>;
+
+  /** Reclaim worktrees and fetched refs whose PR has merged or closed */
+  reclaimClosedPrs(repoPath: string): Promise<string[]>;
+
   // ----- Worktree operations -----
 
   /** Create a review-managed worktree for the given git ref */
@@ -193,11 +211,7 @@ export interface ApiClient {
   // ----- File operations -----
 
   /** List files that have changes in the comparison */
-  listFiles(
-    repoPath: string,
-    comparison: Comparison,
-    githubPr?: GitHubPrRef,
-  ): Promise<FileEntry[]>;
+  listFiles(repoPath: string, comparison: Comparison): Promise<FileEntry[]>;
 
   /** List all files in the repository (for file finder) */
   listAllFiles(repoPath: string, comparison: Comparison): Promise<FileEntry[]>;
@@ -216,7 +230,6 @@ export interface ApiClient {
     repoPath: string,
     filePath: string,
     comparison: Comparison,
-    githubPr?: GitHubPrRef,
   ): Promise<FileContent>;
 
   /** Batch-load all hunks for multiple files in a single call */
@@ -233,7 +246,6 @@ export interface ApiClient {
     comparison: Comparison,
     startLine: number,
     endLine: number,
-    githubPr?: GitHubPrRef,
   ): Promise<ExpandedContext>;
 
   /** Search file contents using git grep */

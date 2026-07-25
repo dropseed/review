@@ -16,28 +16,45 @@ import type { TerminalStatus } from "../../types";
 
 interface TerminalStatusBadgeProps {
   repoPath: string;
-  /** The row's dedicated worktree, if any — scopes sessions to it. */
-  worktreePath?: string;
+  /** The row's own checkout — a linked worktree, or the repo root for the main
+   *  working-tree row. Rows without one host no terminals. */
+  checkoutPath?: string | null;
 }
 
 /**
  * Colored status dot + popover for a TabRail row, summarizing the terminal
- * sessions running for that row's repo (or worktree, when the row has a
- * dedicated one). Renders nothing when there are no sessions.
+ * sessions running in that row's checkout. Renders nothing when there are none.
  */
 export function TerminalStatusBadge({
   repoPath,
-  worktreePath,
+  checkoutPath,
 }: TerminalStatusBadgeProps): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
+  const localActivity = useReviewStore((s) => s.localActivity);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [freshPeek, setFreshPeek] = useState<string | null>(null);
 
+  // Every checkout root in this repo, so a session lands on the innermost one.
+  const checkouts = useMemo(() => {
+    const roots = [repoPath];
+    const repo = localActivity.find((r) => r.repoPath === repoPath);
+    for (const branch of repo?.branches ?? []) {
+      if (branch.worktreePath) roots.push(branch.worktreePath);
+    }
+    return roots;
+  }, [repoPath, localActivity]);
+
   const ids = useMemo(
-    () => selectTerminalIdsForRow({ terminalSessions }, repoPath, worktreePath),
-    [terminalSessions, repoPath, worktreePath],
+    () =>
+      selectTerminalIdsForRow(
+        { terminalSessions },
+        repoPath,
+        checkoutPath,
+        checkouts,
+      ),
+    [terminalSessions, repoPath, checkoutPath, checkouts],
   );
 
   const statuses = useMemo(

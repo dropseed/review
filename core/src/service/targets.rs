@@ -53,23 +53,49 @@ pub fn resolve(
     ref_name: &str,
     base_override: Option<&str>,
 ) -> anyhow::Result<ResolvedReview> {
-    // Fall back to the persisted override so callers can resolve by ref alone.
-    let stored = match base_override {
+    // Loaded unconditionally: the persisted override is only consulted when the
+    // caller didn't pass one, but `github_pr` is needed either way to point the
+    // comparison at a fetched PR head.
+    let stored = storage::load_review_state(repo_path, ref_name).ok();
+    let stored_override = match base_override {
         Some(_) => None,
-        None => storage::load_review_state(repo_path, ref_name)
-            .ok()
-            .and_then(|state| state.base_override),
+        None => stored.as_ref().and_then(|s| s.base_override.clone()),
     };
-    let effective_override = base_override.or(stored.as_deref());
+    let effective_override = base_override.or(stored_override.as_deref());
 
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
-    let (comparison, base_reason) = resolve_review(&source, ref_name, effective_override)?;
+    let github_pr = stored.as_ref().and_then(|s| s.github_pr.as_ref());
+    let (comparison, base_reason) =
+        resolve_review_for(&source, ref_name, effective_override, github_pr)?;
     Ok(ResolvedReview {
         ref_name: ref_name.to_owned(),
         base_override: effective_override.map(str::to_owned),
         comparison,
         base_reason,
     })
+}
+
+/// [`resolve_review`] plus PR-head substitution.
+///
+/// A PR review's identity is its head *branch name*, which for a fork PR names
+/// no ref in this repo. When the PR has been fetched, its head lives at
+/// `refs/review/pr/N` — so the comparison diffs that while the review keeps its
+/// branch-name identity (and therefore its state file). Falls through to the
+/// plain ladder when the PR isn't fetched or isn't a PR at all.
+fn resolve_review_for(
+    source: &LocalGitSource,
+    ref_name: &str,
+    base_override: Option<&str>,
+    github_pr: Option<&crate::sources::github::GitHubPrRef>,
+) -> anyhow::Result<(Comparison, BaseReason)> {
+    if let Some(pr) = github_pr {
+        let pr_ref = LocalGitSource::pr_ref(pr.number);
+        if source.resolve_ref(&pr_ref).is_some() {
+            let base = base_override.unwrap_or(pr.base_ref_name.as_str());
+            return Ok((Comparison::new(base, pr_ref), BaseReason::Override));
+        }
+    }
+    resolve_review(source, ref_name, base_override)
 }
 
 /// Set (or clear) a review's persisted `base_override` and return the freshly

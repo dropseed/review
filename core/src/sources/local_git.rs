@@ -441,6 +441,75 @@ impl LocalGitSource {
         Ok(())
     }
 
+    /// Local ref a fetched pull request head lives at.
+    ///
+    /// Namespaced under `refs/review/` rather than `refs/heads/` so fetched PRs
+    /// never show up in `git branch` or collide with a real local branch that
+    /// happens to share the PR's head branch name.
+    pub fn pr_ref(number: u32) -> String {
+        format!("refs/review/pr/{number}")
+    }
+
+    /// Fetch a pull request's head commit (and its base branch) so the PR can be
+    /// diffed locally without a checkout.
+    ///
+    /// `pull/N/head` is fetched rather than the head branch name because fork
+    /// PRs have no branch on `origin` at all. The base is fetched too — a
+    /// three-dot diff needs the merge base, and the local base branch may be
+    /// stale or absent. Returns the local ref the head landed at.
+    pub fn fetch_pr(&self, number: u32, base_ref_name: &str) -> Result<String, LocalGitError> {
+        let local_ref = Self::pr_ref(number);
+        // `+` forces the update: a force-push to the PR moves the head
+        // non-fast-forward, and refusing that would pin us to a stale diff.
+        let refspec = format!("+refs/pull/{number}/head:{local_ref}");
+        self.run_git(&["fetch", "origin", &refspec])?;
+
+        if !base_ref_name.is_empty() {
+            // Best-effort: a missing base branch on origin shouldn't sink the
+            // fetch, since the base may already be present locally.
+            let base_spec =
+                format!("+refs/heads/{base_ref_name}:refs/remotes/origin/{base_ref_name}");
+            let _ = self.run_git(&["fetch", "origin", &base_spec]);
+        }
+
+        self.resolve_ref_cache.lock().unwrap().clear();
+        self.merge_base_cache.lock().unwrap().clear();
+        Ok(local_ref)
+    }
+
+    /// Delete a fetched PR's local ref. Best-effort — a ref that was never
+    /// fetched is not an error.
+    pub fn prune_pr_ref(&self, number: u32) -> Result<(), LocalGitError> {
+        let local_ref = Self::pr_ref(number);
+        if self.resolve_ref(&local_ref).is_some() {
+            self.run_git(&["update-ref", "-d", &local_ref])?;
+            self.resolve_ref_cache.lock().unwrap().clear();
+        }
+        Ok(())
+    }
+
+    /// Whether a pull request's head has been fetched into this repo.
+    pub fn has_pr_ref(&self, number: u32) -> bool {
+        self.resolve_ref(&Self::pr_ref(number)).is_some()
+    }
+
+    /// Every PR number fetched into this repo, in one git call.
+    ///
+    /// Callers listing many PR reviews at once should prefer this over
+    /// [`Self::has_pr_ref`] per review — the sidebar listing is otherwise
+    /// git-free, and this keeps it to a single spawn per repo.
+    pub fn fetched_pr_numbers(&self) -> HashSet<u32> {
+        let Ok(output) = self.run_git(&["for-each-ref", "--format=%(refname)", "refs/review/pr/"])
+        else {
+            return HashSet::new();
+        };
+        output
+            .lines()
+            .filter_map(|line| line.trim().rsplit('/').next())
+            .filter_map(|n| n.parse::<u32>().ok())
+            .collect()
+    }
+
     /// Get the default branch name (main or master). The result is stable for a
     /// repo, so it's cached per source instance after the first resolution.
     pub fn get_default_branch(&self) -> Result<String, LocalGitError> {
@@ -1485,7 +1554,7 @@ impl LocalGitSource {
             .map(|(i, c)| (c.hash.as_str(), i))
             .collect();
 
-        let hunks = crate::service::files::comparison_hunks(&self.repo_path, comparison, None)?;
+        let hunks = crate::service::files::comparison_hunks(&self.repo_path, comparison)?;
 
         let mut by_file: HashMap<&str, Vec<&crate::diff::parser::DiffHunk>> = HashMap::new();
         for hunk in &hunks {
@@ -2934,6 +3003,53 @@ mod tests {
         let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
         let head_sha = source.resolve_ref_or_empty_tree("HEAD");
         (env, review_home, repo_dir, source, head_sha)
+    }
+
+    /// Fetched PR heads live under `refs/review/`, never `refs/heads/`, so a PR
+    /// whose head branch shares a name with a local branch can't collide with
+    /// it — and `git branch` stays clean.
+    #[test]
+    fn test_pr_refs_are_namespaced_and_enumerable() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        assert_eq!(LocalGitSource::pr_ref(42), "refs/review/pr/42");
+        assert!(!source.has_pr_ref(42));
+        assert!(source.fetched_pr_numbers().is_empty());
+
+        // Stand in for a fetch: the ref is what `fetch_pr` ultimately writes.
+        for number in [7, 42] {
+            run_git_cmd(
+                repo_path,
+                &["update-ref", &LocalGitSource::pr_ref(number), &head_sha],
+            )
+            .unwrap();
+        }
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        assert!(source.has_pr_ref(42));
+        assert_eq!(
+            source.fetched_pr_numbers(),
+            HashSet::from([7, 42]),
+            "every fetched PR should be enumerable in one call"
+        );
+
+        let branches = run_git_cmd(repo_path, &["branch", "--list"]).unwrap();
+        assert!(
+            !branches.contains("42"),
+            "a fetched PR must not appear as a local branch, got: {branches}"
+        );
+
+        source.prune_pr_ref(42).unwrap();
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        assert!(!source.has_pr_ref(42));
+        assert!(source.has_pr_ref(7), "pruning one PR must not touch others");
+
+        // Pruning a PR that was never fetched is a no-op, not an error.
+        source.prune_pr_ref(999).unwrap();
     }
 
     /// `last_commit_by_user` is true only when the tip commit's committer email

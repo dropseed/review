@@ -20,6 +20,7 @@ import type { ActivitySlice } from "./slices/activitySlice";
 import type { LocalActivitySlice } from "./slices/localActivitySlice";
 import type { LspSlice } from "./slices/lspSlice";
 import type { WorktreeSlice } from "./slices/worktreeSlice";
+import type { TierSlice } from "./slices/tierSlice";
 import type { TerminalSlice } from "./slices/terminalSlice";
 // Combined store type
 export type ReviewStore = PreferencesSlice &
@@ -38,6 +39,7 @@ export type ReviewStore = PreferencesSlice &
   LocalActivitySlice &
   LspSlice &
   WorktreeSlice &
+  TierSlice &
   TerminalSlice;
 
 // Helper type for creating slices (no dependencies)

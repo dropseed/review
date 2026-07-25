@@ -3,13 +3,14 @@ import { createPortal } from "react-dom";
 import { useReviewStore } from "../../stores";
 import type { LocalBranchInfo } from "../../types";
 import type { SidebarItemKind } from "../../utils/sidebar-ordering";
-import { GitTreeIcon, XIcon } from "../ui/icons";
+import { XIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
+import { RowStatus } from "./RowStatus";
 
 interface LocalBranchItemProps {
   branch: LocalBranchInfo;
@@ -144,6 +145,11 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   );
 
   const isCheckedOut = itemKind === "working-tree" || itemKind === "worktree";
+  // The working-tree row's checkout *is* the repo root; a linked worktree has
+  // its own. A branch that isn't checked out anywhere has none, so it hosts no
+  // terminals.
+  const checkoutPath =
+    itemKind === "working-tree" ? repoPath : (branch.worktreePath ?? null);
   const nameClass = isActive
     ? "text-fg-secondary font-medium"
     : itemKind === "working-tree"
@@ -186,11 +192,12 @@ export const LocalBranchItem = memo(function LocalBranchItem({
                               : ""
                           }`}
             >
-              {isCheckedOut && itemKind === "worktree" && (
-                <span className="text-fg-faint" title="worktree">
-                  <GitTreeIcon className="h-3.5 w-3.5" />
-                </span>
-              )}
+              <RowStatus
+                repoPath={repoPath}
+                checkoutPath={checkoutPath}
+                tier={isCheckedOut ? "materialized" : "fetched"}
+                showWorktreeIcon={itemKind === "worktree"}
+              />
               {branch.hasWorkingTreeChanges && (
                 <span className="text-2xs text-status-modified">M</span>
               )}

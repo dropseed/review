@@ -431,8 +431,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         }
         startActivity("load-files", "Loading files", 20);
         const phase1Start = performance.now();
-        const githubPr = get().reviewState?.githubPr;
-        const files = await client.listFiles(repoPath, comparison, githubPr);
+        const files = await client.listFiles(repoPath, comparison);
         // Bail before touching any shared state: a newer comparison's own
         // load may already own loadingProgress/the "load-files" activity.
         if (isStale()) return;
@@ -525,7 +524,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                   repoPath,
                   filePath,
                   comparison,
-                  githubPr,
                 );
                 allHunks.push(...content.hunks);
               } catch (err) {
@@ -555,7 +553,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
                 repoPath,
                 filePath,
                 comparison,
-                githubPr,
               );
               allHunks.push(...content.hunks);
             } catch (err) {
@@ -786,10 +783,9 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     refetchFileHunks: async (paths: string[]) => {
-      const { repoPath, comparison, reviewState } = get();
+      const { repoPath, comparison } = get();
       if (!repoPath || !comparison || paths.length === 0) return;
 
-      const githubPr = reviewState?.githubPr;
       const comparisonKey = comparison.key;
       const isStale = () => get().comparison?.key !== comparisonKey;
 
@@ -805,7 +801,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
               repoPath,
               path,
               comparison,
-              githubPr,
             );
             return { path, diff: buildFileDiff(content.hunks) };
           } catch (err) {

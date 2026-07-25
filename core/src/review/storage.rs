@@ -90,6 +90,11 @@ pub struct GlobalReviewSummary {
     pub repo_name: String,
     #[serde(rename = "diffStats")]
     pub diff_stats: Option<DiffShortStat>,
+    /// For PR reviews, whether the PR's head has been fetched locally — the
+    /// listed-vs-fetched tier distinction. Always `true` for non-PR reviews,
+    /// whose ref is by definition already in the repo.
+    #[serde(rename = "prFetched")]
+    pub pr_fetched: bool,
 }
 
 /// List all reviews across all registered repos.
@@ -112,12 +117,28 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
         // SHA-cache short-circuiting and runs reviews in parallel.
         match list_saved_reviews(&repo_path) {
             Ok(summaries) => {
+                // One `for-each-ref` for the whole repo, and only when it
+                // actually has PR reviews — keeps this listing's git cost at
+                // zero for the common case.
+                let fetched_prs = if summaries.iter().any(|s| s.github_pr.is_some()) {
+                    crate::sources::local_git::LocalGitSource::new(repo_path.clone())
+                        .map(|source| source.fetched_pr_numbers())
+                        .unwrap_or_default()
+                } else {
+                    std::collections::HashSet::new()
+                };
+
                 for summary in summaries {
+                    let pr_fetched = summary
+                        .github_pr
+                        .as_ref()
+                        .is_none_or(|pr| fetched_prs.contains(&pr.number));
                     all.push(GlobalReviewSummary {
                         summary,
                         repo_path: entry.path.clone(),
                         repo_name: entry.name.clone(),
                         diff_stats: None,
+                        pr_fetched,
                     });
                 }
             }
