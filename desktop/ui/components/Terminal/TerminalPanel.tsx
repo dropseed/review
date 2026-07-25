@@ -13,11 +13,11 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
 } from "../ui/dropdown-menu";
-import { SimpleTooltip } from "../ui/tooltip";
+import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
 import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
 import { disposeTerminal } from "./registry";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
-import { PaneTree } from "./PaneTree";
+import { PaneTree, PaneButton } from "./PaneTree";
 import type { TerminalStatus } from "../../types";
 
 interface CwdOption {
@@ -51,6 +51,13 @@ export function TerminalPanel(): ReactNode {
   const toggleTerminalDockSide = useReviewStore(
     (s) => s.toggleTerminalDockSide,
   );
+  const maximized = useReviewStore((s) => s.terminalPanelMode === "maximized");
+  const toggleTerminalPanelMaximized = useReviewStore(
+    (s) => s.toggleTerminalPanelMaximized,
+  );
+  const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
+
+  useTerminalFileDrop();
 
   const reviewKey = repoPath ? makeReviewKey(repoPath, reviewRef ?? "") : "";
 
@@ -59,6 +66,9 @@ export function TerminalPanel(): ReactNode {
     [reviewKey, terminalTabsByReviewKey],
   );
   const activeTabId = activeTabIdByReviewKey[reviewKey] ?? tabs[0]?.id ?? null;
+
+  // ⌘D / ⇧⌘D pane splits are dispatched by useKeyboardNavigation, which routes
+  // the chord to whichever pane has focus.
 
   // cwd choices for the "+" menu: repo root plus every worktree of this repo.
   const cwdOptions = useMemo<CwdOption[]>(() => {
@@ -111,10 +121,7 @@ export function TerminalPanel(): ReactNode {
   };
 
   return (
-    <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl
-                 bg-surface-raised shadow-lg shadow-black/30 ring-1 ring-white/10"
-    >
+    <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-raised">
       {/* Tab strip */}
       <div className="flex items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
         <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
@@ -177,26 +184,6 @@ export function TerminalPanel(): ReactNode {
           })}
         </div>
 
-        {/* Dock-side swap */}
-        <SimpleTooltip
-          content={`Move terminal to ${
-            terminalDockSide === "left" ? "right" : "left"
-          }`}
-          side="bottom"
-        >
-          <button
-            type="button"
-            onClick={toggleTerminalDockSide}
-            aria-label={`Move terminal to ${
-              terminalDockSide === "left" ? "right" : "left"
-            }`}
-            className="shrink-0 rounded p-1 text-fg-muted
-                       hover:bg-fg/[0.06] hover:text-fg-secondary"
-          >
-            <DockSideIcon side={terminalDockSide} />
-          </button>
-        </SimpleTooltip>
-
         {/* "+" new-tab menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -221,6 +208,30 @@ export function TerminalPanel(): ReactNode {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Panel controls: dock side / maximize / minimize */}
+        <div className="ml-0.5 flex shrink-0 items-center gap-0.5 border-l border-edge/60 pl-1">
+          <PaneButton
+            label={`Move terminal to ${
+              terminalDockSide === "left" ? "right" : "left"
+            }`}
+            onClick={toggleTerminalDockSide}
+          >
+            <DockSideIcon side={terminalDockSide} />
+          </PaneButton>
+
+          <PaneButton
+            label={maximized ? "Show diff (⇧⌘↵)" : "Expand over diff (⇧⌘↵)"}
+            onClick={toggleTerminalPanelMaximized}
+            pressed={maximized}
+          >
+            <MaximizeIcon maximized={maximized} side={terminalDockSide} />
+          </PaneButton>
+
+          <PaneButton label="Hide terminal (⌘`)" onClick={toggleTerminalPanel}>
+            <MinimizeIcon side={terminalDockSide} />
+          </PaneButton>
+        </div>
       </div>
 
       {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming. */}
@@ -254,6 +265,65 @@ export function TerminalPanel(): ReactNode {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Maximize glyph: arrows pushing outward (expand over the diff) or inward
+ * (restore the split), pointing along the dock axis.
+ */
+function MaximizeIcon({
+  maximized,
+  side,
+}: {
+  maximized: boolean;
+  side: "left" | "right";
+}): ReactNode {
+  // Mirror so the arrows always point toward the diff being covered/revealed.
+  const flip = side === "right";
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={`h-3.5 w-3.5 ${flip ? "-scale-x-100" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      {maximized ? (
+        <>
+          <path d="M10.5 5.5 8 8l2.5 2.5" />
+          <line x1="12.5" y1="4" x2="12.5" y2="12" />
+        </>
+      ) : (
+        <>
+          <path d="M6 5.5 8.5 8 6 10.5" />
+          <line x1="3.5" y1="4" x2="3.5" y2="12" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** Minimize glyph: a chevron collapsing the panel toward its dock edge. */
+function MinimizeIcon({ side }: { side: "left" | "right" }): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={`h-3.5 w-3.5 ${side === "right" ? "-scale-x-100" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 4 5 8l4 4" />
+      <line x1="12" y1="3.5" x2="12" y2="12.5" />
+    </svg>
   );
 }
 

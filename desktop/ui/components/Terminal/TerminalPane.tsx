@@ -2,7 +2,11 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
-import { acquireTerminal, applyLigatures, applyRenderer } from "./registry";
+import {
+  acquireTerminal,
+  attachRenderer,
+  startTerminalOutput,
+} from "./registry";
 import { buildXtermTheme } from "./xterm-theme";
 import { TERMINAL_FONT_WEIGHT_BOLD } from "../../stores/slices/preferencesSlice";
 import { decodeBase64 } from "./base64";
@@ -33,8 +37,6 @@ export function TerminalPane({ id, active }: TerminalPaneProps): ReactNode {
   const fontWeight = useReviewStore((s) => s.terminalFontWeight);
   const lineHeight = useReviewStore((s) => s.terminalLineHeight);
   const letterSpacing = useReviewStore((s) => s.terminalLetterSpacing);
-  const renderer = useReviewStore((s) => s.terminalRenderer);
-  const ligatures = useReviewStore((s) => s.terminalLigatures);
 
   // Keep the latest options in refs so the setup effect (keyed only on id)
   // reads current values without re-running and re-opening the terminal. Live
@@ -45,8 +47,6 @@ export function TerminalPane({ id, active }: TerminalPaneProps): ReactNode {
     fontWeight,
     lineHeight,
     letterSpacing,
-    renderer,
-    ligatures,
   });
   optionsRef.current = {
     fontFamily,
@@ -54,8 +54,6 @@ export function TerminalPane({ id, active }: TerminalPaneProps): ReactNode {
     fontWeight,
     lineHeight,
     letterSpacing,
-    renderer,
-    ligatures,
   };
 
   useEffect(() => {
@@ -86,63 +84,31 @@ export function TerminalPane({ id, active }: TerminalPaneProps): ReactNode {
     } else if (!term.element) {
       term.open(container);
     }
-    // Select the renderer (must be after open() for WebGL), then ligatures
-    // (DOM-only; applyLigatures no-ops under WebGL).
-    applyRenderer(id, opts.renderer);
-    applyLigatures(id, opts.ligatures, opts.renderer);
+    // The GPU renderer binds to the opened element, so this has to follow
+    // open()/re-attach.
+    attachRenderer(id);
 
-    // xterm can be disposed out from under this callback (the tab is closed
-    // while PTY output is still in flight); swallow writes to a dead instance
-    // rather than throwing.
-    const safeWrite = (bytes: Uint8Array) => {
-      try {
-        term.write(bytes);
-      } catch {
-        /* terminal disposed */
-      }
-    };
-
-    // Subscribe to output BEFORE replay. Buffer live output (with its byte
-    // cursor) until any replay is written so historical scrollback lands ahead
-    // of new bytes and overlapping bytes render exactly once.
-    let replayed = false;
-    const pending: { data: Uint8Array; seq: number }[] = [];
-    const unsubOutput = client.onTerminalOutput(id, ({ data, seq }) => {
-      if (replayed) {
-        safeWrite(data);
-      } else {
-        pending.push({ data, seq });
-      }
-    });
-
-    // Flush buffered live output. On a cold reattach, `cursor` is the byte
-    // offset the replay snapshot ends at, so any chunk already contained in the
-    // replay (`seq <= cursor`) is dropped; the seq/cursor boundary always aligns
-    // to a chunk edge, so no chunk straddles it. Without a cursor (fresh/warm
-    // reattach, or replay failure) every buffered chunk is written.
-    const flushPending = (cursor = -1) => {
-      replayed = true;
-      for (const chunk of pending) {
-        if (chunk.seq > cursor) safeWrite(chunk.data);
-      }
-      pending.length = 0;
-    };
-
+    // Output is subscribed by the registry for the instance's whole life, not
+    // this mount's — see registry.ts. All that's left here is deciding whether
+    // a brand-new instance needs its scrollback replayed before the buffered
+    // live output is released.
     if (isNew && !wasFresh) {
       // Cold reattach (new window / web reload): replay the ring buffer.
       client
         .terminalReplay(id)
         .then(({ dataB64, cursor, status }) => {
-          if (dataB64) safeWrite(decodeBase64(dataB64));
-          flushPending(cursor);
+          startTerminalOutput(
+            id,
+            dataB64 ? { data: decodeBase64(dataB64), cursor } : undefined,
+          );
           useReviewStore.getState().applyTerminalStatus(status);
         })
         .catch((err) => {
           console.error("[terminal] Replay failed:", err);
-          flushPending();
+          startTerminalOutput(id);
         });
     } else {
-      flushPending();
+      startTerminalOutput(id);
     }
 
     // Send keystrokes to the PTY.
@@ -177,16 +143,16 @@ export function TerminalPane({ id, active }: TerminalPaneProps): ReactNode {
       if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
       onDataDisposable.dispose();
-      unsubOutput();
       termRef.current = null;
-      // Keep the registry instance alive — do NOT dispose here.
+      // Keep the registry instance alive — do NOT dispose here, and leave its
+      // output subscription running so a hidden session keeps filling its
+      // buffer instead of losing the bytes.
     };
   }, [id]);
 
-  // Font/renderer/ligature changes are pushed to every live terminal (including
-  // this one) by refreshAllTerminalOptions / applyRendererToAll /
-  // applyLigaturesToAll, called from the preferencesSlice setters — no per-pane
-  // effect needed here.
+  // Font changes are pushed to every live terminal (including this one) by
+  // refreshAllTerminalOptions, called from the preferencesSlice setters — no
+  // per-pane effect needed here.
 
   // Refit when this pane becomes active (it may have been sized 0 while hidden).
   useEffect(() => {

@@ -19,7 +19,6 @@ import {
   TERMINAL_LETTER_SPACING_STEP,
 } from "../../utils/preferences";
 import type { FontWeight } from "@xterm/xterm";
-import type { TerminalRenderer } from "../Terminal/registry";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
@@ -221,10 +220,6 @@ export function SettingsModal({
   const setTerminalLetterSpacing = useReviewStore(
     (s) => s.setTerminalLetterSpacing,
   );
-  const terminalRenderer = useReviewStore((s) => s.terminalRenderer);
-  const setTerminalRenderer = useReviewStore((s) => s.setTerminalRenderer);
-  const terminalLigatures = useReviewStore((s) => s.terminalLigatures);
-  const setTerminalLigatures = useReviewStore((s) => s.setTerminalLigatures);
   const uiTheme = useReviewStore((s) => s.uiTheme);
   const setUiTheme = useReviewStore((s) => s.setUiTheme);
   const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
@@ -730,46 +725,6 @@ export function SettingsModal({
               format={(v) => `${v}px`}
               onChange={setTerminalLetterSpacing}
             />
-
-            <div>
-              <span className="text-xs text-fg-secondary">Renderer</span>
-              <div className="mt-1.5">
-                <Segmented<TerminalRenderer>
-                  value={terminalRenderer}
-                  options={[
-                    { value: "dom", label: "DOM" },
-                    { value: "webgl", label: "WebGL" },
-                  ]}
-                  onChange={setTerminalRenderer}
-                />
-              </div>
-              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
-                DOM is crisper on macOS (native font smoothing); WebGL is faster
-                for heavy output.
-              </p>
-            </div>
-
-            <div>
-              <label
-                className={`flex items-center justify-between rounded-lg px-3 py-2.5 transition-colors ${
-                  terminalRenderer === "webgl"
-                    ? "cursor-not-allowed bg-surface-raised/20 opacity-50"
-                    : "bg-surface-raised/30 hover:bg-surface-raised/50"
-                }`}
-              >
-                <span className="text-xs text-fg-secondary">Ligatures</span>
-                <Switch
-                  checked={terminalLigatures}
-                  onCheckedChange={setTerminalLigatures}
-                  disabled={terminalRenderer === "webgl"}
-                />
-              </label>
-              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
-                {terminalRenderer === "webgl"
-                  ? "Requires the DOM renderer."
-                  : "Render combined glyphs (e.g. => and !==) when the font supports them."}
-              </p>
-            </div>
           </div>
 
           {/* Background Sessions */}

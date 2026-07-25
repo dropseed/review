@@ -53,6 +53,9 @@ export function PaneTree({
     const isFocused = tabActive && id === focusedId;
     return (
       <div
+        // Hit-tested by useTerminalFileDrop to route a dropped file's path to
+        // this pane's PTY.
+        data-terminal-id={id}
         className={clsx(
           "group/pane relative flex h-full w-full min-w-0 min-h-0 flex-col",
           "overflow-hidden rounded-lg bg-surface-inset p-1.5",
@@ -144,19 +147,28 @@ interface PaneButtonProps {
   label: string;
   onClick: () => void;
   children: ReactNode;
+  /** Set when the button reflects a state (e.g. a toggle). */
+  pressed?: boolean;
 }
 
-function PaneButton({ label, onClick, children }: PaneButtonProps): ReactNode {
+/** The small square icon button used by every terminal-chrome control. */
+export function PaneButton({
+  label,
+  onClick,
+  children,
+  pressed,
+}: PaneButtonProps): ReactNode {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
+      aria-pressed={pressed}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      className="flex h-5 w-5 items-center justify-center rounded text-fg-faint
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-faint
                  transition-colors hover:bg-fg/[0.08] hover:text-fg-secondary"
     >
       {children}

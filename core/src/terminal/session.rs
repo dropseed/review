@@ -228,15 +228,14 @@ impl Session {
         }
     }
 
-    /// The current scrollback contents.
-    pub fn snapshot(&self) -> Vec<u8> {
-        self.shared.ring.snapshot()
-    }
-
-    /// The current scrollback contents paired with the byte cursor they end at
-    /// (for a cold reattach that must deduplicate live output against replay).
-    pub fn snapshot_with_offset(&self) -> (Vec<u8>, u64) {
-        self.shared.ring.snapshot_with_offset()
+    /// The scrollback for a cold reattach, paired with the byte cursor it ends
+    /// at (so the client can deduplicate live output against the replay), and
+    /// trimmed so the replay can't start inside a half-dropped escape sequence.
+    /// See [`Ring::snapshot_for_replay`].
+    ///
+    /// [`Ring::snapshot_for_replay`]: super::ring::Ring::snapshot_for_replay
+    pub fn snapshot_for_replay(&self) -> (Vec<u8>, u64) {
+        self.shared.ring.snapshot_for_replay()
     }
 
     /// Register a subscriber, returning its receiver. The caller pairs this with

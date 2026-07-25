@@ -1,12 +1,18 @@
 /*
- * Terminal-scoped rendering tweaks. Scoped to `.xterm` so they never leak to
- * the rest of the app. The DOM renderer draws real text nodes, so native macOS
- * font smoothing applies here — antialiased + optimizeLegibility render heavier
- * and crisper than the default subpixel/auto path, closer to a native terminal.
+ * Terminal-scoped styles. Scoped to `.xterm` so they never leak to the rest of
+ * the app.
+ *
+ * Note that glyphs are rasterized into the WebGL renderer's atlas, so CSS text
+ * rendering properties (font-smoothing, text-rendering) have no effect on the
+ * grid — they'd only reach the DOM fallback.
  */
-.xterm,
-.xterm .xterm-rows {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+
+/*
+ * Drop highlight for the pane under the cursor while files are dragged over the
+ * window. Toggled imperatively by useTerminalFileDrop — Tauri's drag events
+ * fire far too often to drive a React re-render.
+ */
+.terminal-drop-target {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }

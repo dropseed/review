@@ -93,22 +93,29 @@ export function TerminalStatusBadge({
   // jump between the loading and loaded states.
   const peekText = freshPeek;
 
+  const label = `${statuses.length} terminal${
+    statuses.length === 1 ? "" : "s"
+  } — ${phaseLabel(worstPhase)}`;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
           onClick={(e) => e.stopPropagation()}
-          className="flex items-center gap-1 rounded px-1 py-0.5 text-fg-faint
-                     hover:bg-fg/[0.06] transition-colors duration-100"
-          aria-label="Terminal status"
+          className="flex shrink-0 items-center gap-1 rounded-full bg-fg/[0.06] px-1.5 py-px
+                     text-fg-muted hover:bg-fg/[0.12] transition-colors duration-100"
+          aria-label={label}
+          title={label}
         >
+          {/* Always shown, even for a single idle session: the point of the
+              badge is "this branch has terminals", not just "one needs you". */}
           <span
-            className={`inline-block h-2 w-2 rounded-full ${phaseDotClass(worstPhase)}`}
+            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${phaseDotClass(
+              worstPhase,
+            )} ${worstPhase === "working" || worstPhase === "needs_attention" ? "animate-pulse" : ""}`}
           />
-          {statuses.length > 1 && (
-            <span className="text-xxs text-fg-faint">{statuses.length}</span>
-          )}
+          <span className="text-xxs tabular-nums">{statuses.length}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent side="right" align="start" className="w-72 p-0">

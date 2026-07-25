@@ -23,12 +23,13 @@ type SessionMap = Arc<Mutex<HashMap<TerminalId, Arc<Session>>>>;
 /// replay the scrollback ring.
 pub const SUBSCRIBER_CHANNEL_CAPACITY: usize = 1024;
 
-/// A newly attached subscription: the scrollback to replay first, then a stream
-/// of live [`TerminalMessage`]s.
+/// A newly attached subscription: a stream of live [`TerminalMessage`]s.
 pub struct Subscription {
-    /// Scrollback bytes to render before applying live output.
-    pub replay: Vec<u8>,
     /// Live message stream (bounded; slow consumers are dropped).
+    ///
+    /// Live output only: scrollback is fetched separately (`SessionManager::replay`)
+    /// so it arrives resync-trimmed and paired with the byte cursor that lets a
+    /// client de-duplicate it against this stream.
     pub rx: Receiver<TerminalMessage>,
 }
 
@@ -119,7 +120,7 @@ impl SessionManager {
     /// chunk whose `seq` is `<=` the cursor to avoid double-rendering.
     pub fn replay(&self, id: &TerminalId) -> Result<(Vec<u8>, u64, SessionStatus)> {
         let session = self.get(id)?;
-        let (bytes, cursor) = session.snapshot_with_offset();
+        let (bytes, cursor) = session.snapshot_for_replay();
         Ok((bytes, cursor, session.status()))
     }
 
@@ -134,16 +135,13 @@ impl SessionManager {
             .ok_or_else(|| anyhow!("terminal {id} peek unavailable"))
     }
 
-    /// Attach a new subscriber: returns the scrollback to replay plus a live
-    /// stream. Subscribe *before* the first write to avoid missing output.
+    /// Attach a new subscriber to a session's live stream. Subscribe *before*
+    /// the first write to avoid missing output.
     pub fn subscribe(&self, id: &TerminalId) -> Result<Subscription> {
         let session = self.get(id)?;
         let (tx, rx) = mpsc::channel(SUBSCRIBER_CHANNEL_CAPACITY);
         session.add_subscriber(tx);
-        Ok(Subscription {
-            replay: session.snapshot(),
-            rx,
-        })
+        Ok(Subscription { rx })
     }
 
     /// Kill every session and clear the registry (app shutdown).

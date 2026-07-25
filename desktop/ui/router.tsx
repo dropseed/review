@@ -259,7 +259,8 @@ function EmptyTabState() {
         <button
           type="button"
           onClick={toggleTabRail}
-          className="absolute top-2.5 left-2 flex items-center justify-center w-7 h-7 rounded-md
+          className="absolute left-2 top-[calc(0.625rem+var(--title-bar-height))]
+                     flex items-center justify-center w-7 h-7 rounded-md
                      hover:bg-surface-hover/60 transition-colors duration-100
                      text-fg-muted hover:text-fg-secondary"
           aria-label="Show sidebar"

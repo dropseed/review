@@ -5,12 +5,9 @@ import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
 import { setSoundEnabled } from "../../utils/sounds";
 import {
-  applyLigaturesToAll,
-  applyRendererToAll,
   refreshAllTerminalOptions,
   refreshAllTerminalThemes,
   type TerminalFontOptions,
-  type TerminalRenderer,
 } from "../../components/Terminal/registry";
 import type { FontWeight } from "@xterm/xterm";
 import {
@@ -134,8 +131,6 @@ export const TERMINAL_LETTER_SPACING_DEFAULT = 0;
 export const TERMINAL_LETTER_SPACING_MIN = -2;
 export const TERMINAL_LETTER_SPACING_MAX = 4;
 export const TERMINAL_LETTER_SPACING_STEP = 0.5;
-export const TERMINAL_RENDERER_DEFAULT: TerminalRenderer = "dom";
-export const TERMINAL_LIGATURES_DEFAULT = false;
 
 const MAX_RECENT_REPOS = 5;
 
@@ -177,8 +172,6 @@ const defaults = {
   terminalFontWeight: TERMINAL_FONT_WEIGHT_DEFAULT as FontWeight,
   terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
   terminalLetterSpacing: TERMINAL_LETTER_SPACING_DEFAULT,
-  terminalRenderer: TERMINAL_RENDERER_DEFAULT,
-  terminalLigatures: TERMINAL_LIGATURES_DEFAULT,
   codeTheme: "github-dark",
   uiTheme: "review-dark",
   recentRepositories: [] as RecentRepo[],
@@ -219,8 +212,6 @@ export interface PreferencesSlice {
   terminalFontWeight: FontWeight;
   terminalLineHeight: number;
   terminalLetterSpacing: number;
-  terminalRenderer: TerminalRenderer;
-  terminalLigatures: boolean;
 
   codeTheme: string;
   uiTheme: string;
@@ -299,8 +290,6 @@ export interface PreferencesSlice {
   setTerminalFontWeight: (weight: FontWeight) => void;
   setTerminalLineHeight: (lineHeight: number) => void;
   setTerminalLetterSpacing: (spacing: number) => void;
-  setTerminalRenderer: (renderer: TerminalRenderer) => void;
-  setTerminalLigatures: (enabled: boolean) => void;
   setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
@@ -419,27 +408,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       set({ terminalLetterSpacing: spacing });
       storage.set("terminalLetterSpacing", spacing);
       refreshAllTerminalOptions(buildTerminalFontOptions(get()));
-    },
-
-    setTerminalRenderer: (renderer) => {
-      set({ terminalRenderer: renderer });
-      storage.set("terminalRenderer", renderer);
-      // Ligatures only work under the DOM renderer. Switching to WebGL unloads
-      // them first; switching back to DOM re-loads them if the pref is on.
-      const ligatures = get().terminalLigatures;
-      if (renderer === "webgl") {
-        applyLigaturesToAll(ligatures, renderer);
-        applyRendererToAll(renderer);
-      } else {
-        applyRendererToAll(renderer);
-        applyLigaturesToAll(ligatures, renderer);
-      }
-    },
-
-    setTerminalLigatures: (enabled) => {
-      set({ terminalLigatures: enabled });
-      storage.set("terminalLigatures", enabled);
-      applyLigaturesToAll(enabled, get().terminalRenderer);
     },
 
     setCodeTheme: (theme) => {

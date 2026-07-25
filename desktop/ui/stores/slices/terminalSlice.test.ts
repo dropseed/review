@@ -484,12 +484,32 @@ describe("panel preferences (dock side + width persistence)", () => {
   it("hydrateTerminalPrefs restores the persisted dock side", async () => {
     const { get, reads } = makeSlice();
     reads.terminalDockSide = "right";
-    reads.terminalPanelOpen = true;
+    reads.terminalPanelMode = "maximized";
     reads.terminalPanelWidth = 640;
     await get().hydrateTerminalPrefs();
     expect(get().terminalDockSide).toBe("right");
-    expect(get().terminalPanelOpen).toBe(true);
+    expect(get().terminalPanelMode).toBe("maximized");
     expect(get().terminalPanelWidth).toBe(640);
+  });
+
+  it("hydrateTerminalPrefs upgrades the pre-mode open/closed boolean", async () => {
+    const { get, reads } = makeSlice();
+    reads.terminalPanelOpen = true;
+    await get().hydrateTerminalPrefs();
+    expect(get().terminalPanelMode).toBe("split");
+  });
+
+  it("hiding a maximized panel reopens as a split, not over the diff", () => {
+    const { get, writes } = makeSlice();
+    get().toggleTerminalPanelMaximized();
+    expect(get().terminalPanelMode).toBe("maximized");
+
+    get().toggleTerminalPanel();
+    expect(get().terminalPanelMode).toBe("closed");
+    expect(writes.terminalPanelMode).toBe("closed");
+
+    get().toggleTerminalPanel();
+    expect(get().terminalPanelMode).toBe("split");
   });
 });
 

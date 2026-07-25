@@ -327,9 +327,6 @@ async fn serve_stream(
         }
     };
 
-    // Pure live stream: discard the subscription's replay bytes. The client
-    // fetches scrollback with `Op::Replay` and de-duplicates on `seq`.
-    drop(subscription.replay);
     let mut rx = subscription.rx;
 
     // A stream connection carries no client→daemon traffic; reading it exists

@@ -13,6 +13,7 @@ import { Toaster } from "sonner";
 import "./index.css";
 import { initSentry } from "./utils/sentry";
 import { initializeLogger, initLogPath } from "./utils/logger";
+import { applyTitleBarLayout } from "./utils/titlebar";
 import { useReviewStore } from "./stores";
 
 import { resolveLanguages } from "@pierre/diffs";
@@ -130,6 +131,10 @@ function App() {
     </WorkerPoolContextProvider>
   );
 }
+
+// Publish the window's title-bar geometry before first paint, so every surface
+// that reaches the top of the window can lay itself out with a plain var().
+applyTitleBarLayout();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

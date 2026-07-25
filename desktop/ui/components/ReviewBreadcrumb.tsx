@@ -147,13 +147,15 @@ export function ReviewBreadcrumb({
   );
 }
 
+/** The PR title, shown inline after the breadcrumb in the title-bar strip. */
 export function ReviewTitle(): ReactNode {
   const displayTitle = useReviewStore((s) => s.reviewState?.githubPr?.title);
   if (!displayTitle) return null;
 
   return (
-    <div className="truncate text-sm font-medium text-fg-secondary leading-tight px-4 mt-1">
-      {displayTitle}
-    </div>
+    <span className="flex min-w-0 items-center gap-1.5" title={displayTitle}>
+      <span className="shrink-0 text-xs text-fg-faint">·</span>
+      <span className="truncate text-xs text-fg-secondary">{displayTitle}</span>
+    </span>
   );
 }

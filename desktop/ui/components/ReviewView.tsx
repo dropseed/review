@@ -72,7 +72,6 @@ export function ReviewView({
   const comparison = useReviewStore((s) => s.comparison);
   const reviewRef = useReviewStore((s) => s.reviewRef);
   const reviewBaseOverride = useReviewStore((s) => s.reviewBaseOverride);
-  const selectedFile = useReviewStore((s) => s.selectedFile);
   const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const classificationsModalOpen = useReviewStore(
     (s) => s.classificationsModalOpen,
@@ -257,14 +256,18 @@ export function ReviewView({
 
   // Terminal panel: left vertical pane inside the content region, sized via the
   // horizontal ResizeHandle and persisted in the store.
-  const terminalPanelOpen = useReviewStore((s) => s.terminalPanelOpen);
+  const terminalPanelMode = useReviewStore((s) => s.terminalPanelMode);
   const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
   const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
   const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
+  const toggleTerminalPanelMaximized = useReviewStore(
+    (s) => s.toggleTerminalPanelMaximized,
+  );
   const contentRowRef = useRef<HTMLDivElement | null>(null);
-  const showTerminalPanel = terminalPanelOpen && terminalsSupported;
+  const panelMode = terminalsSupported ? terminalPanelMode : "closed";
+  const showTerminalPanel = panelMode !== "closed";
 
   // ResizeHandle reports a fraction of the content row from its left edge. The
   // width is always the terminal pane's own width, measured from whichever side
@@ -280,18 +283,24 @@ export function ReviewView({
     [setTerminalPanelWidth, terminalDockSide],
   );
 
-  // Cmd+` toggles the panel (when supported).
+  // Cmd+` toggles the panel, Cmd+Shift+Enter collapses/restores the diff beside
+  // it (iTerm2's maximize-pane chord). Both work regardless of where focus is —
+  // Cmd combos aren't forwarded to the PTY.
   useEffect(() => {
     if (!terminalsSupported) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.code === "Backquote") {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.code === "Backquote") {
         e.preventDefault();
         toggleTerminalPanel();
+      } else if (e.shiftKey && e.code === "Enter") {
+        e.preventDefault();
+        toggleTerminalPanelMaximized();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [terminalsSupported, toggleTerminalPanel]);
+  }, [terminalsSupported, toggleTerminalPanel, toggleTerminalPanelMaximized]);
 
   // Review progress
   const {
@@ -306,6 +315,10 @@ export function ReviewView({
   // so confetti can't fire over the bogus all-deleted diff behind the notice.
   useCelebration(!compareRefMissing);
 
+  // The header doubles as the window's title bar on macOS; when the sidebar is
+  // collapsed it also has to clear the traffic lights.
+  const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
+
   const repoName =
     remoteInfo?.name ||
     repoPath?.replace(/\/+$/, "").split("/").pop() ||
@@ -314,115 +327,126 @@ export function ReviewView({
   return (
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Header */}
-        <header className="@container relative bg-surface shadow-[0_1px_0_0_var(--color-edge)] py-2.5">
-          {/* Top row: breadcrumb + activity + progress */}
-          <div className="flex items-center justify-between pr-4">
-            {/* Left: repo / comparison ref */}
-            <div className="min-w-0 px-4">
-              <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
-            </div>
+        {/* Header — drawn inside the macOS title bar strip, so it costs no
+            vertical space of its own. Draggable except over its controls. */}
+        <header
+          data-tauri-drag-region
+          className={`@container relative flex shrink-0 items-center gap-3 py-1 pr-3
+                      min-h-[var(--title-bar-height)] ${
+                        // With the sidebar collapsed there's nothing else to
+                        // keep the header clear of the traffic lights.
+                        tabRailCollapsed
+                          ? "pl-[max(0.75rem,var(--traffic-light-inset))]"
+                          : "pl-3"
+                      }`}
+        >
+          {/* Left: repo / comparison ref, then the PR title if there is one */}
+          <div
+            className="flex min-w-0 flex-1 items-center gap-2"
+            data-tauri-drag-region
+          >
+            <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
+            {!compareRefMissing && <ReviewTitle />}
+          </div>
 
-            {/* Center: activity island (floating) */}
-            {comparison && !compareRefMissing && <ActivityBar />}
+          {/* Center: activity island (floating) */}
+          {comparison && !compareRefMissing && <ActivityBar />}
 
-            {/* Right: terminal toggle + review progress */}
-            <div className="flex shrink-0 items-center gap-2">
-              {terminalsSupported && (
-                <SimpleTooltip content="Toggle terminal (⌘`)" side="bottom">
+          {/* Right: terminal toggle + review progress */}
+          <div className="flex shrink-0 items-center gap-2">
+            {terminalsSupported && (
+              <SimpleTooltip content="Toggle terminal (⌘`)" side="bottom">
+                <button
+                  type="button"
+                  onClick={toggleTerminalPanel}
+                  aria-label="Toggle terminal panel"
+                  aria-pressed={showTerminalPanel}
+                  className={`p-1.5 rounded transition-colors duration-100 hover:bg-fg/[0.06] ${
+                    showTerminalPanel
+                      ? "text-fg-secondary"
+                      : "text-fg-faint hover:text-fg-muted"
+                  }`}
+                >
+                  <TerminalIcon className="h-4 w-4" />
+                </button>
+              </SimpleTooltip>
+            )}
+            {comparison && !readOnlyPreview && !compareRefMissing && (
+              <div className="flex shrink-0 items-center gap-3">
+                {totalHunks > 0 ? (
                   <button
                     type="button"
-                    onClick={toggleTerminalPanel}
-                    aria-label="Toggle terminal panel"
-                    aria-pressed={showTerminalPanel}
-                    className={`p-1.5 rounded transition-colors duration-100 hover:bg-fg/[0.06] ${
-                      showTerminalPanel
-                        ? "text-fg-secondary"
-                        : "text-fg-faint hover:text-fg-muted"
-                    }`}
-                  >
-                    <TerminalIcon className="h-4 w-4" />
-                  </button>
-                </SimpleTooltip>
-              )}
-              {comparison && !readOnlyPreview && !compareRefMissing && (
-                <div className="flex shrink-0 items-center gap-3">
-                  {totalHunks > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        useReviewStore.setState({
-                          selectedFile: null,
-                          guideContentMode: null,
-                        });
-                      }}
-                      className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
+                    onClick={() => {
+                      useReviewStore.setState({
+                        selectedFile: null,
+                        guideContentMode: null,
+                      });
+                    }}
+                    className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
                              hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
-                    >
-                      <span className="font-mono text-xs tabular-nums text-fg-muted">
-                        {reviewedHunks}/{totalHunks}
-                      </span>
-                      <SimpleTooltip
-                        content={
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-status-trusted" />
-                              <span>Trusted: {trustedHunks}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-status-approved" />
-                              <span>Approved: {approvedHunks}</span>
-                            </div>
-                            {rejectedHunks > 0 && (
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-status-rejected" />
-                                <span>Rejected: {rejectedHunks}</span>
-                              </div>
-                            )}
+                  >
+                    <span className="font-mono text-xs tabular-nums text-fg-muted">
+                      {reviewedHunks}/{totalHunks}
+                    </span>
+                    <SimpleTooltip
+                      content={
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-status-trusted" />
+                            <span>Trusted: {trustedHunks}</span>
                           </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-status-approved" />
+                            <span>Approved: {approvedHunks}</span>
+                          </div>
+                          {rejectedHunks > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-status-rejected" />
+                              <span>Rejected: {rejectedHunks}</span>
+                            </div>
+                          )}
+                        </div>
+                      }
+                    >
+                      <CircleProgress
+                        percent={
+                          totalHunks > 0
+                            ? Math.round((reviewedHunks / totalHunks) * 100)
+                            : 0
                         }
-                      >
-                        <CircleProgress
-                          percent={
-                            totalHunks > 0
-                              ? Math.round((reviewedHunks / totalHunks) * 100)
-                              : 0
-                          }
-                          size={20}
-                          strokeWidth={2.5}
-                          className="shrink-0 cursor-default"
-                          segments={[
-                            {
-                              percent:
-                                totalHunks > 0
-                                  ? (trustedHunks / totalHunks) * 100
-                                  : 0,
-                              color: "var(--color-status-trusted)",
-                            },
-                            {
-                              percent:
-                                totalHunks > 0
-                                  ? (approvedHunks / totalHunks) * 100
-                                  : 0,
-                              color: "var(--color-status-approved)",
-                            },
-                            {
-                              percent:
-                                totalHunks > 0
-                                  ? (rejectedHunks / totalHunks) * 100
-                                  : 0,
-                              color: "var(--color-status-rejected)",
-                            },
-                          ]}
-                        />
-                      </SimpleTooltip>
-                    </button>
-                  ) : null}
-                </div>
-              )}
-            </div>
+                        size={20}
+                        strokeWidth={2.5}
+                        className="shrink-0 cursor-default"
+                        segments={[
+                          {
+                            percent:
+                              totalHunks > 0
+                                ? (trustedHunks / totalHunks) * 100
+                                : 0,
+                            color: "var(--color-status-trusted)",
+                          },
+                          {
+                            percent:
+                              totalHunks > 0
+                                ? (approvedHunks / totalHunks) * 100
+                                : 0,
+                            color: "var(--color-status-approved)",
+                          },
+                          {
+                            percent:
+                              totalHunks > 0
+                                ? (rejectedHunks / totalHunks) * 100
+                                : 0,
+                            color: "var(--color-status-rejected)",
+                          },
+                        ]}
+                      />
+                    </SimpleTooltip>
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
-          {selectedFile && !compareRefMissing && <ReviewTitle />}
         </header>
 
         {/* Status banners — hidden while the deleted-ref notice is shown */}
@@ -499,31 +523,38 @@ export function ReviewView({
           className="relative flex flex-1 flex-row overflow-hidden bg-surface"
         >
           {(() => {
+            const dockLeft = showTerminalPanel && terminalDockSide === "left";
+            const dockRight = showTerminalPanel && terminalDockSide === "right";
+            const maximized = panelMode === "maximized";
             const terminalPane = (
               <div
-                className="shrink-0 overflow-hidden p-2"
-                style={{ width: `${terminalPanelWidth}px` }}
+                className={`overflow-hidden p-2 ${
+                  maximized ? "min-w-0 flex-1" : "shrink-0"
+                }`}
+                style={maximized ? undefined : { width: terminalPanelWidth }}
               >
                 <TerminalPanel />
               </div>
             );
+            // Maximized: the terminal is the whole content region.
+            if (maximized) return terminalPane;
+
             const terminalResize = (
               <ResizeHandle
                 orientation="horizontal"
                 onResize={handleTerminalResize}
               />
             );
-            const dockLeft = showTerminalPanel && terminalDockSide === "left";
-            const dockRight = showTerminalPanel && terminalDockSide === "right";
-            return (
-              <>
-                {dockLeft && (
-                  <>
-                    {terminalPane}
-                    {terminalResize}
-                  </>
-                )}
-                <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+            // The diff sits in the same rounded, raised card as a terminal
+            // pane. The padding on the side facing the terminal is dropped so
+            // the two cards share one gutter instead of stacking two.
+            const diffPane = (
+              <div
+                className={`relative flex min-w-0 flex-1 flex-col overflow-hidden p-2 ${
+                  dockLeft ? "pl-0" : ""
+                } ${dockRight ? "pr-0" : ""}`}
+              >
+                <div className="panel-card relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
                   {compareRefMissing ? (
                     <CompareRefDeletedNotice
                       repoPath={repoPath!}
@@ -534,6 +565,17 @@ export function ReviewView({
                     <ContentArea />
                   )}
                 </div>
+              </div>
+            );
+            return (
+              <>
+                {dockLeft && (
+                  <>
+                    {terminalPane}
+                    {terminalResize}
+                  </>
+                )}
+                {diffPane}
                 {dockRight && (
                   <>
                     {terminalResize}

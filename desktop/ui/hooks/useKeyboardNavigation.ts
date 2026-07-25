@@ -3,6 +3,11 @@ import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getAllHunksFromState } from "../stores/selectors/hunks";
+import { makeReviewKey } from "../utils/review-key";
+import {
+  collectLeafIds,
+  type SplitDirection,
+} from "../components/Terminal/pane-tree";
 import {
   buildOrgGroups,
   buildRepoGroups,
@@ -80,6 +85,31 @@ function activateSidebarItem(
 }
 
 /**
+ * Split the terminal pane that currently has focus, if any. Returns whether it
+ * handled the keystroke, so the caller can fall through to the diff-view split.
+ *
+ * Focus is located through the `data-terminal-id` each pane carries, rather
+ * than a ref the panel would have to publish — the panes are the things that
+ * can be focused, so they're the thing to ask.
+ */
+function splitFocusedTerminal(direction: SplitDirection): boolean {
+  const pane =
+    document.activeElement?.closest<HTMLElement>("[data-terminal-id]");
+  const terminalId = pane?.dataset.terminalId;
+  if (!terminalId) return false;
+
+  const state = useReviewStore.getState();
+  const reviewKey = makeReviewKey(state.repoPath ?? "", state.reviewRef ?? "");
+  const tab = state.terminalTabsByReviewKey[reviewKey]?.find((t) =>
+    collectLeafIds(t.root).includes(terminalId),
+  );
+  if (!tab) return false;
+
+  void state.splitTerminal(reviewKey, tab.id, terminalId, direction);
+  return true;
+}
+
+/**
  * Handles keyboard navigation and shortcuts.
  * j/k for hunk navigation, a/r for approve/reject, split view, escape.
  *
@@ -91,6 +121,22 @@ function activateSidebarItem(
 export function useKeyboardNavigation() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Cmd+D/Cmd+Shift+D mean "split what I'm looking at", so they resolve
+      // against focus: a terminal pane splits itself, anything else splits the
+      // diff (below). Decided here, ahead of the text-input guard, because
+      // focus inside a terminal *is* focus in a textarea — xterm's. Cmd, never
+      // Ctrl: Ctrl+D is EOF and belongs to the shell.
+      if (
+        event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "d" || event.key === "D") &&
+        splitFocusedTerminal(event.shiftKey ? "column" : "row")
+      ) {
+        event.preventDefault();
+        return;
+      }
+
       // Don't capture keys when typing in inputs
       if (
         event.target instanceof HTMLInputElement ||

@@ -730,7 +730,13 @@ function SidebarHeader({
   const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
 
   return (
-    <div className="shrink-0 px-2 py-2 flex items-center gap-1">
+    <div
+      // The traffic lights float over this corner when the window draws into
+      // the title bar, so start the sidebar below them (0 elsewhere).
+      className="shrink-0 px-2 py-2 flex items-center gap-1
+                 mt-[var(--title-bar-height)]"
+      data-tauri-drag-region
+    >
       <span className="pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
         Reviews
       </span>

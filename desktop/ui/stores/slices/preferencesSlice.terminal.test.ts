@@ -19,8 +19,6 @@ const {
   TERMINAL_FONT_WEIGHT_DEFAULT,
   TERMINAL_LINE_HEIGHT_DEFAULT,
   TERMINAL_LETTER_SPACING_DEFAULT,
-  TERMINAL_RENDERER_DEFAULT,
-  TERMINAL_LIGATURES_DEFAULT,
 } = await import("./preferencesSlice");
 
 /** Minimal harness: real slice actions over an in-memory store + stub storage. */
@@ -56,8 +54,6 @@ describe("preferencesSlice terminal font/rendering settings", () => {
     expect(get().terminalFontWeight).toBe(TERMINAL_FONT_WEIGHT_DEFAULT);
     expect(get().terminalLineHeight).toBe(TERMINAL_LINE_HEIGHT_DEFAULT);
     expect(get().terminalLetterSpacing).toBe(TERMINAL_LETTER_SPACING_DEFAULT);
-    expect(get().terminalRenderer).toBe(TERMINAL_RENDERER_DEFAULT);
-    expect(get().terminalLigatures).toBe(TERMINAL_LIGATURES_DEFAULT);
   });
 
   it("setTerminalFontFamily updates state and persists", () => {
@@ -91,23 +87,6 @@ describe("preferencesSlice terminal font/rendering settings", () => {
     expect(writes.terminalLetterSpacing).toBe(0.5);
   });
 
-  it("setTerminalRenderer updates state and persists", () => {
-    const { get, writes } = makeSlice();
-    get().setTerminalRenderer("webgl");
-    expect(get().terminalRenderer).toBe("webgl");
-    expect(writes.terminalRenderer).toBe("webgl");
-    get().setTerminalRenderer("dom");
-    expect(get().terminalRenderer).toBe("dom");
-    expect(writes.terminalRenderer).toBe("dom");
-  });
-
-  it("setTerminalLigatures updates state and persists", () => {
-    const { get, writes } = makeSlice();
-    get().setTerminalLigatures(true);
-    expect(get().terminalLigatures).toBe(true);
-    expect(writes.terminalLigatures).toBe(true);
-  });
-
   it("loadPreferences hydrates persisted terminal fields", async () => {
     const { get } = makeSlice({
       terminalFontFamily: "Fira Code",
@@ -115,8 +94,6 @@ describe("preferencesSlice terminal font/rendering settings", () => {
       terminalFontWeight: 300,
       terminalLineHeight: 1.2,
       terminalLetterSpacing: 1,
-      terminalRenderer: "webgl",
-      terminalLigatures: true,
     });
     await get().loadPreferences();
     expect(get().terminalFontFamily).toBe("Fira Code");
@@ -124,7 +101,5 @@ describe("preferencesSlice terminal font/rendering settings", () => {
     expect(get().terminalFontWeight).toBe(300);
     expect(get().terminalLineHeight).toBe(1.2);
     expect(get().terminalLetterSpacing).toBe(1);
-    expect(get().terminalRenderer).toBe("webgl");
-    expect(get().terminalLigatures).toBe(true);
   });
 });

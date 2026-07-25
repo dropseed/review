@@ -869,6 +869,21 @@ pub struct CliOpenRequest {
     pub focused_hunk_hash: Option<String>,
 }
 
+/// Give a runtime-created window the same overlay title bar the main window
+/// declares in tauri.conf.json: the webview extends under the title bar so the
+/// app can draw its own header there, and the OS title text is hidden. A no-op
+/// off macOS, where the style doesn't exist.
+fn overlay_title_bar<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
+    builder: tauri::webview::WebviewWindowBuilder<'a, R, M>,
+) -> tauri::webview::WebviewWindowBuilder<'a, R, M> {
+    #[cfg(target_os = "macos")]
+    return builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    return builder;
+}
+
 // Multi-window support
 #[tauri::command]
 pub async fn open_repo_window(
@@ -907,11 +922,12 @@ pub async fn open_repo_window(
             })
             .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
 
-        WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
+        let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
             .title("Review")
             .inner_size(width, height)
             .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
-            .tabbing_identifier("review-main")
+            .tabbing_identifier("review-main");
+        overlay_title_bar(builder)
             .build()
             .map_err(|e: tauri::Error| e.to_string())?;
 
@@ -966,11 +982,12 @@ pub async fn open_repo_window(
         })
         .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
 
-    let window = WebviewWindowBuilder::new(&app, label, url)
+    let builder = WebviewWindowBuilder::new(&app, label, url)
         .title(repo_name)
         .inner_size(width, height)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
-        .tabbing_identifier("review-main")
+        .tabbing_identifier("review-main");
+    let window = overlay_title_bar(builder)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
 

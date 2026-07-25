@@ -56,8 +56,8 @@ export interface TerminalSlice {
    */
   freshTerminalIds: string[];
 
-  /** Whether the terminal panel is open (persisted). */
-  terminalPanelOpen: boolean;
+  /** How the panel shares the content region with the diff (persisted). */
+  terminalPanelMode: TerminalPanelMode;
   /** Panel width in px (persisted) — the vertical pane's own width. */
   terminalPanelWidth: number;
   /** Which side of the content region the panel docks on (persisted). */
@@ -118,7 +118,10 @@ export interface TerminalSlice {
     path: number[],
     sizes: number[],
   ) => void;
+  /** Show/hide the panel. Hiding also drops a maximized layout. */
   toggleTerminalPanel: () => void;
+  /** Collapse/restore the diff beside the panel; opens the panel if closed. */
+  toggleTerminalPanelMaximized: () => void;
   setTerminalPanelWidth: (width: number) => void;
   setTerminalDockSide: (side: TerminalDockSide) => void;
   /** Flip the panel between the left and right of the content region. */
@@ -144,6 +147,14 @@ export interface TerminalSlice {
 }
 
 export type TerminalDockSide = "left" | "right";
+
+/**
+ * How the terminal panel shares the content region with the diff. One value
+ * rather than open/maximized booleans, because "maximized while closed" is not
+ * a state the UI has — as two flags it would be an invariant every action had
+ * to re-assert.
+ */
+export type TerminalPanelMode = "closed" | "split" | "maximized";
 
 export const TERMINAL_PANEL_WIDTH_DEFAULT = 480;
 export const TERMINAL_PANEL_WIDTH_MIN = 320;
@@ -584,6 +595,11 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     });
   }
 
+  function setPanelMode(mode: TerminalPanelMode): void {
+    set({ terminalPanelMode: mode });
+    storage.set("terminalPanelMode", mode);
+  }
+
   function unsubscribeSession(id: string): void {
     const unsub = sessionUnsubs.get(id);
     if (unsub) {
@@ -601,19 +617,22 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     terminalTabsByReviewKey: {},
     activeTabIdByReviewKey: {},
     freshTerminalIds: [],
-    terminalPanelOpen: false,
+    terminalPanelMode: "closed",
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
-      const [open, width, dockSide] = await Promise.all([
+      const [mode, legacyOpen, width, dockSide] = await Promise.all([
+        storage.get<TerminalPanelMode>("terminalPanelMode"),
+        // Pre-mode installs persisted an open/closed boolean; honor it once so
+        // the panel doesn't silently close on upgrade.
         storage.get<boolean>("terminalPanelOpen"),
         storage.get<number>("terminalPanelWidth"),
         storage.get<TerminalDockSide>("terminalDockSide"),
       ]);
       set({
-        terminalPanelOpen: open ?? false,
+        terminalPanelMode: mode ?? (legacyOpen ? "split" : "closed"),
         terminalPanelWidth: width ?? TERMINAL_PANEL_WIDTH_DEFAULT,
         terminalDockSide: dockSide ?? TERMINAL_DOCK_SIDE_DEFAULT,
       });
@@ -733,9 +752,17 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       set(resizeSplitInTab(get(), reviewKey, tabId, path, sizes)),
 
     toggleTerminalPanel: () => {
-      const open = !get().terminalPanelOpen;
-      set({ terminalPanelOpen: open });
-      storage.set("terminalPanelOpen", open);
+      // Hiding a maximized panel returns to "split" on the next open, so the
+      // diff can't stay hidden behind a panel that isn't showing.
+      setPanelMode(get().terminalPanelMode === "closed" ? "split" : "closed");
+    },
+
+    toggleTerminalPanelMaximized: () => {
+      // From closed this opens maximized — the shortcut reads as "show me the
+      // terminal, full size" whichever state it starts from.
+      setPanelMode(
+        get().terminalPanelMode === "maximized" ? "split" : "maximized",
+      );
     },
 
     setTerminalPanelWidth: (width) => {

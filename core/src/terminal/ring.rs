@@ -89,6 +89,38 @@ impl Ring {
         out.extend_from_slice(tail);
         (out, inner.total)
     }
+
+    /// Like [`Ring::snapshot_with_offset`], but trimmed to a byte a VT parser
+    /// can safely start reading at.
+    ///
+    /// Old bytes are dropped at whatever offset makes room, so once the ring has
+    /// wrapped its first byte is very likely the *middle* of an escape sequence.
+    /// Replaying that leaves the client's parser mis-synced — the sequence's
+    /// tail renders as literal junk and, worse, whatever state it was setting
+    /// never gets set, so the rest of the replay lands in the wrong mode. That
+    /// is the classic "reattached and the screen is garbage" failure, and
+    /// full-screen TUIs (which emit almost nothing *but* escape sequences) hit
+    /// it hardest.
+    ///
+    /// ESC is the one byte that unambiguously starts a sequence — it also
+    /// aborts any sequence in progress — so a replay that begins there is
+    /// always in sync. A ring that never wrapped starts at the session's real
+    /// first byte and is returned untouched.
+    pub fn snapshot_for_replay(&self) -> (Vec<u8>, u64) {
+        let (mut out, cursor) = self.snapshot_with_offset();
+        // The cursor counts every byte ever appended, so it only exceeds the
+        // retained length once the ring has dropped something. Until then the
+        // snapshot starts at the session's real first byte and is already sound.
+        if cursor <= out.len() as u64 {
+            return (out, cursor);
+        }
+        // No ESC at all means the retained bytes are plain text — nothing to
+        // resync to, and nothing that can mis-parse.
+        if let Some(first_esc) = out.iter().position(|&b| b == 0x1b) {
+            out.drain(..first_esc);
+        }
+        (out, cursor)
+    }
 }
 
 impl Default for Ring {
@@ -146,5 +178,39 @@ mod tests {
         let ring = Ring::with_capacity(4);
         assert_eq!(ring.append(b"0123456789"), 10);
         assert_eq!(ring.snapshot_with_offset(), (b"6789".to_vec(), 10));
+    }
+
+    #[test]
+    fn replay_snapshot_starts_at_an_escape_once_the_ring_has_wrapped() {
+        let ring = Ring::with_capacity(12);
+        // Overflow the ring so its first retained bytes land mid-sequence.
+        ring.append(b"\x1b[31mred");
+        ring.append(b"\x1b[0mplain");
+        // Raw snapshot begins inside the truncated "\x1b[31m".
+        let (raw, _) = ring.snapshot_with_offset();
+        assert_eq!(raw, b"red\x1b[0mplain");
+        // Replay drops the orphaned tail and starts at the next real sequence.
+        let (replay, cursor) = ring.snapshot_for_replay();
+        assert_eq!(replay, b"\x1b[0mplain");
+        // Trimming the front never moves the cursor: it marks the end offset.
+        assert_eq!(cursor, 17);
+    }
+
+    #[test]
+    fn replay_snapshot_is_untouched_when_the_ring_never_wrapped() {
+        let ring = Ring::with_capacity(64);
+        // Plain text ahead of the first sequence is genuine session output here,
+        // not a truncation artifact, so it must survive.
+        ring.append(b"$ claude\r\n\x1b[32mready");
+        let (replay, cursor) = ring.snapshot_for_replay();
+        assert_eq!(replay, b"$ claude\r\n\x1b[32mready");
+        assert_eq!(cursor, 20);
+    }
+
+    #[test]
+    fn replay_snapshot_keeps_plain_text_with_no_escape_to_resync_to() {
+        let ring = Ring::with_capacity(4);
+        ring.append(b"abcdefgh");
+        assert_eq!(ring.snapshot_for_replay(), (b"efgh".to_vec(), 8));
     }
 }

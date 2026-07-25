@@ -3,6 +3,7 @@ export { useSidebarResize } from "./useSidebarResize";
 export { useMenuEvents } from "./useMenuEvents";
 export { useFileWatcher } from "./useFileWatcher";
 export { useTerminalEvents } from "./useTerminalEvents";
+export { useTerminalFileDrop } from "./useTerminalFileDrop";
 export { useRepoActivitySync } from "./useRepoActivitySync";
 export {
   useRepositoryInit,
