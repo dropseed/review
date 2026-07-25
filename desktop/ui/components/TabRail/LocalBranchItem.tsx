@@ -21,6 +21,8 @@ interface LocalBranchItemProps {
   /** Flat (zone-1) rows drop the nested indent so they align with review rows. */
   flat?: boolean;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
+  /** Repo-level checkout roots, computed once by the sidebar. */
+  checkouts: readonly string[];
 }
 
 export const LocalBranchItem = memo(function LocalBranchItem({
@@ -31,6 +33,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   itemKind,
   flat = false,
   onActivate,
+  checkouts,
 }: LocalBranchItemProps) {
   // The review's identity is the branch name.
   const reviewRef = branch.name;
@@ -144,7 +147,6 @@ export const LocalBranchItem = memo(function LocalBranchItem({
     [handleRemoveWorktreeClick],
   );
 
-  const isCheckedOut = itemKind === "working-tree" || itemKind === "worktree";
   // The working-tree row's checkout *is* the repo root; a linked worktree has
   // its own. A branch that isn't checked out anywhere has none, so it hosts no
   // terminals.
@@ -195,8 +197,9 @@ export const LocalBranchItem = memo(function LocalBranchItem({
               <RowStatus
                 repoPath={repoPath}
                 checkoutPath={checkoutPath}
-                tier={isCheckedOut ? "materialized" : "fetched"}
+                tier={checkoutPath ? "materialized" : "fetched"}
                 showWorktreeIcon={itemKind === "worktree"}
+                checkouts={checkouts}
               />
               {branch.hasWorkingTreeChanges && (
                 <span className="text-2xs text-status-modified">M</span>

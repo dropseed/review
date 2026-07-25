@@ -163,11 +163,10 @@ export function ReviewView({
     "start review",
   );
 
-  const checkoutWorktree = useReviewStore((s) => s.checkoutWorktree);
+  const ensureMaterialized = useReviewStore((s) => s.ensureMaterialized);
   const checkoutAction = useCallback(async () => {
-    if (!repoPath || !comparison) return;
-    await checkoutWorktree(repoPath, comparison);
-  }, [repoPath, comparison, checkoutWorktree]);
+    await ensureMaterialized("enable LSP features");
+  }, [ensureMaterialized]);
   const [handleCheckoutClick, checkingOut] = useAsyncAction(
     checkoutAction,
     "checkout worktree",

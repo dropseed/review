@@ -535,11 +535,8 @@ export interface GlobalReviewSummary extends ReviewSummary {
   repoPath: string;
   repoName: string;
   diffStats?: DiffShortStat;
-  /**
-   * For PR reviews, whether the PR head has been fetched locally. Always true
-   * for non-PR reviews, whose ref is already in the repo by definition.
-   */
-  prFetched: boolean;
+  /** How much of this review is present locally, derived by the backend. */
+  tier: ReviewTier;
 }
 
 // Summary of a saved review (for start screen listing). Listing stays git-free:

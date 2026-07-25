@@ -671,21 +671,13 @@ async fn worktree_update_head(Json(req): Json<WorktreeUpdateHeadRequest>) -> Api
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewRefRequest {
-    repo_path: String,
-    #[serde(rename = "ref")]
-    ref_name: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct FetchPullRequestRequest {
     repo_path: String,
     pr: GitHubPrRef,
 }
 
 async fn review_tier(
-    Json(req): Json<ReviewRefRequest>,
+    Json(req): Json<RepoRefRequest>,
 ) -> ApiResult<crate::service::pr::ReviewTierInfo> {
     blocking(move || crate::service::pr::tier(&PathBuf::from(&req.repo_path), &req.ref_name)).await
 }
@@ -694,12 +686,12 @@ async fn github_fetch_pull_request(Json(req): Json<FetchPullRequestRequest>) -> 
     blocking(move || crate::service::pr::fetch(&PathBuf::from(&req.repo_path), &req.pr)).await
 }
 
-async fn review_materialize(Json(req): Json<ReviewRefRequest>) -> ApiResult<String> {
+async fn review_materialize(Json(req): Json<RepoRefRequest>) -> ApiResult<String> {
     blocking(move || crate::service::pr::materialize(&PathBuf::from(&req.repo_path), &req.ref_name))
         .await
 }
 
-async fn review_release_worktree(Json(req): Json<ReviewRefRequest>) -> ApiResult<()> {
+async fn review_release_worktree(Json(req): Json<RepoRefRequest>) -> ApiResult<()> {
     blocking(move || crate::service::pr::release(&PathBuf::from(&req.repo_path), &req.ref_name))
         .await
 }

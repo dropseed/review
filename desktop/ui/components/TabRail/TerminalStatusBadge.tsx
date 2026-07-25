@@ -19,6 +19,10 @@ interface TerminalStatusBadgeProps {
   /** The row's own checkout — a linked worktree, or the repo root for the main
    *  working-tree row. Rows without one host no terminals. */
   checkoutPath?: string | null;
+  /** Every checkout root in the repo, so a session attributes to the innermost
+   *  one. Passed in rather than derived here: this renders once per sidebar
+   *  row, and the list is a repo-level fact identical across all of them. */
+  checkouts: readonly string[];
 }
 
 /**
@@ -28,23 +32,13 @@ interface TerminalStatusBadgeProps {
 export function TerminalStatusBadge({
   repoPath,
   checkoutPath,
+  checkouts,
 }: TerminalStatusBadgeProps): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
-  const localActivity = useReviewStore((s) => s.localActivity);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [freshPeek, setFreshPeek] = useState<string | null>(null);
-
-  // Every checkout root in this repo, so a session lands on the innermost one.
-  const checkouts = useMemo(() => {
-    const roots = [repoPath];
-    const repo = localActivity.find((r) => r.repoPath === repoPath);
-    for (const branch of repo?.branches ?? []) {
-      if (branch.worktreePath) roots.push(branch.worktreePath);
-    }
-    return roots;
-  }, [repoPath, localActivity]);
 
   const ids = useMemo(
     () =>

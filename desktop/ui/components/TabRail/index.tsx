@@ -104,6 +104,7 @@ import {
 import { type WorkingOnEntry } from "../../utils/working-on";
 import { useOrgGroups, useWorkingOn } from "../../hooks/useRepoGroups";
 import { RemoteBranchItem } from "./RemoteBranchItem";
+import { selectRepoCheckouts } from "../../stores/slices/terminalSlice";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -131,6 +132,28 @@ function SidebarList({
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
+
+  // Checkout roots per repo, derived once for the whole sidebar. Every row
+  // needs them to attribute terminal sessions, and they're identical across
+  // rows of a repo — deriving per row re-ran this for each of ~60 rows on every
+  // activity tick.
+  const checkoutsByRepo = useMemo(() => {
+    const repoPaths = new Set<string>([
+      ...localActivity.map((r) => r.repoPath),
+      ...globalReviews.map((r) => r.repoPath),
+    ]);
+    const map = new Map<string, string[]>();
+    for (const path of repoPaths) {
+      map.set(path, selectRepoCheckouts(path, localActivity, globalReviews));
+    }
+    return map;
+  }, [localActivity, globalReviews]);
+
+  const checkoutsFor = useCallback(
+    (repoPath: string): readonly string[] =>
+      checkoutsByRepo.get(repoPath) ?? [],
+    [checkoutsByRepo],
+  );
 
   const reviewState = useReviewStore((s) => s.reviewState);
   const hunks = useAllHunks();
@@ -170,6 +193,7 @@ function SidebarList({
       missingRefs: reviewMissingRefs[key],
       onActivate: onActivateReview,
       onDelete: handleDeleteReview,
+      checkouts: checkoutsFor(review.repoPath),
     };
   }
 
@@ -205,6 +229,7 @@ function SidebarList({
         defaultBranch={entry.repo.defaultBranch}
         itemKind={entry.kind}
         onActivate={onActivateLocalBranch}
+        checkouts={checkoutsFor(entry.repo.repoPath)}
       />
     );
   }
@@ -243,6 +268,7 @@ function SidebarList({
         itemKind={entry.kind}
         flat
         onActivate={onActivateLocalBranch}
+        checkouts={checkoutsFor(entry.repo.repoPath)}
       />
     );
   }

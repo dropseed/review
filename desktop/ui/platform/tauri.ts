@@ -13,6 +13,7 @@ import {
 import {
   open as openDialog,
   message as showMessage,
+  confirm as showConfirm,
 } from "@tauri-apps/plugin-dialog";
 import {
   register as registerShortcut,
@@ -83,17 +84,12 @@ class TauriDialogService implements DialogService {
     return typeof selected === "string" ? selected : null;
   }
 
-  async confirm(_message: string, _title?: string): Promise<boolean> {
-    // Tauri doesn't have a built-in confirm dialog in the same way
-    // For now, always return true (would need custom dialog component)
-    console.warn("[TauriDialogService] confirm not fully implemented");
-    return true;
+  async confirm(message: string, title?: string): Promise<boolean> {
+    return showConfirm(message, { title });
   }
 
-  async alert(_message: string, _title?: string): Promise<void> {
-    // Tauri doesn't have a built-in alert dialog
-    // Would need custom dialog component
-    console.warn("[TauriDialogService] alert not fully implemented");
+  async alert(message: string, title?: string): Promise<void> {
+    await showMessage(message, { title });
   }
 
   async message(

@@ -90,11 +90,11 @@ pub struct GlobalReviewSummary {
     pub repo_name: String,
     #[serde(rename = "diffStats")]
     pub diff_stats: Option<DiffShortStat>,
-    /// For PR reviews, whether the PR's head has been fetched locally — the
-    /// listed-vs-fetched tier distinction. Always `true` for non-PR reviews,
-    /// whose ref is by definition already in the repo.
-    #[serde(rename = "prFetched")]
-    pub pr_fetched: bool,
+    /// How much of this review is present locally. Derived here rather than in
+    /// the UI so the cheap listing and the authoritative probe in
+    /// [`crate::service::pr::tier`] can never give different answers for the
+    /// same review.
+    pub tier: crate::service::pr::ReviewTier,
 }
 
 /// List all reviews across all registered repos.
@@ -129,16 +129,17 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
                 };
 
                 for summary in summaries {
-                    let pr_fetched = summary
-                        .github_pr
-                        .as_ref()
-                        .is_none_or(|pr| fetched_prs.contains(&pr.number));
+                    let tier = crate::service::pr::tier_from_parts(
+                        summary.worktree_path.as_deref(),
+                        summary.github_pr.as_ref(),
+                        |number| fetched_prs.contains(&number),
+                    );
                     all.push(GlobalReviewSummary {
                         summary,
                         repo_path: entry.path.clone(),
                         repo_name: entry.name.clone(),
                         diff_stats: None,
-                        pr_fetched,
+                        tier,
                     });
                 }
             }

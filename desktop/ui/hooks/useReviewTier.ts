@@ -3,11 +3,20 @@ import { useReviewStore } from "../stores";
 import { getApiClient } from "../api";
 
 /**
- * Keep the active review's tier in the store.
+ * Repos already swept this session.
  *
- * Mounted once in ReviewView. Re-probes whenever the review changes, and after
- * a review-state write — materializing records the worktree on the review, so
- * the tier moves whenever that file does.
+ * Module-level, not state: the sweep is disk housekeeping, not something a
+ * render depends on, and re-running it per repo switch would re-pay a `gh`
+ * round trip for every open PR review each time the user ping-pongs between
+ * two repos.
+ */
+const sweptRepos = new Set<string>();
+
+/**
+ * Keep the active review's tier in the store, and reclaim dead PR checkouts.
+ *
+ * Mounted once in ReviewView. The tier is re-probed whenever the review
+ * changes; promotions and releases update it themselves through the store.
  */
 export function useReviewTier(): void {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -19,10 +28,10 @@ export function useReviewTier(): void {
   }, [repoPath, reviewRef]);
 
   // Reclaim disk from PRs that merged or closed while we weren't looking.
-  // Once per repo open, not on every review switch: it costs a `gh` call per
-  // PR review, and merged PRs don't appear between two clicks of the sidebar.
   useEffect(() => {
-    if (!repoPath) return;
+    if (!repoPath || sweptRepos.has(repoPath)) return;
+    sweptRepos.add(repoPath);
+
     let cancelled = false;
     getApiClient()
       .reclaimClosedPrs(repoPath)

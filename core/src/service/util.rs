@@ -100,33 +100,6 @@ pub fn bytes_to_data_url(bytes: &[u8], mime_type: &str) -> String {
     let base64_data = BASE64.encode(bytes);
     format!("data:{mime_type};base64,{base64_data}")
 }
-
-/// Extract the diff section for a specific file from a multi-file diff output.
-pub fn extract_file_diff(full_diff: &str, target_path: &str) -> String {
-    let mut result = String::new();
-    let mut capturing = false;
-
-    for line in full_diff.lines() {
-        if line.starts_with("diff --git ") {
-            if capturing {
-                break; // We've hit the next file's diff
-            }
-            // Check if this diff section is for our target file
-            // Format: "diff --git a/path b/path"
-            if line.contains(&format!(" b/{target_path}")) {
-                capturing = true;
-            }
-        }
-        if capturing {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    result
-}
-
-/// Strip single-line `//` and block `/* */` comments from JSONC text.
 pub fn strip_jsonc_comments(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut in_string = false;

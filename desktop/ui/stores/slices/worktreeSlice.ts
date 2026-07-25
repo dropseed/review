@@ -1,5 +1,3 @@
-import type { Comparison } from "../../types";
-import { getApiClient } from "../../api";
 import type { SliceCreator } from "../types";
 
 export interface WorktreeSlice {
@@ -9,12 +7,20 @@ export interface WorktreeSlice {
   setWorktreePath: (path: string | null) => void;
   setWorktreeStale: (stale: boolean) => void;
   setReadOnlyPreview: (readOnly: boolean) => void;
-  checkoutWorktree: (repoPath: string, comparison: Comparison) => Promise<void>;
   /** On-disk path for working-tree git ops — the linked worktree if one is
    *  active, else the main repo. */
   getWorkingTreePath: () => string | null;
 }
 
+/**
+ * Where the active review's checkout is, once it has one.
+ *
+ * Creating that checkout lives in `tierSlice.ensureMaterialized`, not here —
+ * this slice only tracks the result. There used to be a `checkoutWorktree`
+ * action alongside it that named worktrees by comparison key while the backend
+ * named them by ref, so one review could end up with two checkouts depending
+ * on which button you pressed.
+ */
 export const createWorktreeSlice: SliceCreator<WorktreeSlice> = (set, get) => ({
   worktreePath: null,
   worktreeStale: false,
@@ -24,42 +30,4 @@ export const createWorktreeSlice: SliceCreator<WorktreeSlice> = (set, get) => ({
   setWorktreeStale: (stale) => set({ worktreeStale: stale }),
   setReadOnlyPreview: (readOnly) => set({ readOnlyPreview: readOnly }),
   getWorkingTreePath: () => get().worktreePath ?? get().repoPath,
-
-  checkoutWorktree: async (repoPath, comparison) => {
-    const apiClient = getApiClient();
-
-    let worktreePath: string;
-    try {
-      const wt = await apiClient.createReviewWorktree(
-        repoPath,
-        comparison.key,
-        comparison.head,
-      );
-      worktreePath = wt.path;
-    } catch (err) {
-      const msg = String(err);
-      if (msg.startsWith("WORKTREE_EXISTS:")) {
-        // Path is encoded in the error message after the prefix
-        worktreePath = msg.slice("WORKTREE_EXISTS:".length);
-      } else {
-        throw err;
-      }
-    }
-
-    // Persist worktreePath into review state
-    try {
-      const reviewState = get().reviewState;
-      if (reviewState && !reviewState.worktreePath) {
-        await apiClient.saveReviewState(repoPath, {
-          ...reviewState,
-          worktreePath,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    } catch {
-      // Non-fatal
-    }
-
-    set({ worktreePath, worktreeStale: false });
-  },
 });

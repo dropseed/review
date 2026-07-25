@@ -23,6 +23,8 @@ use crate::sources::traits::Comparison;
 pub enum BaseReason {
     /// An explicit base override is pinned (`base..ref` verbatim).
     Override,
+    /// A pull request, diffed from its fetched head against its base branch.
+    PullRequest,
     /// The default branch reviewed against itself — its uncommitted work.
     TrunkWorkingTree,
     /// A non-default branch reviewed against the default branch.
@@ -66,36 +68,13 @@ pub fn resolve(
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
     let github_pr = stored.as_ref().and_then(|s| s.github_pr.as_ref());
     let (comparison, base_reason) =
-        resolve_review_for(&source, ref_name, effective_override, github_pr)?;
+        resolve_review(&source, ref_name, effective_override, github_pr)?;
     Ok(ResolvedReview {
         ref_name: ref_name.to_owned(),
         base_override: effective_override.map(str::to_owned),
         comparison,
         base_reason,
     })
-}
-
-/// [`resolve_review`] plus PR-head substitution.
-///
-/// A PR review's identity is its head *branch name*, which for a fork PR names
-/// no ref in this repo. When the PR has been fetched, its head lives at
-/// `refs/review/pr/N` — so the comparison diffs that while the review keeps its
-/// branch-name identity (and therefore its state file). Falls through to the
-/// plain ladder when the PR isn't fetched or isn't a PR at all.
-fn resolve_review_for(
-    source: &LocalGitSource,
-    ref_name: &str,
-    base_override: Option<&str>,
-    github_pr: Option<&crate::sources::github::GitHubPrRef>,
-) -> anyhow::Result<(Comparison, BaseReason)> {
-    if let Some(pr) = github_pr {
-        let pr_ref = LocalGitSource::pr_ref(pr.number);
-        if source.resolve_ref(&pr_ref).is_some() {
-            let base = base_override.unwrap_or(pr.base_ref_name.as_str());
-            return Ok((Comparison::new(base, pr_ref), BaseReason::Override));
-        }
-    }
-    resolve_review(source, ref_name, base_override)
 }
 
 /// Set (or clear) a review's persisted `base_override` and return the freshly
@@ -113,6 +92,7 @@ pub fn set_base_override(
 /// The base-resolution ladder — the single source of truth for turning a review
 /// identity into a diff:
 ///
+/// 0. `github_pr` set and its head fetched → that head vs the PR's base branch.
 /// 1. `base_override` set → `base..ref` verbatim (`""` = empty tree, a snapshot).
 /// 2. `ref` is a branch → vs the default branch (or, *for* the default branch,
 ///    vs `origin/<default>` else `HEAD`). Merge-base is applied later at diff
@@ -120,11 +100,27 @@ pub fn set_base_override(
 /// 3. any other resolvable rev (SHA, tag, `stash@{n}`, detached HEAD) → reviewed
 ///    as a single commit: `{ref}^..{ref}`.
 /// 4. otherwise → error.
+///
+/// `github_pr` is a parameter rather than a wrapper function so there is no
+/// signature a caller can reach that silently forgets PR substitution.
 pub fn resolve_review(
     source: &LocalGitSource,
     ref_name: &str,
     base_override: Option<&str>,
+    github_pr: Option<&crate::sources::github::GitHubPrRef>,
 ) -> anyhow::Result<(Comparison, BaseReason)> {
+    // 0. A PR's identity is its head *branch name*, which for a fork PR names no
+    // ref in this repo. Once fetched, its head lives at `refs/review/pr/N`, so
+    // the comparison diffs that while the review keeps its branch-name identity
+    // — and therefore its state file. Falls through when it isn't fetched yet.
+    if let Some(pr) = github_pr {
+        let pr_ref = LocalGitSource::pr_ref(pr.number);
+        if source.resolve_ref(&pr_ref).is_some() {
+            let base = base_override.unwrap_or(pr.base_ref_name.as_str());
+            return Ok((Comparison::new(base, pr_ref), BaseReason::PullRequest));
+        }
+    }
+
     // 1. Explicit override wins.
     if let Some(base) = base_override {
         return Ok((Comparison::new(base, ref_name), BaseReason::Override));
@@ -198,7 +194,7 @@ mod tests {
     #[test]
     fn default_branch_resolves_to_its_own_working_tree() {
         let (_dir, source) = repo();
-        let (comparison, reason) = resolve_review(&source, "main", None).unwrap();
+        let (comparison, reason) = resolve_review(&source, "main", None, None).unwrap();
         assert_eq!(reason, BaseReason::TrunkWorkingTree);
         // `main..main` — the diff layer reads this as "uncommitted work".
         assert_eq!(comparison.base, "main");
@@ -213,7 +209,7 @@ mod tests {
         let path = dir.path();
         git(path, &["update-ref", "refs/remotes/origin/main", "main"]);
         git(path, &["commit", "--allow-empty", "-m", "unpushed"]);
-        let (comparison, reason) = resolve_review(&source, "main", None).unwrap();
+        let (comparison, reason) = resolve_review(&source, "main", None, None).unwrap();
         assert_eq!(reason, BaseReason::TrunkWorkingTree);
         assert_eq!(comparison.base, "main");
     }
@@ -221,7 +217,7 @@ mod tests {
     #[test]
     fn feature_branch_resolves_vs_default() {
         let (_dir, source) = repo();
-        let (comparison, reason) = resolve_review(&source, "feature", None).unwrap();
+        let (comparison, reason) = resolve_review(&source, "feature", None, None).unwrap();
         assert_eq!(reason, BaseReason::BranchVsDefault);
         assert_eq!(comparison.base, "main");
     }
@@ -229,7 +225,7 @@ mod tests {
     #[test]
     fn explicit_base_resolves_as_override() {
         let (_dir, source) = repo();
-        let (_c, reason) = resolve_review(&source, "feature", Some("main")).unwrap();
+        let (_c, reason) = resolve_review(&source, "feature", Some("main"), None).unwrap();
         assert_eq!(reason, BaseReason::Override);
     }
 
@@ -237,7 +233,7 @@ mod tests {
     fn bare_sha_resolves_as_single_commit() {
         let (_dir, source) = repo();
         let sha = source.resolve_ref("feature").unwrap();
-        let (_c, reason) = resolve_review(&source, &sha, None).unwrap();
+        let (_c, reason) = resolve_review(&source, &sha, None, None).unwrap();
         assert_eq!(reason, BaseReason::SingleCommit);
     }
 }

@@ -59,7 +59,7 @@ function review(
     repoPath,
     repoName: repoPath.split("/").pop() ?? repoPath,
     ref,
-    prFetched: true,
+    tier: "fetched" as const,
     totalHunks: 10,
     trustedHunks: 0,
     approvedHunks: 0,

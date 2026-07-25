@@ -8,7 +8,6 @@ import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
 import { CheckoutMenuItem } from "./CheckoutMenuItem";
 import { RowStatus } from "./RowStatus";
 import { PrPreviewCard } from "./PrPreviewCard";
-import { rowTier } from "../../stores/slices/tierSlice";
 import { SimpleTooltip } from "../ui/tooltip";
 
 /**
@@ -50,6 +49,8 @@ interface TabRailItemProps {
   repoLabel?: string;
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
+  /** Repo-level checkout roots, computed once by the sidebar. */
+  checkouts: readonly string[];
 }
 
 /** Value-based comparison so items skip re-render when globalReviews is reconstructed. */
@@ -71,8 +72,11 @@ function arePropsEqual(
   if (prev.repoLabel !== next.repoLabel) return false;
   if (prev.defaultBranch !== next.defaultBranch) return false;
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
+  if (prev.review.tier !== next.review.tier) return false;
+  if (prev.review.worktreePath !== next.review.worktreePath) return false;
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
+  if (prev.checkouts !== next.checkouts) return false;
   return true;
 }
 
@@ -84,6 +88,7 @@ export const TabRailItem = memo(function TabRailItem({
   repoLabel,
   onActivate,
   onDelete,
+  checkouts,
 }: TabRailItemProps) {
   const isActive = useReviewStore(
     (s) =>
@@ -129,8 +134,6 @@ export const TabRailItem = memo(function TabRailItem({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showContextMenu]);
-
-  const tier = rowTier(review);
 
   // Line 1: the most identifying info
   const primaryLabel = isPr
@@ -179,7 +182,8 @@ export const TabRailItem = memo(function TabRailItem({
         <RowStatus
           repoPath={review.repoPath}
           checkoutPath={review.worktreePath}
-          tier={tier}
+          tier={review.tier}
+          checkouts={checkouts}
         />
         {/* Right side: contextual metadata / overflow — stacked grid for no layout shift */}
         <span className="relative grid shrink-0 justify-items-end items-center">
@@ -224,7 +228,13 @@ export const TabRailItem = memo(function TabRailItem({
       {isPr ? (
         <SimpleTooltip
           side="right"
-          content={<PrPreviewCard pr={pr} tier={tier} />}
+          content={
+            <PrPreviewCard
+              pr={pr}
+              tier={review.tier}
+              stats={review.diffStats}
+            />
+          }
         >
           {row}
         </SimpleTooltip>

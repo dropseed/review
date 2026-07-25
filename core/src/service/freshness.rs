@@ -82,10 +82,14 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         };
                     }
                 };
-                let stats =
-                    resolve_review(&source, &input.ref_name, input.base_override.as_deref())
-                        .ok()
-                        .and_then(|(comparison, _)| source.get_diff_shortstat(&comparison).ok());
+                let stats = resolve_review(
+                    &source,
+                    &input.ref_name,
+                    input.base_override.as_deref(),
+                    input.github_pr.as_ref(),
+                )
+                .ok()
+                .and_then(|(comparison, _)| source.get_diff_shortstat(&comparison).ok());
                 return ReviewFreshnessResult {
                     key,
                     is_active: is_diff_active(&stats),
@@ -125,8 +129,12 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
 
     // Resolve the review identity into a comparison. An unresolvable ref (e.g. a
     // deleted branch) takes the missing-refs path so the UI still flags it.
-    let comparison = match resolve_review(&source, &input.ref_name, input.base_override.as_deref())
-    {
+    let comparison = match resolve_review(
+        &source,
+        &input.ref_name,
+        input.base_override.as_deref(),
+        input.github_pr.as_ref(),
+    ) {
         Ok((c, _)) => c,
         Err(_) => {
             return ReviewFreshnessResult {

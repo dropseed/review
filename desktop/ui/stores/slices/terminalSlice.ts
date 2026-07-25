@@ -144,6 +144,12 @@ export interface TerminalSlice {
     sessions: TerminalSessionInfo[],
     reviewKey: string,
   ) => void;
+  /**
+   * Fold sessions into the flat session/status maps without touching any
+   * review-key bucket. Used for sessions in repos other than the open one:
+   * their sidebar rows need badges, but they own no tab layout here.
+   */
+  mergeTerminalSessions: (sessions: TerminalSessionInfo[]) => void;
 }
 
 export type TerminalDockSide = "left" | "right";
@@ -585,6 +591,38 @@ export function sessionCheckout(
 }
 
 /**
+ * Every checkout root in a repo: its working tree, every linked worktree, and
+ * every review-managed worktree.
+ *
+ * Review worktrees have to come from `globalReviews`, not just `localActivity`.
+ * `localActivity` maps worktrees by *local branch name*, so a materialized fork
+ * PR — whose head branch doesn't exist in this repo, and whose worktree lives
+ * under `~/.review/worktrees/` outside the repo entirely — never appears there.
+ * Attributing from that list alone would leave exactly the case PR checkouts
+ * exist for with no terminal badge at all.
+ */
+export function selectRepoCheckouts(
+  repoPath: string,
+  localActivity: readonly {
+    repoPath: string;
+    branches: readonly { worktreePath?: string | null }[];
+  }[],
+  globalReviews: readonly { repoPath: string; worktreePath?: string | null }[],
+): string[] {
+  const roots = new Set<string>([repoPath]);
+  const repo = localActivity.find((r) => r.repoPath === repoPath);
+  for (const branch of repo?.branches ?? []) {
+    if (branch.worktreePath) roots.add(branch.worktreePath);
+  }
+  for (const review of globalReviews) {
+    if (review.repoPath === repoPath && review.worktreePath) {
+      roots.add(review.worktreePath);
+    }
+  }
+  return [...roots];
+}
+
+/**
  * Ids of the sessions belonging to one row.
  *
  * `checkoutPath` is the row's own directory — a linked worktree, or the repo
@@ -830,6 +868,20 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     applyTerminalStatus: (status) => set(applyTerminalStatus(get(), status)),
     applyTerminalExit: (exit) => set(applyTerminalExit(get(), exit)),
+    mergeTerminalSessions: (sessions) => {
+      if (sessions.length === 0) return;
+      const g = get();
+      const terminalSessions = { ...g.terminalSessions };
+      const terminalStatuses = { ...g.terminalStatuses };
+      for (const session of sessions) {
+        terminalSessions[session.id] = session;
+        // A live status already in hand beats the list snapshot, which may be
+        // staler than the events we've been receiving.
+        terminalStatuses[session.id] ??= session.status;
+      }
+      set({ terminalSessions, terminalStatuses });
+    },
+
     ingestTerminalList: (sessions, reviewKey) => {
       const g = get();
       set({

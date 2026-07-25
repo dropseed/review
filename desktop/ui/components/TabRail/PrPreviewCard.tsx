@@ -1,11 +1,11 @@
 import { type ReactNode } from "react";
-import type { GitHubPrRef, ReviewTier } from "../../types";
+import type { DiffShortStat, GitHubPrRef, ReviewTier } from "../../types";
 
 interface PrPreviewCardProps {
   pr: GitHubPrRef;
   tier: ReviewTier;
-  /** Files changed / +- lines, when the listing has computed them. */
-  stats?: { filesChanged?: number; additions?: number; deletions?: number };
+  /** Size of the diff, when the freshness pass has filled it in. */
+  stats?: DiffShortStat;
 }
 
 /**
@@ -40,17 +40,11 @@ export function PrPreviewCard({
 
       {stats && (
         <div className="flex items-center gap-2 text-xxs tabular-nums text-fg-muted">
-          {stats.filesChanged != null && (
-            <span>
-              {stats.filesChanged} file{stats.filesChanged === 1 ? "" : "s"}
-            </span>
-          )}
-          {stats.additions != null && (
-            <span className="text-status-approved">+{stats.additions}</span>
-          )}
-          {stats.deletions != null && (
-            <span className="text-status-rejected">−{stats.deletions}</span>
-          )}
+          <span>
+            {stats.fileCount} file{stats.fileCount === 1 ? "" : "s"}
+          </span>
+          <span className="text-status-approved">+{stats.additions}</span>
+          <span className="text-status-rejected">−{stats.deletions}</span>
         </div>
       )}
 
@@ -68,26 +62,5 @@ export function PrPreviewCard({
             : "Checked out — terminals and LSP available."}
       </div>
     </div>
-  );
-}
-
-/**
- * Tier dot for a sidebar row.
- *
- * Rendered only below `materialized`: a checked-out row already shows the
- * worktree icon and the terminal badge, so a third marker would be noise. The
- * point of this dot is to distinguish "nothing local yet" from "diff is here".
- */
-export function TierDot({ tier }: { tier: ReviewTier }): ReactNode {
-  if (tier === "materialized") return null;
-  const listed = tier === "listed";
-  return (
-    <span
-      className={`inline-block h-1 w-1 shrink-0 rounded-full ${
-        listed ? "bg-fg/25" : "bg-fg/50"
-      }`}
-      title={listed ? "Not fetched yet" : "Diff available locally"}
-      aria-hidden="true"
-    />
   );
 }

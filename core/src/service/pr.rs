@@ -41,39 +41,50 @@ pub struct ReviewTierInfo {
     pub worktree_path: Option<String>,
 }
 
-/// Report which tier a review is currently at.
+/// The tier ladder, over already-loaded parts.
 ///
-/// A non-PR review is never `Listed` — its ref is by definition already in the
-/// repo, so the diff is always available.
+/// The single definition of what each tier *means*, shared by the authoritative
+/// probe in [`tier`] and the cheap per-row derivation in
+/// [`crate::review::storage::list_all_reviews_global`]. Keeping one function
+/// is what stops the listing and the probe disagreeing about the same review —
+/// notably for a worktree the user deleted by hand, where a truthy
+/// `worktree_path` alone would report `Materialized` forever.
+///
+/// `is_pr_fetched` is a callback so the listing can answer it from a set it
+/// already built in one git call, rather than a spawn per review.
+pub fn tier_from_parts(
+    worktree_path: Option<&str>,
+    github_pr: Option<&GitHubPrRef>,
+    is_pr_fetched: impl Fn(u32) -> bool,
+) -> ReviewTier {
+    if worktree_path.is_some_and(|path| Path::new(path).is_dir()) {
+        return ReviewTier::Materialized;
+    }
+    match github_pr {
+        Some(pr) if !is_pr_fetched(pr.number) => ReviewTier::Listed,
+        // Either not a PR — the ref is local by definition — or a PR whose head
+        // is fetched. Both mean the diff is readable.
+        _ => ReviewTier::Fetched,
+    }
+}
+
+/// Report which tier a review is currently at.
 pub fn tier(repo_path: &Path, ref_name: &str) -> anyhow::Result<ReviewTierInfo> {
     let state = storage::load_review_state(repo_path, ref_name).ok();
     let worktree_path = state.as_ref().and_then(|s| s.worktree_path.clone());
-
-    if let Some(path) = &worktree_path {
-        if Path::new(path).is_dir() {
-            return Ok(ReviewTierInfo {
-                tier: ReviewTier::Materialized,
-                worktree_path,
-            });
-        }
-    }
-
-    let source = LocalGitSource::new(repo_path.to_path_buf())?;
     let github_pr = state.as_ref().and_then(|s| s.github_pr.as_ref());
 
-    let fetched = match github_pr {
-        Some(pr) => source.has_pr_ref(pr.number),
-        // Not a PR: the ref is local, so the diff is always readable.
-        None => source.resolve_ref(ref_name).is_some(),
-    };
+    let source = LocalGitSource::new(repo_path.to_path_buf())?;
+    let tier = tier_from_parts(worktree_path.as_deref(), github_pr, |number| {
+        source.has_pr_ref(number)
+    });
 
     Ok(ReviewTierInfo {
-        tier: if fetched {
-            ReviewTier::Fetched
-        } else {
-            ReviewTier::Listed
+        worktree_path: match tier {
+            ReviewTier::Materialized => worktree_path,
+            _ => None,
         },
-        worktree_path: None,
+        tier,
     })
 }
 
@@ -115,7 +126,7 @@ pub fn materialize(repo_path: &Path, ref_name: &str) -> anyhow::Result<String> {
         .with_context(|| format!("Failed to create worktree for '{ref_name}'"))?;
 
     state.worktree_path = Some(info.path.clone());
-    storage::save_review_state(repo_path, &state)?;
+    crate::service::review_io::save_review(repo_path, state, None)?;
 
     Ok(info.path)
 }
@@ -134,7 +145,7 @@ pub fn release(repo_path: &Path, ref_name: &str) -> anyhow::Result<()> {
     let _ = source.remove_review_worktree(&worktree_path);
 
     state.worktree_path = None;
-    storage::save_review_state(repo_path, &state)?;
+    crate::service::review_io::save_review(repo_path, state, None)?;
     Ok(())
 }
 
@@ -147,12 +158,24 @@ pub fn reclaim_closed(repo_path: &Path) -> anyhow::Result<Vec<String>> {
     let states = storage::list_saved_reviews(repo_path)?;
     let provider = GhCliProvider::new(repo_path.to_path_buf());
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
+    // One spawn to learn what is still on disk. Without this the sweep costs a
+    // `gh` round trip per PR review *ever* saved — review records outlive the
+    // disk they're reclaimed from, so already-reclaimed PRs would be re-queried
+    // forever and the cost would grow with history rather than with work to do.
+    let fetched_prs = source.fetched_pr_numbers();
     let mut reclaimed = Vec::new();
 
     for state in states {
         let Some(pr) = state.github_pr.as_ref() else {
             continue;
         };
+        let has_worktree = state
+            .worktree_path
+            .as_deref()
+            .is_some_and(|path| Path::new(path).is_dir());
+        if !has_worktree && !fetched_prs.contains(&pr.number) {
+            continue;
+        }
         let Ok(status) = provider.get_pr_status(pr.number) else {
             continue;
         };

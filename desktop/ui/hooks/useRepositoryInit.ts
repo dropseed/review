@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ResolvedReview, ReviewTarget } from "../types";
+import type { GitHubPrRef, ResolvedReview, ReviewTarget } from "../types";
 import type { GlobalReviewSummary } from "../types";
 import { clearLog } from "../utils/logger";
 import { resolveRepoIdentity, reviewUrl } from "../utils/repo-identity";
@@ -98,6 +98,22 @@ async function resolveTarget(
   const override =
     baseOverride === undefined ? undefined : (baseOverride ?? undefined);
   return client.resolveReview(repoPath, effectiveRef, override);
+}
+
+/**
+ * Listed -> Fetched for a PR review, before its comparison is resolved.
+ *
+ * Resolution points a PR's comparison at `refs/review/pr/N`, so resolving
+ * before the fetch would produce a comparison against a ref that isn't there
+ * yet. Idempotent, and re-fetching also picks up commits pushed since the last
+ * look, so it runs on every open. A no-op for non-PR reviews.
+ */
+async function fetchPrRefIfNeeded(
+  repoPath: string,
+  githubPr: GitHubPrRef | undefined,
+): Promise<void> {
+  if (!githubPr) return;
+  await useReviewStore.getState().fetchPullRequestRef(repoPath, githubPr);
 }
 
 /**
@@ -599,15 +615,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         return;
       }
 
-      // Listed -> Fetched, before resolving: a PR's comparison points at the
-      // fetched ref, so resolving first would pin the review to a base..head
-      // that doesn't exist yet. Fetching is idempotent and also picks up
-      // commits pushed since the last look, so it runs on every open.
-      if (review.githubPr) {
-        await useReviewStore
-          .getState()
-          .fetchPullRequestRef(review.repoPath, review.githubPr);
-      }
+      await fetchPrRefIfNeeded(review.repoPath, review.githubPr);
 
       const resolved = await getApiClient().resolveReview(
         review.repoPath,
@@ -650,11 +658,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       // `githubPr` onto the review, and only then resolve. Resolution reads
       // both — it points a PR's comparison at the fetched ref — so doing it
       // first would produce a comparison against a ref that isn't there yet.
-      if (target.githubPr) {
-        await useReviewStore
-          .getState()
-          .fetchPullRequestRef(path, target.githubPr);
-      }
+      await fetchPrRefIfNeeded(path, target.githubPr);
       await ensureReviewExists(
         path,
         target.ref,

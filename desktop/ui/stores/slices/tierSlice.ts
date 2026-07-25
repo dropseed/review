@@ -16,9 +16,6 @@ import type { SliceCreatorWithClient } from "../types";
 export interface TierSlice {
   /** Tier of the active review, or null before it has been probed. */
   reviewTier: ReviewTierInfo | null;
-  /** True while a fetch or materialize is in flight. */
-  tierPromoting: boolean;
-
   /** Probe the active review's tier and cache it. */
   loadReviewTier: () => Promise<void>;
 
@@ -36,12 +33,20 @@ export interface TierSlice {
    * Resolves to the worktree path, or null if the user declined or it failed.
    */
   ensureMaterialized: (reason: string) => Promise<string | null>;
+
+  /**
+   * Materialized -> Fetched: drop a row's checkout, keeping its review record.
+   *
+   * Lives beside `ensureMaterialized` rather than in the menu item that calls
+   * it, so both directions of the transition refresh the same listings and a
+   * second entry point doesn't have to re-derive which.
+   */
+  releaseCheckout: (repoPath: string, ref: string) => Promise<void>;
 }
 
 export const createTierSlice: SliceCreatorWithClient<TierSlice> =
   (client) => (set, get) => ({
     reviewTier: null,
-    tierPromoting: false,
 
     loadReviewTier: async () => {
       const { repoPath, reviewRef } = get();
@@ -61,16 +66,15 @@ export const createTierSlice: SliceCreatorWithClient<TierSlice> =
     },
 
     fetchPullRequestRef: async (repoPath, pr) => {
-      set({ tierPromoting: true });
       try {
+        // No tier probe here: this runs before the store switches to the review
+        // being opened, so it would probe the outgoing one and throw the result
+        // away. `useReviewTier`'s effect covers the new review a moment later.
         await client.fetchPullRequest(repoPath, pr);
-        await get().loadReviewTier();
         return true;
       } catch (err) {
         console.error("[tier] Failed to fetch PR:", err);
         return false;
-      } finally {
-        set({ tierPromoting: false });
       }
     },
 
@@ -97,7 +101,6 @@ export const createTierSlice: SliceCreatorWithClient<TierSlice> =
       );
       if (!confirmed) return null;
 
-      set({ tierPromoting: true });
       try {
         const worktreePath = await client.materializeReview(
           repoPath,
@@ -125,31 +128,29 @@ export const createTierSlice: SliceCreatorWithClient<TierSlice> =
         return worktreePath;
       } catch (err) {
         console.error("[tier] Failed to materialize review:", err);
-        await dialogs.confirm(
+        await dialogs.alert(
           `Could not create a worktree for "${reviewRef}": ${String(err)}`,
           "Checkout failed",
         );
         return null;
-      } finally {
-        set({ tierPromoting: false });
+      }
+    },
+
+    releaseCheckout: async (repoPath, ref) => {
+      try {
+        await client.releaseReviewWorktree(repoPath, ref);
+      } catch (err) {
+        console.error("[tier] Failed to release worktree:", err);
+        return;
+      }
+      const state = get();
+      await Promise.all([state.loadLocalActivity(), state.loadGlobalReviews()]);
+      if (
+        state.activeReviewKey?.repoPath === repoPath &&
+        state.activeReviewKey?.ref === ref
+      ) {
+        set({ worktreePath: null });
+        await get().loadReviewTier();
       }
     },
   });
-
-/**
- * Tier of a sidebar row, derived from data the listing already carries — no
- * extra round trip per row.
- *
- * A row with a worktree is materialized. A PR row whose head hasn't been
- * fetched is listed. Everything else names a ref that is already in the repo,
- * so its diff is readable: fetched.
- */
-export function rowTier(row: {
-  worktreePath?: string;
-  githubPr?: GitHubPrRef;
-  prFetched?: boolean;
-}): ReviewTierInfo["tier"] {
-  if (row.worktreePath) return "materialized";
-  if (row.githubPr && row.prFetched === false) return "listed";
-  return "fetched";
-}
