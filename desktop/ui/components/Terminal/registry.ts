@@ -2,6 +2,7 @@ import { Terminal, type ITheme, type FontWeight } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import {
   Base64,
   ClipboardAddon,
@@ -93,6 +94,10 @@ export function acquireTerminal(
     // Code's Option chords).
     macOptionIsMeta: true,
     scrollback: 10000,
+    // Nerd Font powerline/icon glyphs are frequently drawn wider than the cell
+    // they occupy. The WebGL renderer clips to the cell, so without rescaling
+    // they arrive sheared; with it they are squeezed to fit.
+    rescaleOverlappingGlyphs: true,
     // OSC 8 hyperlinks (a label with a hidden target) — CLIs use these for
     // login and docs links. Bare URLs in plain text are handled by the
     // web-links addon below.
@@ -102,6 +107,14 @@ export function acquireTerminal(
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
+  // xterm ships Unicode 6 width tables, where a modern emoji counts as one
+  // column and a combining sequence counts as several. Coding agents draw
+  // full-screen TUIs out of exactly those characters, so a width the program
+  // and the terminal disagree on desynchronizes the cursor and every
+  // subsequent redraw lands in the wrong column. This registers Unicode 15
+  // plus grapheme clustering (what Ghostty/WezTerm/iTerm2 measure by) and
+  // activates it on load — no activeVersion assignment needed.
+  term.loadAddon(new UnicodeGraphemesAddon());
   // OSC 52: lets a program running in the terminal put text on the system
   // clipboard (Claude Code's `/copy`, tmux/vim yank). Write-only on purpose —
   // see ClipboardWriteOnlyProvider.
