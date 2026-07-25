@@ -957,9 +957,16 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         applyFileWatcherEvent,
         loadGitStatus,
         classifyStaticHunks,
+        invalidateAttribution,
       } = get();
 
       if (!repoPath) return;
+
+      // This repo's diff just moved, so blame results keyed to the old hunks
+      // are spent. The open review keeps what it already rendered (recomputing
+      // on every debounced edit would cost more than the stale tags do);
+      // dropping the memo means the next review to ask gets fresh attribution.
+      invalidateAttribution(repoPath);
 
       // Git-state changes (commits, branch switches, stage/unstage) can
       // affect anything — delegate to the full refresh. Idempotent writes

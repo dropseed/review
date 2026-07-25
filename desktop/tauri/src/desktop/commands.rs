@@ -85,7 +85,18 @@ pub(crate) struct LspServerHandle {
     client: std::sync::Arc<LspClient>,
     name: String,
     language: String,
+    /// When this server's workspace was last opened or queried. Drives which
+    /// roots survive [`evict_cold_lsp_roots`].
+    last_used: Instant,
 }
+
+/// How many workspace roots keep their language servers running.
+///
+/// Servers stay warm across review switches — restarting rust-analyzer on every
+/// switch costs a full re-index, and reviews ping-pong between a handful of
+/// roots (a repo and its worktrees). The cap is what keeps that from growing
+/// into one indexed workspace per review the user ever opened.
+const MAX_WARM_LSP_ROOTS: usize = 3;
 
 // Types are now imported from review::service::{FileContent, DetectMovePairsResponse, ...}
 
@@ -1608,10 +1619,12 @@ pub async fn init_lsp_servers(
             language: config.language.clone(),
         };
 
-        // Skip if already running
+        // Already running — including from an earlier visit to this review,
+        // which is the point of keeping roots warm.
         {
-            let servers = state.0.lock().await;
-            if servers.contains_key(&key) {
+            let mut servers = state.0.lock().await;
+            if let Some(handle) = servers.get_mut(&key) {
+                handle.last_used = Instant::now();
                 statuses.push(LspServerStatus {
                     name: config.name.clone(),
                     language: config.language.clone(),
@@ -1643,6 +1656,8 @@ pub async fn init_lsp_servers(
         }
     }
 
+    evict_cold_lsp_roots(&state).await;
+
     info!(
         "[init_lsp_servers] {} servers for {} in {:?}",
         statuses.len(),
@@ -1651,6 +1666,58 @@ pub async fn init_lsp_servers(
     );
 
     Ok(statuses)
+}
+
+/// Shut down the language servers of every root past the warm-root budget,
+/// least recently used first.
+async fn evict_cold_lsp_roots(state: &tauri::State<'_, LspServers>) {
+    let evicted: Vec<LspServerHandle> = {
+        let mut servers = state.0.lock().await;
+
+        // Recency is per root, not per server: a root's servers live and die
+        // together, so one cold Cargo workspace frees all of its processes.
+        let mut roots: HashMap<&str, Instant> = HashMap::new();
+        for (key, handle) in servers.iter() {
+            roots
+                .entry(key.repo_path.as_str())
+                .and_modify(|seen| *seen = (*seen).max(handle.last_used))
+                .or_insert(handle.last_used);
+        }
+        if roots.len() <= MAX_WARM_LSP_ROOTS {
+            return;
+        }
+
+        // Everything past the newest N roots goes, servers and all.
+        let cold: std::collections::HashSet<String> = {
+            let mut by_recency: Vec<(&str, Instant)> = roots.into_iter().collect();
+            by_recency.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+            by_recency[MAX_WARM_LSP_ROOTS..]
+                .iter()
+                .map(|(root, _)| (*root).to_owned())
+                .collect()
+        };
+
+        let keys: Vec<LspServerKey> = servers
+            .keys()
+            .filter(|key| cold.contains(&key.repo_path))
+            .cloned()
+            .collect();
+        keys.into_iter()
+            .filter_map(|key| servers.remove(&key))
+            .collect()
+    };
+
+    // The caller is a review switch waiting to render — say goodbye off to the
+    // side rather than making it wait through a handshake per dead server.
+    tokio::spawn(async move {
+        for handle in evicted {
+            let _ = handle.client.shutdown().await;
+            info!(
+                "[lsp] evicted {} for {} (cold workspace)",
+                handle.name, handle.language
+            );
+        }
+    });
 }
 
 #[tauri::command]
@@ -1757,6 +1824,7 @@ async fn start_and_register_server(
         client: std::sync::Arc::new(client),
         name: config.name.to_owned(),
         language: language.to_owned(),
+        last_used: Instant::now(),
     };
     let mut servers = state.0.lock().await;
     servers.insert(key, handle);
@@ -1792,8 +1860,9 @@ async fn find_lsp_key_for_file(
     // Check if server exists and is alive; remove dead entries atomically
     {
         let mut servers = state.0.lock().await;
-        if let Some(handle) = servers.get(&key) {
+        if let Some(handle) = servers.get_mut(&key) {
             if handle.client.is_alive() {
+                handle.last_used = Instant::now();
                 return Ok(key);
             }
             info!(

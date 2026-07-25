@@ -100,6 +100,20 @@ pub enum FileStatus {
     Gitignored,
 }
 
+impl FileStatus {
+    /// Whether this status means the comparison touched the file.
+    ///
+    /// File listings cover the whole working tree, so "did this change?" is a
+    /// question every consumer of one has to answer — keep the answer here so
+    /// a new status can't quietly read as unchanged.
+    pub fn is_changed(&self) -> bool {
+        match self {
+            Self::Added | Self::Modified | Self::Deleted | Self::Renamed | Self::Untracked => true,
+            Self::Gitignored => false,
+        }
+    }
+}
+
 /// A commit entry from git log
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

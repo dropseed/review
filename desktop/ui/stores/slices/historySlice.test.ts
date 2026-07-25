@@ -24,6 +24,8 @@ import { useReviewStore } from "../index";
 
 beforeEach(() => {
   getHunkAttribution.mockReset();
+  // Attribution memoizes across reviews, so each test starts from a cold cache.
+  useReviewStore.getState().invalidateAttribution();
   useReviewStore.setState({
     repoPath: "/repo-a",
     comparison: { key: "a..b", base: "a", head: "b" },
@@ -109,5 +111,37 @@ describe("loadAttribution", () => {
     const state = useReviewStore.getState();
     expect(state.attributionLoading).toBe(false);
     expect(state.attributionLoaded).toBe(true);
+  });
+
+  it("serves a repeat visit from the cache until it is invalidated", async () => {
+    getHunkAttribution.mockResolvedValue({ commits: ["deadbeef"] });
+
+    await useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+    // Switching away and back is the case this exists for.
+    useReviewStore.setState({ attribution: null, attributionLoaded: false });
+    await useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+
+    expect(getHunkAttribution).toHaveBeenCalledTimes(1);
+    expect(useReviewStore.getState().attribution).toEqual({
+      commits: ["deadbeef"],
+    });
+
+    useReviewStore.getState().invalidateAttribution("/repo-a");
+    await useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+
+    expect(getHunkAttribution).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves other repos cached when one repo's diff moves", async () => {
+    getHunkAttribution.mockResolvedValue({ commits: [] });
+
+    await useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+    await useReviewStore.getState().loadAttribution("/repo-b", "a", "b");
+    useReviewStore.getState().invalidateAttribution("/repo-b");
+
+    await useReviewStore.getState().loadAttribution("/repo-a", "a", "b");
+
+    // Only /repo-b had to be re-derived.
+    expect(getHunkAttribution).toHaveBeenCalledTimes(2);
   });
 });

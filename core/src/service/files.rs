@@ -15,7 +15,7 @@ use crate::diff::parser::{
     parse_multi_file_diff, DiffHunk,
 };
 use crate::sources::local_git::{LocalGitSource, SearchMatch, VerifiedStatus};
-use crate::sources::traits::{Comparison, DiffSource, FileEntry};
+use crate::sources::traits::{Comparison, DiffSource, FileEntry, FileStatus};
 
 use super::util::{
     bytes_to_data_url, bytes_to_file_content, get_content_type, get_image_mime_type,
@@ -394,18 +394,24 @@ pub fn comparison_hunks(
 ) -> anyhow::Result<Vec<DiffHunk>> {
     let files = list_files(repo_path, comparison)?;
     let mut paths = Vec::new();
-    collect_file_paths(&files, &mut paths);
+    collect_changed_file_paths(&files, &mut paths);
     get_all_hunks(repo_path, comparison, &paths)
 }
 
-/// Flatten a `FileEntry` tree into the list of non-directory file paths.
-fn collect_file_paths(entries: &[FileEntry], out: &mut Vec<String>) {
+/// Flatten a `FileEntry` tree into the paths the comparison actually touched.
+///
+/// `list_files` returns the whole working tree with the changed entries marked,
+/// so handing its full flattening to `get_all_hunks` makes every unchanged file
+/// in the repo a candidate it has to rule out.
+fn collect_changed_file_paths(entries: &[FileEntry], out: &mut Vec<String>) {
     for entry in entries {
         if entry.is_directory {
             if let Some(children) = &entry.children {
-                collect_file_paths(children, out);
+                collect_changed_file_paths(children, out);
             }
-        } else {
+            continue;
+        }
+        if entry.status.as_ref().is_some_and(FileStatus::is_changed) {
             out.push(entry.path.clone());
         }
     }
@@ -466,25 +472,33 @@ pub fn get_all_hunks(
     let files_with_hunks: HashSet<String> = all_hunks.iter().map(|h| h.file_path.clone()).collect();
 
     // For requested files that have no diff hunks, check if they're
-    // untracked (new) and create untracked hunks for them
-    for fp in file_paths {
-        if !files_with_hunks.contains(fp.as_str()) {
-            let is_tracked = source.is_file_tracked(fp).unwrap_or(false);
-            if !is_tracked {
-                let full_path = content_root.join(fp);
-                let (content_hash, text_content) = std::fs::read(&full_path)
-                    .map(|bytes| {
-                        let hash = compute_content_hash(&bytes);
-                        let text = String::from_utf8(bytes).ok();
-                        (hash, text)
-                    })
-                    .unwrap_or_else(|_| ("00000000".to_owned(), None));
-                all_hunks.push(create_untracked_hunk(
-                    fp,
-                    &content_hash,
-                    text_content.as_deref(),
-                ));
+    // untracked (new) and create untracked hunks for them. The untracked set
+    // is fetched once for the whole batch — probing paths one at a time cost a
+    // git subprocess each, so a caller passing a repo-sized path list (see
+    // `comparison_hunks`) paid thousands of spawns to find a handful of files.
+    let mut unhunked = file_paths
+        .iter()
+        .filter(|fp| !files_with_hunks.contains(fp.as_str()))
+        .peekable();
+    if unhunked.peek().is_some() {
+        let untracked = source.untracked_file_set(&content_root).unwrap_or_default();
+        for fp in unhunked {
+            if !untracked.contains(fp) {
+                continue;
             }
+            let full_path = content_root.join(fp);
+            let (content_hash, text_content) = std::fs::read(&full_path)
+                .map(|bytes| {
+                    let hash = compute_content_hash(&bytes);
+                    let text = String::from_utf8(bytes).ok();
+                    (hash, text)
+                })
+                .unwrap_or_else(|_| ("00000000".to_owned(), None));
+            all_hunks.push(create_untracked_hunk(
+                fp,
+                &content_hash,
+                text_content.as_deref(),
+            ));
         }
     }
 

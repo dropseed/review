@@ -103,6 +103,24 @@ export function flattenFiles(entries: FileEntry[]): string[] {
   return result;
 }
 
+/**
+ * Whether a status means the comparison touched the file.
+ *
+ * File listings cover the whole working tree with only the changed entries
+ * marked, so every consumer of one has to answer this — keep the answer here
+ * so a new status can't quietly read as unchanged. Mirrors
+ * `FileStatus::is_changed` in core.
+ */
+export function isChangedStatus(status: FileEntry["status"]): boolean {
+  return (
+    status === "added" ||
+    status === "modified" ||
+    status === "deleted" ||
+    status === "renamed" ||
+    status === "untracked"
+  );
+}
+
 // Helper to get all files flattened from tree with their status
 export function flattenFilesWithStatus(
   entries: FileEntry[],

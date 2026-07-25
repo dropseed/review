@@ -25,7 +25,12 @@ vi.mock("../../platform", () => ({
 import { useReviewStore } from "../index";
 import { repoSymbolsResetState, symbolsResetState } from "./symbolsSlice";
 
-const files = [{ name: "a.ts", path: "a.ts", isDirectory: false }] as never;
+const files = [
+  { name: "a.ts", path: "a.ts", isDirectory: false, status: "modified" },
+  // Unchanged files ride along in the same tree — `list_files` returns the
+  // whole working tree, marking only what the comparison touched.
+  { name: "b.ts", path: "b.ts", isDirectory: false },
+] as never;
 
 beforeEach(() => {
   getRepoSymbols.mockReset();
@@ -114,6 +119,18 @@ describe("loadSymbols", () => {
       files,
       ...symbolsResetState,
     } as never);
+  });
+
+  it("asks only for the files the comparison changed", async () => {
+    getFileSymbolDiffs.mockResolvedValue([]);
+
+    await useReviewStore.getState().loadSymbols();
+
+    expect(getFileSymbolDiffs).toHaveBeenCalledWith("/repo-a", ["a.ts"], {
+      base: "main",
+      head: "a",
+      key: "main..a",
+    });
   });
 
   it("discards a rejection that resolves after the comparison changed", async () => {

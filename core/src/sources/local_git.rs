@@ -1564,8 +1564,6 @@ impl LocalGitSource {
                 .push(hunk);
         }
 
-        let mut hunk_commits: HashMap<String, Vec<String>> = HashMap::new();
-
         // Blame must read the same content the hunks were diffed against:
         // when the comparison head is checked out (main repo or a linked
         // worktree), `comparison_hunks` above diffed the *working tree*
@@ -1580,92 +1578,125 @@ impl LocalGitSource {
         let blame_dir = wt_dir.as_deref().unwrap_or(&self.repo_path);
         let blame_head = wt_dir.is_none().then_some(comparison.head.as_str());
 
-        for (file_path, file_hunks) in by_file {
-            let blame = self
-                .blame_new_lines(blame_dir, file_path, &comparison.base, blame_head)
-                .unwrap_or_default();
+        // Each file costs a `git blame` (sometimes a second pass for pure
+        // deletions), and a branch of any size touches dozens — sequentially
+        // that added up to tens of seconds on a large repo. The files are
+        // independent, so fan them out across the machine.
+        let files: Vec<(&str, Vec<&crate::diff::parser::DiffHunk>)> = by_file.into_iter().collect();
+        let attribute_files = |chunk: &[(&str, Vec<&crate::diff::parser::DiffHunk>)]| {
+            let mut attributed: Vec<(String, Vec<String>)> = Vec::new();
+            for (file_path, file_hunks) in chunk {
+                let file_path = *file_path;
+                let blame = self
+                    .blame_new_lines(blame_dir, file_path, &comparison.base, blame_head)
+                    .unwrap_or_default();
 
-            // Only computed if the file has a hunk with no added lines to blame.
-            let mut deletion_diffs: Option<HashMap<String, HashSet<String>>> = None;
+                // Only computed if the file has a hunk with no added lines to blame.
+                let mut deletion_diffs: Option<HashMap<String, HashSet<String>>> = None;
 
-            for hunk in file_hunks {
-                // Whitespace-only lines are collected separately: a "wip"
-                // commit whose real changes were fully rewritten later can
-                // still leave a couple of blank lines blaming back to it, which
-                // would otherwise poison the hunk's attribution. They're only
-                // used as a last resort, for hunks that are purely whitespace
-                // (e.g. a formatting-only change) and would otherwise end up
-                // unattributed.
-                let mut shas: Vec<String> = Vec::new();
-                let mut whitespace_shas: Vec<String> = Vec::new();
-                for line in &hunk.lines {
-                    if line.line_type != LineType::Added {
-                        continue;
+                for hunk in file_hunks {
+                    // Whitespace-only lines are collected separately: a "wip"
+                    // commit whose real changes were fully rewritten later can
+                    // still leave a couple of blank lines blaming back to it, which
+                    // would otherwise poison the hunk's attribution. They're only
+                    // used as a last resort, for hunks that are purely whitespace
+                    // (e.g. a formatting-only change) and would otherwise end up
+                    // unattributed.
+                    let mut shas: Vec<String> = Vec::new();
+                    let mut whitespace_shas: Vec<String> = Vec::new();
+                    for line in &hunk.lines {
+                        if line.line_type != LineType::Added {
+                            continue;
+                        }
+                        let Some(new_line) = line.new_line_number else {
+                            continue;
+                        };
+                        let Some(sha) = blame.get(&new_line) else {
+                            continue;
+                        };
+                        if !commit_order.contains_key(sha.as_str()) {
+                            continue;
+                        }
+                        let target = if line.content.trim().is_empty() {
+                            &mut whitespace_shas
+                        } else {
+                            &mut shas
+                        };
+                        if !target.contains(sha) {
+                            target.push(sha.clone());
+                        }
                     }
-                    let Some(new_line) = line.new_line_number else {
-                        continue;
-                    };
-                    let Some(sha) = blame.get(&new_line) else {
-                        continue;
-                    };
-                    if !commit_order.contains_key(sha.as_str()) {
-                        continue;
+                    if shas.is_empty() {
+                        shas = whitespace_shas;
                     }
-                    let target = if line.content.trim().is_empty() {
-                        &mut whitespace_shas
-                    } else {
-                        &mut shas
-                    };
-                    if !target.contains(sha) {
-                        target.push(sha.clone());
-                    }
-                }
-                if shas.is_empty() {
-                    shas = whitespace_shas;
-                }
 
-                if shas.is_empty() {
-                    let non_ws_removed: Vec<&str> = hunk
-                        .lines
-                        .iter()
-                        .filter(|l| {
-                            l.line_type == LineType::Removed && !l.content.trim().is_empty()
-                        })
-                        .map(|l| l.content.as_str())
-                        .collect();
-                    let ws_removed: Vec<&str> = hunk
-                        .lines
-                        .iter()
-                        .filter(|l| l.line_type == LineType::Removed && l.content.trim().is_empty())
-                        .map(|l| l.content.as_str())
-                        .collect();
-                    // Same last-resort rule as above: prefer matching on
-                    // meaningful removed lines, falling back to whitespace-only
-                    // ones only if that's all the hunk removed.
-                    let removed = if !non_ws_removed.is_empty() {
-                        &non_ws_removed
-                    } else {
-                        &ws_removed
-                    };
-                    if !removed.is_empty() {
-                        let diffs = deletion_diffs.get_or_insert_with(|| {
-                            self.removed_lines_by_commit(file_path, &comparison.key)
-                                .unwrap_or_default()
-                        });
-                        for commit in &commits {
-                            if let Some(removed_by_commit) = diffs.get(&commit.hash) {
-                                if removed.iter().any(|l| removed_by_commit.contains(*l)) {
-                                    shas.push(commit.hash.clone());
+                    if shas.is_empty() {
+                        let non_ws_removed: Vec<&str> = hunk
+                            .lines
+                            .iter()
+                            .filter(|l| {
+                                l.line_type == LineType::Removed && !l.content.trim().is_empty()
+                            })
+                            .map(|l| l.content.as_str())
+                            .collect();
+                        let ws_removed: Vec<&str> = hunk
+                            .lines
+                            .iter()
+                            .filter(|l| {
+                                l.line_type == LineType::Removed && l.content.trim().is_empty()
+                            })
+                            .map(|l| l.content.as_str())
+                            .collect();
+                        // Same last-resort rule as above: prefer matching on
+                        // meaningful removed lines, falling back to whitespace-only
+                        // ones only if that's all the hunk removed.
+                        let removed = if !non_ws_removed.is_empty() {
+                            &non_ws_removed
+                        } else {
+                            &ws_removed
+                        };
+                        if !removed.is_empty() {
+                            let diffs = deletion_diffs.get_or_insert_with(|| {
+                                self.removed_lines_by_commit(file_path, &comparison.key)
+                                    .unwrap_or_default()
+                            });
+                            for commit in &commits {
+                                if let Some(removed_by_commit) = diffs.get(&commit.hash) {
+                                    if removed.iter().any(|l| removed_by_commit.contains(*l)) {
+                                        shas.push(commit.hash.clone());
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                shas.sort_by_key(|s| commit_order.get(s.as_str()).copied().unwrap_or(usize::MAX));
-                hunk_commits.insert(hunk.id.clone(), shas);
+                    shas.sort_by_key(|s| {
+                        commit_order.get(s.as_str()).copied().unwrap_or(usize::MAX)
+                    });
+                    attributed.push((hunk.id.clone(), shas));
+                }
             }
-        }
+            attributed
+        };
+
+        let hunk_commits: HashMap<String, Vec<String>> = if files.is_empty() {
+            HashMap::new()
+        } else {
+            let threads = std::thread::available_parallelism()
+                .map(std::num::NonZeroUsize::get)
+                .unwrap_or(4)
+                .min(files.len());
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = files
+                    .chunks(files.len().div_ceil(threads))
+                    .map(|chunk| scope.spawn(|| attribute_files(chunk)))
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|handle| handle.join().unwrap_or_default())
+                    .collect()
+            })
+        };
 
         info!(
             "[attribute_hunks_to_commits] {} commits, {} hunks attributed in {:?}",
@@ -1910,6 +1941,19 @@ impl LocalGitSource {
     fn get_untracked_files(&self, dir: &std::path::Path) -> Result<Vec<String>, LocalGitError> {
         let output = self.run_git_in(dir, &["ls-files", "--others", "--exclude-standard"])?;
         Ok(output.lines().map(std::borrow::ToOwned::to_owned).collect())
+    }
+
+    /// The same set as [`Self::get_untracked_files`], as a lookup table.
+    ///
+    /// Callers testing many paths at once want this rather than
+    /// [`Self::is_file_tracked`] per path — that one spawns a git process each
+    /// time, which turns "is anything here untracked?" over a repo-sized path
+    /// list into thousands of subprocesses.
+    pub fn untracked_file_set(
+        &self,
+        dir: &std::path::Path,
+    ) -> Result<HashSet<String>, LocalGitError> {
+        Ok(self.get_untracked_files(dir)?.into_iter().collect())
     }
 
     /// Check if a file is tracked by git (in the index)

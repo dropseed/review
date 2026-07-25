@@ -13,6 +13,7 @@ import type { ApiClient } from "./client";
 import { isTauriEnvironment } from "./client";
 import { TauriClient } from "./tauri-client";
 import { HttpClient } from "./http-client";
+import { coalesceReads } from "./coalesce";
 
 // Preserve the singleton across HMR so Tauri event listeners are not orphaned.
 let apiClient: ApiClient | null =
@@ -24,7 +25,9 @@ let apiClient: ApiClient | null =
  */
 export function getApiClient(): ApiClient {
   if (!apiClient) {
-    apiClient = isTauriEnvironment() ? new TauriClient() : new HttpClient();
+    apiClient = coalesceReads(
+      isTauriEnvironment() ? new TauriClient() : new HttpClient(),
+    );
   }
   if (import.meta.hot?.data) {
     import.meta.hot.data.apiClient = apiClient;

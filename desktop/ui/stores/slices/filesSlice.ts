@@ -15,7 +15,7 @@ import type { ReviewScope } from "../../types/scope";
 import type { CommitRange } from "../../types/commitRange";
 import { sameRange } from "../../types/commitRange";
 import type { SliceCreatorWithClient } from "../types";
-import { flattenFiles } from "../types";
+import { flattenFiles, isChangedStatus } from "../types";
 import { getAllHunksFromState } from "../selectors/hunks";
 import type { UndoEntry } from "./undoSlice";
 import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
@@ -451,13 +451,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         let skippedCount = 0;
         const collectChangedPaths = (entries: FileEntry[]) => {
           for (const entry of entries) {
-            if (
-              entry.status &&
-              !entry.isDirectory &&
-              ["added", "modified", "deleted", "renamed", "untracked"].includes(
-                entry.status,
-              )
-            ) {
+            if (!entry.isDirectory && isChangedStatus(entry.status)) {
               if (shouldSkipFile(entry.path)) {
                 skippedCount++;
               } else {

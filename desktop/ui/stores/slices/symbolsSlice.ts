@@ -1,7 +1,7 @@
 import type { ApiClient } from "../../api";
 import type { FileSymbolDiff, RepoFileSymbols } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
-import { flattenFilesWithStatus } from "../types";
+import { flattenFilesWithStatus, isChangedStatus } from "../types";
 
 export interface SymbolsSlice {
   symbolDiffs: FileSymbolDiff[];
@@ -55,8 +55,12 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
       startActivity("load-symbols", "Building symbols", 40);
 
       try {
+        // `files` is the whole working tree with the changed entries marked,
+        // so this has to select rather than exclude: filtering deletions alone
+        // sent every file in the repo off to be parsed. Deletions are dropped
+        // on top of that — there's no new version left to extract symbols from.
         const changedPaths = flattenFilesWithStatus(files)
-          .filter((f) => f.status !== "deleted")
+          .filter((f) => isChangedStatus(f.status) && f.status !== "deleted")
           .map((f) => f.path);
 
         if (changedPaths.length === 0) {

@@ -2,53 +2,78 @@ import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
 import { useReviewStore } from "../stores";
+import { useDebounce } from "./useDebounce";
+import type { LspServerStatus } from "../types";
+
+/**
+ * A review's worktree path is resolved from its review state, a moment after
+ * its repo path lands in the store. Letting the root settle first keeps that
+ * intermediate value from starting an indexer for a workspace we're about to
+ * navigate off of.
+ */
+const ROOT_SETTLE_MS = 250;
+
+/** Publish the servers the user hasn't turned off. */
+function publishStatuses(discovered: LspServerStatus[], disabled: string[]) {
+  useReviewStore
+    .getState()
+    .setLspServerStatuses(
+      discovered.filter((s) => !disabled.includes(s.language)),
+    );
+}
 
 /**
  * Auto-discovers and starts LSP servers when a repo is loaded.
  * Uses worktree path as workspace root when available (real files on disk).
- * Stops old servers when the root changes to avoid orphaned processes.
+ *
+ * Servers are deliberately left running when the root changes: switching
+ * reviews used to stop them, which made rust-analyzer re-index from scratch
+ * every time the user came back. The backend keeps the most recently used
+ * roots warm and shuts the rest down (`MAX_WARM_LSP_ROOTS`).
  */
 export function useLspClient() {
-  const lspRoot = useReviewStore((s) => s.worktreePath ?? s.repoPath);
+  const lspRoot = useDebounce(
+    useReviewStore((s) => s.worktreePath ?? s.repoPath),
+    ROOT_SETTLE_MS,
+  );
   const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
-  const prevRootRef = useRef<string | null>(null);
+
+  // What the backend last reported for this root, unfiltered — so toggling a
+  // language in settings re-filters what we already know instead of paying
+  // another discovery pass.
+  const discoveredRef = useRef<LspServerStatus[]>([]);
 
   useEffect(() => {
     if (!lspRoot || !isTauriEnvironment()) return;
 
-    const api = getApiClient();
     let cancelled = false;
-
-    // Stop previous servers if root changed, then start new ones
-    const prevRoot = prevRootRef.current;
-    prevRootRef.current = lspRoot;
-
-    (async () => {
-      if (prevRoot && prevRoot !== lspRoot) {
-        await api.stopAllLspServers(prevRoot).catch(() => {});
-      }
-      if (cancelled) return;
-
-      try {
-        const statuses = await api.initLspServers(lspRoot);
+    getApiClient()
+      .initLspServers(lspRoot)
+      .then((statuses) => {
         if (cancelled) return;
-        const disabled = useReviewStore.getState().lspDisabledLanguages;
-        const filtered = statuses.filter((s) => !disabled.includes(s.language));
-        for (const s of filtered) {
+        discoveredRef.current = statuses;
+        for (const s of statuses) {
           console.log(`[lsp] ${s.name} (${s.language}): ${s.state}`);
         }
-        useReviewStore.getState().setLspServerStatuses(filtered);
-      } catch (err: unknown) {
+        publishStatuses(
+          statuses,
+          useReviewStore.getState().lspDisabledLanguages,
+        );
+      })
+      .catch((err: unknown) => {
         if (!cancelled) {
           console.error("[lsp] Failed to init LSP servers:", err);
         }
-      }
-    })();
+      });
 
     return () => {
       cancelled = true;
-      // Stop servers on unmount
-      api.stopAllLspServers(lspRoot).catch(() => {});
     };
-  }, [lspRoot, lspDisabledLanguages]);
+  }, [lspRoot]);
+
+  useEffect(() => {
+    if (discoveredRef.current.length > 0) {
+      publishStatuses(discoveredRef.current, lspDisabledLanguages);
+    }
+  }, [lspDisabledLanguages]);
 }
