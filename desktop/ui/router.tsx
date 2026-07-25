@@ -148,7 +148,6 @@ function AppShell() {
         <TabRail
           onActivateReview={handleActivateReview}
           onActivateLocalBranch={handleActivateLocalBranch}
-          onOpenSettings={() => setShowSettings(true)}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden bg-surface">
