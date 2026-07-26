@@ -61,15 +61,18 @@ export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
 
   const isHorizontal = orientation === "horizontal";
 
+  // Transparent at rest: the panes it separates are already distinct cards with
+  // a gutter between them, so a permanent bar only adds a line to look past.
+  // The cursor change plus the hover tint carry the affordance on approach.
   return (
     <div
       ref={containerRef}
       onMouseDown={handleMouseDown}
-      className={`group flex-shrink-0 ${
+      className={`group flex-shrink-0 bg-transparent transition-colors ${
         isHorizontal
           ? "w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"
           : "h-1 cursor-row-resize hover:bg-status-modified/50 active:bg-status-modified"
-      } bg-surface-raised transition-colors`}
+      }`}
     />
   );
 }

@@ -174,7 +174,9 @@ export function TerminalPanel(): ReactNode {
   };
 
   return (
-    <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-raised">
+    // The card *is* the terminal surface — panes don't re-declare a background
+    // or a rounding of their own, so there's one edge between diff and shell.
+    <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-inset">
       {/* Tab strip */}
       <div className="flex items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
         <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
@@ -198,8 +200,10 @@ export function TerminalPanel(): ReactNode {
                 key={tab.id}
                 className={clsx(
                   "group flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+                  // Lifted off the terminal surface, not recessed into it —
+                  // the strip now sits on surface-inset itself.
                   isActive
-                    ? "bg-surface-inset text-fg-secondary"
+                    ? "bg-surface-raised text-fg-secondary"
                     : "text-fg-muted hover:bg-fg/[0.06]",
                 )}
               >
@@ -268,7 +272,7 @@ export function TerminalPanel(): ReactNode {
         </DropdownMenu>
 
         {/* Panel controls: dock side / maximize / minimize */}
-        <div className="ml-0.5 flex shrink-0 items-center gap-0.5 border-l border-edge/60 pl-1">
+        <div className="ml-2 flex shrink-0 items-center gap-0.5">
           <PaneButton
             label={`Move terminal to ${
               terminalDockSide === "left" ? "right" : "left"
@@ -292,8 +296,9 @@ export function TerminalPanel(): ReactNode {
         </div>
       </div>
 
-      {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming. */}
-      <div className="relative flex-1 overflow-hidden p-1.5">
+      {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming.
+          The panes own the only inner gutter, so nothing is inset here. */}
+      <div className="relative flex-1 overflow-hidden">
         {tabs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-fg-faint">
             No terminals — use + to start one.
@@ -303,7 +308,7 @@ export function TerminalPanel(): ReactNode {
             <div
               key={tab.id}
               className={clsx(
-                "absolute inset-1.5",
+                "absolute inset-0",
                 tab.id === activeTabId ? "" : "hidden",
               )}
             >
