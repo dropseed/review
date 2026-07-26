@@ -48,14 +48,23 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     exit 1
 fi
 
-# A release that aborts after the version bump leaves sidecars stamped one
-# version ahead of the tree. The identity test below skips when no sidecar
-# exists but *fails* when it finds one built from a different version — so a
-# previous abort would break this gate with a message about build identities
-# that says nothing about the real cause. Clearing them restores the intended
-# skip; the honest check runs further down, after they're rebuilt from the
-# bumped version.
-rm -f desktop/tauri/binaries/review-daemon-*
+# Tauri declares the daemon sidecar an externalBin resource, so the desktop
+# crate cannot build at all without one on disk — and the gate below builds it
+# (`cargo test -p review-desktop`). A tree that has never built the sidecar
+# would fail that gate for a reason that has nothing to do with the change
+# being released, so make sure the host's exists. Both triples are rebuilt from
+# the bumped version further down.
+#
+# Do NOT clear the sidecars here instead: a previous abort can leave one
+# stamped a version ahead of the tree, but deleting it is what breaks this
+# gate. That staleness is handled where it is understood — the identity test
+# skips a sidecar whose version doesn't match the tree, and the honest check
+# runs below under REVIEW_REQUIRE_SIDECAR_TESTS once they match again.
+HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+if [ ! -f "desktop/tauri/binaries/review-daemon-$HOST_TRIPLE" ]; then
+    echo "No host daemon sidecar on disk — building one for the test gate..."
+    TAURI_TARGET_TRIPLE="$HOST_TRIPLE" ./scripts/build-daemon-sidecar
+fi
 
 # Gate: run checks before anything else
 echo "Running pre-commit checks..."

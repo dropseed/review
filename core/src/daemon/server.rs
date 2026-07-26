@@ -480,11 +480,12 @@ mod tests {
     /// daemon on every launch and no session ever survives.
     ///
     /// This test is debug-built and talks to the release binary on purpose.
-    /// It needs the sidecar to exist, and building it is a `--release` compile
-    /// nobody wants on every `scripts/test`, so by default a missing sidecar
-    /// skips. Set [`REQUIRE_SIDECAR`] (CI, the release pipeline) to turn that
-    /// skip into a failure — otherwise the invariant most likely to break
-    /// silently would be guarded by a test that silently never runs.
+    /// It needs the sidecar to exist and to match this tree's version, and
+    /// building it is a `--release` compile nobody wants on every
+    /// `scripts/test`, so by default a missing *or* stale sidecar skips. Set
+    /// [`REQUIRE_SIDECAR`] (CI, the release pipeline) to turn either skip into
+    /// a failure — otherwise the invariant most likely to break silently would
+    /// be guarded by a test that silently never runs.
     #[tokio::test]
     async fn a_release_built_daemon_reports_the_identity_we_expect() {
         let required = std::env::var_os(REQUIRE_SIDECAR).is_some();
@@ -517,9 +518,28 @@ mod tests {
         let reported = client.version().await.unwrap();
         let _ = child.kill().await;
 
+        // A sidecar built from a different version cannot answer the question
+        // this test asks. It compares two *profiles* of one version; against an
+        // older binary a mismatch is guaranteed and means only "the tree moved
+        // since this sidecar was built". Failing there reports a build-identity
+        // bug for what is really a stale artifact, so it skips instead — the
+        // same reasoning as the missing-sidecar skip above. The release
+        // pipeline sets REQUIRE_SIDECAR immediately after building the sidecar
+        // from the bumped version, so there a version mismatch is real.
+        let version = env!("CARGO_PKG_VERSION");
+        let reported_version = reported.split('+').next().unwrap_or_default();
+        if reported_version != version && !required {
+            eprintln!(
+                "skipping: sidecar reports version {reported_version}, tree is {version} \
+                 — rebuild it with scripts/build-daemon-sidecar \
+                 (set {REQUIRE_SIDECAR} to make this a failure)"
+            );
+            return;
+        }
+
         assert_eq!(
             reported,
-            crate::daemon::build_identity(env!("CARGO_PKG_VERSION"), &binary),
+            crate::daemon::build_identity(version, &binary),
             "release daemon and debug caller disagree on the build identity"
         );
     }
