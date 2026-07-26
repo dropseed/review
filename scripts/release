@@ -10,6 +10,40 @@ if [ "$BUMP" != "patch" ] && [ "$BUMP" != "minor" ]; then
     exit 1
 fi
 
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Preflight: the push at the end is the only irreversible step, and it happens
+# after a ~10 minute build. Check now that it can succeed, so a diverged branch
+# costs a fetch instead of the whole build.
+echo "Checking the branch can be pushed..."
+git fetch origin "$BRANCH"
+if [ -n "$(git log --oneline "HEAD..origin/$BRANCH")" ]; then
+    echo "error: origin/$BRANCH has commits you don't have locally:"
+    git log --oneline "HEAD..origin/$BRANCH" | sed 's/^/  /'
+    echo ""
+    echo "Integrate them first (git pull), then re-run. Releasing now would"
+    echo "build artifacts that don't include them."
+    exit 1
+fi
+
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "error: uncommitted changes to tracked files."
+    git status --short --untracked-files=no | sed 's/^/  /'
+    echo ""
+    echo "The release builds and commits the working tree, so it has to be"
+    echo "quiet. Commit or stash first."
+    exit 1
+fi
+
+# A release that aborts after the version bump leaves sidecars stamped one
+# version ahead of the tree. The identity test below skips when no sidecar
+# exists but *fails* when it finds one built from a different version — so a
+# previous abort would break this gate with a message about build identities
+# that says nothing about the real cause. Clearing them restores the intended
+# skip; the honest check runs further down, after they're rebuilt from the
+# bumped version.
+rm -f desktop/tauri/binaries/review-daemon-*
+
 # Gate: run checks before anything else
 echo "Running pre-commit checks..."
 scripts/pre-commit
@@ -127,7 +161,19 @@ git tag -m "v$VERSION" "v$VERSION"
 echo ""
 echo "Created commit and tag v$VERSION"
 
-git push && git push --tags
+# One atomic push of both refs. Two things went wrong here before:
+#
+#   git push && git push --tags
+#
+# `git push` already carries the annotated tag along with the branch, so when
+# the branch was rejected (someone merged a PR during the ~10 minute build) the
+# tag still landed — leaving a published tag pointing at a commit on no branch.
+# And `set -e` ignores a failing command that isn't the last in an `&&` list, so
+# the script sailed past the rejection and reported success.
+#
+# --atomic makes the remote take both refs or neither, and pushing the refs
+# explicitly means nothing rides along implicitly.
+git push --atomic origin "$BRANCH" "v$VERSION"
 
 echo ""
 echo "Pushed to remote."
