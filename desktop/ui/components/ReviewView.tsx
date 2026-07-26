@@ -19,7 +19,6 @@ import {
   useFileWatcher,
   useKeyboardNavigation,
   useMouseNavigation,
-  useReviewProgress,
   useCelebration,
   useLspClient,
   useDeepLinkFocus,
@@ -32,10 +31,8 @@ import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { ResizeHandle } from "./ContentArea/ResizeHandle";
 import { TerminalPanel } from "./Terminal/TerminalPanel";
-import { ReviewBreadcrumb, ReviewTitle } from "./ReviewBreadcrumb";
 import { SimpleTooltip } from "./ui/tooltip";
-import { CircleProgress } from "./ui/circle-progress";
-import { WarningIcon, TerminalIcon } from "./ui/icons";
+import { WarningIcon, SidebarPanelIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
 import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
@@ -73,7 +70,6 @@ export function ReviewView({
   const comparison = useReviewStore((s) => s.comparison);
   const reviewRef = useReviewStore((s) => s.reviewRef);
   const reviewBaseOverride = useReviewStore((s) => s.reviewBaseOverride);
-  const remoteInfo = useReviewStore((s) => s.remoteInfo);
   const classificationsModalOpen = useReviewStore(
     (s) => s.classificationsModalOpen,
   );
@@ -303,152 +299,44 @@ export function ReviewView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [terminalsSupported, toggleTerminalPanel, toggleTerminalPanelMaximized]);
 
-  // Review progress
-  const {
-    totalHunks,
-    trustedHunks,
-    approvedHunks,
-    rejectedHunks,
-    reviewedHunks,
-  } = useReviewProgress();
-
   // Celebration on 100% reviewed — suppressed when the compared branch is gone
   // so confetti can't fire over the bogus all-deleted diff behind the notice.
   useCelebration(!compareRefMissing);
 
-  // The header doubles as the window's title bar on macOS; when the sidebar is
-  // collapsed it also has to clear the traffic lights.
+  // With the sidebar showing, it carries the review's identity and absorbs the
+  // macOS title bar (traffic lights + window drag), so this column starts at
+  // y=0. Collapsed, there's nothing left to do either job — hence the strip.
   const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
-
-  const repoName =
-    remoteInfo?.name ||
-    repoPath?.replace(/\/+$/, "").split("/").pop() ||
-    "repo";
+  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
 
   return (
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Header — drawn inside the macOS title bar strip, so it costs no
-            vertical space of its own. Draggable except over its controls. */}
-        <header
-          data-tauri-drag-region
-          className={`@container relative flex shrink-0 items-center gap-3 py-1 pr-3
-                      min-h-[var(--title-bar-height)] ${
-                        // With the sidebar collapsed there's nothing else to
-                        // keep the header clear of the traffic lights.
-                        tabRailCollapsed
-                          ? "pl-[max(0.75rem,var(--traffic-light-inset))]"
-                          : "pl-3"
-                      }`}
-        >
-          {/* Left: repo / comparison ref, then the PR title if there is one */}
+        {/* Title-bar strip — only needed with the sidebar collapsed, where
+            this column reaches the window's top-left corner: it keeps the
+            traffic lights clear, restores window dragging, and holds the only
+            way back to the sidebar besides ⌘B. */}
+        {tabRailCollapsed && (
           <div
-            className="flex min-w-0 flex-1 items-center gap-2"
             data-tauri-drag-region
+            className="flex shrink-0 items-center min-h-[var(--title-bar-height)]
+                       pl-[max(0.75rem,var(--traffic-light-inset))] pr-3"
           >
-            <ReviewBreadcrumb repoName={repoName} comparison={comparison} />
-            {!compareRefMissing && <ReviewTitle />}
+            <SimpleTooltip content="Show sidebar (⌘B)" side="bottom">
+              <button
+                type="button"
+                onClick={toggleTabRail}
+                className="flex items-center justify-center w-7 h-7 rounded-md
+                           hover:bg-surface-raised/60 transition-colors duration-100
+                           focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
+                           text-fg-muted hover:text-fg-secondary"
+                aria-label="Show sidebar"
+              >
+                <SidebarPanelIcon />
+              </button>
+            </SimpleTooltip>
           </div>
-
-          {/* Center: activity island (floating) */}
-          {comparison && !compareRefMissing && <ActivityBar />}
-
-          {/* Right: terminal toggle + review progress */}
-          <div className="flex shrink-0 items-center gap-2">
-            {terminalsSupported && (
-              <SimpleTooltip content="Toggle terminal (⌘`)" side="bottom">
-                <button
-                  type="button"
-                  onClick={toggleTerminalPanel}
-                  aria-label="Toggle terminal panel"
-                  aria-pressed={showTerminalPanel}
-                  className={`p-1.5 rounded transition-colors duration-100 hover:bg-fg/[0.06] ${
-                    showTerminalPanel
-                      ? "text-fg-secondary"
-                      : "text-fg-faint hover:text-fg-muted"
-                  }`}
-                >
-                  <TerminalIcon className="h-4 w-4" />
-                </button>
-              </SimpleTooltip>
-            )}
-            {comparison && !readOnlyPreview && !compareRefMissing && (
-              <div className="flex shrink-0 items-center gap-3">
-                {totalHunks > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      useReviewStore.setState({
-                        selectedFile: null,
-                        guideContentMode: null,
-                      });
-                    }}
-                    className="flex items-center gap-2 px-2 py-1 -mx-2 -my-1 rounded-md
-                             hover:bg-fg/[0.06] transition-colors duration-100 cursor-default"
-                  >
-                    <span className="font-mono text-xs tabular-nums text-fg-muted">
-                      {reviewedHunks}/{totalHunks}
-                    </span>
-                    <SimpleTooltip
-                      content={
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-status-trusted" />
-                            <span>Trusted: {trustedHunks}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-status-approved" />
-                            <span>Approved: {approvedHunks}</span>
-                          </div>
-                          {rejectedHunks > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-status-rejected" />
-                              <span>Rejected: {rejectedHunks}</span>
-                            </div>
-                          )}
-                        </div>
-                      }
-                    >
-                      <CircleProgress
-                        percent={
-                          totalHunks > 0
-                            ? Math.round((reviewedHunks / totalHunks) * 100)
-                            : 0
-                        }
-                        size={20}
-                        strokeWidth={2.5}
-                        className="shrink-0 cursor-default"
-                        segments={[
-                          {
-                            percent:
-                              totalHunks > 0
-                                ? (trustedHunks / totalHunks) * 100
-                                : 0,
-                            color: "var(--color-status-trusted)",
-                          },
-                          {
-                            percent:
-                              totalHunks > 0
-                                ? (approvedHunks / totalHunks) * 100
-                                : 0,
-                            color: "var(--color-status-approved)",
-                          },
-                          {
-                            percent:
-                              totalHunks > 0
-                                ? (rejectedHunks / totalHunks) * 100
-                                : 0,
-                            color: "var(--color-status-rejected)",
-                          },
-                        ]}
-                      />
-                    </SimpleTooltip>
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </header>
+        )}
 
         {/* Status banners — hidden while the deleted-ref notice is shown */}
         {!compareRefMissing && (
@@ -523,6 +411,8 @@ export function ReviewView({
           ref={contentRowRef}
           className="relative flex flex-1 flex-row overflow-hidden bg-surface"
         >
+          {/* Activity island — floats over the top of the content region */}
+          {comparison && !compareRefMissing && <ActivityBar />}
           {(() => {
             const dockLeft = showTerminalPanel && terminalDockSide === "left";
             const dockRight = showTerminalPanel && terminalDockSide === "right";
