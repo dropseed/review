@@ -579,7 +579,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 if let Err(e) = crate::desktop::watchers::start_local_activity_watchers(app_handle)
                 {
-                    eprintln!("[setup] Failed to start local activity watchers: {e}");
+                    log::error!("[setup] Failed to start local activity watchers: {e}");
                 }
             });
 
