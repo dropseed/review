@@ -12,6 +12,19 @@ fi
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
+# Releases come off the default branch. Cutting one from a feature branch tags
+# a commit that isn't on the line users track, and the updater would ship it —
+# a mistake worth catching before the build rather than after the push.
+DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
+if [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
+    echo "error: on branch '$BRANCH', but releases are cut from '$DEFAULT_BRANCH'."
+    echo ""
+    echo "Switch to $DEFAULT_BRANCH (merging this branch first if it holds the"
+    echo "work you meant to release), then re-run."
+    exit 1
+fi
+
 # Preflight: the push at the end is the only irreversible step, and it happens
 # after a ~10 minute build. Check now that it can succeed, so a diverged branch
 # costs a fetch instead of the whole build.
