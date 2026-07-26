@@ -607,7 +607,7 @@ pub fn register_repo(app: tauri::AppHandle, repo_path: String) -> Result<bool, S
         .map_err(|e| e.to_string())?;
     if registered {
         if let Err(e) = super::watchers::start_local_activity_watcher_for(&repo_path, app) {
-            eprintln!("[register_repo] Failed to start watcher for {repo_path}: {e}");
+            error!("[register_repo] Failed to start watcher for {repo_path}: {e}");
         }
     }
     Ok(registered)
