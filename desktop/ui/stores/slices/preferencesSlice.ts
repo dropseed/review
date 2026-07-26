@@ -186,13 +186,16 @@ const defaults = {
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
   reviewSortOrder: "updated" as ReviewSortOrder,
-  collapsedOrgs: {} as Record<string, boolean>,
+  // Explicit expand/collapse overrides per repo path. Absent = the repo's
+  // default (expanded while it has live rows).
   collapsedRepos: {} as Record<string, boolean>,
-  // Top-level sidebar zones ("working-on", "repositories"). Absent = expanded.
-  collapsedZones: {} as Record<string, boolean>,
-  // Zone-1 "Working on" manual overrides, keyed `${repoPath}:${ref}`.
-  workingOnPinned: [] as string[],
-  workingOnDismissed: [] as string[],
+  // Repos whose `⋯ more` (branches/reviews that aren't live) is open.
+  expandedRepoRest: {} as Record<string, boolean>,
+  // Whether repos with nothing live are listed at all.
+  showInactiveRepos: false,
+  // Sidebar row overrides, keyed `${repoPath}:${ref}`.
+  sidebarPinned: [] as string[],
+  sidebarDismissed: [] as string[],
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -248,18 +251,21 @@ export interface PreferencesSlice {
   // Review sort order
   reviewSortOrder: ReviewSortOrder;
 
-  // Sidebar tree: collapse state per org (e.g., "dropseed") and per repo path.
-  // Empty record = everything expanded; entries with `true` are collapsed.
-  collapsedOrgs: Record<string, boolean>;
+  // Sidebar tree: explicit collapse overrides per repo path. A repo with no
+  // entry follows its default (expanded while it has live rows), so a repo
+  // going quiet re-collapses on its own.
   collapsedRepos: Record<string, boolean>;
 
-  // Top-level sidebar zones ("working-on", "repositories"). Absent = expanded.
-  collapsedZones: Record<string, boolean>;
+  // Repos whose `⋯ more` list (rows that aren't live) is open.
+  expandedRepoRest: Record<string, boolean>;
 
-  // Zone-1 "Working on" manual overrides, keyed `${repoPath}:${ref}`.
+  // Whether repos with nothing live are listed below the active ones.
+  showInactiveRepos: boolean;
+
+  // Sidebar row overrides, keyed `${repoPath}:${ref}`.
   // Pinned rows always show (ranked first); dismissed rows never show.
-  workingOnPinned: string[];
-  workingOnDismissed: string[];
+  sidebarPinned: string[];
+  sidebarDismissed: string[];
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -326,17 +332,15 @@ export interface PreferencesSlice {
   setReviewSortOrder: (order: ReviewSortOrder) => void;
 
   // Sidebar tree actions
-  setOrgCollapsed: (org: string, collapsed: boolean) => void;
-  toggleOrgCollapsed: (org: string) => void;
   setRepoCollapsed: (repoPath: string, collapsed: boolean) => void;
-  toggleRepoCollapsed: (repoPath: string) => void;
-  toggleZoneCollapsed: (zone: string) => void;
+  toggleRepoRest: (repoPath: string) => void;
+  toggleInactiveRepos: () => void;
 
-  // Zone-1 "Working on" actions (key = `${repoPath}:${ref}`)
-  pinWorkingOn: (key: string) => void;
-  unpinWorkingOn: (key: string) => void;
-  dismissWorkingOn: (key: string) => void;
-  undismissWorkingOn: (key: string) => void;
+  // Sidebar row actions (key = `${repoPath}:${ref}`)
+  pinSidebarRow: (key: string) => void;
+  unpinSidebarRow: (key: string) => void;
+  dismissSidebarRow: (key: string) => void;
+  undismissSidebarRow: (key: string) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -622,81 +626,64 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.set("reviewSortOrder", order);
     },
 
-    setOrgCollapsed: (org, collapsed) => {
-      const current = get().collapsedOrgs;
-      if ((current[org] === true) === collapsed) return;
-      const next = { ...current };
-      if (collapsed) next[org] = true;
-      else delete next[org];
-      set({ collapsedOrgs: next });
-      storage.set("collapsedOrgs", next);
-    },
-
-    toggleOrgCollapsed: (org) => {
-      const collapsed = get().collapsedOrgs[org] === true;
-      get().setOrgCollapsed(org, !collapsed);
-    },
-
     setRepoCollapsed: (repoPath, collapsed) => {
-      // Browse repos default to collapsed: absent/`true` = collapsed, explicit
-      // `false` = expanded. Store `false` to expand; drop the key to return to
-      // the collapsed default.
+      // Only explicit overrides are stored, so a repo whose default flips
+      // (its last live row went quiet) follows the default again rather than
+      // being frozen open by a click from weeks ago.
       const current = get().collapsedRepos;
-      const isCollapsedNow = current[repoPath] !== false;
-      if (isCollapsedNow === collapsed) return;
-      const next = { ...current };
-      if (collapsed) delete next[repoPath];
-      else next[repoPath] = false;
+      if (current[repoPath] === collapsed) return;
+      const next = { ...current, [repoPath]: collapsed };
       set({ collapsedRepos: next });
       storage.set("collapsedRepos", next);
     },
 
-    toggleRepoCollapsed: (repoPath) => {
-      const collapsed = get().collapsedRepos[repoPath] !== false;
-      get().setRepoCollapsed(repoPath, !collapsed);
-    },
-
-    toggleZoneCollapsed: (zone) => {
-      const current = get().collapsedZones;
+    toggleRepoRest: (repoPath) => {
+      const current = get().expandedRepoRest;
       const next = { ...current };
-      if (current[zone]) delete next[zone];
-      else next[zone] = true;
-      set({ collapsedZones: next });
-      storage.set("collapsedZones", next);
+      if (current[repoPath]) delete next[repoPath];
+      else next[repoPath] = true;
+      set({ expandedRepoRest: next });
+      storage.set("expandedRepoRest", next);
     },
 
-    pinWorkingOn: (key) => {
+    toggleInactiveRepos: () => {
+      const next = !get().showInactiveRepos;
+      set({ showInactiveRepos: next });
+      storage.set("showInactiveRepos", next);
+    },
+
+    pinSidebarRow: (key) => {
       // Pinning wins over a prior dismiss — clear it from both sets, then add.
-      const pinned = get().workingOnPinned.filter((k) => k !== key);
+      const pinned = get().sidebarPinned.filter((k) => k !== key);
       pinned.push(key);
-      const dismissed = get().workingOnDismissed.filter((k) => k !== key);
-      set({ workingOnPinned: pinned, workingOnDismissed: dismissed });
-      storage.set("workingOnPinned", pinned);
-      storage.set("workingOnDismissed", dismissed);
+      const dismissed = get().sidebarDismissed.filter((k) => k !== key);
+      set({ sidebarPinned: pinned, sidebarDismissed: dismissed });
+      storage.set("sidebarPinned", pinned);
+      storage.set("sidebarDismissed", dismissed);
     },
 
-    unpinWorkingOn: (key) => {
-      if (!get().workingOnPinned.includes(key)) return;
-      const pinned = get().workingOnPinned.filter((k) => k !== key);
-      set({ workingOnPinned: pinned });
-      storage.set("workingOnPinned", pinned);
+    unpinSidebarRow: (key) => {
+      if (!get().sidebarPinned.includes(key)) return;
+      const pinned = get().sidebarPinned.filter((k) => k !== key);
+      set({ sidebarPinned: pinned });
+      storage.set("sidebarPinned", pinned);
     },
 
-    dismissWorkingOn: (key) => {
+    dismissSidebarRow: (key) => {
       // Dismissing a pinned row un-pins it first.
-      const pinned = get().workingOnPinned.filter((k) => k !== key);
-      const dismissed = get().workingOnDismissed.filter((k) => k !== key);
+      const pinned = get().sidebarPinned.filter((k) => k !== key);
+      const dismissed = get().sidebarDismissed.filter((k) => k !== key);
       dismissed.push(key);
-      set({ workingOnPinned: pinned, workingOnDismissed: dismissed });
-      storage.set("workingOnPinned", pinned);
-      storage.set("workingOnDismissed", dismissed);
+      set({ sidebarPinned: pinned, sidebarDismissed: dismissed });
+      storage.set("sidebarPinned", pinned);
+      storage.set("sidebarDismissed", dismissed);
     },
 
-    undismissWorkingOn: (key) => {
-      if (!get().workingOnDismissed.includes(key)) return;
-      const dismissed = get().workingOnDismissed.filter((k) => k !== key);
-      set({ workingOnDismissed: dismissed });
-      storage.set("workingOnDismissed", dismissed);
+    undismissSidebarRow: (key) => {
+      if (!get().sidebarDismissed.includes(key)) return;
+      const dismissed = get().sidebarDismissed.filter((k) => k !== key);
+      set({ sidebarDismissed: dismissed });
+      storage.set("sidebarDismissed", dismissed);
     },
 
     setFileSortOrder: (order) => {

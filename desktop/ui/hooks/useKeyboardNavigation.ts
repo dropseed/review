@@ -9,16 +9,10 @@ import {
   type SplitDirection,
 } from "../components/Terminal/pane-tree";
 import {
-  buildOrgGroups,
-  buildRepoGroups,
-  flattenOrgGroups,
-  type SidebarEntry,
-} from "../utils/sidebar-ordering";
-import {
-  buildWorkingOn,
-  flattenWorkingOn,
-  type WorkingOnEntry,
-} from "../utils/working-on";
+  buildSidebarTree,
+  flattenSidebarTree,
+  type SidebarRow,
+} from "../utils/sidebar-tree";
 
 interface SidebarItem {
   key: string;
@@ -27,40 +21,14 @@ interface SidebarItem {
   baseOverride?: string;
 }
 
-/** Zone-1 rows come first in the Cmd+1..9 order, matching their render order. */
-function workingOnToItems(entries: WorkingOnEntry[]): SidebarItem[] {
-  return entries.map((wo) => ({
-    key: wo.reviewKey,
-    repoPath: wo.repoPath,
-    ref: wo.ref,
+function rowsToItems(rows: SidebarRow[]): SidebarItem[] {
+  return rows.map((row) => ({
+    key: row.reviewKey,
+    repoPath: row.repoPath,
+    ref: row.ref,
     baseOverride:
-      wo.entry.kind === "review" ? wo.entry.review.baseOverride : undefined,
+      row.entry.kind === "review" ? row.entry.review.baseOverride : undefined,
   }));
-}
-
-function entriesToItems(entries: SidebarEntry[]): SidebarItem[] {
-  return entries.map((entry) => {
-    if (entry.kind === "review") {
-      return {
-        key: entry.reviewKey,
-        repoPath: entry.review.repoPath,
-        ref: entry.review.ref,
-        baseOverride: entry.review.baseOverride,
-      };
-    }
-    if (entry.kind === "remote-recent") {
-      return {
-        key: entry.reviewKey,
-        repoPath: entry.repoPath,
-        ref: entry.ref,
-      };
-    }
-    return {
-      key: entry.reviewKey,
-      repoPath: entry.repo.repoPath,
-      ref: entry.ref,
-    };
-  });
 }
 
 /** Activate a sidebar item: save snapshot, resolve the ref, switch review. */
@@ -220,35 +188,29 @@ export function useKeyboardNavigation() {
         }
 
         // Cmd+1 through Cmd+9: jump to visible sidebar item by position.
-        // Honors collapsed orgs/repos so the Nth keypress hits the Nth visible row.
+        // Walks the same tree the sidebar renders, honoring collapse state, so
+        // the Nth keypress hits the Nth visible row.
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           event.preventDefault();
-          const repoGroups = buildRepoGroups(
+          const tree = buildSidebarTree(
             state.localActivity,
             state.globalReviews,
             state.globalReviewsByKey,
+            state.sidebarPinned,
+            state.sidebarDismissed,
+            Date.now(),
             state.reviewSortOrder,
             state.reviewDiffStats,
           );
-          const orgGroups = buildOrgGroups(repoGroups, state.repoMetadata);
-          const workingOn = buildWorkingOn(
-            state.localActivity,
-            state.globalReviews,
-            state.workingOnPinned,
-            state.workingOnDismissed,
-            Date.now(),
-          );
-          const items = [
-            ...workingOnToItems(flattenWorkingOn(workingOn)),
-            ...entriesToItems(
-              flattenOrgGroups(
-                orgGroups,
-                state.collapsedOrgs,
-                state.collapsedRepos,
-              ),
+          const items = rowsToItems(
+            flattenSidebarTree(
+              tree,
+              state.collapsedRepos,
+              state.expandedRepoRest,
+              state.showInactiveRepos,
             ),
-          ];
+          );
           const target = items[digit - 1];
           if (target) activateSidebarItem(state, target);
           return;

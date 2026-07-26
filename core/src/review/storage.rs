@@ -117,11 +117,21 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
         // SHA-cache short-circuiting and runs reviews in parallel.
         match list_saved_reviews(&repo_path) {
             Ok(summaries) => {
-                // One `for-each-ref` for the whole repo, and only when it
-                // actually has PR reviews — keeps this listing's git cost at
-                // zero for the common case.
+                // Two git calls for the whole repo at most, and only when it has
+                // reviews to tier — the per-review cost stays at zero spawns.
+                let source = if summaries.is_empty() {
+                    None
+                } else {
+                    crate::sources::local_git::LocalGitSource::new(repo_path.clone()).ok()
+                };
+                let checkouts = source
+                    .as_ref()
+                    .map(|source| source.checkouts_by_branch())
+                    .unwrap_or_default();
+                // `for-each-ref` only when the repo actually has PR reviews.
                 let fetched_prs = if summaries.iter().any(|s| s.github_pr.is_some()) {
-                    crate::sources::local_git::LocalGitSource::new(repo_path.clone())
+                    source
+                        .as_ref()
                         .map(|source| source.fetched_pr_numbers())
                         .unwrap_or_default()
                 } else {
@@ -129,8 +139,13 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
                 };
 
                 for summary in summaries {
-                    let tier = crate::service::pr::tier_from_parts(
+                    let checkout_path = crate::service::pr::resolve_checkout(
                         summary.worktree_path.as_deref(),
+                        &summary.ref_name,
+                        |name| checkouts.get(name).cloned(),
+                    );
+                    let tier = crate::service::pr::tier_from_parts(
+                        checkout_path.as_deref(),
                         summary.github_pr.as_ref(),
                         |number| fetched_prs.contains(&number),
                     );

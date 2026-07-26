@@ -591,38 +591,6 @@ export function sessionCheckout(
 }
 
 /**
- * Every checkout root in a repo: its working tree, every linked worktree, and
- * every review-managed worktree.
- *
- * Review worktrees have to come from `globalReviews`, not just `localActivity`.
- * `localActivity` maps worktrees by *local branch name*, so a materialized fork
- * PR — whose head branch doesn't exist in this repo, and whose worktree lives
- * under `~/.review/worktrees/` outside the repo entirely — never appears there.
- * Attributing from that list alone would leave exactly the case PR checkouts
- * exist for with no terminal badge at all.
- */
-export function selectRepoCheckouts(
-  repoPath: string,
-  localActivity: readonly {
-    repoPath: string;
-    branches: readonly { worktreePath?: string | null }[];
-  }[],
-  globalReviews: readonly { repoPath: string; worktreePath?: string | null }[],
-): string[] {
-  const roots = new Set<string>([repoPath]);
-  const repo = localActivity.find((r) => r.repoPath === repoPath);
-  for (const branch of repo?.branches ?? []) {
-    if (branch.worktreePath) roots.add(branch.worktreePath);
-  }
-  for (const review of globalReviews) {
-    if (review.repoPath === repoPath && review.worktreePath) {
-      roots.add(review.worktreePath);
-    }
-  }
-  return [...roots];
-}
-
-/**
  * Ids of the sessions belonging to one row.
  *
  * `checkoutPath` is the row's own directory — a linked worktree, or the repo

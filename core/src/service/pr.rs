@@ -41,23 +41,51 @@ pub struct ReviewTierInfo {
     pub worktree_path: Option<String>,
 }
 
+/// Where a review's files live, or `None` when it has no checkout.
+///
+/// A worktree the review provisioned for itself wins, but a ref that is simply
+/// *already checked out* counts too — including at the repo root. The files are
+/// on disk either way, so everything the Materialized tier promises (terminals,
+/// LSP, staging) works either way. Resolving this in one place is what keeps a
+/// branch you have checked out from reading as "no checkout yet" to whichever
+/// caller happened to look only at saved review state.
+///
+/// A recorded path that no longer exists falls through to the live lookup, so a
+/// worktree deleted by hand doesn't strand the review at a tier it can't serve.
+///
+/// `branch_checkout` is a callback so a caller resolving many refs can answer
+/// from a map it already built in one git call, rather than a spawn per review.
+pub fn resolve_checkout(
+    recorded: Option<&str>,
+    ref_name: &str,
+    branch_checkout: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    if let Some(path) = recorded {
+        if Path::new(path).is_dir() {
+            return Some(path.to_string());
+        }
+    }
+    branch_checkout(ref_name).filter(|path| Path::new(path).is_dir())
+}
+
 /// The tier ladder, over already-loaded parts.
 ///
 /// The single definition of what each tier *means*, shared by the authoritative
 /// probe in [`tier`] and the cheap per-row derivation in
 /// [`crate::review::storage::list_all_reviews_global`]. Keeping one function
-/// is what stops the listing and the probe disagreeing about the same review —
-/// notably for a worktree the user deleted by hand, where a truthy
-/// `worktree_path` alone would report `Materialized` forever.
+/// is what stops the listing and the probe disagreeing about the same review.
+///
+/// `checkout_path` is the already-resolved answer from [`resolve_checkout`] —
+/// present means the files are on disk.
 ///
 /// `is_pr_fetched` is a callback so the listing can answer it from a set it
 /// already built in one git call, rather than a spawn per review.
 pub fn tier_from_parts(
-    worktree_path: Option<&str>,
+    checkout_path: Option<&str>,
     github_pr: Option<&GitHubPrRef>,
     is_pr_fetched: impl Fn(u32) -> bool,
 ) -> ReviewTier {
-    if worktree_path.is_some_and(|path| Path::new(path).is_dir()) {
+    if checkout_path.is_some() {
         return ReviewTier::Materialized;
     }
     match github_pr {
@@ -71,19 +99,20 @@ pub fn tier_from_parts(
 /// Report which tier a review is currently at.
 pub fn tier(repo_path: &Path, ref_name: &str) -> anyhow::Result<ReviewTierInfo> {
     let state = storage::load_review_state(repo_path, ref_name).ok();
-    let worktree_path = state.as_ref().and_then(|s| s.worktree_path.clone());
+    let recorded = state.as_ref().and_then(|s| s.worktree_path.clone());
     let github_pr = state.as_ref().and_then(|s| s.github_pr.as_ref());
 
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
-    let tier = tier_from_parts(worktree_path.as_deref(), github_pr, |number| {
+    let checkouts = source.checkouts_by_branch();
+    let checkout_path = resolve_checkout(recorded.as_deref(), ref_name, |name| {
+        checkouts.get(name).cloned()
+    });
+    let tier = tier_from_parts(checkout_path.as_deref(), github_pr, |number| {
         source.has_pr_ref(number)
     });
 
     Ok(ReviewTierInfo {
-        worktree_path: match tier {
-            ReviewTier::Materialized => worktree_path,
-            _ => None,
-        },
+        worktree_path: checkout_path,
         tier,
     })
 }
@@ -101,18 +130,22 @@ pub fn fetch(repo_path: &Path, pr: &GitHubPrRef) -> anyhow::Result<String> {
 /// Materialize a review into a worktree — the Fetched → Materialized promotion.
 ///
 /// Returns the worktree path, and records it on the review state so the tier
-/// survives a restart. Already-materialized reviews return their existing path
-/// rather than provisioning a second worktree.
+/// survives a restart. A review whose files are already on disk returns that
+/// path rather than provisioning a second checkout of the same ref.
 pub fn materialize(repo_path: &Path, ref_name: &str) -> anyhow::Result<String> {
     let mut state = storage::load_review_state(repo_path, ref_name)?;
-
-    if let Some(existing) = &state.worktree_path {
-        if Path::new(existing).is_dir() {
-            return Ok(existing.clone());
-        }
-    }
-
     let source = LocalGitSource::new(repo_path.to_path_buf())?;
+
+    let checkouts = source.checkouts_by_branch();
+    if let Some(existing) = resolve_checkout(state.worktree_path.as_deref(), ref_name, |name| {
+        checkouts.get(name).cloned()
+    }) {
+        // Deliberately not recorded on the review state when it's a checkout the
+        // review didn't create: `worktree_path` is what release/remove act on,
+        // and reclaiming a checkout we merely borrowed — the repo root, most of
+        // all — is not ours to do.
+        return Ok(existing);
+    }
 
     // A PR's head branch may not exist in this repo (fork PRs), so the worktree
     // is created from whatever ref the diff is already reading.
@@ -198,6 +231,7 @@ mod tests {
     use super::*;
     use crate::review::central::tests::{setup_test, ENV_LOCK};
     use crate::review::state::ReviewState;
+    use std::path::PathBuf;
     use std::process::Command;
 
     fn run_git_cmd(dir: &Path, args: &[&str]) -> String {
@@ -289,5 +323,46 @@ mod tests {
         storage::save_review_state(repo_path, &state).unwrap();
 
         assert_eq!(tier(repo_path, "topic").unwrap().tier, ReviewTier::Fetched);
+    }
+
+    /// The branch you already have checked out is materialized — the repo root
+    /// is a worktree like any other. Without this, reviewing the branch you are
+    /// standing on offers to create a second checkout of it.
+    #[test]
+    fn a_ref_checked_out_at_the_repo_root_is_already_materialized() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+        run_git_cmd(repo_path, &["init"]);
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]);
+        let head_branch = run_git_cmd(repo_path, &["branch", "--show-current"])
+            .trim()
+            .to_owned();
+
+        let state = ReviewState::new(&head_branch, None);
+        storage::save_review_state(repo_path, &state).unwrap();
+
+        let info = tier(repo_path, &head_branch).unwrap();
+        assert_eq!(info.tier, ReviewTier::Materialized);
+        assert_eq!(
+            info.worktree_path
+                .map(|p| PathBuf::from(p).canonicalize().unwrap()),
+            Some(repo_path.canonicalize().unwrap()),
+        );
+
+        // Materializing is a no-op that hands back the root, and must not claim
+        // it on the review state — release/remove act on that field.
+        let path = materialize(repo_path, &head_branch).unwrap();
+        assert_eq!(
+            PathBuf::from(path).canonicalize().unwrap(),
+            repo_path.canonicalize().unwrap()
+        );
+        assert!(
+            storage::load_review_state(repo_path, &head_branch)
+                .unwrap()
+                .worktree_path
+                .is_none(),
+            "the repo root is borrowed, not a checkout this review owns"
+        );
     }
 }

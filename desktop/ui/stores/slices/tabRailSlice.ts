@@ -9,7 +9,7 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { jsonEqual } from "../../utils/equality";
-import { buildWorkingOn } from "../../utils/working-on";
+import { buildSidebarTree } from "../../utils/sidebar-tree";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
 import { forgetEnsuredReview } from "./reviewSlice";
@@ -68,10 +68,10 @@ export interface GlobalReviewsSlice {
   ) => Promise<ResolvedReview | null>;
   /**
    * Check which saved reviews are stale (diff SHAs moved, refs deleted) and
-   * refresh their cached diff stats. Scoped by default to the zone-1 "Working
-   * on" set (plus the active review) so the recurring pass stays cheap; pass
-   * explicit `scopeKeys` to check a specific set — e.g. one repo's reviews when
-   * its browse-zone row is expanded.
+   * refresh their cached diff stats. Scoped by default to the live sidebar rows
+   * (plus the active review) so the recurring pass stays cheap; pass explicit
+   * `scopeKeys` to check a specific set — e.g. one repo's reviews when the user
+   * expands it.
    */
   checkReviewsFreshness: (scopeKeys?: string[]) => Promise<void>;
   /** Save current navigation state before switching away from a review. */
@@ -272,26 +272,31 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     },
 
     checkReviewsFreshness: async (scopeKeys?: string[]) => {
-      // Zone-1 review keys (plus the active review) — the default scope.
-      const deriveWorkingOnScope = (): Set<string> => {
+      // Live rows (plus the active review) — the default scope.
+      const deriveLiveScope = (): Set<string> => {
         const {
           localActivity,
           globalReviews,
           globalReviewsByKey,
-          workingOnPinned,
-          workingOnDismissed,
+          sidebarPinned,
+          sidebarDismissed,
           activeReviewKey,
         } = get();
-        const entries = buildWorkingOn(
+        const tree = buildSidebarTree(
           localActivity,
           globalReviews,
-          workingOnPinned,
-          workingOnDismissed,
+          globalReviewsByKey,
+          sidebarPinned,
+          sidebarDismissed,
           Date.now(),
         );
         const keys = new Set<string>();
-        for (const entry of entries) {
-          if (entry.reviewKey in globalReviewsByKey) keys.add(entry.reviewKey);
+        for (const node of tree) {
+          for (const row of [node.head, ...node.live]) {
+            if (row && row.reviewKey in globalReviewsByKey) {
+              keys.add(row.reviewKey);
+            }
+          }
         }
         if (activeReviewKey) {
           keys.add(
@@ -439,7 +444,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
 
       if (freshnessInFlight) return freshnessInFlight;
 
-      freshnessInFlight = runPass(deriveWorkingOnScope()).finally(() => {
+      freshnessInFlight = runPass(deriveLiveScope()).finally(() => {
         freshnessInFlight = null;
       });
 

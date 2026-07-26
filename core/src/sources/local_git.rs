@@ -1152,6 +1152,21 @@ impl LocalGitSource {
         Ok(worktrees)
     }
 
+    /// Every branch that is checked out somewhere, mapped to its directory.
+    ///
+    /// The repo's main worktree is included: a branch checked out at the repo
+    /// root has its files on disk exactly as much as one in a linked worktree,
+    /// and callers asking "where does this ref live" need the same answer for
+    /// both. One `git worktree list` for the whole repo, so callers resolving
+    /// many refs should hold onto the map rather than re-asking per ref.
+    pub fn checkouts_by_branch(&self) -> HashMap<String, String> {
+        self.list_worktrees()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|wt| wt.branch.map(|branch| (branch, wt.path)))
+            .collect()
+    }
+
     /// Create a review-managed worktree at `~/.review/worktrees/<repo-hash>/<name>/`.
     ///
     /// Uses `--detach` to avoid "branch already checked out" conflicts.

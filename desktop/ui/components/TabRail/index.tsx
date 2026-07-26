@@ -97,15 +97,13 @@ function FooterVersionInfo({
 }
 
 import {
-  type SidebarEntry,
-  type RepoGroup,
-  type OrgGroup,
-  isRepoCollapsed,
-} from "../../utils/sidebar-ordering";
-import { type WorkingOnEntry } from "../../utils/working-on";
-import { useOrgGroups, useWorkingOn } from "../../hooks/useRepoGroups";
+  type RepoNode,
+  type SidebarRow,
+  isRepoExpanded,
+} from "../../utils/sidebar-tree";
+import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { RemoteBranchItem } from "./RemoteBranchItem";
-import { selectRepoCheckouts } from "../../stores/slices/terminalSlice";
+import { RowStatus } from "./RowStatus";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -120,8 +118,7 @@ function SidebarList({
   onActivateReview,
   onActivateLocalBranch,
 }: SidebarListProps): ReactNode {
-  const orgGroups = useOrgGroups();
-  const workingOn = useWorkingOn();
+  const tree = useSidebarTree();
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -134,21 +131,13 @@ function SidebarList({
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
 
-  // Checkout roots per repo, derived once for the whole sidebar. Every row
-  // needs them to attribute terminal sessions, and they're identical across
-  // rows of a repo — deriving per row re-ran this for each of ~60 rows on every
-  // activity tick.
-  const checkoutsByRepo = useMemo(() => {
-    const repoPaths = new Set<string>([
-      ...localActivity.map((r) => r.repoPath),
-      ...globalReviews.map((r) => r.repoPath),
-    ]);
-    const map = new Map<string, string[]>();
-    for (const path of repoPaths) {
-      map.set(path, selectRepoCheckouts(path, localActivity, globalReviews));
-    }
-    return map;
-  }, [localActivity, globalReviews]);
+  // Checkout roots per repo, for attributing terminal sessions to rows. The
+  // tree already resolved every row's checkout, so this is a lookup over what
+  // it built rather than a second derivation from the raw activity lists.
+  const checkoutsByRepo = useMemo(
+    () => new Map(tree.map((node) => [node.repoPath, node.checkouts])),
+    [tree],
+  );
 
   const checkoutsFor = useCallback(
     (repoPath: string): readonly string[] =>
@@ -198,11 +187,12 @@ function SidebarList({
     };
   }
 
-  function renderEntry(entry: SidebarEntry): ReactNode {
+  function renderRow(row: SidebarRow): ReactNode {
+    const { entry } = row;
     if (entry.kind === "review") {
       return (
         <TabRailItem
-          key={entry.reviewKey}
+          key={row.reviewKey}
           {...reviewItemPropsFor(entry.review)}
         />
       );
@@ -211,7 +201,7 @@ function SidebarList({
     if (entry.kind === "remote-recent") {
       return (
         <RemoteBranchItem
-          key={entry.reviewKey}
+          key={row.reviewKey}
           branchName={entry.branchName}
           remoteRef={entry.remoteRef}
           repoPath={entry.repoPath}
@@ -224,66 +214,20 @@ function SidebarList({
 
     return (
       <LocalBranchItem
-        key={entry.reviewKey}
+        key={row.reviewKey}
         branch={entry.branch}
-        repoPath={entry.repo.repoPath}
+        repoPath={row.repoPath}
         defaultBranch={entry.repo.defaultBranch}
         itemKind={entry.kind}
+        checkoutPath={row.checkoutPath}
         onActivate={onActivateLocalBranch}
-        checkouts={checkoutsFor(entry.repo.repoPath)}
+        checkouts={checkoutsFor(row.repoPath)}
       />
     );
   }
-
-  /** Short repo name for a zone-1 `repo / branch` label (route-prefix aware). */
-  function repoDisplayName(repoPath: string, fallback: string): string {
-    const routePrefix = repoMetadata[repoPath]?.routePrefix;
-    return routePrefix
-      ? splitRoutePrefix(routePrefix).repo || fallback
-      : fallback;
-  }
-
-  /**
-   * Render a zone-1 "Working on" row, reusing the existing row components.
-   * `repoLabel` prefixes the row with `repo / `; the group's lead row passes
-   * it, the rows nested under it don't.
-   */
-  function renderWorkingOn(wo: WorkingOnEntry, repoLabel?: string): ReactNode {
-    const { entry } = wo;
-    if (entry.kind === "review") {
-      return (
-        <TabRailItem
-          key={`wo:${wo.reviewKey}`}
-          {...reviewItemPropsFor(entry.review)}
-          repoLabel={repoLabel}
-        />
-      );
-    }
-    return (
-      <LocalBranchItem
-        key={`wo:${wo.reviewKey}`}
-        branch={entry.branch}
-        repoPath={entry.repo.repoPath}
-        repoName={repoLabel}
-        defaultBranch={entry.repo.defaultBranch}
-        itemKind={entry.kind}
-        flat
-        onActivate={onActivateLocalBranch}
-        checkouts={checkoutsFor(entry.repo.repoPath)}
-      />
-    );
-  }
-
-  const totalItems = orgGroups.reduce(
-    (n, org) => n + org.repos.reduce((m, r) => m + r.items.length, 0),
-    0,
-  );
 
   const isEmpty =
-    totalItems === 0 &&
-    workingOn.length === 0 &&
-    !globalReviewsLoading &&
-    !localActivityLoading;
+    tree.length === 0 && !globalReviewsLoading && !localActivityLoading;
 
   if (isEmpty) {
     return null;
@@ -309,176 +253,84 @@ function SidebarList({
     );
   }
 
-  // Repos with no remote yet (or only one local repo total) should not get
-  // wrapped in a stutter "local" org header.
-  const suppressLocalOrgHeader =
-    orgGroups.length === 1 ||
-    (orgGroups.find((g) => g.isLocal)?.repos.length ?? 0) <= 1;
+  const active = tree.filter((node) => node.isActive);
+  const quiet = tree.filter((node) => !node.isActive);
 
   return (
-    <div role="tablist" className="pb-1">
-      {/* Zone 1 — "Working on": activity-derived, bucketed by repo. */}
-      <div className="pt-0.5">
-        <Zone zone="working-on" label="Working on">
-          {workingOn.length > 0 ? (
-            workingOn.map((group) => (
-              // The group's lead row (its default branch when it has one)
-              // doubles as the header: a `repo / branch` line, with the repo's
-              // other branches indented beneath it. A repo with a single row
-              // is just this line on its own.
-              <div key={group.repoPath} className="mt-1.5 first:mt-0">
-                {renderWorkingOn(
-                  group.entries[0],
-                  repoDisplayName(group.repoPath, group.repoName),
-                )}
-                {group.entries.length > 1 && (
-                  <div className="ml-2 border-l border-l-fg/[0.06] pl-0.5">
-                    {group.entries.slice(1).map((wo) => renderWorkingOn(wo))}
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
-              Nothing in flight — changes and recent branches show up here.
-            </p>
-          )}
-        </Zone>
-      </div>
+    <div role="tablist" className="pb-1 pt-0.5">
+      {active.map((node) => (
+        <RepoNodeView
+          key={node.repoPath}
+          node={node}
+          renderRow={renderRow}
+          onActivateLocalBranch={onActivateLocalBranch}
+        />
+      ))}
 
-      {/* Zone 2 — browse: the full org → repo tree, collapsed by default. */}
-      <div className="mt-2 border-t border-t-edge/40 pt-1.5">
-        <Zone zone="repositories" label="Repositories">
-          {orgGroups.map((org) => (
-            <OrgSection
-              key={org.org}
-              org={org}
-              suppressHeader={org.isLocal && suppressLocalOrgHeader}
-              renderEntry={renderEntry}
-              onActivateLocalBranch={onActivateLocalBranch}
-            />
-          ))}
-        </Zone>
-      </div>
+      {active.length === 0 && (
+        <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
+          Nothing in flight — changes and recent branches show up here.
+        </p>
+      )}
+
+      {quiet.length > 0 && (
+        <QuietRepos
+          nodes={quiet}
+          renderRow={renderRow}
+          onActivateLocalBranch={onActivateLocalBranch}
+        />
+      )}
     </div>
   );
 }
 
-/** Collapsible top-level sidebar zone with a quiet uppercase header. */
-function Zone({
-  zone,
-  label,
-  children,
-}: {
-  zone: string;
-  label: string;
-  children: ReactNode;
-}): ReactNode {
-  const collapsed = useReviewStore((s) => s.collapsedZones[zone] === true);
-  const toggleZoneCollapsed = useReviewStore((s) => s.toggleZoneCollapsed);
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => toggleZoneCollapsed(zone)}
-        className="flex items-center gap-1 w-full text-left px-2.5 pb-1 pt-1
-                   hover:bg-fg/[0.03] transition-colors duration-100 rounded-sm"
-        aria-expanded={!collapsed}
-      >
-        <span className="text-[8px] text-fg-faint/60 w-2 shrink-0">
-          {collapsed ? "▸" : "▾"}
-        </span>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
-          {label}
-        </span>
-      </button>
-      {!collapsed && children}
-    </>
-  );
-}
-
-/** An org bucket containing one or more repos. */
-function OrgSection({
-  org,
-  suppressHeader,
-  renderEntry,
+/**
+ * Repos with nothing live, behind one line. They stay reachable — this is the
+ * whole browse tree — without the quiet majority pushing today's work off
+ * screen.
+ */
+function QuietRepos({
+  nodes,
+  renderRow,
   onActivateLocalBranch,
 }: {
-  org: OrgGroup;
-  suppressHeader: boolean;
-  renderEntry: (entry: SidebarEntry) => ReactNode;
+  nodes: RepoNode[];
+  renderRow: (row: SidebarRow) => ReactNode;
   onActivateLocalBranch: (
     repoPath: string,
     branch: string,
     defaultBranch: string,
   ) => void;
 }): ReactNode {
-  const collapsedOrgs = useReviewStore((s) => s.collapsedOrgs);
-  const toggleOrgCollapsed = useReviewStore((s) => s.toggleOrgCollapsed);
-  const repoMetadata = useReviewStore((s) => s.repoMetadata);
-
-  const collapsed = collapsedOrgs[org.org] === true;
-  const repoCount = org.repos.length;
+  const showInactiveRepos = useReviewStore((s) => s.showInactiveRepos);
+  const toggleInactiveRepos = useReviewStore((s) => s.toggleInactiveRepos);
 
   return (
-    <div className="mt-1.5 first:mt-0 border-t border-t-edge/30 first:border-t-0 pt-1.5">
-      {!suppressHeader && (
-        <button
-          type="button"
-          onClick={() => toggleOrgCollapsed(org.org)}
-          className="flex items-center gap-1.5 w-full text-left px-2.5 py-1.5 mb-0.5
-                     hover:bg-fg/[0.04] transition-colors duration-100 rounded-sm"
-        >
-          {org.avatarUrl ? (
-            <img
-              src={org.avatarUrl}
-              alt=""
-              className="h-4 w-4 rounded-sm shrink-0 opacity-70"
-            />
-          ) : (
-            <span className="h-4 w-4 rounded-sm shrink-0 bg-fg/[0.10]" />
-          )}
-          <span className="flex-1 text-[11px] text-fg-muted truncate">
-            {org.org}
-          </span>
-          {collapsed && (
-            <span className="text-[10px] tabular-nums text-fg-faint/70">
-              {repoCount}
-            </span>
-          )}
-          <span className="text-[9px] text-fg-faint">
-            {collapsed ? "▸" : "▾"}
-          </span>
-        </button>
-      )}
-      {!collapsed && (
-        <div className={suppressHeader ? "" : "ml-3"}>
-          {org.repos.map((repo) => {
-            const routePrefix = repoMetadata[repo.repoPath]?.routePrefix;
-            const displayName = routePrefix
-              ? splitRoutePrefix(routePrefix).repo || repo.repoName
-              : repo.repoName;
-            return (
-              <RepoGroupHeader
-                key={repo.repoPath}
-                group={repo}
-                displayName={displayName}
-                renderEntry={renderEntry}
-                onActivateLocalBranch={onActivateLocalBranch}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Section label inside an expanded repo (e.g., "In review"). */
-function SectionHeader({ label }: { label: string }): ReactNode {
-  return (
-    <div className="px-2 pt-2 pb-0.5">
-      <span className="text-[10px] text-fg-faint/60">{label}</span>
+    <div className="mt-1.5 border-t border-t-edge/40 pt-1">
+      <button
+        type="button"
+        onClick={toggleInactiveRepos}
+        aria-expanded={showInactiveRepos}
+        className="flex items-center gap-1 w-full text-left px-2.5 py-1 rounded-sm
+                   text-[10px] text-fg-faint/70 hover:text-fg-muted
+                   hover:bg-fg/[0.03] transition-colors duration-100"
+      >
+        <span className="text-[8px] w-2 shrink-0">
+          {showInactiveRepos ? "▾" : "▸"}
+        </span>
+        <span className="tabular-nums">
+          {nodes.length} quiet {nodes.length === 1 ? "repo" : "repos"}
+        </span>
+      </button>
+      {showInactiveRepos &&
+        nodes.map((node) => (
+          <RepoNodeView
+            key={node.repoPath}
+            node={node}
+            renderRow={renderRow}
+            onActivateLocalBranch={onActivateLocalBranch}
+          />
+        ))}
     </div>
   );
 }
@@ -491,8 +343,14 @@ function formatFetchedAgo(unixSecs: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-/** "Remote (recent)" header with a manual fetch button and last-fetched stamp. */
-function RemoteSectionHeader({
+/**
+ * Fetch-from-origin control, on the repo row it refreshes.
+ *
+ * It sits here rather than over a "Remote (recent)" section because remote
+ * branches are no longer a section — they're just the least-present rows in the
+ * repo, and fetching is a repo-level act either way.
+ */
+function FetchButton({
   repoPath,
   lastFetchedAt,
 }: {
@@ -521,62 +379,79 @@ function RemoteSectionHeader({
     [fetching, repoPath, loadLocalActivity],
   );
 
-  const stamp = lastFetchedAt
-    ? formatFetchedAgo(lastFetchedAt)
-    : "never fetched";
   const title = lastFetchedAt
-    ? `Last fetched ${stamp} — click to refresh`
+    ? `Last fetched ${formatFetchedAgo(lastFetchedAt)} — click to refresh`
     : "Click to fetch from origin";
 
   return (
-    <div className="px-2 pt-2 pb-0.5 flex items-center gap-1.5">
-      <span className="text-[10px] text-fg-faint/60">Remote (recent)</span>
-      <span className="text-[10px] text-fg-faint/40 truncate">· {stamp}</span>
-      <span className="flex-1" />
-      <button
-        type="button"
-        onClick={handleFetch}
-        disabled={fetching}
-        title={title}
-        aria-label="Fetch from origin"
-        className="flex items-center justify-center w-4 h-4 shrink-0 rounded
-                   text-fg-faint/70 hover:text-fg-secondary hover:bg-fg/[0.08]
-                   disabled:opacity-50 transition-colors duration-100"
-      >
-        <span className={`text-[10px] ${fetching ? "animate-spin" : ""}`}>
-          ↻
-        </span>
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={handleFetch}
+      disabled={fetching}
+      title={title}
+      aria-label="Fetch from origin"
+      className="flex items-center justify-center w-4 h-4 shrink-0 rounded
+                 text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]
+                 disabled:opacity-50 transition-colors duration-100"
+    >
+      <span className={`text-[10px] ${fetching ? "animate-spin" : ""}`}>↻</span>
+    </button>
   );
 }
 
-/** Repo row with persistent collapse and three sections. */
-function RepoGroupHeader({
-  group,
-  displayName,
-  renderEntry,
+/**
+ * One repo, and everything under it.
+ *
+ * The repo's row *is* its repo-root checkout — clicking it opens that review.
+ * That identity is the point of the tree: there is no separate "repo root"
+ * entry to disagree with the branch that happens to be checked out in it.
+ * Linked worktrees, PRs and reviews hang beneath, live ones first, with the
+ * quiet remainder one `⋯ more` away.
+ */
+function RepoNodeView({
+  node,
+  renderRow,
   onActivateLocalBranch,
 }: {
-  group: RepoGroup;
-  displayName: string;
-  renderEntry: (entry: SidebarEntry) => ReactNode;
+  node: RepoNode;
+  renderRow: (row: SidebarRow) => ReactNode;
   onActivateLocalBranch: (
     repoPath: string,
     branch: string,
     defaultBranch: string,
   ) => void;
-}) {
+}): ReactNode {
   const collapsedRepos = useReviewStore((s) => s.collapsedRepos);
   const setRepoCollapsed = useReviewStore((s) => s.setRepoCollapsed);
+  const restOpen = useReviewStore(
+    (s) => s.expandedRepoRest[node.repoPath] === true,
+  );
+  const toggleRepoRest = useReviewStore((s) => s.toggleRepoRest);
   const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
   const unregisterRepo = useReviewStore((s) => s.unregisterRepo);
   const removeRecentRepository = useReviewStore(
     (s) => s.removeRecentRepository,
   );
-  const collapsed = isRepoCollapsed(collapsedRepos, group.repoPath);
+  const meta = useReviewStore((s) => s.repoMetadata[node.repoPath]);
 
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const expanded = isRepoExpanded(collapsedRepos, node);
+  const displayName = meta?.routePrefix
+    ? splitRoutePrefix(meta.routePrefix).repo || node.repoName
+    : node.repoName;
+
+  const head = node.head;
+  // The head row is always a branch row — it's the repo's current HEAD.
+  const headBranch =
+    head?.entry.kind === "working-tree" ? head.entry.branch : null;
+
+  const headIsActive = useReviewStore(
+    (s) =>
+      !!head &&
+      s.activeReviewKey?.repoPath === node.repoPath &&
+      s.activeReviewKey?.ref === head.ref,
+  );
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -585,58 +460,38 @@ function RepoGroupHeader({
   };
 
   const handleRemove = () => {
-    unregisterRepo(group.repoPath).catch((err) =>
+    unregisterRepo(node.repoPath).catch((err) =>
       console.error("Failed to remove repo from sidebar:", err),
     );
     // Removing it from the sidebar should drop it from the welcome-page
     // recents too, or it reappears the moment the user opens it from there.
-    removeRecentRepository(group.repoPath);
+    removeRecentRepository(node.repoPath);
   };
 
-  const currentHead = group.branches.find((e) => e.kind === "working-tree");
-  const canActivate = !!(currentHead && group.defaultBranch);
-
   const handleActivate = () => {
-    if (!canActivate) {
-      // No working-tree entry — fall back to toggling collapse so the row
-      // still does something useful.
-      setRepoCollapsed(group.repoPath, !collapsed);
+    if (!head || !node.defaultBranch) {
+      // Nothing checked out to open — fall back to expanding, so the row still
+      // does something useful.
+      setRepoCollapsed(node.repoPath, expanded);
       return;
     }
-    onActivateLocalBranch(
-      group.repoPath,
-      currentHead!.branch.name,
-      group.defaultBranch,
-    );
+    onActivateLocalBranch(node.repoPath, head.ref, node.defaultBranch);
   };
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const willExpand = collapsed;
-    setRepoCollapsed(group.repoPath, !collapsed);
-    if (willExpand) {
-      // Browse-zone reviews are outside the recurring (zone-1) freshness scope;
-      // check this repo's reviews once when the user opens it.
-      checkReviewsFreshness(group.items.map((it) => it.reviewKey)).catch(
-        () => {},
-      );
+    setRepoCollapsed(node.repoPath, expanded);
+    if (!expanded) {
+      // A quiet repo's reviews are outside the recurring freshness scope;
+      // check them once when the user opens it.
+      checkReviewsFreshness(
+        [...node.live, ...node.rest].map((row) => row.reviewKey),
+      ).catch(() => {});
     }
   };
 
-  const headBranch = currentHead?.branch;
-  const headIsActive = useReviewStore(
-    (s) =>
-      !!currentHead &&
-      s.activeReviewKey?.repoPath === group.repoPath &&
-      s.activeReviewKey?.ref === currentHead.ref,
-  );
-
-  // The working-tree entry is surfaced in the repo header, so exclude it from
-  // the Branches section list (would otherwise render twice).
-  const branchesRest = group.branches.filter((e) => e.kind !== "working-tree");
-
   return (
-    <div className="mt-0.5 first:mt-0">
+    <div className="mt-1.5 first:mt-0">
       <div
         role="button"
         tabIndex={0}
@@ -653,89 +508,136 @@ function RepoGroupHeader({
                     ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}`}
         aria-current={headIsActive ? "true" : undefined}
         title={
-          headBranch ? `${displayName} — on ${headBranch.name}` : displayName
+          headBranch
+            ? `${displayName} — on ${headBranch.name}`
+            : `${displayName} — nothing checked out`
         }
       >
         {headIsActive && (
           <span className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full bg-fg/30" />
+        )}
+        {/* Disclosure on the left, so every row in the tree ends with its
+            status cluster at the same x — nothing on the right edge is a
+            per-row-type exception. */}
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="flex items-center justify-center w-3 h-4 shrink-0 rounded
+                     text-fg-faint/70 hover:text-fg-secondary
+                     transition-colors duration-100"
+          aria-label={expanded ? "Collapse repository" : "Expand repository"}
+        >
+          <span className="text-[9px]">{expanded ? "▾" : "▸"}</span>
+        </button>
+        {/* The org's avatar rides on the repo row: repos sort by activity, so
+            two orgs interleave freely and the row has to say which it is. */}
+        {meta?.avatarUrl ? (
+          <img
+            src={meta.avatarUrl}
+            alt=""
+            className="h-3.5 w-3.5 rounded-sm shrink-0 opacity-70"
+          />
+        ) : (
+          <span className="h-3.5 w-3.5 rounded-sm shrink-0 bg-fg/[0.10]" />
         )}
         <span className="text-[11px] text-fg-muted truncate shrink-0">
           {displayName}
         </span>
         {headBranch && (
           <span className="flex items-center gap-1 min-w-0">
-            <span className="text-[10px] text-fg-faint/40 shrink-0">/</span>
+            <span className="text-[10px] text-fg-faint/40 shrink-0">·</span>
             <span className="text-[11px] text-fg-faint truncate">
               {headBranch.name}
             </span>
-            {headBranch.hasWorkingTreeChanges && (
-              <span className="text-[10px] text-status-modified shrink-0">
-                M
-              </span>
-            )}
           </span>
         )}
         <span className="flex-1" />
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              className={`items-center justify-center w-4 h-4 shrink-0 rounded
-                         text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]
-                         ${menuOpen ? "flex" : "hidden group-hover:flex"}`}
-              aria-label="Repository options"
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleRemove}>
-              Remove from sidebar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="flex items-center justify-center w-4 h-4 shrink-0 rounded
-                     text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]
-                     transition-colors duration-100"
-          aria-label={collapsed ? "Expand branches" : "Collapse branches"}
-        >
-          <span className="text-[9px]">{collapsed ? "▸" : "▾"}</span>
-        </button>
-      </div>
-      {!collapsed && (
-        <div className="ml-2 border-l border-l-fg/[0.06] pl-0.5">
-          {branchesRest.length > 0 && (
-            <>
-              <SectionHeader label="Branches" />
-              {branchesRest.map(renderEntry)}
-            </>
-          )}
-          {group.pinned.length > 0 && (
-            <>
-              <SectionHeader label="Pinned" />
-              {group.pinned.map(renderEntry)}
-            </>
-          )}
-          {group.remoteRecent.length > 0 && (
-            <>
-              <RemoteSectionHeader
-                repoPath={group.repoPath}
-                lastFetchedAt={group.lastFetchedAt}
+        {/* Status at rest, actions on hover — stacked in one grid cell so the
+            right edge doesn't shift when the actions appear. */}
+        <span className="relative grid shrink-0 justify-items-end items-center">
+          <span
+            className={`col-start-1 row-start-1 flex items-center gap-1.5
+                        transition-opacity duration-100
+                        ${menuOpen ? "opacity-0" : "group-hover:opacity-0"}`}
+          >
+            {headBranch?.hasWorkingTreeChanges && (
+              <span className="text-2xs text-status-modified">M</span>
+            )}
+            {head && (
+              <RowStatus
+                repoPath={node.repoPath}
+                checkoutPath={head.checkoutPath}
+                tier={head.checkoutPath ? "materialized" : "fetched"}
+                checkouts={node.checkouts}
               />
-              {group.remoteRecent.map(renderEntry)}
+            )}
+          </span>
+          <span
+            className={`col-start-1 row-start-1 flex items-center gap-0.5
+                        transition-opacity duration-100
+                        ${
+                          menuOpen
+                            ? "opacity-100"
+                            : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+                        }`}
+          >
+            <FetchButton
+              repoPath={node.repoPath}
+              lastFetchedAt={node.lastFetchedAt}
+            />
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-center w-4 h-4 shrink-0 rounded
+                             text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]"
+                  aria-label="Repository options"
+                >
+                  <svg
+                    className="h-3 w-3"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="5" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="12" cy="19" r="2" />
+                  </svg>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleRemove}>
+                  Remove from sidebar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </span>
+        </span>
+      </div>
+      {expanded && (node.live.length > 0 || node.rest.length > 0) && (
+        // Indented to sit under the repo row's avatar, so a child row's label
+        // starts where its parent's identity does rather than left of it.
+        <div className="ml-[18px] border-l border-l-fg/[0.06]">
+          {node.live.map(renderRow)}
+          {node.rest.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => toggleRepoRest(node.repoPath)}
+                aria-expanded={restOpen}
+                className="flex items-center gap-1 w-full text-left px-2.5 py-1 rounded
+                           text-[10px] text-fg-faint/60 hover:text-fg-muted
+                           hover:bg-fg/[0.03] transition-colors duration-100"
+              >
+                <span className="text-[8px] w-2 shrink-0">
+                  {restOpen ? "▾" : "▸"}
+                </span>
+                <span className="tabular-nums">
+                  {restOpen ? "less" : `${node.rest.length} more`}
+                </span>
+              </button>
+              {restOpen && node.rest.map(renderRow)}
             </>
           )}
         </div>

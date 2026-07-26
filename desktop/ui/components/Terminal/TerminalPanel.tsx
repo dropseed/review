@@ -14,6 +14,7 @@ import {
   DropdownMenuLabel,
 } from "../ui/dropdown-menu";
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
+import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
 import { disposeTerminal } from "./registry";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
@@ -40,7 +41,7 @@ export function TerminalPanel(): ReactNode {
   const activeTabIdByReviewKey = useReviewStore(
     (s) => s.activeTabIdByReviewKey,
   );
-  const localActivity = useReviewStore((s) => s.localActivity);
+  const tree = useSidebarTree();
   const reviewTier = useReviewStore((s) => s.reviewTier);
   const ensureMaterialized = useReviewStore((s) => s.ensureMaterialized);
 
@@ -77,18 +78,32 @@ export function TerminalPanel(): ReactNode {
 
   // cwd choices for the "+" menu. This review leads — a terminal opened from
   // here belongs to the thing being reviewed, so the row's own checkout is the
-  // default even when it doesn't exist yet. Repo root and sibling worktrees
-  // follow for the times you want to step outside it.
+  // default even when it doesn't exist yet. The repo's other checkouts follow,
+  // for the times you want to step outside it.
+  //
+  // Every option comes from a sidebar row's `checkoutPath`, so a directory can
+  // only appear once and it appears under the branch that owns it. Deriving the
+  // list here independently is what once produced "master (checks out a
+  // worktree)" sitting above "Repo root" — two entries for one directory.
   const cwdOptions = useMemo<CwdOption[]>(() => {
     if (!repoPath) return [];
     const options: CwdOption[] = [];
     const seen = new Set<string>();
 
+    const push = (label: string, cwd: string) => {
+      if (seen.has(cwd)) return;
+      seen.add(cwd);
+      options.push({
+        label,
+        cwd,
+        hint: cwd === repoPath ? "repo root" : undefined,
+      });
+    };
+
     const reviewWorktree =
       reviewTier?.tier === "materialized" ? reviewTier.worktreePath : undefined;
     if (reviewRef && reviewWorktree) {
-      options.push({ label: reviewRef, cwd: reviewWorktree });
-      seen.add(reviewWorktree);
+      push(reviewRef, reviewWorktree);
     } else if (reviewRef) {
       options.push({
         label: reviewRef,
@@ -97,21 +112,22 @@ export function TerminalPanel(): ReactNode {
       });
     }
 
-    if (!seen.has(repoPath)) {
-      options.push({ label: "Repo root", cwd: repoPath });
-      seen.add(repoPath);
+    const node = tree.find((n) => n.repoPath === repoPath);
+    for (const row of [
+      node?.head,
+      ...(node?.live ?? []),
+      ...(node?.rest ?? []),
+    ]) {
+      if (row?.checkoutPath)
+        push(row.ref || basename(row.checkoutPath), row.checkoutPath);
     }
 
-    const repo = localActivity.find((r) => r.repoPath === repoPath);
-    for (const branch of repo?.branches ?? []) {
-      const wt = branch.worktreePath;
-      if (wt && !seen.has(wt)) {
-        seen.add(wt);
-        options.push({ label: branch.name || basename(wt), cwd: wt });
-      }
-    }
+    // A repo whose HEAD is detached (or that has no rows yet) still has a root
+    // worth opening a terminal in.
+    push("Repo root", repoPath);
+
     return options;
-  }, [repoPath, reviewRef, reviewTier, localActivity]);
+  }, [repoPath, reviewRef, reviewTier, tree]);
 
   if (!repoPath) return null;
 

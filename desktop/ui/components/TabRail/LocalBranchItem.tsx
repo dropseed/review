@@ -2,14 +2,14 @@ import { memo, useCallback, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useReviewStore } from "../../stores";
 import type { LocalBranchInfo } from "../../types";
-import type { SidebarItemKind } from "../../utils/sidebar-ordering";
+import type { SidebarItemKind } from "../../utils/sidebar-tree";
 import { XIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
-import { WorkingOnMenuItems } from "./WorkingOnMenuItems";
+import { SidebarRowMenuItems } from "./SidebarRowMenuItems";
 import { RowStatus } from "./RowStatus";
 
 interface LocalBranchItemProps {
@@ -18,8 +18,12 @@ interface LocalBranchItemProps {
   repoName?: string;
   defaultBranch: string;
   itemKind: SidebarItemKind;
-  /** Flat (zone-1) rows drop the nested indent so they align with review rows. */
-  flat?: boolean;
+  /**
+   * Where this row's files live, or null when it has no checkout. Resolved once
+   * by the tree builder — rows must not re-derive it, which is how the repo
+   * root and the branch checked out in it drifted into two different answers.
+   */
+  checkoutPath: string | null;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
   /** Repo-level checkout roots, computed once by the sidebar. */
   checkouts: readonly string[];
@@ -31,7 +35,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   repoName,
   defaultBranch,
   itemKind,
-  flat = false,
+  checkoutPath,
   onActivate,
   checkouts,
 }: LocalBranchItemProps) {
@@ -147,11 +151,6 @@ export const LocalBranchItem = memo(function LocalBranchItem({
     [handleRemoveWorktreeClick],
   );
 
-  // The working-tree row's checkout *is* the repo root; a linked worktree has
-  // its own. A branch that isn't checked out anywhere has none, so it hosts no
-  // terminals.
-  const checkoutPath =
-    itemKind === "working-tree" ? repoPath : (branch.worktreePath ?? null);
   const nameClass = isActive
     ? "text-fg-secondary font-medium"
     : itemKind === "working-tree"
@@ -169,8 +168,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
         onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
         className={`group relative w-full text-left py-1 rounded cursor-default
-                    transition-colors duration-100
-                    ${flat ? "px-2.5" : "pl-4 pr-2.5"}
+                    transition-colors duration-100 px-2.5
                     ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
         aria-current={isActive ? "true" : undefined}
         title={`${branch.name}${branch.worktreePath ? ` (worktree: ${branch.worktreePath})` : ""} — ${branch.commitsAhead} commit${branch.commitsAhead !== 1 ? "s" : ""} ahead of ${defaultBranch}`}
@@ -267,7 +265,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
                   </span>
                 </button>
                 <div className="my-1 border-t border-edge/30" />
-                <WorkingOnMenuItems
+                <SidebarRowMenuItems
                   repoPath={repoPath}
                   reviewRef={reviewRef}
                   onDone={() => setShowContextMenu(false)}
