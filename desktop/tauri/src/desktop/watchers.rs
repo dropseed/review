@@ -212,7 +212,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
 
                     // Emit events to frontend
                     if review_changed {
-                        eprintln!("[watcher] Review state changed for {repo_for_closure}");
+                        log::info!("[watcher] Review state changed for {repo_for_closure}");
                         let _ = app_clone.emit(EVENT_REVIEW_STATE_CHANGED, &repo_for_closure);
                     }
 
@@ -224,7 +224,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             changed_paths: changed_paths.into_iter().collect(),
                             git_state_changed,
                         };
-                        eprintln!(
+                        log::info!(
                             "[watcher] git-changed for {repo_for_closure} (paths={}, git_state={git_state_changed})",
                             payload.changed_paths.len()
                         );
@@ -246,7 +246,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[watcher] Error: {e}");
+                    log::error!("[watcher] Error: {e}");
                 }
             }
         },
@@ -286,7 +286,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         map.insert(repo_path_str.clone(), handle);
     }
 
-    eprintln!("[watcher] Started file watcher for {repo_path_str}");
+    log::info!("[watcher] Started file watcher for {repo_path_str}");
     Ok(())
 }
 
@@ -299,19 +299,19 @@ fn local_activity_key(repo_path: &str) -> String {
 /// lightweight watching so branch/staging/review-state deltas keep reaching
 /// the sidebar.
 pub fn stop_watching(repo_path: &str, app: AppHandle) {
-    eprintln!("[watcher] Stopping file watcher for {repo_path}");
+    log::info!("[watcher] Stopping file watcher for {repo_path}");
     {
         let mut watchers = WATCHERS
             .lock()
             .expect("WATCHERS mutex poisoned - another thread panicked while holding lock");
         if let Some(ref mut map) = *watchers {
             if map.remove(repo_path).is_some() {
-                eprintln!("[watcher] Stopped file watcher for {repo_path}");
+                log::info!("[watcher] Stopped file watcher for {repo_path}");
             }
         }
     }
     if let Err(e) = start_local_activity_watcher_for(repo_path, app) {
-        eprintln!("[watcher] Failed to restart lightweight watcher for {repo_path}: {e}");
+        log::error!("[watcher] Failed to restart lightweight watcher for {repo_path}: {e}");
     }
 }
 
@@ -439,13 +439,13 @@ pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
         }
         match start_local_activity_watcher_for(&repo_entry.path, app.clone()) {
             Ok(()) => started += 1,
-            Err(e) => eprintln!(
+            Err(e) => log::error!(
                 "[watcher] Failed to start local activity watcher for {}: {e}",
                 repo_entry.path
             ),
         }
     }
 
-    eprintln!("[watcher] Started local activity watchers for {started} repos");
+    log::info!("[watcher] Started local activity watchers for {started} repos");
     Ok(())
 }
