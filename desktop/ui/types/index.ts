@@ -241,6 +241,8 @@ export interface UsageWindow {
   resetsAtUnix: number | null;
   /** The agent's own reset wording, when that's all it gives (Claude). */
   resetsAtText: string | null;
+  /** How long the window runs — with the reset time, this places "now" in it. */
+  windowMinutes: number | null;
 }
 
 export interface AgentUsage {

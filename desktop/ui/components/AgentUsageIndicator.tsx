@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { useAgentUsage } from "../hooks/useAgentUsage";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { formatSeconds } from "../utils/format-age";
+import { pacePercent, formatPaceDelta } from "../utils/usage-pace";
 import type { AgentUsage, UsageWindow } from "../types";
 
 /** Past this age, a snapshot is old enough that the UI should say so. */
@@ -79,6 +80,8 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
     agent.observedAtUnix !== null &&
     nowSeconds - agent.observedAtUnix > STALE_AFTER_SECONDS;
   const percent = Math.min(100, Math.max(0, headline.usedPercent));
+  const pace = expired ? null : pacePercent(headline, nowSeconds);
+  const paceDelta = pace === null ? null : formatPaceDelta(percent, pace);
 
   return (
     <Popover>
@@ -87,24 +90,39 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
           type="button"
           className="flex w-full items-center gap-2 rounded px-1 py-0.5
                      hover:bg-fg/[0.06] transition-colors duration-100"
-          aria-label={`${agent.name} usage: ${Math.round(percent)}% of ${headline.label}`}
+          aria-label={
+            `${agent.name} usage: ${Math.round(percent)}% of ${headline.label}` +
+            (paceDelta ? `, ${paceDelta}` : "")
+          }
         >
           <span className="w-11 shrink-0 truncate text-left text-xxs text-fg-faint">
             {agent.name}
           </span>
           <span
             className={clsx(
-              "relative h-1 flex-1 overflow-hidden rounded-full bg-fg/[0.10]",
+              "relative h-1 flex-1",
               (expired || stale) && "opacity-50",
             )}
           >
-            <span
-              className={clsx(
-                "absolute inset-y-0 left-0 rounded-full transition-[width] duration-300",
-                barColor(percent),
-              )}
-              style={{ width: `${expired ? 0 : percent}%` }}
-            />
+            <span className="absolute inset-0 overflow-hidden rounded-full bg-fg/[0.10]">
+              <span
+                className={clsx(
+                  "absolute inset-y-0 left-0 rounded-full transition-[width] duration-300",
+                  barColor(percent),
+                )}
+                style={{ width: `${expired ? 0 : percent}%` }}
+              />
+            </span>
+            {/* Where an even burn would have you by now. Sits above the fill so
+                it stays legible whichever side of the mark usage is on. */}
+            {pace !== null && (
+              <span
+                aria-hidden="true"
+                data-testid="pace-marker"
+                className="absolute -top-0.5 -bottom-0.5 w-px bg-fg/50"
+                style={{ left: `${pace}%` }}
+              />
+            )}
           </span>
           <span
             className={clsx(
@@ -130,6 +148,11 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
         <div className="py-1">
           {agent.windows.map((window) => {
             const resets = formatReset(window);
+            const windowPace = expired ? null : pacePercent(window, nowSeconds);
+            const delta =
+              windowPace === null
+                ? null
+                : formatPaceDelta(window.usedPercent, windowPace);
             return (
               <div key={window.label} className="px-3 py-1.5">
                 <div className="flex items-center justify-between gap-2">
@@ -140,6 +163,12 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
                     {Math.round(window.usedPercent)}%
                   </span>
                 </div>
+                {windowPace !== null && (
+                  <div className="mt-0.5 text-xxs text-fg-faint">
+                    {delta ?? "On pace"} · {Math.round(windowPace)}% of the
+                    window elapsed
+                  </div>
+                )}
                 {resets && (
                   <div className="mt-0.5 text-xxs text-fg-faint">
                     Resets {resets}

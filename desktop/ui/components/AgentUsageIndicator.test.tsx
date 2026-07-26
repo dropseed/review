@@ -11,6 +11,21 @@ vi.mock("../api", () => ({
 import { AgentUsageIndicator } from "./AgentUsageIndicator";
 
 const NOW_SECONDS = 1_800_000_000;
+const HOUR = 3_600;
+const DAY = 86_400;
+
+/**
+ * Claude states resets as local wall-clock prose, so build the wording from a
+ * real instant rather than hard-coding a date the fake clock would drift from.
+ */
+function claudeResetText(secondsFromNow: number): string {
+  const at = new Date((NOW_SECONDS + secondsFromNow) * 1000);
+  const month = at.toLocaleString("en-US", { month: "short" });
+  const minutes = String(at.getMinutes()).padStart(2, "0");
+  const hour = at.getHours() % 12 || 12;
+  const meridiem = at.getHours() < 12 ? "am" : "pm";
+  return `${month} ${at.getDate()} at ${hour}:${minutes}${meridiem}`;
+}
 
 function claude(overrides: Partial<AgentUsage> = {}): AgentUsage {
   return {
@@ -21,13 +36,16 @@ function claude(overrides: Partial<AgentUsage> = {}): AgentUsage {
         label: "Session",
         usedPercent: 8,
         resetsAtUnix: null,
-        resetsAtText: "Jul 25 at 2pm",
+        resetsAtText: claudeResetText(2 * HOUR),
+        windowMinutes: 300,
       },
       {
         label: "Week (all models)",
         usedPercent: 86,
         resetsAtUnix: null,
-        resetsAtText: "Jul 28 at 2pm",
+        // Three days left of seven, so an even burn would be at 57%.
+        resetsAtText: claudeResetText(3 * DAY),
+        windowMinutes: 7 * 24 * 60,
       },
     ],
     plan: null,
@@ -44,8 +62,9 @@ function codex(overrides: Partial<AgentUsage> = {}): AgentUsage {
       {
         label: "Weekly",
         usedPercent: 30,
-        resetsAtUnix: NOW_SECONDS + 86_400,
+        resetsAtUnix: NOW_SECONDS + DAY,
         resetsAtText: null,
+        windowMinutes: 7 * 24 * 60,
       },
     ],
     plan: "Plus",
@@ -87,6 +106,59 @@ describe("AgentUsageIndicator", () => {
     expect(row.getAttribute("aria-label")).toContain("Week (all models)");
   });
 
+  it("marks where an even burn would have you by now", async () => {
+    resolveWith(claude());
+    await renderIndicator();
+
+    // Four of seven days gone, so the mark sits at 57% — well behind the 86%
+    // already spent.
+    const marker = await screen.findByTestId("pace-marker");
+    expect(parseFloat(marker.style.left)).toBeCloseTo(57.14, 1);
+
+    const row = screen.getByRole("button", { name: /Claude usage/ });
+    expect(row.getAttribute("aria-label")).toContain("29% ahead of pace");
+  });
+
+  it("drops the mark when the window's length is unknown", async () => {
+    resolveWith(
+      claude({
+        windows: [
+          {
+            label: "Fortnight",
+            usedPercent: 40,
+            resetsAtUnix: null,
+            resetsAtText: claudeResetText(3 * DAY),
+            windowMinutes: null,
+          },
+        ],
+      }),
+    );
+    await renderIndicator();
+
+    await screen.findByRole("button", { name: /Claude usage/ });
+    expect(screen.queryByTestId("pace-marker")).toBeNull();
+  });
+
+  it("drops the mark for a snapshot whose window has already reset", async () => {
+    resolveWith(
+      codex({
+        windows: [
+          {
+            label: "Weekly",
+            usedPercent: 30,
+            resetsAtUnix: NOW_SECONDS - 60,
+            resetsAtText: null,
+            windowMinutes: 7 * 24 * 60,
+          },
+        ],
+      }),
+    );
+    await renderIndicator();
+
+    await screen.findByRole("button", { name: /Codex usage/ });
+    expect(screen.queryByTestId("pace-marker")).toBeNull();
+  });
+
   it("renders a row per reporting agent", async () => {
     resolveWith(claude(), codex());
     await renderIndicator();
@@ -123,6 +195,7 @@ describe("AgentUsageIndicator", () => {
             usedPercent: 30,
             resetsAtUnix: NOW_SECONDS - 60,
             resetsAtText: null,
+            windowMinutes: 7 * 24 * 60,
           },
         ],
         observedAtUnix: NOW_SECONDS - 604_800,

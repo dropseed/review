@@ -33,6 +33,10 @@ pub struct UsageWindow {
     pub resets_at_unix: Option<i64>,
     /// The agent's own reset wording, when that's all it gives (Claude).
     pub resets_at_text: Option<String>,
+    /// How long the window runs. With the reset time, this fixes where "now"
+    /// falls inside the window, which is what lets a caller say whether the
+    /// percentage is ahead of or behind a straight-line burn.
+    pub window_minutes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,8 +197,10 @@ fn parse_claude_windows(text: &str) -> Vec<UsageWindow> {
             continue;
         };
 
+        let label = capitalize(label.trim());
         windows.push(UsageWindow {
-            label: capitalize(label.trim()),
+            window_minutes: claude_window_minutes(&label),
+            label,
             used_percent,
             resets_at_unix: None,
             resets_at_text: after
@@ -204,6 +210,21 @@ fn parse_claude_windows(text: &str) -> Vec<UsageWindow> {
     }
 
     windows
+}
+
+/// Claude states a reset time but not a window length, so it comes from the
+/// window's name: sessions run 5 hours, the model caps run a week. An unfamiliar
+/// name yields `None` rather than a guess — a wrong length would misplace the
+/// pace marker more convincingly than no marker at all.
+fn claude_window_minutes(label: &str) -> Option<u64> {
+    let label = label.to_lowercase();
+    if label.starts_with("session") {
+        Some(5 * 60)
+    } else if label.starts_with("week") {
+        Some(7 * 24 * 60)
+    } else {
+        None
+    }
 }
 
 fn capitalize(s: &str) -> String {
@@ -365,6 +386,7 @@ fn parse_codex_window(window: &Value) -> Option<UsageWindow> {
         used_percent,
         resets_at_unix: window.get("resets_at").and_then(Value::as_i64),
         resets_at_text: None,
+        window_minutes,
     })
 }
 
@@ -411,9 +433,21 @@ mod tests {
             Some("Jul 25 at 2pm (America/Chicago)")
         );
 
+        assert_eq!(windows[0].window_minutes, Some(300));
+
         assert_eq!(windows[1].label, "Week (all models)");
         assert_eq!(windows[1].used_percent, 85.0);
+        assert_eq!(windows[1].window_minutes, Some(10080));
         assert_eq!(windows[2].label, "Week (Fable)");
+    }
+
+    #[test]
+    fn leaves_an_unrecognized_claude_window_without_a_length() {
+        // Better no pace marker than one placed by a guessed window length.
+        let text = "Current fortnight: 40% used · resets Aug 8 at 2pm\n";
+        let windows = parse_claude_windows(text);
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].window_minutes, None);
     }
 
     #[test]
@@ -463,6 +497,7 @@ mod tests {
         assert_eq!(usage.windows[0].label, "Weekly");
         assert_eq!(usage.windows[0].used_percent, 30.0);
         assert_eq!(usage.windows[0].resets_at_unix, Some(1785262985));
+        assert_eq!(usage.windows[0].window_minutes, Some(10080));
     }
 
     #[test]
