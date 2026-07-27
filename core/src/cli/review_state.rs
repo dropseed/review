@@ -374,13 +374,7 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     let total_hunks = hunks.len();
     let classification = classify_hunks_static(&hunks);
 
-    let (known, unknown) = resolve_mark_targets(&live_ids, &args.hunks);
-    for id in &unknown {
-        eprintln!("warning: hunk not found in {}: {id}", comparison.key);
-    }
-    if known.is_empty() {
-        return Err("No matching hunks to update.".to_owned());
-    }
+    let (known, unknown) = resolve_mark_targets(&comparison.key, &live_ids, &args.hunks)?;
 
     let existed = storage::review_exists(&repo, &review.ref_name).unwrap_or(false);
     let reason = args.reason.clone();
@@ -436,10 +430,8 @@ pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
         return Err(format!("No review exists for {}.", comparison.key));
     }
 
-    let (ids, unknown) = resolve_mark_targets(&live_ids, &args.hunks);
-    for id in &unknown {
-        eprintln!("warning: hunk not found in {}: {id}", comparison.key);
-    }
+    let (ids, _unknown) = resolve_mark_targets(&comparison.key, &live_ids, &args.hunks)?;
+
     let result = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
@@ -738,11 +730,13 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
 }
 
 /// Split the requested hunk IDs into those present in the live diff and those
-/// that aren't. Returns `(targets, unknown_ids)`.
+/// that aren't, warning on each unknown ID. Errors if none matched. Returns
+/// `(targets, unknown_ids)`.
 fn resolve_mark_targets(
+    comparison_key: &str,
     live_ids: &HashSet<String>,
     explicit: &[String],
-) -> (Vec<String>, Vec<String>) {
+) -> Result<(Vec<String>, Vec<String>), String> {
     let mut known = Vec::new();
     let mut unknown = Vec::new();
     for id in explicit {
@@ -752,7 +746,13 @@ fn resolve_mark_targets(
             unknown.push(id.clone());
         }
     }
-    (known, unknown)
+    for id in &unknown {
+        eprintln!("warning: hunk not found in {comparison_key}: {id}");
+    }
+    if known.is_empty() {
+        return Err("No matching hunks to update.".to_owned());
+    }
+    Ok((known, unknown))
 }
 
 /// Normalize a `--status` filter value.
