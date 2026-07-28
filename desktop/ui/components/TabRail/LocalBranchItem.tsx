@@ -11,6 +11,11 @@ import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { SidebarRowMenuItems } from "./SidebarRowMenuItems";
 import { RowStatus } from "./RowStatus";
+import {
+  ROW_ACTIONS,
+  ROW_LABEL_HOVER_FADE,
+  ROW_MODIFIED_BADGE,
+} from "./row-chrome";
 
 interface LocalBranchItemProps {
   branch: LocalBranchInfo;
@@ -178,61 +183,69 @@ export const LocalBranchItem = memo(function LocalBranchItem({
         )}
 
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className={`text-xs truncate flex-1 min-w-0 ${nameClass}`}>
+          <span
+            className={`text-xs truncate flex-1 min-w-0 ${nameClass} ${
+              // Only worktree rows carry a hover action to fade under.
+              itemKind === "worktree" ? ROW_LABEL_HOVER_FADE : ""
+            }`}
+          >
             {repoName && <span className="text-fg-muted">{repoName} / </span>}
             {branch.name}
           </span>
 
-          <span className="relative grid shrink-0 justify-items-end items-center">
-            <span
-              className={`col-start-1 row-start-1 flex items-center gap-1.5
-                          transition-opacity duration-100 ${
-                            itemKind === "worktree"
-                              ? "group-hover:opacity-0 group-hover:pointer-events-none"
-                              : ""
-                          }`}
-            >
-              <RowStatus
-                repoPath={repoPath}
-                checkoutPath={checkoutPath}
-                tier={checkoutPath ? "materialized" : "fetched"}
-                showWorktreeIcon={itemKind === "worktree"}
-                checkouts={checkouts}
-              />
-              {branch.hasWorkingTreeChanges && (
-                <span className="text-2xs text-status-modified">M</span>
-              )}
-              {isActive && isWorktreeStale && (
-                <span
-                  className="text-2xs text-amber-500"
-                  title="Worktree is behind branch tip"
-                >
-                  stale
-                </span>
-              )}
-            </span>
-            {itemKind === "worktree" && branch.worktreePath && (
-              <button
-                type="button"
-                onClick={handleRemoveWorktree}
-                disabled={removing}
-                className="col-start-1 row-start-1 flex items-center justify-center
-                           h-5 w-5 rounded text-fg-muted hover:text-status-rejected
-                           hover:bg-fg/[0.08] opacity-0 pointer-events-none
-                           group-hover:opacity-100 group-hover:pointer-events-auto
-                           transition-opacity duration-100 disabled:opacity-50"
-                aria-label="Remove worktree"
-                title="Remove worktree"
+          {/* Status stays in the flow; the remove-worktree button overlays it
+              on hover (see row-chrome) instead of reserving width. */}
+          <span
+            className={`flex shrink-0 items-center gap-1.5
+                        transition-opacity duration-100 ${
+                          itemKind === "worktree"
+                            ? "group-hover:opacity-0 group-hover:pointer-events-none"
+                            : ""
+                        }`}
+          >
+            <RowStatus
+              repoPath={repoPath}
+              checkoutPath={checkoutPath}
+              tier={checkoutPath ? "materialized" : "fetched"}
+              showWorktreeIcon={itemKind === "worktree"}
+              checkouts={checkouts}
+            />
+            {branch.hasWorkingTreeChanges && (
+              <span className={ROW_MODIFIED_BADGE}>M</span>
+            )}
+            {isActive && isWorktreeStale && (
+              <span
+                className="text-xxs text-amber-500"
+                title="Worktree is behind branch tip"
               >
-                {removing ? (
-                  <Spinner className="h-3 w-3 border-[1.5px] border-edge-strong border-t-fg-muted" />
-                ) : (
-                  <XIcon className="h-3 w-3" />
-                )}
-              </button>
+                stale
+              </span>
             )}
           </span>
         </div>
+        {itemKind === "worktree" && branch.worktreePath && (
+          <span
+            className={`${ROW_ACTIONS} opacity-0 pointer-events-none
+                        group-hover:opacity-100 group-hover:pointer-events-auto`}
+          >
+            <button
+              type="button"
+              onClick={handleRemoveWorktree}
+              disabled={removing}
+              className="flex items-center justify-center h-5 w-5 rounded
+                         text-fg-muted hover:text-status-rejected
+                         hover:bg-fg/[0.08] disabled:opacity-50"
+              aria-label="Remove worktree"
+              title="Remove worktree"
+            >
+              {removing ? (
+                <Spinner className="h-3 w-3 border-[1.5px] border-edge-strong border-t-fg-muted" />
+              ) : (
+                <XIcon className="h-3 w-3" />
+              )}
+            </button>
+          </span>
+        )}
       </div>
 
       {/* Context menu */}

@@ -17,7 +17,6 @@ import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
 import { type GlobalReviewSummary } from "../../types";
-import type { ReviewSortOrder } from "../../stores/slices/preferencesSlice";
 import { SidebarPanelIcon } from "../ui/icons";
 import {
   DropdownMenu,
@@ -29,18 +28,11 @@ import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
 import { AgentUsageIndicator } from "../AgentUsageIndicator";
-import { SortMenu } from "../FilesPanel/SortMenu";
 import { LocalBranchItem } from "./LocalBranchItem";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
 import { splitRoutePrefix } from "../../utils/repo-identity";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
-
-const SORT_OPTIONS: [ReviewSortOrder, string][] = [
-  ["updated", "Last updated"],
-  ["repo", "Repository"],
-  ["size", "Size"],
-];
 
 interface FooterVersionInfoProps {
   updateAvailable: { version: string } | null;
@@ -104,6 +96,11 @@ import {
 import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { RemoteBranchItem } from "./RemoteBranchItem";
 import { RowStatus } from "./RowStatus";
+import {
+  ROW_ACTIONS,
+  ROW_LABEL_HOVER_FADE,
+  ROW_MODIFIED_BADGE,
+} from "./row-chrome";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -543,76 +540,79 @@ function RepoNodeView({
         <span className="text-[11px] text-fg-muted truncate shrink-0">
           {displayName}
         </span>
-        {headBranch && (
-          <span className="flex items-center gap-1 min-w-0">
-            <span className="text-[10px] text-fg-faint/40 shrink-0">·</span>
-            <span className="text-[11px] text-fg-faint truncate">
-              {headBranch.name}
-            </span>
-          </span>
-        )}
-        <span className="flex-1" />
-        {/* Status at rest, actions on hover — stacked in one grid cell so the
-            right edge doesn't shift when the actions appear. */}
-        <span className="relative grid shrink-0 justify-items-end items-center">
-          <span
-            className={`col-start-1 row-start-1 flex items-center gap-1.5
-                        transition-opacity duration-100
-                        ${menuOpen ? "opacity-0" : "group-hover:opacity-0"}`}
-          >
-            {headBranch?.hasWorkingTreeChanges && (
-              <span className="text-2xs text-status-modified">M</span>
-            )}
-            {head && (
-              <RowStatus
-                repoPath={node.repoPath}
-                checkoutPath={head.checkoutPath}
-                tier={head.checkoutPath ? "materialized" : "fetched"}
-                checkouts={node.checkouts}
-              />
-            )}
-          </span>
-          <span
-            className={`col-start-1 row-start-1 flex items-center gap-0.5
-                        transition-opacity duration-100
-                        ${
-                          menuOpen
-                            ? "opacity-100"
-                            : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-                        }`}
-          >
-            <FetchButton
+        {/* Doubles as the row's spacer, so the branch name is measured against
+            the trailing edge — which is what makes the hover fade land on the
+            actions rather than on the last word of a short name. */}
+        <span
+          className={`flex flex-1 items-center gap-1 min-w-0 ${ROW_LABEL_HOVER_FADE}`}
+        >
+          {headBranch && (
+            <>
+              <span className="text-[10px] text-fg-faint/40 shrink-0">·</span>
+              <span className="text-[11px] text-fg-faint truncate">
+                {headBranch.name}
+              </span>
+            </>
+          )}
+        </span>
+        {/* Status keeps its place in the flow; the actions overlay it on hover,
+            so the row's right edge holds still without the label paying for
+            their width at rest. */}
+        <span
+          className={`flex shrink-0 items-center gap-1.5
+                      transition-opacity duration-100
+                      ${menuOpen ? "opacity-0" : "group-hover:opacity-0"}`}
+        >
+          {headBranch?.hasWorkingTreeChanges && (
+            <span className={ROW_MODIFIED_BADGE}>M</span>
+          )}
+          {head && (
+            <RowStatus
               repoPath={node.repoPath}
-              lastFetchedAt={node.lastFetchedAt}
+              checkoutPath={head.checkoutPath}
+              tier={head.checkoutPath ? "materialized" : "fetched"}
+              checkouts={node.checkouts}
             />
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center justify-center w-4 h-4 shrink-0 rounded
-                             text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]"
-                  aria-label="Repository options"
+          )}
+        </span>
+        <span
+          className={`${ROW_ACTIONS} ${
+            menuOpen
+              ? "opacity-100"
+              : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+          }`}
+        >
+          <FetchButton
+            repoPath={node.repoPath}
+            lastFetchedAt={node.lastFetchedAt}
+          />
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center justify-center w-4 h-4 shrink-0 rounded
+                           text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]"
+                aria-label="Repository options"
+              >
+                <svg
+                  className="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
                 >
-                  <svg
-                    className="h-3 w-3"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <circle cx="12" cy="5" r="2" />
-                    <circle cx="12" cy="12" r="2" />
-                    <circle cx="12" cy="19" r="2" />
-                  </svg>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleRemove}>
-                  Remove from sidebar
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </span>
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleRemove}>
+                Remove from sidebar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </span>
       </div>
       {expanded && (node.live.length > 0 || node.rest.length > 0) && (
@@ -646,7 +646,13 @@ function RepoNodeView({
   );
 }
 
-/** Top header bar: "Reviews" label + sort/add actions + sidebar toggle. */
+/**
+ * Top header bar: "Reviews" label + new-review button + sidebar toggle.
+ *
+ * No sort control: repos sit in a fixed alphabetical order now, so a sort
+ * dropdown would only reorder rows *within* a repo — not worth a permanent
+ * button, and its funnel glyph read as a filter besides.
+ */
 function SidebarHeader({
   onToggle,
   onNewReview,
@@ -654,24 +660,12 @@ function SidebarHeader({
   onToggle: () => void;
   onNewReview: () => void;
 }): ReactNode {
-  const globalReviews = useReviewStore((s) => s.globalReviews);
-  const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
-  const setReviewSortOrder = useReviewStore((s) => s.setReviewSortOrder);
-
   return (
     <div className="shrink-0 px-2 py-2 flex items-center gap-1">
       <span className="pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
         Reviews
       </span>
       <span className="flex-1" />
-      {globalReviews.length > 0 && (
-        <SortMenu
-          options={SORT_OPTIONS}
-          value={reviewSortOrder}
-          onChange={setReviewSortOrder}
-          ariaLabel="Sort reviews"
-        />
-      )}
       <button
         type="button"
         onClick={onNewReview}

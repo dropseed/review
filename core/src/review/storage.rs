@@ -201,10 +201,13 @@ pub fn load_review_state(repo_path: &Path, ref_name: &str) -> Result<ReviewState
 /// expected version (state.version - 1), a VersionConflict error is returned.
 ///
 /// Call `state.prepare_for_save()` before saving to increment the version.
+///
+/// Saving does **not** register the repo. Registration is what puts a repo in
+/// the sidebar, and this runs on every debounced write — approving one hunk
+/// re-registered a repo the user had just removed, so "Remove from sidebar"
+/// could never stick. Adoption belongs to the explicit paths:
+/// [`ensure_review_exists`] and `central::register_repo_if_valid`.
 pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), StorageError> {
-    // Register repo in central index on first save
-    central::register_repo(repo_path)?;
-
     let storage_dir = get_storage_dir(repo_path)?;
     fs::create_dir_all(&storage_dir)?;
 
@@ -287,12 +290,21 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
 
 /// Create a review file on disk if it doesn't already exist.
 /// Used to make new reviews immediately visible in the sidebar.
+///
+/// This is one of the two adoption points that register the repo (the other
+/// being `central::register_repo_if_valid`, which the app calls when a repo is
+/// opened). Every open path reaches here — the desktop's repo init and review
+/// switch, its first-meaningful-action save guard, `review start`, and
+/// `review <path>` — while the debounced save path deliberately does not, so a
+/// repo the user removed stays removed until they open it again.
 pub fn ensure_review_exists(
     repo_path: &Path,
     ref_name: &str,
     base_override: Option<String>,
     github_pr: Option<GitHubPrRef>,
 ) -> Result<(), StorageError> {
+    central::register_repo(repo_path)?;
+
     let storage_dir = get_storage_dir(repo_path)?;
     let filename = review_filename(ref_name);
     let path = storage_dir.join(&filename);
@@ -494,6 +506,31 @@ mod tests {
         assert_eq!(legacy.updated_at, None);
         assert_eq!(legacy.resolved_at, None);
         assert_eq!(legacy.resolved_by, None);
+    }
+
+    #[test]
+    fn test_saving_does_not_register_the_repo_but_ensuring_does() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (temp_dir, _review_home) = create_test_repo();
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // A bare save must not put the repo in the sidebar. This is the path a
+        // single hunk approval takes, and it used to resurrect a repo the user
+        // had just removed, within the save debounce.
+        save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
+        assert!(!central::is_registered(&repo_path).unwrap());
+
+        // Opening a review is an adoption, so that does register.
+        ensure_review_exists(&repo_path, TEST_REF, None, None).unwrap();
+        assert!(central::is_registered(&repo_path).unwrap());
+
+        // …and removal survives subsequent saves.
+        central::unregister_repo(&repo_path).unwrap();
+        let mut state = load_review_state(&repo_path, TEST_REF).unwrap();
+        state.notes = "reviewed".to_owned();
+        state.prepare_for_save();
+        save_review_state(&repo_path, &state).unwrap();
+        assert!(!central::is_registered(&repo_path).unwrap());
     }
 
     #[test]

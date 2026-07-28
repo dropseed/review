@@ -69,7 +69,15 @@ export interface SidebarRemoteEntry {
 export type SidebarEntry =
   SidebarBranchEntry | SidebarReviewEntry | SidebarRemoteEntry;
 
-/** Why a row is live (union of rules; useful for tests and tooltips). */
+/**
+ * Why a row is live (union of rules; useful for tests and tooltips).
+ *
+ * `checkout` means a *deliberate* checkout — a linked or review-managed
+ * worktree, which someone had to create on purpose. It deliberately excludes
+ * the branch that merely happens to be at the repo root: every repo has one of
+ * those forever, so counting it made every registered repo permanently
+ * "Active" and the section meant nothing.
+ */
 export type LiveReason =
   "pinned" | "checkout" | "uncommitted" | "recent-review" | "recent-own-commit";
 
@@ -123,8 +131,6 @@ export interface RepoNode {
   checkouts: string[];
   lastFetchedAt: number | null;
   hasChanges: boolean;
-  /** Most recent activity across the repo's rows — the repo's sort key. */
-  activityAt: number;
   /** Has anything live: drives default expansion and top-of-list placement. */
   isActive: boolean;
 }
@@ -240,10 +246,17 @@ export function buildSidebarTree(
       const checkoutPath = branch.isCurrent
         ? repo.repoPath
         : (branch.worktreePath ?? null);
+      // …but only the linked worktree is *evidence of intent*. Having a
+      // checkout and being live are separate questions: `checkoutPath` answers
+      // "where are the files" (terminals, LSP, staging all read it), while
+      // liveness asks "did someone do something here". `isCurrent` excludes the
+      // main worktree, which git reports as a worktree like any other.
+      const isDeliberateCheckout =
+        !branch.isCurrent && branch.worktreePath != null;
 
       const reasons: LiveReason[] = [];
       if (pinnedSet.has(key)) reasons.push("pinned");
-      if (checkoutPath) reasons.push("checkout");
+      if (isDeliberateCheckout) reasons.push("checkout");
       if (branch.hasWorkingTreeChanges) reasons.push("uncommitted");
       const tipAt = parseTime(branch.lastCommitDate);
       if (
@@ -379,12 +392,6 @@ export function buildSidebarTree(
     const live = bucket.rows.filter((r) => r.live).sort(byRank);
     const rest = bucket.rows.filter((r) => !r.live).sort(byRank);
 
-    const activityAt = Math.max(
-      bucket.head?.activityAt ?? 0,
-      ...bucket.rows.map((r) => r.activityAt),
-      0,
-    );
-
     // The repo root counts even when nothing is checked out there (a bare or
     // freshly-cloned repo still anchors session attribution).
     const checkouts = new Set<string>([bucket.repoPath]);
@@ -402,17 +409,18 @@ export function buildSidebarTree(
       checkouts: [...checkouts],
       lastFetchedAt: bucket.lastFetchedAt,
       hasChanges: bucket.hasChanges,
-      activityAt,
       isActive: (bucket.head?.live ?? false) || live.length > 0,
     });
   }
 
-  // 5. Repos rank by activity, active ones first. "Active" leads rather than
-  //    just sorting high so a repo you touched today can't fall below one whose
-  //    only claim is an old commit date.
+  // 5. Active repos lead, and within each half repos are alphabetical.
+  //    Deliberately *not* by recency: now that "active" is earned, ordering by
+  //    last-touched only made the list reshuffle under the cursor while you
+  //    worked. A stable position is worth more than a fresh one.
   nodes.sort((a, b) => {
     if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-    if (b.activityAt !== a.activityAt) return b.activityAt - a.activityAt;
+    const byName = a.repoName.localeCompare(b.repoName);
+    if (byName !== 0) return byName;
     return a.repoPath < b.repoPath ? -1 : a.repoPath > b.repoPath ? 1 : 0;
   });
 

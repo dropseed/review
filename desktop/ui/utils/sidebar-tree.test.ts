@@ -113,13 +113,42 @@ describe("the repo row is the repo-root checkout", () => {
     expect(refs(node.live)).not.toContain("master");
   });
 
-  it("is live purely by being checked out, with no other activity", () => {
-    // Stale tip, no changes, no review — but it's the checkout you're standing in.
+  it("is quiet when the checkout is all it has", () => {
+    // Stale tip, no changes, no review. Having HEAD somewhere isn't news —
+    // every repo does, forever, so it can't be what makes one active.
     const [node] = build([
       repo("/r", [branch({ name: "master", isCurrent: true })]),
     ]);
-    expect(node.head?.live).toBe(true);
-    expect(node.head?.reasons).toEqual(["checkout"]);
+    expect(node.head?.live).toBe(false);
+    expect(node.head?.reasons).toEqual([]);
+    expect(node.isActive).toBe(false);
+    // It still has a checkout — liveness changed, not where the files are.
+    expect(node.head?.checkoutPath).toBe("/r");
+    expect(node.head?.presence).toBe("checkout");
+  });
+
+  it("wakes the repo up when the checkout has uncommitted changes", () => {
+    const [node] = build([
+      repo("/r", [
+        branch({
+          name: "master",
+          isCurrent: true,
+          hasWorkingTreeChanges: true,
+        }),
+      ]),
+    ]);
+    expect(node.head?.reasons).toEqual(["uncommitted"]);
+    expect(node.isActive).toBe(true);
+  });
+
+  it("wakes the repo up for a worktree, which someone made on purpose", () => {
+    const [node] = build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "feat", worktreePath: "/wt/feat" }),
+      ]),
+    ]);
+    expect(node.live[0].reasons).toEqual(["checkout"]);
     expect(node.isActive).toBe(true);
   });
 
@@ -300,28 +329,70 @@ describe("row ranking", () => {
 describe("repo ordering", () => {
   it("puts repos with live rows above quiet ones", () => {
     const nodes = build([
-      // Quiet: no checkout row at all, stale branches only.
-      repo("/quiet", [branch({ name: "old" })]),
-      repo("/busy", [branch({ name: "master", isCurrent: true })]),
-    ]);
-    expect(nodes.map((n) => n.repoPath)).toEqual(["/busy", "/quiet"]);
-    expect(nodes[1].isActive).toBe(false);
-  });
-
-  it("orders active repos by most recent activity", () => {
-    const nodes = build([
-      repo("/older", [
+      // Quiet: stale branches only, nothing anyone touched.
+      repo("/a-quiet", [branch({ name: "old" })]),
+      repo("/z-busy", [
         branch({
           name: "master",
           isCurrent: true,
+          hasWorkingTreeChanges: true,
+        }),
+      ]),
+    ]);
+    expect(nodes.map((n) => n.repoPath)).toEqual(["/z-busy", "/a-quiet"]);
+    expect(nodes[1].isActive).toBe(false);
+  });
+
+  it("orders repos alphabetically, not by recency, within each half", () => {
+    const nodes = build([
+      repo("/zulu", [
+        branch({
+          name: "master",
+          isCurrent: true,
+          hasWorkingTreeChanges: true,
+        }),
+      ]),
+      repo("/alpha", [
+        branch({
+          name: "master",
+          isCurrent: true,
+          hasWorkingTreeChanges: true,
+          // Older than zulu's — recency must not pull it up.
           lastCommitDate: iso(5 * 86_400_000),
         }),
       ]),
-      repo("/newer", [
-        branch({ name: "master", isCurrent: true, lastCommitDate: iso(1000) }),
-      ]),
+      repo("/quiet-z", [branch({ name: "old" })]),
+      repo("/quiet-a", [branch({ name: "old" })]),
     ]);
-    expect(nodes.map((n) => n.repoPath)).toEqual(["/newer", "/older"]);
+    expect(nodes.map((n) => n.repoPath)).toEqual([
+      "/alpha",
+      "/zulu",
+      "/quiet-a",
+      "/quiet-z",
+    ]);
+  });
+
+  it("keeps the same order when only activity timestamps move", () => {
+    const order = (commitMsAgo: number) =>
+      build([
+        repo("/zulu", [
+          branch({
+            name: "master",
+            isCurrent: true,
+            hasWorkingTreeChanges: true,
+            lastCommitDate: iso(commitMsAgo),
+          }),
+        ]),
+        repo("/alpha", [
+          branch({
+            name: "master",
+            isCurrent: true,
+            hasWorkingTreeChanges: true,
+          }),
+        ]),
+      ]).map((n) => n.repoPath);
+
+    expect(order(10 * 86_400_000)).toEqual(order(1000));
   });
 });
 

@@ -32,6 +32,7 @@ export interface LocalActivitySlice {
   ) => void;
   /** Add a repo to the central index so it shows in the sidebar. */
   registerRepo: (repoPath: string) => Promise<void>;
+  /** Drop a repo from the app: it leaves the sidebar until reopened. */
   unregisterRepo: (repoPath: string) => Promise<void>;
 }
 
@@ -157,7 +158,15 @@ export const createLocalActivitySlice: SliceCreatorWithClientAndStorage<
 
     unregisterRepo: async (repoPath) => {
       await client.unregisterRepo(repoPath);
-      get().loadLocalActivity();
+      // Drop the repo locally before reloading: a repo's sidebar rows come
+      // from local activity *and* saved reviews, so refreshing only one list
+      // leaves the other still rendering the repo the user just removed.
+      set({
+        localActivity: get().localActivity.filter(
+          (r) => r.repoPath !== repoPath,
+        ),
+      });
+      await Promise.all([get().loadLocalActivity(), get().loadGlobalReviews()]);
     },
   };
 };
