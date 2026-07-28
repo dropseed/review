@@ -16,12 +16,20 @@ import {
   setFocusedInTab,
   resizeSplitInTab,
   ingestTabs,
+  buildCheckoutIndex,
+  sessionReviewKey,
+  isOrphanedSession,
+  rehomeTabs,
+  mergeVisibleTabs,
+  resolveActiveTabIds,
   createTerminalSlice,
   TERMINAL_PANEL_WIDTH_DEFAULT,
 } from "./terminalSlice";
-import { collectLeafIds } from "../../components/Terminal/pane-tree";
+import { collectLeafIds, makeTab } from "../../components/Terminal/pane-tree";
 import type { TerminalTab } from "../../components/Terminal/pane-tree";
 import type {
+  LocalBranchInfo,
+  RepoLocalActivity,
   TerminalSessionInfo,
   TerminalStatus,
   TerminalPhase,
@@ -58,6 +66,25 @@ function session(
     cols: 80,
     rows: 24,
     status: status(id),
+    ...overrides,
+  };
+}
+
+function branch(
+  name: string,
+  overrides: Partial<LocalBranchInfo> = {},
+): LocalBranchInfo {
+  return {
+    name,
+    isCurrent: false,
+    commitsAhead: 0,
+    hasWorkingTreeChanges: false,
+    lastCommitDate: "",
+    lastCommitMessage: "",
+    lastCommitByUser: false,
+    worktreePath: null,
+    lastModifiedAt: null,
+    workingTreeStats: null,
     ...overrides,
   };
 }
@@ -165,7 +192,8 @@ describe("terminalSlice reducers", () => {
     const next = ingestTerminalList(
       state,
       [session("a", "/r"), session("b", "/r")],
-      "k1",
+      "/r",
+      () => "k1",
     );
     expect(next.terminalIdsByReviewKey!["k1"]).toEqual(["a", "b"]);
     expect(Object.keys(next.terminalSessions!)).toEqual(["a", "b"]);
@@ -186,7 +214,8 @@ describe("terminalSlice reducers", () => {
     const next = ingestTerminalList(
       state,
       [session("a", "/r"), session("b", "/r")],
-      "k1",
+      "/r",
+      () => "k1",
     );
     expect(next.activeTerminalIdByReviewKey!["k1"]).toBe("b");
   });
@@ -201,8 +230,39 @@ describe("terminalSlice reducers", () => {
       ...state,
       ...addTerminalToState(state, session("b", "/r"), "k1"),
     };
-    const next = ingestTerminalList(state, [session("a", "/r")], "k1");
+    const next = ingestTerminalList(
+      state,
+      [session("a", "/r")],
+      "/r",
+      () => "k1",
+    );
     expect(next.terminalIdsByReviewKey!["k1"]).toEqual(["a"]);
+  });
+
+  it("ingestTerminalList re-places a session whose bucket changed", () => {
+    let state = { ...emptyState() };
+    state = {
+      ...state,
+      ...addTerminalToState(state, session("a", "/r"), "stale"),
+    };
+    const next = ingestTerminalList(
+      state,
+      [session("a", "/r")],
+      "/r",
+      () => "owner",
+    );
+    expect(next.terminalIdsByReviewKey!["stale"]).toEqual([]);
+    expect(next.terminalIdsByReviewKey!["owner"]).toEqual(["a"]);
+  });
+
+  it("ingestTerminalList leaves another repo's sessions in place", () => {
+    let state = { ...emptyState() };
+    state = {
+      ...state,
+      ...addTerminalToState(state, session("other", "/elsewhere"), "k2"),
+    };
+    const next = ingestTerminalList(state, [], "/r", () => "k1");
+    expect(next.terminalIdsByReviewKey!["k2"]).toEqual(["other"]);
   });
 });
 
@@ -413,7 +473,7 @@ describe("tab reducers", () => {
     state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
     state = {
       ...state,
-      ...splitTabForTerminal(state, "k1", "tabA", "a", "b", "row"),
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     const tab = state.terminalTabsByReviewKey["k1"][0];
     expect(tab.root).toEqual({
@@ -433,7 +493,7 @@ describe("tab reducers", () => {
     state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
     state = {
       ...state,
-      ...splitTabForTerminal(state, "k1", "tabA", "a", "b", "row"),
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     // focused is "b"; removing it collapses to leaf "a" and re-focuses "a"
     state = { ...state, ...removeTerminalFromTabs(state, "b") };
@@ -459,7 +519,7 @@ describe("tab reducers", () => {
     state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
     state = {
       ...state,
-      ...splitTabForTerminal(state, "k1", "tabA", "a", "b", "row"),
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "a") };
     expect(state.terminalTabsByReviewKey["k1"][0].focused).toBe("a");
@@ -470,7 +530,7 @@ describe("tab reducers", () => {
     state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
     state = {
       ...state,
-      ...splitTabForTerminal(state, "k1", "tabA", "a", "b", "row"),
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     state = {
       ...state,
@@ -516,6 +576,60 @@ describe("panel preferences (dock side + width persistence)", () => {
     const { get } = makeSlice();
     expect(get().terminalDockSide).toBe("left");
     expect(get().terminalPanelWidth).toBe(TERMINAL_PANEL_WIDTH_DEFAULT);
+  });
+
+  it("toggleTabPinned flips the flag and persists the tab's terminal ids", () => {
+    const { get, set, writes } = makeSlice();
+    set({ terminalTabsByReviewKey: { home: [makeTab("tabA", "a")] } });
+
+    get().toggleTabPinned("tabA");
+    expect(get().terminalTabsByReviewKey.home[0].pinned).toBe(true);
+    // Persisted by session id, which is what survives a reload.
+    expect(writes.terminalPinnedIds).toEqual(["a"]);
+
+    get().toggleTabPinned("tabA");
+    expect(get().terminalTabsByReviewKey.home[0].pinned).toBe(false);
+    expect(writes.terminalPinnedIds).toEqual([]);
+  });
+
+  it("pinning leaves the tab in its home bucket", () => {
+    const { get, set } = makeSlice();
+    set({ terminalTabsByReviewKey: { home: [makeTab("tabA", "a")] } });
+    get().toggleTabPinned("tabA");
+    expect(Object.keys(get().terminalTabsByReviewKey)).toEqual(["home"]);
+  });
+
+  it("hydrateTerminalPrefs restores the persisted pinned ids", async () => {
+    const { get, reads } = makeSlice();
+    reads.terminalPinnedIds = ["a"];
+    await get().hydrateTerminalPrefs();
+    expect(get().terminalPinnedIds).toEqual(["a"]);
+  });
+
+  it("setTerminalCheckouts adopts a tab whose worktree disappeared", () => {
+    const { get, set } = makeSlice();
+    const cwd = "/home/.review/worktrees/r/feature";
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd }) },
+      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
+    });
+    // Listing no longer has the feature worktree.
+    get().setTerminalCheckouts(
+      [
+        {
+          repoPath: "/r",
+          repoName: "r",
+          defaultBranch: "main",
+          branches: [branch("main", { isCurrent: true })],
+          recentRemoteBranches: [],
+        },
+      ],
+      [],
+    );
+    expect(
+      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    expect(get().terminalTabsByReviewKey["/r:feature"]).toEqual([]);
   });
 
   it("toggleTerminalDockSide flips the side and persists it", () => {
@@ -589,11 +703,24 @@ describe("panel preferences (dock side + width persistence)", () => {
 });
 
 describe("ingestTabs", () => {
+  /** `known` map for the sessions a case declares. */
+  function knownOf(
+    sessions: TerminalSessionInfo[],
+  ): Record<string, TerminalSessionInfo> {
+    return Object.fromEntries(sessions.map((s) => [s.id, s]));
+  }
+
+  const unpinned = () => false;
+
   it("creates a single-leaf tab for each un-placed session (deterministic id)", () => {
+    const sessions = [session("a", "/r"), session("b", "/r")];
     const next = ingestTabs(
       emptyTabState(),
-      [session("a", "/r"), session("b", "/r")],
-      "k1",
+      sessions,
+      knownOf(sessions),
+      "/r",
+      () => "k1",
+      unpinned,
     );
     const tabs = next.terminalTabsByReviewKey!["k1"];
     expect(tabs.map((t) => t.id)).toEqual(["a", "b"]);
@@ -606,13 +733,17 @@ describe("ingestTabs", () => {
     state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
     state = {
       ...state,
-      ...splitTabForTerminal(state, "k1", "tabA", "a", "b", "row"),
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     // both "a" and "b" already live in tabA; ingesting them adds no new tabs
+    const sessions = [session("a", "/r"), session("b", "/r")];
     const next = ingestTabs(
       state,
-      [session("a", "/r"), session("b", "/r")],
-      "k1",
+      sessions,
+      knownOf(sessions),
+      "/r",
+      () => "k1",
+      unpinned,
     );
     expect(next.terminalTabsByReviewKey!["k1"].map((t) => t.id)).toEqual([
       "tabA",
@@ -624,12 +755,236 @@ describe("ingestTabs", () => {
     state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
     state = {
       ...state,
-      ...splitTabForTerminal(state, "k1", "tabA", "a", "b", "row"),
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     // "b" is gone from the authoritative list → collapse tabA to leaf "a"
-    const next = ingestTabs(state, [session("a", "/r")], "k1");
+    const gone = [session("a", "/r"), session("b", "/r")];
+    const next = ingestTabs(
+      state,
+      [session("a", "/r")],
+      knownOf(gone),
+      "/r",
+      () => "k1",
+      unpinned,
+    );
     const tabs = next.terminalTabsByReviewKey!["k1"];
     expect(tabs).toHaveLength(1);
     expect(tabs[0].root).toEqual({ type: "leaf", terminalId: "a" });
+  });
+
+  it("re-homes a restored tab to the bucket its cwd belongs to", () => {
+    let state = { ...emptyTabState() };
+    // Created while a different row was selected — the bug this fixes.
+    state = { ...state, ...addTabForTerminal(state, "a", "selected", "tabA") };
+    const sessions = [
+      session("a", "/r", { cwd: "/home/.review/worktrees/r/feature" }),
+    ];
+    const next = ingestTabs(
+      state,
+      sessions,
+      knownOf(sessions),
+      "/r",
+      () => "owner",
+      unpinned,
+    );
+    expect(next.terminalTabsByReviewKey!["selected"]).toEqual([]);
+    expect(next.terminalTabsByReviewKey!["owner"].map((t) => t.id)).toEqual([
+      "tabA",
+    ]);
+  });
+
+  it("restores a tab's pinned flag from the persisted terminal ids", () => {
+    const sessions = [session("a", "/r")];
+    const next = ingestTabs(
+      emptyTabState(),
+      sessions,
+      knownOf(sessions),
+      "/r",
+      () => "k1",
+      (id) => id === "a",
+    );
+    expect(next.terminalTabsByReviewKey!["k1"][0].pinned).toBe(true);
+  });
+
+  it("leaves another repo's tabs untouched", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "z", "k2", "tabZ") };
+    const other = [session("z", "/elsewhere")];
+    const next = ingestTabs(
+      state,
+      [],
+      knownOf(other),
+      "/r",
+      () => "k1",
+      unpinned,
+    );
+    expect(next.terminalTabsByReviewKey!["k2"].map((t) => t.id)).toEqual([
+      "tabZ",
+    ]);
+  });
+});
+
+describe("checkout attribution", () => {
+  // Review-managed worktrees live under ~/.review/worktrees, outside the repo.
+  const FEATURE_WT = "/home/.review/worktrees/r/feature";
+  const activity: RepoLocalActivity[] = [
+    {
+      repoPath: "/r",
+      repoName: "r",
+      defaultBranch: "main",
+      branches: [
+        branch("main", { isCurrent: true }),
+        branch("feature", { worktreePath: FEATURE_WT }),
+      ],
+      recentRemoteBranches: [],
+    },
+  ];
+
+  it("buildCheckoutIndex maps each checkout to the row that owns it", () => {
+    const index = buildCheckoutIndex(activity);
+    expect(index["/r"].rootKey).toBe("/r:main");
+    expect(index["/r"].owners).toEqual({
+      "/r": "/r:main",
+      [FEATURE_WT]: "/r:feature",
+    });
+    expect(index["/r"].roots).toEqual(["/r", FEATURE_WT]);
+  });
+
+  it("buildCheckoutIndex includes worktrees owned by non-branch reviews", () => {
+    const index = buildCheckoutIndex(activity, [
+      {
+        repoPath: "/r",
+        repoName: "r",
+        ref: "pr-7",
+        worktreePath: "/home/.review/worktrees/r/pr-7",
+        tier: "materialized",
+        totalHunks: 0,
+        trustedHunks: 0,
+        approvedHunks: 0,
+        reviewedHunks: 0,
+        rejectedHunks: 0,
+        savedForLaterHunks: 0,
+        state: null,
+        updatedAt: "",
+      },
+    ]);
+    expect(index["/r"].owners["/home/.review/worktrees/r/pr-7"]).toBe(
+      "/r:pr-7",
+    );
+  });
+
+  it("sessionReviewKey attributes a cwd to its innermost checkout", () => {
+    const index = buildCheckoutIndex(activity);
+    expect(sessionReviewKey(index, "/r", `${FEATURE_WT}/src`, "x")).toBe(
+      "/r:feature",
+    );
+    expect(sessionReviewKey(index, "/r", "/r/src", "x")).toBe("/r:main");
+  });
+
+  it("sessionReviewKey adopts an orphan into the repo's root bucket", () => {
+    const index = buildCheckoutIndex(activity);
+    // The worktree was removed; the shell is still running in a gone directory.
+    expect(
+      sessionReviewKey(index, "/r", "/home/.review/worktrees/r/removed", "x"),
+    ).toBe("/r:main");
+  });
+
+  it("sessionReviewKey falls back for a repo the index has never seen", () => {
+    expect(sessionReviewKey({}, "/r", "/r", "fallback")).toBe("fallback");
+  });
+
+  it("isOrphanedSession is true only for a cwd outside every checkout", () => {
+    const index = buildCheckoutIndex(activity);
+    expect(isOrphanedSession(index, "/r", FEATURE_WT)).toBe(false);
+    expect(
+      isOrphanedSession(index, "/r", "/home/.review/worktrees/r/removed"),
+    ).toBe(true);
+    // Unknown repo: an empty index is not evidence of anything.
+    expect(isOrphanedSession({}, "/r", "/r/gone")).toBe(false);
+  });
+
+  it("rehomeTabs moves an orphaned tab to the root bucket", () => {
+    let state = { ...emptyTabState() };
+    state = {
+      ...state,
+      ...addTabForTerminal(state, "a", "/r:feature", "tabA"),
+    };
+    const sessions = {
+      a: session("a", "/r", { cwd: "/home/.review/worktrees/r/feature" }),
+    };
+    // The feature worktree is gone from the listing.
+    const index = buildCheckoutIndex([
+      {
+        repoPath: "/r",
+        repoName: "r",
+        defaultBranch: "main",
+        branches: [branch("main", { isCurrent: true })],
+        recentRemoteBranches: [],
+      },
+    ]);
+    const next = rehomeTabs(state, sessions, (s) =>
+      sessionReviewKey(index, s.repoPath, s.cwd, ""),
+    );
+    expect(next.terminalTabsByReviewKey!["/r:feature"]).toEqual([]);
+    expect(next.terminalTabsByReviewKey!["/r:main"].map((t) => t.id)).toEqual([
+      "tabA",
+    ]);
+    expect(next.activeTabIdByReviewKey!["/r:main"]).toBe("tabA");
+  });
+
+  it("rehomeTabs is a no-op when nothing moved", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "/r:main", "tabA") };
+    const sessions = { a: session("a", "/r", { cwd: "/r" }) };
+    expect(rehomeTabs(state, sessions, () => "/r:main")).toEqual({});
+  });
+});
+
+describe("mergeVisibleTabs", () => {
+  function pinnedTab(id: string, terminalId: string): TerminalTab {
+    return { ...makeTab(id, terminalId), pinned: true };
+  }
+
+  it("shows the current key's tabs plus every pinned tab, pinned first", () => {
+    const tabsByKey = {
+      k1: [makeTab("own", "a")],
+      k2: [pinnedTab("far", "b"), makeTab("hidden", "c")],
+    };
+    expect(mergeVisibleTabs(tabsByKey, "k1")).toEqual([
+      { tab: tabsByKey.k2[0], reviewKey: "k2" },
+      { tab: tabsByKey.k1[0], reviewKey: "k1" },
+    ]);
+  });
+
+  it("does not show a pinned tab twice in its own bucket", () => {
+    const tabsByKey = { k1: [pinnedTab("own", "a")] };
+    const visible = mergeVisibleTabs(tabsByKey, "k1");
+    expect(visible.map((v) => v.tab.id)).toEqual(["own"]);
+    expect(visible[0].reviewKey).toBe("k1");
+  });
+
+  it("keeps a pinned tab's home key so unpinning is lossless", () => {
+    const tabsByKey = { home: [pinnedTab("t", "a")] };
+    expect(mergeVisibleTabs(tabsByKey, "elsewhere")[0].reviewKey).toBe("home");
+  });
+});
+
+describe("resolveActiveTabIds", () => {
+  it("keeps a key pointed at a pinned tab that lives elsewhere", () => {
+    const tabsByKey = {
+      home: [{ ...makeTab("t", "a"), pinned: true }],
+      other: [],
+    };
+    const next = resolveActiveTabIds(tabsByKey, { other: "t" });
+    expect(next.other).toBe("t");
+  });
+
+  it("re-picks when the remembered tab is gone", () => {
+    const next = resolveActiveTabIds({ k1: [makeTab("b", "b")] }, { k1: "a" });
+    expect(next.k1).toBe("b");
+  });
+
+  it("nulls a key whose bucket emptied", () => {
+    expect(resolveActiveTabIds({ k1: [] }, { k1: "a" }).k1).toBeNull();
   });
 });

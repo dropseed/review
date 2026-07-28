@@ -25,14 +25,24 @@ export interface TerminalTab {
   root: PaneNode;
   /** terminalId of the focused leaf in this tab. */
   focused: string;
+  /**
+   * Shown from every repo and worktree, not just its own bucket. The tab still
+   * belongs to one key — pinning changes where it is *visible*, never where it
+   * lives, so unpinning is lossless.
+   */
+  pinned?: boolean;
 }
 
 export function leaf(terminalId: string): PaneNode {
   return { type: "leaf", terminalId };
 }
 
-export function makeTab(id: string, terminalId: string): TerminalTab {
-  return { id, root: leaf(terminalId), focused: terminalId };
+export function makeTab(
+  id: string,
+  terminalId: string,
+  pinned = false,
+): TerminalTab {
+  return { id, root: leaf(terminalId), focused: terminalId, pinned };
 }
 
 /** Even fractions for `n` children (sums to 1). */

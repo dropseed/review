@@ -246,6 +246,33 @@ export function CodexIcon({ className = "h-3.5 w-3.5" }: IconProps) {
   );
 }
 
+/**
+ * Push pin, for something kept in view wherever you go. Filled when the thing
+ * is pinned, outlined when pinning is merely on offer — same silhouette either
+ * way, so the affordance and its result read as one control.
+ */
+export function PinIcon({
+  className = "h-3 w-3",
+  filled = false,
+}: IconProps & { filled?: boolean }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {/* Head and shaft: a flared pin seen head-on, driven straight down. */}
+      <path d="M9 3.5h6l-1 5 3 3.5H7l3-3.5-1-5Z" />
+      <line x1="12" y1="12" x2="12" y2="20.5" />
+    </svg>
+  );
+}
+
 /** Circular arrow, for re-reading something on demand. */
 export function RefreshIcon({ className = "h-3 w-3" }: IconProps) {
   return (

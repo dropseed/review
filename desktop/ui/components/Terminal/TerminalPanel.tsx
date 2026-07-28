@@ -1,8 +1,10 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { makeReviewKey } from "../../utils/review-key";
 import {
+  isOrphanedSession,
+  mergeVisibleTabs,
+  panelReviewKey,
   terminalSeverity,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
@@ -14,9 +16,10 @@ import {
 } from "../ui/dropdown-menu";
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
 import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
-import { disposeTerminal } from "./registry";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
+import { closeTerminalPane, closeTerminalTab } from "./close";
 import { PaneTree, PaneButton } from "./PaneTree";
+import { PinIcon, WarningIcon } from "../ui/icons";
 import type { TerminalStatus } from "../../types";
 
 export function TerminalPanel(): ReactNode {
@@ -25,6 +28,7 @@ export function TerminalPanel(): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const terminalExited = useReviewStore((s) => s.terminalExited);
+  const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
   const terminalTabsByReviewKey = useReviewStore(
     (s) => s.terminalTabsByReviewKey,
   );
@@ -36,10 +40,9 @@ export function TerminalPanel(): ReactNode {
 
   const startTerminal = useReviewStore((s) => s.startTerminal);
   const splitTerminal = useReviewStore((s) => s.splitTerminal);
-  const killTerminal = useReviewStore((s) => s.killTerminal);
-  const removeTerminal = useReviewStore((s) => s.removeTerminal);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
   const moveTab = useReviewStore((s) => s.moveTab);
+  const toggleTabPinned = useReviewStore((s) => s.toggleTabPinned);
   const setFocusedTerminalPane = useReviewStore(
     (s) => s.setFocusedTerminalPane,
   );
@@ -62,18 +65,27 @@ export function TerminalPanel(): ReactNode {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
-  const reviewKey = repoPath ? makeReviewKey(repoPath, reviewRef ?? "") : "";
+  const reviewKey = repoPath
+    ? panelReviewKey(terminalCheckouts, repoPath, reviewRef)
+    : "";
 
-  const tabs = useMemo<TerminalTab[]>(
-    () => (reviewKey ? (terminalTabsByReviewKey[reviewKey] ?? []) : []),
+  // What the strip shows: this review's own tabs, plus every pinned tab from
+  // anywhere. Each entry carries the key that *owns* the tab, which is not the
+  // key we're viewing when the tab is a pinned visitor — every store call about
+  // a tab has to use its home key or the tab would silently change address.
+  const visibleTabs = useMemo(
+    () =>
+      reviewKey ? mergeVisibleTabs(terminalTabsByReviewKey, reviewKey) : [],
     [reviewKey, terminalTabsByReviewKey],
   );
-  const activeTabId = activeTabIdByReviewKey[reviewKey] ?? tabs[0]?.id ?? null;
+  const activeTabId =
+    activeTabIdByReviewKey[reviewKey] ?? visibleTabs[0]?.tab.id ?? null;
 
   // ⌘D / ⇧⌘D pane splits are dispatched by useKeyboardNavigation, which routes
   // the chord to whichever pane has focus.
 
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
+  const activeTab =
+    visibleTabs.find((v) => v.tab.id === activeTabId)?.tab ?? null;
 
   if (!repoPath) return null;
 
@@ -105,40 +117,47 @@ export function TerminalPanel(): ReactNode {
   };
 
   const handleSplit = (
+    homeKey: string,
     tabId: string,
     targetTerminalId: string,
     direction: SplitDirection,
   ) => {
-    void splitTerminal(reviewKey, tabId, targetTerminalId, direction);
+    void splitTerminal(homeKey, tabId, targetTerminalId, direction);
   };
 
   /** Split the active tab's focused pane; with no tab open, start one. */
   const handleSplitActive = (direction: SplitDirection) => {
-    if (!activeTab) {
+    const active = visibleTabs.find((v) => v.tab.id === activeTabId);
+    if (!active) {
       handleNewTab();
       return;
     }
-    handleSplit(activeTab.id, activeTab.focused, direction);
+    handleSplit(active.reviewKey, active.tab.id, active.tab.focused, direction);
+  };
+
+  /**
+   * Drag-to-reorder within the strip. Only tabs sharing a home can trade
+   * places: the order lives per bucket, so dragging a pinned visitor past a
+   * local tab has no order to write.
+   */
+  const reorderVisibleTabs = (from: number, to: number) => {
+    const source = visibleTabs[from];
+    const target = visibleTabs[to];
+    if (!source || !target || source.reviewKey !== target.reviewKey) return;
+    const bucket = terminalTabsByReviewKey[source.reviewKey] ?? [];
+    moveTab(
+      source.reviewKey,
+      bucket.findIndex((t) => t.id === source.tab.id),
+      bucket.findIndex((t) => t.id === target.tab.id),
+    );
   };
 
   const handleClosePane = (id: string) => {
-    // Update store state first so the pane unmounts (and unsubscribes from
-    // output), THEN dispose the xterm — deferred to the next macrotask so the
-    // React unmount has committed. Disposing synchronously here would tear down
-    // the terminal while the pane is still mounted and PTY output could still
-    // arrive at it (the pane's write is also guarded, defense in depth).
-    const scheduleDispose = () => setTimeout(() => disposeTerminal(id), 0);
-    const isDead = id in terminalExited;
-    if (isDead) {
-      removeTerminal(id);
-      scheduleDispose();
-    } else {
-      void killTerminal(id).finally(scheduleDispose);
-    }
+    void closeTerminalPane(id);
   };
 
   const handleCloseTab = (tab: TerminalTab) => {
-    for (const id of collectLeafIds(tab.root)) handleClosePane(id);
+    void closeTerminalTab(tab);
   };
 
   return (
@@ -148,7 +167,7 @@ export function TerminalPanel(): ReactNode {
       {/* Tab strip */}
       <div className="flex items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
         <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
-          {tabs.map((tab, index) => {
+          {visibleTabs.map(({ tab }, index) => {
             const leafIds = collectLeafIds(tab.root);
             const leafStatuses = leafIds
               .map((id) => terminalStatuses[id])
@@ -165,6 +184,15 @@ export function TerminalPanel(): ReactNode {
             const isActive = tab.id === activeTabId;
             const isDropTarget =
               dragIndex !== null && dragIndex !== index && dropIndex === index;
+            // Its directory is gone but the shell is still alive — say so, so
+            // it isn't mistaken for a terminal in a worktree that still exists.
+            const orphaned =
+              focusedSession != null &&
+              isOrphanedSession(
+                terminalCheckouts,
+                focusedSession.repoPath,
+                focusedSession.cwd,
+              );
             return (
               <div
                 key={tab.id}
@@ -186,7 +214,7 @@ export function TerminalPanel(): ReactNode {
                 onDrop={(e) => {
                   if (dragIndex === null) return;
                   e.preventDefault();
-                  moveTab(reviewKey, dragIndex, index);
+                  reorderVisibleTabs(dragIndex, index);
                   setDragIndex(null);
                   setDropIndex(null);
                 }}
@@ -213,6 +241,21 @@ export function TerminalPanel(): ReactNode {
                     )}
                   />
                 )}
+                {/* A pinned tab wears its marker at rest — it is the only
+                    thing distinguishing a visitor from a local tab — and the
+                    marker is the control that takes it off again. */}
+                {tab.pinned && (
+                  <button
+                    type="button"
+                    onClick={() => toggleTabPinned(tab.id)}
+                    aria-label="Unpin tab"
+                    title="Unpin — show only in its own repo"
+                    aria-pressed
+                    className="mr-1 shrink-0 text-fg-muted hover:text-fg-secondary"
+                  >
+                    <PinIcon className="h-2.5 w-2.5" filled />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveTab(reviewKey, tab.id)}
@@ -227,35 +270,64 @@ export function TerminalPanel(): ReactNode {
                     )}
                   />
                   <span className="max-w-[12rem] truncate">{title}</span>
+                  {orphaned && (
+                    <span
+                      title={`${basename(
+                        focusedSession?.cwd ?? "",
+                      )} no longer exists — this shell is still running in a deleted directory`}
+                      aria-label="Directory no longer exists"
+                      className="shrink-0 text-status-rejected"
+                    >
+                      <WarningIcon className="h-3 w-3" />
+                    </span>
+                  )}
                   {leafIds.length > 1 && (
                     <span className="text-xxs text-fg-faint tabular-nums">
                       {leafIds.length}
                     </span>
                   )}
                 </button>
-                {/* Out of flow, so a tab is no wider for having a close button
-                    and doesn't jump when one appears. It fades in over the
+                {/* Out of flow, so a tab is no wider for having controls and
+                    doesn't jump when they appear. They fade in over the
                     trailing edge, carrying the tab's own background as a
-                    gradient so a long title reads under it rather than
-                    through it. */}
-                <button
-                  type="button"
-                  onClick={() => handleCloseTab(tab)}
-                  aria-label="Close tab"
+                    gradient so a long title reads under them rather than
+                    through them. */}
+                <div
                   className={clsx(
-                    "absolute inset-y-0 right-0 flex w-7 items-center justify-end rounded-r-md pr-1.5",
+                    "absolute inset-y-0 right-0 flex items-center justify-end gap-0.5 rounded-r-md pr-1.5 pl-3",
                     "bg-gradient-to-l to-transparent opacity-0 transition-opacity",
                     // Invisible means inert: at rest this strip must not eat
                     // clicks meant for the tab it's sitting on top of.
                     "pointer-events-none group-hover:pointer-events-auto",
-                    "text-fg-faint hover:text-fg-secondary group-hover:opacity-100",
+                    "text-fg-faint group-hover:opacity-100",
                     isActive
                       ? "from-surface-raised via-surface-raised"
                       : "from-surface-inset via-surface-inset",
                   )}
                 >
-                  ×
-                </button>
+                  {/* Only offered here while unpinned — once pinned, the
+                      marker beside the title is the control. */}
+                  {!tab.pinned && (
+                    <button
+                      type="button"
+                      onClick={() => toggleTabPinned(tab.id)}
+                      aria-label="Pin tab"
+                      title="Pin — keep visible in every repo"
+                      aria-pressed={false}
+                      className="hover:text-fg-secondary"
+                    >
+                      <PinIcon className="h-3 w-3" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleCloseTab(tab)}
+                    aria-label="Close tab"
+                    className="hover:text-fg-secondary"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -330,12 +402,12 @@ export function TerminalPanel(): ReactNode {
       {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming.
           The panes own the only inner gutter, so nothing is inset here. */}
       <div className="relative flex-1 overflow-hidden">
-        {tabs.length === 0 ? (
+        {visibleTabs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-fg-faint">
             No terminals — use + to start one.
           </div>
         ) : (
-          tabs.map((tab) => (
+          visibleTabs.map(({ tab, reviewKey: homeKey }) => (
             <div
               key={tab.id}
               className={clsx(
@@ -346,12 +418,16 @@ export function TerminalPanel(): ReactNode {
               <PaneTree
                 node={tab.root}
                 path={[]}
-                reviewKey={reviewKey}
+                // The tab's own key, not the one we're viewing: focus and split
+                // sizes are stored where the tab lives.
+                reviewKey={homeKey}
                 tabId={tab.id}
                 focusedId={tab.focused}
                 tabActive={tab.id === activeTabId}
-                onFocus={(id) => setFocusedTerminalPane(reviewKey, tab.id, id)}
-                onSplit={(id, direction) => handleSplit(tab.id, id, direction)}
+                onFocus={(id) => setFocusedTerminalPane(homeKey, tab.id, id)}
+                onSplit={(id, direction) =>
+                  handleSplit(homeKey, tab.id, id, direction)
+                }
                 onClose={handleClosePane}
               />
             </div>

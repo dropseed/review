@@ -1,6 +1,31 @@
 import { useEffect } from "react";
 import { getApiClient, isTauriEnvironment } from "../api";
+import { getPlatformServices } from "../platform";
 import { toast } from "sonner";
+
+/**
+ * Convert a drag-drop position to CSS pixels within the webview.
+ *
+ * Tauri types this position as physical, but only some platforms make it so.
+ * On macOS wry reads it from AppKit — `NSDraggingInfo.draggingLocation` against
+ * the web view's `frame` — and AppKit coordinates are points, i.e. already CSS
+ * pixels; tauri-runtime-wry then wraps the number in a `PhysicalPosition`
+ * without scaling it. Windows uses `ScreenToClient`, which really is device
+ * pixels. Dividing unconditionally therefore halved every coordinate on a
+ * Retina display, which is what put drops in the wrong pane.
+ *
+ * The origin is the web view's own top-left on both, so no title-bar offset is
+ * involved: AppKit's window base coordinate system starts at the bottom-left
+ * corner, which the title bar (drawn at the top) does not move, and the web
+ * view fills the content view either way.
+ */
+function toCssPixels(
+  position: { x: number; y: number },
+  scaled: boolean,
+): { x: number; y: number } {
+  const ratio = scaled ? window.devicePixelRatio || 1 : 1;
+  return { x: position.x / ratio, y: position.y / ratio };
+}
 
 /**
  * Dropping files onto a terminal pane types their paths at the prompt, the way
@@ -16,6 +41,7 @@ import { toast } from "sonner";
 export function useTerminalFileDrop(): void {
   useEffect(() => {
     if (!isTauriEnvironment()) return;
+    const scaled = getPlatformServices().window.getPlatformName() !== "macos";
     let unlisten: (() => void) | null = null;
     let disposed = false;
     let hovered: HTMLElement | null = null;
@@ -46,9 +72,7 @@ export function useTerminalFileDrop(): void {
      * mid-drag, so one measurement per drag is enough.
      */
     const paneAt = (position: { x: number; y: number }): HTMLElement | null => {
-      const ratio = window.devicePixelRatio || 1;
-      const x = position.x / ratio;
-      const y = position.y / ratio;
+      const { x, y } = toCssPixels(position, scaled);
       return (
         panes.find(
           ({ rect }) =>
@@ -79,7 +103,14 @@ export function useTerminalFileDrop(): void {
           setHovered(null);
           panes = [];
           const terminalId = pane?.dataset.terminalId;
-          if (!terminalId || payload.paths.length === 0) return;
+          if (!terminalId) return;
+          if (payload.paths.length === 0) {
+            // A drag with no filesystem path — an image dragged out of a
+            // browser, say. Nothing to type at a prompt, but silence here reads
+            // as the drop having been lost.
+            toast.error("Only files can be dropped into a terminal");
+            return;
+          }
           const text = payload.paths.map(quoteShellPath).join(" ") + " ";
           getApiClient()
             .terminalWrite(terminalId, text)

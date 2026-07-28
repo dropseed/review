@@ -51,10 +51,13 @@ export function useTerminalEvents(): void {
       .then((sessions) => {
         if (cancelled) return;
         const store = useReviewStore.getState();
-        // The active review's bucket drives the panel; sessions from elsewhere
-        // only need to reach the flat maps that badges read.
+        // Sessions in this repo are placed in the bucket their checkout owns;
+        // sessions from elsewhere only need to reach the flat maps that badges
+        // read. `reviewKey` is just the fallback for a repo whose checkout
+        // listing hasn't loaded yet.
         store.ingestTerminalList(
           sessions.filter((s) => s.repoPath === repoPath),
+          repoPath,
           reviewKey,
         );
         for (const session of sessions) {

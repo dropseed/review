@@ -3,11 +3,8 @@ import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getAllHunksFromState } from "../stores/selectors/hunks";
-import { makeReviewKey } from "../utils/review-key";
-import {
-  collectLeafIds,
-  type SplitDirection,
-} from "../components/Terminal/pane-tree";
+import { type SplitDirection } from "../components/Terminal/pane-tree";
+import { focusedTerminalTab } from "../components/Terminal/close";
 import {
   buildSidebarTree,
   flattenSidebarTree,
@@ -56,24 +53,21 @@ function activateSidebarItem(
  * Split the terminal pane that currently has focus, if any. Returns whether it
  * handled the keystroke, so the caller can fall through to the diff-view split.
  *
- * Focus is located through the `data-terminal-id` each pane carries, rather
- * than a ref the panel would have to publish — the panes are the things that
- * can be focused, so they're the thing to ask.
+ * The tab is resolved from the focused pane rather than from the review being
+ * viewed: a pinned tab is shown from every repo, so "the tab on screen" and
+ * "the tab in this review's bucket" are not the same question.
  */
 function splitFocusedTerminal(direction: SplitDirection): boolean {
-  const pane =
-    document.activeElement?.closest<HTMLElement>("[data-terminal-id]");
-  const terminalId = pane?.dataset.terminalId;
-  if (!terminalId) return false;
-
-  const state = useReviewStore.getState();
-  const reviewKey = makeReviewKey(state.repoPath ?? "", state.reviewRef ?? "");
-  const tab = state.terminalTabsByReviewKey[reviewKey]?.find((t) =>
-    collectLeafIds(t.root).includes(terminalId),
-  );
-  if (!tab) return false;
-
-  void state.splitTerminal(reviewKey, tab.id, terminalId, direction);
+  const focused = focusedTerminalTab();
+  if (!focused) return false;
+  void useReviewStore
+    .getState()
+    .splitTerminal(
+      focused.reviewKey,
+      focused.tab.id,
+      focused.terminalId,
+      direction,
+    );
   return true;
 }
 

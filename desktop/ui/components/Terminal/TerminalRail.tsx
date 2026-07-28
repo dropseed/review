@@ -1,8 +1,9 @@
 import { type ReactNode, useMemo } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { makeReviewKey } from "../../utils/review-key";
 import {
+  mergeVisibleTabs,
+  panelReviewKey,
   terminalSeverity,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
@@ -29,6 +30,7 @@ export function TerminalRail(): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const terminalExited = useReviewStore((s) => s.terminalExited);
+  const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
   const terminalTabsByReviewKey = useReviewStore(
     (s) => s.terminalTabsByReviewKey,
   );
@@ -36,10 +38,17 @@ export function TerminalRail(): ReactNode {
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
 
-  const reviewKey = repoPath ? makeReviewKey(repoPath, reviewRef ?? "") : "";
+  const reviewKey = repoPath
+    ? panelReviewKey(terminalCheckouts, repoPath, reviewRef)
+    : "";
 
+  // The same set the open panel would show, so collapsing it doesn't quietly
+  // hide the pinned terminals you kept in view.
   const tabs = useMemo<TerminalTab[]>(
-    () => (reviewKey ? (terminalTabsByReviewKey[reviewKey] ?? []) : []),
+    () =>
+      reviewKey
+        ? mergeVisibleTabs(terminalTabsByReviewKey, reviewKey).map((v) => v.tab)
+        : [],
     [reviewKey, terminalTabsByReviewKey],
   );
 
