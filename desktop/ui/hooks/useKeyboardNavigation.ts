@@ -194,8 +194,7 @@ export function useKeyboardNavigation() {
             state.sidebarPinned,
             state.sidebarDismissed,
             Date.now(),
-            state.reviewSortOrder,
-            state.reviewDiffStats,
+            state.repoPath,
           );
           const items = rowsToItems(
             flattenSidebarTree(

@@ -8,9 +8,26 @@
  * actions buys the same no-shift behaviour and hands the label the full row.
  */
 
-/** Hover-revealed actions, overlaid on the row's trailing edge. */
+/**
+ * Hover-revealed actions, overlaid on the row's trailing edge.
+ *
+ * Anchored to the left edge of the row's status cluster (`ROW_STATUS`, which
+ * must be the positioning parent) rather than to the row itself, so the two
+ * never occupy the same pixels. They used to: the status faded out on hover to
+ * make room, which works for the inert markers but not for the terminal badge,
+ * whose popover opens on *click* — the pointer has to be on the row to reach
+ * it, so fading on hover meant it could never be opened at all. What the
+ * actions cover instead is the tail of the label, which already fades for them
+ * (`ROW_LABEL_HOVER_FADE`).
+ */
 export const ROW_ACTIONS =
-  "absolute inset-y-0 right-2.5 flex items-center gap-0.5 transition-opacity duration-100";
+  "absolute right-full top-1/2 -translate-y-1/2 mr-1.5 flex items-center gap-0.5 transition-opacity duration-100";
+
+/**
+ * The status cluster at the row's trailing edge: the positioning parent for
+ * `ROW_ACTIONS`, and never faded — see above.
+ */
+export const ROW_STATUS = "relative flex shrink-0 items-center gap-1.5";
 
 /**
  * Fades a label out where the overlaid actions sit. Apply only to a label that

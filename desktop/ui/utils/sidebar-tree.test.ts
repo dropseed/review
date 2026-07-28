@@ -86,6 +86,7 @@ function build(
   reviews: GlobalReviewSummary[] = [],
   pinned: string[] = [],
   dismissed: string[] = [],
+  openRepoPath: string | null = null,
 ): RepoNode[] {
   return buildSidebarTree(
     activity,
@@ -94,6 +95,7 @@ function build(
     pinned,
     dismissed,
     NOW,
+    openRepoPath,
   );
 }
 
@@ -251,6 +253,54 @@ describe("liveness rules", () => {
     expect(refs(node.rest)).toContain("theirs");
   });
 
+  it("keeps the repo this window has open live, however quiet it is", () => {
+    // Clean default branch, nobody's own commit for a month, no review: the
+    // exact repo you get from `review .` on a fresh clone. Every other rule
+    // says quiet, and quiet repos are hidden — including, without this, the
+    // one on screen.
+    const activity = [
+      repo("/r", [branch({ name: "master", isCurrent: true })]),
+    ];
+
+    const [open] = build(activity, [], [], [], "/r");
+    expect(open.head?.reasons).toContain("open-repo");
+    expect(open.head?.live).toBe(true);
+    expect(open.isActive).toBe(true);
+    // The repro: with `showInactiveRepos` off, an inactive repo is dropped
+    // from the list the sidebar walks, not just demoted.
+    expect(refs(flattenSidebarTree([open], {}, {}, false))).toEqual(["master"]);
+  });
+
+  it("leaves that same repo quiet when it isn't the one open", () => {
+    const activity = [
+      repo("/r", [branch({ name: "master", isCurrent: true })]),
+    ];
+
+    const [other] = build(activity, [], [], [], "/somewhere-else");
+    expect(other.head?.reasons).toEqual([]);
+    expect(other.isActive).toBe(false);
+    expect(flattenSidebarTree([other], {}, {}, false)).toEqual([]);
+  });
+
+  it("keeps an open repo active even with no checkout and a dismissed head", () => {
+    // A repo known only through reviews has no head row to carry the reason,
+    // and a dismissed head row would refuse it — neither may hide the repo
+    // the window is displaying.
+    const [bare] = build([repo("/r", [])], [], [], [], "/r");
+    expect(bare.head).toBeNull();
+    expect(bare.isActive).toBe(true);
+
+    const [dismissed] = build(
+      [repo("/r", [branch({ name: "master", isCurrent: true })])],
+      [],
+      [],
+      ["/r:master"],
+      "/r",
+    );
+    expect(dismissed.head?.live).toBe(false);
+    expect(dismissed.isActive).toBe(true);
+  });
+
   it("pins a row live and dismisses one out", () => {
     const activity = [
       repo("/r", [
@@ -298,6 +348,18 @@ describe("row ranking", () => {
       ["/r:p2", "/r:p1"],
     );
     expect(refs(node.live).slice(0, 2)).toEqual(["p2", "p1"]);
+  });
+
+  it("ranks equal-presence rows by recency, with size no longer a factor", () => {
+    // Ordering takes no sort-order input any more. The menu that set one is
+    // gone, so a persisted "size" would have kept reordering rows with nothing
+    // left to change it back: presence, then recency, then key — full stop.
+    const reviews = [
+      review("/r", "huge", 5000, { totalHunks: 900 }),
+      review("/r", "tiny", 1000, { totalHunks: 1 }),
+    ];
+    const [node] = build([repo("/r", [])], reviews);
+    expect(refs(node.live)).toEqual(["tiny", "huge"]);
   });
 
   it("ranks checkouts above reviews above bare refs", () => {

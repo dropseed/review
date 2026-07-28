@@ -23,10 +23,8 @@ import {
   type RepoLocalActivity,
   type RecentRemoteBranch,
   type GlobalReviewSummary,
-  type DiffShortStat,
 } from "../types";
 import { makeReviewKey } from "./review-key";
-import type { ReviewSortOrder } from "../stores/slices/preferencesSlice";
 
 const DAY_MS = 86_400_000;
 /** A review touched within this window keeps its row live. */
@@ -77,9 +75,19 @@ export type SidebarEntry =
  * the branch that merely happens to be at the repo root: every repo has one of
  * those forever, so counting it made every registered repo permanently
  * "Active" and the section meant nothing.
+ *
+ * `open-repo` is the exception that keeps that rule safe: quiet repos are
+ * *hidden*, not merely demoted, so without it the repo you are looking at
+ * right now can drop out of its own sidebar — a clean default branch you
+ * opened with `review .`, or a fresh clone, satisfies none of the other rules.
  */
 export type LiveReason =
-  "pinned" | "checkout" | "uncommitted" | "recent-review" | "recent-own-commit";
+  | "pinned"
+  | "open-repo"
+  | "checkout"
+  | "uncommitted"
+  | "recent-review"
+  | "recent-own-commit";
 
 /**
  * How present a row is locally — the tier ladder, as a display concern.
@@ -172,9 +180,9 @@ function isLive(
 /**
  * Build the repo-rooted sidebar tree.
  *
- * `reviewSortOrder` only reorders rows that rank equally on presence — the
- * ladder itself is not a user preference, since a checkout you can open a
- * terminal in outranks a ref you have never fetched regardless of taste.
+ * `openRepoPath` is the repo this window currently has open. It's an input
+ * because liveness is otherwise derived from git and review state alone, and
+ * none of those rules can see "you are looking at it".
  */
 export function buildSidebarTree(
   localActivity: RepoLocalActivity[],
@@ -183,8 +191,7 @@ export function buildSidebarTree(
   pinnedKeys: string[],
   dismissedKeys: string[],
   now: number,
-  reviewSortOrder: ReviewSortOrder = "updated",
-  reviewDiffStats: Record<string, DiffShortStat> = {},
+  openRepoPath: string | null = null,
 ): RepoNode[] {
   const pinnedSet = new Set(pinnedKeys);
   const dismissedSet = new Set(dismissedKeys);
@@ -256,6 +263,12 @@ export function buildSidebarTree(
 
       const reasons: LiveReason[] = [];
       if (pinnedSet.has(key)) reasons.push("pinned");
+      // The repo you have open is live by definition. Its row is the repo-root
+      // checkout, so this lands on the current branch — and only for that one
+      // repo, which is what keeps the rest of the staleness rules honest.
+      if (branch.isCurrent && repo.repoPath === openRepoPath) {
+        reasons.push("open-repo");
+      }
       if (isDeliberateCheckout) reasons.push("checkout");
       if (branch.hasWorkingTreeChanges) reasons.push("uncommitted");
       const tipAt = parseTime(branch.lastCommitDate);
@@ -364,12 +377,6 @@ export function buildSidebarTree(
   }
 
   // 4. Split each bucket into live/rest and rank.
-  const sizeOf = (row: SidebarRow): number => {
-    const stats = reviewDiffStats[row.reviewKey];
-    if (stats) return stats.additions + stats.deletions;
-    return row.entry.kind === "review" ? row.entry.review.totalHunks : 0;
-  };
-
   const byRank = (a: SidebarRow, b: SidebarRow): number => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     if (a.pinned && b.pinned) {
@@ -379,10 +386,6 @@ export function buildSidebarTree(
     }
     const rank = presenceRank(a.presence) - presenceRank(b.presence);
     if (rank !== 0) return rank;
-    if (reviewSortOrder === "size") {
-      const diff = sizeOf(b) - sizeOf(a);
-      if (diff !== 0) return diff;
-    }
     if (b.activityAt !== a.activityAt) return b.activityAt - a.activityAt;
     return a.reviewKey < b.reviewKey ? -1 : a.reviewKey > b.reviewKey ? 1 : 0;
   };
@@ -409,7 +412,14 @@ export function buildSidebarTree(
       checkouts: [...checkouts],
       lastFetchedAt: bucket.lastFetchedAt,
       hasChanges: bucket.hasChanges,
-      isActive: (bucket.head?.live ?? false) || live.length > 0,
+      // Stated separately from the head row's liveness so it survives a repo
+      // with nothing checked out (no head row at all) and a head row the user
+      // dismissed: an inactive repo is hidden, and hiding the repo on screen
+      // is never the right answer.
+      isActive:
+        bucket.repoPath === openRepoPath ||
+        (bucket.head?.live ?? false) ||
+        live.length > 0,
     });
   }
 

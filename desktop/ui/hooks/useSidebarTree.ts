@@ -14,8 +14,9 @@ export function useSidebarTree(): RepoNode[] {
   const globalReviewsByKey = useReviewStore((s) => s.globalReviewsByKey);
   const sidebarPinned = useReviewStore((s) => s.sidebarPinned);
   const sidebarDismissed = useReviewStore((s) => s.sidebarDismissed);
-  const reviewSortOrder = useReviewStore((s) => s.reviewSortOrder);
-  const reviewDiffStats = useReviewStore((s) => s.reviewDiffStats);
+  // The repo this window has open. It counts as live on its own, so browsing a
+  // quiet repo can't file it under "quiet repos" while you're looking at it.
+  const openRepoPath = useReviewStore((s) => s.repoPath);
 
   const nowBucket = Math.floor(Date.now() / 60_000);
 
@@ -28,8 +29,7 @@ export function useSidebarTree(): RepoNode[] {
         sidebarPinned,
         sidebarDismissed,
         nowBucket * 60_000,
-        reviewSortOrder,
-        reviewDiffStats,
+        openRepoPath,
       ),
     [
       localActivity,
@@ -38,8 +38,7 @@ export function useSidebarTree(): RepoNode[] {
       sidebarPinned,
       sidebarDismissed,
       nowBucket,
-      reviewSortOrder,
-      reviewDiffStats,
+      openRepoPath,
     ],
   );
 }

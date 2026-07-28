@@ -100,6 +100,7 @@ import {
   ROW_ACTIONS,
   ROW_LABEL_HOVER_FADE,
   ROW_MODIFIED_BADGE,
+  ROW_STATUS,
 } from "./row-chrome";
 
 interface SidebarListProps {
@@ -555,14 +556,10 @@ function RepoNodeView({
             </>
           )}
         </span>
-        {/* Status keeps its place in the flow; the actions overlay it on hover,
-            so the row's right edge holds still without the label paying for
-            their width at rest. */}
-        <span
-          className={`flex shrink-0 items-center gap-1.5
-                      transition-opacity duration-100
-                      ${menuOpen ? "opacity-0" : "group-hover:opacity-0"}`}
-        >
+        {/* Status keeps its place in the flow and stays interactive; the
+            actions appear just left of it (see row-chrome), so the row's right
+            edge holds still without the label paying for their width at rest. */}
+        <span className={ROW_STATUS}>
           {headBranch?.hasWorkingTreeChanges && (
             <span className={ROW_MODIFIED_BADGE}>M</span>
           )}
@@ -574,45 +571,45 @@ function RepoNodeView({
               checkouts={node.checkouts}
             />
           )}
-        </span>
-        <span
-          className={`${ROW_ACTIONS} ${
-            menuOpen
-              ? "opacity-100"
-              : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-          }`}
-        >
-          <FetchButton
-            repoPath={node.repoPath}
-            lastFetchedAt={node.lastFetchedAt}
-          />
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center justify-center w-4 h-4 shrink-0 rounded
-                           text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]"
-                aria-label="Repository options"
-              >
-                <svg
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
+          <span
+            className={`${ROW_ACTIONS} ${
+              menuOpen
+                ? "opacity-100"
+                : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+            }`}
+          >
+            <FetchButton
+              repoPath={node.repoPath}
+              lastFetchedAt={node.lastFetchedAt}
+            />
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-center w-4 h-4 shrink-0 rounded
+                             text-fg-faint hover:text-fg-secondary hover:bg-fg/[0.08]"
+                  aria-label="Repository options"
                 >
-                  <circle cx="12" cy="5" r="2" />
-                  <circle cx="12" cy="12" r="2" />
-                  <circle cx="12" cy="19" r="2" />
-                </svg>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleRemove}>
-                Remove from sidebar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <svg
+                    className="h-3 w-3"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="5" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="12" cy="19" r="2" />
+                  </svg>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleRemove}>
+                  Remove from sidebar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </span>
         </span>
       </div>
       {expanded && (node.live.length > 0 || node.rest.length > 0) && (

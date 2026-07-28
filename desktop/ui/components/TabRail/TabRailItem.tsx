@@ -9,7 +9,7 @@ import { CheckoutMenuItem } from "./CheckoutMenuItem";
 import { RowStatus } from "./RowStatus";
 import { PrPreviewCard } from "./PrPreviewCard";
 import { SimpleTooltip } from "../ui/tooltip";
-import { ROW_ACTIONS, ROW_LABEL_HOVER_FADE } from "./row-chrome";
+import { ROW_ACTIONS, ROW_LABEL_HOVER_FADE, ROW_STATUS } from "./row-chrome";
 
 /**
  * Label a review by its identity (ref) for display. Listing is git-free, so
@@ -180,9 +180,10 @@ export const TabRailItem = memo(function TabRailItem({
           {primaryLabel}
           {isPr && ` #${pr.number}`}
         </span>
-        {/* Status stays in the flow; the overflow button overlays it on hover
-            (see row-chrome) rather than reserving width the label needs. */}
-        <span className="flex shrink-0 items-center gap-1.5 transition-opacity duration-100 group-hover:opacity-0 group-hover:pointer-events-none">
+        {/* Status stays in the flow and stays interactive; the overflow button
+            appears just left of it, over the label's fading tail (see
+            row-chrome), rather than reserving width the label needs. */}
+        <span className={ROW_STATUS}>
           <RowStatus
             repoPath={review.repoPath}
             checkoutPath={review.worktreePath}
@@ -192,31 +193,31 @@ export const TabRailItem = memo(function TabRailItem({
           {hasMissingRefs && (
             <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />
           )}
+          <span
+            className={`${ROW_ACTIONS} opacity-0 pointer-events-none
+                        group-hover:opacity-100 group-hover:pointer-events-auto`}
+          >
+            <button
+              type="button"
+              onClick={handleOverflowClick}
+              className="flex items-center justify-center h-5 w-5 rounded
+                         text-fg-muted hover:text-fg-secondary hover:bg-fg/[0.08]"
+              aria-label="Review options"
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </span>
         </span>
       </div>
-      <span
-        className={`${ROW_ACTIONS} opacity-0 pointer-events-none
-                    group-hover:opacity-100 group-hover:pointer-events-auto`}
-      >
-        <button
-          type="button"
-          onClick={handleOverflowClick}
-          className="flex items-center justify-center h-5 w-5 rounded
-                     text-fg-muted hover:text-fg-secondary hover:bg-fg/[0.08]"
-          aria-label="Review options"
-        >
-          <svg
-            className="h-3 w-3"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="5" r="2" />
-            <circle cx="12" cy="12" r="2" />
-            <circle cx="12" cy="19" r="2" />
-          </svg>
-        </button>
-      </span>
     </div>
   );
 

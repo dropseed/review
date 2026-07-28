@@ -166,7 +166,6 @@ export type DiffLineDiffType = "word" | "word-alt" | "char" | "none";
 export type DiffOverflow = "scroll" | "wrap";
 export type ChangesDisplayMode = "tree" | "flat";
 export type DiffViewMode = "unified" | "split" | "old" | "new";
-export type ReviewSortOrder = "updated" | "repo" | "size";
 export type FileSortOrder = "name" | "size" | "modified";
 
 const defaults = {
@@ -192,7 +191,11 @@ const defaults = {
   soundEffectsEnabled: true,
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
-  reviewSortOrder: "updated" as ReviewSortOrder,
+  // No `reviewSortOrder`: the sort menu is gone, and a stored "size" would
+  // otherwise keep reordering rows with nothing left to change it back. The
+  // key stays on disk untouched — inert, and still there if the control ever
+  // returns.
+
   // Explicit expand/collapse overrides per repo path. Absent = the repo's
   // default (expanded while it has live rows).
   collapsedRepos: {} as Record<string, boolean>,
@@ -270,9 +273,6 @@ export interface PreferencesSlice {
 
   // Files panel (right sidebar)
   filesPanelCollapsed: boolean;
-
-  // Review sort order
-  reviewSortOrder: ReviewSortOrder;
 
   // Sidebar tree: explicit collapse overrides per repo path. A repo with no
   // entry follows its default (expanded while it has live rows), so a repo
@@ -365,9 +365,6 @@ export interface PreferencesSlice {
   // Files panel actions
   setFilesPanelCollapsed: (collapsed: boolean) => void;
   toggleFilesPanel: () => void;
-
-  // Review sort order actions
-  setReviewSortOrder: (order: ReviewSortOrder) => void;
 
   // Sidebar tree actions
   setRepoCollapsed: (repoPath: string, collapsed: boolean) => void;
@@ -677,11 +674,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
 
     toggleFilesPanel: () => {
       get().setFilesPanelCollapsed(!get().filesPanelCollapsed);
-    },
-
-    setReviewSortOrder: (order) => {
-      set({ reviewSortOrder: order });
-      storage.set("reviewSortOrder", order);
     },
 
     setRepoCollapsed: (repoPath, collapsed) => {
