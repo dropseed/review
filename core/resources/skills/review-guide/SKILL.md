@@ -21,9 +21,13 @@ Run `review --help` first to confirm the CLI is installed.
 ### 1. Get oriented before you read anything
 
 ```
+review use                            # what comparison am I on?
 review status                         # how many hunks, how many done
 review hunks --status unreviewed --json   # no --diff yet — just the shape
 ```
+
+If the human wants a different comparison than the stored default, pin it once
+with `review use <spec>` — nothing downstream then needs `-s`.
 
 Count hunks per file. Scan the classification labels. Then tell the human in
 2–3 sentences what you found: *"142 unreviewed hunks across 31 files. 47 are
@@ -113,6 +117,14 @@ review comment add path/to/file.rs:42 "this name is misleading — `cache` sugge
 review comment add path/to/file.rs:10-15 "consider extracting; same shape repeats 3x in this file"
 ```
 
+Leaving more than one or two? Batch them instead — `review comments submit`
+takes a JSON array (a file, or stdin) and lands them all in a single mutation:
+
+```
+review comments submit --example      # the JSON shape, written nowhere
+review comments submit comments.json  # or pipe the array on stdin
+```
+
 Comments show up live on the lines in the desktop app, attributed to you
 (`author` defaults to the repo's git user, or whatever the agent harness has
 set via `$REVIEW_AUTHOR`). Use them sparingly — comments are for line-specific
@@ -181,13 +193,16 @@ override with a `base..ref` spec or `review change-base`):
 
 ```
 review hunks   [--status|--file|--label|--hunk] [--json] [--diff]
-review approve|reject|save|unmark <hunk-id>... [--reason TEXT] [--source ui|cli|agent]
+review approve|reject|save|unmark <hunk-id>... [--reason TEXT] [--source ui|cli|agent|github|gitlab]
 review status                          # progress + overall state
 review list                            # all saved reviews
+review use [<spec>] [--clear]          # show/set the repo's default comparison
+review change-base <new-base> [--clear]
 review note show                       # the human's note — read-only for agents
 review trust list|add|remove [<pattern>]
 review comments [--file GLOB] [--unresolved|--resolved] [--author NAME]
-review comment add <file>:<line>[:<end>] "<text>" [--side new|old|file]
+review comments submit [FILE|-] [--author NAME] [--source ...] [--example]
+review comment add <file>:<line>[-<end>] "<text>" [--side new|old|file]
 review comment edit|resolve|unresolve|delete <comment-id>
 review guide show [--json]             # the guided-review grouping + ungrouped hunks
 review guide add "<title>" <hunk-id>... [--desc TEXT]
