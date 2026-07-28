@@ -1,4 +1,10 @@
-import { useCallback, useMemo, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useId,
+  useMemo,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import type { ProcessedFileEntry } from "./types";
 import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import type { HunkContext } from "./FileNode";
@@ -6,7 +12,11 @@ import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import { EMPTY_HUNK_STATUS } from "./FileTree.utils";
 import { useFilesPanelContext, useFileSelection } from "./FilesPanelContext";
-import { flattenVisibleFilePaths, resolvePaneFiles } from "./fileSelection";
+import {
+  arePanesOnScreen,
+  flattenVisibleFilePaths,
+  resolvePaneFiles,
+} from "./fileSelection";
 import { useReviewStore } from "../../stores";
 
 interface FileListSectionProps {
@@ -74,13 +84,17 @@ export function FileListSection({
   const { handleRowClick } = useFileSelection();
 
   // The sidebar points at whichever pane has focus, not at the primary — with
-  // a split open, the primary's file is the one you're *not* working in.
+  // a split open, the primary's file is the one you're *not* working in. Both
+  // marks go away entirely while a rolling diff is up: the panes aren't there.
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const focusedPane = useReviewStore((s) => s.focusedPane);
+  const guideContentMode = useReviewStore((s) => s.guideContentMode);
+  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
   const { activePath, companionPath } = resolvePaneFiles(
     selectedFile,
     secondaryFile,
     focusedPane,
+    arePanesOnScreen(guideContentMode, workingTreeMultiView),
   );
 
   // The rows a shift-click may span: this section's file rows, in the order
@@ -94,10 +108,15 @@ export function FileListSection({
     [displayMode, treeEntries, flatFilePaths, expandedPaths, hunkStatusMap],
   );
 
+  // Identity for this section, so a shift-click can tell "the row I anchored
+  // on" from "the same file listed again in another section". Sections are
+  // mounted once each, so the instance is the section.
+  const sectionId = useId();
+
   const onRowClick = useCallback(
     (path: string, event: MouseEvent) =>
-      handleRowClick(path, selectableOrder, event),
-    [handleRowClick, selectableOrder],
+      handleRowClick(path, selectableOrder, event, sectionId),
+    [handleRowClick, selectableOrder, sectionId],
   );
 
   if (displayMode === "tree") {

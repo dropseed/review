@@ -118,6 +118,11 @@ export function useSidebarResize({
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
       }
+      // Drop any move that hasn't been committed yet. The handle is also the
+      // double-click target, and a frame left in flight here would land *after*
+      // the dblclick handler has set the canonical width — writing the width
+      // the pointer wobbled to back over the reset the user just asked for.
+      commit.cancel();
     };
 
     document.addEventListener("mousemove", handleMouseMove);

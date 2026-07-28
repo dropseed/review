@@ -1,13 +1,13 @@
 import { useState, useMemo, useCallback } from "react";
 import { FileNode } from "./FileNode";
-import { resolvePaneFiles } from "./fileSelection";
+import { arePanesOnScreen, resolvePaneFiles } from "./fileSelection";
 import {
+  reviewTabBadge,
   useFilePanelFileSystem,
   useFilePanelNavigation,
   useFilePanelApproval,
 } from "./hooks";
 import { useReviewStore } from "../../stores";
-import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { CheckIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
@@ -128,17 +128,24 @@ export function FilesPanel() {
   // Search state
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
 
-  // What the Review tab has waiting, for its badge.
-  const { pendingHunks, totalHunks } = useReviewProgress();
+  // What the Review tab has waiting, for its badge. Taken from the panel's own
+  // stats rather than a store-wide count: the badge labels these sections, so
+  // it has to agree with them however they're narrowed (an active scope,
+  // auto-approve-staged) — a badge reading 240 over a panel reading 4 is worse
+  // than no badge.
+  const { unresolved, complete } = reviewTabBadge(stats);
 
   // Browse rows follow the focused pane too — the Review tab's rows get this
   // from FileListSection, but Browse maps FileNode itself.
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const focusedPane = useReviewStore((s) => s.focusedPane);
+  const guideContentMode = useReviewStore((s) => s.guideContentMode);
+  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
   const browsePanes = resolvePaneFiles(
     selectedFile,
     secondaryFile,
     focusedPane,
+    arePanesOnScreen(guideContentMode, workingTreeMultiView),
   );
 
   // Sort menu items shared across tabs
@@ -246,13 +253,13 @@ export function FilesPanel() {
                 {comparison && (
                   <TabsTrigger value="changes">
                     Review
-                    {/* Unreviewed, not total: the count is there to answer
+                    {/* Unresolved, not total: the count is there to answer
                         "is anything waiting", and a check answers it better
                         than a zero once the answer is no. */}
-                    {pendingHunks > 0 ? (
-                      <TabCount value={pendingHunks} />
+                    {unresolved > 0 ? (
+                      <TabCount value={unresolved} />
                     ) : (
-                      totalHunks > 0 && (
+                      complete && (
                         <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
                       )
                     )}

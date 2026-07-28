@@ -56,6 +56,11 @@ export function ResizeHandle({
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
       }
+      // Drop any move that hasn't been committed yet. This element is also the
+      // double-click target, and a frame left in flight here would land *after*
+      // the dblclick handler has evened the split — undoing the reset with the
+      // fraction the pointer happened to wobble to.
+      commit.cancel();
     };
 
     document.addEventListener("mousemove", handleMouseMove);

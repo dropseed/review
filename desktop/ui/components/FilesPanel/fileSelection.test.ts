@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   EMPTY_SELECTION,
   applySelectionClick,
+  arePanesOnScreen,
   flattenVisibleFilePaths,
   isMultiSelection,
   pruneSelection,
+  refreshedHunkIds,
   resolvePaneFiles,
   selectionHunkIds,
   selectionModifier,
@@ -14,8 +16,15 @@ import {
 
 const ORDER = ["a.ts", "b.ts", "c.ts", "d.ts", "e.ts"];
 
-function selection(paths: string[], anchor: string | null): FileSelection {
-  return { paths, anchor };
+/** The section every fixture click happens in unless it says otherwise. */
+const SECTION = "needs-review";
+
+function selection(
+  paths: string[],
+  anchor: string | null,
+  section = SECTION,
+): FileSelection {
+  return { paths, anchor: anchor === null ? null : { path: anchor, section } };
 }
 
 describe("selectionModifier", () => {
@@ -41,8 +50,9 @@ describe("applySelectionClick", () => {
       "d.ts",
       "replace",
       ORDER,
+      SECTION,
     );
-    expect(next).toEqual({ paths: ["d.ts"], anchor: "d.ts" });
+    expect(next).toEqual(selection(["d.ts"], "d.ts"));
   });
 
   it("toggles a row in and back out", () => {
@@ -51,18 +61,31 @@ describe("applySelectionClick", () => {
       "d.ts",
       "toggle",
       ORDER,
+      SECTION,
     );
     expect(added.paths).toEqual(["b.ts", "d.ts"]);
-    expect(added.anchor).toBe("d.ts");
+    expect(added.anchor).toEqual({ path: "d.ts", section: SECTION });
 
-    const removed = applySelectionClick(added, "b.ts", "toggle", ORDER);
+    const removed = applySelectionClick(
+      added,
+      "b.ts",
+      "toggle",
+      ORDER,
+      SECTION,
+    );
     expect(removed.paths).toEqual(["d.ts"]);
-    expect(removed.anchor).toBe("b.ts");
+    expect(removed.anchor).toEqual({ path: "b.ts", section: SECTION });
   });
 
   it("keeps toggled rows in visual order, not click order", () => {
-    const first = applySelectionClick(EMPTY_SELECTION, "e.ts", "toggle", ORDER);
-    const second = applySelectionClick(first, "b.ts", "toggle", ORDER);
+    const first = applySelectionClick(
+      EMPTY_SELECTION,
+      "e.ts",
+      "toggle",
+      ORDER,
+      SECTION,
+    );
+    const second = applySelectionClick(first, "b.ts", "toggle", ORDER, SECTION);
     expect(second.paths).toEqual(["b.ts", "e.ts"]);
   });
 
@@ -72,9 +95,10 @@ describe("applySelectionClick", () => {
       "d.ts",
       "range",
       ORDER,
+      SECTION,
     );
     expect(next.paths).toEqual(["b.ts", "c.ts", "d.ts"]);
-    expect(next.anchor).toBe("b.ts");
+    expect(next.anchor).toEqual({ path: "b.ts", section: SECTION });
   });
 
   it("extends upward when the click is above the anchor", () => {
@@ -83,9 +107,10 @@ describe("applySelectionClick", () => {
       "b.ts",
       "range",
       ORDER,
+      SECTION,
     );
     expect(next.paths).toEqual(["b.ts", "c.ts", "d.ts"]);
-    expect(next.anchor).toBe("d.ts");
+    expect(next.anchor).toEqual({ path: "d.ts", section: SECTION });
   });
 
   it("re-extends from the same anchor, shrinking the previous range", () => {
@@ -94,9 +119,10 @@ describe("applySelectionClick", () => {
       "e.ts",
       "range",
       ORDER,
+      SECTION,
     );
     expect(wide.paths).toEqual(ORDER);
-    const narrowed = applySelectionClick(wide, "b.ts", "range", ORDER);
+    const narrowed = applySelectionClick(wide, "b.ts", "range", ORDER, SECTION);
     expect(narrowed.paths).toEqual(["a.ts", "b.ts"]);
   });
 
@@ -106,19 +132,67 @@ describe("applySelectionClick", () => {
       "c.ts",
       "range",
       ORDER,
+      SECTION,
     );
     expect(next.paths).toEqual(["b.ts", "c.ts"]);
   });
 
   it("adds the clicked row when the anchor is from another section", () => {
     const next = applySelectionClick(
-      selection(["other/x.ts"], "other/x.ts"),
+      selection(["other/x.ts"], "other/x.ts", "trusted"),
       "c.ts",
       "range",
       ORDER,
+      SECTION,
     );
     expect(next.paths).toEqual(["c.ts", "other/x.ts"]);
-    expect(next.anchor).toBe("c.ts");
+    expect(next.anchor).toEqual({ path: "c.ts", section: SECTION });
+  });
+
+  // Sections overlap by path on purpose: a file with one pending hunk and
+  // three trusted ones is a row in Needs Review *and* in Trusted. An anchor
+  // that is only a path can't tell those two rows apart.
+  describe("across sections that list the same file", () => {
+    const NEEDS_REVIEW = ["foo.ts", "zed.ts"];
+    const TRUSTED = ["aaa.ts", "bbb.ts", "foo.ts"];
+
+    it("does not extend a Needs Review anchor through Trusted", () => {
+      const anchored = applySelectionClick(
+        EMPTY_SELECTION,
+        "foo.ts",
+        "toggle",
+        NEEDS_REVIEW,
+        "needs-review",
+      );
+      const next = applySelectionClick(
+        anchored,
+        "aaa.ts",
+        "range",
+        TRUSTED,
+        "trusted",
+      );
+      // One row added, not the whole aaa → foo sweep of the Trusted list.
+      expect(next.paths).toEqual(["aaa.ts", "foo.ts"]);
+      expect(next.anchor).toEqual({ path: "aaa.ts", section: "trusted" });
+    });
+
+    it("still extends within the section that set the anchor", () => {
+      const anchored = applySelectionClick(
+        EMPTY_SELECTION,
+        "foo.ts",
+        "toggle",
+        TRUSTED,
+        "trusted",
+      );
+      const next = applySelectionClick(
+        anchored,
+        "aaa.ts",
+        "range",
+        TRUSTED,
+        "trusted",
+      );
+      expect(next.paths).toEqual(TRUSTED);
+    });
   });
 
   it("treats unselectable rows as a plain click, whatever the modifier", () => {
@@ -128,8 +202,9 @@ describe("applySelectionClick", () => {
         "src", // a directory row: never present in the order
         modifier,
         ORDER,
+        SECTION,
       );
-      expect(next).toEqual({ paths: ["src"], anchor: "src" });
+      expect(next).toEqual(selection(["src"], "src"));
     }
   });
 });
@@ -146,15 +221,15 @@ describe("pruneSelection", () => {
       new Set(["a.ts", "c.ts"]),
     );
     expect(next.paths).toEqual(["a.ts", "c.ts"]);
-    expect(next.anchor).toBe("a.ts");
+    expect(next.anchor).toEqual({ path: "a.ts", section: SECTION });
   });
 
-  it("re-anchors when the anchor itself disappeared", () => {
+  it("re-anchors within the same section when the anchor disappeared", () => {
     const next = pruneSelection(
       selection(["a.ts", "b.ts", "c.ts"], "a.ts"),
       new Set(["b.ts", "c.ts"]),
     );
-    expect(next).toEqual({ paths: ["b.ts", "c.ts"], anchor: "b.ts" });
+    expect(next).toEqual(selection(["b.ts", "c.ts"], "b.ts"));
   });
 
   it("clears entirely once fewer than two survive", () => {
@@ -247,45 +322,106 @@ describe("selectionHunkIds", () => {
   });
 });
 
+describe("refreshedHunkIds", () => {
+  const hunks: Record<string, { id: string }[]> = {
+    "a.ts": [{ id: "a.ts:old" }],
+    "b.ts": [{ id: "b.ts:1" }],
+  };
+
+  it("reports nothing to do while the ids still match", () => {
+    expect(
+      refreshedHunkIds(
+        ["a.ts:old", "b.ts:1"],
+        ["a.ts", "b.ts"],
+        (p) => hunks[p],
+      ),
+    ).toBeNull();
+  });
+
+  it("re-derives ids a re-diff invalidated", () => {
+    // Editing a.ts rewrites its content hash, so every id it had is retired.
+    const edited: Record<string, { id: string }[]> = {
+      ...hunks,
+      "a.ts": [{ id: "a.ts:new" }],
+    };
+    expect(
+      refreshedHunkIds(
+        ["a.ts:old", "b.ts:1"],
+        ["a.ts", "b.ts"],
+        (p) => edited[p],
+      ),
+    ).toEqual(["a.ts:new", "b.ts:1"]);
+  });
+
+  it("notices hunks appearing and disappearing", () => {
+    expect(
+      refreshedHunkIds(["a.ts:old", "b.ts:1"], ["a.ts"], (p) => hunks[p]),
+    ).toEqual(["a.ts:old"]);
+    expect(refreshedHunkIds([], ["b.ts"], (p) => hunks[p])).toEqual(["b.ts:1"]);
+  });
+});
+
+describe("arePanesOnScreen", () => {
+  it("is true only with no rolling diff over the panes", () => {
+    expect(arePanesOnScreen(null, null)).toBe(true);
+    expect(arePanesOnScreen("adhoc-group", null)).toBe(false);
+    expect(arePanesOnScreen(null, { paths: [] })).toBe(false);
+  });
+});
+
 describe("resolvePaneFiles", () => {
   it("points at the primary file when there is no split", () => {
-    expect(resolvePaneFiles("a.ts", null, "primary")).toEqual({
+    expect(resolvePaneFiles("a.ts", null, "primary", true)).toEqual({
       activePath: "a.ts",
       companionPath: null,
     });
   });
 
   it("ignores a stale focusedPane when the split is closed", () => {
-    expect(resolvePaneFiles("a.ts", null, "secondary")).toEqual({
+    expect(resolvePaneFiles("a.ts", null, "secondary", true)).toEqual({
       activePath: "a.ts",
       companionPath: null,
     });
   });
 
   it("follows focus into the secondary pane", () => {
-    expect(resolvePaneFiles("a.ts", "b.ts", "secondary")).toEqual({
+    expect(resolvePaneFiles("a.ts", "b.ts", "secondary", true)).toEqual({
       activePath: "b.ts",
       companionPath: "a.ts",
     });
   });
 
   it("marks the secondary file weakly while the primary has focus", () => {
-    expect(resolvePaneFiles("a.ts", "b.ts", "primary")).toEqual({
+    expect(resolvePaneFiles("a.ts", "b.ts", "primary", true)).toEqual({
       activePath: "a.ts",
       companionPath: "b.ts",
     });
   });
 
   it("treats the empty-split placeholder as no split", () => {
-    expect(resolvePaneFiles("a.ts", "", "secondary")).toEqual({
+    expect(resolvePaneFiles("a.ts", "", "secondary", true)).toEqual({
       activePath: "a.ts",
       companionPath: null,
     });
   });
 
   it("does not mark the same file twice", () => {
-    expect(resolvePaneFiles("a.ts", "a.ts", "primary")).toEqual({
+    expect(resolvePaneFiles("a.ts", "a.ts", "primary", true)).toEqual({
       activePath: "a.ts",
+      companionPath: null,
+    });
+  });
+
+  it("marks nothing while a rolling diff has replaced the panes", () => {
+    // Opening an ad-hoc group clears selectedFile but leaves secondaryFile and
+    // focusedPane behind, so the split's file would otherwise keep the "you
+    // are here" accent while nothing of it is on screen.
+    expect(resolvePaneFiles(null, "b.ts", "secondary", false)).toEqual({
+      activePath: null,
+      companionPath: null,
+    });
+    expect(resolvePaneFiles("a.ts", "b.ts", "primary", false)).toEqual({
+      activePath: null,
       companionPath: null,
     });
   });

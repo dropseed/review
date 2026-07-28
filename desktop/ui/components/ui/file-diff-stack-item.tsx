@@ -8,10 +8,43 @@ import {
 import { Spinner } from "./spinner";
 
 /** Scroll offset restore captured just before a collapse removes content. */
-interface CollapseShift {
+export interface CollapseShift {
   scroller: HTMLElement;
   scrollTop: number;
   removedAbove: number;
+}
+
+/**
+ * How much has already been taken off each scroller in the batch of collapses
+ * currently being applied. Entries live for one commit and no longer — see
+ * `applyCollapseShift`.
+ */
+const removedThisBatch = new Map<HTMLElement, number>();
+
+/**
+ * Put the scroll offset back after a collapse, accounting for every other item
+ * collapsing alongside it.
+ *
+ * One approval action routinely collapses several files at once ("approve all"
+ * on a guide group, a bulk select, a trust pattern, a CLI approve arriving via
+ * the watcher). Each of those items measured the *same* pre-collapse offset,
+ * so each writing `measured - its own removedAbove` means the last one to run
+ * wins and the page lands short by everything the others removed. Summing the
+ * removals across the batch is what makes the composed case come out where the
+ * single case already did.
+ *
+ * The running total is dropped in a microtask: layout effects for a commit all
+ * run in one synchronous block, so the microtask is guaranteed to land after
+ * the last of them and before any later collapse measures a fresh offset.
+ */
+export function applyCollapseShift(shift: CollapseShift): void {
+  const { scroller, scrollTop, removedAbove } = shift;
+  const previous = removedThisBatch.get(scroller);
+  if (previous === undefined)
+    queueMicrotask(() => removedThisBatch.delete(scroller));
+  const removed = (previous ?? 0) + removedAbove;
+  removedThisBatch.set(scroller, removed);
+  scroller.scrollTop = scrollTop - removed;
 }
 
 /** Nearest scrollable ancestor, or null if nothing above this element scrolls. */
@@ -103,7 +136,7 @@ export function FileDiffStackItem({
     const shift = pendingShiftRef.current;
     if (!shift || !isCollapsed) return;
     pendingShiftRef.current = null;
-    shift.scroller.scrollTop = shift.scrollTop - shift.removedAbove;
+    applyCollapseShift(shift);
   }, [isCollapsed]);
 
   return (

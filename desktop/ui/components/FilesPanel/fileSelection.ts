@@ -13,11 +13,27 @@
 /** What a click means, derived from its modifier keys. */
 export type SelectionModifier = "replace" | "toggle" | "range";
 
+/**
+ * The row a shift-click extends from, and the list it was clicked in.
+ *
+ * The section has to be part of it: the status sections overlap by path by
+ * design — a file with one pending hunk and three trusted ones is a row in
+ * both "Needs review" and "Trusted" — so a bare path can't say which list a
+ * range should run through. Identity by path alone lets an anchor set in one
+ * section answer for the same file in another, and the range then sweeps a
+ * section the user never clicked in.
+ */
+export interface SelectionAnchor {
+  readonly path: string;
+  /** Opaque id of the section the anchor row was clicked in. */
+  readonly section: string;
+}
+
 export interface FileSelection {
   /** Selected file paths, ordered to match the list they were picked from. */
   readonly paths: readonly string[];
-  /** The row a shift-click extends from. */
-  readonly anchor: string | null;
+  /** The row a shift-click extends from, or null when there's nothing to extend. */
+  readonly anchor: SelectionAnchor | null;
 }
 
 export const EMPTY_SELECTION: FileSelection = { paths: [], anchor: null };
@@ -63,44 +79,50 @@ function orderPaths(
 /**
  * Apply a click to the current selection.
  *
- * `order` is the visual order of the *section that was clicked* — only its
- * rows can be range-selected, which keeps a shift-click from silently
- * sweeping across a collapsed neighbouring section. Rows missing from `order`
- * (directories, and files with no hunks to act on) aren't selectable at all;
- * clicking one resets to a plain single selection.
+ * `order` is the visual order of the *section that was clicked*, and `section`
+ * identifies that section — only its rows can be range-selected, which keeps a
+ * shift-click from silently sweeping across a neighbouring section. Rows
+ * missing from `order` (directories, and files with no hunks to act on) aren't
+ * selectable at all; clicking one resets to a plain single selection.
  */
 export function applySelectionClick(
   current: FileSelection,
   path: string,
   modifier: SelectionModifier,
   order: readonly string[],
+  section: string,
 ): FileSelection {
+  const clicked: SelectionAnchor = { path, section };
   if (modifier === "replace" || !order.includes(path)) {
-    return { paths: [path], anchor: path };
+    return { paths: [path], anchor: clicked };
   }
 
   if (modifier === "toggle") {
     const wanted = new Set(current.paths);
     if (!wanted.delete(path)) wanted.add(path);
-    return { paths: orderPaths(wanted, current.paths, order), anchor: path };
+    return { paths: orderPaths(wanted, current.paths, order), anchor: clicked };
   }
 
   // Range. With no usable anchor there's nothing to extend from, so the click
-  // adds itself and becomes the anchor for the next shift-click.
+  // adds itself and becomes the anchor for the next shift-click. An anchor
+  // from another section is not usable here even when this section happens to
+  // list the same file — the row it named isn't one of these rows.
   const anchor =
-    current.anchor !== null && order.includes(current.anchor)
+    current.anchor !== null &&
+    current.anchor.section === section &&
+    order.includes(current.anchor.path)
       ? current.anchor
       : null;
   if (anchor === null) {
     const wanted = new Set(current.paths);
     wanted.add(path);
-    return { paths: orderPaths(wanted, current.paths, order), anchor: path };
+    return { paths: orderPaths(wanted, current.paths, order), anchor: clicked };
   }
 
   // A range replaces the selection rather than adding to it (matching every
   // other list on the machine), and leaves the anchor put so repeated
   // shift-clicks grow and shrink the same range.
-  const from = order.indexOf(anchor);
+  const from = order.indexOf(anchor.path);
   const to = order.indexOf(path);
   const range = order.slice(Math.min(from, to), Math.max(from, to) + 1);
   return { paths: range, anchor };
@@ -119,12 +141,15 @@ export function pruneSelection(
   const paths = current.paths.filter((p) => available.has(p));
   if (paths.length === current.paths.length) return current;
   if (paths.length < 2) return EMPTY_SELECTION;
+  const anchor = current.anchor;
   return {
     paths,
+    // A dropped anchor re-anchors inside the section it was set in: the
+    // section is still on screen even though that one row left it.
     anchor:
-      current.anchor !== null && available.has(current.anchor)
-        ? current.anchor
-        : paths[0],
+      anchor === null || available.has(anchor.path)
+        ? anchor
+        : { path: paths[0], section: anchor.section },
   };
 }
 
@@ -182,6 +207,44 @@ export function selectionHunkIds(
   return ids;
 }
 
+/**
+ * The selection's hunks re-read from the current diff, or null when they still
+ * match `current`.
+ *
+ * A hunk id is `filepath:contentHash`, so editing a file retires every id it
+ * had. A set of ids captured when the rows were clicked therefore stops
+ * covering the files it was picked for the moment anything is re-diffed — the
+ * file drops out of the rolling diff while its row stays selected, and a bulk
+ * approve driven by the snapshot silently skips it. The paths are the durable
+ * part of a selection; the ids have to be derived from them each time.
+ */
+export function refreshedHunkIds(
+  current: readonly string[],
+  paths: readonly string[],
+  hunksForPath: (path: string) => readonly { id: string }[] | undefined,
+): string[] | null {
+  const next = selectionHunkIds(paths, hunksForPath);
+  if (
+    next.length === current.length &&
+    next.every((id, i) => id === current[i])
+  ) {
+    return null;
+  }
+  return next;
+}
+
+/**
+ * Whether the content area is showing the diff panes at all. Both rolling-diff
+ * modes take the whole region ahead of the panes (see ContentArea), so either
+ * one being open means there are no panes to point at.
+ */
+export function arePanesOnScreen(
+  guideContentMode: unknown | null,
+  workingTreeMultiView: unknown | null,
+): boolean {
+  return guideContentMode === null && workingTreeMultiView === null;
+}
+
 export interface PaneFiles {
   /** The file in the pane that currently has focus — the sidebar's "you are here". */
   activePath: string | null;
@@ -197,12 +260,21 @@ export interface PaneFiles {
  * key or approve press acts on. The unfocused pane's file gets a weaker mark
  * rather than nothing — both files are on screen, and a sidebar that admits
  * to only one of them makes the other look closed.
+ *
+ * `panesOnScreen` is what makes any of that true. A rolling diff (a guide
+ * group, an ad-hoc selection, the working tree) replaces the panes wholesale
+ * while `secondaryFile` and `focusedPane` keep their last values, so without
+ * it the sidebar would point confidently at a file that isn't rendered
+ * anywhere — outranking the rows the reader actually picked.
  */
 export function resolvePaneFiles(
   selectedFile: string | null,
   secondaryFile: string | null,
   focusedPane: "primary" | "secondary",
+  panesOnScreen: boolean,
 ): PaneFiles {
+  if (!panesOnScreen) return { activePath: null, companionPath: null };
+
   // "" is the empty-split placeholder: a second pane is open but holds no file.
   const isSplitActive = secondaryFile !== null && secondaryFile !== "";
   if (!isSplitActive) {

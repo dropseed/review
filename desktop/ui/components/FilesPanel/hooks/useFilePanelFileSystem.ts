@@ -3,12 +3,90 @@ import { useReviewStore } from "../../../stores";
 import { useAllHunks } from "../../../stores/selectors/hunks";
 import { useFileHunkStatusMap } from "../../../hooks/useFileHunkStatusMap";
 import { hunkInScope } from "../../../types/scope";
+import type { FileHunkStatus } from "../types";
 import {
   calculateFileHunkStatus,
   hasChangeStatus,
   processTree,
   processTreeWithSections,
 } from "../FileTree.utils";
+
+/** Panel-wide totals, summed from the same per-file counts the sections show. */
+export interface PanelStats {
+  pending: number;
+  approved: number;
+  trusted: number;
+  total: number;
+  rejected: number;
+  savedForLater: number;
+  needsReviewFiles: number;
+  reviewedFiles: number;
+}
+
+/**
+ * Roll the panel's per-file hunk counts up into the totals its headers and
+ * badge quote. Split out from the hook so anything labelling the panel counts
+ * the panel's own hunks — the map already carries whatever narrowing is in
+ * effect (an active scope, auto-approve-staged), and a second count taken from
+ * the unscoped store would contradict the sections sitting right below it.
+ */
+export function computePanelStats(
+  hunkStatusMap: ReadonlyMap<string, FileHunkStatus>,
+): PanelStats {
+  let needsReviewFiles = 0;
+  let reviewedFiles = 0;
+  let totalHunks = 0;
+  let pendingHunks = 0;
+  let approvedHunks = 0;
+  let trustedHunks = 0;
+  let rejectedHunks = 0;
+  let savedForLaterHunks = 0;
+
+  for (const status of hunkStatusMap.values()) {
+    totalHunks += status.total;
+    pendingHunks += status.pending;
+    approvedHunks += status.approved;
+    trustedHunks += status.trusted;
+    rejectedHunks += status.rejected;
+    savedForLaterHunks += status.savedForLater;
+
+    if (status.total > 0) {
+      if (status.pending > 0 || status.savedForLater > 0) {
+        needsReviewFiles++;
+      } else {
+        reviewedFiles++;
+      }
+    }
+  }
+
+  return {
+    pending: pendingHunks,
+    approved: approvedHunks,
+    trusted: trustedHunks,
+    total: totalHunks,
+    rejected: rejectedHunks,
+    savedForLater: savedForLaterHunks,
+    needsReviewFiles,
+    reviewedFiles,
+  };
+}
+
+/**
+ * What the Review tab's badge says: how much is still unresolved, and whether
+ * the tab has earned its completion check.
+ *
+ * Saved-for-later counts as unresolved. It is a deferral, not a decision — the
+ * panel keeps a "Saved for later" section open for exactly that reason — so a
+ * badge that dropped it would show a green check above a list of things still
+ * to do.
+ */
+export function reviewTabBadge(stats: PanelStats): {
+  unresolved: number;
+  complete: boolean;
+} {
+  const unresolved = stats.pending + stats.savedForLater;
+  return { unresolved, complete: unresolved === 0 && stats.total > 0 };
+}
 
 /**
  * Manages file tree data, sections, and stats for the FilesPanel.
@@ -64,44 +142,10 @@ export function useFilePanelFileSystem() {
     [allFiles, hunkStatusMap, fileSortOrder],
   );
 
-  const stats = useMemo(() => {
-    let needsReviewFiles = 0;
-    let reviewedFiles = 0;
-    let totalHunks = 0;
-    let pendingHunks = 0;
-    let approvedHunks = 0;
-    let trustedHunks = 0;
-    let rejectedHunks = 0;
-    let savedForLaterHunks = 0;
-
-    for (const status of hunkStatusMap.values()) {
-      totalHunks += status.total;
-      pendingHunks += status.pending;
-      approvedHunks += status.approved;
-      trustedHunks += status.trusted;
-      rejectedHunks += status.rejected;
-      savedForLaterHunks += status.savedForLater;
-
-      if (status.total > 0) {
-        if (status.pending > 0 || status.savedForLater > 0) {
-          needsReviewFiles++;
-        } else {
-          reviewedFiles++;
-        }
-      }
-    }
-
-    return {
-      pending: pendingHunks,
-      approved: approvedHunks,
-      trusted: trustedHunks,
-      total: totalHunks,
-      rejected: rejectedHunks,
-      savedForLater: savedForLaterHunks,
-      needsReviewFiles,
-      reviewedFiles,
-    };
-  }, [hunkStatusMap]);
+  const stats = useMemo(
+    () => computePanelStats(hunkStatusMap),
+    [hunkStatusMap],
+  );
 
   // Build a metadata lookup map for flat view sorting
   const fileMetadataMap = useMemo(() => {

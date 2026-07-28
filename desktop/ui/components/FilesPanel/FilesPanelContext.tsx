@@ -16,6 +16,7 @@ import {
   applySelectionClick,
   isMultiSelection,
   pruneSelection,
+  refreshedHunkIds,
   selectionHunkIds,
   selectionModifier,
   type FileSelection,
@@ -70,6 +71,8 @@ interface FileSelectionContextValue {
     path: string,
     order: readonly string[],
     event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
+    /** Identifies the section the row lives in; ranges never leave it. */
+    section: string,
   ) => boolean;
   approveSelection: () => void;
   unapproveSelection: () => void;
@@ -138,9 +141,15 @@ export function FileSelectionProvider({
   const handleRowClick = useCallback<
     FileSelectionContextValue["handleRowClick"]
   >(
-    (path, order, event) => {
+    (path, order, event, section) => {
       const modifier = selectionModifier(event);
-      const next = applySelectionClick(selection, path, modifier, order);
+      const next = applySelectionClick(
+        selection,
+        path,
+        modifier,
+        order,
+        section,
+      );
       setSelection(next);
 
       if (modifier === "replace") return false;
@@ -174,6 +183,29 @@ export function FileSelectionProvider({
     const ids = selectedHunkIds();
     if (ids.length > 0) useReviewStore.getState().unapproveHunkIds(ids);
   }, [selectedHunkIds]);
+
+  // Keep the open rolling diff on the *current* hunks of the selected files.
+  // Its hunk ids were resolved when the rows were clicked, and a hunk id is
+  // content-addressed — one edit to a selected file and every id it had is
+  // gone, so the file would silently vanish from the rolling diff (and from
+  // its "Approve all") while its row stayed selected. The paths are what the
+  // user picked; the ids follow the diff.
+  useEffect(() => {
+    const group = openedGroup.current;
+    if (!group || adhocGroup !== group) return;
+    if (!isMultiSelection(selection)) return;
+    const hunkIds = refreshedHunkIds(
+      group.hunkIds,
+      selection.paths,
+      (path) => filesByPath[path]?.hunks,
+    );
+    if (hunkIds === null || hunkIds.length === 0) return;
+    const next: HunkGroup = { ...group, hunkIds };
+    openedGroup.current = next;
+    // Not openAdhocGroup: the group is already open, and re-opening it would
+    // clear overlays and navigation out from under the reader.
+    useReviewStore.setState({ adhocGroup: next });
+  }, [filesByPath, adhocGroup, selection]);
 
   // Navigating anywhere else drops the selection: once the content area is no
   // longer showing the selection's own rolling diff, highlighted rows in the
