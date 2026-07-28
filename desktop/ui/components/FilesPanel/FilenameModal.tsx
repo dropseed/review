@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import type { DiffHunk, HunkState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getFilesByGlob } from "../../utils/glob";
@@ -58,6 +58,7 @@ export function FilenameModal({
   onNavigateToFile,
 }: FilenameModalProps) {
   const [pattern, setPattern] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Suggestions: repeated basenames and per-extension globs that cover 2+
   // files, so the user can fill the input without knowing glob syntax.
@@ -136,6 +137,12 @@ export function FilenameModal({
       <DialogContent
         className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col rounded-lg"
         onEscapeKeyDown={(e) => e.stopPropagation()}
+        // Radix focuses the first tabbable element on open, which is the header's
+        // close button; the glob input is the only thing worth typing into.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -159,12 +166,12 @@ export function FilenameModal({
         {/* Glob input */}
         <div className="border-b border-edge px-4 py-2 space-y-1">
           <input
+            ref={inputRef}
             type="text"
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
             placeholder="Filename or glob — e.g. index.ts, *.test.ts, src/**/*.py"
             className="w-full rounded-md border border-edge-default bg-surface-raised/50 px-3 py-1.5 text-sm font-mono text-fg-secondary placeholder:text-fg-muted placeholder:font-sans focus:border-focus-ring/50 focus:outline-none focus:ring-1 focus:ring-focus-ring/50"
-            autoFocus
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
