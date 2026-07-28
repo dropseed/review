@@ -21,6 +21,7 @@ import {
   isOrphanedSession,
   rehomeTabs,
   mergeVisibleTabs,
+  reorderVisibleTabs,
   resolveActiveTabIds,
   createTerminalSlice,
   TERMINAL_PANEL_WIDTH_DEFAULT,
@@ -545,7 +546,8 @@ describe("tab reducers", () => {
 describe("panel preferences (dock side + width persistence)", () => {
   // Minimal harness: drive the real slice actions with an in-memory store and a
   // stub storage that records writes, so we can assert persistence.
-  function makeSlice() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function makeSlice(client: any = {}) {
     const writes: Record<string, unknown> = {};
     const reads: Record<string, unknown> = {};
     const storage = {
@@ -555,8 +557,6 @@ describe("panel preferences (dock side + width persistence)", () => {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = {} as any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let state: any = {};
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -590,6 +590,80 @@ describe("panel preferences (dock side + width persistence)", () => {
     get().toggleTabPinned("tabA");
     expect(get().terminalTabsByReviewKey.home[0].pinned).toBe(false);
     expect(writes.terminalPinnedIds).toEqual([]);
+  });
+
+  it("unpinning a visiting tab re-points the viewing key at a tab it can see", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabsByReviewKey: {
+        A: [{ ...makeTab("tabA", "a"), pinned: true }],
+        B: [makeTab("tabB", "b")],
+      },
+      // Viewing B and looking at A's pinned tab, which visits every key.
+      activeTabIdByReviewKey: { A: "tabA", B: "tabA" },
+      terminalPinnedIds: ["a"],
+    });
+
+    get().toggleTabPinned("tabA");
+
+    // B can no longer see tabA, so leaving it aimed there would render no
+    // active tab at all — a blank panel with every tab body hidden.
+    expect(get().activeTabIdByReviewKey.B).toBe("tabB");
+    expect(get().activeTabIdByReviewKey.A).toBe("tabA");
+  });
+
+  it("unpinning nulls a viewing key that has no tabs of its own", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabsByReviewKey: {
+        A: [{ ...makeTab("tabA", "a"), pinned: true }],
+        B: [],
+      },
+      activeTabIdByReviewKey: { B: "tabA" },
+      terminalPinnedIds: ["a"],
+    });
+    get().toggleTabPinned("tabA");
+    expect(get().activeTabIdByReviewKey.B).toBeNull();
+  });
+
+  it("killTerminal prunes the closed session from the persisted pinned ids", async () => {
+    const { get, set, writes } = makeSlice({
+      terminalKill: async () => undefined,
+    });
+    set({
+      terminalTabsByReviewKey: { k1: [{ ...makeTab("a", "a"), pinned: true }] },
+      terminalPinnedIds: ["a", "b"],
+    });
+
+    await get().killTerminal("a");
+
+    // The session is gone for good — its pin must not outlive it in the store.
+    expect(get().terminalPinnedIds).toEqual(["b"]);
+    expect(writes.terminalPinnedIds).toEqual(["b"]);
+  });
+
+  it("removeTerminal prunes the dead session from the persisted pinned ids", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalTabsByReviewKey: { k1: [{ ...makeTab("a", "a"), pinned: true }] },
+      terminalPinnedIds: ["a"],
+    });
+
+    get().removeTerminal("a");
+
+    expect(get().terminalPinnedIds).toEqual([]);
+    expect(writes.terminalPinnedIds).toEqual([]);
+  });
+
+  it("teardown of an unpinned session doesn't rewrite the pinned ids", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalTabsByReviewKey: { k1: [makeTab("a", "a")] },
+      terminalPinnedIds: ["b"],
+    });
+    get().removeTerminal("a");
+    expect(get().terminalPinnedIds).toEqual(["b"]);
+    expect(writes.terminalPinnedIds).toBeUndefined();
   });
 
   it("pinning leaves the tab in its home bucket", () => {
@@ -686,6 +760,55 @@ describe("panel preferences (dock side + width persistence)", () => {
     expect(after).not.toBe(before);
     get().moveTab("k1", 1, 1);
     expect(get().terminalTabsByReviewKey).toBe(after);
+  });
+
+  it("moveTab refuses a drag across the pinned boundary instead of scrambling", () => {
+    const { get, set } = makeSlice();
+    // Renders as [B, A, C] — pinned first — so dragging A onto B is a move the
+    // strip's own sort would immediately undo.
+    set({
+      terminalTabsByReviewKey: {
+        k1: [
+          makeTab("tabA", "a"),
+          { ...makeTab("tabB", "b"), pinned: true },
+          makeTab("tabC", "c"),
+        ],
+      },
+    });
+    const before = get().terminalTabsByReviewKey;
+
+    get().moveTab("k1", 1, 0);
+
+    // Nothing appeared to move, so nothing may have been written — the old
+    // mapping quietly reordered the bucket to [B, A, C], visible only later
+    // when B was unpinned.
+    expect(get().terminalTabsByReviewKey).toBe(before);
+  });
+
+  it("moveTab moves a tab past a pinned neighbour without moving the neighbour", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabsByReviewKey: {
+        k1: [
+          makeTab("tabA", "a"),
+          { ...makeTab("tabB", "b"), pinned: true },
+          makeTab("tabC", "c"),
+        ],
+      },
+    });
+
+    // Strip is [B, A, C]; drag A onto C.
+    get().moveTab("k1", 1, 2);
+
+    // A and C swap the slots they held; B keeps its own.
+    expect(
+      get().terminalTabsByReviewKey["k1"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabC", "tabB", "tabA"]);
+    expect(
+      mergeVisibleTabs(get().terminalTabsByReviewKey, "k1").map(
+        (v) => v.tab.id,
+      ),
+    ).toEqual(["tabB", "tabC", "tabA"]);
   });
 
   it("hiding a maximized panel reopens as a split, not over the diff", () => {
@@ -889,6 +1012,74 @@ describe("checkout attribution", () => {
     ).toBe("/r:main");
   });
 
+  it("anchors a detached HEAD on a row that exists, not on an unreachable key", () => {
+    // Detached HEAD: git names no branch as checked out, so nothing owns the
+    // repo root. `/r:` is a bucket no routed view ever reads, so anything
+    // adopted into it would disappear while its PTY kept running.
+    const detached = buildCheckoutIndex([
+      {
+        repoPath: "/r",
+        repoName: "r",
+        defaultBranch: "main",
+        branches: [branch("feature", { worktreePath: FEATURE_WT })],
+        recentRemoteBranches: [],
+      },
+    ]);
+    expect(detached["/r"].rootKey).toBe("/r:feature");
+    // Both the orphan and a shell sitting in the detached main working tree
+    // land somewhere the sidebar has a row for.
+    expect(sessionReviewKey(detached, "/r", "/gone/elsewhere", "x")).toBe(
+      "/r:feature",
+    );
+    expect(sessionReviewKey(detached, "/r", "/r/src", "x")).toBe("/r:feature");
+  });
+
+  it("anchors a detached HEAD on a review's worktree when there are no branches", () => {
+    const index = buildCheckoutIndex(
+      [
+        {
+          repoPath: "/r",
+          repoName: "r",
+          defaultBranch: "main",
+          branches: [],
+          recentRemoteBranches: [],
+        },
+      ],
+      [
+        {
+          repoPath: "/r",
+          repoName: "r",
+          ref: "pr-7",
+          worktreePath: "/home/.review/worktrees/r/pr-7",
+          tier: "materialized",
+          totalHunks: 0,
+          trustedHunks: 0,
+          approvedHunks: 0,
+          reviewedHunks: 0,
+          rejectedHunks: 0,
+          savedForLaterHunks: 0,
+          state: null,
+          updatedAt: "",
+        },
+      ],
+    );
+    expect(index["/r"].rootKey).toBe("/r:pr-7");
+  });
+
+  it("keeps the placeholder key for a repo with no checkouts at all", () => {
+    // No rows to be reachable from either — the repo-level view reads this key.
+    const index = buildCheckoutIndex([
+      {
+        repoPath: "/r",
+        repoName: "r",
+        defaultBranch: "main",
+        branches: [],
+        recentRemoteBranches: [],
+      },
+    ]);
+    expect(index["/r"].rootKey).toBe("/r:");
+  });
+
   it("sessionReviewKey falls back for a repo the index has never seen", () => {
     expect(sessionReviewKey({}, "/r", "/r", "fallback")).toBe("fallback");
   });
@@ -966,6 +1157,47 @@ describe("mergeVisibleTabs", () => {
   it("keeps a pinned tab's home key so unpinning is lossless", () => {
     const tabsByKey = { home: [pinnedTab("t", "a")] };
     expect(mergeVisibleTabs(tabsByKey, "elsewhere")[0].reviewKey).toBe("home");
+  });
+});
+
+describe("reorderVisibleTabs", () => {
+  const pin = (tab: TerminalTab): TerminalTab => ({ ...tab, pinned: true });
+
+  it("rejects a drag between tabs living in different buckets", () => {
+    const tabsByKey = {
+      k1: [makeTab("own", "a")],
+      k2: [pin(makeTab("far", "b"))],
+    };
+    // Strip for k1 is [far, own]; the two have no shared order to write.
+    expect(reorderVisibleTabs(tabsByKey, "k1", 1, 0)).toEqual({});
+  });
+
+  it("rejects a drag that skips past a tab on the other side of the boundary", () => {
+    const tabsByKey = {
+      k1: [makeTab("a", "a"), pin(makeTab("b", "b")), makeTab("c", "c")],
+    };
+    // Strip [b, a, c]: dragging c to the front passes over pinned b.
+    expect(reorderVisibleTabs(tabsByKey, "k1", 2, 0)).toEqual({});
+  });
+
+  it("is a no-op for a drag that ends where it started", () => {
+    const tabsByKey = { k1: [makeTab("a", "a"), makeTab("b", "b")] };
+    expect(reorderVisibleTabs(tabsByKey, "k1", 1, 1)).toEqual({});
+  });
+
+  it("reorders a pinned visitor within its own bucket", () => {
+    const tabsByKey = {
+      home: [pin(makeTab("p1", "a")), pin(makeTab("p2", "b"))],
+      viewing: [makeTab("local", "c")],
+    };
+    // Strip for "viewing" is [p1, p2, local]; both pinned tabs are home's.
+    const next = reorderVisibleTabs(tabsByKey, "viewing", 0, 1);
+    expect(next.terminalTabsByReviewKey!.home.map((t) => t.id)).toEqual([
+      "p2",
+      "p1",
+    ]);
+    // The bucket being viewed is untouched.
+    expect(next.terminalTabsByReviewKey!.viewing).toBe(tabsByKey.viewing);
   });
 });
 

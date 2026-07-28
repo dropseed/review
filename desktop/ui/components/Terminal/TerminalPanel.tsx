@@ -135,23 +135,6 @@ export function TerminalPanel(): ReactNode {
     handleSplit(active.reviewKey, active.tab.id, active.tab.focused, direction);
   };
 
-  /**
-   * Drag-to-reorder within the strip. Only tabs sharing a home can trade
-   * places: the order lives per bucket, so dragging a pinned visitor past a
-   * local tab has no order to write.
-   */
-  const reorderVisibleTabs = (from: number, to: number) => {
-    const source = visibleTabs[from];
-    const target = visibleTabs[to];
-    if (!source || !target || source.reviewKey !== target.reviewKey) return;
-    const bucket = terminalTabsByReviewKey[source.reviewKey] ?? [];
-    moveTab(
-      source.reviewKey,
-      bucket.findIndex((t) => t.id === source.tab.id),
-      bucket.findIndex((t) => t.id === target.tab.id),
-    );
-  };
-
   const handleClosePane = (id: string) => {
     void closeTerminalPane(id);
   };
@@ -214,7 +197,9 @@ export function TerminalPanel(): ReactNode {
                 onDrop={(e) => {
                   if (dragIndex === null) return;
                   e.preventDefault();
-                  reorderVisibleTabs(dragIndex, index);
+                  // Strip positions, not stored ones — the store maps them back
+                  // and declines a drag the strip's own sort would swallow.
+                  moveTab(reviewKey, dragIndex, index);
                   setDragIndex(null);
                   setDropIndex(null);
                 }}

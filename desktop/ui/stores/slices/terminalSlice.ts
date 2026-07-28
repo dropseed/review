@@ -137,7 +137,11 @@ export interface TerminalSlice {
     activity: RepoLocalActivity[],
     reviews: GlobalReviewSummary[],
   ) => void;
-  /** Drag-to-reorder: move a tab within its review's tab strip. */
+  /**
+   * Drag-to-reorder: move a tab within the strip shown for `reviewKey`. Indices
+   * are positions in that strip (`mergeVisibleTabs`), not in the stored bucket
+   * — the caller drags what it can see.
+   */
   moveTab: (reviewKey: string, fromIndex: number, toIndex: number) => void;
   /** Mark `terminalId` as the focused leaf in `tabId`. */
   setFocusedTerminalPane: (
@@ -213,9 +217,13 @@ export const TERMINAL_DOCK_SIDE_DEFAULT: TerminalDockSide = "left";
 /** One repo's checkout layout, as terminals need to read it. */
 export interface RepoCheckouts {
   /**
-   * The repo's main row — the branch checked out at the repo root. Orphaned
-   * sessions are adopted here: their own directory is gone, but the shell is
-   * still alive and may hold work, so it needs a row that always exists.
+   * The repo's main row — the row owning the repo root. Orphaned sessions are
+   * adopted here: their own directory is gone, but the shell is still alive and
+   * may hold work, so it needs a row that always exists.
+   *
+   * On a detached HEAD nothing owns the repo root (git reports no current
+   * branch), so this falls back to the row owning the repo's first checkout —
+   * see `buildCheckoutIndex`.
    */
   rootKey: string;
   /** Every checkout root in the repo, innermost-wins ordering applied later. */
@@ -275,7 +283,6 @@ export function buildCheckoutIndex(
         ? activityRepo.repoPath
         : branch.worktreePath;
       add(repo, path, key);
-      if (branch.isCurrent) repo.rootKey = key;
     }
   }
 
@@ -283,6 +290,25 @@ export function buildCheckoutIndex(
   for (const review of reviews) {
     const repo = repoFor(review.repoPath);
     add(repo, review.worktreePath, makeReviewKey(review.repoPath, review.ref));
+  }
+
+  // Anchor each repo *after* every owner is known, so the answer doesn't depend
+  // on which listing happened to mention the repo root.
+  //
+  // Whatever owns the repo root is the main row, and normally that is the
+  // current branch. A detached HEAD has no current branch — git names no branch
+  // as checked out — so nothing owns the root, and the placeholder key
+  // `repoPath:""` would be a bucket no routed view ever reads: sessions adopted
+  // into it would vanish while their PTYs kept running. Fall back to the row
+  // owning the repo's first checkout instead. A row with a directory is one the
+  // sidebar always shows, so the adopted session stays reachable. The
+  // placeholder survives only for a repo with no checkouts at all, which has no
+  // rows to be reachable from either.
+  for (const [repoPath, repo] of Object.entries(index)) {
+    repo.rootKey =
+      repo.owners[repoPath] ??
+      repo.roots.map((root) => repo.owners[root]).find((key) => key != null) ??
+      makeReviewKey(repoPath, "");
   }
 
   return index;
@@ -641,6 +667,69 @@ export function mergeVisibleTabs(
     .filter((tab) => !seen.has(tab.id))
     .map((tab) => ({ tab, reviewKey }));
   return [...pinned, ...own];
+}
+
+/**
+ * The stored tab order a strip drag should produce, or `{}` for a drag that
+ * can't be honored.
+ *
+ * Indices are into the strip as rendered (`mergeVisibleTabs`), which is not the
+ * stored order: pinned tabs are hoisted to the front on every render, and order
+ * itself lives per bucket. So a drag is only writable when everything it passed
+ * over shares one bucket *and* one side of the pinned boundary. Anything else
+ * gets rejected rather than approximated — the re-sort would swallow the move,
+ * leaving a drag that looks like a no-op but has quietly rewritten an order the
+ * user will only see later, when the pinned tab is unpinned.
+ *
+ * The honored case permutes only the slots the moved run occupies, so tabs the
+ * drag never appeared to touch keep the stored positions they had.
+ */
+export function reorderVisibleTabs(
+  tabsByKey: Record<string, TerminalTab[]>,
+  reviewKey: string,
+  fromIndex: number,
+  toIndex: number,
+): Partial<TabState> {
+  if (fromIndex === toIndex) return {};
+  const visible = mergeVisibleTabs(tabsByKey, reviewKey);
+  const source = visible[fromIndex];
+  const target = visible[toIndex];
+  if (!source || !target) return {};
+
+  // Checked across the whole span, not just its ends: the question is what the
+  // drag passed over, and a tab it skipped past is one it would displace.
+  const pinnedSide = !!source.tab.pinned;
+  for (
+    let i = Math.min(fromIndex, toIndex);
+    i <= Math.max(fromIndex, toIndex);
+    i++
+  ) {
+    const entry = visible[i];
+    if (entry.reviewKey !== source.reviewKey) return {};
+    if (!!entry.tab.pinned !== pinnedSide) return {};
+  }
+
+  // The slots the moved run occupies in stored order. Reordering the run within
+  // them leaves every other tab's stored position exactly where it was.
+  const bucket = tabsByKey[source.reviewKey] ?? [];
+  const slots: number[] = [];
+  bucket.forEach((tab, i) => {
+    if (!!tab.pinned === pinnedSide) slots.push(i);
+  });
+  const members = slots.map((i) => bucket[i]);
+  const from = members.findIndex((tab) => tab.id === source.tab.id);
+  const to = members.findIndex((tab) => tab.id === target.tab.id);
+  if (from === -1 || to === -1) return {};
+  const moved = reorderTabs(members, from, to);
+  if (moved === members) return {};
+
+  const tabs = [...bucket];
+  slots.forEach((slot, i) => {
+    tabs[slot] = moved[i];
+  });
+  return {
+    terminalTabsByReviewKey: { ...tabsByKey, [source.reviewKey]: tabs },
+  };
 }
 
 /** Append a fresh single-leaf tab for `terminalId` and make it active. */
@@ -1059,6 +1148,28 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   }
 
   /**
+   * Drop a gone session from every map that holds it.
+   *
+   * Including the pinned list: it is keyed by session id and persisted, so a
+   * session that is never coming back would otherwise leave an entry in the
+   * Tauri store forever — one per pinned terminal ever closed.
+   */
+  function teardownSession(id: string): void {
+    unsubscribeSession(id);
+    const g = get();
+    const next: Partial<TerminalSlice> = {
+      ...removeTerminalFromState(g, id),
+      ...removeTerminalFromTabs(g, id),
+    };
+    if (g.terminalPinnedIds.includes(id)) {
+      const terminalPinnedIds = g.terminalPinnedIds.filter((x) => x !== id);
+      next.terminalPinnedIds = terminalPinnedIds;
+      storage.set("terminalPinnedIds", terminalPinnedIds);
+    }
+    set(next);
+  }
+
+  /**
    * Where a session's tab belongs. Every placement goes through here so tab
    * bucketing and the sidebar's per-row badges are the same computation, rather
    * than two that happen to agree.
@@ -1188,22 +1299,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         // session already died should not strand the tab.
         console.error("[terminal] Failed to kill terminal:", err);
       }
-      unsubscribeSession(id);
-      const g = get();
-      set({
-        ...removeTerminalFromState(g, id),
-        ...removeTerminalFromTabs(g, id),
-      });
+      teardownSession(id);
     },
 
-    removeTerminal: (id) => {
-      unsubscribeSession(id);
-      const g = get();
-      set({
-        ...removeTerminalFromState(g, id),
-        ...removeTerminalFromTabs(g, id),
-      });
-    },
+    removeTerminal: (id) => teardownSession(id),
 
     setActiveTerminal: (reviewKey, id) =>
       set({
@@ -1232,8 +1331,19 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       const terminalPinnedIds = pinned
         ? [...new Set([...g.terminalPinnedIds, ...leafIds])]
         : g.terminalPinnedIds.filter((id) => !leafIds.includes(id));
+      const next = setTabPinned(g, tabId, pinned);
+      const tabsByKey =
+        next.terminalTabsByReviewKey ?? g.terminalTabsByReviewKey;
       set({
-        ...setTabPinned(g, tabId, pinned),
+        ...next,
+        // Unpinning takes the tab off every other key's strip, so any key that
+        // was pointing at it as a visitor has to be re-pointed here — a key
+        // left aimed at a tab it can no longer see renders no active tab at
+        // all, which reads as an empty panel.
+        activeTabIdByReviewKey: resolveActiveTabIds(
+          tabsByKey,
+          g.activeTabIdByReviewKey,
+        ),
         terminalPinnedIds,
       });
       storage.set("terminalPinnedIds", terminalPinnedIds);
@@ -1263,13 +1373,17 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     },
 
     moveTab: (reviewKey, fromIndex, toIndex) => {
-      const byKey = get().terminalTabsByReviewKey;
-      const existing = byKey[reviewKey] ?? [];
-      const tabs = reorderTabs(existing, fromIndex, toIndex);
-      // reorderTabs hands back the same array for a no-op, so a drag that
-      // ends where it started doesn't re-render the panel.
-      if (tabs === existing) return;
-      set({ terminalTabsByReviewKey: { ...byKey, [reviewKey]: tabs } });
+      // reorderVisibleTabs hands back nothing for a drag it won't honor (a
+      // no-op, or one the strip's pinned-first sort would swallow), so those
+      // don't re-render the panel — or rewrite an order they didn't touch.
+      const next = reorderVisibleTabs(
+        get().terminalTabsByReviewKey,
+        reviewKey,
+        fromIndex,
+        toIndex,
+      );
+      if (!next.terminalTabsByReviewKey) return;
+      set(next);
     },
 
     setFocusedTerminalPane: (reviewKey, tabId, terminalId) =>
