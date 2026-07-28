@@ -19,10 +19,12 @@ export function useFileWatcher(comparisonReady: number) {
   const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
   const loadRepoFiles = useReviewStore((s) => s.loadRepoFiles);
   const loadCurrentBranch = useReviewStore((s) => s.loadCurrentBranch);
+  const restoreGuideFromState = useReviewStore((s) => s.restoreGuideFromState);
 
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
   const loadReviewStateRef = useRef(loadReviewState);
+  const restoreGuideFromStateRef = useRef(restoreGuideFromState);
   const applyWatcherEventRef = useRef(applyWatcherEvent);
   const loadGlobalReviewsRef = useRef(loadGlobalReviews);
   const checkReviewsFreshnessRef = useRef(checkReviewsFreshness);
@@ -64,6 +66,7 @@ export function useFileWatcher(comparisonReady: number) {
     isStandaloneFileRef.current = isStandaloneFile;
     loadRepoFilesRef.current = loadRepoFiles;
     loadCurrentBranchRef.current = loadCurrentBranch;
+    restoreGuideFromStateRef.current = restoreGuideFromState;
   }, [
     repoPath,
     loadReviewState,
@@ -77,6 +80,7 @@ export function useFileWatcher(comparisonReady: number) {
     isStandaloneFile,
     loadRepoFiles,
     loadCurrentBranch,
+    restoreGuideFromState,
   ]);
 
   // Start file watcher when repo is loaded
@@ -126,6 +130,16 @@ export function useFileWatcher(comparisonReady: number) {
     );
     const unlistenFns: (() => void)[] = [];
 
+    // The guide surfaces (banner, guide-mode panel) read a cache derived from
+    // the review state rather than the state itself, so reloading alone leaves
+    // them showing the previous guide — an agent's `review guide add` wouldn't
+    // appear until some unrelated git change forced a full refresh. Reconcile
+    // only once the load has resolved, or we'd derive from the stale state.
+    const reloadReviewState = async () => {
+      await loadReviewStateRef.current();
+      restoreGuideFromStateRef.current();
+    };
+
     // Review state changed externally
     unlistenFns.push(
       apiClient.onReviewStateChanged(async (eventRepoPath) => {
@@ -167,11 +181,11 @@ export function useFileWatcher(comparisonReady: number) {
               setActiveReviewKeyRef.current(null);
             } else {
               console.log("[watcher] Reloading review state...");
-              loadReviewStateRef.current();
+              await reloadReviewState();
             }
           } else {
             console.log("[watcher] Reloading review state...");
-            loadReviewStateRef.current();
+            await reloadReviewState();
           }
         }
         // Refresh sidebar for external review state changes

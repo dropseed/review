@@ -14,7 +14,12 @@ vi.mock("../../platform", () => ({
   }),
 }));
 
-import { computeGuideGroups, countGroupUnreviewed } from "./groups";
+import {
+  computeGroupFiles,
+  computeGuideGroups,
+  countGroupUnreviewed,
+  countUnreviewed,
+} from "./groups";
 import { attributed, type DiffHunk, type ReviewState } from "../../types";
 
 const hunks = [
@@ -58,6 +63,49 @@ describe("computeGuideGroups", () => {
       hunks, // only a.ts:1, b.ts:2, c.ts:3 are live
     );
     expect(groups[0].hunkIds).toEqual(["a.ts:1"]);
+  });
+});
+
+describe("computeGroupFiles", () => {
+  const fileHunks = [
+    { id: "a.ts:1", filePath: "a.ts" },
+    { id: "a.ts:2", filePath: "a.ts" },
+    { id: "b.ts:1", filePath: "b.ts" },
+  ] as DiffHunk[];
+  const hunkById = new Map(fileHunks.map((h) => [h.id, h]));
+
+  it("orders files by where each first appears in the group", () => {
+    const files = computeGroupFiles(["b.ts:1", "a.ts:1"], hunkById);
+    expect(files.map((f) => f.filePath)).toEqual(["b.ts", "a.ts"]);
+  });
+
+  it("collects a file's hunks even when they are not adjacent in the group", () => {
+    const files = computeGroupFiles(["a.ts:1", "b.ts:1", "a.ts:2"], hunkById);
+    expect(files.map((f) => f.filePath)).toEqual(["a.ts", "b.ts"]);
+    expect(files[0].hunks.map((h) => h.id)).toEqual(["a.ts:1", "a.ts:2"]);
+    expect(files[1].hunks.map((h) => h.id)).toEqual(["b.ts:1"]);
+  });
+
+  it("drops hunk ids with no live hunk rather than inventing a file", () => {
+    const files = computeGroupFiles(["vanished.ts:9", "a.ts:1"], hunkById);
+    expect(files).toEqual([{ filePath: "a.ts", hunks: [fileHunks[0]] }]);
+  });
+
+  it("yields per-file unreviewed counts when fed through countUnreviewed", () => {
+    const reviewState = {
+      trustList: [],
+      hunks: { "a.ts:1": { status: attributed("approved", "ui") } },
+    } as unknown as ReviewState;
+    const counts = computeGroupFiles(
+      ["a.ts:1", "a.ts:2", "b.ts:1"],
+      hunkById,
+    ).map((f) =>
+      countUnreviewed(
+        f.hunks.map((h) => h.id),
+        reviewState,
+      ),
+    );
+    expect(counts).toEqual([1, 1]);
   });
 });
 

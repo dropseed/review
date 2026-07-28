@@ -259,13 +259,27 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
         .watch(&repo_path_buf, RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch repository: {e}"))?;
 
-    // Also watch the repo's central storage dir for review state changes
+    // Also watch the repo's central storage dir for review state changes.
+    // `notify` can only watch paths that already exist, and this directory is
+    // only created when a review is first saved — so create it up front rather
+    // than skipping it. Skipping left repos that had never been reviewed with
+    // no `review-state-changed` events for the whole session, which meant CLI
+    // writes (`review approve`, `review guide add`) never reached the app.
+    // Watching the shared parent instead isn't an option: it holds every
+    // repo's state, and the frontend keys these events by repo path.
     if let Ok(central_dir) = review::review::central::get_repo_storage_dir(&repo_path_buf) {
-        if central_dir.exists() {
-            debouncer
-                .watcher()
-                .watch(&central_dir, RecursiveMode::Recursive)
-                .ok();
+        match std::fs::create_dir_all(&central_dir) {
+            Ok(()) => {
+                debouncer
+                    .watcher()
+                    .watch(&central_dir, RecursiveMode::Recursive)
+                    .ok();
+            }
+            Err(e) => {
+                eprintln!(
+                    "[watcher] Failed to create central storage dir for {repo_path_str}: {e}"
+                );
+            }
         }
     }
 

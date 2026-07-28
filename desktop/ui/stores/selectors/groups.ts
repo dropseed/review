@@ -46,6 +46,46 @@ export function countGroupUnreviewed(
   return countUnreviewed(group.hunkIds, reviewState);
 }
 
+/** One file touched by a group, carrying only that group's hunks for it. */
+export interface GroupFile {
+  filePath: string;
+  hunks: DiffHunk[];
+}
+
+/**
+ * Split a group's hunk ids into per-file buckets, ordered by where each file
+ * first appears in the group — the order the guide author put them in, which
+ * is the order the rolling diff renders them in. Shared by
+ * {@link GroupDiffViewer}'s file sections and {@link GuideModePanel}'s nested
+ * file rows so the sidebar lists a section's files in the same order the
+ * section's diff stacks them.
+ *
+ * Ids with no matching hunk are dropped: a group can outlive the hunks it
+ * names (amend/rebase), and a phantom id has no file to file under.
+ */
+export function computeGroupFiles(
+  hunkIds: string[],
+  hunkById: Map<string, DiffHunk>,
+): GroupFile[] {
+  const byPath = new Map<string, DiffHunk[]>();
+  const order: string[] = [];
+  for (const id of hunkIds) {
+    const hunk = hunkById.get(id);
+    if (!hunk) continue;
+    let bucket = byPath.get(hunk.filePath);
+    if (!bucket) {
+      bucket = [];
+      byPath.set(hunk.filePath, bucket);
+      order.push(hunk.filePath);
+    }
+    bucket.push(hunk);
+  }
+  return order.map((filePath) => ({
+    filePath,
+    hunks: byPath.get(filePath) as DiffHunk[],
+  }));
+}
+
 let guideGroupsCache: {
   reviewGroups: HunkGroup[];
   hunks: DiffHunk[];

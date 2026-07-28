@@ -1,5 +1,58 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Spinner } from "./spinner";
+
+/** Scroll offset restore captured just before a collapse removes content. */
+interface CollapseShift {
+  scroller: HTMLElement;
+  scrollTop: number;
+  removedAbove: number;
+}
+
+/** Nearest scrollable ancestor, or null if nothing above this element scrolls. */
+function findScrollParent(el: HTMLElement): HTMLElement | null {
+  let node = el.parentElement;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (
+      (overflowY === "auto" ||
+        overflowY === "scroll" ||
+        overflowY === "overlay") &&
+      node.scrollHeight > node.clientHeight
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * How far the scroll offset must move to keep the viewport visually still once
+ * `content` is unmounted. Only the slice of it sitting above the scroll
+ * container's top edge counts — content collapsing below the fold pulls the
+ * page up under nothing the reader is looking at, so it needs no adjustment.
+ */
+function measureCollapseShift(
+  content: HTMLElement | null,
+): CollapseShift | null {
+  if (!content) return null;
+  const scroller = findScrollParent(content);
+  if (!scroller) return null;
+  const contentRect = content.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
+  const removedAbove = Math.max(
+    0,
+    Math.min(scrollerRect.top - contentRect.top, contentRect.height),
+  );
+  if (removedAbove === 0) return null;
+  return { scroller, scrollTop: scroller.scrollTop, removedAbove };
+}
 
 interface FileDiffStackItemProps {
   filePath: string;
@@ -28,14 +81,30 @@ export function FileDiffStackItem({
   children,
 }: FileDiffStackItemProps): ReactNode {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const pendingShiftRef = useRef<CollapseShift | null>(null);
 
   const prevAutoCollapse = useRef(false);
   useEffect(() => {
     if (autoCollapseSignal && !prevAutoCollapse.current) {
+      // Measured here, before the state change unmounts the diff.
+      pendingShiftRef.current = measureCollapseShift(contentRef.current);
       setIsCollapsed(true);
     }
     prevAutoCollapse.current = autoCollapseSignal ?? false;
   }, [autoCollapseSignal]);
+
+  // Auto-collapse is a progress signal, not a navigation, so it must not move
+  // what the reader is looking at. The webview has no scroll anchoring to fall
+  // back on, so re-apply the offset by hand once the content is gone. Absolute
+  // assignment (not a relative nudge) so it survives the browser's own clamp
+  // when the shrunken content no longer reaches the previous offset.
+  useLayoutEffect(() => {
+    const shift = pendingShiftRef.current;
+    if (!shift || !isCollapsed) return;
+    pendingShiftRef.current = null;
+    shift.scroller.scrollTop = shift.scrollTop - shift.removedAbove;
+  }, [isCollapsed]);
 
   return (
     <div className="border-b border-edge/50">
@@ -86,7 +155,7 @@ export function FileDiffStackItem({
       </div>
 
       {!isCollapsed && (
-        <>
+        <div ref={contentRef}>
           {isLoading && (
             <div className="flex items-center gap-2 px-4 py-6 text-fg-muted">
               <Spinner className="h-4 w-4" />
@@ -94,7 +163,7 @@ export function FileDiffStackItem({
             </div>
           )}
           {children}
-        </>
+        </div>
       )}
     </div>
   );

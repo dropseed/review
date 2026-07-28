@@ -189,8 +189,14 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const { reviewState, isGroupingStale, repoPath, reviewRef } = get();
       if (!repoPath || !reviewRef) return;
       const hunks = getAllHunksFromState(get());
+      const reviewKey = makeReviewKey(repoPath, reviewRef);
       const generated = reviewState?.guide?.state;
-      if (!generated || generated.groups.length === 0) return;
+      if (!generated || generated.groups.length === 0) {
+        // The guide went away (e.g. `review guide clear`). Drop the derived
+        // cache too, or guide mode keeps listing groups that no longer exist.
+        get().removeGroupingEntry(reviewKey);
+        return;
+      }
 
       // If stale, patch the stored groups (remove vanished IDs, bucket new ones)
       // instead of discarding them entirely.
@@ -198,7 +204,6 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
         ? patchStaleGroups(generated.groups, new Set(hunks.map((h) => h.id)))
         : generated.groups;
 
-      const reviewKey = makeReviewKey(repoPath, reviewRef);
       set((prev) => ({
         groupingStates: updateGroupingEntry(
           prev.groupingStates,

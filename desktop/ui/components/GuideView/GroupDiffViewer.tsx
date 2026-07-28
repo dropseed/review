@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useReviewStore } from "../../stores";
 import { useHunkById } from "../../stores/selectors/hunks";
+import { computeGroupFiles } from "../../stores/selectors/groups";
 import { getApiClient } from "../../api";
 import { isHunkReviewed } from "../../types";
 import { countLines } from "../../utils/count-lines";
@@ -245,28 +246,124 @@ function getUnreviewedIds(
   return result;
 }
 
-interface ExpandContextBarProps {
-  label: string;
-  disabled?: boolean;
-  loading?: boolean;
-  onClick: () => void;
+/**
+ * Unmodified lines still hidden on one side of `hunk`, clamped to the file
+ * bounds and to the neighbouring group hunk's already-expanded range. Shared
+ * by the expander's label and its click handler so the count on screen is
+ * exactly what a full expansion would reveal.
+ */
+function remainingContext(
+  hunk: DiffHunk,
+  direction: "above" | "below",
+  expansionByHunk: Map<string, HunkExpansion>,
+  siblings: DiffHunk[],
+  counts: { newLines: number; oldLines: number } | undefined,
+): number {
+  const cur = expansionByHunk.get(hunk.id) ?? { above: 0, below: 0 };
+
+  if (direction === "above") {
+    const topNewLine = hunk.newStart - cur.above;
+    const topOldLine = hunk.oldStart - cur.above;
+    const priorSiblings = siblings
+      .filter((h) => h.oldStart < hunk.oldStart)
+      .sort((a, b) => a.oldStart - b.oldStart);
+    const prevSibling = priorSiblings[priorSiblings.length - 1];
+    const prevBelow = prevSibling
+      ? (expansionByHunk.get(prevSibling.id)?.below ?? 0)
+      : 0;
+    const prevOldEndExclusive = prevSibling
+      ? prevSibling.oldStart + prevSibling.oldCount + prevBelow
+      : 1;
+    const room = Math.min(
+      topNewLine - 1,
+      topOldLine - 1,
+      topOldLine - prevOldEndExclusive,
+    );
+    return Math.max(0, room);
+  }
+
+  const newEnd = hunk.newStart + hunk.newCount - 1 + cur.below;
+  const oldEnd = hunk.oldStart + hunk.oldCount - 1 + cur.below;
+  const newMax = counts?.newLines ?? Infinity;
+  const oldMax = counts?.oldLines ?? Infinity;
+  const nextSibling = siblings
+    .filter((h) => h.oldStart > hunk.oldStart)
+    .sort((a, b) => a.oldStart - b.oldStart)[0];
+  const nextAbove = nextSibling
+    ? (expansionByHunk.get(nextSibling.id)?.above ?? 0)
+    : 0;
+  const nextOldStart = nextSibling
+    ? nextSibling.oldStart - nextAbove
+    : oldMax + 1;
+  const room = Math.min(
+    newMax - newEnd,
+    oldMax - oldEnd,
+    nextOldStart - 1 - oldEnd,
+  );
+  return Number.isFinite(room) ? Math.max(0, room) : 0;
 }
 
+/** The chevron pierre's own expander uses (`diffs-icon-expand`). */
+const EXPAND_CHEVRON = (
+  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M3.47 5.47a.75.75 0 0 1 1.06 0L8 8.94l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
+  </svg>
+);
+
+interface ExpandContextBarProps {
+  direction: "above" | "below";
+  /** Unmodified lines still hidden in this gap. */
+  hiddenLines: number;
+  loading?: boolean;
+  onExpand: (amount: number) => void;
+}
+
+/**
+ * Stand-in for pierre's native hunk-separator expander. Group mode renders one
+ * hunk at a time from a synthetic patch and deliberately withholds whole-file
+ * content — which is what keeps the view group-scoped, but also what stops
+ * pierre from drawing its own expander. This mirrors that control's shape so
+ * the two diff surfaces read as one: a 32px row inset 8px with 8px of air
+ * above and below, a 34px chevron button butted against a rounded label pill
+ * reading "N unmodified lines", separated by a 2px sliver of page background.
+ * Chevron expands a step; the label expands the whole gap, as pierre's does.
+ * The chevron points the way the context will grow — pierre's own arrows read
+ * the other way round, and following it here would just be confusing.
+ */
 function ExpandContextBar({
-  label,
-  disabled,
+  direction,
+  hiddenLines,
   loading,
-  onClick,
+  onExpand,
 }: ExpandContextBarProps): ReactNode {
+  const pill =
+    "flex h-full items-center bg-surface-raised/50 text-fg-muted transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || loading}
-      className="w-full px-4 py-1 text-xxs font-mono text-fg-muted hover:text-fg-secondary hover:bg-surface-hover/40 disabled:opacity-40 disabled:cursor-not-allowed border-y border-edge/30 bg-surface-raised/20 text-center transition-colors"
-    >
-      {loading ? "Loading…" : label}
-    </button>
+    <div className="my-2 flex h-8 items-center gap-[2px] px-2 text-xs select-none">
+      <button
+        type="button"
+        onClick={() => onExpand(EXPAND_STEP)}
+        disabled={loading}
+        aria-label={`Expand ${EXPAND_STEP} lines ${direction}`}
+        className={`${pill} w-[34px] shrink-0 justify-center rounded-l-md hover:text-fg-secondary`}
+      >
+        <span className={direction === "above" ? "rotate-180" : undefined}>
+          {EXPAND_CHEVRON}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onExpand(hiddenLines)}
+        disabled={loading}
+        className={`${pill} min-w-0 flex-1 rounded-r-md px-[1ch] text-left hover:underline`}
+      >
+        <span className="truncate">
+          {loading
+            ? "Loading…"
+            : `${hiddenLines} unmodified line${hiddenLines === 1 ? "" : "s"}`}
+        </span>
+      </button>
+    </div>
   );
 }
 
@@ -373,32 +470,23 @@ export function GroupDiffViewer({
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
   const hunkStates = reviewState?.hunks;
 
-  // Get unique file paths from group's hunk IDs, preserving order
-  const filePaths = useMemo(() => {
-    const seen = new Set<string>();
-    const paths: string[] = [];
-    for (const id of group.hunkIds) {
-      const hunk = hunkById.get(id);
-      if (hunk && !seen.has(hunk.filePath)) {
-        seen.add(hunk.filePath);
-        paths.push(hunk.filePath);
-      }
-    }
-    return paths;
-  }, [group.hunkIds, hunkById]);
+  // This group's files in first-appearance order, each with only the hunks
+  // the group claims — shared with the guide sidebar's nested file rows so
+  // both surfaces agree on the order.
+  const groupFiles = useMemo(
+    () => computeGroupFiles(group.hunkIds, hunkById),
+    [group.hunkIds, hunkById],
+  );
 
-  // Get hunks per file that belong to this group
-  const hunksPerFile = useMemo(() => {
-    const map = new Map<string, DiffHunk[]>();
-    for (const id of group.hunkIds) {
-      const hunk = hunkById.get(id);
-      if (!hunk) continue;
-      const existing = map.get(hunk.filePath) ?? [];
-      existing.push(hunk);
-      map.set(hunk.filePath, existing);
-    }
-    return map;
-  }, [group.hunkIds, hunkById]);
+  const filePaths = useMemo(
+    () => groupFiles.map((f) => f.filePath),
+    [groupFiles],
+  );
+
+  const hunksPerFile = useMemo(
+    () => new Map(groupFiles.map((f) => [f.filePath, f.hunks])),
+    [groupFiles],
+  );
 
   // Load file contents for all files in this group
   useEffect(() => {
@@ -472,47 +560,24 @@ export function GroupDiffViewer({
       const counts = fileLineCounts.get(hunk.filePath);
       const siblings = hunksPerFile.get(hunk.filePath) ?? [];
 
+      const maxStep = remainingContext(
+        hunk,
+        direction,
+        expansionByHunk,
+        siblings,
+        counts,
+      );
+      if (maxStep <= 0) return;
+      const step = Math.min(amount, maxStep);
+
       let requestStart: number;
       let requestEnd: number;
       if (direction === "above") {
         const topNewLine = hunk.newStart - cur.above;
-        const topOldLine = hunk.oldStart - cur.above;
-        // Don't cross into the previous group hunk's expanded range.
-        const priorSiblings = [...siblings]
-          .filter((h) => h.oldStart < hunk.oldStart)
-          .sort((a, b) => a.oldStart - b.oldStart);
-        const prevSibling = priorSiblings[priorSiblings.length - 1];
-        const prevBelow = prevSibling
-          ? (expansionByHunk.get(prevSibling.id)?.below ?? 0)
-          : 0;
-        const prevOldEndExclusive = prevSibling
-          ? prevSibling.oldStart + prevSibling.oldCount + prevBelow
-          : 1;
-        const limitByPrev = topOldLine - prevOldEndExclusive;
-        const maxStep = Math.min(topNewLine - 1, topOldLine - 1, limitByPrev);
-        if (maxStep <= 0) return;
-        const step = Math.min(amount, maxStep);
         requestStart = topNewLine - step;
         requestEnd = topNewLine - 1;
       } else {
         const newEnd = hunk.newStart + hunk.newCount - 1 + cur.below;
-        const oldEnd = hunk.oldStart + hunk.oldCount - 1 + cur.below;
-        const newMax = counts?.newLines ?? Infinity;
-        const oldMax = counts?.oldLines ?? Infinity;
-        // Don't cross into the next group hunk's expanded range.
-        const nextSibling = siblings
-          .filter((h) => h.oldStart > hunk.oldStart)
-          .sort((a, b) => a.oldStart - b.oldStart)[0];
-        const nextAbove = nextSibling
-          ? (expansionByHunk.get(nextSibling.id)?.above ?? 0)
-          : 0;
-        const nextOldStart = nextSibling
-          ? nextSibling.oldStart - nextAbove
-          : oldMax + 1;
-        const limitByNext = nextOldStart - 1 - oldEnd;
-        const maxStep = Math.min(newMax - newEnd, oldMax - oldEnd, limitByNext);
-        if (maxStep <= 0) return;
-        const step = Math.min(amount, maxStep);
         requestStart = newEnd + 1;
         requestEnd = newEnd + step;
       }
@@ -687,7 +752,6 @@ export function GroupDiffViewer({
       lineCacheRef.current,
     );
     const counts = fileLineCounts.get(filePath);
-    const newMax = counts?.newLines ?? Infinity;
 
     return (
       <DiffErrorBoundary
@@ -703,9 +767,6 @@ export function GroupDiffViewer({
       >
         {expandedHunks.map((hunk, i) => {
           const prev = i > 0 ? expandedHunks[i - 1] : null;
-          const newEnd = hunk.newStart + hunk.newCount - 1;
-          const atTopOfFile = hunk.newStart <= 1 || hunk.oldStart <= 1;
-          const atBottomOfFile = newEnd >= newMax;
           const touchesPrev =
             prev != null && hunk.newStart <= prev.newStart + prev.newCount;
           const isLoading = expandingHunks.has(hunk.id);
@@ -727,18 +788,32 @@ export function GroupDiffViewer({
           const blockHunkIds =
             blockSources.length > 0 ? blockSources.map((h) => h.id) : [hunk.id];
 
+          const firstSourceHunk =
+            fileHunks.find((h) => h.id === hunk.id) ?? fileHunks[0];
+          const hiddenAbove = remainingContext(
+            firstSourceHunk,
+            "above",
+            expansionByHunk,
+            fileHunks,
+            counts,
+          );
+          const hiddenBelow = remainingContext(
+            lastSourceHunk,
+            "below",
+            expansionByHunk,
+            fileHunks,
+            counts,
+          );
+
           return (
             <Fragment key={hunk.id}>
-              {!touchesPrev && !atTopOfFile && (
+              {!touchesPrev && hiddenAbove > 0 && (
                 <ExpandContextBar
-                  label={`↑ Expand ${EXPAND_STEP} lines above`}
+                  direction="above"
+                  hiddenLines={hiddenAbove}
                   loading={isLoading}
-                  onClick={() =>
-                    handleExpandContext(
-                      fileHunks.find((h) => h.id === hunk.id) ?? fileHunks[0],
-                      "above",
-                      EXPAND_STEP,
-                    )
+                  onExpand={(amount) =>
+                    handleExpandContext(firstSourceHunk, "above", amount)
                   }
                 />
               )}
@@ -757,12 +832,13 @@ export function GroupDiffViewer({
                   expandUnchanged={false}
                 />
               </div>
-              {i === expandedHunks.length - 1 && !atBottomOfFile && (
+              {i === expandedHunks.length - 1 && hiddenBelow > 0 && (
                 <ExpandContextBar
-                  label={`↓ Expand ${EXPAND_STEP} lines below`}
+                  direction="below"
+                  hiddenLines={hiddenBelow}
                   loading={expandingHunks.has(lastSourceHunk.id)}
-                  onClick={() =>
-                    handleExpandContext(lastSourceHunk, "below", EXPAND_STEP)
+                  onExpand={(amount) =>
+                    handleExpandContext(lastSourceHunk, "below", amount)
                   }
                 />
               )}
@@ -859,9 +935,8 @@ export function GroupDiffViewer({
       </div>
 
       {/* File sections */}
-      {filePaths.map((filePath) => {
+      {groupFiles.map(({ filePath, hunks: fileHunks }) => {
         const fc = fileContents.get(filePath);
-        const fileHunks = hunksPerFile.get(filePath) ?? [];
         const isLoading = loadingFiles.has(filePath);
         const fileUnreviewed = getUnreviewedIds(
           fileHunks.map((h) => h.id),
