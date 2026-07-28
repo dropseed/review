@@ -32,7 +32,9 @@ Slices that need backend access receive an `ApiClient` via `SliceCreatorWithClie
 
 Stored globally via Tauri Store (persists across all repositories, stored in Tauri's app data directory):
 
-- Font size, sidebar width, theme
+- Font size, theme, and split sizes (`tabRailWidth`, `filesPanelWidth`, `diffSplitFraction`)
+
+Split sizes follow one rule, in `utils/resize.ts`: side panels are absolute (rem, so they track the UI scale) and clamped to the current window at render, while content splits are fractions. The *chosen* size is what's persisted, so a width picked on a large display survives a stint on a laptop.
 
 ## App Logs
 

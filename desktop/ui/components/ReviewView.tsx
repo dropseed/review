@@ -33,11 +33,22 @@ import { ResizeHandle } from "./ContentArea/ResizeHandle";
 import { DiffRail } from "./ContentArea/DiffRail";
 import { TerminalPanel } from "./Terminal/TerminalPanel";
 import { TerminalRail } from "./Terminal/TerminalRail";
+import { closeFocusedTerminal } from "./Terminal/close";
 import { SimpleTooltip } from "./ui/tooltip";
 import { WarningIcon, SidebarPanelIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
 import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
+import {
+  TERMINAL_MAX_CONTENT_FRACTION,
+  clampPanelWidthPx,
+  rafThrottle,
+  toggleToCanonical,
+} from "../utils/resize";
+import {
+  TERMINAL_PANEL_WIDTH_MAX,
+  TERMINAL_PANEL_WIDTH_MIN,
+} from "../stores/slices/terminalSlice";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -125,6 +136,16 @@ export function ReviewView({
   const worktreeStale = useReviewStore((s) => s.worktreeStale);
   const worktreePath = useReviewStore((s) => s.worktreePath);
   const localActivity = useReviewStore((s) => s.localActivity);
+
+  // Republish the checkout layout whenever the listings change. These are the
+  // only things that say a worktree appeared or vanished, so this is also when
+  // a terminal left behind by a removed worktree gets adopted by its repo.
+  const globalReviews = useReviewStore((s) => s.globalReviews);
+  const setTerminalCheckouts = useReviewStore((s) => s.setTerminalCheckouts);
+  useEffect(() => {
+    setTerminalCheckouts(localActivity, globalReviews);
+  }, [localActivity, globalReviews, setTerminalCheckouts]);
+
   const isOnCurrentBranch = useMemo(() => {
     if (!repoPath || !comparison) return false;
     const repo = localActivity.find((r) => r.repoPath === repoPath);
@@ -189,8 +210,12 @@ export function ReviewView({
     }
   }, [isRefreshing]);
 
-  // Close handler: cascading close (split -> file -> window)
+  // Close handler: cascading close (terminal pane -> split -> file -> window)
   const handleClose = useCallback(async () => {
+    // A terminal pane goes first when focus is inside one: ⌘W there means
+    // "close this shell", the same as it would in any terminal app, and it
+    // must not reach past it to the window.
+    if (await closeFocusedTerminal()) return;
     const state = useReviewStore.getState();
     if (state.secondaryFile !== null) {
       state.closeSplit();
@@ -281,6 +306,56 @@ export function ReviewView({
     },
     [setTerminalPanelWidth, terminalDockSide],
   );
+
+  // The panel's stored width is px, and a width picked on an ultrawide is most
+  // of a laptop screen. Rather than rewrite the stored width — which would lose
+  // it the moment you unplugged — the row is measured and the panel is capped
+  // at a share of it, so it comes back at full size on the display it was
+  // sized for.
+  const [contentRowWidth, setContentRowWidth] = useState(0);
+  useEffect(() => {
+    const row = contentRowRef.current;
+    if (!row) return;
+    const update = rafThrottle(setContentRowWidth);
+    const observer = new ResizeObserver((entries) => {
+      update(entries[0].contentRect.width);
+    });
+    observer.observe(row);
+    setContentRowWidth(row.clientWidth);
+    return () => {
+      observer.disconnect();
+      update.cancel();
+    };
+  }, []);
+  const appliedTerminalWidth = clampPanelWidthPx(
+    terminalPanelWidth,
+    contentRowWidth,
+    TERMINAL_MAX_CONTENT_FRACTION,
+  );
+
+  // Double-click on the divider splits the content region evenly between the
+  // terminal and the diff, and double-clicking again gives the panel its old
+  // width back.
+  const rememberedTerminalWidth = useRef<number | null>(null);
+  const handleTerminalReset = useCallback(() => {
+    const rowWidth = contentRowRef.current?.clientWidth ?? 0;
+    if (rowWidth === 0) return;
+    // Held inside the panel's own bounds so "even" is a width the panel can
+    // actually take — otherwise the toggle would never register as reached.
+    const even = Math.max(
+      TERMINAL_PANEL_WIDTH_MIN,
+      Math.min(TERMINAL_PANEL_WIDTH_MAX, Math.round(rowWidth / 2)),
+    );
+    const { next, remember } = toggleToCanonical(
+      useReviewStore.getState().terminalPanelWidth,
+      even,
+      rememberedTerminalWidth.current,
+      even,
+      1,
+    );
+    rememberedTerminalWidth.current = remember;
+    setTerminalPanelWidth(Math.round(next));
+  }, [setTerminalPanelWidth]);
 
   // Cmd+` toggles the panel, Cmd+Shift+Enter collapses/restores the diff beside
   // it (iTerm2's maximize-pane chord). Both work regardless of where focus is —
@@ -430,7 +505,7 @@ export function ReviewView({
                       }`
                     : "shrink-0"
                 }`}
-                style={maximized ? undefined : { width: terminalPanelWidth }}
+                style={maximized ? undefined : { width: appliedTerminalWidth }}
               >
                 <TerminalPanel />
               </div>
@@ -462,6 +537,7 @@ export function ReviewView({
               <ResizeHandle
                 orientation="horizontal"
                 onResize={handleTerminalResize}
+                onReset={handleTerminalReset}
               />
             );
             // The diff sits in the same rounded, raised card as a terminal

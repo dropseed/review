@@ -21,6 +21,11 @@ import {
   resolveVscodeTheme,
   type VscodeThemeDetection,
 } from "../../lib/vscode-theme-resolver";
+import {
+  SIDEBAR_LIMITS,
+  clampFraction,
+  type SidebarWidthKey,
+} from "../../utils/resize";
 
 /** Parse a hex color string (e.g., "#1e1e1e") to { r, g, b }. */
 function parseHexColor(
@@ -173,6 +178,7 @@ const defaults = {
   terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
   terminalLetterSpacing: TERMINAL_LETTER_SPACING_DEFAULT,
   terminalLaunchCommand: "",
+  usagePinnedWindows: {} as Record<string, string>,
   codeTheme: "github-dark",
   uiTheme: "review-dark",
   recentRepositories: [] as RecentRepo[],
@@ -203,6 +209,11 @@ const defaults = {
   matchVscodeTheme: false,
   showOutline: false,
   lspDisabledLanguages: [] as string[],
+  // Split sizes. Side panels are absolute (rem, so they track the UI scale);
+  // content splits are fractions. See utils/resize.ts for why.
+  tabRailWidth: SIDEBAR_LIMITS.left.defaultRem,
+  filesPanelWidth: SIDEBAR_LIMITS.right.defaultRem,
+  diffSplitFraction: 0.5,
 };
 
 export interface PreferencesSlice {
@@ -221,6 +232,12 @@ export interface PreferencesSlice {
    * `claude`). Empty means plain shell.
    */
   terminalLaunchCommand: string;
+
+  /**
+   * Which usage window each agent's compact bar plots, by agent id → window
+   * label. Absent means the agent's own headline window.
+   */
+  usagePinnedWindows: Record<string, string>;
 
   codeTheme: string;
   uiTheme: string;
@@ -291,6 +308,18 @@ export interface PreferencesSlice {
   // LSP disabled languages
   lspDisabledLanguages: string[];
 
+  /**
+   * Chosen width of each side panel, in rem. This is the width the user picked,
+   * not necessarily the one on screen — a window too narrow to honor it renders
+   * a clamped width without overwriting the choice, so it comes back intact on
+   * the display it was chosen for.
+   */
+  tabRailWidth: number;
+  filesPanelWidth: number;
+
+  /** Diff primary/secondary split, as the primary pane's share (0..1). */
+  diffSplitFraction: number;
+
   /** True once loadPreferences() has completed (theme, fonts, etc. are ready) */
   preferencesLoaded: boolean;
 
@@ -303,6 +332,8 @@ export interface PreferencesSlice {
   setTerminalLineHeight: (lineHeight: number) => void;
   setTerminalLetterSpacing: (spacing: number) => void;
   setTerminalLaunchCommand: (command: string) => void;
+  /** Pin the usage window an agent's sidebar bar plots; null restores the default. */
+  setUsagePinnedWindow: (agentId: string, windowLabel: string | null) => void;
   setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
@@ -367,6 +398,10 @@ export interface PreferencesSlice {
 
   // LSP disabled languages actions
   setLspDisabledLanguages: (languages: string[]) => void;
+
+  // Split size actions
+  setSidebarWidth: (key: SidebarWidthKey, widthRem: number) => void;
+  setDiffSplitFraction: (fraction: number) => void;
 }
 
 export const createPreferencesSlice: SliceCreatorWithStorage<
@@ -425,6 +460,16 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       // Only new terminals pick this up — running sessions are left alone.
       set({ terminalLaunchCommand: command });
       storage.set("terminalLaunchCommand", command);
+    },
+
+    setUsagePinnedWindow: (agentId, windowLabel) => {
+      // Keyed by label rather than index: an agent can add or drop a window
+      // between reads, and a stale index would silently plot the wrong one.
+      const next = { ...get().usagePinnedWindows };
+      if (windowLabel === null) delete next[agentId];
+      else next[agentId] = windowLabel;
+      set({ usagePinnedWindows: next });
+      storage.set("usagePinnedWindows", next);
     },
 
     setCodeTheme: (theme) => {
@@ -756,6 +801,21 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setLspDisabledLanguages: (languages) => {
       set({ lspDisabledLanguages: languages });
       storage.set("lspDisabledLanguages", languages);
+    },
+
+    setSidebarWidth: (key, widthRem) => {
+      if (get()[key] === widthRem) return;
+      set({ [key]: widthRem } as Partial<PreferencesSlice>);
+      // Called once per animation frame while dragging; the storage layer
+      // debounces its own disk writes, so this is a memory write per frame.
+      storage.set(key, widthRem);
+    },
+
+    setDiffSplitFraction: (fraction) => {
+      const clamped = clampFraction(fraction);
+      if (get().diffSplitFraction === clamped) return;
+      set({ diffSplitFraction: clamped });
+      storage.set("diffSplitFraction", clamped);
     },
   };
 };

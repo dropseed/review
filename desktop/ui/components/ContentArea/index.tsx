@@ -1,7 +1,8 @@
-import { type ReactNode, useState, useCallback, lazy, Suspense } from "react";
+import { type ReactNode, useRef, useCallback, lazy, Suspense } from "react";
 import { useReviewStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
 import { ResizeHandle } from "./ResizeHandle";
+import { toggleToCanonical } from "../../utils/resize";
 const OverviewContent = lazy(() =>
   import("./OverviewContent").then((m) => ({ default: m.OverviewContent })),
 );
@@ -28,8 +29,26 @@ export function ContentArea(): ReactNode {
 
   // When viewing an external file (from LSP go-to-definition), use that path
   const effectiveFile = externalFilePath ?? selectedFile;
-  // Split size as a fraction (0.5 = 50/50 split)
-  const [splitFraction, setSplitFraction] = useState(0.5);
+  // Split size as a fraction (0.5 = 50/50 split). A fraction rather than px
+  // because the two panes are peers dividing one region — the same split reads
+  // correctly on an ultrawide and on a laptop with no conversion.
+  const splitFraction = useReviewStore((s) => s.diffSplitFraction);
+  const setSplitFraction = useReviewStore((s) => s.setDiffSplitFraction);
+
+  // Double-click evens the split out; double-clicking again restores the
+  // lopsided one you had, so the gesture is its own undo.
+  const rememberedSplit = useRef<number | null>(null);
+  const handleSplitReset = useCallback(() => {
+    const { next, remember } = toggleToCanonical(
+      useReviewStore.getState().diffSplitFraction,
+      0.5,
+      rememberedSplit.current,
+      0.5,
+      0.005,
+    );
+    rememberedSplit.current = remember;
+    setSplitFraction(next);
+  }, [setSplitFraction]);
 
   const handlePrimaryClick = useCallback(() => {
     if (secondaryFile !== null) {
@@ -112,6 +131,7 @@ export function ContentArea(): ReactNode {
       <ResizeHandle
         orientation={splitOrientation}
         onResize={setSplitFraction}
+        onReset={handleSplitReset}
       />
 
       {/* Secondary Pane */}

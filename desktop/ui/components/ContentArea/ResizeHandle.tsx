@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { SplitOrientation } from "../../stores/slices/navigationSlice";
+import { clampFraction, rafThrottle } from "../../utils/resize";
 
 interface ResizeHandleProps {
   orientation: SplitOrientation;
   onResize: (fraction: number) => void;
+  /** Double-click action. Owners use it to snap the split even and back again. */
+  onReset?: () => void;
 }
 
-export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
+export function ResizeHandle({
+  orientation,
+  onResize,
+  onReset,
+}: ResizeHandleProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
 
@@ -22,6 +29,11 @@ export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
   );
 
   useEffect(() => {
+    // Coalesced to one update per frame: the panes on either side are diff
+    // viewers, and re-rendering them per pointer event (which a fast mouse
+    // fires several of per frame) was work no one could ever see.
+    const commit = rafThrottle(onResize);
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current || !containerRef.current) return;
 
@@ -30,16 +42,12 @@ export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
 
       const rect = parent.getBoundingClientRect();
 
-      let fraction: number;
-      if (orientation === "horizontal") {
-        fraction = (e.clientX - rect.left) / rect.width;
-      } else {
-        fraction = (e.clientY - rect.top) / rect.height;
-      }
+      const fraction =
+        orientation === "horizontal"
+          ? (e.clientX - rect.left) / rect.width
+          : (e.clientY - rect.top) / rect.height;
 
-      // Clamp between 20% and 80%
-      fraction = Math.max(0.2, Math.min(0.8, fraction));
-      onResize(fraction);
+      commit(clampFraction(fraction));
     };
 
     const handleMouseUp = () => {
@@ -56,6 +64,7 @@ export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      commit.cancel();
     };
   }, [orientation, onResize]);
 
@@ -68,6 +77,8 @@ export function ResizeHandle({ orientation, onResize }: ResizeHandleProps) {
     <div
       ref={containerRef}
       onMouseDown={handleMouseDown}
+      onDoubleClick={onReset}
+      title={onReset ? "Drag to resize · double-click to even out" : undefined}
       className={`group flex-shrink-0 bg-transparent transition-colors ${
         isHorizontal
           ? "w-1 cursor-col-resize hover:bg-status-modified/50 active:bg-status-modified"

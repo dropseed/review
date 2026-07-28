@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useRef } from "react";
 import { clsx } from "clsx";
 import type { SplitDirection } from "./pane-tree";
+import { rafThrottle, toggleToCanonical } from "../../utils/resize";
 
 interface SplitDividerProps {
   /** The parent split's direction: "row" → vertical bar, "column" → horizontal bar. */
@@ -24,6 +25,8 @@ export function SplitDivider({
   onResize,
 }: SplitDividerProps) {
   const isDragging = useRef(false);
+  const dividerRef = useRef<HTMLDivElement | null>(null);
+  const rememberedRef = useRef<number | null>(null);
   const isRow = direction === "row";
 
   const handleMouseDown = useCallback(
@@ -37,14 +40,67 @@ export function SplitDivider({
     [isRow],
   );
 
+  /**
+   * Double-click evens out the two panes this divider separates, and
+   * double-clicking again restores the sizes they had — the gesture undoes
+   * itself.
+   *
+   * The pair is measured off the DOM siblings rather than read from the pane
+   * tree: the divider is handed one callback that takes a fraction of the whole
+   * split, and its own neighbours are the only thing here that knows which two
+   * panes that fraction is about to move.
+   */
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const container = containerRef.current;
+      const divider = dividerRef.current;
+      const before = divider?.previousElementSibling;
+      const after = divider?.nextElementSibling;
+      if (!container || !divider || !before || !after) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const span = isRow ? containerRect.width : containerRect.height;
+      if (span <= 0) return;
+
+      const origin = isRow ? containerRect.left : containerRect.top;
+      const pairStart = isRow
+        ? before.getBoundingClientRect().left
+        : before.getBoundingClientRect().top;
+      const pairEnd = isRow
+        ? after.getBoundingClientRect().right
+        : after.getBoundingClientRect().bottom;
+      const boundary = isRow
+        ? divider.getBoundingClientRect().left
+        : divider.getBoundingClientRect().top;
+
+      const current = (boundary - origin) / span;
+      const even = ((pairStart + pairEnd) / 2 - origin) / span;
+
+      const { next, remember } = toggleToCanonical(
+        current,
+        even,
+        rememberedRef.current,
+        even,
+        0.005,
+      );
+      rememberedRef.current = remember;
+      onResize(next);
+    },
+    [containerRef, isRow, onResize],
+  );
+
   useEffect(() => {
+    // One update per frame, not one per pointer event: each update re-slices the
+    // split, and every terminal in it refits to the new size.
+    const commit = rafThrottle(onResize);
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const fraction = isRow
         ? (e.clientX - rect.left) / rect.width
         : (e.clientY - rect.top) / rect.height;
-      onResize(Math.max(0, Math.min(1, fraction)));
+      commit(Math.max(0, Math.min(1, fraction)));
     };
     const handleMouseUp = () => {
       if (!isDragging.current) return;
@@ -57,12 +113,16 @@ export function SplitDivider({
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      commit.cancel();
     };
   }, [isRow, containerRef, onResize]);
 
   return (
     <div
+      ref={dividerRef}
       onMouseDown={handleMouseDown}
+      onDoubleClick={handleDoubleClick}
+      title="Drag to resize · double-click to even out"
       className={clsx(
         "shrink-0 bg-transparent transition-colors hover:bg-focus-ring/30 active:bg-focus-ring/50",
         isRow ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize",
