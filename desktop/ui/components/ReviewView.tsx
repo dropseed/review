@@ -314,16 +314,10 @@ export function ReviewView({
   return (
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Title-bar strip — only needed with the sidebar collapsed, where
-            this column reaches the window's top-left corner: it keeps the
-            traffic lights clear, restores window dragging, and holds the only
-            way back to the sidebar besides ⌘B. */}
+        {/* Only needed with the sidebar collapsed — it holds the only way back
+            besides ⌘B. */}
         {tabRailCollapsed && (
-          <div
-            data-tauri-drag-region
-            className="flex shrink-0 items-center min-h-[var(--title-bar-height)]
-                       pl-[max(0.75rem,var(--traffic-light-inset))] pr-3"
-          >
+          <div className="flex shrink-0 items-center px-3 pt-2">
             <SimpleTooltip content="Show sidebar (⌘B)" side="bottom">
               <button
                 type="button"

@@ -99,10 +99,7 @@ export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
   }, [selectedRepoPath, handleSelectTarget]);
 
   return (
-    <div
-      className="flex h-full items-center justify-center"
-      data-tauri-drag-region
-    >
+    <div className="flex h-full items-center justify-center">
       <div className="w-full max-w-xl px-6">
         <div className="space-y-6">
           {/* Header */}

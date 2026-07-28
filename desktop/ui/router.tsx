@@ -208,10 +208,7 @@ function EmptyTabState() {
 
   if (repoStatus === "error") {
     return (
-      <div
-        className="flex h-full items-center justify-center"
-        data-tauri-drag-region
-      >
+      <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
           <div className="w-12 h-12 rounded-full bg-status-rejected/10 flex items-center justify-center">
             <svg
@@ -250,15 +247,12 @@ function EmptyTabState() {
   }
 
   return (
-    <div
-      className="relative flex h-full items-center justify-center"
-      data-tauri-drag-region
-    >
+    <div className="relative flex h-full items-center justify-center">
       {tabRailCollapsed && (
         <button
           type="button"
           onClick={toggleTabRail}
-          className="absolute left-2 top-[calc(0.625rem+var(--title-bar-height))]
+          className="absolute left-2 top-2.5
                      flex items-center justify-center w-7 h-7 rounded-md
                      hover:bg-surface-hover/60 transition-colors duration-100
                      text-fg-muted hover:text-fg-secondary"
