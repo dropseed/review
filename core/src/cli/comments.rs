@@ -521,6 +521,7 @@ fn read_stdin_or_file(file: Option<&str>) -> Result<String, String> {
 
 /// `review comment edit` — replace the content of an existing comment.
 pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
+    validate_content(&args.content)?;
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
     let comparison = &review.comparison;
@@ -945,6 +946,13 @@ mod tests {
             content: "   ".into(),
         };
         assert!(validate_comment_input(&empty).is_err());
+    }
+
+    #[test]
+    fn validate_content_rejects_blank() {
+        assert!(validate_content("   ").is_err());
+        assert!(validate_content("").is_err());
+        assert!(validate_content("x").is_ok());
     }
 
     #[test]
