@@ -30,7 +30,9 @@ import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanel } from "./FilesPanel";
 import { ContentArea } from "./ContentArea";
 import { ResizeHandle } from "./ContentArea/ResizeHandle";
+import { DiffRail } from "./ContentArea/DiffRail";
 import { TerminalPanel } from "./Terminal/TerminalPanel";
+import { TerminalRail } from "./Terminal/TerminalRail";
 import { SimpleTooltip } from "./ui/tooltip";
 import { WarningIcon, SidebarPanelIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
@@ -414,23 +416,55 @@ export function ReviewView({
           {/* Activity island — floats over the top of the content region */}
           {comparison && !compareRefMissing && <ActivityBar />}
           {(() => {
-            const dockLeft = showTerminalPanel && terminalDockSide === "left";
-            const dockRight = showTerminalPanel && terminalDockSide === "right";
+            // Closed still occupies the dock edge — as a narrow rail, not
+            // nothing, so there's a way back besides remembering ⌘`.
+            const railed = terminalsSupported && panelMode === "closed";
+            const docked = showTerminalPanel || railed;
+            const dockLeft = docked && terminalDockSide === "left";
+            const dockRight = docked && terminalDockSide === "right";
             const maximized = panelMode === "maximized";
-            const terminalPane = (
+            const terminalPane = railed ? (
+              <div className="w-12 shrink-0 overflow-hidden p-2">
+                <TerminalRail />
+              </div>
+            ) : (
               <div
                 className={`overflow-hidden p-2 ${
-                  maximized ? "min-w-0 flex-1" : "shrink-0"
+                  maximized
+                    ? `min-w-0 flex-1 ${
+                        terminalDockSide === "left" ? "pr-0" : "pl-0"
+                      }`
+                    : "shrink-0"
                 }`}
                 style={maximized ? undefined : { width: terminalPanelWidth }}
               >
                 <TerminalPanel />
               </div>
             );
-            // Maximized: the terminal is the whole content region.
-            if (maximized) return terminalPane;
+            // Maximized: the terminal takes the content region, and the diff
+            // collapses to its own rail on the far edge — the same rule in
+            // reverse, so neither pane can ever vanish without a trace.
+            if (maximized) {
+              const diffRail = (
+                <div className="w-12 shrink-0 overflow-hidden p-2">
+                  <DiffRail />
+                </div>
+              );
+              return terminalDockSide === "left" ? (
+                <>
+                  {terminalPane}
+                  {diffRail}
+                </>
+              ) : (
+                <>
+                  {diffRail}
+                  {terminalPane}
+                </>
+              );
+            }
 
-            const terminalResize = (
+            // The rail is fixed-width — nothing to drag.
+            const terminalResize = railed ? null : (
               <ResizeHandle
                 orientation="horizontal"
                 onResize={handleTerminalResize}
