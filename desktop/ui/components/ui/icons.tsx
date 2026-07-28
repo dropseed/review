@@ -204,3 +204,63 @@ export function CheckIcon({ className = "w-3 h-3" }: IconProps) {
     </svg>
   );
 }
+
+/**
+ * Claude, as the radial burst of Anthropic's mark — reduced to eight even
+ * spokes, which is all that survives at the size the usage row draws it.
+ */
+export function ClaudeIcon({ className = "h-3.5 w-3.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M12 2.5v19M2.5 12h19M5.3 5.3l13.4 13.4M18.7 5.3L5.3 18.7" />
+    </svg>
+  );
+}
+
+/**
+ * Codex, as a six-fold rosette — the silhouette of OpenAI's knot, drawn as
+ * three crossed ellipses because the interlacing itself is illegible this small.
+ */
+export function CodexIcon({ className = "h-3.5 w-3.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      aria-hidden="true"
+    >
+      <ellipse cx="12" cy="12" rx="4" ry="9.2" />
+      <ellipse cx="12" cy="12" rx="4" ry="9.2" transform="rotate(60 12 12)" />
+      <ellipse cx="12" cy="12" rx="4" ry="9.2" transform="rotate(120 12 12)" />
+    </svg>
+  );
+}
+
+/** Circular arrow, for re-reading something on demand. */
+export function RefreshIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <polyline points="21 3 21 9 15 9" />
+    </svg>
+  );
+}

@@ -243,6 +243,8 @@ export interface UsageWindow {
   resetsAtText: string | null;
   /** How long the window runs — with the reset time, this places "now" in it. */
   windowMinutes: number | null;
+  /** The long-horizon cap, as the agent's own parser identified it. */
+  headline: boolean;
 }
 
 export interface AgentUsage {

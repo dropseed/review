@@ -37,6 +37,13 @@ pub struct UsageWindow {
     /// falls inside the window, which is what lets a caller say whether the
     /// percentage is ahead of or behind a straight-line burn.
     pub window_minutes: Option<u64>,
+    /// Whether this is the long-horizon cap worth showing when there's only
+    /// room for one number.
+    ///
+    /// Each agent frames its windows differently, so the agent's own parser —
+    /// which already knows what it's looking at — decides, rather than leaving
+    /// a caller to infer it from a label or a duration.
+    pub headline: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +58,9 @@ pub struct AgentUsage {
     /// When the snapshot was taken. `None` means it was read live just now.
     pub observed_at_unix: Option<i64>,
 }
+
+/// A seven-day window, the long-horizon cap both agents report.
+const WEEK_MINUTES: u64 = 7 * 24 * 60;
 
 /// Coalescing window for repeat reads. The UI polls far less often than this;
 /// the TTL is here to absorb bursts — several windows mounting at once, or a
@@ -72,22 +82,36 @@ static REFRESH: OnceLock<Mutex<()>> = OnceLock::new();
 /// Agents that aren't installed, aren't logged in, or can't be read are simply
 /// absent — the caller renders what it gets, and never has to decide whether an
 /// agent is worth showing.
-pub fn report() -> Result<Vec<AgentUsage>> {
-    if let Some(cached) = cached_report() {
+/// `force` ignores [`CACHE_TTL`], for an explicit user refresh. The cache and
+/// the caller's poll interval are both tuned for ambient background updates,
+/// which is exactly wrong in the one moment the number is known to be stale — a
+/// window that just reset shouldn't take minutes to show up because someone
+/// asked.
+pub fn report(force: bool) -> Result<Vec<AgentUsage>> {
+    let asked_at = Instant::now();
+    if let Some(cached) = fresh_enough(force, asked_at) {
         return Ok(cached);
     }
 
     // Losing this race means someone else is already doing the work; take their
     // result instead of duplicating a ~2s subprocess.
     let _refreshing = lock(REFRESH.get_or_init(|| Mutex::new(())));
-    if let Some(cached) = cached_report() {
+    if let Some(cached) = fresh_enough(force, asked_at) {
         return Ok(cached);
     }
 
     let t0 = Instant::now();
-    let agents: Vec<AgentUsage> = [claude_usage(), codex_usage()]
+    // Claude costs a ~2s subprocess and Codex a walk of its session tree; they
+    // share nothing, and a user waiting on the refresh button waits for both.
+    let (claude, codex) = std::thread::scope(|scope| {
+        let claude = scope.spawn(claude_usage);
+        let codex = scope.spawn(codex_usage);
+        (claude.join(), codex.join())
+    });
+    // A panicking reader loses that agent, not the whole report.
+    let agents: Vec<AgentUsage> = [claude, codex]
         .into_iter()
-        .flatten()
+        .filter_map(|joined| joined.ok().flatten())
         .collect();
     info!(
         "agent usage -> {} agents in {:?}",
@@ -99,10 +123,22 @@ pub fn report() -> Result<Vec<AgentUsage>> {
     Ok(agents)
 }
 
-fn cached_report() -> Option<Vec<AgentUsage>> {
+/// The cached report, when it's good enough for this caller.
+///
+/// A forced read normally rejects the cache outright, with one exception: a
+/// read that *completed after the caller asked* can't be what they're trying to
+/// get past. Honouring it turns two racing refreshes into one subprocess
+/// instead of two four-second ones, without ever handing back a number that
+/// predates the click.
+fn fresh_enough(force: bool, asked_at: Instant) -> Option<Vec<AgentUsage>> {
     let cache = lock(CACHE.get_or_init(|| Mutex::new(None)));
     let (cached_at, agents) = cache.as_ref()?;
-    (cached_at.elapsed() < CACHE_TTL).then(|| agents.clone())
+    let acceptable = if force {
+        *cached_at >= asked_at
+    } else {
+        cached_at.elapsed() < CACHE_TTL
+    };
+    acceptable.then(|| agents.clone())
 }
 
 /// Take a lock, ignoring poisoning — a panic mid-refresh shouldn't disable
@@ -200,6 +236,9 @@ fn parse_claude_windows(text: &str) -> Vec<UsageWindow> {
         let label = capitalize(label.trim());
         windows.push(UsageWindow {
             window_minutes: claude_window_minutes(&label),
+            // Claude reports a 5-hour session alongside one or more weekly
+            // caps; the week is the horizon, the session is a detail.
+            headline: label.to_lowercase().starts_with("week"),
             label,
             used_percent,
             resets_at_unix: None,
@@ -221,7 +260,7 @@ fn claude_window_minutes(label: &str) -> Option<u64> {
     if label.starts_with("session") {
         Some(5 * 60)
     } else if label.starts_with("week") {
-        Some(7 * 24 * 60)
+        Some(WEEK_MINUTES)
     } else {
         None
     }
@@ -387,6 +426,7 @@ fn parse_codex_window(window: &Value) -> Option<UsageWindow> {
         resets_at_unix: window.get("resets_at").and_then(Value::as_i64),
         resets_at_text: None,
         window_minutes,
+        headline: window_minutes == Some(WEEK_MINUTES),
     })
 }
 
@@ -395,7 +435,7 @@ fn parse_codex_window(window: &Value) -> Option<UsageWindow> {
 fn codex_window_label(minutes: Option<u64>) -> String {
     match minutes {
         Some(300) => "Session".to_string(),
-        Some(10080) => "Weekly".to_string(),
+        Some(WEEK_MINUTES) => "Weekly".to_string(),
         Some(m) if m % 1440 == 0 => format!("{}d", m / 1440),
         Some(m) if m % 60 == 0 => format!("{}h", m / 60),
         Some(m) => format!("{m}m"),
@@ -439,6 +479,13 @@ mod tests {
         assert_eq!(windows[1].used_percent, 85.0);
         assert_eq!(windows[1].window_minutes, Some(10080));
         assert_eq!(windows[2].label, "Week (Fable)");
+
+        // The weekly caps are the horizon; the session is a detail. The UI
+        // plots the flagged ones, so getting this wrong changes what the
+        // sidebar bar means.
+        assert!(!windows[0].headline);
+        assert!(windows[1].headline);
+        assert!(windows[2].headline);
     }
 
     #[test]
@@ -448,6 +495,8 @@ mod tests {
         let windows = parse_claude_windows(text);
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].window_minutes, None);
+        // Unrecognized means unflagged; the UI falls back rather than guessing.
+        assert!(!windows[0].headline);
     }
 
     #[test]
@@ -514,7 +563,9 @@ mod tests {
         assert_eq!(usage.windows.len(), 2);
         assert_eq!(usage.windows[0].label, "Session");
         assert_eq!(usage.windows[0].used_percent, 12.5);
+        assert!(!usage.windows[0].headline);
         assert_eq!(usage.windows[1].label, "Weekly");
+        assert!(usage.windows[1].headline);
         assert!(usage.plan.is_none());
     }
 

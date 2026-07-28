@@ -172,8 +172,11 @@ export interface ApiClient {
   /** How much of a review is present locally: listed, fetched, or materialized */
   getReviewTier(repoPath: string, ref: string): Promise<ReviewTierInfo>;
 
-  /** Rate-limit usage for the coding agents installed on this machine. */
-  getAgentUsage(): Promise<AgentUsage[]>;
+  /**
+   * Rate-limit usage for the coding agents installed on this machine.
+   * `force` bypasses the service-side cache, for an explicit user refresh.
+   */
+  getAgentUsage(force?: boolean): Promise<AgentUsage[]>;
 
   /** Listed -> Fetched: pull a PR's head (and base) so its diff reads locally */
   fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string>;

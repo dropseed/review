@@ -205,8 +205,8 @@ export class TauriClient implements ApiClient {
     return invoke<ReviewTierInfo>("get_review_tier", { repoPath, ref });
   }
 
-  async getAgentUsage(): Promise<AgentUsage[]> {
-    return invoke<AgentUsage[]>("get_agent_usage");
+  async getAgentUsage(force = false): Promise<AgentUsage[]> {
+    return invoke<AgentUsage[]>("get_agent_usage", { force });
   }
 
   async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {

@@ -500,11 +500,15 @@ pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInf
 }
 
 /// Rate-limit usage for the coding agents installed on this machine.
+///
+/// `force` bypasses the service-side cache, for the refresh button.
 #[tauri::command]
-pub async fn get_agent_usage() -> Result<Vec<AgentUsage>, String> {
-    tokio::task::spawn_blocking(|| review::service::usage::report().map_err(|e| e.to_string()))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn get_agent_usage(force: bool) -> Result<Vec<AgentUsage>, String> {
+    tokio::task::spawn_blocking(move || {
+        review::service::usage::report(force).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Listed → Fetched: pull a PR's head (and base) so its diff can be read locally.

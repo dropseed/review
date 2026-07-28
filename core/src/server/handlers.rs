@@ -1117,8 +1117,18 @@ async fn misc_resolve_repo_path(
 // Agent usage handlers
 // ============================================================
 
-async fn usage_agents() -> ApiResult<Vec<crate::service::usage::AgentUsage>> {
-    blocking(crate::service::usage::report).await
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentUsageRequest {
+    /// Bypass the service-side cache. Absent means the ambient poll.
+    #[serde(default)]
+    force: bool,
+}
+
+async fn usage_agents(
+    Json(req): Json<AgentUsageRequest>,
+) -> ApiResult<Vec<crate::service::usage::AgentUsage>> {
+    blocking(move || crate::service::usage::report(req.force)).await
 }
 
 // ============================================================

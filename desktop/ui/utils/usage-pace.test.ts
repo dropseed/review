@@ -12,6 +12,7 @@ function window(overrides: Partial<UsageWindow> = {}): UsageWindow {
     resetsAtUnix: null,
     resetsAtText: null,
     windowMinutes: WEEK_MINUTES,
+    headline: true,
     ...overrides,
   };
 }

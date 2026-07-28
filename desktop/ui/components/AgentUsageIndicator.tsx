@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import clsx from "clsx";
 import { useAgentUsage } from "../hooks/useAgentUsage";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import { ClaudeIcon, CodexIcon, RefreshIcon } from "./ui/icons";
 import { formatSeconds } from "../utils/format-age";
 import { pacePercent, formatPaceDelta } from "../utils/usage-pace";
 import type { AgentUsage, UsageWindow } from "../types";
@@ -9,16 +10,27 @@ import type { AgentUsage, UsageWindow } from "../types";
 /** Past this age, a snapshot is old enough that the UI should say so. */
 const STALE_AFTER_SECONDS = 60 * 60;
 
-/**
- * The window closest to its cap — that's the one that will actually stop you,
- * and the only number worth a footer's worth of space.
- */
-function headlineWindow(windows: UsageWindow[]): UsageWindow | undefined {
+/** The fullest of a set of windows — the one that will stop you first. */
+function fullest(windows: UsageWindow[]): UsageWindow | undefined {
   return windows.reduce<UsageWindow | undefined>(
     (worst, window) =>
       worst && worst.usedPercent >= window.usedPercent ? worst : window,
     undefined,
   );
+}
+
+/**
+ * The one number worth a footer's worth of space.
+ *
+ * This used to be whichever window sat closest to its cap, which silently
+ * swapped between the session and the week as they crossed over — so the same
+ * bar meant different things at different times of day. The backend now flags
+ * the long-horizon window per agent; the session stays a detail for the
+ * popover. Where an agent reports several headline caps (Claude splits
+ * all-models from per-model), the fullest is the one that binds.
+ */
+function headlineWindow(windows: UsageWindow[]): UsageWindow | undefined {
+  return fullest(windows.filter((w) => w.headline)) ?? fullest(windows);
 }
 
 /**
@@ -50,6 +62,75 @@ function formatReset(window: UsageWindow): string | null {
   });
 }
 
+const AGENT_ICONS: Record<
+  string,
+  (props: { className?: string }) => ReactNode
+> = {
+  claude: ClaudeIcon,
+  codex: CodexIcon,
+};
+
+/**
+ * The agent's mark, falling back to its name.
+ *
+ * The backend owns the agent list, so a new agent must stay legible here
+ * without a matching frontend change — degrading to the name it already sends
+ * beats a row with no identity at all.
+ */
+function AgentIcon({
+  agent,
+  className,
+}: {
+  agent: AgentUsage;
+  className?: string;
+}): ReactNode {
+  const Icon = AGENT_ICONS[agent.id];
+  if (Icon) return <Icon className={className} />;
+  return (
+    <span className={clsx("shrink-0 text-xxs", className)}>{agent.name}</span>
+  );
+}
+
+/**
+ * A usage bar: a track, a fill, and a tick marking where an even burn would
+ * have you by now. Shared by the compact row and each window in the popover so
+ * the two read as the same measurement at two zoom levels.
+ */
+function UsageBar({
+  percent,
+  pace,
+  dimmed = false,
+}: {
+  percent: number;
+  pace: number | null;
+  dimmed?: boolean;
+}): ReactNode {
+  const width = Math.min(100, Math.max(0, percent));
+  return (
+    <span className={clsx("relative h-1 flex-1", dimmed && "opacity-50")}>
+      <span className="absolute inset-0 overflow-hidden rounded-full bg-fg/[0.10]">
+        <span
+          className={clsx(
+            "absolute inset-y-0 left-0 rounded-full transition-[width] duration-300",
+            barColor(width),
+          )}
+          style={{ width: `${width}%` }}
+        />
+      </span>
+      {/* Where an even burn would have you by now. Sits above the fill so
+          it stays legible whichever side of the mark usage is on. */}
+      {pace !== null && (
+        <span
+          aria-hidden="true"
+          data-testid="pace-marker"
+          className="absolute -top-0.5 -bottom-0.5 w-px bg-fg/50"
+          style={{ left: `${pace}%` }}
+        />
+      )}
+    </span>
+  );
+}
+
 /**
  * Claude and Codex rate-limit usage, one row per agent.
  *
@@ -57,20 +138,33 @@ function formatReset(window: UsageWindow): string | null {
  * machine with neither CLI installed gets an empty list and no widget.
  */
 export function AgentUsageIndicator(): ReactNode {
-  const agents = useAgentUsage();
+  const { agents, refresh, refreshing } = useAgentUsage();
 
   if (agents.length === 0) return null;
 
   return (
     <div className="shrink-0 space-y-0.5 border-t border-t-edge/40 px-3 py-2">
       {agents.map((agent) => (
-        <AgentUsageRow key={agent.id} agent={agent} />
+        <AgentUsageRow
+          key={agent.id}
+          agent={agent}
+          onRefresh={refresh}
+          refreshing={refreshing}
+        />
       ))}
     </div>
   );
 }
 
-function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
+function AgentUsageRow({
+  agent,
+  onRefresh,
+  refreshing,
+}: {
+  agent: AgentUsage;
+  onRefresh: () => void;
+  refreshing: boolean;
+}): ReactNode {
   const headline = headlineWindow(agent.windows);
   if (!headline) return null;
 
@@ -79,6 +173,8 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
   const stale =
     agent.observedAtUnix !== null &&
     nowSeconds - agent.observedAtUnix > STALE_AFTER_SECONDS;
+  /** Both states mean "don't read too much into this number". */
+  const muted = expired || stale;
   const percent = Math.min(100, Math.max(0, headline.usedPercent));
   const pace = expired ? null : pacePercent(headline, nowSeconds);
   const paceDelta = pace === null ? null : formatPaceDelta(percent, pace);
@@ -95,39 +191,24 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
             (paceDelta ? `, ${paceDelta}` : "")
           }
         >
-          <span className="w-11 shrink-0 truncate text-left text-xxs text-fg-faint">
-            {agent.name}
-          </span>
-          <span
+          {/* The mark carries the identity here; the name is a click away in
+              the popover, and the width it frees goes to the bar. */}
+          <AgentIcon
+            agent={agent}
             className={clsx(
-              "relative h-1 flex-1",
-              (expired || stale) && "opacity-50",
+              "h-3.5 w-3.5 shrink-0",
+              muted ? "text-fg-faint/60" : "text-fg-faint",
             )}
-          >
-            <span className="absolute inset-0 overflow-hidden rounded-full bg-fg/[0.10]">
-              <span
-                className={clsx(
-                  "absolute inset-y-0 left-0 rounded-full transition-[width] duration-300",
-                  barColor(percent),
-                )}
-                style={{ width: `${expired ? 0 : percent}%` }}
-              />
-            </span>
-            {/* Where an even burn would have you by now. Sits above the fill so
-                it stays legible whichever side of the mark usage is on. */}
-            {pace !== null && (
-              <span
-                aria-hidden="true"
-                data-testid="pace-marker"
-                className="absolute -top-0.5 -bottom-0.5 w-px bg-fg/50"
-                style={{ left: `${pace}%` }}
-              />
-            )}
-          </span>
+          />
+          <UsageBar
+            percent={expired ? 0 : percent}
+            pace={pace}
+            dimmed={muted}
+          />
           <span
             className={clsx(
               "w-7 shrink-0 text-right text-xxs tabular-nums",
-              expired || stale ? "text-fg-faint" : "text-fg-muted",
+              muted ? "text-fg-faint" : "text-fg-muted",
             )}
           >
             {expired ? "—" : `${Math.round(percent)}%`}
@@ -136,13 +217,31 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
       </PopoverTrigger>
 
       <PopoverContent side="top" align="start" className="w-64 p-0">
-        <div className="flex items-center justify-between border-b border-edge/40 px-3 py-2">
-          <span className="text-xs font-medium text-fg-secondary">
+        <div className="flex items-center gap-2 border-b border-edge/40 px-3 py-2">
+          <AgentIcon agent={agent} className="h-3.5 w-3.5 text-fg-muted" />
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg-secondary">
             {agent.name}
           </span>
           {agent.plan && (
-            <span className="text-xxs text-fg-faint">{agent.plan}</span>
+            <span className="shrink-0 text-xxs text-fg-faint">
+              {agent.plan}
+            </span>
           )}
+          {/* One read covers every agent, so this is deliberately not labelled
+              per-agent even though it sits in one agent's popover. */}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="Refresh usage"
+            title="Refresh usage"
+            className="shrink-0 rounded p-0.5 text-fg-faint transition-colors
+                       hover:bg-fg/[0.06] hover:text-fg-secondary disabled:pointer-events-none"
+          >
+            <RefreshIcon
+              className={clsx("h-3 w-3", refreshing && "animate-spin")}
+            />
+          </button>
         </div>
 
         <div className="py-1">
@@ -163,8 +262,15 @@ function AgentUsageRow({ agent }: { agent: AgentUsage }): ReactNode {
                     {Math.round(window.usedPercent)}%
                   </span>
                 </div>
+                <div className="mt-1 flex">
+                  <UsageBar
+                    percent={expired ? 0 : window.usedPercent}
+                    pace={windowPace}
+                    dimmed={muted}
+                  />
+                </div>
                 {windowPace !== null && (
-                  <div className="mt-0.5 text-xxs text-fg-faint">
+                  <div className="mt-1 text-xxs text-fg-faint">
                     {delta ?? "On pace"} · {Math.round(windowPace)}% of the
                     window elapsed
                   </div>

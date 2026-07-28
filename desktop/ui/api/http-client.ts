@@ -305,8 +305,8 @@ export class HttpClient implements ApiClient {
     return this.post("/api/review/tier", { repoPath, ref });
   }
 
-  async getAgentUsage(): Promise<AgentUsage[]> {
-    return this.post("/api/usage/agents");
+  async getAgentUsage(force = false): Promise<AgentUsage[]> {
+    return this.post("/api/usage/agents", { force });
   }
 
   async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {

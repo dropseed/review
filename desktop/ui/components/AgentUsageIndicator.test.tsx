@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import type { AgentUsage } from "../types";
 
-const getAgentUsage = vi.fn<() => Promise<AgentUsage[]>>();
+const getAgentUsage = vi.fn<(force?: boolean) => Promise<AgentUsage[]>>();
 
 vi.mock("../api", () => ({
   getApiClient: () => ({ getAgentUsage }),
@@ -27,27 +27,35 @@ function claudeResetText(secondsFromNow: number): string {
   return `${month} ${at.getDate()} at ${hour}:${minutes}${meridiem}`;
 }
 
+/** Claude's 5-hour window. Never the headline. */
+function session(usedPercent: number) {
+  return {
+    label: "Session",
+    usedPercent,
+    resetsAtUnix: null,
+    resetsAtText: claudeResetText(2 * HOUR),
+    windowMinutes: 300,
+    headline: false,
+  };
+}
+
+/** Claude's weekly cap, three days from resetting — an even burn sits at 57%. */
+function week(label: string, usedPercent: number) {
+  return {
+    label,
+    usedPercent,
+    resetsAtUnix: null,
+    resetsAtText: claudeResetText(3 * DAY),
+    windowMinutes: 7 * 24 * 60,
+    headline: true,
+  };
+}
+
 function claude(overrides: Partial<AgentUsage> = {}): AgentUsage {
   return {
     id: "claude",
     name: "Claude",
-    windows: [
-      {
-        label: "Session",
-        usedPercent: 8,
-        resetsAtUnix: null,
-        resetsAtText: claudeResetText(2 * HOUR),
-        windowMinutes: 300,
-      },
-      {
-        label: "Week (all models)",
-        usedPercent: 86,
-        resetsAtUnix: null,
-        // Three days left of seven, so an even burn would be at 57%.
-        resetsAtText: claudeResetText(3 * DAY),
-        windowMinutes: 7 * 24 * 60,
-      },
-    ],
+    windows: [session(8), week("Week (all models)", 86)],
     plan: null,
     observedAtUnix: null,
     ...overrides,
@@ -65,6 +73,7 @@ function codex(overrides: Partial<AgentUsage> = {}): AgentUsage {
         resetsAtUnix: NOW_SECONDS + DAY,
         resetsAtText: null,
         windowMinutes: 7 * 24 * 60,
+        headline: true,
       },
     ],
     plan: "Plus",
@@ -96,14 +105,48 @@ afterEach(() => {
 });
 
 describe("AgentUsageIndicator", () => {
-  it("shows the most-constrained window as the headline number", async () => {
+  it("shows the weekly window as the headline number", async () => {
     resolveWith(claude());
     await renderIndicator();
 
-    // 86% (weekly) is what will actually stop you, not the 8% session.
+    // 86% (weekly) is the horizon worth the space, not the 8% session.
     const row = await screen.findByRole("button", { name: /Claude usage/ });
     expect(row.getAttribute("aria-label")).toContain("86%");
     expect(row.getAttribute("aria-label")).toContain("Week (all models)");
+  });
+
+  it("stays on the headline window even when the session is fuller", async () => {
+    // The bar used to plot whichever window was closest to its cap, which meant
+    // it silently changed meaning as the session overtook the week.
+    resolveWith(
+      claude({ windows: [session(94), week("Week (all models)", 21)] }),
+    );
+    await renderIndicator();
+
+    const row = await screen.findByRole("button", { name: /Claude usage/ });
+    expect(row.getAttribute("aria-label")).toContain("21%");
+    expect(row.getAttribute("aria-label")).toContain("Week (all models)");
+  });
+
+  it("picks the fullest cap when an agent flags several as headline", async () => {
+    resolveWith(
+      claude({
+        windows: [week("Week (all models)", 40), week("Week (Fable)", 77)],
+      }),
+    );
+    await renderIndicator();
+
+    const row = await screen.findByRole("button", { name: /Claude usage/ });
+    expect(row.getAttribute("aria-label")).toContain("77%");
+  });
+
+  it("falls back to the fullest window when nothing is flagged", async () => {
+    resolveWith(claude({ windows: [session(63)] }));
+    await renderIndicator();
+
+    const row = await screen.findByRole("button", { name: /Claude usage/ });
+    expect(row.getAttribute("aria-label")).toContain("63%");
+    expect(row.getAttribute("aria-label")).toContain("Session");
   });
 
   it("marks where an even burn would have you by now", async () => {
@@ -129,6 +172,7 @@ describe("AgentUsageIndicator", () => {
             resetsAtUnix: null,
             resetsAtText: claudeResetText(3 * DAY),
             windowMinutes: null,
+            headline: false,
           },
         ],
       }),
@@ -149,6 +193,7 @@ describe("AgentUsageIndicator", () => {
             resetsAtUnix: NOW_SECONDS - 60,
             resetsAtText: null,
             windowMinutes: 7 * 24 * 60,
+            headline: true,
           },
         ],
       }),
@@ -196,6 +241,7 @@ describe("AgentUsageIndicator", () => {
             resetsAtUnix: NOW_SECONDS - 60,
             resetsAtText: null,
             windowMinutes: 7 * 24 * 60,
+            headline: true,
           },
         ],
         observedAtUnix: NOW_SECONDS - 604_800,
@@ -226,5 +272,35 @@ describe("AgentUsageIndicator", () => {
 
     // Still rendered — a failed poll is not an error state worth showing.
     expect(screen.getByRole("button", { name: /Claude usage/ })).toBeDefined();
+  });
+
+  it("re-reads usage on demand, bypassing the cached read", async () => {
+    resolveWith(claude());
+    await renderIndicator();
+
+    // The popover holds the refresh control, so open the row first.
+    const row = await screen.findByRole("button", { name: /Claude usage/ });
+    await act(async () => {
+      row.click();
+    });
+
+    resolveWith(claude({ windows: [week("Week (all models)", 3)] }));
+
+    const refreshButton = await screen.findByRole("button", {
+      name: /Refresh usage/,
+    });
+    await act(async () => {
+      refreshButton.click();
+    });
+
+    await waitFor(() => {
+      // The force flag is what distinguishes this from the ambient poll.
+      expect(getAgentUsage).toHaveBeenCalledWith(true);
+      expect(
+        screen
+          .getByRole("button", { name: /^Claude usage:/ })
+          .getAttribute("aria-label"),
+      ).toContain("3%");
+    });
   });
 });
