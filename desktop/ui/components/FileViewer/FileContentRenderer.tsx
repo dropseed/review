@@ -1,5 +1,6 @@
-import { memo } from "react";
+import { memo, useMemo, useState } from "react";
 import type { FileContent } from "../../types";
+import { countLines } from "../../utils/count-lines";
 import type { SupportedLanguages } from "./languageMap";
 import { isMarkdownFile } from "./languageMap";
 import { ImageViewer } from "./ImageViewer";
@@ -13,6 +14,19 @@ import type { TokenHoverHandler, TokenClickHandler } from "./diff-model";
 import type { ContentMode } from "./content-mode";
 
 export type { TokenHoverHandler, TokenClickHandler };
+
+/**
+ * Combined old+new line budget for auto-expanding unchanged context.
+ *
+ * This renderer only ever draws a single, deliberately opened file — the
+ * multi-file stacks (GroupDiffViewer, WorkingTreeMultiFileDiffViewer) pass
+ * `expandUnchanged={false}` to DiffView directly — so the default here is the
+ * whole file. The ceiling exists purely so generated blobs (lockfiles, minified
+ * bundles, vendored dumps) don't hand the virtualizer hundreds of thousands of
+ * rows at once; ordinary source files sit far below it. Whenever the ceiling
+ * does bite, the banner below says so and offers a one-click override.
+ */
+const AUTO_EXPAND_LINE_BUDGET = 20000;
 
 interface FileContentRendererProps {
   filePath: string;
@@ -56,6 +70,17 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   containerRef,
   handleRef,
 }: FileContentRendererProps) {
+  // Tracked by path rather than as a boolean so switching files drops back to
+  // the automatic decision without an effect.
+  const [forceExpandPath, setForceExpandPath] = useState<string | null>(null);
+
+  // `total` (both sides) is what the diff renderer actually has to lay out;
+  // `current` is what the user would call "the file's length".
+  const lineCounts = useMemo(() => {
+    const current = countLines(fileContent.content);
+    return { current, total: countLines(fileContent.oldContent) + current };
+  }, [fileContent.oldContent, fileContent.content]);
+
   // Markdown preview mode
   if (isMarkdownFile(filePath) && markdownViewMode === "preview") {
     return (
@@ -140,15 +165,13 @@ export const FileContentRenderer = memo(function FileContentRenderer({
         });
       }
 
-      // Diff view (unified or split)
-      // For large files, collapse unchanged sections to improve performance.
-      // Users can expand sections on demand via the expand buttons.
-      const totalLines =
-        (fileContent.oldContent?.split("\n").length ?? 0) +
-        (fileContent.content?.split("\n").length ?? 0);
-      const expandUnchanged = totalLines <= 2500;
+      // Diff view (unified or split) — show the whole file unless it is large
+      // enough that expanding it would stall the renderer.
+      const expandUnchanged =
+        lineCounts.total <= AUTO_EXPAND_LINE_BUDGET ||
+        forceExpandPath === filePath;
 
-      return renderCodeView({
+      const codeView = renderCodeView({
         kind: "diff",
         diffPatch: fileContent.diffPatch,
         hunks: fileContent.hunks,
@@ -157,6 +180,26 @@ export const FileContentRenderer = memo(function FileContentRenderer({
         viewMode,
         expandUnchanged,
       });
+
+      if (expandUnchanged) return codeView;
+
+      return (
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-edge/50 bg-surface-raised/30 px-4 py-1.5 text-xxs text-fg-muted">
+            <span>
+              Unchanged lines are collapsed — this file is{" "}
+              {lineCounts.current.toLocaleString()} lines.
+            </span>
+            <button
+              onClick={() => setForceExpandPath(filePath)}
+              className="rounded bg-surface-raised/60 px-2 py-0.5 font-medium text-fg-secondary transition-colors hover:bg-surface-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
+            >
+              Expand full file
+            </button>
+          </div>
+          {codeView}
+        </div>
+      );
     }
 
     case "svg":

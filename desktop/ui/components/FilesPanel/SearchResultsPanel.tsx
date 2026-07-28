@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { groupSearchResultsByFile } from "../../utils/search";
 import { SymbolSearchPanel } from "./SymbolSearchPanel";
 import { FileGroupHeader } from "./FileGroupHeader";
+import { SearchPanelMessage } from "./SearchPanelMessage";
 import type { SearchMode } from "../../stores/slices/searchSlice";
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
@@ -224,15 +225,13 @@ export function SearchResultsPanel(): ReactNode {
       >
         <div className="flex-1 overflow-y-auto scrollbar-thin pb-8">
           {searchError ? (
-            <div className="px-4 py-8 text-center text-xs text-status-rejected">
-              {searchError}
-            </div>
+            <SearchPanelMessage tone="error">{searchError}</SearchPanelMessage>
           ) : visibleResults.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-fg-muted">
+            <SearchPanelMessage>
               {searchVerifiedOnly && searchResults.length > 0
                 ? "No verified matches. Toggle off to include text-only hits."
                 : getEmptyStateMessage(query, searchLoading)}
-            </div>
+            </SearchPanelMessage>
           ) : (
             groupedResults.map((group) => (
               <div key={group.filePath}>

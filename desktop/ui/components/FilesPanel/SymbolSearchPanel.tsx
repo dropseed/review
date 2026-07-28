@@ -5,6 +5,7 @@ import { useDebounce } from "../../hooks/useDebounce";
 import { SymbolKindBadge } from "../symbols";
 import { fuzzyMatch, HighlightedText } from "../symbols/utils";
 import { FileGroupHeader } from "./FileGroupHeader";
+import { SearchPanelMessage } from "./SearchPanelMessage";
 import type { FileSymbol, RepoFileSymbols } from "../../types";
 
 interface FlatRepoSymbol {
@@ -129,27 +130,15 @@ export function SymbolSearchPanel({ query }: { query: string }): ReactNode {
   };
 
   if (repoSymbolsLoading) {
-    return (
-      <div className="px-4 py-8 text-center text-xs text-fg-muted">
-        Loading symbols…
-      </div>
-    );
+    return <SearchPanelMessage>Loading symbols…</SearchPanelMessage>;
   }
 
   if (!debouncedQuery.trim()) {
-    return (
-      <div className="px-4 py-8 text-center text-xs text-fg-muted">
-        Type to search symbols…
-      </div>
-    );
+    return <SearchPanelMessage>Type to search symbols…</SearchPanelMessage>;
   }
 
   if (results.length === 0) {
-    return (
-      <div className="px-4 py-8 text-center text-xs text-fg-muted">
-        No matching symbols
-      </div>
-    );
+    return <SearchPanelMessage>No matching symbols</SearchPanelMessage>;
   }
 
   return (

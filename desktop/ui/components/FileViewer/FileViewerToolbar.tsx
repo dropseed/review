@@ -3,6 +3,7 @@ import { useReviewStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { useNavigate } from "react-router-dom";
+import { cn } from "../../lib/utils";
 import { Breadcrumbs } from "../Breadcrumbs";
 import { getPlatformServices } from "../../platform";
 import {
@@ -10,6 +11,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
 import { SimpleTooltip } from "../ui/tooltip";
@@ -102,15 +107,23 @@ interface ToggleButtonGroupProps<T extends string> {
   options: [T, string, string?][];
   value: T;
   onChange: (value: T) => void;
+  /** Extra classes on the group wrapper (used for container-query visibility) */
+  className?: string;
 }
 
 function ToggleButtonGroup<T extends string>({
   options,
   value,
   onChange,
+  className,
 }: ToggleButtonGroupProps<T>): JSX.Element {
   return (
-    <div className="flex items-center rounded bg-surface-raised/30 p-0.5">
+    <div
+      className={cn(
+        "flex items-center rounded bg-surface-raised/30 p-0.5",
+        className,
+      )}
+    >
       {options.map(([optionValue, label, shortLabel]) => (
         <button
           key={optionValue}
@@ -152,6 +165,64 @@ const DIFF_VIEW_OPTIONS: [DiffViewMode, string][] = [
   ["new", "New"],
 ];
 
+/**
+ * Section of mutually exclusive view modes inside the overflow menu — the
+ * fallback for the inline ToggleButtonGroups once the pane is too narrow.
+ */
+function MenuViewModeSection<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: [T, string, string?][];
+  value: T;
+  onChange: (value: T) => void;
+}): JSX.Element {
+  return (
+    <>
+      <DropdownMenuLabel className="px-3 py-1 text-xxs font-medium uppercase tracking-wide text-fg-muted">
+        {label}
+      </DropdownMenuLabel>
+      <DropdownMenuRadioGroup
+        value={value}
+        onValueChange={(next) => onChange(next as T)}
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <DropdownMenuRadioItem
+            key={optionValue}
+            value={optionValue}
+            className="text-xs"
+          >
+            {optionLabel}
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+      <DropdownMenuSeparator />
+    </>
+  );
+}
+
+/**
+ * Overflow-menu twin of OutlineToggleButton. Kept a leaf so the `showOutline`
+ * subscription doesn't re-render the whole toolbar.
+ */
+function OutlineMenuItem(): JSX.Element {
+  const showOutline = useReviewStore((s) => s.showOutline);
+  const toggleOutline = useReviewStore((s) => s.toggleOutline);
+
+  return (
+    <DropdownMenuCheckboxItem
+      checked={showOutline}
+      onCheckedChange={toggleOutline}
+      className="text-xs"
+    >
+      Symbol outline
+    </DropdownMenuCheckboxItem>
+  );
+}
+
 function OutlineToggleButton() {
   const showOutline = useReviewStore((s) => s.showOutline);
   const toggleOutline = useReviewStore((s) => s.toggleOutline);
@@ -160,7 +231,7 @@ function OutlineToggleButton() {
     <SimpleTooltip content="Symbol outline">
       <button
         onClick={toggleOutline}
-        className={`flex items-center justify-center w-6 h-6 rounded transition-colors ${
+        className={`hidden @lg:flex items-center justify-center w-6 h-6 rounded transition-colors ${
           showOutline
             ? "text-fg-secondary bg-surface-raised/50"
             : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised"
@@ -431,12 +502,14 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
         />
         <div className="flex shrink-0 items-center gap-2">
           {contentMode.type === "plain" && (
-            <LanguageSelector
-              language={effectiveLanguage}
-              detectedLanguage={detectedLanguage}
-              isOverridden={isLanguageOverridden}
-              onLanguageChange={onLanguageChange}
-            />
+            <span className="hidden @md:contents">
+              <LanguageSelector
+                language={effectiveLanguage}
+                detectedLanguage={detectedLanguage}
+                isOverridden={isLanguageOverridden}
+                onLanguageChange={onLanguageChange}
+              />
+            </span>
           )}
           {renderFileStatusBadge()}
 
@@ -462,6 +535,49 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {/* Overflow twins of the right-hand controls. Radix portals this
+                  menu outside the @container, so container queries can't hide
+                  them at wide widths — they stay listed at every width. */}
+              {isMarkdownFile(filePath) && (
+                <MenuViewModeSection
+                  label="Markdown view"
+                  options={MARKDOWN_VIEW_OPTIONS}
+                  value={markdownViewMode}
+                  onChange={onMarkdownViewModeChange}
+                />
+              )}
+              {contentMode.type === "svg" && contentMode.hasRendered && (
+                <MenuViewModeSection
+                  label="SVG view"
+                  options={SVG_VIEW_OPTIONS}
+                  value={svgViewMode}
+                  onChange={onSvgViewModeChange}
+                />
+              )}
+              {showDiffControls && (
+                <MenuViewModeSection
+                  label="Diff view"
+                  options={DIFF_VIEW_OPTIONS}
+                  value={viewMode}
+                  onChange={handleDiffViewModeChange}
+                />
+              )}
+              {hasSymbols && <OutlineMenuItem />}
+              {onSplitOrRotate && (
+                <DropdownMenuItem onClick={onSplitOrRotate}>
+                  <svg
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M12 3v18" />
+                  </svg>
+                  {isSplitActive ? "Rotate split" : "Split view"}
+                </DropdownMenuItem>
+              )}
+              {(hasSymbols || onSplitOrRotate) && <DropdownMenuSeparator />}
               <DropdownMenuItem onClick={() => revealInBrowse(filePath)}>
                 <svg
                   fill="none"
@@ -568,9 +684,17 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           </DropdownMenu>
         </div>
       </div>
+      {/* Only the breadcrumb can absorb a squeeze; once it is fully clipped the
+          two clusters would push each other out of the row. So controls drop
+          out by container width, cheapest-to-lose first: view-mode groups and
+          the diff-display gear below @xl, outline and split below @lg. The
+          dropped view modes, outline and split stay reachable from the "…"
+          menu; the gear and the language override are display preferences that
+          simply return when the pane widens. */}
       <div className="flex shrink-0 items-center gap-2">
         {isMarkdownFile(filePath) && (
           <ToggleButtonGroup
+            className="hidden @xl:flex"
             options={MARKDOWN_VIEW_OPTIONS}
             value={markdownViewMode}
             onChange={onMarkdownViewModeChange}
@@ -578,6 +702,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
         )}
         {contentMode.type === "svg" && contentMode.hasRendered && (
           <ToggleButtonGroup
+            className="hidden @xl:flex"
             options={SVG_VIEW_OPTIONS}
             value={svgViewMode}
             onChange={onSvgViewModeChange}
@@ -586,11 +711,14 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
         {showDiffControls && (
           <>
             <ToggleButtonGroup
+              className="hidden @xl:flex"
               options={DIFF_VIEW_OPTIONS}
               value={viewMode}
               onChange={handleDiffViewModeChange}
             />
-            <DiffOptionsPopover />
+            <span className="hidden @xl:contents">
+              <DiffOptionsPopover />
+            </span>
           </>
         )}
         {hasSymbols && <OutlineToggleButton />}
@@ -600,7 +728,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
           >
             <button
               onClick={onSplitOrRotate}
-              className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+              className="hidden @lg:flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
             >
               <svg
                 className={`w-3.5 h-3.5 transition-transform ${splitOrientation === "vertical" ? "rotate-90" : ""}`}
