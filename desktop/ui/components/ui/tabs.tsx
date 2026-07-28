@@ -32,7 +32,9 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex-1 rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 data-[state=active]:bg-surface-hover data-[state=active]:text-fg data-[state=inactive]:text-fg-muted data-[state=inactive]:hover:text-fg-secondary",
+        // min-w-0 so a long label truncates instead of forcing the row wider
+        // than the panel; the count badge stays shrink-0 beside it.
+        "flex min-w-0 flex-1 items-center justify-center gap-1 truncate rounded px-2 py-1 text-xxs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50 data-[state=active]:bg-surface-hover data-[state=active]:text-fg data-[state=inactive]:text-fg-muted data-[state=inactive]:hover:text-fg-secondary",
         className,
       )}
       {...props}

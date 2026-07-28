@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { useHasAnyHunks } from "../../../stores/selectors/hunks";
 import type { FilesPanelTab, ProcessedFileEntry } from "../types";
@@ -93,17 +93,31 @@ export function useFilePanelNavigation({
     }
   }, [requestedFilesPanelTab, clearRequestedFilesPanelTab]);
 
-  // Derive whether the Git tab should be visible: the comparison head must
-  // match the current branch, and there must be actual working tree changes.
+  // Whether a working tree is a thing this review even has. Reviewing a branch
+  // that isn't checked out means there is no working tree to show — that's
+  // inapplicable, not empty, and it's the only reason to hide the tab.
+  //
+  // Emptiness deliberately does NOT hide it: a tab that vanishes as you stage
+  // the last file makes the row of tabs move under you and leaves no way to
+  // tell "nothing changed" from "where did that go". The count badge carries
+  // that instead.
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const comparison = useReviewStore((s) => s.comparison);
   const showGitTab =
     gitStatus !== null &&
     comparison !== null &&
-    comparison.head === gitStatus.currentBranch &&
-    (gitStatus.staged.length > 0 ||
-      gitStatus.unstaged.length > 0 ||
-      gitStatus.untracked.length > 0);
+    comparison.head === gitStatus.currentBranch;
+
+  // Files, not entries: git lists a path under both staged and unstaged when
+  // it has changes of each kind, and "2" for one edited file would be a lie.
+  const gitChangeCount = useMemo(() => {
+    if (!gitStatus) return 0;
+    return new Set([
+      ...gitStatus.staged.map((f) => f.path),
+      ...gitStatus.unstaged.map((f) => f.path),
+      ...gitStatus.untracked,
+    ]).size;
+  }, [gitStatus]);
 
   // Auto-switch away from git tab when it is no longer applicable
   useEffect(() => {
@@ -243,6 +257,7 @@ export function useFilePanelNavigation({
     selectedFile,
     viewMode,
     showGitTab,
+    gitChangeCount,
     setFilesPanelTab: handleSetFilesPanelTab,
     expandedPaths,
     togglePath,

@@ -6,6 +6,8 @@ import {
   useFilePanelApproval,
 } from "./hooks";
 import { useReviewStore } from "../../stores";
+import { useReviewProgress } from "../../hooks/useReviewProgress";
+import { CheckIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
@@ -26,6 +28,23 @@ import { CommitRangeHeader } from "./CommitRangeHeader";
 import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
+
+/**
+ * How much is waiting behind a tab, so you don't have to open it to find out.
+ *
+ * Deliberately absent at zero rather than showing "0" — an empty tab should
+ * look quiet, not like it's reporting something. The badge inherits the
+ * trigger's colour so it brightens with the active tab instead of competing
+ * with it, which also keeps one treatment across all three counts.
+ */
+function TabCount({ value, max }: { value: number; max?: number }) {
+  if (value <= 0) return null;
+  return (
+    <span className="shrink-0 rounded-full bg-fg/10 px-1 font-medium tabular-nums">
+      {max !== undefined && value >= max ? `${max}+` : value}
+    </span>
+  );
+}
 
 export function FilesPanel() {
   const comparison = useReviewStore((s) => s.comparison);
@@ -64,6 +83,7 @@ export function FilesPanel() {
     selectedFile,
     viewMode,
     showGitTab,
+    gitChangeCount,
     setFilesPanelTab,
     expandedPaths,
     togglePath,
@@ -106,6 +126,9 @@ export function FilesPanel() {
 
   // Search state
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
+
+  // What the Review tab has waiting, for its badge.
+  const { pendingHunks, totalHunks } = useReviewProgress();
 
   // Sort menu items shared across tabs
   const sortMenuItems = useMemo(
@@ -204,19 +227,30 @@ export function FilesPanel() {
             >
               <TabsList aria-label="File view mode">
                 {comparison && showGitTab && (
-                  <TabsTrigger value="git">Git</TabsTrigger>
+                  <TabsTrigger value="git">
+                    Git
+                    <TabCount value={gitChangeCount} />
+                  </TabsTrigger>
                 )}
                 {comparison && (
-                  <TabsTrigger value="changes">Review</TabsTrigger>
+                  <TabsTrigger value="changes">
+                    Review
+                    {/* Unreviewed, not total: the count is there to answer
+                        "is anything waiting", and a check answers it better
+                        than a zero once the answer is no. */}
+                    {pendingHunks > 0 ? (
+                      <TabCount value={pendingHunks} />
+                    ) : (
+                      totalHunks > 0 && (
+                        <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
+                      )
+                    )}
+                  </TabsTrigger>
                 )}
                 <TabsTrigger value="browse">Browse</TabsTrigger>
-                <TabsTrigger value="search" className="flex items-center gap-1">
+                <TabsTrigger value="search">
                   Search
-                  {searchResultCount > 0 && (
-                    <span className="rounded-full bg-status-modified/20 px-1.5 py-0.5 text-xxs font-medium tabular-nums text-status-modified">
-                      {searchResultCount >= 100 ? "100+" : searchResultCount}
-                    </span>
-                  )}
+                  <TabCount value={searchResultCount} max={100} />
                 </TabsTrigger>
               </TabsList>
             </Tabs>
