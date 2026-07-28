@@ -23,7 +23,7 @@ export function pacePercent(
 }
 
 /** The window's reset instant in unix seconds, however the agent expressed it. */
-function windowResetsAt(
+export function windowResetsAt(
   window: UsageWindow,
   nowSeconds: number,
 ): number | null {
@@ -93,6 +93,41 @@ export function parseResetText(
   }
 
   return best === null ? null : Math.round(best / 1000);
+}
+
+/**
+ * How long until the window resets, as a duration rather than a date.
+ *
+ * The agents state this as wall-clock — Claude in prose, Codex as a timestamp —
+ * which makes you do the subtraction yourself. "In 3h" is the thing you
+ * actually wanted to know, and it reads the same for both agents. Callers
+ * should keep the absolute wording somewhere reachable, since a duration can't
+ * tell you which afternoon it means.
+ *
+ * `null` when the instant can't be resolved, or has already passed.
+ */
+export function formatResetsIn(
+  window: UsageWindow,
+  nowSeconds: number,
+): string | null {
+  const resetsAt = windowResetsAt(window, nowSeconds);
+  if (resetsAt === null) return null;
+
+  const seconds = resetsAt - nowSeconds;
+  if (seconds <= 0) return null;
+  if (seconds < 60) return "under a minute";
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  // Hours carry a half for the first couple of days, where "1h" and "2h" are
+  // far apart in practice; past that the extra precision is noise.
+  const hours = seconds / 3600;
+  if (hours < 48) {
+    const rounded = Math.round(hours * 2) / 2;
+    return `${rounded % 1 === 0 ? rounded : rounded.toFixed(1)}h`;
+  }
+  return `${Math.round(hours / 24)}d`;
 }
 
 /**

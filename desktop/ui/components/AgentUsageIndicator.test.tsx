@@ -2,13 +2,18 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import type { AgentUsage } from "../types";
 
-const getAgentUsage = vi.fn<(force?: boolean) => Promise<AgentUsage[]>>();
+// Hoisted, because the component reaches the store, whose module initializer
+// calls getApiClient() — that runs before a plain `const` mock is initialized.
+const { getAgentUsage } = vi.hoisted(() => ({
+  getAgentUsage: vi.fn<(force?: boolean) => Promise<AgentUsage[]>>(),
+}));
 
 vi.mock("../api", () => ({
   getApiClient: () => ({ getAgentUsage }),
 }));
 
 import { AgentUsageIndicator } from "./AgentUsageIndicator";
+import { useReviewStore } from "../stores";
 
 const NOW_SECONDS = 1_800_000_000;
 const HOUR = 3_600;
@@ -97,6 +102,8 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(NOW_SECONDS * 1000);
   getAgentUsage.mockReset();
+  // The store is a singleton, so a pin set by one test would follow the rest.
+  useReviewStore.setState({ usagePinnedWindows: {} });
 });
 
 afterEach(() => {
@@ -138,6 +145,66 @@ describe("AgentUsageIndicator", () => {
 
     const row = await screen.findByRole("button", { name: /Claude usage/ });
     expect(row.getAttribute("aria-label")).toContain("77%");
+  });
+
+  it("plots whichever window you pick from the popover", async () => {
+    // The week is the default, but the session is what tells you whether to
+    // start something right now.
+    resolveWith(claude());
+    await renderIndicator();
+
+    const row = await screen.findByRole("button", { name: /^Claude usage:/ });
+    expect(row.getAttribute("aria-label")).toContain("Week (all models)");
+
+    await act(async () => {
+      row.click();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: /Show Session/ }).click();
+    });
+
+    await waitFor(() => {
+      const label = screen
+        .getByRole("button", { name: /^Claude usage:/ })
+        .getAttribute("aria-label");
+      expect(label).toContain("Session");
+      expect(label).toContain("8%");
+    });
+  });
+
+  it("returns to the default when you pick the pinned window again", async () => {
+    resolveWith(claude());
+    await renderIndicator();
+
+    const row = await screen.findByRole("button", { name: /^Claude usage:/ });
+    await act(async () => {
+      row.click();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: /Show Session/ }).click();
+    });
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("button", { name: /^Claude usage:/ })
+          .getAttribute("aria-label"),
+      ).toContain("Session");
+    });
+
+    // Clicking the shown one is the way back, without having to know which
+    // window the default would have chosen.
+    await act(async () => {
+      screen
+        .getByRole("button", { name: /Session, shown in the sidebar/ })
+        .click();
+    });
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("button", { name: /^Claude usage:/ })
+          .getAttribute("aria-label"),
+      ).toContain("Week (all models)");
+    });
   });
 
   it("falls back to the fullest window when nothing is flagged", async () => {

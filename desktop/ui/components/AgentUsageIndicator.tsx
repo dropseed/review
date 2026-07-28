@@ -2,9 +2,14 @@ import { type ReactNode } from "react";
 import clsx from "clsx";
 import { useAgentUsage } from "../hooks/useAgentUsage";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
-import { ClaudeIcon, CodexIcon, RefreshIcon } from "./ui/icons";
+import { ClaudeIcon, CodexIcon, RefreshIcon, CheckIcon } from "./ui/icons";
+import { useReviewStore } from "../stores";
 import { formatSeconds } from "../utils/format-age";
-import { pacePercent, formatPaceDelta } from "../utils/usage-pace";
+import {
+  pacePercent,
+  formatPaceDelta,
+  formatResetsIn,
+} from "../utils/usage-pace";
 import type { AgentUsage, UsageWindow } from "../types";
 
 /** Past this age, a snapshot is old enough that the UI should say so. */
@@ -28,8 +33,17 @@ function fullest(windows: UsageWindow[]): UsageWindow | undefined {
  * the long-horizon window per agent; the session stays a detail for the
  * popover. Where an agent reports several headline caps (Claude splits
  * all-models from per-model), the fullest is the one that binds.
+ *
+ * `pinnedLabel` is the user's own pick from the popover, which wins when it
+ * still matches a window the agent reports — an agent that stops reporting it
+ * falls back rather than showing nothing.
  */
-function headlineWindow(windows: UsageWindow[]): UsageWindow | undefined {
+function headlineWindow(
+  windows: UsageWindow[],
+  pinnedLabel?: string,
+): UsageWindow | undefined {
+  const pinned = windows.find((w) => w.label === pinnedLabel);
+  if (pinned) return pinned;
   return fullest(windows.filter((w) => w.headline)) ?? fullest(windows);
 }
 
@@ -52,7 +66,8 @@ function isExpired(agent: AgentUsage, nowSeconds: number): boolean {
   return dated.length > 0 && dated.every((w) => w.resetsAtUnix! < nowSeconds);
 }
 
-function formatReset(window: UsageWindow): string | null {
+/** The reset instant as the agent stated it — the tooltip behind "in 3h". */
+function formatResetAt(window: UsageWindow): string | null {
   if (window.resetsAtText) return window.resetsAtText;
   if (window.resetsAtUnix === null) return null;
   return new Date(window.resetsAtUnix * 1000).toLocaleString(undefined, {
@@ -165,7 +180,10 @@ function AgentUsageRow({
   onRefresh: () => void;
   refreshing: boolean;
 }): ReactNode {
-  const headline = headlineWindow(agent.windows);
+  const usagePinnedWindows = useReviewStore((s) => s.usagePinnedWindows);
+  const setUsagePinnedWindow = useReviewStore((s) => s.setUsagePinnedWindow);
+  const pinnedLabel = usagePinnedWindows[agent.id];
+  const headline = headlineWindow(agent.windows, pinnedLabel);
   if (!headline) return null;
 
   const nowSeconds = Date.now() / 1000;
@@ -244,21 +262,63 @@ function AgentUsageRow({
           </button>
         </div>
 
+        {/* Each window is a choice of what the sidebar bar plots. The default
+            is the agent's long-horizon cap, but the session is the number that
+            matters when you're deciding whether to start something now. */}
         <div className="py-1">
           {agent.windows.map((window) => {
-            const resets = formatReset(window);
+            const resetsAt = formatResetAt(window);
+            const resetsIn = expired
+              ? null
+              : formatResetsIn(window, nowSeconds);
             const windowPace = expired ? null : pacePercent(window, nowSeconds);
             const delta =
               windowPace === null
                 ? null
                 : formatPaceDelta(window.usedPercent, windowPace);
+            const isShown = window.label === headline.label;
             return (
-              <div key={window.label} className="px-3 py-1.5">
+              <button
+                key={window.label}
+                type="button"
+                onClick={() =>
+                  // Clicking the one already shown reverts to the default,
+                  // so there's a way back without knowing which that was.
+                  setUsagePinnedWindow(
+                    agent.id,
+                    pinnedLabel === window.label ? null : window.label,
+                  )
+                }
+                aria-pressed={isShown}
+                // Without this the name is the whole block of numbers below.
+                aria-label={
+                  isShown
+                    ? `${window.label}, shown in the sidebar`
+                    : `Show ${window.label} in the sidebar`
+                }
+                title={
+                  isShown
+                    ? "Shown in the sidebar"
+                    : `Show ${window.label} in the sidebar`
+                }
+                className={clsx(
+                  "block w-full px-3 py-1.5 text-left transition-colors",
+                  isShown ? "bg-fg/[0.04]" : "hover:bg-fg/[0.06]",
+                )}
+              >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-fg-secondary">
+                  <span
+                    className={clsx(
+                      "truncate text-xs",
+                      isShown ? "text-fg" : "text-fg-secondary",
+                    )}
+                  >
                     {window.label}
                   </span>
-                  <span className="shrink-0 text-xs tabular-nums text-fg-muted">
+                  {isShown && (
+                    <CheckIcon className="h-2.5 w-2.5 shrink-0 text-fg-faint" />
+                  )}
+                  <span className="ml-auto shrink-0 text-xs tabular-nums text-fg-muted">
                     {Math.round(window.usedPercent)}%
                   </span>
                 </div>
@@ -275,12 +335,17 @@ function AgentUsageRow({
                     window elapsed
                   </div>
                 )}
-                {resets && (
-                  <div className="mt-0.5 text-xxs text-fg-faint">
-                    Resets {resets}
+                {/* A duration is what you want at a glance; the wall-clock
+                    time stays one hover away for deciding when to come back. */}
+                {(resetsIn || resetsAt) && (
+                  <div
+                    className="mt-0.5 text-xxs text-fg-faint"
+                    title={resetsAt ?? undefined}
+                  >
+                    {resetsIn ? `Resets in ${resetsIn}` : `Resets ${resetsAt}`}
                   </div>
                 )}
-              </div>
+              </button>
             );
           })}
         </div>

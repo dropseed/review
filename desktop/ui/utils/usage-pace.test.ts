@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { pacePercent, parseResetText, formatPaceDelta } from "./usage-pace";
+import {
+  pacePercent,
+  parseResetText,
+  formatPaceDelta,
+  formatResetsIn,
+} from "./usage-pace";
 import type { UsageWindow } from "../types";
 
 const WEEK_MINUTES = 7 * 24 * 60;
@@ -107,5 +112,61 @@ describe("formatPaceDelta", () => {
 
   it("says nothing when the gap rounds away", () => {
     expect(formatPaceDelta(57.2, 57)).toBeNull();
+  });
+});
+
+describe("formatResetsIn", () => {
+  const NOW = 1_000_000;
+
+  it("counts down in minutes under an hour", () => {
+    expect(formatResetsIn(window({ resetsAtUnix: NOW + 42 * 60 }), NOW)).toBe(
+      "42m",
+    );
+  });
+
+  it("keeps a half hour of precision through the first two days", () => {
+    // "3h" and "3.5h" are far apart when you're deciding whether to wait.
+    expect(
+      formatResetsIn(window({ resetsAtUnix: NOW + 3.5 * 3600 }), NOW),
+    ).toBe("3.5h");
+    expect(formatResetsIn(window({ resetsAtUnix: NOW + 3 * 3600 }), NOW)).toBe(
+      "3h",
+    );
+  });
+
+  it("drops to whole days past that, where half hours are noise", () => {
+    expect(formatResetsIn(window({ resetsAtUnix: NOW + 3 * DAY }), NOW)).toBe(
+      "3d",
+    );
+  });
+
+  it("says so rather than rounding the last minute to zero", () => {
+    expect(formatResetsIn(window({ resetsAtUnix: NOW + 20 }), NOW)).toBe(
+      "under a minute",
+    );
+  });
+
+  it("reads Claude's prose the same as Codex's timestamp", () => {
+    // Claude states wall-clock text and no unix time; both should count down.
+    const at = new Date((NOW + 5 * 3600) * 1000);
+    const month = at.toLocaleString("en-US", { month: "short" });
+    const hour = at.getHours() % 12 || 12;
+    const minutes = String(at.getMinutes()).padStart(2, "0");
+    const meridiem = at.getHours() < 12 ? "am" : "pm";
+    const text = `${month} ${at.getDate()} at ${hour}:${minutes}${meridiem}`;
+
+    expect(
+      formatResetsIn(window({ resetsAtUnix: null, resetsAtText: text }), NOW),
+    ).toBe("5h");
+  });
+
+  it("has nothing to say about a window that already reset", () => {
+    expect(formatResetsIn(window({ resetsAtUnix: NOW - 60 }), NOW)).toBeNull();
+  });
+
+  it("has nothing to say when the agent gave no reset at all", () => {
+    expect(
+      formatResetsIn(window({ resetsAtUnix: null, resetsAtText: null }), NOW),
+    ).toBeNull();
   });
 });
