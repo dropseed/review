@@ -1,27 +1,93 @@
 #!/bin/bash
+# Run the UI in a browser: Axum backend on :3421, Vite on :1420.
+#
+# Both halves run as background jobs in their own process groups so cleanup can
+# kill the *group*. The processes started here are not the ones holding the
+# ports — `cargo run` spawns a child `review-server`, `npx vite` a child `node
+# vite` — so killing the job leader alone leaves the real server running. That
+# is how a Vite from a previous session ends up squatting on :1420 for days:
+# `strictPort` then kills every later run at startup, `wait` keeps the script
+# looking alive, and the browser quietly talks to whatever stale build answers.
 set -e
+set -m  # job control: each background job gets its own process group
 cd "$(dirname "$0")/.."
 
-cleanup() {
-    kill $SERVER_PID $VITE_PID 2>/dev/null
-    wait $SERVER_PID $VITE_PID 2>/dev/null
-}
-trap cleanup EXIT
+SERVER_PORT=3421
+VITE_PORT=1420
 
-echo "Starting review-server on :3421..."
+SERVER_PID=""
+VITE_PID=""
+
+cleanup() {
+    trap - EXIT INT TERM
+    # A negative PID targets the whole process group, which is the only way to
+    # reach the grandchild that actually holds the port.
+    [ -n "$SERVER_PID" ] && kill -- -"$SERVER_PID" 2>/dev/null
+    [ -n "$VITE_PID" ] && kill -- -"$VITE_PID" 2>/dev/null
+    wait 2>/dev/null
+    return 0
+}
+trap cleanup EXIT INT TERM
+
+# A port still held here is a leftover from a previous run, not a second
+# developer — reclaim it rather than attach to it. Silently reusing a stale
+# server is the failure this guards against, so say what happened.
+reclaim_port() {
+    local port=$1 label=$2 pids
+    pids=$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)
+    [ -z "$pids" ] && return 0
+
+    echo "Port $port ($label) is held by a leftover process:"
+    ps -o pid,lstart,command -p $pids | tail -n +2 | cut -c1-100
+    echo "Stopping it."
+    kill $pids 2>/dev/null || true
+
+    for _ in $(seq 1 20); do
+        lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1 || return 0
+        sleep 0.25
+    done
+
+    kill -9 $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null) 2>/dev/null || true
+    sleep 0.5
+    if lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "Could not free port $port. Stop it by hand and re-run." >&2
+        exit 1
+    fi
+}
+
+reclaim_port "$SERVER_PORT" "review-server"
+reclaim_port "$VITE_PORT" "vite"
+
+echo "Starting review-server on :$SERVER_PORT..."
 cargo run -p review --features server,symbols-dev --bin review-server &
 SERVER_PID=$!
 
-# Wait for the server to be ready before starting Vite
-for i in $(seq 1 60); do
-    if curl -s http://127.0.0.1:3421/api/activity/list > /dev/null 2>&1; then
-        break
+# A cold build takes minutes, so wait on the build itself rather than a fixed
+# timeout — but stop the moment cargo gives up, instead of starting Vite against
+# a backend that is never coming.
+echo "Waiting for the backend (a cold build takes a while)..."
+until lsof -ti "tcp:$SERVER_PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "review-server exited before it listened — see the build output above." >&2
+        exit 1
     fi
-    sleep 1
+    sleep 0.5
 done
+echo "Backend is up."
 
-echo "Starting Vite dev server on :1420..."
-cd desktop && npx vite --port 1420 &
+echo "Starting Vite dev server on :$VITE_PORT..."
+(cd desktop && exec npx vite --port "$VITE_PORT") &
 VITE_PID=$!
 
-wait
+echo
+echo "  Open http://localhost:$VITE_PORT"
+echo "  (not 127.0.0.1 — Vite binds localhost, which resolves to ::1 here)"
+echo
+
+# Exit when *either* half dies, so a Vite that failed to start takes the script
+# down with it rather than leaving a backend running behind a dead front end.
+# Polled rather than `wait -n`: macOS ships bash 3.2, which predates it.
+while kill -0 "$SERVER_PID" 2>/dev/null && kill -0 "$VITE_PID" 2>/dev/null; do
+    sleep 1
+done
+echo "One half exited — shutting the other down." >&2
