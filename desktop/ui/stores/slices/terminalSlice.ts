@@ -16,6 +16,7 @@ import {
   collectLeafIds,
   firstLeafId,
   setSizesAtPath,
+  reorderTabs,
 } from "../../components/Terminal/pane-tree";
 
 export type { TerminalTab } from "../../components/Terminal/pane-tree";
@@ -105,6 +106,8 @@ export interface TerminalSlice {
 
   setActiveTerminal: (reviewKey: string, id: string) => void;
   setActiveTab: (reviewKey: string, tabId: string) => void;
+  /** Drag-to-reorder: move a tab within its review's tab strip. */
+  moveTab: (reviewKey: string, fromIndex: number, toIndex: number) => void;
   /** Mark `terminalId` as the focused leaf in `tabId`. */
   setFocusedTerminalPane: (
     reviewKey: string,
@@ -636,6 +639,22 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     });
   }
 
+  /**
+   * Type the user's launch command at a new session's prompt.
+   *
+   * Written as input rather than passed as the PTY's `shell`, so the command is
+   * a program the shell ran — quitting it drops you back to a prompt instead of
+   * killing the terminal. The tty buffers the keystrokes until the shell is
+   * ready to read them, which is why this needs no readiness handshake.
+   */
+  function runLaunchCommand(id: string): void {
+    const command = get().terminalLaunchCommand?.trim();
+    if (!command) return;
+    client.terminalWrite(id, `${command}\n`).catch((err) => {
+      console.error("[terminal] Launch command failed:", err);
+    });
+  }
+
   function setPanelMode(mode: TerminalPanelMode): void {
     set({ terminalPanelMode: mode });
     storage.set("terminalPanelMode", mode);
@@ -701,6 +720,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
           ...addTerminalToState(g, session, reviewKey),
           ...addTabForTerminal(g, session.id, reviewKey, tabId),
         });
+        runLaunchCommand(session.id);
         return id;
       } catch (err) {
         unsubscribeSession(id);
@@ -736,6 +756,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
             direction,
           ),
         });
+        runLaunchCommand(session.id);
         return id;
       } catch (err) {
         unsubscribeSession(id);
@@ -785,6 +806,16 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
           [reviewKey]: tabId,
         },
       }),
+
+    moveTab: (reviewKey, fromIndex, toIndex) => {
+      const byKey = get().terminalTabsByReviewKey;
+      const existing = byKey[reviewKey] ?? [];
+      const tabs = reorderTabs(existing, fromIndex, toIndex);
+      // reorderTabs hands back the same array for a no-op, so a drag that
+      // ends where it started doesn't re-render the panel.
+      if (tabs === existing) return;
+      set({ terminalTabsByReviewKey: { ...byKey, [reviewKey]: tabs } });
+    },
 
     setFocusedTerminalPane: (reviewKey, tabId, terminalId) =>
       set(setFocusedInTab(get(), reviewKey, tabId, terminalId)),

@@ -172,6 +172,7 @@ const defaults = {
   terminalFontWeight: TERMINAL_FONT_WEIGHT_DEFAULT as FontWeight,
   terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
   terminalLetterSpacing: TERMINAL_LETTER_SPACING_DEFAULT,
+  terminalLaunchCommand: "",
   codeTheme: "github-dark",
   uiTheme: "review-dark",
   recentRepositories: [] as RecentRepo[],
@@ -215,6 +216,11 @@ export interface PreferencesSlice {
   terminalFontWeight: FontWeight;
   terminalLineHeight: number;
   terminalLetterSpacing: number;
+  /**
+   * Command typed at the prompt of every terminal this app starts (e.g.
+   * `claude`). Empty means plain shell.
+   */
+  terminalLaunchCommand: string;
 
   codeTheme: string;
   uiTheme: string;
@@ -296,6 +302,7 @@ export interface PreferencesSlice {
   setTerminalFontWeight: (weight: FontWeight) => void;
   setTerminalLineHeight: (lineHeight: number) => void;
   setTerminalLetterSpacing: (spacing: number) => void;
+  setTerminalLaunchCommand: (command: string) => void;
   setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
@@ -412,6 +419,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       set({ terminalLetterSpacing: spacing });
       storage.set("terminalLetterSpacing", spacing);
       refreshAllTerminalOptions(buildTerminalFontOptions(get()));
+    },
+
+    setTerminalLaunchCommand: (command) => {
+      // Only new terminals pick this up — running sessions are left alone.
+      set({ terminalLaunchCommand: command });
+      storage.set("terminalLaunchCommand", command);
     },
 
     setCodeTheme: (theme) => {

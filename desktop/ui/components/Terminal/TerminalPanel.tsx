@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import { makeReviewKey } from "../../utils/review-key";
@@ -11,23 +11,13 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
 } from "../ui/dropdown-menu";
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
-import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
 import { disposeTerminal } from "./registry";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
 import { PaneTree, PaneButton } from "./PaneTree";
 import type { TerminalStatus } from "../../types";
-
-interface CwdOption {
-  label: string;
-  /** Null when the row has no checkout yet — picking it materializes one. */
-  cwd: string | null;
-  /** Extra line shown under the label, e.g. the cost of materializing. */
-  hint?: string;
-}
 
 export function TerminalPanel(): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -41,7 +31,6 @@ export function TerminalPanel(): ReactNode {
   const activeTabIdByReviewKey = useReviewStore(
     (s) => s.activeTabIdByReviewKey,
   );
-  const tree = useSidebarTree();
   const reviewTier = useReviewStore((s) => s.reviewTier);
   const ensureMaterialized = useReviewStore((s) => s.ensureMaterialized);
 
@@ -50,6 +39,7 @@ export function TerminalPanel(): ReactNode {
   const killTerminal = useReviewStore((s) => s.killTerminal);
   const removeTerminal = useReviewStore((s) => s.removeTerminal);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
+  const moveTab = useReviewStore((s) => s.moveTab);
   const setFocusedTerminalPane = useReviewStore(
     (s) => s.setFocusedTerminalPane,
   );
@@ -65,6 +55,13 @@ export function TerminalPanel(): ReactNode {
 
   useTerminalFileDrop();
 
+  // Tab drag-to-reorder. Both indices are local to this drag — `dragIndex`
+  // doubles as "this is our own tab drag", so a file dragged in from the OS
+  // (handled by useTerminalFileDrop, a separate channel) is never treated as a
+  // reorder.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+
   const reviewKey = repoPath ? makeReviewKey(repoPath, reviewRef ?? "") : "";
 
   const tabs = useMemo<TerminalTab[]>(
@@ -76,73 +73,35 @@ export function TerminalPanel(): ReactNode {
   // ⌘D / ⇧⌘D pane splits are dispatched by useKeyboardNavigation, which routes
   // the chord to whichever pane has focus.
 
-  // cwd choices for the "+" menu. This review leads — a terminal opened from
-  // here belongs to the thing being reviewed, so the row's own checkout is the
-  // default even when it doesn't exist yet. The repo's other checkouts follow,
-  // for the times you want to step outside it.
-  //
-  // Every option comes from a sidebar row's `checkoutPath`, so a directory can
-  // only appear once and it appears under the branch that owns it. Deriving the
-  // list here independently is what once produced "master (checks out a
-  // worktree)" sitting above "Repo root" — two entries for one directory.
-  const cwdOptions = useMemo<CwdOption[]>(() => {
-    if (!repoPath) return [];
-    const options: CwdOption[] = [];
-    const seen = new Set<string>();
-
-    const push = (label: string, cwd: string) => {
-      if (seen.has(cwd)) return;
-      seen.add(cwd);
-      options.push({
-        label,
-        cwd,
-        hint: cwd === repoPath ? "repo root" : undefined,
-      });
-    };
-
-    const reviewWorktree =
-      reviewTier?.tier === "materialized" ? reviewTier.worktreePath : undefined;
-    if (reviewRef && reviewWorktree) {
-      push(reviewRef, reviewWorktree);
-    } else if (reviewRef) {
-      options.push({
-        label: reviewRef,
-        cwd: null,
-        hint: "checks out a worktree",
-      });
-    }
-
-    const node = tree.find((n) => n.repoPath === repoPath);
-    for (const row of [
-      node?.head,
-      ...(node?.live ?? []),
-      ...(node?.rest ?? []),
-    ]) {
-      if (row?.checkoutPath)
-        push(row.ref || basename(row.checkoutPath), row.checkoutPath);
-    }
-
-    // A repo whose HEAD is detached (or that has no rows yet) still has a root
-    // worth opening a terminal in.
-    push("Repo root", repoPath);
-
-    return options;
-  }, [repoPath, reviewRef, reviewTier, tree]);
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
   if (!repoPath) return null;
 
-  const handleNewTerminal = (option: CwdOption) => {
-    // A null cwd means this review has no checkout yet. Materializing asks
-    // first, so a declined prompt simply starts no terminal.
-    if (option.cwd === null) {
-      void ensureMaterialized("run a terminal in it").then((worktreePath) => {
-        if (worktreePath) {
-          void startTerminal(reviewKey, repoPath, worktreePath, 80, 24);
-        }
-      });
+  /**
+   * Open a terminal in a new tab, in the directory this review is about: its
+   * own checkout. There's no cwd picker — a shell that landed somewhere else
+   * than you wanted is one `cd` away.
+   */
+  const handleNewTab = () => {
+    const worktree =
+      reviewTier?.tier === "materialized" ? reviewTier.worktreePath : null;
+    if (worktree) {
+      void startTerminal(reviewKey, repoPath, worktree, 80, 24);
       return;
     }
-    void startTerminal(reviewKey, repoPath, option.cwd, 80, 24);
+    // No review open (or a repo-level view) — the repo root is the only
+    // directory there is.
+    if (!reviewRef) {
+      void startTerminal(reviewKey, repoPath, repoPath, 80, 24);
+      return;
+    }
+    // This review has no checkout yet. Materializing asks first, so a declined
+    // prompt simply starts no terminal.
+    void ensureMaterialized("run a terminal in it").then((worktreePath) => {
+      if (worktreePath) {
+        void startTerminal(reviewKey, repoPath, worktreePath, 80, 24);
+      }
+    });
   };
 
   const handleSplit = (
@@ -151,6 +110,15 @@ export function TerminalPanel(): ReactNode {
     direction: SplitDirection,
   ) => {
     void splitTerminal(reviewKey, tabId, targetTerminalId, direction);
+  };
+
+  /** Split the active tab's focused pane; with no tab open, start one. */
+  const handleSplitActive = (direction: SplitDirection) => {
+    if (!activeTab) {
+      handleNewTab();
+      return;
+    }
+    handleSplit(activeTab.id, activeTab.focused, direction);
   };
 
   const handleClosePane = (id: string) => {
@@ -180,7 +148,7 @@ export function TerminalPanel(): ReactNode {
       {/* Tab strip */}
       <div className="flex items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
         <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
-          {tabs.map((tab) => {
+          {tabs.map((tab, index) => {
             const leafIds = collectLeafIds(tab.root);
             const leafStatuses = leafIds
               .map((id) => terminalStatuses[id])
@@ -195,18 +163,56 @@ export function TerminalPanel(): ReactNode {
               basename(focusedSession?.cwd ?? "") ||
               "shell";
             const isActive = tab.id === activeTabId;
+            const isDropTarget =
+              dragIndex !== null && dragIndex !== index && dropIndex === index;
             return (
               <div
                 key={tab.id}
+                draggable
+                onDragStart={(e) => {
+                  setDragIndex(index);
+                  e.dataTransfer.effectAllowed = "move";
+                  // A payload is required for the drag to start at all.
+                  e.dataTransfer.setData("text/plain", tab.id);
+                }}
+                onDragOver={(e) => {
+                  // Only claim the drop for our own tab drags; anything else
+                  // (a file from Finder) falls through to its own handler.
+                  if (dragIndex === null) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  setDropIndex(index);
+                }}
+                onDrop={(e) => {
+                  if (dragIndex === null) return;
+                  e.preventDefault();
+                  moveTab(reviewKey, dragIndex, index);
+                  setDragIndex(null);
+                  setDropIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setDropIndex(null);
+                }}
                 className={clsx(
-                  "group flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+                  "group relative flex shrink-0 items-center rounded-md px-2 py-1 text-xs",
                   // Lifted off the terminal surface, not recessed into it —
                   // the strip now sits on surface-inset itself.
                   isActive
                     ? "bg-surface-raised text-fg-secondary"
                     : "text-fg-muted hover:bg-fg/[0.06]",
+                  dragIndex === index && "opacity-50",
                 )}
               >
+                {isDropTarget && (
+                  <span
+                    className={clsx(
+                      "pointer-events-none absolute inset-y-0.5 w-0.5 rounded-full bg-focus-ring",
+                      // Mark the edge the tab would land against.
+                      dragIndex < index ? "right-0" : "left-0",
+                    )}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveTab(reviewKey, tab.id)}
@@ -227,12 +233,26 @@ export function TerminalPanel(): ReactNode {
                     </span>
                   )}
                 </button>
+                {/* Out of flow, so a tab is no wider for having a close button
+                    and doesn't jump when one appears. It fades in over the
+                    trailing edge, carrying the tab's own background as a
+                    gradient so a long title reads under it rather than
+                    through it. */}
                 <button
                   type="button"
                   onClick={() => handleCloseTab(tab)}
                   aria-label="Close tab"
-                  className="rounded px-0.5 text-fg-faint opacity-0 transition-opacity
-                             hover:text-fg-secondary group-hover:opacity-100"
+                  className={clsx(
+                    "absolute inset-y-0 right-0 flex w-7 items-center justify-end rounded-r-md pr-1.5",
+                    "bg-gradient-to-l to-transparent opacity-0 transition-opacity",
+                    // Invisible means inert: at rest this strip must not eat
+                    // clicks meant for the tab it's sitting on top of.
+                    "pointer-events-none group-hover:pointer-events-auto",
+                    "text-fg-faint hover:text-fg-secondary group-hover:opacity-100",
+                    isActive
+                      ? "from-surface-raised via-surface-raised"
+                      : "from-surface-inset via-surface-inset",
+                  )}
                 >
                   ×
                 </button>
@@ -241,35 +261,46 @@ export function TerminalPanel(): ReactNode {
           })}
         </div>
 
-        {/* "+" new-tab menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="New terminal"
-              className="shrink-0 rounded px-2 py-1 text-sm text-fg-muted
-                         hover:bg-fg/[0.06] hover:text-fg-secondary"
-            >
-              +
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>New terminal in…</DropdownMenuLabel>
-            {cwdOptions.map((opt) => (
-              <DropdownMenuItem
-                key={opt.cwd ?? `materialize:${opt.label}`}
-                onClick={() => handleNewTerminal(opt)}
+        {/* New terminal: the button splits, the caret offers the rest. */}
+        <div className="ml-1 flex shrink-0 items-center rounded text-fg-muted hover:bg-fg/[0.06]">
+          <button
+            type="button"
+            aria-label={activeTab ? "Split terminal" : "New terminal"}
+            title={activeTab ? "Split terminal (⌘D)" : "New terminal"}
+            onClick={() => handleSplitActive("row")}
+            className="rounded-l py-1 pl-2 pr-1 text-sm hover:text-fg-secondary"
+          >
+            +
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="New terminal options"
+                className="rounded-r py-1 pl-0.5 pr-1.5 hover:text-fg-secondary"
               >
-                <span className="min-w-0 truncate">{opt.label}</span>
-                {opt.hint && (
-                  <span className="ml-2 shrink-0 text-xxs text-fg-faint">
-                    {opt.hint}
-                  </span>
-                )}
+                <CaretIcon />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              // Radix restores focus to the trigger when the menu closes, and
+              // it does so after the exit animation — landing *after* the new
+              // pane focused itself. Let the terminal keep the focus.
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              <DropdownMenuItem onClick={handleNewTab}>
+                New tab
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem onClick={() => handleSplitActive("row")}>
+                Split vertical
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSplitActive("column")}>
+                Split horizontal
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         {/* Panel controls: dock side / maximize / minimize */}
         <div className="ml-2 flex shrink-0 items-center gap-0.5">
@@ -328,6 +359,24 @@ export function TerminalPanel(): ReactNode {
         )}
       </div>
     </div>
+  );
+}
+
+/** Caret opening the new-terminal menu beside the split button. */
+function CaretIcon(): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3 w-3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 6.5 8 10.5l4-4" />
+    </svg>
   );
 }
 

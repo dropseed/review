@@ -509,7 +509,7 @@ describe("panel preferences (dock side + width persistence)", () => {
     const get = () => state;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     state = createTerminalSlice(client, storage)(set, get, {} as any);
-    return { get, writes, reads };
+    return { get, set, writes, reads };
   }
 
   it("defaults dock side to left and width to the default", () => {
@@ -551,6 +551,27 @@ describe("panel preferences (dock side + width persistence)", () => {
     reads.terminalPanelOpen = true;
     await get().hydrateTerminalPrefs();
     expect(get().terminalPanelMode).toBe("split");
+  });
+
+  it("moveTab reorders a review's tabs and no-ops on an unchanged order", () => {
+    const { get, set } = makeSlice();
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "b", "k1", "tabB") };
+    state = { ...state, ...addTabForTerminal(state, "c", "k1", "tabC") };
+    set({ terminalTabsByReviewKey: state.terminalTabsByReviewKey });
+
+    const before = get().terminalTabsByReviewKey;
+    get().moveTab("k1", 2, 0);
+    expect(
+      get().terminalTabsByReviewKey["k1"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabC", "tabA", "tabB"]);
+
+    // A drag that ends where it started leaves the map object untouched.
+    const after = get().terminalTabsByReviewKey;
+    expect(after).not.toBe(before);
+    get().moveTab("k1", 1, 1);
+    expect(get().terminalTabsByReviewKey).toBe(after);
   });
 
   it("hiding a maximized panel reopens as a split, not over the diff", () => {

@@ -51,8 +51,8 @@ export function PaneTree({
   if (node.type === "leaf") {
     const id = node.terminalId;
     const isFocused = tabActive && id === focusedId;
-    // A leaf at the tab root is the only pane, so a focus ring would mark
-    // nothing — it would just redraw the panel's own edge one gutter in.
+    // A leaf at the tab root is the only pane, so there's nothing to contrast
+    // it against — dimming it would just make the whole panel look asleep.
     const isOnlyPane = path.length === 0;
     return (
       <div
@@ -64,7 +64,11 @@ export function PaneTree({
           // The panel card supplies the surface and the rounding; this is the
           // one gutter between the card edge and the terminal text.
           "overflow-hidden p-1.5",
-          isFocused && !isOnlyPane && "ring-1 ring-inset ring-focus-ring/50",
+          // Focus reads as the pane that isn't faded, rather than a border
+          // drawn around it — one less line inside an already busy panel.
+          // Kept shallow so the dimmed pane's output stays readable.
+          "transition-opacity",
+          !isFocused && !isOnlyPane && "opacity-70",
         )}
         onMouseDown={() => onFocus(id)}
       >

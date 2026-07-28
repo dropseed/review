@@ -172,6 +172,25 @@ export function pruneLeaves(
   return { ...node, children, sizes: normalize(sizes) };
 }
 
+/**
+ * Move the tab at `fromIndex` so it lands at `toIndex` in the resulting list
+ * (drag-to-reorder). Returns the original array untouched when the move is a
+ * no-op or either index is out of range, so a reducer can skip the state write.
+ */
+export function reorderTabs(
+  tabs: TerminalTab[],
+  fromIndex: number,
+  toIndex: number,
+): TerminalTab[] {
+  if (fromIndex === toIndex) return tabs;
+  if (fromIndex < 0 || fromIndex >= tabs.length) return tabs;
+  if (toIndex < 0 || toIndex >= tabs.length) return tabs;
+  const next = [...tabs];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
 /** Get the split node at `path` (child-index list from the root), or null. */
 export function nodeAtPath(node: PaneNode, path: number[]): PaneNode | null {
   let cur: PaneNode = node;

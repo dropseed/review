@@ -220,6 +220,10 @@ export function SettingsModal({
   const setTerminalLetterSpacing = useReviewStore(
     (s) => s.setTerminalLetterSpacing,
   );
+  const terminalLaunchCommand = useReviewStore((s) => s.terminalLaunchCommand);
+  const setTerminalLaunchCommand = useReviewStore(
+    (s) => s.setTerminalLaunchCommand,
+  );
   const uiTheme = useReviewStore((s) => s.uiTheme);
   const setUiTheme = useReviewStore((s) => s.setUiTheme);
   const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
@@ -241,6 +245,9 @@ export function SettingsModal({
   const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
   const [terminalFontDraft, setTerminalFontDraft] =
     useState(terminalFontFamily);
+  const [launchCommandDraft, setLaunchCommandDraft] = useState(
+    terminalLaunchCommand,
+  );
   const [discoveredServers, setDiscoveredServers] = useState<
     { name: string; language: string }[]
   >([]);
@@ -252,6 +259,10 @@ export function SettingsModal({
   useEffect(() => {
     if (isOpen) setTerminalFontDraft(terminalFontFamily);
   }, [isOpen, terminalFontFamily]);
+
+  useEffect(() => {
+    if (isOpen) setLaunchCommandDraft(terminalLaunchCommand);
+  }, [isOpen, terminalLaunchCommand]);
 
   // CLI install status (hidden in dev mode)
   const [devMode, setDevMode] = useState(false);
@@ -388,6 +399,13 @@ export function SettingsModal({
     } else {
       setFontFamilyDraft(codeFontFamily);
     }
+  }
+
+  function commitLaunchCommand() {
+    // Unlike the font fields, an empty value is meaningful here — it means
+    // "just a shell" — so it commits rather than reverting the draft.
+    const trimmed = launchCommandDraft.trim();
+    if (trimmed !== terminalLaunchCommand) setTerminalLaunchCommand(trimmed);
   }
 
   function commitTerminalFontFamily() {
@@ -725,6 +743,39 @@ export function SettingsModal({
               format={(v) => `${v}px`}
               onChange={setTerminalLetterSpacing}
             />
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-fg-secondary">
+                  Launch command
+                </span>
+                {terminalLaunchCommand !== "" && (
+                  <button
+                    onClick={() => {
+                      setLaunchCommandDraft("");
+                      setTerminalLaunchCommand("");
+                    }}
+                    className="text-xxs text-fg-muted hover:text-fg-secondary transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <Input
+                value={launchCommandDraft}
+                onChange={(e) => setLaunchCommandDraft(e.target.value)}
+                onBlur={commitLaunchCommand}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitLaunchCommand();
+                }}
+                className="mt-1.5 w-full text-xs font-mono"
+                placeholder="claude"
+              />
+              <p className="mt-1.5 text-xxs text-fg-faint">
+                Typed at the prompt of every new terminal and split pane. Leave
+                empty for a plain shell.
+              </p>
+            </div>
           </div>
 
           {/* Background Sessions */}

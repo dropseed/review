@@ -11,6 +11,7 @@ import {
   pruneLeaves,
   nodeAtPath,
   setSizesAtPath,
+  reorderTabs,
 } from "./pane-tree";
 
 describe("makeTab / leaf", () => {
@@ -155,6 +156,39 @@ describe("firstLeafId", () => {
       sizes: [0.5, 0.5],
     };
     expect(firstLeafId(root)).toBe("x");
+  });
+});
+
+describe("reorderTabs", () => {
+  const tabs = [makeTab("t1", "a"), makeTab("t2", "b"), makeTab("t3", "c")];
+
+  it("moves a tab forward, landing it at the target index", () => {
+    expect(reorderTabs(tabs, 0, 2).map((t) => t.id)).toEqual([
+      "t2",
+      "t3",
+      "t1",
+    ]);
+  });
+
+  it("moves a tab backward, landing it at the target index", () => {
+    expect(reorderTabs(tabs, 2, 0).map((t) => t.id)).toEqual([
+      "t3",
+      "t1",
+      "t2",
+    ]);
+  });
+
+  it("leaves the tabs themselves untouched (same objects, new array)", () => {
+    const next = reorderTabs(tabs, 0, 1);
+    expect(next).not.toBe(tabs);
+    expect(next[0]).toBe(tabs[1]);
+    expect(tabs.map((t) => t.id)).toEqual(["t1", "t2", "t3"]);
+  });
+
+  it("returns the original array for a no-op or out-of-range move", () => {
+    expect(reorderTabs(tabs, 1, 1)).toBe(tabs);
+    expect(reorderTabs(tabs, -1, 0)).toBe(tabs);
+    expect(reorderTabs(tabs, 0, 3)).toBe(tabs);
   });
 });
 
