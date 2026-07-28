@@ -9,16 +9,26 @@ import {
 } from "../tree";
 import { useFileDrag } from "../../hooks/useFileDrag";
 import type { FileHunkStatus } from "./types";
-import { ApprovalButtons, StageButtons, type HunkContext } from "./FileNode";
+import {
+  ApprovalButtons,
+  StageButtons,
+  fileRowHighlight,
+  type HunkContext,
+} from "./FileNode";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
-import { useFilesPanelContext } from "./FilesPanelContext";
+import { useFilesPanelContext, useFileSelection } from "./FilesPanelContext";
 
 interface FlatFileNodeProps {
   filePath: string;
   fileStatus: string | undefined;
   hunkStatus: FileHunkStatus;
+  /** The focused pane's file (see resolvePaneFiles), not always the primary. */
   selectedFile: string | null;
+  /** The unfocused pane's file while a split is open. */
+  companionFile?: string | null;
   onSelectFile: (path: string) => void;
+  /** See FileNode's onRowClick: true means the multi-selection handled it. */
+  onRowClick?: (path: string, event: React.MouseEvent) => boolean;
   hunkContext: HunkContext;
   onApproveAll?: (path: string, isDir: boolean) => void;
   onUnapproveAll?: (path: string, isDir: boolean) => void;
@@ -36,7 +46,9 @@ export const FlatFileNode = memo(function FlatFileNode({
   fileStatus,
   hunkStatus,
   selectedFile,
+  companionFile,
   onSelectFile,
+  onRowClick,
   hunkContext,
   onApproveAll,
   onUnapproveAll,
@@ -50,10 +62,15 @@ export const FlatFileNode = memo(function FlatFileNode({
 }: FlatFileNodeProps) {
   const { grayscaleIcons, showRevealInBrowse, repoPath } =
     useFilesPanelContext();
+  const { selectedPaths, isMultiSelect, approveSelection, unapproveSelection } =
+    useFileSelection();
   const absolutePath = repoPath ? `${repoPath}/${filePath}` : null;
   const dragProps = useFileDrag(absolutePath);
 
   const isSelected = selectedFile === filePath;
+  const isCompanion = companionFile === filePath && !isSelected;
+  const bulkSelected = isMultiSelect && selectedPaths.has(filePath);
+  const selectionCount = selectedPaths.size;
   const hasReviewableContent = hunkStatus.total > 0;
   const hasPending = hunkStatus.pending > 0;
   const hasApproved = hunkStatus.approved > 0;
@@ -70,11 +87,12 @@ export const FlatFileNode = memo(function FlatFileNode({
     <TreeNodeItem>
       <TreeRow
         depth={0}
-        className={
-          isSelected
-            ? "bg-focus-ring/15 border-l-2 border-l-focus-ring"
-            : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
-        }
+        className={fileRowHighlight({
+          isCurrent: isSelected,
+          isCompanion,
+          isSelected: bulkSelected,
+          isGitignored: false,
+        })}
         {...dragProps}
       >
         <TreeFileIcon
@@ -87,10 +105,14 @@ export const FlatFileNode = memo(function FlatFileNode({
 
         <button
           className="flex flex-1 items-center text-left min-w-0"
-          onClick={() => onSelectFile(filePath)}
+          aria-selected={isSelected || bulkSelected}
+          onClick={(e) => {
+            if (onRowClick?.(filePath, e)) return;
+            onSelectFile(filePath);
+          }}
         >
           <span
-            className={`min-w-0 truncate text-xs ${fileNameColor(isSelected, false, fileStatus)}`}
+            className={`min-w-0 truncate text-xs ${fileNameColor(isSelected || bulkSelected, false, fileStatus)}`}
           >
             {dirPath && <span className="text-fg-muted">{dirPath}</span>}
             {fileName}
@@ -106,8 +128,24 @@ export const FlatFileNode = memo(function FlatFileNode({
           <ApprovalButtons
             hasPending={hasPending}
             hasApproved={hasApproved}
-            onApprove={() => onApproveAll!(filePath, false)}
-            onUnapprove={() => onUnapproveAll!(filePath, false)}
+            onApprove={() =>
+              bulkSelected ? approveSelection() : onApproveAll!(filePath, false)
+            }
+            onUnapprove={() =>
+              bulkSelected
+                ? unapproveSelection()
+                : onUnapproveAll!(filePath, false)
+            }
+            approveLabel={
+              bulkSelected
+                ? `Approve ${selectionCount} selected files`
+                : undefined
+            }
+            unapproveLabel={
+              bulkSelected
+                ? `Unapprove ${selectionCount} selected files`
+                : undefined
+            }
           />
         )}
 

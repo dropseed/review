@@ -21,6 +21,7 @@ import { RollingDiffIcon } from "../ui/icons";
 import { GroupHeader } from "./GroupHeader";
 import { TrustSection } from "../GuideView/TrustSection";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
+import { FileSelectionProvider } from "./FilesPanelContext";
 import { FilenameModal } from "./FilenameModal";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
@@ -604,7 +605,10 @@ export function StatusGroupList({
   }
 
   return (
-    <>
+    // Multi-select spans the status sections and nothing else: these four
+    // lists are the run of rows a shift-click range is allowed to cross, and
+    // the selection is meaningless once this panel unmounts.
+    <FileSelectionProvider>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {/* Trusted — auto-approved hunks, kept out of Reviewed so it stays
             re-reviewable. Shown whenever there are trusted files to list (which
@@ -827,6 +831,6 @@ export function StatusGroupList({
           useReviewStore.getState().navigateToBrowse(path)
         }
       />
-    </>
+    </FileSelectionProvider>
   );
 }

@@ -25,9 +25,43 @@ import {
   fileNameColor,
 } from "../tree";
 import { NodeOverflowMenu } from "./NodeOverflowMenu";
-import { useFilesPanelContext } from "./FilesPanelContext";
+import { useFilesPanelContext, useFileSelection } from "./FilesPanelContext";
 
 export type HunkContext = "needs-review" | "reviewed" | "trusted" | "all";
+
+interface RowHighlight {
+  /** The file in the focused pane — the sidebar's "you are here". */
+  isCurrent: boolean;
+  /** The other open pane's file: on screen, but not what keys act on. */
+  isCompanion: boolean;
+  /** Part of a shift/cmd-click multi-selection. */
+  isSelected: boolean;
+  isGitignored: boolean;
+}
+
+/**
+ * Three states share one row, so each gets a different axis rather than a
+ * different shade of the same one: the current file keeps the accent rail and
+ * fill it always had; the split's other file gets the rail alone, dimmed, so
+ * it reads as "also open, not focused" without competing; a multi-selection
+ * gets a neutral fill and a neutral rail, so a range never looks like ten
+ * current files.
+ */
+export function fileRowHighlight({
+  isCurrent,
+  isCompanion,
+  isSelected,
+  isGitignored,
+}: RowHighlight): string {
+  if (isCurrent) return "bg-focus-ring/15 border-l-2 border-l-focus-ring";
+  if (isSelected)
+    return "bg-surface-active/40 border-l-2 border-l-fg-faint hover:bg-surface-active/50";
+  if (isCompanion)
+    return "border-l-2 border-l-focus-ring/40 hover:bg-surface-raised/40";
+  if (isGitignored)
+    return "border-l-2 border-l-transparent opacity-50 hover:opacity-70";
+  return "border-l-2 border-l-transparent hover:bg-surface-raised/40";
+}
 
 function SizeBar({
   totalSize,
@@ -53,8 +87,16 @@ interface FileNodeProps {
   entry: ProcessedFileEntry;
   depth: number;
   onToggle: (path: string, isGitignored?: boolean) => void;
+  /** The focused pane's file (see resolvePaneFiles), not always the primary. */
   selectedFile: string | null;
+  /** The unfocused pane's file while a split is open. */
+  companionFile?: string | null;
   onSelectFile: (path: string) => void;
+  /**
+   * Route a click through the multi-selection first. Returns true when the
+   * click was a multi-select gesture and the row should not also navigate.
+   */
+  onRowClick?: (path: string, event: React.MouseEvent) => boolean;
   repoPath: string | null;
   onOpenInSplit?: (path: string) => void;
   registerRef: (path: string, ref: HTMLButtonElement | null) => void;
@@ -75,6 +117,9 @@ interface ApprovalButtonsProps {
   hasApproved: boolean;
   onApprove: () => void;
   onUnapprove: () => void;
+  /** Overridden while the row is part of a multi-selection ("Approve 8 files"). */
+  approveLabel?: string;
+  unapproveLabel?: string;
 }
 
 export function ApprovalButtons({
@@ -82,6 +127,8 @@ export function ApprovalButtons({
   hasApproved,
   onApprove,
   onUnapprove,
+  approveLabel = "Approve all",
+  unapproveLabel = "Unapprove all",
 }: ApprovalButtonsProps): ReactNode {
   if (!hasPending && !hasApproved) {
     return null;
@@ -90,7 +137,7 @@ export function ApprovalButtons({
   return (
     <div className="hidden items-center gap-0.5 group-hover:flex">
       {hasPending && (
-        <SimpleTooltip content="Approve all">
+        <SimpleTooltip content={approveLabel}>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -117,7 +164,7 @@ export function ApprovalButtons({
         </SimpleTooltip>
       )}
       {hasApproved && (
-        <SimpleTooltip content="Unapprove all">
+        <SimpleTooltip content={unapproveLabel}>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -220,7 +267,9 @@ export const FileNode = memo(
     depth,
     onToggle,
     selectedFile,
+    companionFile,
     onSelectFile,
+    onRowClick,
     repoPath,
     onOpenInSplit,
     registerRef,
@@ -237,6 +286,12 @@ export const FileNode = memo(
   }: FileNodeProps) {
     const { expandedPaths, grayscaleIcons, showRevealInBrowse } =
       useFilesPanelContext();
+    const {
+      selectedPaths,
+      isMultiSelect,
+      approveSelection,
+      unapproveSelection,
+    } = useFileSelection();
     const fullPath = repoPath ? `${repoPath}/${entry.path}` : entry.path;
     const dragProps = useFileDrag(
       !entry.isDirectory && repoPath ? fullPath : null,
@@ -247,6 +302,8 @@ export const FileNode = memo(
 
     const isExpanded = !collapsible || expandedPaths.has(entry.path);
     const isSelected = selectedFile === entry.path;
+    const isCompanion = companionFile === entry.path && !isSelected;
+    const inSelection = selectedPaths.has(entry.path);
 
     if (entry.isDirectory) {
       const visibleChildren = entry.children?.filter((c) => c.matchesFilter);
@@ -350,7 +407,9 @@ export const FileNode = memo(
                   depth={depth + 1}
                   onToggle={onToggle}
                   selectedFile={selectedFile}
+                  companionFile={companionFile}
                   onSelectFile={onSelectFile}
+                  onRowClick={onRowClick}
                   repoPath={repoPath}
                   onOpenInSplit={onOpenInSplit}
                   registerRef={registerRef}
@@ -382,6 +441,11 @@ export const FileNode = memo(
     const hasHoverActions =
       (hasReviewActions && hasReviewableContent) || !!onStage || !!onUnstage;
 
+    // A row inside a multi-selection acts for the whole selection — the check
+    // in the list and the rolling diff's header button do the same thing.
+    const bulkSelected = isMultiSelect && inSelection;
+    const selectionCount = selectedPaths.size;
+
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>
@@ -390,18 +454,20 @@ export const FileNode = memo(
               registerRef(entry.path, el as unknown as HTMLButtonElement | null)
             }
             depth={depth}
-            className={
-              isSelected
-                ? "bg-focus-ring/15 border-l-2 border-l-focus-ring"
-                : isGitignored
-                  ? "border-l-2 border-l-transparent opacity-50 hover:opacity-70"
-                  : "border-l-2 border-l-transparent hover:bg-surface-raised/40"
-            }
+            className={fileRowHighlight({
+              isCurrent: isSelected,
+              isCompanion,
+              isSelected: bulkSelected,
+              isGitignored,
+            })}
             {...dragProps}
           >
             <TreeRowButton
-              onClick={() => onSelectFile(entry.path)}
-              aria-selected={isSelected}
+              onClick={(e) => {
+                if (onRowClick?.(entry.path, e)) return;
+                onSelectFile(entry.path);
+              }}
+              aria-selected={isSelected || bulkSelected}
             >
               <TreeFileIcon
                 name={entry.name}
@@ -413,7 +479,7 @@ export const FileNode = memo(
 
               <TreeNodeName
                 className={fileNameColor(
-                  isSelected,
+                  isSelected || bulkSelected,
                   isGitignored,
                   entry.status,
                 )}
@@ -439,8 +505,26 @@ export const FileNode = memo(
               <ApprovalButtons
                 hasPending={hasPending}
                 hasApproved={hasApproved}
-                onApprove={() => onApproveAll!(entry.path, false)}
-                onUnapprove={() => onUnapproveAll!(entry.path, false)}
+                onApprove={() =>
+                  bulkSelected
+                    ? approveSelection()
+                    : onApproveAll!(entry.path, false)
+                }
+                onUnapprove={() =>
+                  bulkSelected
+                    ? unapproveSelection()
+                    : onUnapproveAll!(entry.path, false)
+                }
+                approveLabel={
+                  bulkSelected
+                    ? `Approve ${selectionCount} selected files`
+                    : undefined
+                }
+                unapproveLabel={
+                  bulkSelected
+                    ? `Unapprove ${selectionCount} selected files`
+                    : undefined
+                }
               />
             )}
 
@@ -594,6 +678,8 @@ export const FileNode = memo(
       prev.entry === next.entry &&
       prev.depth === next.depth &&
       prev.selectedFile === next.selectedFile &&
+      prev.companionFile === next.companionFile &&
+      prev.onRowClick === next.onRowClick &&
       prev.hunkContext === next.hunkContext &&
       prev.onApproveAll === next.onApproveAll &&
       prev.onUnapproveAll === next.onUnapproveAll &&

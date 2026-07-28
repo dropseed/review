@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { FileNode } from "./FileNode";
+import { resolvePaneFiles } from "./fileSelection";
 import {
   useFilePanelFileSystem,
   useFilePanelNavigation,
@@ -129,6 +130,16 @@ export function FilesPanel() {
 
   // What the Review tab has waiting, for its badge.
   const { pendingHunks, totalHunks } = useReviewProgress();
+
+  // Browse rows follow the focused pane too — the Review tab's rows get this
+  // from FileListSection, but Browse maps FileNode itself.
+  const secondaryFile = useReviewStore((s) => s.secondaryFile);
+  const focusedPane = useReviewStore((s) => s.focusedPane);
+  const browsePanes = resolvePaneFiles(
+    selectedFile,
+    secondaryFile,
+    focusedPane,
+  );
 
   // Sort menu items shared across tabs
   const sortMenuItems = useMemo(
@@ -327,7 +338,8 @@ export function FilesPanel() {
                         entry={entry}
                         depth={0}
                         onToggle={togglePath}
-                        selectedFile={selectedFile}
+                        selectedFile={browsePanes.activePath}
+                        companionFile={browsePanes.companionPath}
                         onSelectFile={handleSelectFile}
                         repoPath={repoPath}
                         onOpenInSplit={openInSplit}

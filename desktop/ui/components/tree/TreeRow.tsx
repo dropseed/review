@@ -41,13 +41,18 @@ export function TreeRow({
   );
 }
 
-/** Inner button for clickable row content */
+/**
+ * Inner button for clickable row content. The handler receives the event so
+ * callers can read modifier keys (shift/cmd-click multi-select in the file
+ * list) — hence the explicit signature rather than the bare `() => void` this
+ * used to take.
+ */
 export function TreeRowButton({
   onClick,
   children,
   ...rest
 }: {
-  onClick?: () => void;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>): ReactNode {
   return (

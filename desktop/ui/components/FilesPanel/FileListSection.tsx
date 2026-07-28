@@ -1,11 +1,13 @@
-import type { ReactNode } from "react";
+import { useCallback, useMemo, type MouseEvent, type ReactNode } from "react";
 import type { ProcessedFileEntry } from "./types";
 import type { ChangesDisplayMode } from "../../stores/slices/preferencesSlice";
 import type { HunkContext } from "./FileNode";
 import { FileNode } from "./FileNode";
 import { FlatFileNode } from "./FlatFileNode";
 import { EMPTY_HUNK_STATUS } from "./FileTree.utils";
-import { useFilesPanelContext } from "./FilesPanelContext";
+import { useFilesPanelContext, useFileSelection } from "./FilesPanelContext";
+import { flattenVisibleFilePaths, resolvePaneFiles } from "./fileSelection";
+import { useReviewStore } from "../../stores";
 
 interface FileListSectionProps {
   treeEntries: ProcessedFileEntry[];
@@ -54,6 +56,7 @@ export function FileListSection({
   emptyMessage,
 }: FileListSectionProps): ReactNode {
   const {
+    expandedPaths,
     togglePath,
     selectedFile,
     handleSelectFile,
@@ -68,6 +71,34 @@ export function FileListSection({
     fileStatusMap,
     symlinkMap,
   } = useFilesPanelContext();
+  const { handleRowClick } = useFileSelection();
+
+  // The sidebar points at whichever pane has focus, not at the primary — with
+  // a split open, the primary's file is the one you're *not* working in.
+  const secondaryFile = useReviewStore((s) => s.secondaryFile);
+  const focusedPane = useReviewStore((s) => s.focusedPane);
+  const { activePath, companionPath } = resolvePaneFiles(
+    selectedFile,
+    secondaryFile,
+    focusedPane,
+  );
+
+  // The rows a shift-click may span: this section's file rows, in the order
+  // they're on screen. Ranges stop at the section boundary — a click in
+  // "Needs Review" shouldn't quietly sweep in everything above it.
+  const selectableOrder = useMemo(
+    () =>
+      displayMode === "tree"
+        ? flattenVisibleFilePaths(treeEntries, expandedPaths)
+        : flatFilePaths.filter((p) => (hunkStatusMap.get(p)?.total ?? 0) > 0),
+    [displayMode, treeEntries, flatFilePaths, expandedPaths, hunkStatusMap],
+  );
+
+  const onRowClick = useCallback(
+    (path: string, event: MouseEvent) =>
+      handleRowClick(path, selectableOrder, event),
+    [handleRowClick, selectableOrder],
+  );
 
   if (displayMode === "tree") {
     if (treeEntries.length === 0) {
@@ -82,8 +113,10 @@ export function FileListSection({
             entry={entry}
             depth={0}
             onToggle={togglePath}
-            selectedFile={selectedFile}
+            selectedFile={activePath}
+            companionFile={companionPath}
             onSelectFile={handleSelectFile}
+            onRowClick={onRowClick}
             repoPath={repoPath}
             onOpenInSplit={openInSplit}
             registerRef={registerRef}
@@ -111,8 +144,10 @@ export function FileListSection({
           filePath={filePath}
           fileStatus={fileStatusMap.get(filePath)}
           hunkStatus={hunkStatusMap.get(filePath) ?? EMPTY_HUNK_STATUS}
-          selectedFile={selectedFile}
+          selectedFile={activePath}
+          companionFile={companionPath}
           onSelectFile={handleSelectFile}
+          onRowClick={onRowClick}
           hunkContext={hunkContext}
           onApproveAll={handleApproveAll}
           onUnapproveAll={handleUnapproveAll}
