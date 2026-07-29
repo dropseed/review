@@ -20,6 +20,7 @@ const COALESCED_READS = new Set<keyof ApiClient>([
   "getHunkAttribution",
   "listAllReviewsGlobal",
   "listAllLocalActivity",
+  "getTrustTaxonomy",
   // Sidebar metadata: one pair of git calls per repo, resolved for every repo
   // at once, and kicked off from more than one place on startup.
   "getRemoteInfo",

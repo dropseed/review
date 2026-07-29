@@ -4,13 +4,14 @@ import { useAllHunks } from "../stores/selectors/hunks";
 import { anyLabelMatchesPattern, hunkLabels } from "../types";
 import { getApiClient } from "../api";
 
+// `getTrustTaxonomy` is in the client's coalesced-reads set, so overlapping
+// callers already share one in-flight request; this only needs to remember
+// the result once it succeeds.
 let cachedKnownPatternIds: Set<string> | null = null;
-let cachedPromise: Promise<Set<string>> | null = null;
 
 function loadKnownPatternIds(): Promise<Set<string>> {
   if (cachedKnownPatternIds) return Promise.resolve(cachedKnownPatternIds);
-  if (cachedPromise) return cachedPromise;
-  cachedPromise = getApiClient()
+  return getApiClient()
     .getTrustTaxonomy()
     .then((categories) => {
       const ids = new Set<string>();
@@ -21,12 +22,7 @@ function loadKnownPatternIds(): Promise<Set<string>> {
       }
       cachedKnownPatternIds = ids;
       return ids;
-    })
-    .catch((err) => {
-      cachedPromise = null;
-      throw err;
     });
-  return cachedPromise;
 }
 
 export function useKnownPatternIds(): Set<string> | undefined {
