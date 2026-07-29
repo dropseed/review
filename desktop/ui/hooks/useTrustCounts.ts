@@ -21,6 +21,10 @@ function loadKnownPatternIds(): Promise<Set<string>> {
       }
       cachedKnownPatternIds = ids;
       return ids;
+    })
+    .catch((err) => {
+      cachedPromise = null;
+      throw err;
     });
   return cachedPromise;
 }
