@@ -30,3 +30,6 @@ desktop/tauri/binaries/
 xcuserdata/
 *.xcuserstate
 
+
+# Agent worktrees, which live inside the repo and are checkouts of it
+.claude/worktrees/
