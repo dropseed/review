@@ -87,6 +87,7 @@ function build(
   pinned: string[] = [],
   dismissed: string[] = [],
   openRepoPath: string | null = null,
+  terminalKeys: string[] = [],
 ): RepoNode[] {
   return buildSidebarTree(
     activity,
@@ -96,6 +97,7 @@ function build(
     dismissed,
     NOW,
     openRepoPath,
+    terminalKeys,
   );
 }
 
@@ -194,6 +196,50 @@ describe("liveness rules", () => {
       ]),
     ]);
     expect(refs(node.live)).toContain("dirty");
+  });
+
+  it("includes a branch with a shell running in it, and wakes its repo", () => {
+    // Stale on every time-based rule — a running terminal is the only reason.
+    const [node] = build(
+      [
+        repo("/r", [
+          branch({ name: "master", isCurrent: true }),
+          branch({ name: "agent-work" }),
+        ]),
+      ],
+      [],
+      [],
+      [],
+      null,
+      ["/r:agent-work"],
+    );
+    expect(refs(node.live)).toContain("agent-work");
+    expect(node.live[0].reasons).toContain("terminal");
+    expect(node.isActive).toBe(true);
+  });
+
+  it("does not let a running terminal reorder rows", () => {
+    // Ranking is presence then activity; "a shell is open here" is neither, so
+    // the row lands where it always would — a phase that flips every few
+    // seconds must never move rows under the cursor.
+    const rowsFor = (terminalKeys: string[]) =>
+      refs(
+        build(
+          [
+            repo("/r", [
+              branch({ name: "master", isCurrent: true }),
+              branch({ name: "a", hasWorkingTreeChanges: true }),
+              branch({ name: "b", hasWorkingTreeChanges: true }),
+            ]),
+          ],
+          [],
+          [],
+          [],
+          null,
+          terminalKeys,
+        )[0].live,
+      );
+    expect(rowsFor(["/r:b"])).toEqual(rowsFor([]));
   });
 
   it("includes a branch whose review was touched inside the window", () => {
@@ -432,6 +478,32 @@ describe("repo ordering", () => {
       "/quiet-a",
       "/quiet-z",
     ]);
+  });
+
+  it("puts repos holding a pin above active ones, in pin order", () => {
+    const nodes = build(
+      [
+        repo("/busy", [
+          branch({
+            name: "master",
+            isCurrent: true,
+            hasWorkingTreeChanges: true,
+          }),
+        ]),
+        repo("/quiet-first-pin", [branch({ name: "old" })]),
+        repo("/quiet-second-pin", [branch({ name: "old" })]),
+      ],
+      [],
+      // Pin order is the user's own ordering, so it survives alphabetization.
+      ["/quiet-second-pin:old", "/quiet-first-pin:old"],
+    );
+    expect(nodes.map((n) => n.repoPath)).toEqual([
+      "/quiet-second-pin",
+      "/quiet-first-pin",
+      "/busy",
+    ]);
+    expect(nodes[0].pinRank).toBe(0);
+    expect(nodes[2].pinRank).toBeNull();
   });
 
   it("keeps the same order when only activity timestamps move", () => {

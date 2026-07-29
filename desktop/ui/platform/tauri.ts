@@ -4,6 +4,7 @@
  * Implements platform services using Tauri plugins for the desktop app.
  */
 
+import { toast } from "sonner";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   isPermissionGranted,
@@ -85,7 +86,20 @@ class TauriDialogService implements DialogService {
   }
 
   async confirm(message: string, title?: string): Promise<boolean> {
-    return showConfirm(message, { title });
+    // A dialog that can't open must not look like a silent "no". Tauri
+    // rejects the call when the capability isn't granted, and every caller
+    // here treats a rejection as "don't proceed" — which presents as a button
+    // that does nothing at all. Answering false is still the safe default, so
+    // the fix is to say what happened. Handled once here rather than per
+    // caller: a missing permission is a property of the platform, not of the
+    // question being asked.
+    try {
+      return await showConfirm(message, { title });
+    } catch (err) {
+      console.error("[dialog] confirm failed to open:", err);
+      toast.error("Couldn't open the confirmation dialog");
+      return false;
+    }
   }
 
   async alert(message: string, title?: string): Promise<void> {

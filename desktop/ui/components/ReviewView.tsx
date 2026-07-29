@@ -34,8 +34,7 @@ import { DiffRail } from "./ContentArea/DiffRail";
 import { TerminalPanel } from "./Terminal/TerminalPanel";
 import { TerminalRail } from "./Terminal/TerminalRail";
 import { closeFocusedTerminal } from "./Terminal/close";
-import { SimpleTooltip } from "./ui/tooltip";
-import { WarningIcon, SidebarPanelIcon } from "./ui/icons";
+import { WarningIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
 import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
@@ -380,35 +379,9 @@ export function ReviewView({
   // so confetti can't fire over the bogus all-deleted diff behind the notice.
   useCelebration(!compareRefMissing);
 
-  // With the sidebar showing, it carries the review's identity and absorbs the
-  // macOS title bar (traffic lights + window drag), so this column starts at
-  // y=0. Collapsed, there's nothing left to do either job — hence the strip.
-  const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
-  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
-
   return (
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Only needed with the sidebar collapsed — it holds the only way back
-            besides ⌘B. */}
-        {tabRailCollapsed && (
-          <div className="flex shrink-0 items-center px-3 pt-2">
-            <SimpleTooltip content="Show sidebar (⌘B)" side="bottom">
-              <button
-                type="button"
-                onClick={toggleTabRail}
-                className="flex items-center justify-center w-7 h-7 rounded-md
-                           hover:bg-surface-raised/60 transition-colors duration-100
-                           focus:outline-hidden focus:ring-2 focus:ring-edge-default/50
-                           text-fg-muted hover:text-fg-secondary"
-                aria-label="Show sidebar"
-              >
-                <SidebarPanelIcon />
-              </button>
-            </SimpleTooltip>
-          </div>
-        )}
-
         {/* Status banners — hidden while the deleted-ref notice is shown */}
         {!compareRefMissing && (
           <>

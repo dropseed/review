@@ -5,11 +5,8 @@ import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getAllHunksFromState } from "../stores/selectors/hunks";
 import { type SplitDirection } from "../components/Terminal/pane-tree";
 import { focusedTerminalTab } from "../components/Terminal/close";
-import {
-  buildSidebarTree,
-  flattenSidebarTree,
-  type SidebarRow,
-} from "../utils/sidebar-tree";
+import { flattenSidebarTree, type SidebarRow } from "../utils/sidebar-tree";
+import { getSidebarTree } from "../stores/selectors/sidebar";
 
 interface SidebarItem {
   key: string;
@@ -187,15 +184,7 @@ export function useKeyboardNavigation() {
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           event.preventDefault();
-          const tree = buildSidebarTree(
-            state.localActivity,
-            state.globalReviews,
-            state.globalReviewsByKey,
-            state.sidebarPinned,
-            state.sidebarDismissed,
-            Date.now(),
-            state.repoPath,
-          );
+          const tree = getSidebarTree(state, Date.now(), state.repoPath);
           const items = rowsToItems(
             flattenSidebarTree(
               tree,

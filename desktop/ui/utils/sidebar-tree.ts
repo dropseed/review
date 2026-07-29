@@ -87,7 +87,16 @@ export type LiveReason =
   | "checkout"
   | "uncommitted"
   | "recent-review"
-  | "recent-own-commit";
+  | "recent-own-commit"
+  /**
+   * A shell is running in this row's checkout right now. The strongest
+   * evidence there is that someone is working here — stronger than any of the
+   * time-window rules, which only say someone *was*. It deliberately affects
+   * membership and nothing else: terminal phase changes every few seconds, so
+   * ranking on it would reshuffle the list under the cursor, which is the
+   * failure the ordering rules below were written to avoid.
+   */
+  | "terminal";
 
 /**
  * How present a row is locally — the tier ladder, as a display concern.
@@ -141,6 +150,13 @@ export interface RepoNode {
   hasChanges: boolean;
   /** Has anything live: drives default expansion and top-of-list placement. */
   isActive: boolean;
+  /**
+   * Best (lowest) pin position among this repo's rows, or null when none are
+   * pinned. Repos with a pin lead the list, ordered by the pin the user put
+   * first — pinning is the one ordering signal they control by hand, so it
+   * outranks everything derived.
+   */
+  pinRank: number | null;
 }
 
 function parseTime(iso: string | null | undefined): number {
@@ -192,9 +208,12 @@ export function buildSidebarTree(
   dismissedKeys: string[],
   now: number,
   openRepoPath: string | null = null,
+  /** Review keys whose checkout currently hosts a live terminal session. */
+  terminalKeys: readonly string[] = [],
 ): RepoNode[] {
   const pinnedSet = new Set(pinnedKeys);
   const dismissedSet = new Set(dismissedKeys);
+  const terminalSet = new Set(terminalKeys);
   /** pin order → rank; earlier in the array ranks first. */
   const pinOrder = new Map(pinnedKeys.map((k, i) => [k, i]));
 
@@ -270,6 +289,7 @@ export function buildSidebarTree(
         reasons.push("open-repo");
       }
       if (isDeliberateCheckout) reasons.push("checkout");
+      if (terminalSet.has(key)) reasons.push("terminal");
       if (branch.hasWorkingTreeChanges) reasons.push("uncommitted");
       const tipAt = parseTime(branch.lastCommitDate);
       if (
@@ -323,6 +343,7 @@ export function buildSidebarTree(
     const reasons: LiveReason[] = [];
     if (pinnedSet.has(key)) reasons.push("pinned");
     if (checkoutPath) reasons.push("checkout");
+    if (terminalSet.has(key)) reasons.push("terminal");
     if (reviewAt > 0 && now - reviewAt <= REVIEW_ACTIVE_WINDOW_MS) {
       reasons.push("recent-review");
     }
@@ -398,8 +419,14 @@ export function buildSidebarTree(
     // The repo root counts even when nothing is checked out there (a bare or
     // freshly-cloned repo still anchors session attribution).
     const checkouts = new Set<string>([bucket.repoPath]);
+    let pinRank: number | null = null;
     for (const row of [bucket.head, ...bucket.rows]) {
-      if (row?.checkoutPath) checkouts.add(row.checkoutPath);
+      if (!row) continue;
+      if (row.checkoutPath) checkouts.add(row.checkoutPath);
+      const rank = pinOrder.get(row.reviewKey);
+      if (rank !== undefined && (pinRank === null || rank < pinRank)) {
+        pinRank = rank;
+      }
     }
 
     nodes.push({
@@ -420,14 +447,20 @@ export function buildSidebarTree(
         bucket.repoPath === openRepoPath ||
         (bucket.head?.live ?? false) ||
         live.length > 0,
+      pinRank,
     });
   }
 
-  // 5. Active repos lead, and within each half repos are alphabetical.
-  //    Deliberately *not* by recency: now that "active" is earned, ordering by
-  //    last-touched only made the list reshuffle under the cursor while you
-  //    worked. A stable position is worth more than a fresh one.
+  // 5. Three bands: repos you pinned something in, then active repos, then the
+  //    rest. Pinned leads because it's the only ordering the user states
+  //    outright — everything below it is inferred, and an inference shouldn't
+  //    outrank an instruction. Pinned repos follow pin order; the other two
+  //    bands stay alphabetical, deliberately *not* by recency: ordering by
+  //    last-touched made the list reshuffle under the cursor while you worked,
+  //    and a stable position is worth more than a fresh one.
+  const pinBand = (node: RepoNode): number => node.pinRank ?? Infinity;
   nodes.sort((a, b) => {
+    if (pinBand(a) !== pinBand(b)) return pinBand(a) - pinBand(b);
     if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
     const byName = a.repoName.localeCompare(b.repoName);
     if (byName !== 0) return byName;

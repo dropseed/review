@@ -148,8 +148,17 @@ export function TerminalPanel(): ReactNode {
     // or a rounding of their own, so there's one edge between diff and shell.
     <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-inset">
       {/* Tab strip */}
-      <div className="flex items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
-        <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+      {/* Controls stay on the first row (items-start) while the tabs below them
+          wrap — the strip grows downward instead of scrolling sideways. */}
+      <div className="flex items-start gap-0.5 border-b border-edge/60 px-1.5 py-1">
+        {/* Tabs wrap rather than scroll: the panel is often half the window
+            wide, where a horizontal scroller hides tabs behind a gesture you
+            have to discover. Capped at ~three rows so a pile of terminals can't
+            eat the panel; past that the rows scroll. */}
+        <div
+          className="flex max-h-[4.75rem] flex-1 flex-wrap items-center gap-0.5
+                     overflow-y-auto scrollbar-thin"
+        >
           {visibleTabs.map(({ tab }, index) => {
             const leafIds = collectLeafIds(tab.root);
             const leafStatuses = leafIds
@@ -208,7 +217,7 @@ export function TerminalPanel(): ReactNode {
                   setDropIndex(null);
                 }}
                 className={clsx(
-                  "group relative flex shrink-0 items-center rounded-md px-2 py-1 text-xs",
+                  "group relative flex max-w-full shrink-0 items-center rounded-md px-2 py-1 text-xs",
                   // Lifted off the terminal surface, not recessed into it —
                   // the strip now sits on surface-inset itself.
                   isActive
@@ -244,7 +253,7 @@ export function TerminalPanel(): ReactNode {
                 <button
                   type="button"
                   onClick={() => setActiveTab(reviewKey, tab.id)}
-                  className="flex items-center gap-1.5"
+                  className="flex min-w-0 items-center gap-1.5"
                 >
                   <span
                     className={clsx(

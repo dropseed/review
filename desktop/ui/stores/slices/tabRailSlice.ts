@@ -9,7 +9,7 @@ import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { jsonEqual } from "../../utils/equality";
-import { buildSidebarTree } from "../../utils/sidebar-tree";
+import { getSidebarTree } from "../selectors/sidebar";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
 import { forgetEnsuredReview } from "./reviewSlice";
@@ -274,22 +274,8 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     checkReviewsFreshness: async (scopeKeys?: string[]) => {
       // Live rows (plus the active review) — the default scope.
       const deriveLiveScope = (): Set<string> => {
-        const {
-          localActivity,
-          globalReviews,
-          globalReviewsByKey,
-          sidebarPinned,
-          sidebarDismissed,
-          activeReviewKey,
-        } = get();
-        const tree = buildSidebarTree(
-          localActivity,
-          globalReviews,
-          globalReviewsByKey,
-          sidebarPinned,
-          sidebarDismissed,
-          Date.now(),
-        );
+        const { globalReviewsByKey, activeReviewKey } = get();
+        const tree = getSidebarTree(get(), Date.now(), null);
         const keys = new Set<string>();
         for (const node of tree) {
           for (const row of [node.head, ...node.live]) {

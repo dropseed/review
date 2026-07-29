@@ -124,9 +124,22 @@ export function SplitDivider({
       onDoubleClick={handleDoubleClick}
       title="Drag to resize · double-click to even out"
       className={clsx(
-        "shrink-0 bg-transparent transition-colors hover:bg-focus-ring/30 active:bg-focus-ring/50",
-        isRow ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize",
+        "group/divider relative shrink-0 bg-transparent",
+        isRow ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize",
       )}
-    />
+    >
+      {/* Panes share one surface, so without a drawn line two terminals sitting
+          side by side read as one. The hairline is the seam; the hit area
+          around it stays wider than the line so it's still easy to grab. */}
+      <span
+        className={clsx(
+          "pointer-events-none absolute bg-edge-strong transition-colors",
+          "group-hover/divider:bg-focus-ring/70 group-active/divider:bg-focus-ring",
+          isRow
+            ? "inset-y-0 left-1/2 w-px -translate-x-1/2"
+            : "inset-x-0 top-1/2 h-px -translate-y-1/2",
+        )}
+      />
+    </div>
   );
 }

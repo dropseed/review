@@ -1097,6 +1097,35 @@ export function selectTerminalIdsForRow(
     .map((s) => s.id);
 }
 
+/**
+ * Live (not yet exited) session ids grouped by the review key that owns them.
+ *
+ * Resolved through the checkout index rather than the sidebar tree, so the
+ * answer doesn't depend on a presentation structure — and so the tree can take
+ * this as an input without either one needing the other first. A session whose
+ * checkout is gone lands in its repo's root bucket, the same place
+ * `sessionReviewKey` puts it everywhere else.
+ */
+export function selectLiveSessionsByReviewKey(
+  state: Pick<
+    TerminalSlice,
+    "terminalSessions" | "terminalExited" | "terminalCheckouts"
+  >,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const session of Object.values(state.terminalSessions)) {
+    if (session.id in state.terminalExited) continue;
+    const key = sessionReviewKey(
+      state.terminalCheckouts,
+      session.repoPath,
+      session.cwd,
+      makeReviewKey(session.repoPath, ""),
+    );
+    (out[key] ??= []).push(session.id);
+  }
+  return out;
+}
+
 export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   TerminalSlice
 > = (client, storage) => (set, get) => {

@@ -1,5 +1,4 @@
 import { type ReactNode, useMemo } from "react";
-import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
   mergeVisibleTabs,
@@ -7,21 +6,23 @@ import {
   terminalSeverity,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
-import { SimpleTooltip } from "../ui/tooltip";
-import { Rail, RailButton, RailRestoreIcon, railTooltipSide } from "../ui/rail";
 import {
-  phaseDotClass,
-  phaseLabel,
-  basename,
-} from "../TabRail/terminal-status-format";
+  Rail,
+  RailButton,
+  RailSeparator,
+  RailTab,
+  RailRestoreIcon,
+} from "../ui/rail";
+import { PhaseDot } from "../TabRail/PhaseDot";
+import { phaseLabel, basename } from "../TabRail/terminal-status-format";
 import { collectLeafIds } from "./pane-tree";
 import type { TerminalStatus } from "../../types";
 
 /**
  * The terminal panel's closed state. Hiding the panel used to leave nothing
  * behind — the only way back was ⌘`, which you had to already know. This keeps
- * a sliver of the panel on its dock edge instead: a restore control, and one
- * live phase dot per tab so a shell that needs you is still visible while the
+ * a sliver of the panel on its dock edge instead: a restore control, and every
+ * tab turned on its side, so a shell that needs you is still nameable while the
  * diff has the full width.
  */
 export function TerminalRail(): ReactNode {
@@ -33,6 +34,9 @@ export function TerminalRail(): ReactNode {
   const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
   const terminalTabsByReviewKey = useReviewStore(
     (s) => s.terminalTabsByReviewKey,
+  );
+  const activeTabIdByReviewKey = useReviewStore(
+    (s) => s.activeTabIdByReviewKey,
   );
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
@@ -54,13 +58,15 @@ export function TerminalRail(): ReactNode {
 
   if (!repoPath) return null;
 
+  const activeTabId = activeTabIdByReviewKey[reviewKey] ?? tabs[0]?.id ?? null;
+
   const showTab = (tab: TerminalTab) => {
     setActiveTab(reviewKey, tab.id);
     toggleTerminalPanel();
   };
 
   return (
-    <Rail className="bg-surface-inset">
+    <Rail className="panel-card w-full bg-surface-inset">
       <RailButton
         label="Show terminal (⌘`)"
         edge={terminalDockSide}
@@ -69,10 +75,10 @@ export function TerminalRail(): ReactNode {
         <RailRestoreIcon edge={terminalDockSide} />
       </RailButton>
 
-      {tabs.length > 0 && <div className="h-px w-4 shrink-0 bg-edge/60" />}
+      {tabs.length > 0 && <RailSeparator />}
 
-      {/* Tab dots — the reason the rail earns its width. Picking one restores
-          the panel with that tab already active. */}
+      {/* The tabs themselves, turned on their side — the reason the rail earns
+          its width. Picking one restores the panel with that tab active. */}
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {tabs.map((tab) => {
           const leafIds = collectLeafIds(tab.root);
@@ -94,29 +100,15 @@ export function TerminalRail(): ReactNode {
             : `${title} — ${phaseLabel(phase)}`;
 
           return (
-            <SimpleTooltip
+            <RailTab
               key={tab.id}
-              content={label}
-              side={railTooltipSide(terminalDockSide)}
-            >
-              <button
-                type="button"
-                onClick={() => showTab(tab)}
-                aria-label={label}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded
-                           hover:bg-fg/[0.08]"
-              >
-                <span
-                  className={clsx(
-                    "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-                    allDead ? "bg-fg-faint" : phaseDotClass(phase),
-                    !allDead &&
-                      (phase === "working" || phase === "needs_attention") &&
-                      "animate-pulse",
-                  )}
-                />
-              </button>
-            </SimpleTooltip>
+              text={title}
+              label={label}
+              edge={terminalDockSide}
+              active={tab.id === activeTabId}
+              onClick={() => showTab(tab)}
+              marker={<PhaseDot phase={phase} dead={allDead} />}
+            />
           );
         })}
       </div>

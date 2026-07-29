@@ -29,6 +29,7 @@ import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
 import { AgentUsageIndicator } from "../AgentUsageIndicator";
 import { LocalBranchItem } from "./LocalBranchItem";
+import { SidebarRail } from "./SidebarRail";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
 import { splitRoutePrefix } from "../../utils/repo-identity";
 
@@ -746,6 +747,18 @@ export const TabRail = memo(function TabRail({
 
   return (
     <div className="relative flex shrink-0">
+      {/* Collapsed, the sidebar keeps its column as a rail rather than
+          vanishing — the way back lives on the sidebar's own edge instead of
+          floating over whichever view is mounted. The nav below stays mounted
+          at zero width so expanding is a width animation, not a remount. */}
+      {collapsed && (
+        <SidebarRail
+          onExpand={toggleTabRail}
+          onActivateReview={onActivateReview}
+          onActivateLocalBranch={onActivateLocalBranch}
+        />
+      )}
+
       <nav
         className={`tab-rail flex h-full shrink-0 flex-col
                    bg-surface border-r border-edge overflow-hidden

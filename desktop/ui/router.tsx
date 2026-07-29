@@ -8,7 +8,6 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
-import { SidebarPanelIcon } from "./components/ui/icons";
 import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
@@ -203,9 +202,6 @@ function EmptyTabState() {
     useAppContext();
   const globalReviews = useReviewStore((s) => s.globalReviews);
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
-  const tabRailCollapsed = useReviewStore((s) => s.tabRailCollapsed);
-  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
-
   if (repoStatus === "error") {
     return (
       <div className="flex h-full items-center justify-center">
@@ -248,19 +244,6 @@ function EmptyTabState() {
 
   return (
     <div className="relative flex h-full items-center justify-center">
-      {tabRailCollapsed && (
-        <button
-          type="button"
-          onClick={toggleTabRail}
-          className="absolute left-2 top-2.5
-                     flex items-center justify-center w-7 h-7 rounded-md
-                     hover:bg-surface-hover/60 transition-colors duration-100
-                     text-fg-muted hover:text-fg-secondary"
-          aria-label="Show sidebar"
-        >
-          <SidebarPanelIcon />
-        </button>
-      )}
       <div className="flex flex-col items-center gap-3 text-center px-6">
         <p className="text-sm text-fg-muted">
           Select a review from the sidebar, or start a new one

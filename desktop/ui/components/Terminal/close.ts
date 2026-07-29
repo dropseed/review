@@ -69,6 +69,9 @@ async function confirmKill(ids: string[]): Promise<boolean> {
   if (running.length === 0) return true;
   const { dialogs } = getPlatformServices();
   const lines = running.map((r) => `${r.title} is running \`${r.command}\``);
+  // A dialog that fails to open answers false and says so itself — see
+  // DialogService.confirm. Declining is right either way: closing would kill
+  // the running command without ever asking.
   return dialogs.confirm(
     `${lines.join("\n")}\n\nClosing ${
       running.length === 1 ? "it" : "them"
