@@ -12,6 +12,12 @@ import {
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
 import { buildXtermTheme } from "./xterm-theme";
+import {
+  encodeKittyKey,
+  forgetKittyState,
+  kittyFlags,
+  registerKittyHandlers,
+} from "./kitty-keys";
 
 /**
  * Module-level registry of live xterm instances, keyed by terminal id. This is
@@ -33,6 +39,8 @@ interface RegistryEntry {
   webgl: WebglAddon | null;
   /** Detaches the output stream; called only from disposeTerminal. */
   unsubOutput: (() => void) | null;
+  /** Removes the kitty keyboard negotiation handlers. */
+  disposeKitty: (() => void) | null;
   /**
    * Live output held back until a cold reattach's replay has been written, so
    * historical scrollback lands ahead of new bytes. `null` once flushed.
@@ -88,6 +96,11 @@ export function acquireTerminal(
     theme: opts.theme,
     cursorBlink: true,
     allowProposedApi: true,
+    // xterm renders bold text in the bright variant of its color by default,
+    // which silently rewrites the output of anything that color-codes by
+    // severity — a bold red error arrives as bright red. Bold is a weight, not
+    // a different color; native terminals stopped conflating the two.
+    drawBoldTextInBrightColors: false,
     // Option sends ESC-prefixed sequences instead of composing characters —
     // the "Use Option as Meta key" setting every terminal-based CLI expects
     // (Option+Enter for a newline, Option+B/F for word motion, and Claude
@@ -104,6 +117,12 @@ export function acquireTerminal(
     linkHandler: { activate: (_event, uri) => openTerminalLink(uri) },
   });
   term.attachCustomKeyEventHandler((event) => handleCustomKey(id, event));
+  // Lets a program negotiate the kitty keyboard protocol, so chords like
+  // Ctrl+Enter and Shift+Tab arrive distinguishable instead of collapsing onto
+  // the same bytes as their unmodified forms.
+  const disposeKitty = registerKittyHandlers(term, id, (data) =>
+    writeToPty(id, data),
+  );
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
@@ -124,6 +143,7 @@ export function acquireTerminal(
     fit,
     webgl: null,
     unsubOutput: null,
+    disposeKitty,
     // A brand-new instance has nothing on screen yet, so hold output until the
     // caller has decided whether it needs a replay first.
     pending: [],
@@ -182,6 +202,17 @@ class WriteOnlyClipboard implements IClipboardProvider {
 }
 
 /**
+ * Send input to a session's PTY. Failure is logged rather than thrown: these
+ * are keystrokes, and there is nothing useful a caller could do about one that
+ * didn't land.
+ */
+function writeToPty(id: string, data: string): void {
+  getApiClient()
+    .terminalWrite(id, data)
+    .catch((err) => console.error("[terminal] Write failed:", err));
+}
+
+/**
  * Write to an instance, swallowing writes to a disposed one — a terminal can be
  * torn down while PTY output for it is still in flight.
  */
@@ -228,27 +259,46 @@ export function startTerminalOutput(
  * Cmd+C/Cmd+V stay native copy/paste.
  */
 function handleCustomKey(id: string, event: KeyboardEvent): boolean {
-  if (event.type !== "keydown") return true;
+  const release = event.type === "keyup";
+  if (!release && event.type !== "keydown") return true;
 
   // Cmd chords are app shortcuts (⌘D split, ⌘` toggle, ⌘C/⌘V) — macOS
   // terminals never forward them to the PTY. Ctrl chords are the shell's
-  // (Ctrl+C, Ctrl+D, Ctrl+R) and must pass straight through.
-  if (event.metaKey) return false;
+  // (Ctrl+C, Ctrl+D, Ctrl+R) and must pass straight through. Release events
+  // skip this: the app already acted on the press.
+  if (!release && event.metaKey) return false;
 
-  // Shift+Enter inserts a newline instead of submitting. xterm has no key
-  // encoding protocol (kitty/modifyOtherKeys), so it would otherwise send a
-  // bare CR; ESC+CR is the sequence CLIs read as "newline" and exactly what
-  // Claude Code's own `/terminal-setup` configures for terminals in this
-  // position (Alacritty, VS Code, Zed).
+  // When a program has asked for the kitty keyboard protocol, every modified
+  // key goes through it — that is the whole point of the program opting in.
+  // A `null` means the protocol is off or the key isn't ours; an empty string
+  // means it *is* ours and is deliberately silent (a bare modifier press).
+  const encoded = encodeKittyKey(event, kittyFlags(id));
+  // Silence on release means "nothing to report", so let xterm see the event;
+  // on press it means "consumed", so swallow it.
+  if (encoded !== null && !(release && encoded === "")) {
+    if (encoded !== "") writeToPty(id, encoded);
+    // xterm does not preventDefault for us when a custom handler declines a
+    // key, and the browser's own handling of Tab would move focus out of the
+    // terminal entirely.
+    event.preventDefault();
+    event.stopPropagation();
+    return false;
+  }
+  if (release) return true;
+
+  // Shift+Enter inserts a newline instead of submitting. Without a key encoding
+  // protocol the terminal would send a bare CR, indistinguishable from Enter;
+  // ESC+CR is what CLIs read as "newline" and exactly what Claude Code's own
+  // `/terminal-setup` configures for terminals in this position (Alacritty, VS
+  // Code, Zed). Only reached when the program has not negotiated kitty mode,
+  // which encodes this properly as CSI 13;2u.
   if (
     event.key === "Enter" &&
     event.shiftKey &&
     !event.ctrlKey &&
     !event.altKey
   ) {
-    getApiClient()
-      .terminalWrite(id, "\x1b\r")
-      .catch((err) => console.error("[terminal] Write failed:", err));
+    writeToPty(id, "\x1b\r");
     return false;
   }
 
@@ -304,6 +354,11 @@ export function disposeTerminal(id: string): void {
   if (!entry) return;
   entry.unsubOutput?.();
   entry.unsubOutput = null;
+  entry.disposeKitty?.();
+  entry.disposeKitty = null;
+  // The keyboard mode belongs to the program that negotiated it, so it dies
+  // with the session rather than leaking into whatever reuses this id.
+  forgetKittyState(id);
   try {
     entry.webgl?.dispose();
   } catch {

@@ -9,6 +9,7 @@
 import { registerCustomTheme } from "@pierre/diffs";
 import type { UiTheme, UiThemeTokens } from "./ui-themes";
 import { UI_THEMES } from "./ui-themes";
+import { mixColors } from "./color";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -373,37 +374,6 @@ const LIGHT_FALLBACK_TOKENS: UiThemeTokens = {
 // ---------------------------------------------------------------------------
 // Color mixing helpers
 // ---------------------------------------------------------------------------
-
-/** Parse a hex color (#RGB, #RRGGBB, or #RRGGBBAA) into [r, g, b]. */
-function parseHex(hex: string): [number, number, number] | null {
-  const h = hex.replace("#", "");
-  if (h.length === 3) {
-    return [
-      parseInt(h[0] + h[0], 16),
-      parseInt(h[1] + h[1], 16),
-      parseInt(h[2] + h[2], 16),
-    ];
-  }
-  if (h.length >= 6) {
-    return [
-      parseInt(h.slice(0, 2), 16),
-      parseInt(h.slice(2, 4), 16),
-      parseInt(h.slice(4, 6), 16),
-    ];
-  }
-  return null;
-}
-
-/** Mix two hex colors by a ratio (0 = a, 1 = b). Returns #RRGGBB. */
-function mixColors(a: string, b: string, ratio: number): string {
-  const ca = parseHex(a);
-  const cb = parseHex(b);
-  if (!ca || !cb) return a;
-  const r = Math.round(ca[0] + (cb[0] - ca[0]) * ratio);
-  const g = Math.round(ca[1] + (cb[1] - ca[1]) * ratio);
-  const bl = Math.round(ca[2] + (cb[2] - ca[2]) * ratio);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
-}
 
 /**
  * Ensure the 4 fg levels (fg > fg-secondary > fg-muted > fg-faint) are distinct.

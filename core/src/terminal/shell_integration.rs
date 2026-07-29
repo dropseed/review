@@ -43,22 +43,100 @@ if [[ "$REVIEW_TERMINAL_INTEGRATION" == "1" && -z "$__REVIEW_HOOKS_INSTALLED" ]]
   __REVIEW_HOOKS_INSTALLED=1
   autoload -Uz add-zsh-hook
 
-  __review_precmd() {
-    local __review_exit=$?
-    # D: the previous command finished (report its exit code) — must come first.
-    printf '\033]133;D;%s\a' "$__review_exit"
-    # A: a new prompt begins.
-    printf '\033]133;A\a'
-    # OSC 7: report the working directory as file://<host><path>.
-    printf '\033]7;file://%s%s\a' "${HOST}" "${PWD}"
+  # A dedicated write descriptor on the tty, close-on-exec so children never
+  # inherit it. Marks go here rather than to stdout: `cmd > file` would
+  # otherwise capture them into the file and Review would see no marks at all.
+  # If anything here fails we fall back to fd 1, which is merely the old
+  # behaviour rather than a broken shell.
+  zmodload -F zsh/system b:sysopen 2>/dev/null
+  if ! { [[ -n "$TTY" ]] && sysopen -o cloexec -wu __review_fd -- "$TTY" 2>/dev/null }; then
+    __review_fd=1
+  fi
+
+  # Every hook runs under `emulate -L zsh -o no_aliases` and prefixes builtins
+  # with `builtin`, so a user alias or function named `print`/`local` cannot
+  # break the marks. The options are function-local and restored on return.
+  __review_emit() {
+    builtin emulate -L zsh -o no_aliases
+    builtin print -nu $__review_fd -- "$1"
   }
+
+  # OSC 7: the working directory, as file://<host><path>.
+  __review_report_cwd() {
+    __review_emit $'\e]7;file://'"${HOST}${PWD}"$'\a'
+  }
+
+  # C: a command is about to run.
   __review_preexec() {
-    # C: a command is about to run.
-    printf '\033]133;C\a'
+    __review_emit $'\e]133;C\a'
+  }
+
+  __review_precmd() {
+    # $? first — anything else clobbers it.
+    builtin local __review_exit=$?
+    builtin emulate -L zsh -o no_aliases
+
+    # D: the previous command finished, with its exit code.
+    __review_emit $'\e]133;D;'"$__review_exit"$'\a'
+    __review_report_cwd
+
+    # The A/B marks live inside PS1 rather than being printed here, because a
+    # printed mark is a one-time event while the prompt is redisplayed many
+    # times — on reset-prompt, on SIGCHLD, and above all on SIGWINCH. Review
+    # resizes panes constantly (split drags, sidebar collapse), and a printed
+    # mark would leave the prompt on screen with its marks scrolled away, so
+    # the session would look like it was still running a command forever.
+    #
+    # This needs prompt_percent for %{...%} to be understood; without it we
+    # print the marks once and accept the staleness.
+    if [[ ! -o prompt_percent ]]; then
+      __review_emit $'\e]133;A\a'
+      return
+    fi
+
+    # Marks only survive if we are the last precmd hook — a later hook that
+    # rebuilds PS1 would drop them. If we are not last, move ourselves there
+    # and try again on the next prompt.
+    if [[ ${precmd_functions[-1]} != __review_precmd ]]; then
+      precmd_functions=(${precmd_functions:#__review_precmd} __review_precmd)
+      __review_emit $'\e]133;A\a'
+      return
+    fi
+
+    # Start from a clean PS1. If PS1 still matches what we last marked, strip
+    # back to the saved original; if a theme has since rewritten it, keep the
+    # theme's version and re-mark that. Handing a marked PS1 back to other
+    # hooks breaks themes (Pure, and anything that pattern-matches its own
+    # prompt to rebuild it).
+    if [[ -n ${__review_saved_ps1+x} && $PS1 == $__review_marked_ps1 ]]; then
+      PS1=$__review_saved_ps1
+      PS2=$__review_saved_ps2
+    fi
+    __review_saved_ps1=$PS1
+    __review_saved_ps2=$PS2
+
+    # A trailing bare '%' would pair with the '{' of the mark we append and be
+    # read as the '%{' prompt escape, swallowing the mark and printing a stray
+    # '{'. Doubling it makes it the literal '%' it was meant to be.
+    [[ $PS1 == % || $PS1 == *[^%]% ]] && PS1=$PS1%
+    [[ $PS2 == % || $PS2 == *[^%]% ]] && PS2=$PS2%
+
+    # A opens the prompt, B closes it: the span between them is what the user
+    # is typing, which is how "prompt is up, idle" is told apart from "a
+    # command is running". k=s marks continuation lines as secondary prompts,
+    # so multi-line and PS2 prompts aren't mistaken for command output.
+    PS1=$'%{\e]133;A\a%}'"${PS1}"$'%{\e]133;B\a%}'
+    PS1=${PS1//$'\n'/$'\n'$'%{\e]133;P;k=s\a%}'}
+    PS2=$'%{\e]133;P;k=s\a%}'"${PS2}"$'%{\e]133;B\a%}'
+
+    __review_marked_ps1=$PS1
   }
 
   add-zsh-hook precmd __review_precmd
   add-zsh-hook preexec __review_preexec
+  # `cd foo && slow-thing` changes directory before the command runs, so
+  # without this the reported cwd stays stale for that command's whole life.
+  add-zsh-hook chpwd __review_report_cwd
 fi
 "#;
 
@@ -161,6 +239,120 @@ mod tests {
         std::env::remove_var("REVIEW_HOME");
     }
 
+    /// Prompt marks must survive a redraw — see the rationale in `ZSHRC`. This
+    /// is the only test that can tell a printed mark from a `PS1`-carried one.
+    ///
+    /// Skips itself when there is no zsh to drive.
+    #[test]
+    fn prompt_marks_survive_a_resize() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::Read;
+        use std::sync::{Arc, Mutex};
+        use std::time::{Duration, Instant};
+
+        let shell = Path::new("/bin/zsh");
+        if !shell.exists() {
+            return;
+        }
+
+        let env = {
+            let _lock = ENV_LOCK.lock().unwrap();
+            let review_home = TempDir::new().unwrap();
+            std::env::set_var("REVIEW_HOME", review_home.path());
+            let env = injection_env(shell).expect("zsh should inject");
+            std::env::remove_var("REVIEW_HOME");
+            // Keep the temp dir alive past the lock: the shell reads the
+            // generated .zshrc out of it after we spawn.
+            std::mem::forget(review_home);
+            env
+        };
+
+        let pty = native_pty_system();
+        let pair = pty
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+
+        let mut cmd = CommandBuilder::new(shell);
+        cmd.arg("-i");
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+        // Point the integration at a config dir that does not exist, so the
+        // test exercises our marks rather than whatever is in the developer's
+        // own zshrc.
+        cmd.env("REVIEW_ZDOTDIR", "/nonexistent-review-test");
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("PS1", "prompt> ");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn zsh");
+
+        let seen = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut reader = pair.master.try_clone_reader().expect("reader");
+        {
+            let seen = Arc::clone(&seen);
+            std::thread::spawn(move || {
+                let mut chunk = [0u8; 4096];
+                while let Ok(n) = reader.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    seen.lock().unwrap().extend_from_slice(&chunk[..n]);
+                }
+            });
+        }
+
+        let wait_for = |needle: &[u8], budget: Duration| -> bool {
+            let deadline = Instant::now() + budget;
+            while Instant::now() < deadline {
+                if seen
+                    .lock()
+                    .unwrap()
+                    .windows(needle.len())
+                    .any(|w| w == needle)
+                {
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+
+        assert!(
+            wait_for(b"\x1b]133;A", Duration::from_secs(10)),
+            "no prompt-start mark at startup; shell integration never ran"
+        );
+
+        // Forget everything seen so far, so the assertion below can only be
+        // satisfied by marks emitted *after* the resize.
+        seen.lock().unwrap().clear();
+
+        pair.master
+            .resize(PtySize {
+                rows: 30,
+                cols: 100,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("resize");
+
+        let redrawn = wait_for(b"\x1b]133;A", Duration::from_secs(5))
+            && wait_for(b"\x1b]133;B", Duration::from_secs(5));
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(
+            redrawn,
+            "the prompt marks did not come back after a resize — they are \
+             being printed once instead of carried in PS1, so every pane \
+             resize leaves the session's phase stuck"
+        );
+    }
+
     #[test]
     fn generated_zshrc_has_osc133_marks_and_guard() {
         let _lock = ENV_LOCK.lock().unwrap();
@@ -171,7 +363,17 @@ mod tests {
         let zshrc = std::fs::read_to_string(dir.join(".zshrc")).unwrap();
         assert!(zshrc.contains("133;D"), "missing command-end mark");
         assert!(zshrc.contains("133;A"), "missing prompt-start mark");
+        assert!(zshrc.contains("133;B"), "missing prompt-end mark");
         assert!(zshrc.contains("133;C"), "missing command-start mark");
+        assert!(
+            zshrc.contains("chpwd"),
+            "cwd is only reported from precmd, so `cd x && slow` reports the \
+             old directory for that command's whole life"
+        );
+        assert!(
+            zshrc.contains("cloexec"),
+            "marks go to stdout, so a command redirecting stdout swallows them"
+        );
         assert!(
             zshrc.contains("REVIEW_TERMINAL_INTEGRATION"),
             "missing idempotency guard"

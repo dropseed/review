@@ -126,6 +126,11 @@ impl Session {
         cmd.cwd(&cwd);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // Programs branch on these to decide what the terminal can do — and
+        // agents in particular check them before enabling richer input or
+        // output. Without them Review is indistinguishable from a bare xterm.
+        cmd.env("TERM_PROGRAM", "Review");
+        cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         // Enable OSC 133 shell integration for zsh (no-op for other shells).
         // Applied before the caller's env so an explicit override still wins.
         if let Some(injected) = shell_integration::injection_env(&shell) {

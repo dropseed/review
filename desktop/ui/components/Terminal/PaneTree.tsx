@@ -64,16 +64,25 @@ export function PaneTree({
           // The panel card supplies the surface and the rounding; this is the
           // one gutter between the card edge and the terminal text.
           "overflow-hidden p-1.5",
-          // Focus reads as the pane that isn't faded, rather than a border
-          // drawn around it — one less line inside an already busy panel.
-          // Kept shallow so the dimmed pane's output stays readable.
-          "transition-opacity",
-          !isFocused && !isOnlyPane && "opacity-70",
         )}
         onMouseDown={() => onFocus(id)}
       >
         <div className="relative min-h-0 flex-1">
           <TerminalPane id={id} active={isFocused} />
+          {/* Focus reads as the pane that isn't faded, rather than a border
+              drawn around it — one less line inside an already busy panel.
+              This is a veil of the terminal's own background rather than
+              `opacity` on the pane: fading the element composites its text
+              against the app chrome behind it, which tints the output and
+              washes it out, while a veil settles it toward the background it
+              already sits on. Reads as "still a terminal, just not this one".
+              Non-interactive, so a click still focuses the pane underneath. */}
+          {!isFocused && !isOnlyPane && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-[5] bg-surface-inset/30 transition-opacity"
+            />
+          )}
         </div>
 
         {/* Hover affordances — split / close. */}

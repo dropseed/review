@@ -10,6 +10,20 @@ import ReactDOM from "react-dom/client";
 import { AppRouter } from "./router";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "sonner";
+// Fonts, bundled rather than fetched from Google at runtime. A desktop app that
+// pulls its UI font over the network renders in a fallback face whenever the
+// user is offline, and tells a third party every time the app is opened.
+//
+// Imported here, not from index.css: Vite rewrites `url()` references only in
+// CSS it processes as a module, so importing these through a stylesheet leaves
+// the woff2 paths relative and they resolve to nothing in the built app.
+import "@fontsource-variable/inter/wght.css";
+import "@fontsource-variable/inter/wght-italic.css";
+// The terminal's font. An embedded terminal should measure its grid identically
+// on every machine; a family that resolves differently per install makes cell
+// width — and so every TUI's layout — machine-dependent.
+import "@fontsource-variable/jetbrains-mono/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght-italic.css";
 import "./index.css";
 import { initSentry } from "./utils/sentry";
 import { initializeLogger, initLogPath } from "./utils/logger";

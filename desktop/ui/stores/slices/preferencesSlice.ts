@@ -119,8 +119,13 @@ export const CODE_FONT_FAMILY_DEFAULT =
 // Terminal font/rendering defaults. These are intentionally separate from the
 // code-font settings above so the embedded terminal can be tuned to read like a
 // native terminal without disturbing the diff/code viewer.
+//
+// JetBrains Mono is bundled (see index.css) rather than relying on the system
+// stack, so the grid measures the same on every machine — the same reason
+// Ghostty ships it as its own default. The system fonts stay behind it as a
+// fallback for anything the bundled subsets don't cover.
 export const TERMINAL_FONT_FAMILY_DEFAULT =
-  "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace";
+  "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace";
 export const TERMINAL_FONT_SIZE_DEFAULT = 13;
 export const TERMINAL_FONT_SIZE_MIN = 8;
 export const TERMINAL_FONT_SIZE_MAX = 32;

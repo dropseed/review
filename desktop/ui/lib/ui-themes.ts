@@ -987,6 +987,10 @@ const TOKEN_TO_CSS_VAR: Record<keyof UiThemeTokens, string> = {
 export function applyUiTheme(theme: UiTheme): void {
   const el = document.documentElement;
   el.style.setProperty("color-scheme", theme.colorScheme);
+  // The terminal needs to know *which* theme is active, not just its colors:
+  // its 16-color ANSI ramp is per-theme published data that cannot be derived
+  // from the handful of semantic tokens below.
+  el.dataset.uiTheme = theme.id;
 
   for (const [token, value] of Object.entries(theme.tokens)) {
     const cssVar = TOKEN_TO_CSS_VAR[token as keyof UiThemeTokens];
