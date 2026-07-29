@@ -14,7 +14,8 @@ Single combined store in `stores/index.ts` via `useReviewStore` hook. State is s
 | Slice              | Purpose                                                      |
 | ------------------ | ------------------------------------------------------------ |
 | `reviewSlice`      | Review state: hunk approvals, trust labels, notes, save/load |
-| `navigationSlice`  | Current file, hunk index, view mode, search/palette overlays |
+| `navigationSlice`  | Current file, hunk index, view mode                          |
+| `overlaySlice`     | The one open overlay, and the palette's mode                 |
 | `filesSlice`       | File tree, file content, hunks per file                      |
 | `gitSlice`         | Repo path, branches, comparison, git status                  |
 | `preferencesSlice` | Font size, theme, sidebar width (persisted via Tauri Store)  |
@@ -76,7 +77,19 @@ Shortcuts are described by `KeyboardEvent.code`, never `key`: on macOS Option+C 
 
 Adding a command means adding one entry to `APP_COMMANDS`. Adding a _menu_ entry additionally means a `MenuItemBuilder` in `mod.rs` and a `MENU_COMMANDS` line.
 
-`lib/fuzzy/` is the one fuzzy matcher — a Smith-Waterman DP producing scores normalized to 0..1, so several weighted fields and an extrinsic boost can be blended without one term swamping the others. `components/palette/PaletteDialog.tsx` is the shell behind the palette and all three finders; it owns the combobox ARIA contract and the flat-index ↔ grouped-render mapping.
+`lib/fuzzy/` is the one fuzzy matcher — a Smith-Waterman DP producing scores normalized to 0..1, so several weighted fields and an extrinsic boost can be blended without one term swamping the others.
+
+### The palette's four modes
+
+⌘K, ⌘P, ⌘R and ⌘⇧F are one dialog, not four. `activeOverlay === "palette"` plus a `PaletteMode` (`commands` / `files` / `symbols` / `content`) is the whole state; each shortcut calls `openPalette(mode)`. Prefixes switch modes in place — `>` commands, `@` symbols, `#` in files, nothing for files — and Backspace on an empty query steps back, falling to files when there is nothing to unwind. See `components/palette/modes.ts` for why a prefix is only read out of an *empty* box.
+
+Three files divide the work:
+
+- `PaletteDialog.tsx` — the shell. Owns the combobox ARIA contract and the flat-index ↔ grouped-render mapping, so a grouped mode cannot open a different row than the one highlighted.
+- `sources/*.tsx` — one hook per mode, each returning a `PaletteSource` (the half of the dialog's props that depends on what is being searched). Every hook runs on every render, so each takes `active` and declines its own work; the fetches and tree walks all sit behind it.
+- `Palette.tsx` — routes between them. Modes swap the contents of a dialog that stays mounted, because four Radix roots would replay the open animation and drop focus on every prefix keystroke.
+
+Adding a mode means a `modes.ts` entry and a `sources/` hook. Nothing else changes.
 
 ## Components
 

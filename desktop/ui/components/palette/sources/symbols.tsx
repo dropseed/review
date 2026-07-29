@@ -1,24 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useReviewStore } from "../../stores";
-import { useFileHunks } from "../../stores/selectors/hunks";
-import { getApiClient } from "../../api";
-import type { FileSymbol, SymbolDiff } from "../../types";
-import { HighlightedText } from "../../lib/fuzzy";
-import { scoreSymbol } from "../symbols/score";
-import { PaletteDialog, countLabel } from "../palette";
-import { ChangeIndicator, SymbolKindBadge } from "../symbols";
+import { useReviewStore } from "../../../stores";
+import { useFileHunks } from "../../../stores/selectors/hunks";
+import { getApiClient } from "../../../api";
+import type { FileSymbol, SymbolDiff } from "../../../types";
+import { HighlightedText } from "../../../lib/fuzzy";
+import { scoreSymbol } from "../../symbols/score";
+import { countLabel, type PaletteSource } from "../PaletteDialog";
+import { ChangeIndicator, SymbolKindBadge } from "../../symbols";
 import {
   type FlatSymbol,
   type SymbolMatch,
   buildDiffLookup,
   flattenAllSymbols,
   flattenDiffSymbols,
-} from "../symbols/utils";
-
-interface SymbolSearchProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+} from "../../symbols/utils";
 
 const CHANGE_ORDER: Record<string, number> = {
   modified: 0,
@@ -29,19 +24,31 @@ const CHANGE_ORDER: Record<string, number> = {
 /** A generated or vendored file can carry thousands of symbols. */
 const MAX_RESULTS = 200;
 
+const NO_SYMBOLS: FlatSymbol[] = [];
+
 function symbolKey(match: SymbolMatch): string {
   const { symbol } = match;
   return `${symbol.changeType ?? "none"}-${symbol.name}-${symbol.sortKey}`;
 }
 
-export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
+/**
+ * Symbols in the file currently open, changed ones first.
+ *
+ * `active` gates the tree-sitter fetch: this is the only mode that talks to the
+ * backend on open, and firing that request every time the palette is raised in
+ * some other mode would spend a round trip per keystroke-adjacent render.
+ */
+export function useSymbolSource(
+  query: string,
+  active: boolean,
+): PaletteSource<SymbolMatch> {
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const repoPath = useReviewStore((s) => s.repoPath);
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const fileHunks = useFileHunks(selectedFile);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const closeOverlay = useReviewStore((s) => s.closeOverlay);
 
-  const [query, setQuery] = useState("");
   const [allSymbols, setAllSymbols] = useState<FileSymbol[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,9 +59,9 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
     return symbolDiffs.find((d) => d.filePath === selectedFile) ?? null;
   }, [selectedFile, symbolDiffs]);
 
-  // Fetch all symbols when dialog opens or file changes
+  // Fetch all symbols when the mode is entered or the file changes
   useEffect(() => {
-    if (!isOpen || !selectedFile || !repoPath) {
+    if (!active || !selectedFile || !repoPath) {
       return;
     }
 
@@ -85,11 +92,11 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
     return () => {
       cancelled = true;
     };
-  }, [isOpen, selectedFile, repoPath]);
+  }, [active, selectedFile, repoPath]);
 
   // Build the flat symbol list, merging full symbols with diff data
   const flatSymbols = useMemo(() => {
-    if (!selectedFile) return [];
+    if (!active || !selectedFile) return NO_SYMBOLS;
 
     const diffLookup = new Map<
       string,
@@ -126,7 +133,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
       // No full symbol data, fall back to diff-only symbols
       symbols = flattenDiffSymbols(fileDiff.symbols, null);
     } else {
-      return [];
+      return NO_SYMBOLS;
     }
 
     // Add top-level changes entry if present in diff
@@ -142,7 +149,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
     }
 
     return symbols;
-  }, [allSymbols, fileDiff, selectedFile]);
+  }, [active, allSymbols, fileDiff, selectedFile]);
 
   const results = useMemo((): SymbolMatch[] => {
     if (!query.trim()) {
@@ -180,7 +187,7 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
     return matches.slice(0, MAX_RESULTS);
   }, [flatSymbols, query]);
 
-  const handleActivate = useCallback(
+  const onActivate = useCallback(
     (match: SymbolMatch) => {
       if (!selectedFile) return;
       const { symbol } = match;
@@ -226,9 +233,9 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
         });
       }
 
-      onClose();
+      closeOverlay("palette");
     },
-    [selectedFile, fileHunks, navigateToBrowse, onClose],
+    [selectedFile, fileHunks, navigateToBrowse, closeOverlay],
   );
 
   const emptyMessage = !selectedFile
@@ -241,46 +248,40 @@ export function SymbolSearch({ isOpen, onClose }: SymbolSearchProps) {
           ? "No matching symbols"
           : "No symbols in this file";
 
-  return (
-    <PaletteDialog<SymbolMatch>
-      open={isOpen}
-      onClose={onClose}
-      title="Go to Symbol"
-      query={query}
-      onQueryChange={setQuery}
-      placeholder="Search symbols…"
-      items={results}
-      getKey={symbolKey}
-      renderRow={(match) => (
-        <div className="flex items-center gap-2 px-4 py-2 text-left">
-          {match.symbol.changeType ? (
-            <ChangeIndicator changeType={match.symbol.changeType} />
-          ) : (
-            <span className="flex-shrink-0 w-3" />
-          )}
-          <SymbolKindBadge kind={match.symbol.kind} />
-          <span
-            className={`min-w-0 flex-1 truncate font-mono text-sm ${
-              match.symbol.changeType ? "text-fg-secondary" : "text-fg-muted"
-            }`}
-          >
-            <HighlightedText
-              text={match.symbol.name}
-              indices={match.matchIndices}
-            />
+  return {
+    title: "Go to Symbol",
+    placeholder: "Search symbols…",
+    items: results,
+    getKey: symbolKey,
+    renderRow: (match) => (
+      <div className="flex items-center gap-2 px-4 py-2 text-left">
+        {match.symbol.changeType ? (
+          <ChangeIndicator changeType={match.symbol.changeType} />
+        ) : (
+          <span className="flex-shrink-0 w-3" />
+        )}
+        <SymbolKindBadge kind={match.symbol.kind} />
+        <span
+          className={`min-w-0 flex-1 truncate font-mono text-sm ${
+            match.symbol.changeType ? "text-fg-secondary" : "text-fg-muted"
+          }`}
+        >
+          <HighlightedText
+            text={match.symbol.name}
+            indices={match.matchIndices}
+          />
+        </span>
+        {match.symbol.parentName && (
+          <span className="flex-shrink-0 text-xs text-fg-faint">
+            in {match.symbol.parentName}
           </span>
-          {match.symbol.parentName && (
-            <span className="flex-shrink-0 text-xs text-fg-faint">
-              in {match.symbol.parentName}
-            </span>
-          )}
-        </div>
-      )}
-      onActivate={handleActivate}
-      busy={loading}
-      error={error}
-      emptyMessage={emptyMessage}
-      renderCount={(n) => countLabel(n, "symbol")}
-    />
-  );
+        )}
+      </div>
+    ),
+    onActivate,
+    busy: loading,
+    error,
+    emptyMessage,
+    renderCount: (n) => countLabel(n, "symbol"),
+  };
 }

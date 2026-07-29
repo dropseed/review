@@ -31,7 +31,7 @@ import {
   useCommandDispatch,
 } from "./commands";
 import { useProvideCommandUi } from "./commands/host";
-import { CommandPalette } from "./components/palette";
+import { Palette } from "./components/palette";
 
 const SettingsModal = lazy(() =>
   import("./components/modals/SettingsModal").then((m) => ({
@@ -167,7 +167,7 @@ function AppShell() {
 
       {/* Mounted at the shell, not inside the review screen, so ⌘K still
           offers "Open Repository" and "New Review" with nothing open. */}
-      <CommandPalette />
+      <Palette />
     </TooltipProvider>
   );
 }

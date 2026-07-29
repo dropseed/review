@@ -1,6 +1,7 @@
 import type { ReviewStore } from "../stores/types";
 import type { ContextKeys } from "./contextKeys";
 import type { OverlayId } from "../stores/slices/overlaySlice";
+import type { PaletteMode } from "../components/palette/modes";
 import type { Shortcut } from "./shortcuts";
 
 /**
@@ -38,6 +39,8 @@ export interface ProvidedCommandUi {
 export interface StoreCommandUi {
   /** Raise one of the app's overlays; opening one closes any other. */
   openOverlay(id: OverlayId): void;
+  /** Raise the palette in a given search mode. */
+  openPalette(mode: PaletteMode): void;
   restartLsp(): void;
   zoom(direction: "in" | "out" | "reset"): void;
 }

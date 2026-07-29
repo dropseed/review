@@ -1,24 +1,25 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
+import { useReviewStore } from "../../../stores";
+import { useStoreRevision } from "../../../stores/selectors/overlay";
 import {
-  useOverlay,
-  useCloseOverlay,
-  useStoreRevision,
-} from "../../stores/selectors/overlay";
-import { scoreCandidate, indicesFor, HighlightedText } from "../../lib/fuzzy";
+  scoreCandidate,
+  indicesFor,
+  HighlightedText,
+} from "../../../lib/fuzzy";
 import {
   useCommandRegistryVersion,
   getAllCommands,
   resolveCommands,
   buildCommandContext,
   formatShortcut,
-} from "../../commands";
-import type { ResolvedCommand } from "../../commands";
+} from "../../../commands";
+import type { ResolvedCommand } from "../../../commands";
 import {
-  PaletteDialog,
   Kbd,
   countLabel,
   type PaletteGroup,
-} from "./PaletteDialog";
+  type PaletteSource,
+} from "../PaletteDialog";
 
 /** Weights for the fields a command can be found by. */
 const TITLE_WEIGHT = 1;
@@ -34,45 +35,41 @@ interface Entry {
   titleIndices: number[];
 }
 
+const NO_GROUPS: PaletteGroup<Entry>[] = [];
+
 function categoryRank(category: string): number {
   const index = CATEGORY_ORDER.indexOf(category);
   return index === -1 ? CATEGORY_ORDER.length : index;
 }
 
 /**
- * Mounted always, rendered only when open.
+ * Every command the app defines, runnable ones ahead of inert ones.
  *
- * The split is what lets the open palette subscribe to the whole store: a
- * command's predicates read arbitrary state, so nothing narrower can know when
- * enablement has changed. Memoizing on `[commands, open]` instead — as this
- * did — froze every predicate at the moment the palette was summoned, leaving
- * a command greyed out and inert after the state that blocked it cleared.
+ * `useStoreRevision` is the reason this is rebuilt from scratch on every
+ * render rather than memoized. A command's predicates read arbitrary state, so
+ * nothing narrower can know when its availability has changed; memoizing froze
+ * every predicate at the moment the palette was summoned, leaving a command
+ * greyed out and inert after the state that blocked it had cleared.
+ *
+ * That subscription cannot be conditional, so the palette re-renders on any
+ * store write in every mode. The work behind it can be, and is: rebuilding the
+ * list means resolving every predicate and re-walking the sidebar tree that
+ * backs the dynamic review commands, which is not something files mode should
+ * pay for on each keystroke.
  */
-export function CommandPalette() {
-  const open = useOverlay("commandPalette");
-  if (!open) return null;
-  return <OpenCommandPalette />;
-}
-
-function OpenCommandPalette() {
-  const closePalette = useCloseOverlay("commandPalette");
-  const [query, setQuery] = useState("");
+export function useCommandSource(
+  query: string,
+  active: boolean,
+): PaletteSource<Entry> {
+  const closeOverlay = useReviewStore((s) => s.closeOverlay);
   useCommandRegistryVersion();
-
-  // Any store write re-renders this, which is the point — see above. Scoped to
-  // the open palette so a closed one costs nothing.
   useStoreRevision();
 
-  const close = useCallback(() => {
-    closePalette();
-    setQuery("");
-  }, [closePalette]);
-
-  const available = resolveCommands(getAllCommands(), buildCommandContext());
+  const trimmed = query.trim();
 
   const groups = ((): PaletteGroup<Entry>[] => {
-    const trimmed = query.trim();
-
+    if (!active) return NO_GROUPS;
+    const available = resolveCommands(getAllCommands(), buildCommandContext());
     if (!trimmed) {
       // No query: group by category so the palette doubles as a map of what
       // the app can do, with runnable commands ahead of inert ones.
@@ -125,33 +122,26 @@ function OpenCommandPalette() {
     return [{ key: "results", items: scored.map((s) => s.entry) }];
   })();
 
-  const handleActivate = useCallback(
+  const onActivate = useCallback(
     (entry: Entry) => {
       if (!entry.resolved.enabled) return;
-      close();
+      closeOverlay("palette");
       void entry.resolved.command.run(buildCommandContext());
     },
-    [close],
+    [closeOverlay],
   );
 
-  return (
-    <PaletteDialog<Entry>
-      open
-      onClose={close}
-      title="Command Palette"
-      query={query}
-      onQueryChange={setQuery}
-      placeholder="Type a command…"
-      groups={groups}
-      getKey={(entry) => entry.resolved.command.id}
-      renderRow={(entry) => (
-        <CommandRow entry={entry} showShortcut={!query.trim()} />
-      )}
-      onActivate={handleActivate}
-      emptyMessage="No matching commands"
-      renderCount={(n) => countLabel(n, "command")}
-    />
-  );
+  return {
+    title: "Command Palette",
+    placeholder: "Type a command…",
+    groups,
+    getKey: (entry) => entry.resolved.command.id,
+    renderRow: (entry) => <CommandRow entry={entry} showShortcut={!trimmed} />,
+    onActivate,
+    emptyMessage: "No matching commands",
+    enterLabel: "run",
+    renderCount: (n) => countLabel(n, "command"),
+  };
 }
 
 function CategoryHeader({ label }: { label: string }) {

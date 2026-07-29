@@ -1,15 +1,10 @@
-import { useState, useCallback, useMemo } from "react";
-import { useReviewStore } from "../../stores";
-import type { FileEntry } from "../../types";
-import { scoreCandidate, foldText, HighlightedText } from "../../lib/fuzzy";
-import type { ScoreField } from "../../lib/fuzzy";
-import { PaletteDialog, countLabel } from "../palette";
-import { FileIcon } from "../ui/icons";
-
-interface FileFinderProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+import { useCallback, useMemo } from "react";
+import { useReviewStore } from "../../../stores";
+import type { FileEntry } from "../../../types";
+import { scoreCandidate, foldText, HighlightedText } from "../../../lib/fuzzy";
+import type { ScoreField } from "../../../lib/fuzzy";
+import { countLabel, type PaletteSource } from "../PaletteDialog";
+import { FileIcon } from "../../ui/icons";
 
 interface FileMatch {
   path: string;
@@ -27,6 +22,7 @@ const MAX_RESULTS = 50;
 
 /** Shared identity so unmatched rows do not re-memo on every render. */
 const EMPTY_INDICES: number[] = [];
+const NO_CANDIDATES: Candidate[] = [];
 
 // Flatten all files from tree structure, excluding gitignored files
 function flattenAllFiles(entries: FileEntry[]): FileEntry[] {
@@ -84,15 +80,27 @@ function toCandidate(path: string): Candidate {
   return { path, nameOffset: path.lastIndexOf("/") + 1 };
 }
 
-export function FileFinder({ isOpen, onClose }: FileFinderProps) {
+/**
+ * Every file in the repo, changed ones first.
+ *
+ * `active` gates the two walks over the file tree. The palette calls every mode
+ * hook on every render — hooks cannot be called conditionally — so the mode
+ * that is not on screen has to decline the work itself rather than rely on not
+ * being invoked.
+ */
+export function useFileSource(
+  query: string,
+  active: boolean,
+): PaletteSource<FileMatch> {
   const allFiles = useReviewStore((s) => s.allFiles);
   const files = useReviewStore((s) => s.files);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const [query, setQuery] = useState("");
+  const closeOverlay = useReviewStore((s) => s.closeOverlay);
 
   // Get changed file paths for highlighting
   const changedPaths = useMemo(() => {
     const changed = new Set<string>();
+    if (!active) return changed;
     const collectChanged = (entries: FileEntry[]) => {
       for (const entry of entries) {
         if (entry.status && !entry.isDirectory) {
@@ -105,13 +113,16 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
     };
     collectChanged(files);
     return changed;
-  }, [files]);
+  }, [files, active]);
 
   // Flattening walks the whole tree, so it is keyed on the tree alone rather
   // than recomputed for every keystroke.
   const candidates = useMemo(
-    () => flattenAllFiles(allFiles).map((file) => toCandidate(file.path)),
-    [allFiles],
+    () =>
+      active
+        ? flattenAllFiles(allFiles).map((file) => toCandidate(file.path))
+        : NO_CANDIDATES,
+    [allFiles, active],
   );
 
   const results = useMemo<FileMatch[]>(() => {
@@ -173,48 +184,42 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
     return matches.slice(0, MAX_RESULTS).map((m) => m.match);
   }, [candidates, query, changedPaths]);
 
-  const handleActivate = useCallback(
+  const onActivate = useCallback(
     (match: FileMatch) => {
       navigateToBrowse(match.path);
-      onClose();
+      closeOverlay("palette");
     },
-    [navigateToBrowse, onClose],
+    [navigateToBrowse, closeOverlay],
   );
 
-  return (
-    <PaletteDialog<FileMatch>
-      open={isOpen}
-      onClose={onClose}
-      title="Find File"
-      query={query}
-      onQueryChange={setQuery}
-      placeholder="Search files by name…"
-      items={results}
-      getKey={(match) => match.path}
-      renderRow={(match) => (
-        <div className="flex items-center gap-3 px-4 py-2 text-left">
-          <FileIcon
-            className={`h-4 w-4 flex-shrink-0 ${
-              match.isChanged ? "text-status-modified" : "text-fg-muted"
-            }`}
-          />
+  return {
+    title: "Go to File",
+    placeholder: "Search files by name…",
+    items: results,
+    getKey: (match) => match.path,
+    renderRow: (match) => (
+      <div className="flex items-center gap-3 px-4 py-2 text-left">
+        <FileIcon
+          className={`h-4 w-4 flex-shrink-0 ${
+            match.isChanged ? "text-status-modified" : "text-fg-muted"
+          }`}
+        />
 
-          <div className="flex-1 min-w-0 font-mono text-sm">
-            <span className="text-fg-secondary truncate block">
-              <HighlightedText text={match.path} indices={match.matchIndices} />
-            </span>
-          </div>
-
-          {match.isChanged && (
-            <span className="text-xxs text-status-modified/80 flex-shrink-0">
-              changed
-            </span>
-          )}
+        <div className="flex-1 min-w-0 font-mono text-sm">
+          <span className="text-fg-secondary truncate block">
+            <HighlightedText text={match.path} indices={match.matchIndices} />
+          </span>
         </div>
-      )}
-      onActivate={handleActivate}
-      emptyMessage={query ? "No matching files" : "No files available"}
-      renderCount={(n) => countLabel(n, "file")}
-    />
-  );
+
+        {match.isChanged && (
+          <span className="text-xxs text-status-modified/80 flex-shrink-0">
+            changed
+          </span>
+        )}
+      </div>
+    ),
+    onActivate,
+    emptyMessage: query ? "No matching files" : "No files available",
+    renderCount: (n) => countLabel(n, "file"),
+  };
 }

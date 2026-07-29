@@ -48,6 +48,7 @@ export function getCommandUi(): CommandUi {
 
   return {
     openOverlay: (id) => store().openOverlay(id),
+    openPalette: (mode) => store().openPalette(mode),
     zoom: (direction) =>
       store().setCodeFontSize(nextFontSize(store().codeFontSize, direction)),
     restartLsp: async () => {

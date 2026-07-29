@@ -43,6 +43,12 @@ export interface PaletteDialogProps<T> {
   onClear?: () => void;
   /** Select the existing text on open, for a pre-filled query. */
   selectOnOpen?: boolean;
+  /**
+   * What the selection resets on. Defaults to the query, which is right when
+   * the query is the only thing that changes what is listed — a caller that
+   * swaps the whole result set out from under an unchanged query has to say so.
+   */
+  resetSelectionOn?: string;
 
   /** Flat items, or `groups` for headered sections. Provide exactly one. */
   items?: T[];
@@ -58,6 +64,8 @@ export interface PaletteDialogProps<T> {
 
   /** Extra controls in the input row, before the spinner/clear button. */
   inputAccessories?: ReactNode;
+  /** Rendered ahead of the input, in place of the search icon. */
+  inputPrefix?: ReactNode;
   /**
    * Runs before the shell's own Arrow/Enter/Escape handling. Return true to
    * claim the keystroke.
@@ -68,10 +76,41 @@ export interface PaletteDialogProps<T> {
   enterLabel?: string;
   /** Right-hand footer summary. Defaults to "N results". */
   renderCount?: (count: number) => ReactNode;
+  /** Extra hints after the built-in navigate/select/close trio. */
+  footerHints?: ReactNode;
 
   /** Dialog width and list height together — code lines need the extra room. */
   size?: "md" | "lg";
 }
+
+/**
+ * Everything about the dialog that depends on *what* is being searched.
+ *
+ * Derived from the props rather than restated so the two cannot drift, and so a
+ * new dialog capability is available to every mode by default. The complement —
+ * `open`, `query`, and the mode chrome — belongs to whoever owns the palette,
+ * which is what lets one mounted dialog swap between modes.
+ */
+export type PaletteSource<T> = Pick<
+  PaletteDialogProps<T>,
+  | "title"
+  | "placeholder"
+  | "items"
+  | "groups"
+  | "getKey"
+  | "renderRow"
+  | "onActivate"
+  | "busy"
+  | "error"
+  | "emptyMessage"
+  | "renderCount"
+  | "enterLabel"
+  | "size"
+  | "inputAccessories"
+  | "onKeyDown"
+  | "onClear"
+  | "selectOnOpen"
+>;
 
 const SIZES = {
   md: { width: "max-w-xl", list: "max-h-80" },
@@ -137,6 +176,7 @@ export function PaletteDialog<T>({
   placeholder,
   onClear,
   selectOnOpen = false,
+  resetSelectionOn,
   items,
   groups,
   getKey,
@@ -146,9 +186,11 @@ export function PaletteDialog<T>({
   error = null,
   emptyMessage,
   inputAccessories,
+  inputPrefix,
   onKeyDown,
   enterLabel = "select",
   renderCount,
+  footerHints,
   size = "md",
 }: PaletteDialogProps<T>) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -171,7 +213,10 @@ export function PaletteDialog<T>({
     return { flat: flattened, sections: built };
   }, [groups, items]);
 
-  const [selectedIndex, setSelectedIndex] = useSelection(flat.length, query);
+  const [selectedIndex, setSelectedIndex] = useSelection(
+    flat.length,
+    resetSelectionOn ?? query,
+  );
 
   const optionId = useCallback(
     (index: number) => `${baseId}-option-${index}`,
@@ -267,7 +312,9 @@ export function PaletteDialog<T>({
         <div>
           <div className="border-b border-edge p-3">
             <div className="flex items-center gap-3 px-2">
-              <SearchIcon className="h-4 w-4 text-fg-muted flex-shrink-0" />
+              {inputPrefix ?? (
+                <SearchIcon className="h-4 w-4 text-fg-muted flex-shrink-0" />
+              )}
               <input
                 ref={inputRef}
                 type="text"
@@ -367,6 +414,7 @@ export function PaletteDialog<T>({
               <Hint keys={["↑", "↓"]} label="navigate" />
               <Hint keys={["Enter"]} label={enterLabel} />
               <Hint keys={["Esc"]} label="close" />
+              {footerHints}
             </div>
             <span aria-live="polite">
               {hasResults &&

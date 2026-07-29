@@ -1,22 +1,22 @@
 import type { SliceCreator } from "../types";
+import type { PaletteMode } from "../../components/palette/modes";
 
 /**
- * The transient surfaces that sit above the review: search dialogs, the
- * command palette, and the modals.
+ * The transient surfaces that sit above the review: the palette and the modals.
+ *
+ * The four search dialogs used to be four ids here. They are one `palette` with
+ * a mode now — see `components/palette/modes.ts`.
  */
-export type OverlayId =
-  | "commandPalette"
-  | "fileFinder"
-  | "symbolSearch"
-  | "contentSearch"
-  | "classifications"
-  | "settings"
-  | "debug";
+export type OverlayId = "palette" | "classifications" | "settings" | "debug";
 
 export interface OverlaySlice {
   /** The one overlay currently on screen, if any. */
   activeOverlay: OverlayId | null;
+  /** Which mode the palette opens in. Read only as it opens. */
+  paletteMode: PaletteMode;
   openOverlay: (id: OverlayId) => void;
+  /** Raise the palette in a given mode — what each search shortcut does. */
+  openPalette: (mode: PaletteMode) => void;
   /**
    * Close `id`, or whatever is open if no id is given.
    *
@@ -37,7 +37,9 @@ export interface OverlaySlice {
  */
 export const createOverlaySlice: SliceCreator<OverlaySlice> = (set, get) => ({
   activeOverlay: null,
+  paletteMode: "commands",
   openOverlay: (id) => set({ activeOverlay: id }),
+  openPalette: (mode) => set({ activeOverlay: "palette", paletteMode: mode }),
   closeOverlay: (id) => {
     if (id && get().activeOverlay !== id) return;
     set({ activeOverlay: null });

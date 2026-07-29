@@ -59,7 +59,7 @@ export const APP_COMMANDS: readonly Command[] = [
     keywords: ["open", "find", "quick open"],
     shortcut: { code: "KeyP", mod: true },
     isEnabled: hasDiff,
-    run: (ctx) => ctx.ui.openOverlay("fileFinder"),
+    run: (ctx) => ctx.ui.openPalette("files"),
   },
   {
     id: "go.symbol",
@@ -68,7 +68,7 @@ export const APP_COMMANDS: readonly Command[] = [
     keywords: ["function", "class", "definition", "outline"],
     shortcut: { code: "KeyR", mod: true },
     isEnabled: hasDiff,
-    run: (ctx) => ctx.ui.openOverlay("symbolSearch"),
+    run: (ctx) => ctx.ui.openPalette("symbols"),
   },
   {
     id: "go.search",
@@ -77,7 +77,7 @@ export const APP_COMMANDS: readonly Command[] = [
     keywords: ["grep", "find in files", "content"],
     shortcut: { code: "KeyF", mod: true, shift: true },
     isEnabled: hasDiff,
-    run: (ctx) => ctx.ui.openOverlay("contentSearch"),
+    run: (ctx) => ctx.ui.openPalette("content"),
   },
   {
     id: "go.nextHunk",
@@ -274,7 +274,7 @@ export const APP_COMMANDS: readonly Command[] = [
     // inside a search field or a terminal pane.
     allowInInput: true,
     allowInTerminal: true,
-    run: (ctx) => ctx.ui.openOverlay("commandPalette"),
+    run: (ctx) => ctx.ui.openPalette("commands"),
   },
   {
     id: "app.openRepo",

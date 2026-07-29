@@ -55,15 +55,6 @@ import {
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
 );
-const FileFinder = lazy(() =>
-  import("./search/FileFinder").then((m) => ({ default: m.FileFinder })),
-);
-const ContentSearch = lazy(() =>
-  import("./search/ContentSearch").then((m) => ({ default: m.ContentSearch })),
-);
-const SymbolSearch = lazy(() =>
-  import("./search/SymbolSearch").then((m) => ({ default: m.SymbolSearch })),
-);
 const ClassificationsModal = lazy(() =>
   import("./modals/ClassificationsModal").then((m) => ({
     default: m.ClassificationsModal,
@@ -564,26 +555,8 @@ export function ReviewView({
         </Suspense>
       )}
 
-      {/* File Finder */}
-      {activeOverlay === "fileFinder" && (
-        <Suspense fallback={null}>
-          <FileFinder isOpen onClose={() => closeOverlay("fileFinder")} />
-        </Suspense>
-      )}
-
-      {/* Content Search */}
-      {activeOverlay === "contentSearch" && (
-        <Suspense fallback={null}>
-          <ContentSearch isOpen onClose={() => closeOverlay("contentSearch")} />
-        </Suspense>
-      )}
-
-      {/* Symbol Search */}
-      {activeOverlay === "symbolSearch" && (
-        <Suspense fallback={null}>
-          <SymbolSearch isOpen onClose={() => closeOverlay("symbolSearch")} />
-        </Suspense>
-      )}
+      {/* The palette — files, symbols, and content search included — is
+          mounted at the shell in router.tsx, not here. */}
 
       {/* Classifications Modal */}
       {activeOverlay === "classifications" && (
