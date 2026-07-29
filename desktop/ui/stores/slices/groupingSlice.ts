@@ -1,6 +1,6 @@
 import type { ApiClient } from "../../api";
 import type { SliceCreatorWithClient } from "../types";
-import { getAllHunksFromState } from "../selectors/hunks";
+import { getAllHunksFromState } from "../selectors/hunkData";
 import type { HunkGroup } from "../../types";
 import { makeReviewKey } from "../../utils/review-key";
 

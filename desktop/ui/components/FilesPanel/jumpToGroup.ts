@@ -9,7 +9,7 @@
 // selection goes through `setCommitRange` in CommitRangePicker instead.
 
 import { useReviewStore } from "../../stores";
-import { getHunkByIdMap } from "../../stores/selectors/hunks";
+import { getHunkByIdMap } from "../../stores/selectors/hunkData";
 import type { Group } from "../../stores/selectors/groups";
 import { effectiveHunkStatus } from "../../types";
 import type { ReviewStore } from "../../stores/types";

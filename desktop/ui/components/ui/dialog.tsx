@@ -35,15 +35,18 @@ function DialogOverlay({
 
 function DialogContent({
   className,
+  overlayClassName,
   children,
   ref,
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   ref?: React.Ref<React.ComponentRef<typeof DialogPrimitive.Content>>;
+  /** Positions the dialog — e.g. `items-start pt-[15vh]` to top-anchor it. */
+  overlayClassName?: string;
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay>
+      <DialogOverlay className={overlayClassName}>
         <DialogPrimitive.Content
           ref={ref}
           aria-modal="true"

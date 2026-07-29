@@ -1,204 +1,75 @@
-import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { getApiClient } from "../api";
+import { useEffect } from "react";
 import { getPlatformServices } from "../platform";
-import { useReviewStore } from "../stores";
-import {
-  CODE_FONT_SIZE_DEFAULT,
-  CODE_FONT_SIZE_MIN,
-  CODE_FONT_SIZE_MAX,
-  CODE_FONT_SIZE_STEP,
-} from "../utils/preferences";
-
-interface UseMenuEventsOptions {
-  handleClose: () => void;
-  handleNewTab: () => void;
-  handleNewWindow: () => void;
-  handleRefresh: () => void;
-  setShowDebugModal: (show: boolean) => void;
-  setShowFileFinder: (show: boolean) => void;
-  setShowContentSearch: (show: boolean) => void;
-  setShowSymbolSearch: (show: boolean) => void;
-  /** When false, the file/symbol/content search openers are no-ops (there is
-   *  no diff to search — e.g. the compared branch was deleted). */
-  searchEnabled?: boolean;
-}
+import { findCommand } from "../commands";
+import { buildCommandContext } from "../commands/useCommandDispatch";
 
 /**
- * Sets up listeners for menu events (open repo, debug, settings, refresh, zoom).
- * Uses refs to avoid stale closures.
+ * Native menu item id → command id.
+ *
+ * The menu is a second *entrance* to a command, not a second implementation of
+ * it. Anything here that has a keyboard shortcut is dispatched by
+ * `useCommandDispatch` too, which is why the shortcuts also work in web mode
+ * where there is no native menu.
  */
-export function useMenuEvents({
-  handleClose,
-  handleNewTab,
-  handleNewWindow,
-  handleRefresh,
-  setShowDebugModal,
-  setShowFileFinder,
-  setShowContentSearch,
-  setShowSymbolSearch,
-  searchEnabled = true,
-}: UseMenuEventsOptions) {
-  const navigate = useNavigate();
-  const navigateRef = useRef(navigate);
-  // Ref so the menu listeners (registered once) read the current value without
-  // re-registering whenever it flips.
-  const searchEnabledRef = useRef(searchEnabled);
+export const MENU_COMMANDS: Record<string, string> = {
+  "menu:close": "app.closeTab",
+  "menu:new-tab": "app.newTab",
+  "menu:new-window": "app.newWindow",
+  "menu:show-debug": "app.debug",
+  "menu:refresh": "review.refresh",
+  "menu:zoom-in": "view.zoomIn",
+  "menu:zoom-out": "view.zoomOut",
+  "menu:zoom-reset": "view.zoomReset",
+  "menu:find-file": "go.file",
+  "menu:find-symbols": "go.symbol",
+  "menu:search-in-files": "go.search",
+  "menu:toggle-sidebar": "view.toggleSidebar",
+  "menu:new-review": "review.new",
+  "menu:reveal-in-browse": "go.revealInBrowse",
+  "menu:restart-lsp": "app.restartLsp",
+};
 
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
-  const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
-
-  // Refs to avoid stale closures
-  const handleCloseRef = useRef(handleClose);
-  const handleNewTabRef = useRef(handleNewTab);
-  const handleNewWindowRef = useRef(handleNewWindow);
-  const handleRefreshRef = useRef(handleRefresh);
-  const codeFontSizeRef = useRef(codeFontSize);
-  const setCodeFontSizeRef = useRef(setCodeFontSize);
-
-  useEffect(() => {
-    handleCloseRef.current = handleClose;
-    handleNewTabRef.current = handleNewTab;
-    handleNewWindowRef.current = handleNewWindow;
-    handleRefreshRef.current = handleRefresh;
-    codeFontSizeRef.current = codeFontSize;
-    setCodeFontSizeRef.current = setCodeFontSize;
-    navigateRef.current = navigate;
-    searchEnabledRef.current = searchEnabled;
-  }, [
-    handleClose,
-    handleNewTab,
-    handleNewWindow,
-    handleRefresh,
-    codeFontSize,
-    setCodeFontSize,
-    navigate,
-    searchEnabled,
-  ]);
-
-  // Listen for menu events (setup once, use refs for current values)
+/**
+ * Route native menu events to commands, plus the two CLI-install dialogs that
+ * are not commands because nothing else can trigger them.
+ */
+export function useMenuEvents() {
   useEffect(() => {
     const platform = getPlatformServices();
     const { on } = platform.menuEvents;
 
-    // Define all menu event handlers
-    const listeners: [string, (payload?: unknown) => void][] = [
-      // CLI install events (from Help menu)
-      [
-        "cli:installed",
-        () => {
-          platform.dialogs.message(
-            "The 'review' command has been installed to /usr/local/bin/review",
-            { title: "CLI Installed", kind: "info" },
-          );
-        },
-      ],
-      [
-        "cli:install-error",
-        (payload) => {
-          const errorMsg =
-            typeof payload === "string"
-              ? payload
-              : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Review.app/Contents/MacOS/review-cli /usr/local/bin/review";
-          platform.dialogs.message(errorMsg, {
-            title: "CLI Install Failed",
-            kind: "error",
-          });
-        },
-      ],
-      // Menu actions
-      // Note: menu:open-repo is handled globally in AppShell (router.tsx)
-      ["menu:close", () => handleCloseRef.current()],
-      ["menu:new-tab", () => handleNewTabRef.current()],
-      ["menu:new-window", () => handleNewWindowRef.current()],
-      ["menu:show-debug", () => setShowDebugModal(true)],
-      // Note: menu:open-settings is handled globally in TabRail (always mounted)
-      ["menu:refresh", () => handleRefreshRef.current()],
-      // Zoom controls
-      [
-        "menu:zoom-in",
-        () => {
-          setCodeFontSizeRef.current(
-            Math.min(
-              codeFontSizeRef.current + CODE_FONT_SIZE_STEP,
-              CODE_FONT_SIZE_MAX,
-            ),
-          );
-        },
-      ],
-      [
-        "menu:zoom-out",
-        () => {
-          setCodeFontSizeRef.current(
-            Math.max(
-              codeFontSizeRef.current - CODE_FONT_SIZE_STEP,
-              CODE_FONT_SIZE_MIN,
-            ),
-          );
-        },
-      ],
-      [
-        "menu:zoom-reset",
-        () => setCodeFontSizeRef.current(CODE_FONT_SIZE_DEFAULT),
-      ],
-      // View menu actions — no-ops when there is no diff to search
-      [
-        "menu:find-file",
-        () => searchEnabledRef.current && setShowFileFinder(true),
-      ],
-      [
-        "menu:find-symbols",
-        () => searchEnabledRef.current && setShowSymbolSearch(true),
-      ],
-      [
-        "menu:search-in-files",
-        () => searchEnabledRef.current && setShowContentSearch(true),
-      ],
-      ["menu:toggle-sidebar", () => toggleTabRail()],
-      [
-        "menu:new-review",
-        () => {
-          navigateRef.current("/new");
-        },
-      ],
-      [
-        "menu:reveal-in-browse",
-        () => {
-          const selectedFile = useReviewStore.getState().selectedFile;
-          if (selectedFile) {
-            useReviewStore.getState().revealInBrowse(selectedFile);
-          }
-        },
-      ],
-      [
-        "menu:restart-lsp",
-        async () => {
-          const repoPath = useReviewStore.getState().repoPath;
-          if (!repoPath) return;
-          const api = getApiClient();
-          try {
-            await api.stopAllLspServers(repoPath);
-            const statuses = await api.initLspServers(repoPath);
-            useReviewStore.getState().setLspServerStatuses(statuses);
-            console.log("[menu] Restarted LSP servers:", statuses);
-          } catch (e) {
-            console.error("[menu] Failed to restart LSP servers:", e);
-          }
-        },
-      ],
-    ];
+    const unlisten = Object.entries(MENU_COMMANDS).map(([event, commandId]) =>
+      on(event, () => {
+        const command = findCommand(commandId);
+        if (!command) return;
+        const ctx = buildCommandContext();
+        // The menu item may be stale by a frame; re-check before running.
+        if (command.isEnabled && !command.isEnabled(ctx)) return;
+        void command.run(ctx);
+      }),
+    );
 
-    const unlistenFns = listeners.map(([event, handler]) => on(event, handler));
+    unlisten.push(
+      on("cli:installed", () => {
+        platform.dialogs.message(
+          "The 'review' command has been installed to /usr/local/bin/review",
+          { title: "CLI Installed", kind: "info" },
+        );
+      }),
+      on("cli:install-error", (payload) => {
+        const errorMsg =
+          typeof payload === "string"
+            ? payload
+            : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Review.app/Contents/MacOS/review-cli /usr/local/bin/review";
+        platform.dialogs.message(errorMsg, {
+          title: "CLI Install Failed",
+          kind: "error",
+        });
+      }),
+    );
 
     return () => {
-      unlistenFns.forEach((fn) => fn());
+      unlisten.forEach((fn) => fn());
     };
-  }, [
-    setShowDebugModal,
-    setShowFileFinder,
-    setShowContentSearch,
-    setShowSymbolSearch,
-    toggleTabRail,
-  ]);
+  }, []);
 }

@@ -19,7 +19,7 @@ import {
 } from "../../utils/sounds";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { makeReviewKey } from "./groupingSlice";
-import { getAllHunksFromState } from "../selectors/hunks";
+import { getAllHunksFromState } from "../selectors/hunkData";
 
 // Debounced save operation (exported so cancelPendingSaves can cancel it)
 export const debouncedSave = createDebouncedFn(500);

@@ -1,7 +1,7 @@
 import type { ApiClient } from "../../api";
 import { attributed, isHunkUnclassified } from "../../types";
 import type { SliceCreatorWithClient } from "../types";
-import { getAllHunksFromState } from "../selectors/hunks";
+import { getAllHunksFromState } from "../selectors/hunkData";
 
 export interface ClassificationSlice {
   // Classification state

@@ -1,22 +1,32 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useReviewStore } from "../../stores";
 import type { FileEntry } from "../../types";
-import { Dialog, DialogOverlay, DialogPortal } from "../ui/dialog";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
+import { scoreCandidate, foldText, HighlightedText } from "../../lib/fuzzy";
+import type { ScoreField } from "../../lib/fuzzy";
+import { PaletteDialog, countLabel } from "../palette";
+import { FileIcon } from "../ui/icons";
 
 interface FileFinderProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface FuzzyMatch {
+interface FileMatch {
   path: string;
-  name: string;
-  score: number;
+  /** Offsets into `path`, including any that matched only the filename. */
   matchIndices: number[];
   isChanged: boolean;
 }
+
+/** How much more a filename match counts than a match anywhere in the path. */
+const NAME_WEIGHT = 1;
+const PATH_WEIGHT = 0.6;
+/** Proportional bump for files the comparison actually touched. */
+const CHANGED_BOOST = 0.2;
+const MAX_RESULTS = 50;
+
+/** Shared identity so unmatched rows do not re-memo on every render. */
+const EMPTY_INDICES: number[] = [];
 
 // Flatten all files from tree structure, excluding gitignored files
 function flattenAllFiles(entries: FileEntry[]): FileEntry[] {
@@ -35,197 +45,32 @@ function flattenAllFiles(entries: FileEntry[]): FileEntry[] {
   return result;
 }
 
-// VS Code-style fuzzy matching with recursive best-path scoring
-function fuzzyMatch(
-  query: string,
-  text: string,
-): { score: number; indices: number[] } | null {
-  const queryLower = query.toLowerCase();
-  const textLower = text.toLowerCase();
-
-  // Quick check: all query chars must exist in text
-  {
-    let qi = 0;
-    for (let i = 0; i < textLower.length && qi < queryLower.length; i++) {
-      if (textLower[i] === queryLower[qi]) qi++;
-    }
-    if (qi !== queryLower.length) return null;
-  }
-
-  // Recursive matching to find the best scoring path
-  const bestResult = fuzzyMatchRecursive(
-    queryLower,
-    textLower,
-    text,
-    0,
-    0,
-    [],
-    0,
-  );
-  if (!bestResult) return null;
-
-  return { score: bestResult.score, indices: bestResult.indices };
+interface Candidate {
+  path: string;
+  /** Where the filename starts within `path`, for remapping match offsets. */
+  nameOffset: number;
+  fields: ScoreField[];
 }
 
-const MAX_RECURSION = 10;
-
-function fuzzyMatchRecursive(
-  queryLower: string,
-  textLower: string,
-  textOriginal: string,
-  queryIdx: number,
-  textIdx: number,
-  currentIndices: number[],
-  depth: number,
-): { score: number; indices: number[] } | null {
-  if (queryIdx === queryLower.length) {
-    return {
-      score: scoreIndices(currentIndices, textOriginal),
-      indices: [...currentIndices],
-    };
-  }
-  if (textIdx >= textLower.length) return null;
-  if (depth > MAX_RECURSION) {
-    // Fall back to greedy match from current position
-    const indices = [...currentIndices];
-    let qi = queryIdx;
-    for (let i = textIdx; i < textLower.length && qi < queryLower.length; i++) {
-      if (textLower[i] === queryLower[qi]) {
-        indices.push(i);
-        qi++;
-      }
-    }
-    if (qi !== queryLower.length) return null;
-    return { score: scoreIndices(indices, textOriginal), indices };
-  }
-
-  let best: { score: number; indices: number[] } | null = null;
-
-  for (let i = textIdx; i < textLower.length; i++) {
-    if (textLower[i] !== queryLower[queryIdx]) continue;
-
-    const result = fuzzyMatchRecursive(
-      queryLower,
-      textLower,
-      textOriginal,
-      queryIdx + 1,
-      i + 1,
-      [...currentIndices, i],
-      depth + 1,
-    );
-
-    if (result && (!best || result.score > best.score)) {
-      best = result;
-    }
-
-    // Only explore a limited number of starting positions for this char
-    // to avoid exponential blowup, but enough to find good matches
-    if (currentIndices.length === 0 && i - textIdx > 20) break;
-  }
-
-  return best;
-}
-
-function scoreIndices(indices: number[], text: string): number {
-  if (indices.length === 0) return 0;
-
-  let score = 0;
-
-  for (let i = 0; i < indices.length; i++) {
-    const idx = indices[i];
-
-    // Consecutive match bonus (strongest signal)
-    if (i > 0 && indices[i - 1] === idx - 1) {
-      score += 15;
-    }
-
-    // Word boundary bonus (after separator or camelCase)
-    const prevChar = idx > 0 ? text[idx - 1] : "";
-    const currChar = text[idx];
-    if (idx === 0) {
-      score += 10; // Start of string
-    } else if (/[/\\._\-\s]/.test(prevChar)) {
-      score += 10; // After separator
-    } else if (
-      prevChar === prevChar.toLowerCase() &&
-      currChar === currChar.toUpperCase() &&
-      currChar !== currChar.toLowerCase()
-    ) {
-      score += 8; // camelCase boundary
-    }
-
-    // Penalize large gaps between matches
-    if (i > 0) {
-      const gap = idx - indices[i - 1] - 1;
-      if (gap > 0) {
-        score -= Math.min(gap, 5); // Cap gap penalty
-      }
-    }
-  }
-
-  // Prefer shorter texts (tighter matches)
-  score += Math.max(0, 100 - text.length);
-
-  // Bonus for match starting earlier in the string
-  score += Math.max(0, 10 - indices[0]);
-
-  return score;
-}
-
-// Match multiple space-separated terms against text (all must match)
-function fuzzyMatchTerms(
-  terms: string[],
-  text: string,
-): { score: number; indices: number[] } | null {
-  if (terms.length === 0) return null;
-  if (terms.length === 1) return fuzzyMatch(terms[0], text);
-
-  let totalScore = 0;
-  const allIndices: number[] = [];
-
-  for (const term of terms) {
-    const result = fuzzyMatch(term, text);
-    if (!result) return null; // All terms must match
-    totalScore += result.score;
-    allIndices.push(...result.indices);
-  }
-
-  // Deduplicate and sort indices for highlighting
-  const uniqueIndices = [...new Set(allIndices)].sort((a, b) => a - b);
-
-  return { score: totalScore, indices: uniqueIndices };
-}
-
-// Extract filename from path
-function getFileName(path: string): string {
-  const parts = path.split("/");
-  return parts[parts.length - 1] || path;
-}
-
-// Highlight matched characters in text
-function HighlightedText({
-  text,
-  indices,
-}: {
-  text: string;
-  indices: number[];
-}) {
-  const indicesSet = new Set(indices);
-  const chars = text.split("");
-
-  return (
-    <>
-      {chars.map((char, i) =>
-        indicesSet.has(i) ? (
-          <span key={i} className="text-status-modified font-medium">
-            {char}
-          </span>
-        ) : (
-          <span key={i}>{char}</span>
-        ),
-      )}
-    </>
-  );
+/**
+ * Scoring inputs for one file.
+ *
+ * Built once per file tree rather than per keystroke: the filename split, the
+ * case-folds, and the field descriptors all depend only on the path, so
+ * rebuilding them for all ~7k files on every character typed was the single
+ * biggest cost in this component.
+ */
+function toCandidate(path: string): Candidate {
+  const nameOffset = path.lastIndexOf("/") + 1;
+  const name = path.slice(nameOffset);
+  return {
+    path,
+    nameOffset,
+    fields: [
+      { key: "name", text: name, weight: NAME_WEIGHT, folded: foldText(name) },
+      { key: "path", text: path, weight: PATH_WEIGHT, folded: foldText(path) },
+    ],
+  };
 }
 
 export function FileFinder({ isOpen, onClose }: FileFinderProps) {
@@ -233,9 +78,6 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
   const files = useReviewStore((s) => s.files);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const [query, setQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
 
   // Get changed file paths for highlighting
   const changedPaths = useMemo(() => {
@@ -254,305 +96,114 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
     return changed;
   }, [files]);
 
-  // Compute filtered and sorted results
-  const results = useMemo(() => {
-    const flatFiles = flattenAllFiles(allFiles);
+  // Flattening walks the whole tree, so it is keyed on the tree alone rather
+  // than recomputed for every keystroke.
+  const candidates = useMemo(
+    () => flattenAllFiles(allFiles).map((file) => toCandidate(file.path)),
+    [allFiles],
+  );
 
+  const results = useMemo<FileMatch[]>(() => {
     if (!query.trim()) {
-      // Show changed files first when no query
-      const matches: FuzzyMatch[] = flatFiles.map((f) => ({
-        path: f.path,
-        name: getFileName(f.path),
-        score: 0,
-        matchIndices: [],
-        isChanged: changedPaths.has(f.path),
-      }));
+      // Show changed files first when no query. Plain `<` rather than
+      // `localeCompare`, which invokes Intl collation on every comparison for
+      // a list that is about to be sliced to 50.
+      return candidates
+        .map((candidate) => ({
+          path: candidate.path,
+          matchIndices: EMPTY_INDICES,
+          isChanged: changedPaths.has(candidate.path),
+        }))
+        .sort((a, b) => {
+          if (a.isChanged !== b.isChanged) return a.isChanged ? -1 : 1;
+          return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+        })
+        .slice(0, MAX_RESULTS);
+    }
 
-      // Sort: changed files first, then alphabetically
-      matches.sort((a, b) => {
-        if (a.isChanged !== b.isChanged) return a.isChanged ? -1 : 1;
-        return a.path.localeCompare(b.path);
+    const matches: { match: FileMatch; score: number }[] = [];
+
+    for (const candidate of candidates) {
+      const isChanged = changedPaths.has(candidate.path);
+
+      const scored = scoreCandidate(query, candidate.fields, {
+        boost: isChanged ? CHANGED_BOOST : 0,
       });
+      if (!scored) continue;
 
-      return matches.slice(0, 50);
-    }
-
-    const matches: FuzzyMatch[] = [];
-
-    for (const file of flatFiles) {
-      const fileName = getFileName(file.path);
-      const isChanged = changedPaths.has(file.path);
-
-      // Split query on spaces to support multi-term matching
-      const terms = query.split(/\s+/).filter(Boolean);
-
-      // Try matching against filename first (higher weight)
-      const filenameMatch = fuzzyMatchTerms(terms, fileName);
-      // Also try matching against full path
-      const pathMatch = fuzzyMatchTerms(terms, file.path);
-
-      let bestScore = -1;
-      let bestIndices: number[] = [];
-
-      if (filenameMatch) {
-        // Filename matches get bonus, adjust indices to path position
-        const filenameStartIndex = file.path.length - fileName.length;
-        const adjustedIndices = filenameMatch.indices.map(
-          (i) => i + filenameStartIndex,
-        );
-        bestScore = filenameMatch.score + 50; // Filename bonus
-        bestIndices = adjustedIndices;
-      }
-
-      if (pathMatch && pathMatch.score > bestScore) {
-        bestScore = pathMatch.score;
-        bestIndices = pathMatch.indices;
-      }
-
-      if (bestScore >= 0) {
-        // Bonus for changed files
-        if (isChanged) {
-          bestScore += 20;
+      // Rows render the full path, so filename offsets are shifted into path
+      // space. The filename is always a suffix, which makes this exact.
+      const indices = new Set<number>();
+      for (const hit of scored.hits) {
+        for (const index of hit.indices) {
+          indices.add(
+            hit.key === "name" ? index + candidate.nameOffset : index,
+          );
         }
-
-        matches.push({
-          path: file.path,
-          name: fileName,
-          score: bestScore,
-          matchIndices: bestIndices,
-          isChanged,
-        });
       }
+
+      matches.push({
+        score: scored.score,
+        match: {
+          path: candidate.path,
+          matchIndices: [...indices].sort((a, b) => a - b),
+          isChanged,
+        },
+      });
     }
 
-    // Sort by score (descending), then changed status, then path
     matches.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      if (a.isChanged !== b.isChanged) return a.isChanged ? -1 : 1;
-      return a.path.localeCompare(b.path);
+      if (a.match.isChanged !== b.match.isChanged)
+        return a.match.isChanged ? -1 : 1;
+      return a.match.path.localeCompare(b.match.path);
     });
 
-    return matches.slice(0, 50);
-  }, [allFiles, files, query, changedPaths]);
+    return matches.slice(0, MAX_RESULTS).map((m) => m.match);
+  }, [candidates, query, changedPaths]);
 
-  // Reset selection when results change
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [results]);
-
-  // Focus input when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setQuery("");
-      setSelectedIndex(0);
-      // Small delay to ensure modal is rendered
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
-    }
-  }, [isOpen]);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    if (!listRef.current) return;
-    const selectedEl = listRef.current.querySelector(
-      `[data-index="${selectedIndex}"]`,
-    );
-    if (selectedEl) {
-      selectedEl.scrollIntoView({ block: "nearest" });
-    }
-  }, [selectedIndex]);
-
-  const handleSelect = useCallback(
-    (path: string) => {
-      navigateToBrowse(path);
+  const handleActivate = useCallback(
+    (match: FileMatch) => {
+      navigateToBrowse(match.path);
       onClose();
     },
     [navigateToBrowse, onClose],
   );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          setSelectedIndex((prev) => Math.max(prev - 1, 0));
-          break;
-        case "Enter":
-          e.preventDefault();
-          if (results[selectedIndex]) {
-            handleSelect(results[selectedIndex].path);
-          }
-          break;
-      }
-    },
-    [results, selectedIndex, handleSelect],
-  );
-
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogPortal>
-        <DialogOverlay className="items-start pt-[15vh]">
-          <DialogPrimitive.Content
-            className="w-full max-w-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <VisuallyHidden.Root>
-              <DialogPrimitive.Title>Find File</DialogPrimitive.Title>
-            </VisuallyHidden.Root>
-            <div className="rounded-xl border border-edge-default/80 bg-surface-panel shadow-2xl shadow-black/50 overflow-hidden">
-              {/* Search input */}
-              <div className="border-b border-edge p-3">
-                <div className="flex items-center gap-3 px-2">
-                  <svg
-                    className="h-4 w-4 text-fg-muted flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Find file…"
-                    aria-label="Find file"
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    autoComplete="off"
-                    className="flex-1 bg-transparent text-sm text-fg placeholder-fg-muted focus:outline-hidden"
-                  />
-                  {query && (
-                    <button
-                      onClick={() => setQuery("")}
-                      className="text-fg-muted hover:text-fg-secondary transition-colors"
-                      aria-label="Clear search"
-                    >
-                      <svg
-                        className="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              </div>
+    <PaletteDialog<FileMatch>
+      open={isOpen}
+      onClose={onClose}
+      title="Find File"
+      query={query}
+      onQueryChange={setQuery}
+      placeholder="Search files by name…"
+      items={results}
+      getKey={(match) => match.path}
+      renderRow={(match) => (
+        <div className="flex items-center gap-3 px-4 py-2 text-left">
+          <FileIcon
+            className={`h-4 w-4 flex-shrink-0 ${
+              match.isChanged ? "text-status-modified" : "text-fg-muted"
+            }`}
+          />
 
-              {/* Results list */}
-              <div
-                ref={listRef}
-                className="max-h-80 overflow-y-auto scrollbar-thin"
-                role="listbox"
-                aria-label="File search results"
-              >
-                {results.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-fg-muted">
-                    {query ? "No matching files" : "No files available"}
-                  </div>
-                ) : (
-                  results.map((result, index) => (
-                    <button
-                      key={result.path}
-                      data-index={index}
-                      role="option"
-                      aria-selected={index === selectedIndex}
-                      onClick={() => handleSelect(result.path)}
-                      className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${
-                        index === selectedIndex
-                          ? "bg-surface-raised"
-                          : "hover:bg-surface-raised/50"
-                      }`}
-                    >
-                      {/* File icon */}
-                      <svg
-                        className={`h-4 w-4 flex-shrink-0 ${
-                          result.isChanged
-                            ? "text-status-modified"
-                            : "text-fg-muted"
-                        }`}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                        <polyline points="14 2 14 8 20 8" />
-                      </svg>
+          <div className="flex-1 min-w-0 font-mono text-sm">
+            <span className="text-fg-secondary truncate block">
+              <HighlightedText text={match.path} indices={match.matchIndices} />
+            </span>
+          </div>
 
-                      {/* File path with highlighted matches */}
-                      <div className="flex-1 min-w-0 font-mono text-sm">
-                        <span className="text-fg-secondary truncate block">
-                          <HighlightedText
-                            text={result.path}
-                            indices={result.matchIndices}
-                          />
-                        </span>
-                      </div>
-
-                      {/* Changed indicator */}
-                      {result.isChanged && (
-                        <span className="text-xxs text-status-modified/80 flex-shrink-0">
-                          changed
-                        </span>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-
-              {/* Footer with keyboard hints */}
-              <div className="border-t border-edge px-4 py-2 flex items-center justify-between text-xxs text-fg-faint">
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
-                      ↑
-                    </kbd>
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
-                      ↓
-                    </kbd>
-                    <span className="ml-0.5">navigate</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
-                      Enter
-                    </kbd>
-                    <span className="ml-0.5">select</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <kbd className="rounded bg-surface-raised px-1 py-0.5 text-fg-muted">
-                      Esc
-                    </kbd>
-                    <span className="ml-0.5">close</span>
-                  </span>
-                </div>
-                <span>{results.length} files</span>
-              </div>
-            </div>
-          </DialogPrimitive.Content>
-        </DialogOverlay>
-      </DialogPortal>
-    </Dialog>
+          {match.isChanged && (
+            <span className="text-xxs text-status-modified/80 flex-shrink-0">
+              changed
+            </span>
+          )}
+        </div>
+      )}
+      onActivate={handleActivate}
+      emptyMessage={query ? "No matching files" : "No files available"}
+      renderCount={(n) => countLabel(n, "file")}
+    />
   );
 }

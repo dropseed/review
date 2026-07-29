@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useListContinuation } from "../../../hooks";
 import type { Source, LineAnnotation } from "../../../types";
 import { SimpleTooltip } from "../../ui/tooltip";
+import { MOD_SYMBOL } from "../../../commands";
 
 interface AnnotationEditorProps {
   initialContent?: string;
@@ -57,7 +58,7 @@ export function AnnotationEditor({
       />
       <div className="flex items-center justify-between mt-2">
         <span className="text-xxs text-fg-faint">
-          {navigator.platform.includes("Mac") ? "Cmd" : "Ctrl"}+Enter to save
+          {MOD_SYMBOL}+Enter to save
         </span>
         <div className="flex gap-1">
           {onDelete && (

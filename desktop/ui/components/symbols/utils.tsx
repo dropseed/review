@@ -20,65 +20,6 @@ export interface SymbolMatch {
   matchIndices: number[];
 }
 
-// Fuzzy matching (same algorithm as FileFinder)
-export function fuzzyMatch(
-  query: string,
-  text: string,
-): { score: number; indices: number[] } | null {
-  const queryLower = query.toLowerCase();
-  const textLower = text.toLowerCase();
-
-  let queryIdx = 0;
-  let score = 0;
-  const indices: number[] = [];
-  let prevMatchIdx = -1;
-
-  for (let i = 0; i < textLower.length && queryIdx < queryLower.length; i++) {
-    if (textLower[i] === queryLower[queryIdx]) {
-      indices.push(i);
-      if (prevMatchIdx === i - 1) {
-        score += 10;
-      }
-      if (i === 0 || /[/._-]/.test(text[i - 1])) {
-        score += 5;
-      }
-      prevMatchIdx = i;
-      queryIdx++;
-    }
-  }
-
-  if (queryIdx !== queryLower.length) {
-    return null;
-  }
-
-  score += 100 - (text.length - queryLower.length);
-  return { score, indices };
-}
-
-export function HighlightedText({
-  text,
-  indices,
-}: {
-  text: string;
-  indices: number[];
-}) {
-  const indicesSet = new Set(indices);
-  const chars = text.split("");
-  return (
-    <>
-      {chars.map((char, i) =>
-        indicesSet.has(i) ? (
-          <span key={i} className="text-status-modified font-medium">
-            {char}
-          </span>
-        ) : (
-          <span key={i}>{char}</span>
-        ),
-      )}
-    </>
-  );
-}
-
 // Build a lookup of changed symbols from the diff: "name|kind" -> SymbolDiff
 export function buildDiffLookup(
   symbols: SymbolDiff[],

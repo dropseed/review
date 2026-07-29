@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { useReviewStore } from "../stores";
+import { useProvideCommandUi } from "../commands/host";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -68,13 +69,11 @@ const ClassificationsModal = lazy(() =>
 );
 
 interface ReviewViewProps {
-  onNewWindow: () => Promise<void>;
   comparisonReady: number;
   onStartReview?: (path: string, target: ReviewTarget) => Promise<void>;
 }
 
 export function ReviewView({
-  onNewWindow,
   comparisonReady,
   onStartReview,
 }: ReviewViewProps): ReactNode {
@@ -88,6 +87,12 @@ export function ReviewView({
 
   const contentSearchOpen = useReviewStore((s) => s.contentSearchOpen);
   const setContentSearchOpen = useReviewStore((s) => s.setContentSearchOpen);
+  const fileFinderOpen = useReviewStore((s) => s.fileFinderOpen);
+  const setFileFinderOpen = useReviewStore((s) => s.setFileFinderOpen);
+  const symbolSearchOpen = useReviewStore((s) => s.symbolSearchOpen);
+  const setSymbolSearchOpen = useReviewStore((s) => s.setSymbolSearchOpen);
+  const debugModalOpen = useReviewStore((s) => s.debugModalOpen);
+  const setDebugModalOpen = useReviewStore((s) => s.setDebugModalOpen);
 
   // A comparison whose base or compare branch was deleted resolves to git's
   // empty tree, so the diff would otherwise render every file as a deletion.
@@ -191,9 +196,6 @@ export function ReviewView({
   );
 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showDebugModal, setShowDebugModal] = useState(false);
-  const [showFileFinder, setShowFileFinder] = useState(false);
-  const [showSymbolSearch, setShowSymbolSearch] = useState(false);
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
@@ -253,23 +255,24 @@ export function ReviewView({
   });
 
   useKeyboardNavigation();
+  // Deliberately not `newWindow` — AppShell already provides it, and the same
+  // handler registered twice makes which one wins depend on effect-run order.
+  useProvideCommandUi(
+    useMemo(
+      () => ({
+        closeTab: () => void handleClose(),
+        newTab: () => void handleNewTab(),
+        refresh: () => void handleRefresh(),
+      }),
+      [handleClose, handleNewTab, handleRefresh],
+    ),
+  );
   useMouseNavigation();
   // Hold deep-link focus until the diff is real again — consuming it against the
   // all-deleted diff behind the notice would drop the requested hunk.
   useDeepLinkFocus(!compareRefMissing);
 
-  useMenuEvents({
-    handleClose,
-    handleNewTab,
-    handleNewWindow: onNewWindow,
-    handleRefresh,
-    setShowDebugModal,
-    setShowFileFinder,
-    setShowContentSearch: setContentSearchOpen,
-    setShowSymbolSearch,
-    // No diff to search while the compared branch is gone.
-    searchEnabled: !compareRefMissing,
-  });
+  useMenuEvents();
 
   useFileWatcher(comparisonReady);
   useLspClient();
@@ -284,10 +287,6 @@ export function ReviewView({
   const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
   const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
-  const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
-  const toggleTerminalPanelMaximized = useReviewStore(
-    (s) => s.toggleTerminalPanelMaximized,
-  );
   const contentRowRef = useRef<HTMLDivElement | null>(null);
   const panelMode = terminalsSupported ? terminalPanelMode : "closed";
   const showTerminalPanel = panelMode !== "closed";
@@ -356,24 +355,10 @@ export function ReviewView({
     setTerminalPanelWidth(Math.round(next));
   }, [setTerminalPanelWidth]);
 
-  // Cmd+` toggles the panel, Cmd+Shift+Enter collapses/restores the diff beside
-  // it (iTerm2's maximize-pane chord). Both work regardless of where focus is —
-  // Cmd combos aren't forwarded to the PTY.
-  useEffect(() => {
-    if (!terminalsSupported) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.code === "Backquote") {
-        e.preventDefault();
-        toggleTerminalPanel();
-      } else if (e.shiftKey && e.code === "Enter") {
-        e.preventDefault();
-        toggleTerminalPanelMaximized();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [terminalsSupported, toggleTerminalPanel, toggleTerminalPanelMaximized]);
+  // Cmd+` and Cmd+Shift+Enter are the `view.toggleTerminal` and
+  // `view.maximizeTerminal` commands. A second window listener here would not
+  // replace the dispatcher's — preventDefault does not stop a sibling listener
+  // on the same target — so both would fire and the toggle would cancel itself.
 
   // Celebration on 100% reviewed — suppressed when the compared branch is gone
   // so confetti can't fire over the bogus all-deleted diff behind the notice.
@@ -580,21 +565,21 @@ export function ReviewView({
       )}
 
       {/* Debug Modal */}
-      {showDebugModal && (
+      {debugModalOpen && (
         <Suspense fallback={null}>
           <DebugModal
-            isOpen={showDebugModal}
-            onClose={() => setShowDebugModal(false)}
+            isOpen={debugModalOpen}
+            onClose={() => setDebugModalOpen(false)}
           />
         </Suspense>
       )}
 
       {/* File Finder */}
-      {showFileFinder && (
+      {fileFinderOpen && (
         <Suspense fallback={null}>
           <FileFinder
-            isOpen={showFileFinder}
-            onClose={() => setShowFileFinder(false)}
+            isOpen={fileFinderOpen}
+            onClose={() => setFileFinderOpen(false)}
           />
         </Suspense>
       )}
@@ -610,11 +595,11 @@ export function ReviewView({
       )}
 
       {/* Symbol Search */}
-      {showSymbolSearch && (
+      {symbolSearchOpen && (
         <Suspense fallback={null}>
           <SymbolSearch
-            isOpen={showSymbolSearch}
-            onClose={() => setShowSymbolSearch(false)}
+            isOpen={symbolSearchOpen}
+            onClose={() => setSymbolSearchOpen(false)}
           />
         </Suspense>
       )}

@@ -2,12 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { useReviewStore } from "../../stores";
 import type { FileSymbol, SymbolDiff, SymbolChangeType } from "../../types";
 import { ChangeIndicator, SymbolKindBadge } from "../symbols";
-import {
-  fuzzyMatch,
-  HighlightedText,
-  buildDiffLookup,
-  nestMarkdownHeadings,
-} from "../symbols/utils";
+import { HighlightedText } from "../../lib/fuzzy";
+import { scoreSymbol } from "../symbols/score";
+import { buildDiffLookup, nestMarkdownHeadings } from "../symbols/utils";
 import { isMarkdownFile } from "./languageMap";
 import { useCodeFont } from "../../hooks";
 
@@ -26,6 +23,8 @@ interface OutlineSymbol {
   depth?: number;
   changeType?: SymbolChangeType;
   children: OutlineSymbol[];
+  /** Offsets matched by the current filter, if this node matched it. */
+  matchIndices?: number[];
 }
 
 function mergeSymbolsWithDiff(
@@ -96,10 +95,16 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
     function filterTree(symbols: OutlineSymbol[]): OutlineSymbol[] {
       const result: OutlineSymbol[] = [];
       for (const sym of symbols) {
-        const match = fuzzyMatch(filter, sym.name);
+        const match = scoreSymbol(filter, { name: sym.name, parentName: null });
         const filteredChildren = filterTree(sym.children);
         if (match || filteredChildren.length > 0) {
-          result.push({ ...sym, children: filteredChildren });
+          // Carry the matched offsets on the node so rows can highlight
+          // without re-running the matcher during render.
+          result.push({
+            ...sym,
+            children: filteredChildren,
+            matchIndices: match?.matchIndices,
+          });
         }
       }
       return result;
@@ -212,7 +217,6 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
               symbol={sym}
               depth={0}
               activeStartLine={activeStartLine}
-              filter={filter}
               onClick={handleSymbolClick}
             />
           ))
@@ -226,19 +230,16 @@ const OutlineNode = memo(function OutlineNode({
   symbol,
   depth,
   activeStartLine,
-  filter,
   onClick,
 }: {
   symbol: OutlineSymbol;
   depth: number;
   activeStartLine: number | null;
-  filter: string;
   onClick: (startLine: number) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = symbol.children.length > 0;
   const isActive = activeStartLine === symbol.startLine;
-  const matchResult = filter ? fuzzyMatch(filter, symbol.name) : null;
 
   return (
     <>
@@ -289,9 +290,13 @@ const OutlineNode = memo(function OutlineNode({
             symbol.changeType ? "text-fg-secondary" : "text-fg-muted"
           }`}
         >
-          {matchResult ? (
-            <HighlightedText text={symbol.name} indices={matchResult.indices} />
+          {symbol.matchIndices ? (
+            <HighlightedText text={symbol.name} indices={symbol.matchIndices} />
           ) : (
+            // Unfiltered rows render the bare string: HighlightedText would
+            // build a Set and walk the name by code point for every row on
+            // every render, and `?? []` would hand it a fresh array identity
+            // each time so its own memo could never hit.
             symbol.name
           )}
         </span>
@@ -306,7 +311,6 @@ const OutlineNode = memo(function OutlineNode({
             symbol={child}
             depth={depth + 1}
             activeStartLine={activeStartLine}
-            filter={filter}
             onClick={onClick}
           />
         ))}

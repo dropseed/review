@@ -1,7 +1,7 @@
 import type { SliceCreatorWithClient } from "../types";
 import type { ApiClient } from "../../api";
 import type { SearchMatch } from "../../types";
-import { getAllHunksFromState } from "../selectors/hunks";
+import { getAllHunksFromState } from "../selectors/hunkData";
 
 export type SearchMode = "text" | "symbols";
 

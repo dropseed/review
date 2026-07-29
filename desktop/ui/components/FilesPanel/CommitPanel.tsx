@@ -10,10 +10,9 @@ import {
 import { useListContinuation } from "../../hooks";
 import { useReviewStore } from "../../stores";
 import { CollapsibleSection } from "../ui/collapsible-section";
+import { MOD_SYMBOL as MOD_KEY_SYMBOL } from "../../commands";
 
 const MAX_OUTPUT_LINES = 8;
-const IS_MAC = navigator.platform?.includes("Mac");
-const MOD_KEY_SYMBOL = IS_MAC ? "\u2318" : "Ctrl";
 
 const COMMIT_ICON = (
   <svg

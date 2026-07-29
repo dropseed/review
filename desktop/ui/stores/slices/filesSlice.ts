@@ -16,7 +16,7 @@ import type { CommitRange } from "../../types/commitRange";
 import { sameRange } from "../../types/commitRange";
 import type { SliceCreatorWithClient } from "../types";
 import { flattenFiles, isChangedStatus } from "../types";
-import { getAllHunksFromState } from "../selectors/hunks";
+import { getAllHunksFromState } from "../selectors/hunkData";
 import type { UndoEntry } from "./undoSlice";
 import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";

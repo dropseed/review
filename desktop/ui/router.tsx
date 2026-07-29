@@ -1,10 +1,11 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserRouter,
   Routes,
   Route,
   Navigate,
   Outlet,
+  useNavigate,
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
@@ -24,6 +25,13 @@ import {
   type RepoStatus,
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
+import {
+  APP_COMMANDS,
+  useRegisterCommands,
+  useCommandDispatch,
+} from "./commands";
+import { useProvideCommandUi } from "./commands/host";
+import { CommandPalette } from "./components/palette";
 
 const SettingsModal = lazy(() =>
   import("./components/modals/SettingsModal").then((m) => ({
@@ -38,6 +46,7 @@ const ACTIVITY_POLL_MS = 300_000;
  * Renders <Outlet /> for child routes.
  */
 function AppShell() {
+  const navigate = useNavigate();
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
   const [showSettings, setShowSettings] = useState(false);
@@ -102,31 +111,28 @@ function AppShell() {
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
 
+  // The app's commands, and the shell-level actions they need. Shortcuts are
+  // dispatched here rather than by the native menu, so they work identically
+  // in the desktop app and in web mode (which has no native menu at all).
+  useRegisterCommands(APP_COMMANDS);
+  useProvideCommandUi(
+    useMemo(
+      () => ({
+        openRepo: () => handleOpenRepoRef.current(),
+        openSettings: () => setShowSettings(true),
+        newWindow: () => handleNewWindow(),
+        navigate: (to: string) => navigate(to),
+      }),
+      [handleNewWindow, navigate],
+    ),
+  );
+  useCommandDispatch();
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-
-      if ((e.metaKey || e.ctrlKey) && e.key === "o") {
-        e.preventDefault();
-        handleOpenRepoRef.current();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-
     const platform = getPlatformServices();
-    const unlistenMenu = platform.menuEvents.on("menu:open-repo", () => {
+    return platform.menuEvents.on("menu:open-repo", () => {
       handleOpenRepoRef.current();
     });
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      unlistenMenu();
-    };
   }, []);
 
   useMenuState();
@@ -175,6 +181,10 @@ function AppShell() {
           />
         </Suspense>
       )}
+
+      {/* Mounted at the shell, not inside the review screen, so ⌘K still
+          offers "Open Repository" and "New Review" with nothing open. */}
+      <CommandPalette />
     </TooltipProvider>
   );
 }
@@ -267,8 +277,7 @@ function NewReviewRoute() {
 
 /** Review UI — shown at /:owner/:repo/review/:ref (ref is encodeURIComponent-encoded) */
 function ReviewRoute() {
-  const { repoPath, comparisonReady, handleNewWindow, handleStartReview } =
-    useAppContext();
+  const { repoPath, comparisonReady, handleStartReview } = useAppContext();
 
   useFileRouteSync();
 
@@ -278,7 +287,6 @@ function ReviewRoute() {
 
   return (
     <ReviewView
-      onNewWindow={handleNewWindow}
       comparisonReady={comparisonReady}
       onStartReview={handleStartReview}
     />

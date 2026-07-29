@@ -3,7 +3,7 @@ import type { TokenEventBase } from "@pierre/diffs";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
-import { getAllHunksFromState } from "../stores/selectors/hunks";
+import { getAllHunksFromState } from "../stores/selectors/hunkData";
 import type {
   SymbolDefinition,
   SymbolChangeType,

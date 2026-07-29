@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { useReviewStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { SymbolKindBadge } from "../symbols";
-import { fuzzyMatch, HighlightedText } from "../symbols/utils";
+import { HighlightedText } from "../../lib/fuzzy";
+import { scoreSymbol } from "../symbols/score";
 import { FileGroupHeader } from "./FileGroupHeader";
 import { SearchPanelMessage } from "./SearchPanelMessage";
 import type { FileSymbol, RepoFileSymbols } from "../../types";
@@ -59,14 +60,9 @@ function searchSymbols(
 
   const results: SymbolSearchResult[] = [];
   for (const sym of allSymbols) {
-    const match = fuzzyMatch(query, sym.name);
-    if (match) {
-      results.push({
-        symbol: sym,
-        score: match.score,
-        matchIndices: match.indices,
-      });
-    }
+    const scored = scoreSymbol(query, sym);
+    if (!scored) continue;
+    results.push({ symbol: sym, ...scored });
   }
 
   results.sort((a, b) => b.score - a.score);

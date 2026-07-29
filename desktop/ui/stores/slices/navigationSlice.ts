@@ -5,7 +5,7 @@ import {
   type ReviewScope,
 } from "../../types/scope";
 import type { ReviewStore, SliceCreator } from "../types";
-import { getHunkLocationMap } from "../selectors/hunks";
+import { getHunkLocationMap } from "../selectors/hunkData";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
@@ -145,9 +145,19 @@ export interface NavigationSlice {
   }) => void;
   closeWorkingTreeMultiView: () => void;
 
-  // Content search modal
+  // Search and command overlays. Their open state lives here rather than in
+  // the component that renders them so a command can open any of them without
+  // that component having to thread a setter outward.
   contentSearchOpen: boolean;
   setContentSearchOpen: (open: boolean) => void;
+  fileFinderOpen: boolean;
+  setFileFinderOpen: (open: boolean) => void;
+  symbolSearchOpen: boolean;
+  setSymbolSearchOpen: (open: boolean) => void;
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+  debugModalOpen: boolean;
+  setDebugModalOpen: (open: boolean) => void;
 
   // Request a files panel tab switch from outside the panel
   requestedFilesPanelTab: string | null;
@@ -699,6 +709,14 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Content search modal
   contentSearchOpen: false,
   setContentSearchOpen: (open) => set({ contentSearchOpen: open }),
+  fileFinderOpen: false,
+  setFileFinderOpen: (open) => set({ fileFinderOpen: open }),
+  symbolSearchOpen: false,
+  setSymbolSearchOpen: (open) => set({ symbolSearchOpen: open }),
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  debugModalOpen: false,
+  setDebugModalOpen: (open) => set({ debugModalOpen: open }),
 
   // Requested files panel tab
   requestedFilesPanelTab: null,
