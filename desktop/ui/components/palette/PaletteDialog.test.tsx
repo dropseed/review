@@ -88,13 +88,6 @@ describe("selection and activation", () => {
     expect(onActivate.mock.calls[0][0]).toMatchObject({ label: "beta" });
   });
 
-  it("passes the activating event through so modifiers are readable", () => {
-    const onActivate = vi.fn();
-    render(<Harness items={rows("alpha")} onActivate={onActivate} />);
-    fireEvent.click(options()[0], { metaKey: true });
-    expect(onActivate.mock.calls[0][1]).toMatchObject({ metaKey: true });
-  });
-
   it("does not activate when there is nothing to activate", () => {
     const onActivate = vi.fn();
     render(<Harness items={[]} onActivate={onActivate} />);

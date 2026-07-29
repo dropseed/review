@@ -26,10 +26,6 @@ interface PaletteHint {
   label: string;
 }
 
-/** The event that activated a row, so consumers can read modifier keys. */
-export type PaletteActivation =
-  React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLInputElement>;
-
 export interface PaletteDialogProps<T> {
   open: boolean;
   onClose: () => void;
@@ -55,7 +51,7 @@ export interface PaletteDialogProps<T> {
   groups?: PaletteGroup<T>[];
   getKey: (item: T) => string;
   renderRow: (item: T, state: { selected: boolean }) => ReactNode;
-  onActivate: (item: T, event: PaletteActivation) => void;
+  onActivate: (item: T) => void;
 
   busy?: boolean;
   error?: string | null;
@@ -247,10 +243,10 @@ export function PaletteDialog<T>({
   }, [selectedIndex]);
 
   const activate = useCallback(
-    (index: number, event: PaletteActivation) => {
+    (index: number) => {
       const item = flat[index];
       if (!item) return;
-      onActivate(item, event);
+      onActivate(item);
     },
     [flat, onActivate],
   );
@@ -285,7 +281,7 @@ export function PaletteDialog<T>({
             return;
           if (!flat[selectedIndex]) return;
           event.preventDefault();
-          activate(selectedIndex, event);
+          activate(selectedIndex);
           break;
       }
     },
@@ -389,7 +385,7 @@ export function PaletteDialog<T>({
                         data-index={index}
                         role="option"
                         aria-selected={selected}
-                        onClick={(e) => activate(index, e)}
+                        onClick={() => activate(index)}
                         // mousemove, not mouseenter: scrolling the list
                         // under a stationary pointer should not yank the
                         // keyboard cursor to wherever it happens to rest.
