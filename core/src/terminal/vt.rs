@@ -33,9 +33,16 @@
 //!
 //! ## Engine
 //!
-//! [`default_engine_factory`] builds an
-//! [`AlacrittyEngine`](super::engine_alacritty::AlacrittyEngine) — pure Rust, no
-//! native toolchain, builds on every platform.
+//! [`default_engine_factory`] builds a
+//! [`GhosttyEngine`](super::engine_ghostty::GhosttyEngine) — Ghostty's own VT
+//! core, so the peek and the visible terminal agree on wide characters, emoji,
+//! and combining marks. It is `!Send`, which is what the actor thread above
+//! exists to accommodate.
+//!
+//! The [`ScreenEngine`] trait stays a trait even with one real implementation:
+//! the actor's own semantics — the peek timeout and the drop-on-full inbox —
+//! can only be tested against an engine that blocks on command, which a real
+//! Ghostty terminal cannot be made to do.
 
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread::JoinHandle;
@@ -203,7 +210,7 @@ impl OutputSink for VtOutputSink {
 
 /// Builds the screen engine each session's VT thread owns.
 pub fn default_engine_factory(cols: u16, rows: u16) -> EngineFactory {
-    Box::new(move || Box::new(super::engine_alacritty::AlacrittyEngine::new(cols, rows)))
+    Box::new(move || Box::new(super::engine_ghostty::GhosttyEngine::new(cols, rows)))
 }
 
 #[cfg(test)]

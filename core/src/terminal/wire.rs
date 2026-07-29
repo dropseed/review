@@ -2,8 +2,9 @@
 //!
 //! Plain serde structs with no PTY dependencies, so a process that only decodes
 //! daemon payloads — the desktop app — gets them from the `terminal-types`
-//! feature without compiling `portable-pty`, `vte`, `nix` or
-//! `alacritty_terminal`. Every struct here serializes as `camelCase` JSON.
+//! feature without compiling `portable-pty`, `vte`, `nix` or `libghostty-vt`
+//! (and so without needing a Zig toolchain). Every struct here serializes as
+//! `camelCase` JSON.
 
 use serde::{Deserialize, Serialize};
 

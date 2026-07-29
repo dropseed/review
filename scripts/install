@@ -14,6 +14,14 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
+# vendor/ghostty is the VT engine's source. Fetch it before checking the
+# toolchain, so a fresh clone gets one error (a missing zig) rather than two.
+git submodule update --init vendor/ghostty
+
+# Zig, and the submodule we just fetched. This is the only script allowed to
+# populate vendor/ghostty; the rest only assert it is there.
+scripts/check-vt-toolchain
+
 # Set up pre-commit hook
 ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 

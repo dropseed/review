@@ -32,7 +32,7 @@ The desktop app includes optional crash reporting via [Sentry](https://sentry.io
 
 ## Development
 
-Requires Node.js 18+ and Rust (latest stable). See `CLAUDE.md` for full development docs.
+Requires Node.js 18+, Rust (latest stable), and Zig 0.16+ (`brew install zig`) — the embedded terminal's VT engine is built from Ghostty's source. See `CLAUDE.md` for full development docs.
 
 ```bash
 scripts/install          # Install dependencies

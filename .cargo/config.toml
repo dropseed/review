@@ -1,0 +1,9 @@
+# Point `libghostty-vt-sys` at the vendored Ghostty instead of letting it fetch
+# its own pinned commit, which still requires Zig 0.15.2 and therefore cannot
+# link at all (ziglang/zig#31658). `relative = true` resolves against this
+# file's parent, so clones and worktrees work unchanged.
+#
+# The pin this depends on is load-bearing in two directions and fails silently
+# in one of them — read CLAUDE.md → "Terminal VT engine" before bumping it.
+[env]
+GHOSTTY_SOURCE_DIR = { value = "vendor/ghostty", relative = true }

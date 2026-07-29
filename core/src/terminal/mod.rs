@@ -20,7 +20,7 @@ pub use wire::{Phase, SessionStatus, TerminalId, TerminalSummary};
 
 // Everything below owns or drives real PTYs.
 #[cfg(feature = "terminal")]
-mod engine_alacritty;
+mod engine_ghostty;
 #[cfg(feature = "terminal")]
 mod manager;
 #[cfg(feature = "terminal")]

@@ -25,6 +25,11 @@ if [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 
+# The release builds the daemon, which links the zig-built VT engine. Name a
+# missing toolchain here with the rest of the preflight rather than partway
+# through the build.
+scripts/check-vt-toolchain
+
 # Preflight: the push at the end is the only irreversible step, and it happens
 # after a ~10 minute build. Check now that it can succeed, so a diverged branch
 # costs a fetch instead of the whole build.

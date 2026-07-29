@@ -5,6 +5,11 @@ cd "$(dirname "$0")/.."
 # Build the review daemon binary and place it in desktop/tauri/binaries/ with
 # the target-triple suffix required by Tauri's externalBin (sidecar) feature.
 
+# The daemon is the only binary that links the VT engine. Tauri runs this script
+# before both `dev` and `build`, so it is the choke point where a missing or too
+# old zig should be named plainly instead of surfacing from inside a zig build.
+scripts/check-vt-toolchain
+
 TARGET="${TAURI_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/host: //p')}"
 
 echo "Building review daemon for $TARGET..."

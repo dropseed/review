@@ -10,7 +10,8 @@ Review is a desktop app (built with Tauri) that helps humans review diffs more e
 
 ```bash
 # Setup
-scripts/install          # Install dependencies (npm + cargo + pre-commit hook)
+scripts/install          # Install dependencies (npm + cargo + submodule + pre-commit hook)
+                         # Requires Zig 0.16+ — see "Terminal VT engine" below
 
 # Desktop Development
 scripts/dev              # Run in development mode with hot reload
@@ -19,7 +20,8 @@ scripts/dev              # Run in development mode with hot reload
 scripts/dev-web          # Run UI in browser (Axum backend + Vite) — no Tauri needed
 
 # Testing
-scripts/test             # TypeScript type check + Rust tests (fast, no API calls)
+scripts/test             # TypeScript type check + Rust tests (no API calls; needs Zig,
+                         # and pays a one-time libghostty build on a cold target/)
 
 # Linting/Formatting
 scripts/fix              # Auto-fix: prettier + cargo fmt
@@ -101,6 +103,19 @@ Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined 
 ### Web Mode
 
 `scripts/dev-web` runs the UI in a regular browser (Chrome) with an Axum HTTP backend instead of Tauri. This is the preferred way to develop and test UI changes — you get full Chrome devtools, fast hot reload, and no Tauri rebuild cycle. The frontend uses an `HttpClient` (fetch-based) instead of `TauriClient` (invoke-based), both implementing the same `ApiClient` interface. Use web mode when working on the UI — open `localhost:1420` in Chrome to test.
+
+## Terminal VT engine
+
+The embedded terminal's content peek replays PTY bytes into a screen model to answer "what is on screen right now?". That model is **libghostty-vt** — Ghostty's own VT core — so the peek agrees with the visible terminal on wide characters, emoji clusters, and combining marks instead of approximating them.
+
+It is a native library, which puts two requirements on the build:
+
+- **Zig 0.16+** on `PATH` (`brew install zig`). Zig 0.15.x cannot link against the macOS 26 SDK at all, and it fails inside its own build runner — the error names `build_zcu.o`, a file nobody wrote.
+- **`vendor/ghostty` submodule**, which `.cargo/config.toml` points `GHOSTTY_SOURCE_DIR` at. The `libghostty-vt-sys` crate would otherwise fetch its own pinned Ghostty commit, which still requires Zig 0.15.2.
+
+Only the `terminal` feature needs this, so only `review-daemon` (and `cargo test`) pay for it — the desktop app compiles against `terminal-types`, a serde-only wire contract, and needs no Zig.
+
+**When bumping the submodule**, the pin has to satisfy both halves: buildable with the Zig in use, _and_ C headers matching the crate's checked-in bindings. Header drift is silent, not loud — Ghostty's option structs are size-prefixed, so a mismatch reads fields at the wrong offsets and the peek quietly renders scrollback instead of the visible screen. `engine_ghostty.rs`'s `renders_only_the_visible_viewport` test is the tripwire.
 
 ## Key Concepts
 

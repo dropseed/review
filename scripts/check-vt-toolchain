@@ -1,0 +1,43 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+# Read-only preflight for the terminal's VT engine (libghostty-vt), which is
+# built from vendor/ghostty by zig. Every path that compiles the `terminal`
+# feature needs both halves — scripts/test, scripts/build-daemon-sidecar (which
+# tauri runs before `dev` and `build`), and scripts/release through them.
+#
+# Deliberately checks and never mutates. `git submodule update --init` lives in
+# scripts/install alone: it resets the submodule pointer, which would silently
+# clobber a locally-bumped vendor/ghostty checkout mid-build.
+
+if ! command -v zig &> /dev/null; then
+    echo "Error: zig is not installed (needed to build the terminal VT engine)"
+    echo "Install with: brew install zig"
+    exit 1
+fi
+
+# Compare numerically rather than by glob: zig reports things like "0.16.0" and
+# "0.16.0-dev.100+abc", and a pattern loose enough for both is easy to write so
+# loosely that it also accepts 0.9.x.
+ZIG_VERSION="$(zig version)"
+ZIG_MAJOR="${ZIG_VERSION%%.*}"
+ZIG_MINOR="${ZIG_VERSION#*.}"
+ZIG_MINOR="${ZIG_MINOR%%.*}"
+
+if [ "$ZIG_MAJOR" = "0" ] && { ! [ "$ZIG_MINOR" -ge 16 ] 2>/dev/null; }; then
+    echo "Error: zig $ZIG_VERSION is too old to build the terminal VT engine."
+    echo ""
+    echo "Zig 0.15.x cannot link against the macOS 26 SDK at all — it fails"
+    echo "inside its own build runner, so the error names build_zcu.o, a file"
+    echo "nobody wrote. Zig 0.16.0 or newer is required."
+    echo ""
+    echo "Upgrade with: brew upgrade zig"
+    exit 1
+fi
+
+if [ ! -f vendor/ghostty/build.zig ]; then
+    echo "Error: vendor/ghostty is empty — it holds the VT engine's source."
+    echo "Fetch it with: git submodule update --init vendor/ghostty"
+    exit 1
+fi

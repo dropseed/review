@@ -60,8 +60,9 @@ portable-pty = { version = "0.8", optional = true }
 vte = { version = "0.13", optional = true }
 nix = { version = "0.29", features = ["term", "process"], optional = true }
 bytes = { version = "1", optional = true }
-# VT screen engine (pure Rust, builds everywhere). See terminal/vt.rs.
-alacritty_terminal = { version = "0.26", optional = true }
+# VT screen engine — Ghostty's own terminal core. Native, built from the
+# `vendor/ghostty` submodule by zig; see CLAUDE.md → "Terminal VT engine".
+libghostty-vt = { version = "0.2.1", optional = true }
 
 # LSP client (feature-gated)
 lsp-types = { version = "0.97", optional = true }
@@ -105,7 +106,7 @@ lsp = ["dep:lsp-types"]
 # serde structs, no PTY dependencies. The desktop app decodes daemon payloads
 # with this and never links a PTY stack it does not own.
 terminal-types = []
-terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:alacritty_terminal"]
+terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:libghostty-vt"]
 cli = ["clap"]
 # Web-mode HTTP backend. Deliberately does NOT imply `terminal`: web mode has no
 # terminals — PTYs live in the `review-daemon` process and only the desktop app

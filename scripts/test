@@ -13,6 +13,8 @@ echo "TypeScript tests passed!"
 
 echo ""
 echo "=== Rust Tests ==="
+# `daemon` implies `terminal`, which links the zig-built VT engine.
+scripts/check-vt-toolchain
 cargo test -p review --features symbols-all,cli,server,daemon,daemon-client
 # The desktop crate owns the daemon lifecycle (attach-vs-spawn, version respawn)
 # and the terminal event payloads — both worth gating on.
