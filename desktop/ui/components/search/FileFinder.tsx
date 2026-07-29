@@ -49,7 +49,8 @@ interface Candidate {
   path: string;
   /** Where the filename starts within `path`, for remapping match offsets. */
   nameOffset: number;
-  fields: ScoreField[];
+  /** Built on first search — see {@link scoreFields}. */
+  fields?: ScoreField[];
 }
 
 /**
@@ -59,18 +60,28 @@ interface Candidate {
  * case-folds, and the field descriptors all depend only on the path, so
  * rebuilding them for all ~7k files on every character typed was the single
  * biggest cost in this component.
+ *
+ * Populated lazily and cached on the candidate rather than eagerly in the
+ * memo: the folds are one array slot per character, so precomputing them for
+ * a large repo held tens of megabytes resident whether or not the finder was
+ * ever opened.
  */
+function scoreFields(candidate: Candidate): ScoreField[] {
+  if (candidate.fields) return candidate.fields;
+  const name = candidate.path.slice(candidate.nameOffset);
+  return (candidate.fields = [
+    { key: "name", text: name, weight: NAME_WEIGHT, folded: foldText(name) },
+    {
+      key: "path",
+      text: candidate.path,
+      weight: PATH_WEIGHT,
+      folded: foldText(candidate.path),
+    },
+  ]);
+}
+
 function toCandidate(path: string): Candidate {
-  const nameOffset = path.lastIndexOf("/") + 1;
-  const name = path.slice(nameOffset);
-  return {
-    path,
-    nameOffset,
-    fields: [
-      { key: "name", text: name, weight: NAME_WEIGHT, folded: foldText(name) },
-      { key: "path", text: path, weight: PATH_WEIGHT, folded: foldText(path) },
-    ],
-  };
+  return { path, nameOffset: path.lastIndexOf("/") + 1 };
 }
 
 export function FileFinder({ isOpen, onClose }: FileFinderProps) {
@@ -126,7 +137,7 @@ export function FileFinder({ isOpen, onClose }: FileFinderProps) {
     for (const candidate of candidates) {
       const isChanged = changedPaths.has(candidate.path);
 
-      const scored = scoreCandidate(query, candidate.fields, {
+      const scored = scoreCandidate(query, scoreFields(candidate), {
         boost: isChanged ? CHANGED_BOOST : 0,
       });
       if (!scored) continue;

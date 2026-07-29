@@ -12,31 +12,33 @@ import type { Command, CommandContext, ResolvedCommand } from "./types";
  * Contribution is open — anything can add commands, including a panel that
  * registers its own only while it is mounted (see `useRegisterCommands`).
  */
-const sources = new Set<readonly Command[]>();
+/**
+ * A fixed list, or a function producing one from current state.
+ *
+ * The dynamic form is what lets things that are really *data* be commands —
+ * one per open review, say — so they are findable by typing rather than
+ * reachable only through a positional shortcut.
+ */
+export type CommandSource = readonly Command[] | (() => readonly Command[]);
+
+const sources = new Set<CommandSource>();
 const listeners = new Set<() => void>();
 
-let snapshot: Command[] = [];
+/** Bumped whenever the set of registrations changes, for React subscribers. */
+let version = 0;
 
-function rebuild(): void {
-  const byId = new Map<string, Command>();
-  for (const source of sources) {
-    for (const command of source) {
-      // Last registration wins, so a mounted panel can specialize a command
-      // the base set defines.
-      byId.set(command.id, command);
-    }
-  }
-  snapshot = [...byId.values()];
+function notify(): void {
+  version++;
   for (const listener of listeners) listener();
 }
 
 /** Add commands to the registry. Returns a disposer. */
-export function registerCommands(commands: readonly Command[]): () => void {
+export function registerCommands(commands: CommandSource): () => void {
   sources.add(commands);
-  rebuild();
+  notify();
   return () => {
     sources.delete(commands);
-    rebuild();
+    notify();
   };
 }
 
@@ -47,14 +49,33 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-/** Every registered command, regardless of context. Safe outside React. */
+/**
+ * Every registered command, expanded from current state.
+ *
+ * Returns a fresh array — dynamic sources are evaluated on each call, which is
+ * the point. Callers that render must therefore re-render on their own signal
+ * ({@link useCommandRegistryVersion} for registrations, store subscription for
+ * everything else) rather than relying on this to be referentially stable.
+ */
 export function getAllCommands(): Command[] {
-  return snapshot;
+  const byId = new Map<string, Command>();
+  for (const source of sources) {
+    for (const command of typeof source === "function" ? source() : source) {
+      // Last registration wins, so a mounted panel can specialize a command
+      // the base set defines.
+      byId.set(command.id, command);
+    }
+  }
+  return [...byId.values()];
 }
 
-/** Every registered command, re-rendering when the registry changes. */
-export function useAllCommands(): Command[] {
-  return useSyncExternalStore(subscribe, getAllCommands, getAllCommands);
+function getVersion(): number {
+  return version;
+}
+
+/** Re-render when commands are registered or unregistered. */
+export function useCommandRegistryVersion(): number {
+  return useSyncExternalStore(subscribe, getVersion, getVersion);
 }
 
 /**
@@ -63,7 +84,7 @@ export function useAllCommands(): Command[] {
  * `commands` must be stable (a module constant, or memoized) — it is the
  * registry key.
  */
-export function useRegisterCommands(commands: readonly Command[]): void {
+export function useRegisterCommands(commands: CommandSource): void {
   useEffect(() => registerCommands(commands), [commands]);
 }
 
@@ -91,11 +112,11 @@ export function resolveCommands(
 
 /** Look up a single command by id. */
 export function findCommand(id: string): Command | undefined {
-  return snapshot.find((command) => command.id === id);
+  return getAllCommands().find((command) => command.id === id);
 }
 
 /** Test seam: drop every registration. */
 export function resetRegistry(): void {
   sources.clear();
-  rebuild();
+  notify();
 }

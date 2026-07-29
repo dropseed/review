@@ -1,4 +1,6 @@
 import type { ReviewStore } from "../stores/types";
+import type { ContextKeys } from "./contextKeys";
+import type { OverlayId } from "../stores/slices/overlaySlice";
 import type { Shortcut } from "./shortcuts";
 
 /**
@@ -11,14 +13,8 @@ import type { Shortcut } from "./shortcuts";
 export interface CommandContext {
   /** Live store state, read at evaluation time. */
   store: ReviewStore;
-  /**
-   * Whether focus is inside a terminal pane.
-   *
-   * Tracked separately because focus inside a terminal is focus inside
-   * xterm's textarea, which the generic "typing in an input" guard would
-   * otherwise swallow.
-   */
-  terminalFocused: boolean;
+  /** Facts contributed by whichever components own them. */
+  keys: ContextKeys;
   /** Imperative UI affordances the store does not own. */
   ui: CommandUi;
 }
@@ -28,7 +24,6 @@ export interface CommandContext {
  * routing or native-window concerns the store does not own.
  */
 export interface ProvidedCommandUi {
-  openSettings(): void;
   openRepo(): void;
   navigate(to: string): void;
   closeTab(): void;
@@ -41,11 +36,8 @@ export interface ProvidedCommandUi {
  * Actions that need nothing but the store, so they are always available.
  */
 export interface StoreCommandUi {
-  openCommandPalette(): void;
-  openFileFinder(): void;
-  openSymbolSearch(): void;
-  openContentSearch(): void;
-  openDebug(): void;
+  /** Raise one of the app's overlays; opening one closes any other. */
+  openOverlay(id: OverlayId): void;
   restartLsp(): void;
   zoom(direction: "in" | "out" | "reset"): void;
 }

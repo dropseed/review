@@ -1,8 +1,13 @@
-import { useCallback, useMemo, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useCallback, useState } from "react";
+import {
+  useOverlay,
+  useCloseOverlay,
+  useStoreRevision,
+} from "../../stores/selectors/overlay";
 import { scoreCandidate, indicesFor, HighlightedText } from "../../lib/fuzzy";
 import {
-  useAllCommands,
+  useCommandRegistryVersion,
+  getAllCommands,
   resolveCommands,
   buildCommandContext,
   formatShortcut,
@@ -34,25 +39,38 @@ function categoryRank(category: string): number {
   return index === -1 ? CATEGORY_ORDER.length : index;
 }
 
+/**
+ * Mounted always, rendered only when open.
+ *
+ * The split is what lets the open palette subscribe to the whole store: a
+ * command's predicates read arbitrary state, so nothing narrower can know when
+ * enablement has changed. Memoizing on `[commands, open]` instead — as this
+ * did — froze every predicate at the moment the palette was summoned, leaving
+ * a command greyed out and inert after the state that blocked it cleared.
+ */
 export function CommandPalette() {
-  const open = useReviewStore((s) => s.commandPaletteOpen);
-  const setOpen = useReviewStore((s) => s.setCommandPaletteOpen);
-  const commands = useAllCommands();
+  const open = useOverlay("commandPalette");
+  if (!open) return null;
+  return <OpenCommandPalette />;
+}
+
+function OpenCommandPalette() {
+  const closePalette = useCloseOverlay("commandPalette");
   const [query, setQuery] = useState("");
+  useCommandRegistryVersion();
+
+  // Any store write re-renders this, which is the point — see above. Scoped to
+  // the open palette so a closed one costs nothing.
+  useStoreRevision();
 
   const close = useCallback(() => {
-    setOpen(false);
+    closePalette();
     setQuery("");
-  }, [setOpen]);
+  }, [closePalette]);
 
-  // Resolved fresh on each render while open, so predicates see current state
-  // rather than whatever was true when the palette was summoned.
-  const available = useMemo(() => {
-    if (!open) return [];
-    return resolveCommands(commands, buildCommandContext());
-  }, [commands, open]);
+  const available = resolveCommands(getAllCommands(), buildCommandContext());
 
-  const groups = useMemo<PaletteGroup<Entry>[]>(() => {
+  const groups = ((): PaletteGroup<Entry>[] => {
     const trimmed = query.trim();
 
     if (!trimmed) {
@@ -105,7 +123,7 @@ export function CommandPalette() {
 
     scored.sort((a, b) => b.score - a.score);
     return [{ key: "results", items: scored.map((s) => s.entry) }];
-  }, [available, query]);
+  })();
 
   const handleActivate = useCallback(
     (entry: Entry) => {
@@ -118,7 +136,7 @@ export function CommandPalette() {
 
   return (
     <PaletteDialog<Entry>
-      open={open}
+      open
       onClose={close}
       title="Command Palette"
       query={query}

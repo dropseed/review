@@ -16,18 +16,33 @@ const MOD_RS = resolve(process.cwd(), "tauri/src/desktop/mod.rs");
 
 interface MenuItem {
   id: string;
+  label?: string;
   accelerator?: string;
 }
+
+/**
+ * Menu ids that deliberately have no command.
+ *
+ * Everything else must be reachable from the palette too — a menu-only action
+ * is one the user cannot find by typing its name.
+ */
+const NOT_COMMANDS = new Set([
+  "check_for_updates",
+  "review_help",
+  "report_issue",
+  "install_cli",
+]);
 
 /** Pull `.id("x")` / `.accelerator("y")` pairs out of the menu builder. */
 function parseMenuItems(source: string): MenuItem[] {
   const items: MenuItem[] = [];
   const builder =
-    /MenuItemBuilder::new\((?:[^)]*)\)([\s\S]*?)\.build\(app\)\?/g;
+    /MenuItemBuilder::new\(("(?:[^"\\]|\\.)*")?[^)]*\)([\s\S]*?)\.build\(app\)\?/g;
 
   let match: RegExpExecArray | null;
   while ((match = builder.exec(source)) !== null) {
-    const body = match[1];
+    const label = match[1]?.slice(1, -1);
+    const body = match[2];
     const id = /\.id\("([^"]+)"\)/.exec(body)?.[1];
     if (!id) continue;
     // Rust escapes a backslash accelerator; unescape so it compares to the
@@ -35,7 +50,7 @@ function parseMenuItems(source: string): MenuItem[] {
     const accelerator = /\.accelerator\("((?:[^"\\]|\\.)*)"\)/
       .exec(body)?.[1]
       ?.replace(/\\\\/g, "\\");
-    items.push({ id, accelerator });
+    items.push({ id, label, accelerator });
   }
   return items;
 }
@@ -43,6 +58,13 @@ function parseMenuItems(source: string): MenuItem[] {
 const source = readFileSync(MOD_RS, "utf8");
 const menuItems = parseMenuItems(source);
 const commandsById = new Map(APP_COMMANDS.map((c) => [c.id, c]));
+
+const commandForMenuId = new Map(
+  Object.entries(MENU_COMMANDS).map(([menuId, { command }]) => [
+    menuId,
+    command,
+  ]),
+);
 
 describe("native menu parity", () => {
   it("finds the menu items in mod.rs", () => {
@@ -52,23 +74,53 @@ describe("native menu parity", () => {
     expect(menuItems.some((i) => i.id === "find_file")).toBe(true);
   });
 
-  it("maps every menu event to a command that exists", () => {
-    for (const [event, commandId] of Object.entries(MENU_COMMANDS)) {
+  it("routes every menu item to a command, or says why not", () => {
+    const unrouted = menuItems
+      .filter(
+        (item) => !commandForMenuId.has(item.id) && !NOT_COMMANDS.has(item.id),
+      )
+      .map((item) => item.id);
+
+    expect(unrouted).toEqual([]);
+  });
+
+  it("maps every menu item to a command that exists", () => {
+    for (const [menuId, { command }] of Object.entries(MENU_COMMANDS)) {
       expect(
-        commandsById.has(commandId),
-        `${event} maps to unknown command "${commandId}"`,
+        commandsById.has(command),
+        `${menuId} maps to unknown command "${command}"`,
       ).toBe(true);
     }
   });
 
-  it("gives every mapped menu item the same accelerator as its command", () => {
-    // Menu ids are the event name minus the "menu:" prefix, with underscores.
-    const eventForMenuId = (menuId: string) =>
-      `menu:${menuId.replace(/_/g, "-")}`;
+  it("names an event mod.rs actually emits", () => {
+    const emitted = new Set(
+      [...source.matchAll(/emit_menu_event\(app, "([^"]+)"/g)].map((m) => m[1]),
+    );
+    const missing = Object.entries(MENU_COMMANDS)
+      .filter(([, { event }]) => !emitted.has(event))
+      .map(([menuId, { event }]) => `${menuId} → ${event}`);
 
+    expect(missing).toEqual([]);
+  });
+
+  it("covers every menu item that carries an accelerator", () => {
+    // Deriving the event name from the menu id looks obvious and is wrong:
+    // `actual_size` emits `menu:zoom-reset`, `settings` emits
+    // `menu:open-settings`. Anything derived silently skipped those, so the
+    // guard against accelerator drift did not cover them. Comparing against
+    // the explicit map instead makes an uncovered accelerator a failure.
+    const uncovered = menuItems
+      .filter((item) => item.accelerator && !commandForMenuId.has(item.id))
+      .map((item) => `${item.id} (${item.accelerator})`);
+
+    expect(uncovered).toEqual([]);
+  });
+
+  it("gives every mapped menu item the same accelerator as its command", () => {
     const mismatches: string[] = [];
     for (const item of menuItems) {
-      const commandId = MENU_COMMANDS[eventForMenuId(item.id)];
+      const commandId = commandForMenuId.get(item.id);
       if (!commandId) continue;
       const command = commandsById.get(commandId);
       if (!command) continue;
@@ -80,6 +132,24 @@ describe("native menu parity", () => {
         mismatches.push(
           `${item.id}: menu has ${item.accelerator ?? "none"}, ` +
             `command "${commandId}" has ${expected ?? "none"}`,
+        );
+      }
+    }
+
+    expect(mismatches).toEqual([]);
+  });
+
+  it("gives every mapped menu item the same label as its command", () => {
+    // The menu and the palette are two views of one action; two names for it
+    // is the same drift as two accelerators, just quieter.
+    const mismatches: string[] = [];
+    for (const item of menuItems) {
+      const commandId = commandForMenuId.get(item.id);
+      const command = commandId ? commandsById.get(commandId) : undefined;
+      if (!command || !item.label) continue;
+      if (item.label !== command.title) {
+        mismatches.push(
+          `${item.id}: menu says "${item.label}", command says "${command.title}"`,
         );
       }
     }

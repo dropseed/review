@@ -99,7 +99,21 @@ describe("negotiation", () => {
 
     term.handlers.get("=u")!([2, 99]); // mode outside 1..3
     expect(kittyFlags("t")).toBe(1);
+  });
+
+  // A push carrying bits we do not implement is a valid push, not a garbled
+  // one — the protocol reserves room above the five bits here. Dropping it
+  // while still honouring the program's later pop would unwind a level it
+  // never pushed, taking the shell's mode with it.
+  it("masks unknown flag bits instead of dropping the push", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+    term.handlers.get(">u")!([1]);
+
     term.handlers.get(">u")!([999]); // wider than five bits
+    expect(kittyFlags("t")).toBe(999 & 31);
+
+    term.handlers.get("<u")!([1]);
     expect(kittyFlags("t")).toBe(1);
   });
 

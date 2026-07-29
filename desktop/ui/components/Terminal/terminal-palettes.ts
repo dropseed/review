@@ -235,14 +235,20 @@ const PALETTES: Record<string, AnsiPalette> = {
 };
 
 /**
- * Nudge a color towards black until it is legible on `bg`.
+ * Nudge a color away from `bg` until it is legible on it.
  *
- * Bounded because the 10%-per-step mix has a fixed point above zero, so it
- * cannot reach black on its own and an unbounded loop would not terminate.
+ * Bounded because the 10%-per-step mix has a fixed point short of the target,
+ * so it cannot reach pure black or white on its own and an unbounded loop
+ * would not terminate.
  */
-function darkenUntilVisible(hex: string, bg: string, target: number): string {
+function nudgeUntilVisible(
+  hex: string,
+  bg: string,
+  target: number,
+  towards: "#000000" | "#ffffff",
+): string {
   for (let i = 0; i < 24 && contrast(hex, bg) < target; i++) {
-    hex = mixColors(hex, "#000000", 0.1);
+    hex = mixColors(hex, towards, 0.1);
   }
   return hex;
 }
@@ -251,11 +257,18 @@ function darkenUntilVisible(hex: string, bg: string, target: number): string {
  * The palette for a theme, or a shared ramp when the theme has no published
  * one (Review's own light theme, and anything derived from a VS Code theme).
  *
- * Light themes get one correction. Several put a paper white in slot 7 or 15
- * — Solarized's `base2` and Flexoki's `paper` are literally the background this
- * terminal draws on — so those slots would render invisible text. Ghostty
- * darkens them for the same reason. Only slots that actually collide are
- * touched, so a palette that is already fine is passed through untouched.
+ * Both schemes get one correction, for the same defect at opposite ends.
+ *
+ * Light themes put a paper white in slot 7 or 15 — Solarized's `base2` and
+ * Flexoki's `paper` are literally the background this terminal draws on — so
+ * those slots render invisible. Dark themes do it in slots 0 and 8: Solarized
+ * Dark's brightBlack is `#002b36` against a `#00212b` surface, 1.1:1. That
+ * slot is the universal dim color (git's abbreviated hashes, `ls` metadata,
+ * every TUI's secondary text), so leaving it uncorrected loses more text than
+ * the light case does. Ghostty nudges for the same reason.
+ *
+ * Only slots that actually collide are touched, so a palette that is already
+ * fine is passed through untouched.
  */
 export function ansiPaletteFor(
   themeId: string,
@@ -265,14 +278,22 @@ export function ansiPaletteFor(
   const base =
     PALETTES[themeId] ??
     (colorScheme === "light" ? GITHUB_LIGHT : TOMORROW_NIGHT);
-  if (colorScheme !== "light") return base;
-
   // 1.6:1 is well below a text-legibility threshold — the goal is only to stop
   // a color being *identical* to the background, not to restyle the theme.
   const MIN = 1.6;
+  const light = colorScheme === "light";
+  const slots = light
+    ? (["white", "brightWhite"] as const)
+    : (["black", "brightBlack"] as const);
+
   const fixed = { ...base };
-  for (const slot of ["white", "brightWhite"] as const) {
-    fixed[slot] = darkenUntilVisible(fixed[slot], background, MIN);
+  for (const slot of slots) {
+    fixed[slot] = nudgeUntilVisible(
+      fixed[slot],
+      background,
+      MIN,
+      light ? "#000000" : "#ffffff",
+    );
   }
   return fixed;
 }

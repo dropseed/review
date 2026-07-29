@@ -1,12 +1,13 @@
 export {
   registerCommands,
   useRegisterCommands,
-  useAllCommands,
+  useCommandRegistryVersion,
   getAllCommands,
   resolveCommands,
   findCommand,
 } from "./registry";
 export { APP_COMMANDS, nextFontSize } from "./appCommands";
+export { reviewCommands } from "./reviewCommands";
 export { useCommandDispatch, buildCommandContext } from "./useCommandDispatch";
 export {
   formatShortcut,
@@ -16,6 +17,7 @@ export {
   MOD_SYMBOL,
 } from "./shortcuts";
 export type { Shortcut } from "./shortcuts";
+export type { CommandSource } from "./registry";
 export type {
   Command,
   CommandContext,

@@ -94,8 +94,6 @@ export interface NavigationSlice {
   setLastClickedNarrativeLinkOffset: (offset: number | null) => void;
 
   // Modal state
-  classificationsModalOpen: boolean;
-  setClassificationsModalOpen: (open: boolean) => void;
 
   // Review scope: a named, exact hunk-ID set (a status bucket, a commit, the
   // uncommitted bucket, or a guide group). Set by clicking a group header,
@@ -144,20 +142,6 @@ export interface NavigationSlice {
     mode: "staged" | "unstaged";
   }) => void;
   closeWorkingTreeMultiView: () => void;
-
-  // Search and command overlays. Their open state lives here rather than in
-  // the component that renders them so a command can open any of them without
-  // that component having to thread a setter outward.
-  contentSearchOpen: boolean;
-  setContentSearchOpen: (open: boolean) => void;
-  fileFinderOpen: boolean;
-  setFileFinderOpen: (open: boolean) => void;
-  symbolSearchOpen: boolean;
-  setSymbolSearchOpen: (open: boolean) => void;
-  commandPaletteOpen: boolean;
-  setCommandPaletteOpen: (open: boolean) => void;
-  debugModalOpen: boolean;
-  setDebugModalOpen: (open: boolean) => void;
 
   // Request a files panel tab switch from outside the panel
   requestedFilesPanelTab: string | null;
@@ -638,9 +622,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     set({ lastClickedNarrativeLinkOffset: offset }),
 
   // Modal state
-  classificationsModalOpen: false,
-  setClassificationsModalOpen: (open) =>
-    set({ classificationsModalOpen: open }),
 
   scope: null,
   setScope: (scope) => set({ scope }),
@@ -707,16 +688,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   closeWorkingTreeMultiView: () => set({ workingTreeMultiView: null }),
 
   // Content search modal
-  contentSearchOpen: false,
-  setContentSearchOpen: (open) => set({ contentSearchOpen: open }),
-  fileFinderOpen: false,
-  setFileFinderOpen: (open) => set({ fileFinderOpen: open }),
-  symbolSearchOpen: false,
-  setSymbolSearchOpen: (open) => set({ symbolSearchOpen: open }),
-  commandPaletteOpen: false,
-  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
-  debugModalOpen: false,
-  setDebugModalOpen: (open) => set({ debugModalOpen: open }),
 
   // Requested files panel tab
   requestedFilesPanelTab: null,

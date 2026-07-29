@@ -24,7 +24,7 @@ function command(id: string, extra: Partial<Command> = {}): Command {
 function context(overrides: Partial<CommandContext> = {}): CommandContext {
   return {
     store: {} as CommandContext["store"],
-    terminalFocused: false,
+    keys: { terminalFocused: false },
     ui: {} as CommandContext["ui"],
     ...overrides,
   };
@@ -96,10 +96,11 @@ describe("resolution", () => {
   });
 
   it("evaluates predicates against the context it is given", () => {
-    const cmd = command("a", { isEnabled: (ctx) => ctx.terminalFocused });
+    const cmd = command("a", { isEnabled: (ctx) => ctx.keys.terminalFocused });
     expect(resolveCommands([cmd], context())[0].enabled).toBe(false);
     expect(
-      resolveCommands([cmd], context({ terminalFocused: true }))[0].enabled,
+      resolveCommands([cmd], context({ keys: { terminalFocused: true } }))[0]
+        .enabled,
     ).toBe(true);
   });
 

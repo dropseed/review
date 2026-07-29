@@ -10,6 +10,12 @@ import {
   type IClipboardProvider,
 } from "@xterm/addon-clipboard";
 import { getApiClient } from "../../api";
+// Imported from the leaf modules, not the `commands` barrel: the barrel also
+// pulls `host`, which imports the assembled store — and `preferencesSlice`
+// imports this file, so going through the barrel closes a cycle back onto the
+// store's own construction. These two modules touch nothing but types.
+import { IS_MAC, matchesEvent } from "../../commands/shortcuts";
+import { getAllCommands } from "../../commands/registry";
 import { getPlatformServices } from "../../platform";
 import { buildXtermTheme } from "./xterm-theme";
 import {
@@ -258,15 +264,35 @@ export function startTerminalOutput(
  * bubbling to the app and the browser's own handling still runs — that's how
  * Cmd+C/Cmd+V stay native copy/paste.
  */
+/**
+ * Whether this keystroke is one the app has bound, rather than the shell's.
+ *
+ * On macOS every ⌘ chord is the app's. Elsewhere ⌘ and Ctrl collapse onto one
+ * key that the shell also uses heavily, so membership in the command registry
+ * is the only honest test.
+ */
+function isAppChord(event: KeyboardEvent): boolean {
+  if (IS_MAC) return event.metaKey;
+  if (!event.ctrlKey) return false;
+  return getAllCommands().some(
+    (command) => command.shortcut && matchesEvent(command.shortcut, event),
+  );
+}
+
 function handleCustomKey(id: string, event: KeyboardEvent): boolean {
   const release = event.type === "keyup";
   if (!release && event.type !== "keydown") return true;
 
-  // Cmd chords are app shortcuts (⌘D split, ⌘` toggle, ⌘C/⌘V) — macOS
-  // terminals never forward them to the PTY. Ctrl chords are the shell's
-  // (Ctrl+C, Ctrl+D, Ctrl+R) and must pass straight through. Release events
-  // skip this: the app already acted on the press.
-  if (!release && event.metaKey) return false;
+  // The platform's app-shortcut modifier (⌘ on macOS, Ctrl elsewhere) belongs
+  // to the app — ⌘D split, ⌘` toggle, ⌘C/⌘V. On macOS the shell's Ctrl chords
+  // (Ctrl+C, Ctrl+D, Ctrl+R) are a different key and pass straight through; on
+  // Linux and Windows they are the same key, so only the chords the app has
+  // actually claimed are withheld and everything else reaches the PTY.
+  //
+  // This applies to releases too. Skipping it there meant that with kitty
+  // `report_events` on, the *release* of an app shortcut was encoded and
+  // written to the PTY as a release with no matching press.
+  if (isAppChord(event)) return false;
 
   // When a program has asked for the kitty keyboard protocol, every modified
   // key goes through it — that is the whole point of the program opting in.

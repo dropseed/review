@@ -1317,41 +1317,26 @@ pub fn uninstall_cli() -> Result<(), String> {
 
 // --- Menu state ---
 
+/// Apply the frontend's verdict on which menu items are available.
+///
+/// The rules live in the command registry (`ui/commands/appCommands.ts`), not
+/// here. They used to live in both, with a coarse `(has_repo, view)` model on
+/// this side that disagreed with the commands' own predicates — and because
+/// macOS lets a *disabled* item's accelerator fall through to the webview, a
+/// greyed-out menu item's shortcut still ran.
 #[tauri::command]
-pub fn update_menu_state(
+pub fn set_menu_enabled(
     app: tauri::AppHandle,
-    has_repo: bool,
-    view: String,
+    states: std::collections::HashMap<String, bool>,
 ) -> Result<(), String> {
     use tauri::Manager;
 
     let items: tauri::State<'_, super::MenuItems> = app.state();
-    let in_review = has_repo && view != "none";
-
-    items
-        .refresh
-        .set_enabled(has_repo)
-        .map_err(|e| e.to_string())?;
-    items
-        .find_file
-        .set_enabled(in_review)
-        .map_err(|e| e.to_string())?;
-    items
-        .search_in_files
-        .set_enabled(in_review)
-        .map_err(|e| e.to_string())?;
-    items
-        .find_symbols
-        .set_enabled(in_review && view == "browse")
-        .map_err(|e| e.to_string())?;
-    items
-        .toggle_sidebar
-        .set_enabled(in_review)
-        .map_err(|e| e.to_string())?;
-    items
-        .reveal_in_browse
-        .set_enabled(in_review)
-        .map_err(|e| e.to_string())?;
+    for (id, enabled) in states {
+        if let Some(item) = items.0.get(&id) {
+            item.set_enabled(enabled).map_err(|e| e.to_string())?;
+        }
+    }
 
     Ok(())
 }

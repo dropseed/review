@@ -5,6 +5,7 @@ import { getPlatformServices } from "../platform";
 
 import { createPreferencesSlice } from "./slices/preferencesSlice";
 import { createNavigationSlice } from "./slices/navigationSlice";
+import { createOverlaySlice } from "./slices/overlaySlice";
 import { createGitSlice } from "./slices/gitSlice";
 import { createClassificationSlice } from "./slices/classificationSlice";
 import { createFilesSlice } from "./slices/filesSlice";
@@ -29,6 +30,7 @@ const platform = getPlatformServices();
 export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createPreferencesSlice(platform.storage)(...args),
   ...createNavigationSlice(...args),
+  ...createOverlaySlice(...args),
   ...createGitSlice(apiClient)(...args),
   ...createClassificationSlice(apiClient)(...args),
   ...createFilesSlice(apiClient)(...args),

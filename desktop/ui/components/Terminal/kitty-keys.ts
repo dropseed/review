@@ -142,7 +142,12 @@ export function registerKittyHandlers(
     // CSI > flags u — push. No parameter means "push 0", i.e. disable.
     term.parser.registerCsiHandler({ prefix: ">", final: "u" }, (params) => {
       const flags = params.length === 1 ? (param(params, 0) ?? 0) : 0;
-      if (flags <= FLAGS_MAX) push(id, flags);
+      // Mask unknown bits rather than refusing the push. The protocol reserves
+      // room above the five bits we implement, and dropping the push while
+      // still honouring the program's later pop unwinds a level it never
+      // pushed — taking the shell's mode with it. Ghostty masks for the same
+      // reason.
+      push(id, flags & FLAGS_MAX);
       return true;
     }),
     // CSI < n u — pop n levels, defaulting to one.

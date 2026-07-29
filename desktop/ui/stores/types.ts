@@ -6,6 +6,7 @@ import type { StorageService } from "../platform";
 // Import all slice types
 import type { PreferencesSlice } from "./slices/preferencesSlice";
 import type { NavigationSlice } from "./slices/navigationSlice";
+import type { OverlaySlice } from "./slices/overlaySlice";
 import type { GitSlice } from "./slices/gitSlice";
 import type { ClassificationSlice } from "./slices/classificationSlice";
 import type { FilesSlice } from "./slices/filesSlice";
@@ -25,6 +26,7 @@ import type { TerminalSlice } from "./slices/terminalSlice";
 // Combined store type
 export type ReviewStore = PreferencesSlice &
   NavigationSlice &
+  OverlaySlice &
   GitSlice &
   ClassificationSlice &
   FilesSlice &

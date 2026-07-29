@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useReviewStore } from "../stores";
-import { focusedTerminalId } from "../components/Terminal/close";
+import { readContextKeys } from "./contextKeys";
 import { getCommandUi } from "./host";
 import { getAllCommands } from "./registry";
 import { matchesEvent } from "./shortcuts";
@@ -10,7 +10,7 @@ import type { CommandContext } from "./types";
 export function buildCommandContext(): CommandContext {
   return {
     store: useReviewStore.getState(),
-    terminalFocused: focusedTerminalId() !== null,
+    keys: readContextKeys(),
     ui: getCommandUi(),
   };
 }
@@ -55,7 +55,7 @@ export function useCommandDispatch(): void {
 
         ctx ??= buildCommandContext();
 
-        if (ctx.terminalFocused) {
+        if (ctx.keys.terminalFocused) {
           if (!command.allowInTerminal) continue;
         } else if (isTextEntry(event.target) && !command.allowInInput) {
           continue;

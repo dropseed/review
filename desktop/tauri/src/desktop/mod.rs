@@ -28,14 +28,12 @@ use tauri_plugin_opener::OpenerExt;
 /// Managed state holding references to menu items whose enabled state
 /// changes dynamically based on the current app view.
 #[cfg(desktop)]
-pub struct MenuItems {
-    pub refresh: MenuItem<tauri::Wry>,
-    pub find_file: MenuItem<tauri::Wry>,
-    pub find_symbols: MenuItem<tauri::Wry>,
-    pub search_in_files: MenuItem<tauri::Wry>,
-    pub toggle_sidebar: MenuItem<tauri::Wry>,
-    pub reveal_in_browse: MenuItem<tauri::Wry>,
-}
+/// The menu items whose enabled state the frontend drives.
+///
+/// Keyed by menu id rather than named fields: the frontend decides
+/// availability by resolving the command registry, and sends back a map, so
+/// this side does not need to know which items exist or why one is off.
+pub struct MenuItems(pub std::collections::HashMap<String, MenuItem<tauri::Wry>>);
 
 /// Managed state that controls whether Sentry events are actually sent.
 /// Both the `before_send` callback and the `set_sentry_consent` command
@@ -371,7 +369,7 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+W")
                 .build(app)?;
 
-            let open_repo = MenuItemBuilder::new("Open Repository...")
+            let open_repo = MenuItemBuilder::new("Open Repository…")
                 .id("open_repo")
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?;
@@ -386,7 +384,7 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?;
 
-            let refresh = MenuItemBuilder::new("Refresh")
+            let refresh = MenuItemBuilder::new("Refresh Review")
                 .id("refresh")
                 .accelerator("CmdOrCtrl+Shift+R")
                 .enabled(false)
@@ -419,7 +417,7 @@ pub fn run() {
                 .id("check_for_updates")
                 .build(app)?;
 
-            let settings = MenuItemBuilder::new("Settings...")
+            let settings = MenuItemBuilder::new("Settings…")
                 .id("settings")
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?;
@@ -432,19 +430,19 @@ pub fn run() {
                 .id("report_issue")
                 .build(app)?;
 
-            let find_file = MenuItemBuilder::new("Find File")
+            let find_file = MenuItemBuilder::new("Go to File…")
                 .id("find_file")
                 .accelerator("CmdOrCtrl+P")
                 .enabled(false)
                 .build(app)?;
 
-            let find_symbols = MenuItemBuilder::new("Find Symbols")
+            let find_symbols = MenuItemBuilder::new("Go to Symbol…")
                 .id("find_symbols")
                 .accelerator("CmdOrCtrl+R")
                 .enabled(false)
                 .build(app)?;
 
-            let search_in_files = MenuItemBuilder::new("Search in Files")
+            let search_in_files = MenuItemBuilder::new("Search in Files…")
                 .id("search_in_files")
                 .accelerator("CmdOrCtrl+Shift+F")
                 .enabled(false)
@@ -462,7 +460,7 @@ pub fn run() {
                 .enabled(false)
                 .build(app)?;
 
-            let new_review = MenuItemBuilder::new("New Review")
+            let new_review = MenuItemBuilder::new("New Review…")
                 .id("new_review")
                 .accelerator("CmdOrCtrl+Shift+N")
                 .build(app)?;
@@ -554,14 +552,14 @@ pub fn run() {
 
             app.set_menu(menu)?;
 
-            app.manage(MenuItems {
-                refresh,
-                find_file,
-                find_symbols,
-                search_in_files,
-                toggle_sidebar,
-                reveal_in_browse,
-            });
+            app.manage(MenuItems(std::collections::HashMap::from([
+                ("refresh".to_owned(), refresh),
+                ("find_file".to_owned(), find_file),
+                ("find_symbols".to_owned(), find_symbols),
+                ("search_in_files".to_owned(), search_in_files),
+                ("toggle_sidebar".to_owned(), toggle_sidebar),
+                ("reveal_in_browse".to_owned(), reveal_in_browse),
+            ])));
 
             // Terminals live in a separate `review-daemon` process so they
             // survive quitting — or crashing — this app. Nothing is spawned or
@@ -717,7 +715,7 @@ pub fn run() {
             commands::install_cli,
             commands::uninstall_cli,
             commands::set_sentry_consent,
-            commands::update_menu_state,
+            commands::set_menu_enabled,
             commands::check_reviews_freshness,
             commands::detect_vscode_theme,
             commands::set_window_background_color,

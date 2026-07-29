@@ -47,11 +47,7 @@ export function getCommandUi(): CommandUi {
   const store = () => useReviewStore.getState();
 
   return {
-    openCommandPalette: () => store().setCommandPaletteOpen(true),
-    openFileFinder: () => store().setFileFinderOpen(true),
-    openSymbolSearch: () => store().setSymbolSearchOpen(true),
-    openContentSearch: () => store().setContentSearchOpen(true),
-    openDebug: () => store().setDebugModalOpen(true),
+    openOverlay: (id) => store().openOverlay(id),
     zoom: (direction) =>
       store().setCodeFontSize(nextFontSize(store().codeFontSize, direction)),
     restartLsp: async () => {
@@ -67,7 +63,6 @@ export function getCommandUi(): CommandUi {
         console.error("[command] Failed to restart LSP servers:", e);
       }
     },
-    openSettings: resolve("openSettings") ?? noop,
     openRepo: resolve("openRepo") ?? noop,
     navigate: resolve("navigate") ?? noop,
     closeTab: resolve("closeTab") ?? noop,

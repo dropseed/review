@@ -177,6 +177,10 @@ export function PaletteDialog<T>({
     (index: number) => `${baseId}-option-${index}`,
     [baseId],
   );
+  const groupId = useCallback(
+    (key: string) => `${baseId}-group-${key}`,
+    [baseId],
+  );
   const listId = `${baseId}-listbox`;
 
   useEffect(() => {
@@ -230,6 +234,10 @@ export function PaletteDialog<T>({
           setSelectedIndex(Math.max(0, flat.length - 1));
           break;
         case "Enter":
+          // Only a bare Enter activates. A modified Enter belongs to whatever
+          // global shortcut owns that chord, and would otherwise fire both.
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+            return;
           if (!flat[selectedIndex]) return;
           event.preventDefault();
           activate(selectedIndex, event);
@@ -239,7 +247,9 @@ export function PaletteDialog<T>({
     [activate, flat, onKeyDown, selectedIndex, setSelectedIndex],
   );
 
-  const hasResults = flat.length > 0;
+  // The error branch renders in place of the list, so there are no options to
+  // point at even when the previous result set is still in state.
+  const hasResults = !error && flat.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -312,8 +322,16 @@ export function PaletteDialog<T>({
               </div>
             ) : (
               sections.map((section) => (
-                <div key={section.key}>
-                  {section.header}
+                <div
+                  key={section.key}
+                  role={section.header ? "group" : undefined}
+                  aria-labelledby={
+                    section.header ? groupId(section.key) : undefined
+                  }
+                >
+                  {section.header && (
+                    <div id={groupId(section.key)}>{section.header}</div>
+                  )}
                   {section.items.map((item, i) => {
                     const index = section.offset + i;
                     const selected = index === selectedIndex;

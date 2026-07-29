@@ -10,6 +10,8 @@ import {
 } from "react";
 import { useReviewStore } from "../stores";
 import { useProvideCommandUi } from "../commands/host";
+import { useRegisterCommands } from "../commands";
+import { TERMINAL_COMMANDS } from "./Terminal/commands";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
@@ -81,18 +83,8 @@ export function ReviewView({
   const comparison = useReviewStore((s) => s.comparison);
   const reviewRef = useReviewStore((s) => s.reviewRef);
   const reviewBaseOverride = useReviewStore((s) => s.reviewBaseOverride);
-  const classificationsModalOpen = useReviewStore(
-    (s) => s.classificationsModalOpen,
-  );
-
-  const contentSearchOpen = useReviewStore((s) => s.contentSearchOpen);
-  const setContentSearchOpen = useReviewStore((s) => s.setContentSearchOpen);
-  const fileFinderOpen = useReviewStore((s) => s.fileFinderOpen);
-  const setFileFinderOpen = useReviewStore((s) => s.setFileFinderOpen);
-  const symbolSearchOpen = useReviewStore((s) => s.symbolSearchOpen);
-  const setSymbolSearchOpen = useReviewStore((s) => s.setSymbolSearchOpen);
-  const debugModalOpen = useReviewStore((s) => s.debugModalOpen);
-  const setDebugModalOpen = useReviewStore((s) => s.setDebugModalOpen);
+  const activeOverlay = useReviewStore((s) => s.activeOverlay);
+  const closeOverlay = useReviewStore((s) => s.closeOverlay);
 
   // A comparison whose base or compare branch was deleted resolves to git's
   // empty tree, so the diff would otherwise render every file as a deletion.
@@ -241,7 +233,7 @@ export function ReviewView({
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      useReviewStore.getState().setClassificationsModalOpen(false);
+      useReviewStore.getState().closeOverlay("classifications");
       useReviewStore.getState().navigateToBrowse(filePath, { hunkId });
       useReviewStore.setState({
         scrollTarget: { type: "hunk", hunkId },
@@ -255,6 +247,7 @@ export function ReviewView({
   });
 
   useKeyboardNavigation();
+  useRegisterCommands(TERMINAL_COMMANDS);
   // Deliberately not `newWindow` — AppShell already provides it, and the same
   // handler registered twice makes which one wins depend on effect-run order.
   useProvideCommandUi(
@@ -565,53 +558,39 @@ export function ReviewView({
       )}
 
       {/* Debug Modal */}
-      {debugModalOpen && (
+      {activeOverlay === "debug" && (
         <Suspense fallback={null}>
-          <DebugModal
-            isOpen={debugModalOpen}
-            onClose={() => setDebugModalOpen(false)}
-          />
+          <DebugModal isOpen onClose={() => closeOverlay("debug")} />
         </Suspense>
       )}
 
       {/* File Finder */}
-      {fileFinderOpen && (
+      {activeOverlay === "fileFinder" && (
         <Suspense fallback={null}>
-          <FileFinder
-            isOpen={fileFinderOpen}
-            onClose={() => setFileFinderOpen(false)}
-          />
+          <FileFinder isOpen onClose={() => closeOverlay("fileFinder")} />
         </Suspense>
       )}
 
       {/* Content Search */}
-      {contentSearchOpen && (
+      {activeOverlay === "contentSearch" && (
         <Suspense fallback={null}>
-          <ContentSearch
-            isOpen={contentSearchOpen}
-            onClose={() => setContentSearchOpen(false)}
-          />
+          <ContentSearch isOpen onClose={() => closeOverlay("contentSearch")} />
         </Suspense>
       )}
 
       {/* Symbol Search */}
-      {symbolSearchOpen && (
+      {activeOverlay === "symbolSearch" && (
         <Suspense fallback={null}>
-          <SymbolSearch
-            isOpen={symbolSearchOpen}
-            onClose={() => setSymbolSearchOpen(false)}
-          />
+          <SymbolSearch isOpen onClose={() => closeOverlay("symbolSearch")} />
         </Suspense>
       )}
 
       {/* Classifications Modal */}
-      {classificationsModalOpen && (
+      {activeOverlay === "classifications" && (
         <Suspense fallback={null}>
           <ClassificationsModal
-            isOpen={classificationsModalOpen}
-            onClose={() =>
-              useReviewStore.getState().setClassificationsModalOpen(false)
-            }
+            isOpen
+            onClose={() => closeOverlay("classifications")}
             onSelectHunk={handleClassificationSelectHunk}
           />
         </Suspense>

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -9,7 +9,6 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { TabRail } from "./components/TabRail";
-import { getPlatformServices } from "./platform";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -27,6 +26,7 @@ import {
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
 import {
   APP_COMMANDS,
+  reviewCommands,
   useRegisterCommands,
   useCommandDispatch,
 } from "./commands";
@@ -47,9 +47,10 @@ const ACTIVITY_POLL_MS = 300_000;
  */
 function AppShell() {
   const navigate = useNavigate();
+  const activeOverlay = useReviewStore((s) => s.activeOverlay);
+  const closeOverlay = useReviewStore((s) => s.closeOverlay);
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
-  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     loadGlobalReviews();
@@ -84,14 +85,6 @@ function AppShell() {
     };
   }, [loadLocalActivity]);
 
-  // Global menu:open-settings listener (always mounted)
-  useEffect(() => {
-    const platform = getPlatformServices();
-    return platform.menuEvents.on("menu:open-settings", () =>
-      setShowSettings(true),
-    );
-  }, []);
-
   const {
     repoStatus,
     repoError,
@@ -115,11 +108,11 @@ function AppShell() {
   // dispatched here rather than by the native menu, so they work identically
   // in the desktop app and in web mode (which has no native menu at all).
   useRegisterCommands(APP_COMMANDS);
+  useRegisterCommands(reviewCommands);
   useProvideCommandUi(
     useMemo(
       () => ({
         openRepo: () => handleOpenRepoRef.current(),
-        openSettings: () => setShowSettings(true),
         newWindow: () => handleNewWindow(),
         navigate: (to: string) => navigate(to),
       }),
@@ -127,13 +120,6 @@ function AppShell() {
     ),
   );
   useCommandDispatch();
-
-  useEffect(() => {
-    const platform = getPlatformServices();
-    return platform.menuEvents.on("menu:open-repo", () => {
-      handleOpenRepoRef.current();
-    });
-  }, []);
 
   useMenuState();
   useReviewFreshness();
@@ -173,12 +159,9 @@ function AppShell() {
         </div>
       </div>
 
-      {showSettings && (
+      {activeOverlay === "settings" && (
         <Suspense fallback={null}>
-          <SettingsModal
-            isOpen={showSettings}
-            onClose={() => setShowSettings(false)}
-          />
+          <SettingsModal isOpen onClose={() => closeOverlay("settings")} />
         </Suspense>
       )}
 
