@@ -12,6 +12,11 @@
  * stack-based, so a TUI can enable it, a child process can push its own
  * setting, and popping restores whatever the parent had.
  *
+ * The stack is per screen buffer, which is the protocol's safety net rather
+ * than a detail: a full-screen program does its work on the alternate screen,
+ * so whatever it pushes there — and forgets to pop, or never gets the chance to
+ * pop because it was killed — cannot follow the shell back to the main screen.
+ *
  * Scope: negotiation is complete. Encoding implements `disambiguate` (1),
  * `report_events` (2), `report_all` (8) and `report_associated` (16). For
  * `report_alternates` (4) the shifted key is reported but the base-layout key
@@ -40,16 +45,30 @@ const FLAGS_MAX = 31;
  */
 const STACK_DEPTH = 8;
 
-/** Per-terminal mode stacks, keyed the same way as the terminal registry. */
-const stacks = new Map<string, number[]>();
+/** Which buffer a terminal is showing. Each keeps its own mode stack. */
+type ScreenBuffer = "normal" | "alternate";
+
+interface KittyState {
+  normal: number[];
+  alternate: number[];
+  screen: ScreenBuffer;
+}
+
+/** Per-terminal mode state, keyed the same way as the terminal registry. */
+const states = new Map<string, KittyState>();
+
+function stateFor(id: string): KittyState {
+  let state = states.get(id);
+  if (!state) {
+    state = { normal: [0], alternate: [0], screen: "normal" };
+    states.set(id, state);
+  }
+  return state;
+}
 
 function stackFor(id: string): number[] {
-  let stack = stacks.get(id);
-  if (!stack) {
-    stack = [0];
-    stacks.set(id, stack);
-  }
-  return stack;
+  const state = stateFor(id);
+  return state[state.screen];
 }
 
 /** The flags currently in force, 0 when the protocol is off. */
@@ -58,18 +77,29 @@ export function kittyFlags(id: string): number {
   return stack[stack.length - 1] ?? 0;
 }
 
-/** Drop a terminal's stack (tab closed, session killed). */
+/** Drop a terminal's state (tab closed, session killed). */
 export function forgetKittyState(id: string): void {
-  stacks.delete(id);
+  states.delete(id);
 }
 
 /**
- * Reset to "off". A full terminal reset (RIS) clears the mode, otherwise a
- * program that crashes mid-session leaves every later keystroke encoded for a
- * protocol nothing is reading.
+ * Follow the terminal onto the other screen buffer.
+ *
+ * The stacks do not merge and the one being left is not cleared: a program that
+ * drops to the main screen to run a child and comes back expects to find its
+ * own mode still in force. What it cannot do is impose that mode on the shell.
+ */
+function setScreen(id: string, screen: ScreenBuffer): void {
+  stateFor(id).screen = screen;
+}
+
+/**
+ * Reset to "off" on both screens. A full terminal reset (RIS) clears the mode,
+ * otherwise a program that crashes mid-session leaves every later keystroke
+ * encoded for a protocol nothing is reading.
  */
 function resetKittyState(id: string): void {
-  stacks.set(id, [0]);
+  states.set(id, { normal: [0], alternate: [0], screen: "normal" });
 }
 
 function push(id: string, flags: number): void {
@@ -80,13 +110,14 @@ function push(id: string, flags: number): void {
 }
 
 function pop(id: string, count: number): void {
-  const stack = stackFor(id);
+  const state = stateFor(id);
   // A pop deeper than the stack is a program losing track of its own state;
   // treat it as "put everything back" rather than half-unwinding.
   if (count >= STACK_DEPTH) {
-    stacks.set(id, [0]);
+    state[state.screen] = [0];
     return;
   }
+  const stack = state[state.screen];
   for (let i = 0; i < count; i++) {
     if (stack.length > 1) stack.pop();
     else stack[0] = 0;
@@ -129,11 +160,21 @@ export function registerKittyHandlers(
         cb: () => boolean,
       ) => { dispose: () => void };
     };
+    buffer: {
+      active: { type: ScreenBuffer };
+      onBufferChange: (cb: () => void) => { dispose: () => void };
+    };
   },
   id: string,
   reply: (data: string) => void,
 ): () => void {
   const handlers = [
+    // Which stack is live follows the screen buffer. Watching xterm's own event
+    // rather than parsing `CSI ?1049h` covers every way in — 47, 1047, 1049 and
+    // a reset all arrive here as one signal.
+    term.buffer.onBufferChange(() => {
+      setScreen(id, term.buffer.active.type);
+    }),
     // CSI ? u — what mode are we in?
     term.parser.registerCsiHandler({ prefix: "?", final: "u" }, () => {
       reply(`\x1b[?${kittyFlags(id)}u`);
@@ -186,6 +227,13 @@ interface KeyEntry {
   /** Modifier keys are silent unless the program asked for every key. */
   modifier?: boolean;
 }
+
+/**
+ * Finals that DECCKM (`CSI ?1h`, application cursor keys) switches to SS3 —
+ * the arrows plus Home and End. Function keys share the compact shape but not
+ * this behaviour, so they are matched by final rather than by key name.
+ */
+const CURSOR_FINALS = new Set(["A", "B", "C", "D", "H", "F"]);
 
 /** Keys addressed by `KeyboardEvent.key`. */
 const BY_KEY: Record<string, KeyEntry> = {
@@ -309,6 +357,14 @@ function modifierBits(event: KeyboardEvent, consumedShift: boolean): number {
   return bits;
 }
 
+export interface EncodeOptions {
+  /**
+   * DECCKM, from `term.modes.applicationCursorKeysMode`. Only reaches the
+   * unmodified cursor keys; a modified one is `CSI 1 ; mods A` either way.
+   */
+  applicationCursorKeys?: boolean;
+}
+
 /**
  * Encode a key event, or return `null` to let xterm.js handle it normally.
  *
@@ -319,6 +375,7 @@ function modifierBits(event: KeyboardEvent, consumedShift: boolean): number {
 export function encodeKittyKey(
   event: KeyboardEvent,
   flags: number,
+  opts: EncodeOptions = {},
 ): string | null {
   if (flags === 0) return null;
 
@@ -368,7 +425,14 @@ export function encodeKittyKey(
   }
 
   const build = (target: KeyEntry): string =>
-    buildSequence(target, { mods, event, flags, text, release });
+    buildSequence(target, {
+      mods,
+      event,
+      flags,
+      text,
+      release,
+      applicationCursorKeys: opts.applicationCursorKeys === true,
+    });
 
   if (!entry) {
     // Not a key we have a number for: fall back to its codepoint, or hand it
@@ -390,11 +454,12 @@ interface SequenceContext {
   flags: number;
   text: string;
   release: boolean;
+  applicationCursorKeys: boolean;
 }
 
 function buildSequence(
   entry: KeyEntry,
-  { mods, event, flags, text, release }: SequenceContext,
+  { mods, event, flags, text, release, applicationCursorKeys }: SequenceContext,
 ): string {
   // The protocol encodes modifiers as a 1-based bitmask, so "no modifiers" is
   // 1 and is omitted entirely.
@@ -415,6 +480,12 @@ function buildSequence(
   if (entry.final !== "u" && entry.final !== "~") {
     if (wantEvent) return `\x1b[1;${modValue}:${eventType}${entry.final}`;
     if (modValue > 1) return `\x1b[1;${modValue}${entry.final}`;
+    // A program in application-cursor mode reads SS3, not CSI. Only the bare
+    // form changes: once there are modifiers the CSI form is the only one that
+    // can carry them, which is why DECCKM does not apply above.
+    if (applicationCursorKeys && CURSOR_FINALS.has(entry.final)) {
+      return `\x1bO${entry.final}`;
+    }
     return `\x1b[${entry.final}`;
   }
 

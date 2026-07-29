@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { Terminal } from "@xterm/xterm";
 import {
   encodeKittyKey,
   forgetKittyState,
@@ -22,9 +23,23 @@ function fakeTerm() {
     (params: (number | number[])[]) => boolean
   >();
   const escHandlers = new Map<string, () => boolean>();
+  const bufferListeners: (() => void)[] = [];
+  const buffer = {
+    active: { type: "normal" as "normal" | "alternate" },
+    onBufferChange(cb: () => void) {
+      bufferListeners.push(cb);
+      return { dispose: () => {} };
+    },
+  };
   return {
     handlers,
     escHandlers,
+    buffer,
+    /** What xterm does on `CSI ?1049h` / `l`: switch, then announce. */
+    switchScreen(type: "normal" | "alternate") {
+      buffer.active.type = type;
+      bufferListeners.forEach((cb) => cb());
+    },
     parser: {
       registerCsiHandler(
         id: { prefix?: string; final: string },
@@ -137,6 +152,105 @@ describe("negotiation", () => {
   });
 });
 
+describe("screen buffers", () => {
+  /**
+   * The bug this exists to prevent: a TUI enables the protocol on the alternate
+   * screen and is killed before it can pop. With one shared stack the shell
+   * inherits the mode and every keystroke encodes for a reader that is gone —
+   * Ctrl+C arrives as `CSI 99;5u`, so the terminal cannot even be told `reset`.
+   */
+  it("does not let an alt-screen mode follow the shell home", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+
+    term.switchScreen("alternate");
+    term.handlers.get(">u")!([DISAMBIGUATE]);
+    expect(kittyFlags("t")).toBe(1);
+
+    // The TUI dies. Nothing pops; the shell simply gets its screen back.
+    term.switchScreen("normal");
+    expect(kittyFlags("t")).toBe(0);
+  });
+
+  it("keeps a program's mode while it visits the main screen", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+
+    term.switchScreen("alternate");
+    term.handlers.get(">u")!([9]);
+    // Dropping out to run a child process and coming back is a normal thing
+    // for a full-screen program to do.
+    term.switchScreen("normal");
+    term.switchScreen("alternate");
+    expect(kittyFlags("t")).toBe(9);
+  });
+
+  it("keeps the shell's own mode across a program's visit", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+
+    // A shell that negotiated the protocol for its own line editor.
+    term.handlers.get(">u")!([DISAMBIGUATE]);
+    term.switchScreen("alternate");
+    term.handlers.get(">u")!([9]);
+    term.switchScreen("normal");
+    expect(kittyFlags("t")).toBe(1);
+  });
+
+  it("clears both screens on a terminal reset", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+    term.handlers.get(">u")!([DISAMBIGUATE]);
+    term.switchScreen("alternate");
+    term.handlers.get(">u")!([9]);
+
+    term.escHandlers.get("c")!();
+
+    // A reset returns to the main screen, and finds nothing set there...
+    expect(kittyFlags("t")).toBe(0);
+    // ...nor waiting on the screen it just left.
+    term.switchScreen("alternate");
+    expect(kittyFlags("t")).toBe(0);
+  });
+});
+
+/**
+ * The fake above tests the logic; this tests the seam. Both fixes here read
+ * state that xterm owns — `buffer.active.type` and `modes` — off events xterm
+ * decides when to fire, and a fake that agrees with a wrong assumption about
+ * either would pass while the terminal stayed broken.
+ */
+describe("against a real xterm", () => {
+  const write = (term: Terminal, data: string) =>
+    new Promise<void>((resolve) => term.write(data, resolve));
+
+  it("tracks the screen buffer and DECCKM as xterm parses them", async () => {
+    const term = new Terminal({ allowProposedApi: true });
+    registerKittyHandlers(term, "real", () => {});
+
+    // A TUI starts: alternate screen, protocol on, application cursor keys.
+    await write(term, "\x1b[?1049h");
+    expect(term.buffer.active.type).toBe("alternate");
+    await write(term, "\x1b[>1u");
+    expect(kittyFlags("real")).toBe(1);
+    await write(term, "\x1b[?1h");
+    expect(term.modes.applicationCursorKeysMode).toBe(true);
+    expect(
+      encodeKittyKey(key({ key: "ArrowUp" }), kittyFlags("real"), {
+        applicationCursorKeys: term.modes.applicationCursorKeysMode,
+      }),
+    ).toBe("\x1bOA");
+
+    // It exits without popping. The shell must get a clean keyboard back.
+    await write(term, "\x1b[?1049l");
+    expect(term.buffer.active.type).toBe("normal");
+    expect(kittyFlags("real")).toBe(0);
+
+    forgetKittyState("real");
+    term.dispose();
+  });
+});
+
 describe("encoding", () => {
   it("stays out of the way when no program has asked for it", () => {
     expect(encodeKittyKey(key({ key: "Enter", shiftKey: true }), 0)).toBeNull();
@@ -215,6 +329,28 @@ describe("encoding", () => {
     expect(encodeKittyKey(key({ key: "F1" }), DISAMBIGUATE)).toBe("\x1b[P");
     expect(encodeKittyKey(key({ key: "Delete" }), DISAMBIGUATE)).toBe(
       "\x1b[3~",
+    );
+  });
+
+  /**
+   * DECCKM. Every line editor and pager sets it, and a program that asked for
+   * SS3 does not recognize CSI — arrow keys stop working inside it.
+   */
+  it("sends SS3 for cursor keys in application mode", () => {
+    const app = { applicationCursorKeys: true };
+    expect(encodeKittyKey(key({ key: "ArrowUp" }), DISAMBIGUATE, app)).toBe(
+      "\x1bOA",
+    );
+    expect(encodeKittyKey(key({ key: "Home" }), DISAMBIGUATE, app)).toBe(
+      "\x1bOH",
+    );
+    // Modifiers have nowhere to go in the SS3 form, so those stay CSI.
+    expect(
+      encodeKittyKey(key({ key: "ArrowUp", ctrlKey: true }), DISAMBIGUATE, app),
+    ).toBe("\x1b[1;5A");
+    // Function keys share the shape but not the mode.
+    expect(encodeKittyKey(key({ key: "F1" }), DISAMBIGUATE, app)).toBe(
+      "\x1b[P",
     );
   });
 

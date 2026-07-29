@@ -122,7 +122,7 @@ export function acquireTerminal(
     // web-links addon below.
     linkHandler: { activate: (_event, uri) => openTerminalLink(uri) },
   });
-  term.attachCustomKeyEventHandler((event) => handleCustomKey(id, event));
+  term.attachCustomKeyEventHandler((event) => handleCustomKey(term, id, event));
   // Lets a program negotiate the kitty keyboard protocol, so chords like
   // Ctrl+Enter and Shift+Tab arrive distinguishable instead of collapsing onto
   // the same bytes as their unmodified forms.
@@ -279,7 +279,11 @@ function isAppChord(event: KeyboardEvent): boolean {
   );
 }
 
-function handleCustomKey(id: string, event: KeyboardEvent): boolean {
+function handleCustomKey(
+  term: Terminal,
+  id: string,
+  event: KeyboardEvent,
+): boolean {
   const release = event.type === "keyup";
   if (!release && event.type !== "keydown") return true;
 
@@ -298,7 +302,9 @@ function handleCustomKey(id: string, event: KeyboardEvent): boolean {
   // key goes through it — that is the whole point of the program opting in.
   // A `null` means the protocol is off or the key isn't ours; an empty string
   // means it *is* ours and is deliberately silent (a bare modifier press).
-  const encoded = encodeKittyKey(event, kittyFlags(id));
+  const encoded = encodeKittyKey(event, kittyFlags(id), {
+    applicationCursorKeys: term.modes.applicationCursorKeysMode,
+  });
   // Silence on release means "nothing to report", so let xterm see the event;
   // on press it means "consumed", so swallow it.
   if (encoded !== null && !(release && encoded === "")) {
