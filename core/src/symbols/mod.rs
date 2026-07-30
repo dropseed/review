@@ -34,6 +34,11 @@ pub struct Symbol {
     pub start_line: u32,
     #[serde(rename = "endLine")]
     pub end_line: u32,
+    /// First interior line of the body (1-based) — the first line a fold may
+    /// hide while the whole signature, including a trailing `{`, stays visible.
+    /// None when the body isn't identifiable or has nothing to fold.
+    #[serde(rename = "bodyStartLine", skip_serializing_if = "Option::is_none")]
+    pub body_start_line: Option<u32>,
     pub children: Vec<Symbol>,
     /// Heading depth for markdown symbols (1–6), None for code symbols.
     #[serde(skip_serializing_if = "Option::is_none")]

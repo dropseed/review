@@ -167,6 +167,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -178,6 +179,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Struct,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -189,6 +191,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Enum,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -201,6 +204,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Trait,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -213,6 +217,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Impl,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -224,6 +229,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Type,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -238,6 +244,7 @@ fn rust_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                     kind: SymbolKind::Module,
                     start_line: node.start_position().row as u32 + 1,
                     end_line: node.end_position().row as u32 + 1,
+                    body_start_line: body_interior_start(node, source),
                     children,
                     depth: None,
                 })
@@ -261,6 +268,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -273,6 +281,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -284,6 +293,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 kind: SymbolKind::Interface,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -295,6 +305,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 kind: SymbolKind::Type,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -306,6 +317,7 @@ fn js_ts_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symb
                 kind: SymbolKind::Enum,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -343,6 +355,9 @@ fn extract_variable_function(node: Node, source: &str) -> Option<Symbol> {
                         kind: SymbolKind::Function,
                         start_line: node.start_position().row as u32 + 1,
                         end_line: node.end_position().row as u32 + 1,
+                        // The declaration itself has no body — the function
+                        // expression on its right-hand side does.
+                        body_start_line: body_interior_start(value, source),
                         children: vec![],
                         depth: None,
                     });
@@ -367,11 +382,15 @@ fn extract_class_methods_js(class_node: Node, source: &str) -> Vec<Symbol> {
         match child.kind() {
             "method_definition" | "public_field_definition" => {
                 if let Some(name) = find_child_text(child, "name", source) {
+                    // A field holding an arrow function folds like a method, but
+                    // its body hangs off the value rather than the field itself.
+                    let body_owner = child.child_by_field_name("value").unwrap_or(child);
                     methods.push(Symbol {
                         name,
                         kind: SymbolKind::Method,
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
+                        body_start_line: body_interior_start(body_owner, source),
                         children: vec![],
                         depth: None,
                     });
@@ -396,6 +415,7 @@ fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -408,6 +428,7 @@ fn python_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -445,6 +466,7 @@ fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
                         kind: SymbolKind::Method,
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
+                        body_start_line: body_interior_start(child, source),
                         children: vec![],
                         depth: None,
                     });
@@ -460,6 +482,8 @@ fn extract_python_methods(class_node: Node, source: &str) -> Vec<Symbol> {
                                 kind: SymbolKind::Method,
                                 start_line: child.start_position().row as u32 + 1,
                                 end_line: child.end_position().row as u32 + 1,
+                                // Body belongs to the def, not the decorator wrapper.
+                                body_start_line: body_interior_start(inner, source),
                                 children: vec![],
                                 depth: None,
                             });
@@ -486,6 +510,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -506,6 +531,7 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
                 kind: SymbolKind::Method,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -527,6 +553,9 @@ fn go_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol>
                         kind,
                         start_line: node.start_position().row as u32 + 1,
                         end_line: node.end_position().row as u32 + 1,
+                        // The declaration wraps a type_spec; any body is on the
+                        // struct/interface type itself.
+                        body_start_line: body_interior_start(type_node, source),
                         children: vec![],
                         depth: None,
                     });
@@ -566,6 +595,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -577,6 +607,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -589,6 +620,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -601,6 +633,7 @@ fn ruby_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Module,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -626,6 +659,7 @@ fn extract_ruby_methods(node: Node, source: &str) -> Vec<Symbol> {
                         kind: SymbolKind::Method,
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
+                        body_start_line: body_interior_start(child, source),
                         children: vec![],
                         depth: None,
                     });
@@ -638,6 +672,7 @@ fn extract_ruby_methods(node: Node, source: &str) -> Vec<Symbol> {
                         kind: SymbolKind::Method,
                         start_line: child.start_position().row as u32 + 1,
                         end_line: child.end_position().row as u32 + 1,
+                        body_start_line: body_interior_start(child, source),
                         children: vec![],
                         depth: None,
                     });
@@ -680,6 +715,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -691,6 +727,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Interface,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -702,6 +739,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Method,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -713,6 +751,7 @@ fn java_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Enum,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -737,6 +776,7 @@ fn extract_java_members(node: Node, source: &str) -> Vec<Symbol> {
                     kind: SymbolKind::Method,
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
+                    body_start_line: body_interior_start(child, source),
                     children: vec![],
                     depth: None,
                 });
@@ -760,6 +800,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -771,6 +812,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 kind: SymbolKind::Struct,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -782,6 +824,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 kind: SymbolKind::Enum,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -793,6 +836,7 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
                 kind: SymbolKind::Type,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -843,6 +887,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -855,6 +900,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -866,6 +912,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Struct,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -877,6 +924,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Enum,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -889,6 +937,7 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Module,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -930,6 +979,7 @@ fn extract_cpp_class_members(node: Node, source: &str) -> Vec<Symbol> {
                             kind: SymbolKind::Method,
                             start_line: child.start_position().row as u32 + 1,
                             end_line: child.end_position().row as u32 + 1,
+                            body_start_line: body_interior_start(child, source),
                             children: vec![],
                             depth: None,
                         });
@@ -947,6 +997,7 @@ fn extract_cpp_class_members(node: Node, source: &str) -> Vec<Symbol> {
                                 kind: SymbolKind::Method,
                                 start_line: child.start_position().row as u32 + 1,
                                 end_line: child.end_position().row as u32 + 1,
+                                body_start_line: body_interior_start(child, source),
                                 children: vec![],
                                 depth: None,
                             });
@@ -991,6 +1042,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -1002,6 +1054,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Interface,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1013,6 +1066,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Method,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1024,6 +1078,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Struct,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1035,6 +1090,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Enum,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1047,6 +1103,7 @@ fn csharp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Sym
                 kind: SymbolKind::Module,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -1071,6 +1128,7 @@ fn extract_csharp_members(node: Node, source: &str) -> Vec<Symbol> {
                     kind: SymbolKind::Method,
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
+                    body_start_line: body_interior_start(child, source),
                     children: vec![],
                     depth: None,
                 });
@@ -1111,6 +1169,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Class,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -1122,6 +1181,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1133,6 +1193,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Method,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1144,6 +1205,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Interface,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1156,6 +1218,7 @@ fn php_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Trait,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children,
                 depth: None,
             })
@@ -1190,6 +1253,7 @@ fn extract_php_members(node: Node, source: &str) -> Vec<Symbol> {
                     kind: SymbolKind::Method,
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
+                    body_start_line: body_interior_start(child, source),
                     children: vec![],
                     depth: None,
                 });
@@ -1216,6 +1280,7 @@ fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                         kind: SymbolKind::Function,
                         start_line: node.start_position().row as u32 + 1,
                         end_line: node.end_position().row as u32 + 1,
+                        body_start_line: body_interior_start(node, source),
                         children: vec![],
                         depth: None,
                     });
@@ -1231,6 +1296,7 @@ fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Module,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1252,6 +1318,7 @@ fn css_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: body_interior_start(node, source),
                 children: vec![],
                 depth: None,
             })
@@ -1295,6 +1362,7 @@ fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
                 kind: SymbolKind::Function,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: None,
                 children: vec![],
                 depth: None,
             })
@@ -1304,6 +1372,7 @@ fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
             kind: SymbolKind::Module,
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
+            body_start_line: None,
             children: vec![],
             depth: None,
         }),
@@ -1312,6 +1381,7 @@ fn html_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbo
             kind: SymbolKind::Module,
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
+            body_start_line: None,
             children: vec![],
             depth: None,
         }),
@@ -1379,6 +1449,7 @@ fn markdown_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<S
                 kind: SymbolKind::Module,
                 start_line: node.start_position().row as u32 + 1,
                 end_line: node.end_position().row as u32 + 1,
+                body_start_line: None,
                 children: vec![],
                 depth,
             })
@@ -1398,6 +1469,27 @@ fn node_text<'a>(node: Node<'a>, source: &'a str) -> &'a str {
 fn find_child_text(node: Node, field: &str, source: &str) -> Option<String> {
     node.child_by_field_name(field)
         .map(|n| node_text(n, source).to_owned())
+}
+
+/// 1-based line of the first *interior* line of `node`'s body — the first line a
+/// fold may hide while the full signature stays visible.
+///
+/// Brace languages park the opening `{` at the end of the signature, so the
+/// interior starts one line further down; indentation bodies (Python, Ruby)
+/// already begin on their own line. Returns None when there is nothing to fold:
+/// no body child, or a body that shares a line with the signature (one-liners,
+/// expression-bodied arrow functions).
+fn body_interior_start(node: Node, source: &str) -> Option<u32> {
+    let body = node.child_by_field_name("body")?;
+    let body_row = body.start_position().row as u32;
+    let first_interior = if node_text(body, source).starts_with('{') {
+        body_row + 2
+    } else {
+        body_row + 1
+    };
+    let start_line = node.start_position().row as u32 + 1;
+    let end_line = node.end_position().row as u32 + 1;
+    (first_interior > start_line && first_interior <= end_line).then_some(first_interior)
 }
 
 /// Find the name for a Rust `impl` block (e.g., "MyStruct" or "MyTrait for MyStruct").
@@ -1432,6 +1524,7 @@ fn extract_methods_from_body(parent: Node, source: &str, _ext: &str) -> Vec<Symb
                     kind: SymbolKind::Method,
                     start_line: child.start_position().row as u32 + 1,
                     end_line: child.end_position().row as u32 + 1,
+                    body_start_line: body_interior_start(child, source),
                     children: vec![],
                     depth: None,
                 });
@@ -2403,6 +2496,7 @@ func (s *Server) Start() {
                 kind: SymbolKind::Function,
                 start_line: 2,
                 end_line: 5,
+                body_start_line: None,
                 children: vec![],
                 depth: None,
             },
@@ -2411,6 +2505,7 @@ func (s *Server) Start() {
                 kind: SymbolKind::Function,
                 start_line: 10,
                 end_line: 15,
+                body_start_line: None,
                 children: vec![],
                 depth: None,
             },
@@ -2470,6 +2565,114 @@ const add = function(a, b) {
 
         let add = symbols.iter().find(|s| s.name == "add").unwrap();
         assert_eq!(add.kind, SymbolKind::Function);
+    }
+
+    // --- body_start_line tests ---
+
+    #[cfg(feature = "symbols-rust-lang")]
+    #[test]
+    fn test_rust_body_start_line() {
+        let source = r#"
+pub fn foo(a: u32) -> u32 {
+    a + 1
+}
+
+pub fn wrapped(
+    a: u32,
+) -> u32 {
+    a + 1
+}
+
+pub fn one_liner() -> u32 { 1 }
+
+impl Foo {
+    pub fn method(&self) -> u32 {
+        self.x
+    }
+}
+"#;
+        let symbols = extract_symbols(source, "test.rs").unwrap();
+
+        // Signature on one line: fold starts just below the `{` line.
+        let foo = symbols.iter().find(|s| s.name == "foo").unwrap();
+        assert_eq!(foo.body_start_line, Some(3));
+
+        // Multi-line signature: the `) -> u32 {` line stays visible.
+        let wrapped = symbols.iter().find(|s| s.name == "wrapped").unwrap();
+        assert_eq!(wrapped.body_start_line, Some(9));
+
+        // Nothing between the braces' lines — nothing to fold.
+        let one_liner = symbols.iter().find(|s| s.name == "one_liner").unwrap();
+        assert_eq!(one_liner.body_start_line, None);
+
+        let impl_sym = symbols.iter().find(|s| s.kind == SymbolKind::Impl).unwrap();
+        assert_eq!(impl_sym.body_start_line, Some(15));
+        let method = impl_sym
+            .children
+            .iter()
+            .find(|s| s.name == "method")
+            .unwrap();
+        assert_eq!(method.body_start_line, Some(16));
+    }
+
+    #[cfg(feature = "symbols-python")]
+    #[test]
+    fn test_python_body_start_line() {
+        let source = r#"
+def foo():
+    """Docstrings are interior."""
+    return 1
+
+class MyClass:
+    def method(self):
+        pass
+
+def one_liner(): return 2
+"#;
+        let symbols = extract_symbols(source, "test.py").unwrap();
+
+        let foo = symbols.iter().find(|s| s.name == "foo").unwrap();
+        assert_eq!(foo.body_start_line, Some(3));
+
+        let class = symbols.iter().find(|s| s.name == "MyClass").unwrap();
+        assert_eq!(class.body_start_line, Some(7));
+        assert_eq!(class.children[0].body_start_line, Some(8));
+
+        let one_liner = symbols.iter().find(|s| s.name == "one_liner").unwrap();
+        assert_eq!(one_liner.body_start_line, None);
+    }
+
+    #[cfg(feature = "symbols-typescript")]
+    #[test]
+    fn test_typescript_body_start_line() {
+        let source = r#"
+export function process(config: Config): void {
+    console.log(config.name);
+}
+
+class Widget {
+    render(): string {
+        return "x";
+    }
+}
+
+const greet = (name: string) => {
+    console.log(name);
+};
+"#;
+        let symbols = extract_symbols(source, "test.ts").unwrap();
+
+        let process = symbols.iter().find(|s| s.name == "process").unwrap();
+        assert_eq!(process.body_start_line, Some(3));
+
+        let widget = symbols.iter().find(|s| s.name == "Widget").unwrap();
+        assert_eq!(widget.body_start_line, Some(7));
+        let render = widget.children.iter().find(|s| s.name == "render").unwrap();
+        assert_eq!(render.body_start_line, Some(8));
+
+        // Arrow function: the body hangs off the value, not the declaration.
+        let greet = symbols.iter().find(|s| s.name == "greet").unwrap();
+        assert_eq!(greet.body_start_line, Some(13));
     }
 
     // --- compute_file_symbol_diff tests ---
