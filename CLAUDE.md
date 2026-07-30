@@ -146,7 +146,7 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
 
-- `review changes [--staged|--unstaged|--file GLOB] [--json] [--diff]`
+- `review changes [--staged|--unstaged|--file GLOB|--label PATTERN|--hunk ID] [--json] [--diff]`
 - `review stage|unstage <hunk-id|file>...`
 
 **Skills**: `review skill install` writes the bundled skills into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). Canonical sources live in `core/resources/skills/*/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries them:
