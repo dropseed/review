@@ -56,7 +56,7 @@ interface FileContentRendererProps {
    * synthesized, body-folded document that replaces `fileContent.content`.
    * Only ever set for `contentMode.type === "plain"`.
    */
-  shape?: (ShapeViewState & { content: string }) | undefined;
+  shape?: ShapeViewState & { content: string };
 }
 
 export const FileContentRenderer = memo(function FileContentRenderer({
@@ -220,10 +220,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
       // mode pierre is handed the synthesized, body-folded document instead of
       // the literal file — see shape-model.ts.
       if (shape) {
-        return renderCodeView(
-          { kind: "plain", content: shape.content },
-          { rows: shape.rows, onToggleFold: shape.onToggleFold },
-        );
+        return renderCodeView({ kind: "plain", content: shape.content }, shape);
       }
       return renderCodeView({ kind: "plain", content: fileContent.content });
   }

@@ -1,6 +1,7 @@
 import {
   type ReactNode,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -53,6 +54,12 @@ import type { ShapeRow } from "./shape-model";
 export interface ShapeViewState {
   rows: ShapeRow[];
   onToggleFold: (foldId: string) => void;
+  /**
+   * Identifies the synthesized document (file content + which folds are open),
+   * so pierre's cache key doesn't have to re-hash the whole document on every
+   * fold toggle. Supplied by the shape-mode hook that builds `rows`.
+   */
+  cacheKey: string;
 }
 
 export interface FileCodeViewHandle {
@@ -129,9 +136,8 @@ export function FileCodeView({
   const diffOverflow = useReviewStore((s) => s.diffOverflow);
 
   const isDiff = content.kind === "diff";
-  // Shape mode only ever applies to a plain file.
-  const shapeState = isDiff ? undefined : shape;
-  const shapeMode = shapeState !== undefined;
+  // Only ever set for a plain file — a diff has its own notion of elision.
+  const shapeMode = shape !== undefined;
   const hunks = isDiff ? content.hunks : EMPTY_HUNKS;
   const itemId = isDiff ? `diff:${filePath}` : `file:${filePath}`;
 
@@ -186,6 +192,13 @@ export function FileCodeView({
   }, [isDiff, filePath, oldContentHash, newContentHash, diffPatch, language]);
 
   const plainContent = !isDiff ? content.content : "";
+  // In shape mode the document is re-synthesized on every fold toggle, and its
+  // cacheKey already identifies (file content × open folds) — so take that
+  // instead of re-hashing the whole synthesized text per toggle.
+  const plainCacheKey = useMemo(
+    () => shape?.cacheKey ?? stringHash(plainContent),
+    [shape, plainContent],
+  );
   const plainFile = useMemo(
     () =>
       isDiff
@@ -194,9 +207,9 @@ export function FileCodeView({
             name: filePath,
             contents: plainContent,
             lang: language,
-            cacheKey: `file:${filePath}:${stringHash(plainContent)}`,
+            cacheKey: `file:${filePath}:${plainCacheKey}`,
           },
-    [isDiff, filePath, plainContent, language],
+    [isDiff, filePath, plainContent, language, plainCacheKey],
   );
 
   // Controlled items: CodeView only re-reads an item (and re-invokes its
@@ -205,7 +218,7 @@ export function FileCodeView({
   // Shape mode is a reading posture, not an editing surface: comments and
   // their editors stay out of the synthesized document, whose line numbers
   // wouldn't line up with the real file anyway.
-  const annotations = shapeState
+  const annotations = shapeMode
     ? EMPTY_ANNOTATIONS
     : isDiff
       ? diffModel.lineAnnotations
@@ -285,7 +298,7 @@ export function FileCodeView({
   // pierre reports the line number of the *synthesized* document, which is
   // exactly the index into `shape.rows`.
   const shapeRef = useRef<ShapeViewState | undefined>(undefined);
-  shapeRef.current = shapeState;
+  shapeRef.current = shape;
   const handleShapeLineClick = useCallback((props: { lineNumber: number }) => {
     const state = shapeRef.current;
     if (!state) return;
@@ -398,18 +411,27 @@ export function FileCodeView({
     : (plainFile?.cacheKey ?? filePath);
   const highlightReady = useSyntaxHighlightReady(shimmerRef, contentKey);
 
-  // ShapeGutter has to follow pierre's scroll offset, so keep the container
-  // as state (not just a ref) for the one render that hands it over.
+  // ShapeGutter has to follow pierre's scroll offset, so the container is kept
+  // as state (not just a ref) for the one render that hands it over. Only shape
+  // mode needs it, so every other file view is spared that extra render.
+  // pierre's own container ref is identity-stable and fires only when the node
+  // mounts, so switching into shape mode later publishes the captured node.
+  const scrollNodeRef = useRef<HTMLDivElement | null>(null);
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
 
   const setContainerNode = useCallback(
     (node: HTMLDivElement | null) => {
       shimmerRef.current = node;
-      setScrollNode(node);
+      scrollNodeRef.current = node;
+      setScrollNode(shapeRef.current ? node : null);
       containerRef?.(node);
     },
     [containerRef],
   );
+
+  useEffect(() => {
+    setScrollNode(shapeMode ? scrollNodeRef.current : null);
+  }, [shapeMode]);
 
   return (
     <div className="relative flex min-w-0 flex-1 h-full diff-container">
@@ -418,12 +440,12 @@ export function FileCodeView({
           <div className="h-full w-1/3 animate-[shimmer_1s_ease-in-out_infinite] bg-status-renamed/50 rounded-full" />
         </div>
       )}
-      {shapeState && (
+      {shape && (
         <ShapeGutter
-          rows={shapeState.rows}
+          rows={shape.rows}
           lineHeight={lineHeight}
           scrollNode={scrollNode}
-          onToggleFold={shapeState.onToggleFold}
+          onToggleFold={shape.onToggleFold}
         />
       )}
       {/* Keyed per file only (parity with the old key={fileName}) — content

@@ -34,9 +34,10 @@ pub struct Symbol {
     pub start_line: u32,
     #[serde(rename = "endLine")]
     pub end_line: u32,
-    /// First interior line of the body (1-based) — the first line a fold may
-    /// hide while the whole signature, including a trailing `{`, stays visible.
-    /// None when the body isn't identifiable or has nothing to fold.
+    /// First interior line of the body (1-based). Everything before it is the
+    /// signature, including a trailing brace on its own line; `end_line` is the
+    /// last line of the body. None when the body isn't identifiable, or when
+    /// nothing lies between the signature and the end of the symbol.
     #[serde(rename = "bodyStartLine", skip_serializing_if = "Option::is_none")]
     pub body_start_line: Option<u32>,
     pub children: Vec<Symbol>,

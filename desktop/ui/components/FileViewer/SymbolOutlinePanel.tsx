@@ -12,6 +12,12 @@ interface SymbolOutlinePanelProps {
   filePath: string;
   scrollNode: HTMLDivElement | null;
   symbols: FileSymbol[];
+  /**
+   * Whether the rendered view is numbered in real file lines. False in shape
+   * mode, where the view is a synthesized document: both scroll tracking and
+   * click-to-scroll would then address the wrong lines, so they go quiet.
+   */
+  lineAddressable?: boolean;
 }
 
 /** FileSymbol augmented with optional diff change type. */
@@ -50,6 +56,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
   filePath,
   scrollNode,
   symbols: allSymbols,
+  lineAddressable = true,
 }: SymbolOutlinePanelProps) {
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const toggleOutline = useReviewStore((s) => s.toggleOutline);
@@ -120,6 +127,10 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
 
   useEffect(() => {
     if (!scrollNode) return;
+    if (!lineAddressable) {
+      setActiveStartLine(null);
+      return;
+    }
 
     let rafId: number;
     const handleScroll = () => {
@@ -137,7 +148,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
       scrollNode.removeEventListener("scroll", handleScroll);
       cancelAnimationFrame(rafId);
     };
-  }, [scrollNode, lineHeight]);
+  }, [scrollNode, lineHeight, lineAddressable]);
 
   // Auto-scroll outline list to keep active item visible
   useEffect(() => {
@@ -152,6 +163,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
 
   const handleSymbolClick = useCallback(
     (startLine: number) => {
+      if (!lineAddressable) return;
       useReviewStore.setState({
         scrollTarget: {
           type: "line",
@@ -160,7 +172,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
         },
       });
     },
-    [filePath],
+    [filePath, lineAddressable],
   );
 
   if (outlineSymbols.length === 0) {

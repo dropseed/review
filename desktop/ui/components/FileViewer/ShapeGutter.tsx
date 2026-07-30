@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState, type JSX } from "react";
 import { useReviewStore } from "../../stores";
-import type { ShapeRow } from "./shape-model";
+import { maxRealLine, type ShapeRow } from "./shape-model";
 
 interface ShapeGutterProps {
   /** One entry per line of the synthesized document. */
@@ -24,9 +24,12 @@ const OVERSCAN = 4;
  * off (`disableLineNumbers`) and this column draws the real ones instead.
  *
  * It is a sibling of the scroll container, not an overlay inside it: rows are
- * uniform height, so a row's y is `index * lineHeight - scrollTop` and the
- * visible slice is a pure function of scrollTop and clientHeight. Only that
- * slice is rendered, so this stays O(viewport) like pierre's own virtualizer.
+ * uniform height, so a row's y is `index * lineHeight` inside a wrapper the
+ * scroll offset translates, and the visible slice is a pure function of
+ * scrollTop and clientHeight. Only that slice is rendered, so this stays
+ * O(viewport) like pierre's own virtualizer — and because the offset lives on
+ * the wrapper's transform, a scroll frame restyles one element rather than
+ * re-laying out every row.
  */
 export const ShapeGutter = memo(function ShapeGutter({
   rows,
@@ -65,14 +68,8 @@ export const ShapeGutter = memo(function ShapeGutter({
     };
   }, [scrollNode]);
 
-  const digits = useMemo(() => {
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const row = rows[i];
-      const line = row.kind === "code" ? row.line : row.endLine;
-      return String(line).length;
-    }
-    return 2;
-  }, [rows]);
+  // O(1): rows are ordered, so the widest number is the last row's.
+  const digits = String(maxRealLine(rows)).length;
 
   const first = Math.max(0, Math.floor(scroll.top / lineHeight) - OVERSCAN);
   const last = Math.min(
@@ -80,60 +77,68 @@ export const ShapeGutter = memo(function ShapeGutter({
     Math.ceil((scroll.top + scroll.height) / lineHeight) + OVERSCAN,
   );
 
-  const visible: JSX.Element[] = [];
-  for (let i = first; i <= last; i++) {
-    const row = rows[i];
-    if (!row) continue;
-    const top = i * lineHeight - scroll.top;
-    const foldId: string | undefined = row.foldId;
+  // Rebuilt only when the visible window moves, not on every scroll frame —
+  // scrolling within the window just restyles the translated wrapper.
+  const visible = useMemo(() => {
+    const elements: JSX.Element[] = [];
+    for (let i = first; i <= last; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      const foldId: string | undefined = row.foldId;
 
-    visible.push(
-      <div
-        key={i}
-        className="absolute right-0 flex w-full items-center justify-end gap-1 pr-2 tabular-nums select-none"
-        style={{ top, height: lineHeight, lineHeight: `${lineHeight}px` }}
-      >
-        {foldId ? (
-          <button
-            type="button"
-            onClick={() => onToggleFold(foldId)}
-            title={
-              row.kind === "marker"
-                ? `Expand ${row.foldName} (${row.hiddenLines} lines)`
-                : `Collapse ${row.foldName ?? "body"}`
-            }
-            aria-label={
-              row.kind === "marker"
-                ? `Expand ${row.foldName}`
-                : `Collapse ${row.foldName ?? "body"}`
-            }
-            aria-expanded={row.kind !== "marker"}
-            className="pointer-events-auto flex h-full w-3 shrink-0 items-center justify-center text-fg-faint transition-colors hover:text-fg-secondary"
-          >
-            <svg
-              className={`h-2.5 w-2.5 transition-transform ${
-                row.kind === "marker" ? "" : "rotate-90"
-              }`}
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M9 5l7 7-7 7z" />
-            </svg>
-          </button>
-        ) : (
-          <span className="w-3 shrink-0" aria-hidden="true" />
-        )}
-        <span
-          className={
-            row.kind === "marker" ? "text-fg-faint/50" : "text-fg-faint"
-          }
+      elements.push(
+        <div
+          key={i}
+          className="absolute right-0 flex w-full items-center justify-end gap-1 pr-2 tabular-nums select-none"
+          style={{
+            top: i * lineHeight,
+            height: lineHeight,
+            lineHeight: `${lineHeight}px`,
+          }}
         >
-          {row.kind === "marker" ? "" : row.line}
-        </span>
-      </div>,
-    );
-  }
+          {foldId ? (
+            <button
+              type="button"
+              onClick={() => onToggleFold(foldId)}
+              title={
+                row.kind === "marker"
+                  ? `Expand ${row.foldName} (${row.hiddenLines} lines)`
+                  : `Collapse ${row.foldName ?? "body"}`
+              }
+              aria-label={
+                row.kind === "marker"
+                  ? `Expand ${row.foldName}`
+                  : `Collapse ${row.foldName ?? "body"}`
+              }
+              aria-expanded={row.kind !== "marker"}
+              className="pointer-events-auto flex h-full w-3 shrink-0 items-center justify-center text-fg-faint transition-colors hover:text-fg-secondary"
+            >
+              <svg
+                className={`h-2.5 w-2.5 transition-transform ${
+                  row.kind === "marker" ? "" : "rotate-90"
+                }`}
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M9 5l7 7-7 7z" />
+              </svg>
+            </button>
+          ) : (
+            <span className="w-3 shrink-0" aria-hidden="true" />
+          )}
+          <span
+            className={
+              row.kind === "marker" ? "text-fg-faint/50" : "text-fg-faint"
+            }
+          >
+            {row.kind === "marker" ? "" : row.line}
+          </span>
+        </div>,
+      );
+    }
+    return elements;
+  }, [rows, first, last, lineHeight, onToggleFold]);
 
   return (
     <div
@@ -144,7 +149,12 @@ export const ShapeGutter = memo(function ShapeGutter({
         fontFamily: codeFontFamily,
       }}
     >
-      {visible}
+      <div
+        className="absolute inset-x-0 top-0"
+        style={{ transform: `translate3d(0, ${-scroll.top}px, 0)` }}
+      >
+        {visible}
+      </div>
     </div>
   );
 });

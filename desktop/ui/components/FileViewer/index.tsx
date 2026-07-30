@@ -47,12 +47,11 @@ import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
-import { buildShapeDocument, collectFolds } from "./shape-model";
+import { useShapeMode } from "./hooks/useShapeMode";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
 const EMPTY_HUNKS: DiffHunk[] = [];
-const NO_FOLDS_EXPANDED: ReadonlySet<string> = new Set();
 
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
@@ -176,12 +175,6 @@ export function FileViewer({
   // Which floating bar (if any) is open over the file viewport.
   const [openBar, setOpenBar] = useState<"search" | "goToLine" | null>(null);
 
-  // Shape mode: read the file as its outline, every function/method body
-  // folded to a marker. Reset per file (no persistence — reading posture).
-  const [shapeMode, setShapeMode] = useState(false);
-  const [expandedFolds, setExpandedFolds] =
-    useState<ReadonlySet<string>>(NO_FOLDS_EXPANDED);
-
   // File-level comment editor state
   const [fileCommentEditorOpen, setFileCommentEditorOpen] = useState(false);
   const [editingFileCommentId, setEditingFileCommentId] = useState<
@@ -286,8 +279,6 @@ export function FileViewer({
     setEditingFileCommentId(null);
     setOpenBar(null);
     setHighlightLine(null);
-    setShapeMode(false);
-    setExpandedFolds(NO_FOLDS_EXPANDED);
   }, [filePath]);
 
   // Listener stays registered for the FileViewer's lifetime; gate via
@@ -295,6 +286,8 @@ export function FileViewer({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!fileContentRef.current) return;
+      // Both bars address real file lines — suppressed in shape mode.
+      if (shapeModeRef.current) return;
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       if (e.key === "f") {
         e.preventDefault();
@@ -624,58 +617,34 @@ export function FileViewer({
   }, [fileContent, isGitignored, svgViewMode, viewMode]);
 
   // --- Shape mode ---------------------------------------------------------
-  // Foldable bodies come straight from the symbol tree; a symbol without a
-  // bodyStartLine simply doesn't fold, so this degrades to "nothing to fold"
-  // rather than breaking while the extractor catches up.
-  const folds = useMemo(
-    () => (fileSymbols ? collectFolds(fileSymbols) : []),
-    [fileSymbols],
-  );
-  // Only meaningful for the whole-file view — a diff already has its own
-  // notion of what is elided.
-  const shapeAvailable = contentMode.type === "plain" && folds.length > 0;
+  const {
+    shapeAvailable,
+    shapeMode,
+    shape,
+    allExpanded: shapeAllExpanded,
+    toggleShapeMode,
+    expandAllFolds,
+    collapseAllFolds,
+  } = useShapeMode({
+    filePath,
+    content: fileContent?.content,
+    symbols: fileSymbols,
+    isPlainView: contentMode.type === "plain",
+  });
 
-  const shapeDocument = useMemo(
-    () =>
-      shapeMode && shapeAvailable && fileContent
-        ? buildShapeDocument(fileContent.content, folds, expandedFolds)
-        : null,
-    [shapeMode, shapeAvailable, fileContent, folds, expandedFolds],
-  );
-
-  const handleToggleFold = useCallback((foldId: string) => {
-    setExpandedFolds((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(foldId)) next.add(foldId);
-      return next;
-    });
-  }, []);
-
-  const handleExpandAllFolds = useCallback(() => {
-    setExpandedFolds(new Set(folds.map((f) => f.id)));
-  }, [folds]);
-
-  const handleCollapseAllFolds = useCallback(() => {
-    setExpandedFolds(NO_FOLDS_EXPANDED);
-  }, []);
-
+  // Shape mode swaps in a second line-coordinate space (see the note at the
+  // search/go-to-line bars below), so entering or leaving it drops anything
+  // addressed in the other one.
   const handleToggleShapeMode = useCallback(() => {
-    setShapeMode((prev) => !prev);
-    setExpandedFolds(NO_FOLDS_EXPANDED);
+    toggleShapeMode();
     setHighlightLine(null);
-  }, []);
+    setOpenBar(null);
+  }, [toggleShapeMode]);
 
-  const shape = useMemo(
-    () =>
-      shapeDocument
-        ? {
-            content: shapeDocument.content,
-            rows: shapeDocument.rows,
-            onToggleFold: handleToggleFold,
-          }
-        : undefined,
-    [shapeDocument, handleToggleFold],
-  );
+  // Read by the ⌘F / ⌘L handler, which is registered once for the viewer's
+  // lifetime and so can't close over the current value.
+  const shapeModeRef = useRef(shapeMode);
+  shapeModeRef.current = shapeMode;
 
   if (loading || fileContentPath !== filePath) {
     return (
@@ -755,12 +724,10 @@ export function FileViewer({
         hasSymbols={hasSymbols}
         shapeAvailable={shapeAvailable}
         shapeMode={shapeMode}
-        shapeAllExpanded={
-          shapeDocument !== null && shapeDocument.collapsedCount === 0
-        }
+        shapeAllExpanded={shapeAllExpanded}
         onToggleShapeMode={handleToggleShapeMode}
-        onExpandAllFolds={handleExpandAllFolds}
-        onCollapseAllFolds={handleCollapseAllFolds}
+        onExpandAllFolds={expandAllFolds}
+        onCollapseAllFolds={collapseAllFolds}
         isExternalFile={isExternalFile}
         onCloseExternalFile={
           isExternalFile
@@ -814,7 +781,15 @@ export function FileViewer({
       )}
 
       <div className="relative flex flex-1 overflow-hidden">
-        {openBar === "search" && fileContent && (
+        {/* Shape mode hands pierre a *synthesized* document, so the view is
+            addressed in document lines while search, go-to-line and the
+            outline all speak real file lines. Rather than translate between
+            the two, this spike suppresses the line-addressed affordances while
+            shape mode is on: the bars don't open (see the ⌘F / ⌘L handler) and
+            the outline stops tracking and jumping. Closing this properly means
+            carrying a real↔doc mapping on `buildShapeDocument`'s rows and
+            translating at these three call sites. */}
+        {openBar === "search" && !shapeMode && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <InFileSearchBar
               content={fileContent.content}
@@ -823,7 +798,7 @@ export function FileViewer({
             />
           </div>
         )}
-        {openBar === "goToLine" && fileContent && (
+        {openBar === "goToLine" && !shapeMode && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <GoToLineBar
               maxLine={totalLineCount}
@@ -837,6 +812,7 @@ export function FileViewer({
             filePath={filePath}
             scrollNode={scrollNode}
             symbols={fileSymbols}
+            lineAddressable={!shapeMode}
           />
         )}
         <FileContentRenderer

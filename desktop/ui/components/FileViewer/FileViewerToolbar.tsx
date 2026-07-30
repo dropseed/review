@@ -293,34 +293,13 @@ function ShapeToggleButton({
   );
 }
 
+type ShapeFoldState = "expanded" | "collapsed";
+
 /** Expand-all / collapse-all, shown only while shape mode is on. */
-function ShapeFoldControls({
-  allExpanded,
-  onExpandAll,
-  onCollapseAll,
-}: {
-  allExpanded: boolean;
-  onExpandAll: () => void;
-  onCollapseAll: () => void;
-}): JSX.Element {
-  return (
-    <div className="hidden @lg:flex items-center rounded bg-surface-raised/30 p-0.5">
-      <button
-        onClick={onExpandAll}
-        disabled={allExpanded}
-        className="rounded px-2 py-0.5 text-xxs font-medium text-fg-muted transition-colors hover:text-fg-secondary disabled:opacity-40 disabled:hover:text-fg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
-      >
-        Expand all
-      </button>
-      <button
-        onClick={onCollapseAll}
-        className="rounded px-2 py-0.5 text-xxs font-medium text-fg-muted transition-colors hover:text-fg-secondary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
-      >
-        Collapse all
-      </button>
-    </div>
-  );
-}
+const SHAPE_FOLD_OPTIONS: [ShapeFoldState, string][] = [
+  ["expanded", "Expand all"],
+  ["collapsed", "Collapse all"],
+];
 
 interface FileViewerToolbarProps {
   filePath: string;
@@ -348,14 +327,18 @@ interface FileViewerToolbarProps {
   isWorkingTreeMode?: boolean;
   onExitWorkingTreeMode?: () => void;
   hasSymbols?: boolean;
-  /** Whether shape mode can be offered (plain whole-file view with foldables) */
-  shapeAvailable?: boolean;
-  shapeMode?: boolean;
+  /**
+   * Whether shape mode can be offered. Already encodes both halves: the
+   * whole-file (plain) view, and a file with foldable bodies in it — a diff
+   * has its own notion of what is elided.
+   */
+  shapeAvailable: boolean;
+  shapeMode: boolean;
   /** True when no fold is currently collapsed — disables "Expand all" */
-  shapeAllExpanded?: boolean;
-  onToggleShapeMode?: () => void;
-  onExpandAllFolds?: () => void;
-  onCollapseAllFolds?: () => void;
+  shapeAllExpanded: boolean;
+  onToggleShapeMode: () => void;
+  onExpandAllFolds: () => void;
+  onCollapseAllFolds: () => void;
   isExternalFile?: boolean;
   onCloseExternalFile?: () => void;
 }
@@ -428,6 +411,11 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const handleDiffViewModeChange = (mode: DiffViewMode) => {
     onViewModeChange(mode);
     onClearHighlight();
+  };
+
+  const handleShapeFoldChange = (next: ShapeFoldState) => {
+    if (next === "expanded") onExpandAllFolds();
+    else onCollapseAllFolds();
   };
 
   function renderFileStatusBadge(): JSX.Element | null {
@@ -545,10 +533,6 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   }
 
   const showDiffControls = contentMode.type === "diff";
-  // Shape mode reads the whole file as an outline, so it is only offered for
-  // the plain content mode — a diff has its own notion of what is elided.
-  const showShapeControls =
-    contentMode.type === "plain" && !!shapeAvailable && !!onToggleShapeMode;
 
   return (
     <div
@@ -648,16 +632,16 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
                   onChange={handleDiffViewModeChange}
                 />
               )}
-              {showShapeControls && (
+              {shapeAvailable && (
                 <DropdownMenuCheckboxItem
-                  checked={shapeMode ?? false}
+                  checked={shapeMode}
                   onCheckedChange={onToggleShapeMode}
                   className="text-xs"
                 >
                   Shape (fold bodies)
                 </DropdownMenuCheckboxItem>
               )}
-              {showShapeControls && shapeMode && (
+              {shapeAvailable && shapeMode && (
                 <>
                   <DropdownMenuItem
                     onClick={onExpandAllFolds}
@@ -685,7 +669,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
                   {isSplitActive ? "Rotate split" : "Split view"}
                 </DropdownMenuItem>
               )}
-              {(hasSymbols || onSplitOrRotate || showShapeControls) && (
+              {(hasSymbols || onSplitOrRotate || shapeAvailable) && (
                 <DropdownMenuSeparator />
               )}
               <DropdownMenuItem onClick={() => revealInBrowse(filePath)}>
@@ -831,18 +815,16 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
             </span>
           </>
         )}
-        {showShapeControls && shapeMode && onExpandAllFolds && (
-          <ShapeFoldControls
-            allExpanded={!!shapeAllExpanded}
-            onExpandAll={onExpandAllFolds}
-            onCollapseAll={onCollapseAllFolds ?? (() => {})}
+        {shapeAvailable && shapeMode && (
+          <ToggleButtonGroup
+            className="hidden @lg:flex"
+            options={SHAPE_FOLD_OPTIONS}
+            value={shapeAllExpanded ? "expanded" : "collapsed"}
+            onChange={handleShapeFoldChange}
           />
         )}
-        {showShapeControls && onToggleShapeMode && (
-          <ShapeToggleButton
-            active={!!shapeMode}
-            onToggle={onToggleShapeMode}
-          />
+        {shapeAvailable && (
+          <ShapeToggleButton active={shapeMode} onToggle={onToggleShapeMode} />
         )}
         {hasSymbols && <OutlineToggleButton />}
         {onSplitOrRotate && (

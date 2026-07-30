@@ -20,7 +20,7 @@ import type { FileSymbol } from "../../types";
 export const SHAPE_MARKER = "⋯";
 
 /** Bodies shorter than this aren't worth folding — the marker costs a line. */
-export const MIN_HIDDEN_LINES = 5;
+const MIN_HIDDEN_LINES = 5;
 
 /** A foldable function/method body, in real (1-based) file line numbers. */
 export interface ShapeFold {
@@ -65,12 +65,6 @@ export interface ShapeDocument {
   content: string;
   /** One entry per line of `content`; `rows[n - 1]` describes doc line `n`. */
   rows: ShapeRow[];
-  /** Real line number → 1-based line in `content` (visible lines only). */
-  docLineByRealLine: Map<number, number>;
-  /** Number of folds currently collapsed. */
-  collapsedCount: number;
-  /** Number of real lines currently hidden. */
-  hiddenLineCount: number;
 }
 
 const FOLDABLE_KINDS = new Set<FileSymbol["kind"]>(["function", "method"]);
@@ -87,10 +81,7 @@ const FOLDABLE_KINDS = new Set<FileSymbol["kind"]>(["function", "method"]);
  * `bodyStartLine` is optional on the wire (the Rust side may not supply it
  * yet); a symbol without one simply doesn't fold.
  */
-export function collectFolds(
-  symbols: readonly FileSymbol[],
-  minHiddenLines: number = MIN_HIDDEN_LINES,
-): ShapeFold[] {
+export function collectFolds(symbols: readonly FileSymbol[]): ShapeFold[] {
   const collected: ShapeFold[] = [];
 
   const walk = (nodes: readonly FileSymbol[]): void => {
@@ -100,7 +91,7 @@ export function collectFolds(
         typeof symbol.bodyStartLine === "number" &&
         symbol.bodyStartLine >= 1 &&
         symbol.endLine >= symbol.bodyStartLine &&
-        symbol.endLine - symbol.bodyStartLine + 1 >= minHiddenLines;
+        symbol.endLine - symbol.bodyStartLine + 1 >= MIN_HIDDEN_LINES;
 
       if (folded) {
         const startLine = symbol.bodyStartLine!;
@@ -143,62 +134,48 @@ export function collectFolds(
  * fold never shifts anything above it and the scroll position stays put.
  */
 export function buildShapeDocument(
-  fileContent: string,
+  lines: readonly string[],
   folds: readonly ShapeFold[],
   expandedFoldIds: ReadonlySet<string>,
 ): ShapeDocument {
-  const lines = fileContent.split("\n");
-  // A trailing newline yields a phantom empty element; drop it and restore it
-  // on join so the synthesized document keeps the file's line count.
+  // A trailing newline yields a phantom empty element; ignore it and restore
+  // it on join so the synthesized document keeps the file's line count.
   const hasTrailingNewline = lines.length > 1 && lines[lines.length - 1] === "";
-  if (hasTrailingNewline) lines.pop();
+  const lineCount = hasTrailingNewline ? lines.length - 1 : lines.length;
 
-  const collapsedByStart = new Map<number, ShapeFold>();
-  const expandedByStart = new Map<number, ShapeFold>();
+  const foldByStart = new Map<number, ShapeFold>();
   for (const fold of folds) {
-    if (fold.startLine < 1 || fold.startLine > lines.length) continue;
-    if (expandedFoldIds.has(fold.id)) {
-      expandedByStart.set(fold.startLine, fold);
-    } else {
-      collapsedByStart.set(fold.startLine, fold);
-    }
+    if (fold.startLine < 1 || fold.startLine > lineCount) continue;
+    foldByStart.set(fold.startLine, fold);
   }
 
   const outLines: string[] = [];
   const rows: ShapeRow[] = [];
-  const docLineByRealLine = new Map<number, number>();
-  let collapsedCount = 0;
-  let hiddenLineCount = 0;
 
   let line = 1;
-  while (line <= lines.length) {
-    const collapsed = collapsedByStart.get(line);
-    if (collapsed) {
-      const endLine = Math.min(collapsed.endLine, lines.length);
-      const hiddenLines = endLine - line + 1;
+  while (line <= lineCount) {
+    const fold = foldByStart.get(line);
+    if (fold && !expandedFoldIds.has(fold.id)) {
+      const endLine = Math.min(fold.endLine, lineCount);
       outLines.push(markerLineFor(lines, line, endLine));
       rows.push({
         kind: "marker",
-        foldId: collapsed.id,
-        foldName: collapsed.name,
+        foldId: fold.id,
+        foldName: fold.name,
         startLine: line,
         endLine,
-        hiddenLines,
+        hiddenLines: endLine - line + 1,
       });
-      collapsedCount += 1;
-      hiddenLineCount += hiddenLines;
       line = endLine + 1;
       continue;
     }
 
-    const expanded = expandedByStart.get(line);
     outLines.push(lines[line - 1]);
     rows.push(
-      expanded
-        ? { kind: "code", line, foldId: expanded.id, foldName: expanded.name }
+      fold
+        ? { kind: "code", line, foldId: fold.id, foldName: fold.name }
         : { kind: "code", line },
     );
-    docLineByRealLine.set(line, outLines.length);
     line += 1;
   }
 
@@ -206,13 +183,7 @@ export function buildShapeDocument(
     outLines.join("\n") +
     (hasTrailingNewline && outLines.length > 0 ? "\n" : "");
 
-  return {
-    content,
-    rows,
-    docLineByRealLine,
-    collapsedCount,
-    hiddenLineCount,
-  };
+  return { content, rows };
 }
 
 /** Indent the marker to match the body it stands for. */
@@ -236,20 +207,14 @@ function leadingWhitespace(text: string): string {
   return match ? match[0] : "";
 }
 
-/** The row at a 1-based line of the synthesized document, if any. */
-export function rowAtDocLine(
-  doc: ShapeDocument,
-  docLine: number,
-): ShapeRow | undefined {
-  return doc.rows[docLine - 1];
-}
-
-/** Widest real line number in the document — sizes the custom gutter. */
-export function maxRealLine(doc: ShapeDocument): number {
-  for (let i = doc.rows.length - 1; i >= 0; i--) {
-    const row = doc.rows[i];
-    if (row.kind === "code") return row.line;
-    return row.endLine;
-  }
-  return 0;
+/**
+ * Widest real line number in the document — sizes the custom gutter.
+ *
+ * Row order is monotonic in real line numbers, so the last row carries the
+ * largest one: its own line for code, its hidden range's end for a marker.
+ */
+export function maxRealLine(rows: readonly ShapeRow[]): number {
+  const last = rows[rows.length - 1];
+  if (!last) return 0;
+  return last.kind === "code" ? last.line : last.endLine;
 }

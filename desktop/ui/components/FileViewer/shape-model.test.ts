@@ -5,7 +5,6 @@ import {
   buildShapeDocument,
   collectFolds,
   maxRealLine,
-  rowAtDocLine,
 } from "./shape-model";
 
 function symbol(
@@ -126,7 +125,7 @@ describe("collectFolds", () => {
   });
 });
 
-const FILE = [
+const FILE_LINES = [
   "import os", // 1
   "", // 2
   "", // 3
@@ -139,13 +138,14 @@ const FILE = [
   "", // 10
   "", // 11
   "VALUE = 3", // 12
-].join("\n");
+];
+const FILE = FILE_LINES.join("\n");
 
 const GREET = { id: "5:9", name: "greet", startLine: 5, endLine: 9 };
 
 describe("buildShapeDocument", () => {
   it("replaces a collapsed body with one indent-matched marker line", () => {
-    const doc = buildShapeDocument(FILE, [GREET], EMPTY);
+    const doc = buildShapeDocument(FILE_LINES, [GREET], EMPTY);
     expect(doc.content.split("\n")).toEqual([
       "import os",
       "",
@@ -156,25 +156,27 @@ describe("buildShapeDocument", () => {
       "",
       "VALUE = 3",
     ]);
-    expect(doc.collapsedCount).toBe(1);
-    expect(doc.hiddenLineCount).toBe(5);
+    const markers = doc.rows.filter((r) => r.kind === "marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({ hiddenLines: 5 });
   });
 
   it("maps every rendered row back to its real line number", () => {
-    const doc = buildShapeDocument(FILE, [GREET], EMPTY);
+    const doc = buildShapeDocument(FILE_LINES, [GREET], EMPTY);
     expect(
       doc.rows.map((r) => (r.kind === "code" ? r.line : "marker")),
     ).toEqual([1, 2, 3, 4, "marker", 10, 11, 12]);
-    // The gap in the numbering is the elision signal.
-    expect(doc.docLineByRealLine.get(12)).toBe(8);
-    expect(doc.docLineByRealLine.has(6)).toBe(false);
-    expect(maxRealLine(doc)).toBe(12);
+    // The gap in the numbering is the elision signal: the hidden lines have no
+    // row at all, and the lines after them keep their real numbers.
+    expect(doc.rows[7]).toEqual({ kind: "code", line: 12 });
+    expect(doc.rows.some((r) => r.kind === "code" && r.line === 6)).toBe(false);
+    expect(maxRealLine(doc.rows)).toBe(12);
   });
 
   it("carries the hidden range on the marker row", () => {
-    const doc = buildShapeDocument(FILE, [GREET], EMPTY);
-    const row = rowAtDocLine(doc, 5);
-    expect(row).toEqual({
+    const doc = buildShapeDocument(FILE_LINES, [GREET], EMPTY);
+    // `rows[n - 1]` describes doc line `n` — the marker is on doc line 5.
+    expect(doc.rows[4]).toEqual({
       kind: "marker",
       foldId: "5:9",
       foldName: "greet",
@@ -185,10 +187,9 @@ describe("buildShapeDocument", () => {
   });
 
   it("restores the literal file when a fold is expanded", () => {
-    const doc = buildShapeDocument(FILE, [GREET], new Set(["5:9"]));
+    const doc = buildShapeDocument(FILE_LINES, [GREET], new Set(["5:9"]));
     expect(doc.content).toBe(FILE);
-    expect(doc.collapsedCount).toBe(0);
-    expect(doc.hiddenLineCount).toBe(0);
+    expect(doc.rows.some((r) => r.kind === "marker")).toBe(false);
   });
 
   /**
@@ -196,8 +197,8 @@ describe("buildShapeDocument", () => {
    * same row index that the body's first line takes once expanded.
    */
   it("puts the expanded body's first line at the marker's row index", () => {
-    const collapsed = buildShapeDocument(FILE, [GREET], EMPTY);
-    const expanded = buildShapeDocument(FILE, [GREET], new Set(["5:9"]));
+    const collapsed = buildShapeDocument(FILE_LINES, [GREET], EMPTY);
+    const expanded = buildShapeDocument(FILE_LINES, [GREET], new Set(["5:9"]));
     const markerIndex = collapsed.rows.findIndex((r) => r.kind === "marker");
     expect(expanded.rows[markerIndex]).toEqual({
       kind: "code",
@@ -208,28 +209,31 @@ describe("buildShapeDocument", () => {
   });
 
   it("is a no-op when nothing folds", () => {
-    const doc = buildShapeDocument(FILE, [], EMPTY);
+    const doc = buildShapeDocument(FILE_LINES, [], EMPTY);
     expect(doc.content).toBe(FILE);
     expect(doc.rows).toHaveLength(12);
   });
 
   it("preserves a trailing newline", () => {
-    const doc = buildShapeDocument("a\nb\n", [], EMPTY);
+    const doc = buildShapeDocument(["a", "b", ""], [], EMPTY);
     expect(doc.content).toBe("a\nb\n");
     expect(doc.rows).toHaveLength(2);
   });
 
   it("clamps a fold that runs past the end of the file", () => {
-    const doc = buildShapeDocument(FILE, [{ ...GREET, endLine: 999 }], EMPTY);
+    const doc = buildShapeDocument(
+      FILE_LINES,
+      [{ ...GREET, endLine: 999 }],
+      EMPTY,
+    );
     const last = doc.rows[doc.rows.length - 1];
     expect(last).toMatchObject({ kind: "marker", startLine: 5, endLine: 12 });
     expect(doc.content.endsWith(`    ${SHAPE_MARKER}`)).toBe(true);
+    expect(maxRealLine(doc.rows)).toBe(12);
   });
 
   it("indents the marker from the first non-blank hidden line", () => {
-    const nested = ["class A:", "    def m(self):", "", "", "", "", ""].join(
-      "\n",
-    );
+    const nested = ["class A:", "    def m(self):", "", "", "", "", ""];
     const doc = buildShapeDocument(
       nested,
       [{ id: "3:7", name: "m", startLine: 3, endLine: 7 }],
