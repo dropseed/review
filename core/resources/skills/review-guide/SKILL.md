@@ -212,7 +212,7 @@ review guide clear                     # drop the guide
 Git index (working tree):
 
 ```
-review changes [--staged|--unstaged|--file GLOB] [--json] [--diff]
+review changes [--staged|--unstaged|--file GLOB|--label PATTERN|--hunk ID] [--json] [--diff]
 review stage|unstage <hunk-id|file>...
 ```
 

@@ -12,6 +12,7 @@ use serde::Serialize;
 use crate::classify::classify_hunks_static;
 use crate::diff::parser::{parse_diff, parse_multi_file_diff, DiffHunk};
 use crate::sources::local_git::LocalGitSource;
+use crate::trust::matches_pattern;
 
 use super::common::{
     classified_labels, hunk_line_stats, parse_hunk_target, print_json, render_hunk_diff, HunkTarget,
@@ -38,6 +39,12 @@ pub struct ChangesArgs {
     /// Filter to a file-path glob (e.g. "src/*.rs")
     #[arg(long)]
     pub file: Option<String>,
+    /// Filter by label pattern (e.g. "imports:*")
+    #[arg(long)]
+    pub label: Option<String>,
+    /// Show only the hunk with this ID
+    #[arg(long)]
+    pub hunk: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -129,8 +136,18 @@ pub fn run_changes(args: ChangesArgs) -> Result<(), String> {
                 continue;
             }
         }
-        let (additions, deletions) = hunk_line_stats(hunk);
+        if let Some(id) = &args.hunk {
+            if &hunk.id != id {
+                continue;
+            }
+        }
         let labels = classified_labels(&classification, &hunk.id);
+        if let Some(label_pattern) = &args.label {
+            if !labels.iter().any(|l| matches_pattern(l, label_pattern)) {
+                continue;
+            }
+        }
+        let (additions, deletions) = hunk_line_stats(hunk);
         rows.push(ChangeRow {
             id: hunk.id.clone(),
             file: hunk.file_path.clone(),
@@ -139,7 +156,8 @@ pub fn run_changes(args: ChangesArgs) -> Result<(), String> {
             additions,
             deletions,
             labels,
-            diff: if args.diff {
+            // A single-hunk query always includes the diff.
+            diff: if args.diff || args.hunk.is_some() {
                 Some(render_hunk_diff(hunk))
             } else {
                 None
@@ -152,6 +170,15 @@ pub fn run_changes(args: ChangesArgs) -> Result<(), String> {
                 if !pattern.matches(path) {
                     continue;
                 }
+            }
+            if let Some(id) = &args.hunk {
+                if path != id {
+                    continue;
+                }
+            }
+            // Untracked rows never carry labels, so any --label filter excludes them.
+            if args.label.is_some() {
+                continue;
             }
             rows.push(ChangeRow {
                 id: path.clone(),
