@@ -254,6 +254,74 @@ function OutlineToggleButton() {
   );
 }
 
+/**
+ * Shape mode toggle — folds every function/method body to a `⋯` marker so the
+ * file reads as its outline. Only offered for the whole-file view.
+ */
+function ShapeToggleButton({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  return (
+    <SimpleTooltip content="Shape — fold function bodies">
+      <button
+        onClick={onToggle}
+        aria-pressed={active}
+        aria-label="Toggle shape mode"
+        className={`hidden @lg:flex items-center justify-center w-6 h-6 rounded transition-colors ${
+          active
+            ? "text-fg-secondary bg-surface-raised/50"
+            : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised"
+        }`}
+      >
+        <svg
+          className="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 4h16M4 20h16M8 8l4 4 4-4M8 16l4-4 4 4" />
+        </svg>
+      </button>
+    </SimpleTooltip>
+  );
+}
+
+/** Expand-all / collapse-all, shown only while shape mode is on. */
+function ShapeFoldControls({
+  allExpanded,
+  onExpandAll,
+  onCollapseAll,
+}: {
+  allExpanded: boolean;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
+}): JSX.Element {
+  return (
+    <div className="hidden @lg:flex items-center rounded bg-surface-raised/30 p-0.5">
+      <button
+        onClick={onExpandAll}
+        disabled={allExpanded}
+        className="rounded px-2 py-0.5 text-xxs font-medium text-fg-muted transition-colors hover:text-fg-secondary disabled:opacity-40 disabled:hover:text-fg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
+      >
+        Expand all
+      </button>
+      <button
+        onClick={onCollapseAll}
+        className="rounded px-2 py-0.5 text-xxs font-medium text-fg-muted transition-colors hover:text-fg-secondary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-ring/50"
+      >
+        Collapse all
+      </button>
+    </div>
+  );
+}
+
 interface FileViewerToolbarProps {
   filePath: string;
   contentMode: ContentMode;
@@ -280,6 +348,14 @@ interface FileViewerToolbarProps {
   isWorkingTreeMode?: boolean;
   onExitWorkingTreeMode?: () => void;
   hasSymbols?: boolean;
+  /** Whether shape mode can be offered (plain whole-file view with foldables) */
+  shapeAvailable?: boolean;
+  shapeMode?: boolean;
+  /** True when no fold is currently collapsed — disables "Expand all" */
+  shapeAllExpanded?: boolean;
+  onToggleShapeMode?: () => void;
+  onExpandAllFolds?: () => void;
+  onCollapseAllFolds?: () => void;
   isExternalFile?: boolean;
   onCloseExternalFile?: () => void;
 }
@@ -310,6 +386,12 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   isWorkingTreeMode,
   onExitWorkingTreeMode,
   hasSymbols,
+  shapeAvailable,
+  shapeMode,
+  shapeAllExpanded,
+  onToggleShapeMode,
+  onExpandAllFolds,
+  onCollapseAllFolds,
   isExternalFile,
   onCloseExternalFile,
 }: FileViewerToolbarProps) {
@@ -463,6 +545,10 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   }
 
   const showDiffControls = contentMode.type === "diff";
+  // Shape mode reads the whole file as an outline, so it is only offered for
+  // the plain content mode — a diff has its own notion of what is elided.
+  const showShapeControls =
+    contentMode.type === "plain" && !!shapeAvailable && !!onToggleShapeMode;
 
   return (
     <div
@@ -562,6 +648,28 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
                   onChange={handleDiffViewModeChange}
                 />
               )}
+              {showShapeControls && (
+                <DropdownMenuCheckboxItem
+                  checked={shapeMode ?? false}
+                  onCheckedChange={onToggleShapeMode}
+                  className="text-xs"
+                >
+                  Shape (fold bodies)
+                </DropdownMenuCheckboxItem>
+              )}
+              {showShapeControls && shapeMode && (
+                <>
+                  <DropdownMenuItem
+                    onClick={onExpandAllFolds}
+                    disabled={shapeAllExpanded}
+                  >
+                    Expand all bodies
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onCollapseAllFolds}>
+                    Collapse all bodies
+                  </DropdownMenuItem>
+                </>
+              )}
               {hasSymbols && <OutlineMenuItem />}
               {onSplitOrRotate && (
                 <DropdownMenuItem onClick={onSplitOrRotate}>
@@ -577,7 +685,9 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
                   {isSplitActive ? "Rotate split" : "Split view"}
                 </DropdownMenuItem>
               )}
-              {(hasSymbols || onSplitOrRotate) && <DropdownMenuSeparator />}
+              {(hasSymbols || onSplitOrRotate || showShapeControls) && (
+                <DropdownMenuSeparator />
+              )}
               <DropdownMenuItem onClick={() => revealInBrowse(filePath)}>
                 <svg
                   fill="none"
@@ -720,6 +830,19 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
               <DiffOptionsPopover />
             </span>
           </>
+        )}
+        {showShapeControls && shapeMode && onExpandAllFolds && (
+          <ShapeFoldControls
+            allExpanded={!!shapeAllExpanded}
+            onExpandAll={onExpandAllFolds}
+            onCollapseAll={onCollapseAllFolds ?? (() => {})}
+          />
+        )}
+        {showShapeControls && onToggleShapeMode && (
+          <ShapeToggleButton
+            active={!!shapeMode}
+            onToggle={onToggleShapeMode}
+          />
         )}
         {hasSymbols && <OutlineToggleButton />}
         {onSplitOrRotate && (

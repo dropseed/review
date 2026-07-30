@@ -47,10 +47,12 @@ import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
+import { buildShapeDocument, collectFolds } from "./shape-model";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
 const EMPTY_HUNKS: DiffHunk[] = [];
+const NO_FOLDS_EXPANDED: ReadonlySet<string> = new Set();
 
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
@@ -174,6 +176,12 @@ export function FileViewer({
   // Which floating bar (if any) is open over the file viewport.
   const [openBar, setOpenBar] = useState<"search" | "goToLine" | null>(null);
 
+  // Shape mode: read the file as its outline, every function/method body
+  // folded to a marker. Reset per file (no persistence — reading posture).
+  const [shapeMode, setShapeMode] = useState(false);
+  const [expandedFolds, setExpandedFolds] =
+    useState<ReadonlySet<string>>(NO_FOLDS_EXPANDED);
+
   // File-level comment editor state
   const [fileCommentEditorOpen, setFileCommentEditorOpen] = useState(false);
   const [editingFileCommentId, setEditingFileCommentId] = useState<
@@ -278,6 +286,8 @@ export function FileViewer({
     setEditingFileCommentId(null);
     setOpenBar(null);
     setHighlightLine(null);
+    setShapeMode(false);
+    setExpandedFolds(NO_FOLDS_EXPANDED);
   }, [filePath]);
 
   // Listener stays registered for the FileViewer's lifetime; gate via
@@ -613,6 +623,60 @@ export function FileViewer({
     return PLAIN_MODE;
   }, [fileContent, isGitignored, svgViewMode, viewMode]);
 
+  // --- Shape mode ---------------------------------------------------------
+  // Foldable bodies come straight from the symbol tree; a symbol without a
+  // bodyStartLine simply doesn't fold, so this degrades to "nothing to fold"
+  // rather than breaking while the extractor catches up.
+  const folds = useMemo(
+    () => (fileSymbols ? collectFolds(fileSymbols) : []),
+    [fileSymbols],
+  );
+  // Only meaningful for the whole-file view — a diff already has its own
+  // notion of what is elided.
+  const shapeAvailable = contentMode.type === "plain" && folds.length > 0;
+
+  const shapeDocument = useMemo(
+    () =>
+      shapeMode && shapeAvailable && fileContent
+        ? buildShapeDocument(fileContent.content, folds, expandedFolds)
+        : null,
+    [shapeMode, shapeAvailable, fileContent, folds, expandedFolds],
+  );
+
+  const handleToggleFold = useCallback((foldId: string) => {
+    setExpandedFolds((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(foldId)) next.add(foldId);
+      return next;
+    });
+  }, []);
+
+  const handleExpandAllFolds = useCallback(() => {
+    setExpandedFolds(new Set(folds.map((f) => f.id)));
+  }, [folds]);
+
+  const handleCollapseAllFolds = useCallback(() => {
+    setExpandedFolds(NO_FOLDS_EXPANDED);
+  }, []);
+
+  const handleToggleShapeMode = useCallback(() => {
+    setShapeMode((prev) => !prev);
+    setExpandedFolds(NO_FOLDS_EXPANDED);
+    setHighlightLine(null);
+  }, []);
+
+  const shape = useMemo(
+    () =>
+      shapeDocument
+        ? {
+            content: shapeDocument.content,
+            rows: shapeDocument.rows,
+            onToggleFold: handleToggleFold,
+          }
+        : undefined,
+    [shapeDocument, handleToggleFold],
+  );
+
   if (loading || fileContentPath !== filePath) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -689,6 +753,14 @@ export function FileViewer({
           isWorkingTreeMode ? handleExitWorkingTreeMode : undefined
         }
         hasSymbols={hasSymbols}
+        shapeAvailable={shapeAvailable}
+        shapeMode={shapeMode}
+        shapeAllExpanded={
+          shapeDocument !== null && shapeDocument.collapsedCount === 0
+        }
+        onToggleShapeMode={handleToggleShapeMode}
+        onExpandAllFolds={handleExpandAllFolds}
+        onCollapseAllFolds={handleCollapseAllFolds}
         isExternalFile={isExternalFile}
         onCloseExternalFile={
           isExternalFile
@@ -784,6 +856,7 @@ export function FileViewer({
           onTokenClick={onTokenClick}
           containerRef={setScrollNode}
           handleRef={codeViewHandleRef}
+          shape={shape}
         />
         {contentMode.type === "diff" && (
           <DiffMinimap
