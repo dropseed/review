@@ -6,6 +6,7 @@ export { useTerminalEvents } from "./useTerminalEvents";
 export { useReviewTier } from "./useReviewTier";
 export { useTerminalFileDrop } from "./useTerminalFileDrop";
 export { useRepoActivitySync } from "./useRepoActivitySync";
+export { useTerminalCheckoutSync } from "./useTerminalCheckoutSync";
 export {
   useRepositoryInit,
   getStoredRepoPath,

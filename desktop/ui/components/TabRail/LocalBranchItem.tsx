@@ -11,6 +11,7 @@ import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { SidebarRowMenuItems } from "./SidebarRowMenuItems";
 import { RowStatus } from "./RowStatus";
+import { useTerminalTabDrop } from "./useTerminalTabDrop";
 import {
   ROW_ACTIONS,
   ROW_LABEL_HOVER_FADE,
@@ -31,8 +32,6 @@ interface LocalBranchItemProps {
    */
   checkoutPath: string | null;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
-  /** Repo-level checkout roots, computed once by the sidebar. */
-  checkouts: readonly string[];
 }
 
 export const LocalBranchItem = memo(function LocalBranchItem({
@@ -43,10 +42,10 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   itemKind,
   checkoutPath,
   onActivate,
-  checkouts,
 }: LocalBranchItemProps) {
   // The review's identity is the branch name.
   const reviewRef = branch.name;
+  const { dropClass, dropProps } = useTerminalTabDrop(repoPath, reviewRef);
 
   const isActive = useReviewStore(
     (s) =>
@@ -173,9 +172,11 @@ export const LocalBranchItem = memo(function LocalBranchItem({
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
+        {...dropProps}
         className={`group relative w-full text-left py-1 rounded cursor-default
                     transition-colors duration-100 px-2.5
-                    ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
+                    ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}
+                    ${dropClass}`}
         aria-current={isActive ? "true" : undefined}
         title={`${branch.name}${branch.worktreePath ? ` (worktree: ${branch.worktreePath})` : ""} — ${branch.commitsAhead} commit${branch.commitsAhead !== 1 ? "s" : ""} ahead of ${defaultBranch}`}
       >
@@ -200,10 +201,10 @@ export const LocalBranchItem = memo(function LocalBranchItem({
           <span className={ROW_STATUS}>
             <RowStatus
               repoPath={repoPath}
+              reviewRef={reviewRef}
               checkoutPath={checkoutPath}
               tier={checkoutPath ? "materialized" : "fetched"}
               showWorktreeIcon={itemKind === "worktree"}
-              checkouts={checkouts}
             />
             {branch.hasWorkingTreeChanges && (
               <span className={ROW_MODIFIED_BADGE}>M</span>

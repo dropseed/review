@@ -10,6 +10,7 @@ import { RowStatus } from "./RowStatus";
 import { PrPreviewCard } from "./PrPreviewCard";
 import { SimpleTooltip } from "../ui/tooltip";
 import { ROW_ACTIONS, ROW_LABEL_HOVER_FADE, ROW_STATUS } from "./row-chrome";
+import { useTerminalTabDrop } from "./useTerminalTabDrop";
 
 /**
  * Label a review by its identity (ref) for display. Listing is git-free, so
@@ -50,8 +51,6 @@ interface TabRailItemProps {
   repoLabel?: string;
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
-  /** Repo-level checkout roots, computed once by the sidebar. */
-  checkouts: readonly string[];
 }
 
 /** Value-based comparison so items skip re-render when globalReviews is reconstructed. */
@@ -77,7 +76,6 @@ function arePropsEqual(
   if (prev.review.worktreePath !== next.review.worktreePath) return false;
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
-  if (prev.checkouts !== next.checkouts) return false;
   return true;
 }
 
@@ -89,7 +87,6 @@ export const TabRailItem = memo(function TabRailItem({
   repoLabel,
   onActivate,
   onDelete,
-  checkouts,
 }: TabRailItemProps) {
   const isActive = useReviewStore(
     (s) =>
@@ -100,6 +97,10 @@ export const TabRailItem = memo(function TabRailItem({
   const [showChangeBase, setShowChangeBase] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const { dropClass, dropProps } = useTerminalTabDrop(
+    review.repoPath,
+    review.ref,
+  );
 
   const pr = review.githubPr;
   const isPr = pr != null;
@@ -159,9 +160,11 @@ export const TabRailItem = memo(function TabRailItem({
         }
       }}
       onContextMenu={handleContextMenu}
+      {...dropProps}
       className={`group relative w-full text-left px-2.5 py-1 rounded cursor-default
                     transition-colors duration-100
-                    ${isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]"}`}
+                    ${isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]"}
+                    ${dropClass}`}
       aria-current={isActive ? "true" : undefined}
       title={titleText}
     >
@@ -186,9 +189,9 @@ export const TabRailItem = memo(function TabRailItem({
         <span className={ROW_STATUS}>
           <RowStatus
             repoPath={review.repoPath}
+            reviewRef={review.ref}
             checkoutPath={review.worktreePath}
             tier={review.tier}
-            checkouts={checkouts}
           />
           {hasMissingRefs && (
             <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />

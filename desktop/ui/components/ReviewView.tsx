@@ -124,15 +124,6 @@ export function ReviewView({
   const worktreePath = useReviewStore((s) => s.worktreePath);
   const localActivity = useReviewStore((s) => s.localActivity);
 
-  // Republish the checkout layout whenever the listings change. These are the
-  // only things that say a worktree appeared or vanished, so this is also when
-  // a terminal left behind by a removed worktree gets adopted by its repo.
-  const globalReviews = useReviewStore((s) => s.globalReviews);
-  const setTerminalCheckouts = useReviewStore((s) => s.setTerminalCheckouts);
-  useEffect(() => {
-    setTerminalCheckouts(localActivity, globalReviews);
-  }, [localActivity, globalReviews, setTerminalCheckouts]);
-
   const isOnCurrentBranch = useMemo(() => {
     if (!repoPath || !comparison) return false;
     const repo = localActivity.find((r) => r.repoPath === repoPath);

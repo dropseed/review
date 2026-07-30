@@ -103,6 +103,7 @@ import {
   ROW_MODIFIED_BADGE,
   ROW_STATUS,
 } from "./row-chrome";
+import { useTerminalTabDrop } from "./useTerminalTabDrop";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -129,20 +130,6 @@ function SidebarList({
   const repoMetadata = useReviewStore((s) => s.repoMetadata);
   const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
   const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
-
-  // Checkout roots per repo, for attributing terminal sessions to rows. The
-  // tree already resolved every row's checkout, so this is a lookup over what
-  // it built rather than a second derivation from the raw activity lists.
-  const checkoutsByRepo = useMemo(
-    () => new Map(tree.map((node) => [node.repoPath, node.checkouts])),
-    [tree],
-  );
-
-  const checkoutsFor = useCallback(
-    (repoPath: string): readonly string[] =>
-      checkoutsByRepo.get(repoPath) ?? [],
-    [checkoutsByRepo],
-  );
 
   const reviewState = useReviewStore((s) => s.reviewState);
   const hunks = useAllHunks();
@@ -182,7 +169,6 @@ function SidebarList({
       missingRefs: reviewMissingRefs[key],
       onActivate: onActivateReview,
       onDelete: handleDeleteReview,
-      checkouts: checkoutsFor(review.repoPath),
     };
   }
 
@@ -220,7 +206,6 @@ function SidebarList({
         itemKind={entry.kind}
         checkoutPath={row.checkoutPath}
         onActivate={onActivateLocalBranch}
-        checkouts={checkoutsFor(row.repoPath)}
       />
     );
   }
@@ -434,6 +419,12 @@ function RepoNodeView({
   const meta = useReviewStore((s) => s.repoMetadata[node.repoPath]);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  // The repo row is its head branch's row, so a tab dropped on it is homed
+  // there — not on some repo-wide bucket the sidebar has no row for.
+  const { dropClass, dropProps } = useTerminalTabDrop(
+    node.repoPath,
+    node.head?.ref ?? "",
+  );
 
   const expanded = isRepoExpanded(collapsedRepos, node);
   const displayName = meta?.routePrefix
@@ -502,9 +493,11 @@ function RepoNodeView({
           }
         }}
         onContextMenu={handleContextMenu}
+        {...dropProps}
         className={`group relative flex items-center gap-1.5 w-full text-left px-2.5 py-1
                     transition-colors duration-100 rounded-sm cursor-default
-                    ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}`}
+                    ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}
+                    ${dropClass}`}
         aria-current={headIsActive ? "true" : undefined}
         title={
           headBranch
@@ -567,9 +560,9 @@ function RepoNodeView({
           {head && (
             <RowStatus
               repoPath={node.repoPath}
+              reviewRef={head.ref}
               checkoutPath={head.checkoutPath}
               tier={head.checkoutPath ? "materialized" : "fetched"}
-              checkouts={node.checkouts}
             />
           )}
           <span

@@ -139,13 +139,6 @@ export interface RepoNode {
   live: SidebarRow[];
   /** Everything else, behind the repo's inline `⋯ more` toggle. */
   rest: SidebarRow[];
-  /**
-   * Every checkout root in the repo — the repo itself plus each row's
-   * `checkoutPath`. Terminal sessions are attributed to the *innermost* root,
-   * so a row needs the whole set, not just its own: worktrees can live under
-   * the repo root, and a prefix test alone would let the repo row claim them.
-   */
-  checkouts: string[];
   lastFetchedAt: number | null;
   hasChanges: boolean;
   /** Has anything live: drives default expansion and top-of-list placement. */
@@ -416,13 +409,9 @@ export function buildSidebarTree(
     const live = bucket.rows.filter((r) => r.live).sort(byRank);
     const rest = bucket.rows.filter((r) => !r.live).sort(byRank);
 
-    // The repo root counts even when nothing is checked out there (a bare or
-    // freshly-cloned repo still anchors session attribution).
-    const checkouts = new Set<string>([bucket.repoPath]);
     let pinRank: number | null = null;
     for (const row of [bucket.head, ...bucket.rows]) {
       if (!row) continue;
-      if (row.checkoutPath) checkouts.add(row.checkoutPath);
       const rank = pinOrder.get(row.reviewKey);
       if (rank !== undefined && (pinRank === null || rank < pinRank)) {
         pinRank = rank;
@@ -436,7 +425,6 @@ export function buildSidebarTree(
       head: bucket.head,
       live,
       rest,
-      checkouts: [...checkouts],
       lastFetchedAt: bucket.lastFetchedAt,
       hasChanges: bucket.hasChanges,
       // Stated separately from the head row's liveness so it survives a repo

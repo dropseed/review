@@ -26,6 +26,8 @@ function TierDot({ tier }: { tier: ReviewTier }): ReactNode {
 
 interface RowStatusProps {
   repoPath: string;
+  /** The row's ref — its identity, and what a re-homed terminal names. */
+  reviewRef: string;
   /** The row's own checkout: a linked worktree, the repo root for the main
    *  working-tree row, or null when the row has no checkout at all. */
   checkoutPath?: string | null;
@@ -33,8 +35,6 @@ interface RowStatusProps {
   /** Show the worktree glyph. Suppressed for the main working tree, which is
    *  a checkout but not a *linked* worktree. */
   showWorktreeIcon?: boolean;
-  /** Repo-level checkout roots, computed once by the sidebar. */
-  checkouts: readonly string[];
 }
 
 /**
@@ -47,10 +47,10 @@ interface RowStatusProps {
  */
 export function RowStatus({
   repoPath,
+  reviewRef,
   checkoutPath,
   tier,
   showWorktreeIcon = false,
-  checkouts,
 }: RowStatusProps): ReactNode {
   return (
     <>
@@ -60,11 +60,7 @@ export function RowStatus({
           <GitTreeIcon className="h-3.5 w-3.5" />
         </span>
       )}
-      <TerminalStatusBadge
-        repoPath={repoPath}
-        checkoutPath={checkoutPath}
-        checkouts={checkouts}
-      />
+      <TerminalStatusBadge repoPath={repoPath} reviewRef={reviewRef} />
     </>
   );
 }

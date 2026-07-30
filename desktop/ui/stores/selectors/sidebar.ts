@@ -6,7 +6,7 @@ import type { GlobalReviewSummary, RepoLocalActivity } from "../../types";
 /** Everything `buildSidebarTree` needs that lives in the store. */
 export interface SidebarTreeState extends Pick<
   TerminalSlice,
-  "terminalSessions" | "terminalExited" | "terminalCheckouts"
+  "terminalSessions" | "terminalExited" | "terminalCheckouts" | "terminalHomes"
 > {
   localActivity: RepoLocalActivity[];
   globalReviews: GlobalReviewSummary[];

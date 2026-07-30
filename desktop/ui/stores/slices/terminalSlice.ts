@@ -73,6 +73,14 @@ export interface TerminalSlice {
    * Pinning has to survive that, so it is stored against the thing that does.
    */
   terminalPinnedIds: string[];
+  /**
+   * Session id → the review key its tab lives under (persisted).
+   *
+   * Written when the session is created and when the user drags its tab onto
+   * another row; never re-derived. Keyed by session id for the same reason
+   * `terminalPinnedIds` is — sessions outlive the window, tab ids don't.
+   */
+  terminalHomes: Record<string, string>;
 
   /** How the panel shares the content region with the diff (persisted). */
   terminalPanelMode: TerminalPanelMode;
@@ -128,6 +136,12 @@ export interface TerminalSlice {
    * keeping its home bucket, so unpinning simply stops showing it elsewhere.
    */
   toggleTabPinned: (tabId: string) => void;
+  /**
+   * Re-home a tab onto `reviewKey` — the drag from the tab strip onto a
+   * sidebar row. Writes the home for every session in the tab, so the move
+   * survives a reload and the row's badge counts it too.
+   */
+  setTabHome: (tabId: string, reviewKey: string) => void;
   /**
    * Publish the current checkout layout. Re-homes every tab against it, which
    * is how a terminal whose worktree was removed gets adopted by its repo's
@@ -230,6 +244,12 @@ export interface RepoCheckouts {
   roots: string[];
   /** Checkout root → the review key whose row owns it. */
   owners: Record<string, string>;
+  /**
+   * Every review key this repo can show a row for. A stored home naming a key
+   * outside this set has no row left to be seen on, which is what
+   * `reachableKey` rescues.
+   */
+  rows: Set<string>;
 }
 
 export type CheckoutIndex = Record<string, RepoCheckouts>;
@@ -257,6 +277,7 @@ export function buildCheckoutIndex(
         rootKey: makeReviewKey(repoPath, ""),
         roots: [repoPath],
         owners: {},
+        rows: new Set(),
       };
       index[repoPath] = repo;
     }
@@ -268,6 +289,9 @@ export function buildCheckoutIndex(
     path: string | null | undefined,
     key: string,
   ) => {
+    // Every key seen is a row, checkout or not: a row with no directory still
+    // exists in the sidebar, so a tab homed there is still reachable.
+    repo.rows.add(key);
     if (!path) return;
     if (!repo.roots.includes(path)) repo.roots.push(path);
     repo.owners[path] = key;
@@ -315,8 +339,11 @@ export function buildCheckoutIndex(
 }
 
 /**
- * The review key a session's tab belongs under: the key owning the innermost
- * checkout its start cwd falls in.
+ * The review key a session's tab belongs under *when nothing has been stored
+ * for it*: the key owning the innermost checkout its start cwd falls in.
+ *
+ * This is the initial answer, not a standing one — see `sessionHomeKey`, which
+ * is what placement actually goes through.
  *
  * A cwd that matches no known checkout means the checkout was removed while the
  * shell kept running (see `isOrphanedSession`), so it is adopted by the repo's
@@ -334,6 +361,52 @@ export function sessionReviewKey(
   if (!repo) return fallback;
   const checkout = sessionCheckout(cwd, repo.roots);
   return (checkout && repo.owners[checkout]) || repo.rootKey;
+}
+
+/**
+ * `key` if a row can still show it, otherwise the repo's root key.
+ *
+ * A stored home outlives the row it names — the review gets marked done, the
+ * branch is deleted — and a bucket no routed view reads is one where a tab
+ * disappears while its PTY keeps running. So an unreachable home is *rendered*
+ * at the root row; the stored value is deliberately left alone, and the tab
+ * goes home if the row comes back.
+ *
+ * A repo the index has never seen returns the key untouched: an empty index is
+ * not evidence that a row is gone.
+ */
+export function reachableKey(
+  index: CheckoutIndex,
+  repoPath: string,
+  key: string,
+): string {
+  const repo = index[repoPath];
+  if (!repo) return key;
+  return repo.rows.has(key) ? key : repo.rootKey;
+}
+
+/**
+ * Where a session's tab lives: its stored home if it has one, otherwise the
+ * checkout its cwd falls in.
+ *
+ * Homes are written once, when the terminal is created, and after that only by
+ * the user dragging a tab onto a row. Deriving on every ingest instead would
+ * mean a `git checkout` in the main working tree silently relocated every shell
+ * running in it — the terminal moving under you because of something you did to
+ * the repo, not to the terminal.
+ *
+ * Derivation still answers for a session with no stored home: one this window
+ * did not create, reattached from the daemon.
+ */
+export function sessionHomeKey(
+  index: CheckoutIndex,
+  homes: Record<string, string>,
+  session: TerminalSessionInfo,
+  fallback: string,
+): string {
+  const stored = homes[session.id];
+  if (stored) return reachableKey(index, session.repoPath, stored);
+  return sessionReviewKey(index, session.repoPath, session.cwd, fallback);
 }
 
 /**
@@ -572,22 +645,30 @@ export function ingestTerminalList(
     ];
   }
 
-  const activeTerminalIdByReviewKey = {
-    ...state.activeTerminalIdByReviewKey,
-  };
-  for (const [key, ids] of Object.entries(terminalIdsByReviewKey)) {
-    activeTerminalIdByReviewKey[key] = activeFallback(
-      ids,
-      activeTerminalIdByReviewKey[key] ?? null,
-    );
-  }
-
   return {
     terminalSessions,
     terminalStatuses,
     terminalIdsByReviewKey,
-    activeTerminalIdByReviewKey,
+    activeTerminalIdByReviewKey: resolveActiveTerminalIds(
+      terminalIdsByReviewKey,
+      state.activeTerminalIdByReviewKey,
+    ),
   };
+}
+
+/**
+ * The active session per review key, re-picked wherever the old answer left its
+ * bucket. The flat-map counterpart of `resolveActiveTabIds`.
+ */
+export function resolveActiveTerminalIds(
+  idsByKey: Record<string, string[]>,
+  previous: Record<string, string | null>,
+): Record<string, string | null> {
+  const out = { ...previous };
+  for (const [key, ids] of Object.entries(idsByKey)) {
+    out[key] = activeFallback(ids, out[key] ?? null);
+  }
+  return out;
 }
 
 // ----- Pure tab-tree reducers (exported for unit testing) -----
@@ -843,6 +924,69 @@ export function setTabPinned(
 }
 
 /**
+ * Move one tab into `targetKey`'s bucket, appended at the end.
+ *
+ * The tab becomes the target key's active tab: the user just put it there, so
+ * that row should be showing it the next time they open it. The bucket it left
+ * re-picks its own active tab.
+ */
+export function moveTabToKey(
+  state: TabState,
+  tabId: string,
+  targetKey: string,
+): Partial<TabState> {
+  const found = findTab(state.terminalTabsByReviewKey, tabId);
+  if (!found || found.reviewKey === targetKey) return {};
+
+  const terminalTabsByReviewKey = { ...state.terminalTabsByReviewKey };
+  terminalTabsByReviewKey[found.reviewKey] = (
+    terminalTabsByReviewKey[found.reviewKey] ?? []
+  ).filter((tab) => tab.id !== tabId);
+  terminalTabsByReviewKey[targetKey] = [
+    ...(terminalTabsByReviewKey[targetKey] ?? []),
+    found.tab,
+  ];
+
+  return {
+    terminalTabsByReviewKey,
+    activeTabIdByReviewKey: {
+      ...resolveActiveTabIds(
+        terminalTabsByReviewKey,
+        state.activeTabIdByReviewKey,
+      ),
+      [targetKey]: tabId,
+    },
+  };
+}
+
+/**
+ * Move `ids` into `targetKey`'s flat bucket. The tab tree is what the panel
+ * renders, but these buckets still order the panel's sessions and hold the
+ * per-key active id, so a re-homed tab has to move in both.
+ */
+export function moveTerminalsToKey(
+  state: TerminalState,
+  ids: string[],
+  targetKey: string,
+): Partial<TerminalState> {
+  const moving = new Set(ids);
+  const terminalIdsByReviewKey: Record<string, string[]> = {};
+  for (const [key, bucket] of Object.entries(state.terminalIdsByReviewKey)) {
+    terminalIdsByReviewKey[key] = bucket.filter((id) => !moving.has(id));
+  }
+  const existing = terminalIdsByReviewKey[targetKey] ?? [];
+  terminalIdsByReviewKey[targetKey] = [...existing, ...ids];
+
+  return {
+    terminalIdsByReviewKey,
+    activeTerminalIdByReviewKey: resolveActiveTerminalIds(
+      terminalIdsByReviewKey,
+      state.activeTerminalIdByReviewKey,
+    ),
+  };
+}
+
+/**
  * Move each tab into the bucket its session now belongs to. `homeFor` returns
  * null for a session it has no opinion about, leaving that tab where it is.
  *
@@ -1072,29 +1216,43 @@ export function sessionCheckout(
   return best;
 }
 
+type HomeState = Pick<
+  TerminalSlice,
+  "terminalSessions" | "terminalCheckouts" | "terminalHomes"
+>;
+
+function groupByHomeKey(
+  sessions: TerminalSessionInfo[],
+  state: HomeState,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const session of sessions) {
+    const key = sessionHomeKey(
+      state.terminalCheckouts,
+      state.terminalHomes,
+      session,
+      makeReviewKey(session.repoPath, ""),
+    );
+    (out[key] ??= []).push(session.id);
+  }
+  return out;
+}
+
 /**
- * Ids of the sessions belonging to one row.
+ * Every session grouped by the row that owns it — the answer the sidebar's
+ * per-row badges read.
  *
- * `checkoutPath` is the row's own directory — a linked worktree, or the repo
- * root for the main working-tree row. Rows without a checkout own no sessions
- * (they have nowhere to run one), so they get an empty list.
+ * One pass for the whole sidebar rather than one scan per row, and one rule:
+ * asking each row to attribute sessions itself is what let a row's badge and
+ * the tab strip disagree about a terminal that had been re-homed.
  *
- * `checkouts` is every checkout root in the repo, needed to attribute a
- * session to the *innermost* one: worktrees can live under the repo root, so a
- * plain prefix test would let the repo-root row claim every worktree's
- * terminals as well as its own.
+ * Includes exited sessions, which still have a tab and still belong to a row
+ * until they are closed.
  */
-export function selectTerminalIdsForRow(
-  state: Pick<TerminalSlice, "terminalSessions">,
-  repoPath: string,
-  checkoutPath: string | null | undefined,
-  checkouts: readonly string[],
-): string[] {
-  if (!checkoutPath) return [];
-  return Object.values(state.terminalSessions)
-    .filter((s) => s.repoPath === repoPath)
-    .filter((s) => sessionCheckout(s.cwd, checkouts) === checkoutPath)
-    .map((s) => s.id);
+export function selectSessionsByHomeKey(
+  state: HomeState,
+): Record<string, string[]> {
+  return groupByHomeKey(Object.values(state.terminalSessions), state);
 }
 
 /**
@@ -1104,26 +1262,17 @@ export function selectTerminalIdsForRow(
  * answer doesn't depend on a presentation structure — and so the tree can take
  * this as an input without either one needing the other first. A session whose
  * checkout is gone lands in its repo's root bucket, the same place
- * `sessionReviewKey` puts it everywhere else.
+ * `sessionHomeKey` puts it everywhere else.
  */
 export function selectLiveSessionsByReviewKey(
-  state: Pick<
-    TerminalSlice,
-    "terminalSessions" | "terminalExited" | "terminalCheckouts"
-  >,
+  state: HomeState & Pick<TerminalSlice, "terminalExited">,
 ): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const session of Object.values(state.terminalSessions)) {
-    if (session.id in state.terminalExited) continue;
-    const key = sessionReviewKey(
-      state.terminalCheckouts,
-      session.repoPath,
-      session.cwd,
-      makeReviewKey(session.repoPath, ""),
-    );
-    (out[key] ??= []).push(session.id);
-  }
-  return out;
+  return groupByHomeKey(
+    Object.values(state.terminalSessions).filter(
+      (s) => !(s.id in state.terminalExited),
+    ),
+    state,
+  );
 }
 
 export const createTerminalSlice: SliceCreatorWithClientAndStorage<
@@ -1195,6 +1344,12 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       next.terminalPinnedIds = terminalPinnedIds;
       storage.set("terminalPinnedIds", terminalPinnedIds);
     }
+    if (id in g.terminalHomes) {
+      const terminalHomes = { ...g.terminalHomes };
+      delete terminalHomes[id];
+      next.terminalHomes = terminalHomes;
+      storage.set("terminalHomes", terminalHomes);
+    }
     set(next);
   }
 
@@ -1204,12 +1359,24 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
    * than two that happen to agree.
    */
   function ownerKey(session: TerminalSessionInfo, fallback: string): string {
-    return sessionReviewKey(
-      get().terminalCheckouts,
-      session.repoPath,
-      session.cwd,
+    const g = get();
+    return sessionHomeKey(
+      g.terminalCheckouts,
+      g.terminalHomes,
+      session,
       fallback,
     );
+  }
+
+  /** Record where these sessions live, and persist it. */
+  function rememberHome(
+    ids: string[],
+    reviewKey: string,
+  ): Record<string, string> {
+    const terminalHomes = { ...get().terminalHomes };
+    for (const id of ids) terminalHomes[id] = reviewKey;
+    storage.set("terminalHomes", terminalHomes);
+    return terminalHomes;
   }
 
   return {
@@ -1223,26 +1390,32 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     freshTerminalIds: [],
     terminalCheckouts: {},
     terminalPinnedIds: [],
+    terminalHomes: {},
     terminalPanelMode: "closed",
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
-      const [mode, legacyOpen, width, dockSide, pinned] = await Promise.all([
-        storage.get<TerminalPanelMode>("terminalPanelMode"),
-        // Pre-mode installs persisted an open/closed boolean; honor it once so
-        // the panel doesn't silently close on upgrade.
-        storage.get<boolean>("terminalPanelOpen"),
-        storage.get<number>("terminalPanelWidth"),
-        storage.get<TerminalDockSide>("terminalDockSide"),
-        storage.get<string[]>("terminalPinnedIds"),
-      ]);
+      const [mode, legacyOpen, width, dockSide, pinned, homes] =
+        await Promise.all([
+          storage.get<TerminalPanelMode>("terminalPanelMode"),
+          // Pre-mode installs persisted an open/closed boolean; honor it once so
+          // the panel doesn't silently close on upgrade.
+          storage.get<boolean>("terminalPanelOpen"),
+          storage.get<number>("terminalPanelWidth"),
+          storage.get<TerminalDockSide>("terminalDockSide"),
+          storage.get<string[]>("terminalPinnedIds"),
+          storage.get<Record<string, string>>("terminalHomes"),
+        ]);
       set({
         terminalPanelMode: mode ?? (legacyOpen ? "split" : "closed"),
         terminalPanelWidth: width ?? TERMINAL_PANEL_WIDTH_DEFAULT,
         terminalDockSide: dockSide ?? TERMINAL_DOCK_SIDE_DEFAULT,
         terminalPinnedIds: pinned ?? [],
+        // Sessions outlive the app, so homes written in an earlier run are
+        // still the answer for the sessions the daemon hands back.
+        terminalHomes: homes ?? {},
       });
     },
 
@@ -1267,10 +1440,14 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         // The terminal belongs to the checkout it was started in, not to
         // whatever row happened to be selected — those differ the moment you
         // open a shell in a worktree and then click back to the repo row.
+        //
+        // Recorded once, here: where it started is the answer for the rest of
+        // its life, unless the user says otherwise by dragging its tab.
         const key = ownerKey(session, reviewKey);
         set({
           ...addTerminalToState(g, session, key),
           ...addTabForTerminal(g, session.id, key, tabId),
+          terminalHomes: rememberHome([session.id], key),
         });
         runLaunchCommand(session.id);
         return id;
@@ -1297,11 +1474,18 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
           rows: 24,
         });
         const g = get();
+        // A split joins the tab it was opened from, so it inherits the pane's
+        // home rather than deriving one — otherwise splitting a re-homed tab
+        // would drag half of it back to the directory's own row.
+        const homeKey =
+          g.terminalHomes[targetTerminalId] ?? ownerKey(session, reviewKey);
         set({
-          // Same attribution as a new tab: the pane inherits the target's cwd,
-          // so it lands in the target's checkout — which is the tab's home even
-          // when the tab is being shown from somewhere else (pinned).
-          ...addTerminalToState(g, session, ownerKey(session, reviewKey)),
+          ...addTerminalToState(
+            g,
+            session,
+            reachableKey(g.terminalCheckouts, session.repoPath, homeKey),
+          ),
+          terminalHomes: rememberHome([session.id], homeKey),
           ...splitTabForTerminal(
             g,
             tabId,
@@ -1381,23 +1565,36 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     setTerminalCheckouts: (activity, reviews) => {
       const terminalCheckouts = buildCheckoutIndex(activity, reviews);
       const g = get();
-      // Re-homing here is the whole point: this fires when the checkout listing
-      // changed, which is exactly when a worktree may have disappeared out from
-      // under a still-running shell.
+      // This fires when the checkout listing changed, which is when a row a tab
+      // was homed on may have stopped existing. For a session with a stored
+      // home that is all this does — rescue it to a row that exists, without
+      // touching what was stored. Sessions with no home (reattached from the
+      // daemon) are still placed by their cwd here.
       set({
         terminalCheckouts,
         ...rehomeTabs(g, g.terminalSessions, (session) =>
           // No fallback key to offer for a repo we know nothing about, so leave
           // those tabs alone rather than guessing.
           terminalCheckouts[session.repoPath]
-            ? sessionReviewKey(
-                terminalCheckouts,
-                session.repoPath,
-                session.cwd,
-                "",
-              )
+            ? sessionHomeKey(terminalCheckouts, g.terminalHomes, session, "")
             : null,
         ),
+      });
+    },
+
+    setTabHome: (tabId, reviewKey) => {
+      const g = get();
+      const found = findTab(g.terminalTabsByReviewKey, tabId);
+      if (!found) return;
+      const leafIds = collectLeafIds(found.tab.root);
+      // Stored even when the tab is already in this bucket: it may be sitting
+      // here only because its own row is gone, and dropping it here is the
+      // user saying this is where it belongs now.
+      const terminalHomes = rememberHome(leafIds, reviewKey);
+      set({
+        terminalHomes,
+        ...moveTabToKey(g, tabId, reviewKey),
+        ...moveTerminalsToKey(g, leafIds, reviewKey),
       });
     },
 

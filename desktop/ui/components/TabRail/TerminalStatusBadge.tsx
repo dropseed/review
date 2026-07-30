@@ -2,10 +2,9 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
 import { getApiClient } from "../../api";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
-import {
-  selectTerminalIdsForRow,
-  terminalSeverity,
-} from "../../stores/slices/terminalSlice";
+import { terminalSeverity } from "../../stores/slices/terminalSlice";
+import { useSessionsByHomeKey } from "../../stores/selectors/terminals";
+import { makeReviewKey } from "../../utils/review-key";
 import {
   phaseDotClass,
   phaseLabel,
@@ -16,40 +15,28 @@ import type { TerminalStatus } from "../../types";
 
 interface TerminalStatusBadgeProps {
   repoPath: string;
-  /** The row's own checkout — a linked worktree, or the repo root for the main
-   *  working-tree row. Rows without one host no terminals. */
-  checkoutPath?: string | null;
-  /** Every checkout root in the repo, so a session attributes to the innermost
-   *  one. Passed in rather than derived here: this renders once per sidebar
-   *  row, and the list is a repo-level fact identical across all of them. */
-  checkouts: readonly string[];
+  /** The row's identity — which sessions it owns is keyed off this. */
+  reviewRef: string;
 }
 
 /**
  * Colored status dot + popover for a TabRail row, summarizing the terminal
  * sessions running in that row's checkout. Renders nothing when there are none.
  */
+const NO_SESSIONS: string[] = [];
+
 export function TerminalStatusBadge({
   repoPath,
-  checkoutPath,
-  checkouts,
+  reviewRef,
 }: TerminalStatusBadgeProps): ReactNode {
-  const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
+  const sessionsByHomeKey = useSessionsByHomeKey();
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [freshPeek, setFreshPeek] = useState<string | null>(null);
 
-  const ids = useMemo(
-    () =>
-      selectTerminalIdsForRow(
-        { terminalSessions },
-        repoPath,
-        checkoutPath,
-        checkouts,
-      ),
-    [terminalSessions, repoPath, checkoutPath, checkouts],
-  );
+  const ids =
+    sessionsByHomeKey[makeReviewKey(repoPath, reviewRef)] ?? NO_SESSIONS;
 
   const statuses = useMemo(
     () =>

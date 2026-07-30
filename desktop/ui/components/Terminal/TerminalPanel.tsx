@@ -20,6 +20,7 @@ import { collectLeafIds, type SplitDirection } from "./pane-tree";
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { PaneTree, PaneButton } from "./PaneTree";
 import { PinIcon, WarningIcon } from "../ui/icons";
+import { TERMINAL_TAB_MIME } from "../TabRail/useTerminalTabDrop";
 import type { TerminalStatus } from "../../types";
 
 export function TerminalPanel(): ReactNode {
@@ -194,6 +195,11 @@ export function TerminalPanel(): ReactNode {
                   e.dataTransfer.effectAllowed = "move";
                   // A payload is required for the drag to start at all.
                   e.dataTransfer.setData("text/plain", tab.id);
+                  // The same drag reaches the sidebar, where dropping on a row
+                  // re-homes the tab. Its own type, because a row has to decide
+                  // during dragover — when only `types` is readable — whether
+                  // this is a drag it should take.
+                  e.dataTransfer.setData(TERMINAL_TAB_MIME, tab.id);
                 }}
                 onDragOver={(e) => {
                   // Only claim the drop for our own tab drags; anything else

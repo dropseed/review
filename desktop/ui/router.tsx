@@ -21,6 +21,7 @@ import {
   useFileRouteSync,
   useMenuState,
   useRepoActivitySync,
+  useTerminalCheckoutSync,
   type RepoStatus,
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
@@ -124,6 +125,7 @@ function AppShell() {
   useMenuState();
   useReviewFreshness();
   useRepoActivitySync();
+  useTerminalCheckoutSync();
 
   useComparisonLoader(comparisonReady, setInitialLoading);
 

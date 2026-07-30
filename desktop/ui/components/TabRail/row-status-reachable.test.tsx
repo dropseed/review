@@ -39,11 +39,13 @@ function session(id: string, cwd: string): TerminalSessionInfo {
   };
 }
 
+/** One session belonging to the `feature` row, which both rows here are. */
 function seedTerminal(cwd: string): void {
   const s = session("t1", cwd);
   useReviewStore.setState({
     terminalSessions: { t1: s },
     terminalStatuses: { t1: s.status },
+    terminalHomes: { t1: `${REPO}:feature` },
   });
 }
 
@@ -91,7 +93,11 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({ terminalSessions: {}, terminalStatuses: {} });
+  useReviewStore.setState({
+    terminalSessions: {},
+    terminalStatuses: {},
+    terminalHomes: {},
+  });
   vi.clearAllMocks();
 });
 
@@ -105,7 +111,6 @@ describe("the terminal badge survives hovering its row", () => {
         defaultBranch="main"
         onActivate={() => {}}
         onDelete={() => {}}
-        checkouts={[REPO, "/wt/feature"]}
       />,
     );
 
@@ -136,7 +141,6 @@ describe("the terminal badge survives hovering its row", () => {
         itemKind="worktree"
         checkoutPath="/wt/feature"
         onActivate={() => {}}
-        checkouts={[REPO, "/wt/feature"]}
       />,
     );
 

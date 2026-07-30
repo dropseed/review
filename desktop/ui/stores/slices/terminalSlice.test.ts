@@ -6,7 +6,8 @@ import {
   removeTerminalFromState,
   ingestTerminalList,
   selectTerminalIdsForReview,
-  selectTerminalIdsForRow,
+  selectSessionsByHomeKey,
+  selectLiveSessionsByReviewKey,
   sessionCheckout,
   terminalSeverity,
   activeFallback,
@@ -25,6 +26,10 @@ import {
   resolveActiveTabIds,
   createTerminalSlice,
   TERMINAL_PANEL_WIDTH_DEFAULT,
+  sessionHomeKey,
+  reachableKey,
+  moveTabToKey,
+  moveTerminalsToKey,
 } from "./terminalSlice";
 import { collectLeafIds, makeTab } from "../../components/Terminal/pane-tree";
 import type { TerminalTab } from "../../components/Terminal/pane-tree";
@@ -307,90 +312,185 @@ describe("selectTerminalIdsForReview", () => {
   });
 });
 
-describe("selectTerminalIdsForRow", () => {
-  const CHECKOUTS = ["/r", "/r/.worktrees/feature"];
+describe("selectSessionsByHomeKey", () => {
+  // A repo on `main` at its root, with `feature` in a linked worktree and
+  // `idle` checked out nowhere.
+  const INDEX = buildCheckoutIndex([
+    {
+      repoPath: "/r",
+      repoName: "r",
+      defaultBranch: "main",
+      branches: [
+        branch("main", { isCurrent: true }),
+        branch("feature", { worktreePath: "/r/.worktrees/feature" }),
+        branch("idle"),
+      ],
+      recentRemoteBranches: [],
+    },
+  ]);
 
-  it("gives the repo-root row only the sessions started there", () => {
+  function grouped(
+    state: TestState,
+    homes: Record<string, string> = {},
+  ): Record<string, string[]> {
+    return selectSessionsByHomeKey({
+      terminalSessions: state.terminalSessions,
+      terminalCheckouts: INDEX,
+      terminalHomes: homes,
+    });
+  }
+
+  function withSessions(...sessions: TerminalSessionInfo[]): TestState {
     let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(
-        state,
-        session("b", "/r", { cwd: "/r/.worktrees/feature" }),
-        "k1",
-      ),
-    };
+    for (const s of sessions) {
+      state = { ...state, ...addTerminalToState(state, s, "k1") };
+    }
+    return state;
+  }
+
+  it("splits sessions between the rows that own their directories", () => {
+    const state = withSessions(
+      session("a", "/r", { cwd: "/r" }),
+      session("b", "/r", { cwd: "/r/.worktrees/feature" }),
+    );
     // A prefix test would hand the worktree's session to the repo root too;
     // the innermost checkout has to win.
-    expect(selectTerminalIdsForRow(state, "/r", "/r", CHECKOUTS)).toEqual([
-      "a",
-    ]);
-  });
-
-  it("scopes to sessions under the row's own worktree", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(
-        state,
-        session("b", "/r", { cwd: "/r/.worktrees/feature" }),
-        "k1",
-      ),
-    };
-    expect(
-      selectTerminalIdsForRow(state, "/r", "/r/.worktrees/feature", CHECKOUTS),
-    ).toEqual(["b"]);
+    expect(grouped(state)).toEqual({ "/r:main": ["a"], "/r:feature": ["b"] });
   });
 
   it("attributes a session started in a subdirectory to its checkout", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(
-        state,
-        session("a", "/r", { cwd: "/r/.worktrees/feature/src/deep" }),
-        "k1",
-      ),
-    };
+    const state = withSessions(
+      session("a", "/r", { cwd: "/r/.worktrees/feature/src/deep" }),
+    );
+    expect(grouped(state)["/r:feature"]).toEqual(["a"]);
+  });
+
+  it("gives a row with no checkout nothing to show", () => {
+    const state = withSessions(session("a", "/r", { cwd: "/r" }));
+    expect(grouped(state)["/r:idle"]).toBeUndefined();
+  });
+
+  it("counts a homed session on the row it was dropped on, not its directory", () => {
+    const state = withSessions(
+      session("a", "/r", { cwd: "/r/.worktrees/feature" }),
+    );
+    // The shell stays in the worktree; the badge has to follow the tab or the
+    // two disagree about where the terminal is.
+    expect(grouped(state, { a: "/r:main" })).toEqual({ "/r:main": ["a"] });
+  });
+
+  it("shows a homed session on a row with no checkout of its own", () => {
+    const state = withSessions(session("a", "/r", { cwd: "/r" }));
+    expect(grouped(state, { a: "/r:idle" })["/r:idle"]).toEqual(["a"]);
+  });
+
+  it("keeps each repo's sessions under its own keys", () => {
+    const state = withSessions(
+      session("a", "/r", { cwd: "/r" }),
+      session("b", "/other", { cwd: "/other" }),
+    );
+    expect(grouped(state)["/r:main"]).toEqual(["a"]);
+    expect(grouped(state)["/other:"]).toEqual(["b"]);
+  });
+
+  it("keeps an exited session on its row, unlike the live-only grouping", () => {
+    const state = withSessions(session("a", "/r", { cwd: "/r" }));
+    expect(grouped(state)["/r:main"]).toEqual(["a"]);
     expect(
-      selectTerminalIdsForRow(state, "/r", "/r/.worktrees/feature", CHECKOUTS),
-    ).toEqual(["a"]);
+      selectLiveSessionsByReviewKey({
+        terminalSessions: state.terminalSessions,
+        terminalExited: { a: 0 },
+        terminalCheckouts: INDEX,
+        terminalHomes: {},
+      }),
+    ).toEqual({});
   });
+});
 
-  it("gives a row with no checkout nothing", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
-    };
-    expect(selectTerminalIdsForRow(state, "/r", null, CHECKOUTS)).toEqual([]);
-  });
+describe("sessionHomeKey", () => {
+  // Built rather than hand-written, so the shape can't drift from the builder.
+  const index = buildCheckoutIndex([
+    {
+      repoPath: "/r",
+      repoName: "r",
+      defaultBranch: "main",
+      branches: [
+        branch("main", { isCurrent: true }),
+        branch("feature", { worktreePath: "/wt/feature" }),
+      ],
+      recentRemoteBranches: [],
+    },
+  ]);
 
-  it("excludes sessions from other repos", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r", { cwd: "/r" }), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(
-        state,
-        session("b", "/other", { cwd: "/other" }),
-        "k2",
+  it("prefers a stored home over the session's directory", () => {
+    expect(
+      sessionHomeKey(
+        index,
+        { a: "/r:main" },
+        session("a", "/r", { cwd: "/wt/feature" }),
+        "",
       ),
+    ).toBe("/r:main");
+  });
+
+  it("falls back to the cwd's checkout for a session it has never seen", () => {
+    expect(
+      sessionHomeKey(index, {}, session("a", "/r", { cwd: "/wt/feature" }), ""),
+    ).toBe("/r:feature");
+  });
+
+  it("rescues a stored home whose row is gone to the repo root", () => {
+    expect(
+      sessionHomeKey(index, { a: "/r:deleted" }, session("a", "/r"), ""),
+    ).toBe("/r:main");
+  });
+
+  it("leaves a home alone for a repo nothing is known about", () => {
+    // An empty index is not evidence the row went away.
+    expect(reachableKey({}, "/other", "/other:branch")).toBe("/other:branch");
+  });
+});
+
+describe("moveTabToKey / moveTerminalsToKey", () => {
+  it("moves the tab and makes it the target's active tab", () => {
+    const state = {
+      terminalTabsByReviewKey: {
+        A: [makeTab("tabA", "a"), makeTab("tabB", "b")],
+        B: [],
+      },
+      activeTabIdByReviewKey: { A: "tabA", B: null },
     };
-    expect(selectTerminalIdsForRow(state, "/r", "/r", CHECKOUTS)).toEqual([
-      "a",
-    ]);
+    const next = moveTabToKey(state, "tabA", "B");
+    expect(next.terminalTabsByReviewKey!.A.map((t) => t.id)).toEqual(["tabB"]);
+    expect(next.terminalTabsByReviewKey!.B.map((t) => t.id)).toEqual(["tabA"]);
+    expect(next.activeTabIdByReviewKey!.B).toBe("tabA");
+    // The bucket it left re-picks rather than pointing at a tab it lost.
+    expect(next.activeTabIdByReviewKey!.A).toBe("tabB");
+  });
+
+  it("does nothing for a tab already in the target bucket", () => {
+    const state = {
+      terminalTabsByReviewKey: { A: [makeTab("tabA", "a")] },
+      activeTabIdByReviewKey: { A: "tabA" },
+    };
+    expect(moveTabToKey(state, "tabA", "A")).toEqual({});
+  });
+
+  it("moves the sessions between flat buckets too", () => {
+    let state = { ...emptyState() };
+    state = {
+      ...state,
+      ...addTerminalToState(state, session("a", "/r"), "A"),
+    };
+    state = {
+      ...state,
+      ...addTerminalToState(state, session("b", "/r"), "A"),
+    };
+    const next = moveTerminalsToKey(state, ["a"], "B");
+    expect(next.terminalIdsByReviewKey!.A).toEqual(["b"]);
+    expect(next.terminalIdsByReviewKey!.B).toEqual(["a"]);
+    expect(next.activeTerminalIdByReviewKey!.A).toBe("b");
+    expect(next.activeTerminalIdByReviewKey!.B).toBe("a");
   });
 });
 
@@ -704,6 +804,160 @@ describe("panel preferences (dock side + width persistence)", () => {
       get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
     ).toEqual(["tabA"]);
     expect(get().terminalTabsByReviewKey["/r:feature"]).toEqual([]);
+  });
+
+  /** The listing for a repo whose main working tree is on `current`. */
+  function activityOn(current: string, others: string[] = []) {
+    return [
+      {
+        repoPath: "/r",
+        repoName: "r",
+        defaultBranch: "main",
+        branches: [
+          branch(current, { isCurrent: true }),
+          ...others.map((name) => branch(name)),
+        ],
+        recentRemoteBranches: [],
+      },
+    ];
+  }
+
+  it("startTerminal records where the session started", async () => {
+    const started = session("a", "/r", { cwd: "/r" });
+    const { get } = makeSlice({
+      terminalStart: async () => started,
+      onTerminalStatus: () => () => {},
+      onTerminalExit: () => () => {},
+      terminalWrite: async () => {},
+    });
+    get().setTerminalCheckouts(activityOn("main"), []);
+
+    await get().startTerminal("/r:main", "/r", "/r", 80, 24);
+
+    expect(get().terminalHomes.a).toBe("/r:main");
+  });
+
+  it("a checkout in the main working tree leaves its terminals where they are", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
+      terminalTabsByReviewKey: { "/r:main": [makeTab("tabA", "a")] },
+      terminalHomes: { a: "/r:main" },
+    });
+
+    // `git checkout feature` in the repo root: the row owning that directory
+    // is now feature's. The shell is genuinely on feature now, but it was
+    // opened as a main terminal and nobody asked for it to move.
+    get().setTerminalCheckouts(activityOn("feature", ["main"]), []);
+
+    expect(
+      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    expect(get().terminalTabsByReviewKey["/r:feature"] ?? []).toEqual([]);
+  });
+
+  it("shows a tab whose row is gone at the repo root, without forgetting its home", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalSessions: {
+        a: session("a", "/r", { cwd: "/wt/feature" }),
+      },
+      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
+      terminalHomes: { a: "/r:feature" },
+    });
+
+    // The feature row is gone — a bucket no view reads, so the tab would
+    // vanish while its shell kept running.
+    get().setTerminalCheckouts(activityOn("main"), []);
+    expect(
+      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    // Rendered elsewhere, not re-homed: the stored answer is still feature.
+    expect(get().terminalHomes.a).toBe("/r:feature");
+
+    // ...so it goes home when the row comes back.
+    get().setTerminalCheckouts(activityOn("main", ["feature"]), []);
+    expect(
+      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+  });
+
+  it("setTabHome moves the tab, its sessions, and the persisted home", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
+      terminalTabsByReviewKey: { "/r:main": [makeTab("tabA", "a")] },
+      terminalIdsByReviewKey: { "/r:main": ["a"] },
+      activeTerminalIdByReviewKey: { "/r:main": "a" },
+      activeTabIdByReviewKey: { "/r:main": "tabA" },
+      terminalHomes: { a: "/r:main" },
+    });
+
+    get().setTabHome("tabA", "/r:feature");
+
+    expect(get().terminalHomes.a).toBe("/r:feature");
+    expect(writes.terminalHomes).toEqual({ a: "/r:feature" });
+    expect(
+      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    expect(get().terminalTabsByReviewKey["/r:main"]).toEqual([]);
+    expect(get().terminalIdsByReviewKey["/r:feature"]).toEqual(["a"]);
+    expect(get().terminalIdsByReviewKey["/r:main"]).toEqual([]);
+    // The row you dropped it on shows it when you get there.
+    expect(get().activeTabIdByReviewKey["/r:feature"]).toBe("tabA");
+  });
+
+  it("a re-homed tab survives the next checkout listing", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalSessions: {
+        a: session("a", "/r", { cwd: "/wt/feature" }),
+      },
+      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
+      terminalHomes: { a: "/r:feature" },
+    });
+
+    get().setTabHome("tabA", "/r:main");
+    get().setTerminalCheckouts(
+      [
+        {
+          repoPath: "/r",
+          repoName: "r",
+          defaultBranch: "main",
+          branches: [
+            branch("main", { isCurrent: true }),
+            branch("feature", { worktreePath: "/wt/feature" }),
+          ],
+          recentRemoteBranches: [],
+        },
+      ],
+      [],
+    );
+
+    // Its cwd still says feature; the drag says main, and the drag wins.
+    expect(
+      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+  });
+
+  it("removeTerminal prunes the dead session's persisted home", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalTabsByReviewKey: { "/r:main": [makeTab("a", "a")] },
+      terminalHomes: { a: "/r:main", b: "/r:other" },
+    });
+
+    get().removeTerminal("a");
+
+    expect(get().terminalHomes).toEqual({ b: "/r:other" });
+    expect(writes.terminalHomes).toEqual({ b: "/r:other" });
+  });
+
+  it("hydrateTerminalPrefs restores the persisted homes", async () => {
+    const { get, reads } = makeSlice();
+    reads.terminalHomes = { a: "/r:feature" };
+    await get().hydrateTerminalPrefs();
+    expect(get().terminalHomes).toEqual({ a: "/r:feature" });
   });
 
   it("toggleTerminalDockSide flips the side and persists it", () => {
