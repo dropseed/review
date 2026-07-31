@@ -19,7 +19,9 @@ use serde::Serialize;
 
 use crate::review::state::{now_iso8601, Guide, GuideGenerated, HunkGroup};
 
-use super::common::{load_for_mutation, load_review_view, mutate_review, print_json, ReviewTarget};
+use super::common::{
+    load_for_mutation, load_review_view, mutate_review, print_json, reject_blank, ReviewTarget,
+};
 use super::get_repo_path;
 
 #[derive(Debug, Args)]
@@ -194,8 +196,15 @@ fn print_guide_human(comparison: &str, groups: &[HunkGroup], ungrouped: &[String
     }
 }
 
+/// Reject an empty/whitespace-only group title, matching the comment
+/// commands' guard against blank input.
+fn validate_title(title: &str) -> Result<(), String> {
+    reject_blank("title", title)
+}
+
 /// `review guide add` — append a group to the guide.
 pub fn run_add(args: AddArgs) -> Result<(), String> {
+    validate_title(&args.title)?;
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let (review, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
     let comparison = &review.comparison;
@@ -362,5 +371,12 @@ mod tests {
         let (kept, ungrouped) = reconcile_for_display(&[], &live(&["f:b", "f:a"]));
         assert!(kept.is_empty());
         assert_eq!(ungrouped, vec!["f:a", "f:b"]);
+    }
+
+    #[test]
+    fn validate_title_rejects_blank() {
+        assert!(validate_title("   ").is_err());
+        assert!(validate_title("").is_err());
+        assert!(validate_title("Refactor auth").is_ok());
     }
 }

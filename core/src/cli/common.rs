@@ -360,6 +360,15 @@ pub fn resolve_source(arg: Option<super::comments::SourceArg>) -> Result<Source,
     }
 }
 
+/// Reject an empty/whitespace-only value, shared by CLI commands with a
+/// user-supplied text field (comment content, guide group titles, ...).
+pub fn reject_blank(field: &str, value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("empty {field}"));
+    }
+    Ok(())
+}
+
 /// Print a value as pretty JSON to stdout.
 pub fn print_json<T: Serialize>(value: &T) {
     match serde_json::to_string_pretty(value) {
