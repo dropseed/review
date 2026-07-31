@@ -62,6 +62,17 @@ export interface NavigationSlice {
   // Navigation actions
   navigateToBrowse: (filePath?: string, scrollTo?: { hunkId: string }) => void;
   revealInBrowse: (filePath: string) => void;
+  /**
+   * Open `filePath` at `lineNumber` — the landing for anything that found a
+   * *place* rather than a file: a search hit, a symbol. `navigateToBrowse`
+   * cannot express a line, which is why both of those had grown their own
+   * hand-rolled version of this and both had drifted from it.
+   */
+  navigateToFileLine: (
+    filePath: string,
+    lineNumber: number,
+    focusedHunkId?: string | null,
+  ) => void;
 
   // Split view actions
   setSecondaryFile: (path: string | null) => void;
@@ -255,9 +266,9 @@ function shouldSkipHunkInState(hunkId: string, state: ReviewStore): boolean {
 
 /**
  * Field set that nulls out every "overlay" view in the content area, used to
- * keep the overlays mutually exclusive. ContentArea picks guideContentMode >
- * workingTreeMultiView > file viewer, but if two are set at once the
- * lower-priority one leaks state when the higher one is dismissed. Any
+ * keep the overlays mutually exclusive. ContentArea picks search >
+ * guideContentMode > workingTreeMultiView > file viewer, but if two are set at
+ * once the lower-priority one leaks state when the higher one is dismissed. Any
  * action that opens or dismisses one overlay should spread these in to
  * clear the others.
  */
@@ -267,6 +278,32 @@ const OVERLAYS_CLEARED = {
   workingTreeMultiView: null,
   searchViewOpen: false,
 } as const;
+
+/** The content-area views that take the whole region ahead of the diff panes. */
+export type ContentOverlay = "search" | "guide" | "workingTree";
+
+/**
+ * Which overlay the content area is showing, or null when it is showing the
+ * diff panes — in ContentArea's own priority order.
+ *
+ * The one answer to that question. Four places had grown their own version of
+ * it — hunk navigation, the URL sync, the sidebar's "you are here" marks, and
+ * ContentArea itself — each a disjunction naming the overlays that existed when
+ * it was written, and adding the fourth overlay silently left three of them
+ * behind: `j` in the search view moved the selection and the URL under a screen
+ * that never changed. Asking here is what makes the next one cost nothing.
+ */
+export function activeContentOverlay(
+  state: Pick<
+    NavigationSlice,
+    "searchViewOpen" | "guideContentMode" | "workingTreeMultiView"
+  >,
+): ContentOverlay | null {
+  if (state.searchViewOpen) return "search";
+  if (state.guideContentMode !== null) return "guide";
+  if (state.workingTreeMultiView !== null) return "workingTree";
+  return null;
+}
 
 /** Jump to the first or last hunk in the current file. */
 function jumpToFileEdge(
@@ -560,6 +597,18 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     // on disk until the next launch re-reads it.
     get().setFilesPanelCollapsed(false);
   },
+
+  navigateToFileLine: (filePath, lineNumber, focusedHunkId = null) =>
+    set({
+      ...OVERLAYS_CLEARED,
+      // ContentArea reads `externalFilePath ?? selectedFile`, so leaving an
+      // LSP-opened external file set would land you back on it and make the
+      // pick look like it did nothing.
+      externalFilePath: null,
+      selectedFile: filePath,
+      focusedHunkId,
+      scrollTarget: { type: "line", filePath, lineNumber },
+    }),
 
   // Split view actions
   setSecondaryFile: (path) => set({ secondaryFile: path }),

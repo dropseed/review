@@ -3,20 +3,18 @@ import type { ReactNode } from "react";
 import { useReviewStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { HighlightedLine } from "../ui/HighlightedLine";
+import { XIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
-import { groupSearchResultsByFile } from "../../utils/search";
+import {
+  groupSearchResultsByFile,
+  searchEmptyStateMessage,
+} from "../../utils/search";
 import { SymbolResults } from "./SymbolResults";
 import { FileGroupHeader } from "./FileGroupHeader";
 import { SearchMessage } from "./SearchMessage";
 import type { SearchMode } from "../../stores/slices/searchSlice";
-
-function getEmptyStateMessage(query: string, isLoading: boolean): string {
-  if (!query.trim()) return "Type to search file contents…";
-  if (isLoading) return "Searching…";
-  return "No matches found";
-}
 
 export function SearchView(): ReactNode {
   const searchQuery = useReviewStore((s) => s.searchQuery);
@@ -112,17 +110,16 @@ export function SearchView(): ReactNode {
         <span className="text-xs font-semibold uppercase tracking-wider text-fg-faint">
           Search
         </span>
-        <span className="flex-1" />
         <button
           type="button"
           onClick={closeSearchView}
           aria-label="Close search"
           title="Close search (Esc)"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded
+          className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded
                      text-fg-muted transition-colors duration-100
                      hover:bg-fg/[0.08] hover:text-fg-secondary"
         >
-          <span className="text-sm leading-none">×</span>
+          <XIcon className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -271,7 +268,7 @@ export function SearchView(): ReactNode {
             <SearchMessage>
               {searchVerifiedOnly && searchResults.length > 0
                 ? "No verified matches. Toggle off to include text-only hits."
-                : getEmptyStateMessage(query, searchLoading)}
+                : searchEmptyStateMessage(query, searchLoading)}
             </SearchMessage>
           ) : (
             groupedResults.map((group) => (
@@ -323,7 +320,7 @@ export function SearchView(): ReactNode {
         {/* Footer */}
         {searchResults.length > 0 && (
           <div
-            className="border-t border-edge/50 px-3 py-1.5 text-xxs text-fg-muted"
+            className="border-t border-edge/50 px-4 py-1.5 text-xxs text-fg-muted"
             aria-live="polite"
           >
             {visibleResults.length >= 100 ? "100+" : visibleResults.length}{" "}

@@ -112,17 +112,10 @@ export function SymbolResults({ query }: { query: string }): ReactNode {
   const grouped = useMemo(() => groupByFile(results), [results]);
 
   const handleSelect = (sym: FlatRepoSymbol) => {
-    useReviewStore.setState({
-      searchViewOpen: false,
-      selectedFile: sym.filePath,
-      guideContentMode: null,
-      focusedHunkId: null,
-      scrollTarget: {
-        type: "line",
-        filePath: sym.filePath,
-        lineNumber: sym.startLine,
-      },
-    });
+    // The store action rather than a `set` bag of our own: picking a symbol is
+    // the same act as picking a search hit, and the hand-rolled version of it
+    // here had already fallen behind on what a navigation has to clear.
+    useReviewStore.getState().navigateToFileLine(sym.filePath, sym.startLine);
   };
 
   if (repoSymbolsLoading) {
@@ -150,10 +143,10 @@ export function SymbolResults({ query }: { query: string }): ReactNode {
               <button
                 key={`${result.symbol.filePath}:${result.symbol.name}:${result.symbol.startLine}`}
                 onClick={() => handleSelect(result.symbol)}
-                className="w-full flex items-center gap-2 px-3 py-1 text-left hover:bg-surface-raised/50 transition-colors"
+                className="flex w-full items-center gap-3 px-4 py-1 text-left transition-colors hover:bg-surface-raised/50"
               >
                 <SymbolKindBadge kind={result.symbol.kind} />
-                <span className="text-xxs font-mono text-fg-secondary truncate flex-1 min-w-0">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-secondary">
                   <HighlightedText
                     text={result.symbol.name}
                     indices={result.matchIndices}
@@ -164,7 +157,7 @@ export function SymbolResults({ query }: { query: string }): ReactNode {
                     in {result.symbol.parentName}
                   </span>
                 )}
-                <span className="text-xxs font-mono text-fg-faint w-6 text-right flex-shrink-0 tabular-nums">
+                <span className="w-12 shrink-0 text-right font-mono text-xs text-fg-faint tabular-nums">
                   {result.symbol.startLine}
                 </span>
               </button>
@@ -175,7 +168,7 @@ export function SymbolResults({ query }: { query: string }): ReactNode {
 
       {/* Footer */}
       <div
-        className="border-t border-edge/50 px-3 py-1.5 text-xxs text-fg-muted"
+        className="border-t border-edge/50 px-4 py-1.5 text-xxs text-fg-muted"
         aria-live="polite"
       >
         {results.length >= 200 ? "200+" : results.length} symbol

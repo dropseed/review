@@ -3,7 +3,10 @@ import { useReviewStore } from "../../../stores";
 import type { SearchMatch } from "../../../types";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { HighlightedLine } from "../../ui/HighlightedLine";
-import { groupSearchResultsByFile } from "../../../utils/search";
+import {
+  groupSearchResultsByFile,
+  searchEmptyStateMessage,
+} from "../../../utils/search";
 import { SimpleTooltip } from "../../ui/tooltip";
 import { FileIcon } from "../../ui/icons";
 import {
@@ -14,24 +17,20 @@ import {
 
 const NO_GROUPS: PaletteGroup<SearchMatch>[] = [];
 
-function getEmptyStateMessage(query: string, isLoading: boolean): string {
-  if (!query.trim()) return "Type to search file contents…";
-  if (isLoading) return "Searching…";
-  return "No matches found";
-}
-
 function matchKey(match: SearchMatch): string {
   return `${match.filePath}:${match.lineNumber}:${match.column}`;
 }
 
 /**
- * Content search across the repo, grouped by file.
+ * Content search across the repo, grouped by file — the jump-to-a-hit door,
+ * beside the full results view at ⌘⇧F (`components/search/`).
  *
  * The query is the palette's, but it is mirrored into the store: the slice
  * drops stale responses by comparing the query it was called with against
- * `searchQuery`, and the sidebar's results panel reads the same field. The
- * mirror is written well before the debounce elapses, so the comparison always
- * sees the query the request was actually issued for.
+ * `searchQuery`, and the results view reads the same field, which is why
+ * either door picks up where the other left off. The mirror is written well
+ * before the debounce elapses, so the comparison always sees the query the
+ * request was actually issued for.
  */
 export function useContentSource(
   query: string,
@@ -151,7 +150,7 @@ export function useContentSource(
     onKeyDown,
     busy: searchLoading,
     error: searchError,
-    emptyMessage: getEmptyStateMessage(query, searchLoading),
+    emptyMessage: searchEmptyStateMessage(query, searchLoading),
     enterLabel: "go to line",
     renderCount: (n) => (n >= 100 ? "100+ results" : countLabel(n, "result")),
     size: "lg",

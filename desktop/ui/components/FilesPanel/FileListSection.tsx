@@ -88,13 +88,12 @@ export function FileListSection({
   // marks go away entirely while a rolling diff is up: the panes aren't there.
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const focusedPane = useReviewStore((s) => s.focusedPane);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
+  const panesOnScreen = useReviewStore(arePanesOnScreen);
   const { activePath, companionPath } = resolvePaneFiles(
     selectedFile,
     secondaryFile,
     focusedPane,
-    arePanesOnScreen(guideContentMode, workingTreeMultiView),
+    panesOnScreen,
   );
 
   // The rows a shift-click may span: this section's file rows, in the order

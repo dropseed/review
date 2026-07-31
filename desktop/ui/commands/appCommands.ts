@@ -1,5 +1,6 @@
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { getHunkByIdMap } from "../stores/selectors/hunkData";
+import { activeContentOverlay } from "../stores/slices/navigationSlice";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,
@@ -92,11 +93,7 @@ export const APP_COMMANDS: readonly Command[] = [
     run: ({ store }) => {
       // In any overlay view, switch to browse first so hunk navigation lands
       // in the single-file viewer rather than getting eaten.
-      if (
-        store.guideContentMode !== null ||
-        store.workingTreeMultiView !== null
-      )
-        store.navigateToBrowse();
+      if (activeContentOverlay(store)) store.navigateToBrowse();
       store.nextHunk();
     },
   },
@@ -107,11 +104,7 @@ export const APP_COMMANDS: readonly Command[] = [
     shortcut: { code: "KeyK" },
     isEnabled: hasDiff,
     run: ({ store }) => {
-      if (
-        store.guideContentMode !== null ||
-        store.workingTreeMultiView !== null
-      )
-        store.navigateToBrowse();
+      if (activeContentOverlay(store)) store.navigateToBrowse();
       store.prevHunk();
     },
   },

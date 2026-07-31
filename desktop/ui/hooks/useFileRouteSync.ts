@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useReviewStore } from "../stores";
+import { activeContentOverlay } from "../stores/slices/navigationSlice";
 import { reviewUrl } from "../utils/repo-identity";
 
 /**
@@ -21,8 +22,7 @@ export function useFileRouteSync() {
   const params = useParams();
 
   const selectedFile = useReviewStore((s) => s.selectedFile);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
+  const overlay = useReviewStore(activeContentOverlay);
   const flatFileList = useReviewStore((s) => s.flatFileList);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
@@ -78,8 +78,9 @@ export function useFileRouteSync() {
   // immediately overriding the guide view.
   useEffect(() => {
     if (isSyncingRef.current) return;
-    if (guideContentMode !== null) return;
-    if (workingTreeMultiView !== null) return;
+    // An overlay is showing something other than the selected file, so the URL
+    // must not follow a selection the screen isn't reflecting.
+    if (overlay !== null) return;
     if (!owner || !repo) return;
     if (!isBrowseRoute && !reviewRef) return;
 
@@ -103,8 +104,7 @@ export function useFileRouteSync() {
     }
   }, [
     selectedFile,
-    guideContentMode,
-    workingTreeMultiView,
+    overlay,
     owner,
     repo,
     reviewRef,

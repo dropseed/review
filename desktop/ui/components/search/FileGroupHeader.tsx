@@ -8,7 +8,7 @@ export function FileGroupHeader({
   count: number;
 }): ReactNode {
   return (
-    <div className="sticky top-0 z-10 bg-surface-panel border-b border-edge/50 px-3 py-1.5 flex items-center gap-2">
+    <div className="sticky top-0 z-10 bg-surface-panel border-b border-edge/50 px-4 py-1.5 flex items-center gap-2">
       <svg
         aria-hidden="true"
         className="h-3 w-3 text-fg-muted flex-shrink-0"

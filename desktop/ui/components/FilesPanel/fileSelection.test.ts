@@ -362,10 +362,25 @@ describe("refreshedHunkIds", () => {
 });
 
 describe("arePanesOnScreen", () => {
-  it("is true only with no rolling diff over the panes", () => {
-    expect(arePanesOnScreen(null, null)).toBe(true);
-    expect(arePanesOnScreen("adhoc-group", null)).toBe(false);
-    expect(arePanesOnScreen(null, { paths: [] })).toBe(false);
+  const panes = {
+    searchViewOpen: false,
+    guideContentMode: null,
+    workingTreeMultiView: null,
+  } as const;
+
+  it("is true only when no overlay is over the panes", () => {
+    expect(arePanesOnScreen(panes)).toBe(true);
+    expect(
+      arePanesOnScreen({ ...panes, guideContentMode: "adhoc-group" }),
+    ).toBe(false);
+    expect(
+      arePanesOnScreen({
+        ...panes,
+        workingTreeMultiView: { title: "", mode: "staged" },
+      }),
+    ).toBe(false);
+    // The one that used to be missed: search takes the region too.
+    expect(arePanesOnScreen({ ...panes, searchViewOpen: true })).toBe(false);
   });
 });
 

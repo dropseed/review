@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 
 /**
- * Empty / loading / error placeholder for the search panels.
+ * Empty / loading / error placeholder for the search view.
  *
- * Left-aligned on the same `px-3` gutter as the result rows and file group
- * headers: the sidebar is user-resizable, and a centred message drifts to the
- * horizontal middle of a wide pane while every other row stays pinned left.
+ * Left-aligned on the same `px-4` gutter as the result rows and file group
+ * headers. It matters more here than it did in the sidebar this came from: the
+ * view is as wide as the diff, so a centred message would sit half a screen
+ * away from every row it is standing in for.
  */
 export function SearchMessage({
   children,
@@ -16,7 +17,7 @@ export function SearchMessage({
 }): ReactNode {
   return (
     <div
-      className={`px-3 py-8 text-xs text-pretty ${
+      className={`px-4 py-8 text-xs text-pretty ${
         tone === "error" ? "text-status-rejected" : "text-fg-muted"
       }`}
     >

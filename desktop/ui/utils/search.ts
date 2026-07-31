@@ -25,3 +25,17 @@ export function groupSearchResultsByFile(
 
   return Array.from(groups.values());
 }
+
+/**
+ * What to say when there is nothing to show — the same words at both of
+ * search's front doors, the palette's `#` mode and the results view, since a
+ * user comparing them is comparing one feature.
+ */
+export function searchEmptyStateMessage(
+  query: string,
+  isLoading: boolean,
+): string {
+  if (!query.trim()) return "Type to search file contents…";
+  if (isLoading) return "Searching…";
+  return "No matches found";
+}

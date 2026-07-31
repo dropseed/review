@@ -31,8 +31,16 @@ export function useKeyboardNavigation() {
 
       const state = useReviewStore.getState();
 
-      // Escape: dismiss overlay views in priority order (working-tree
-      // rolling diff > split view).
+      // Escape: dismiss overlay views in priority order (search > working-tree
+      // rolling diff > split view). SearchView handles Escape itself as well,
+      // because this handler bails on text entry and its query box is focused
+      // on open — but clicking into the results moves focus to the body, and
+      // that is this one's to catch.
+      if (event.key === "Escape" && state.searchViewOpen) {
+        event.preventDefault();
+        state.closeSearchView();
+        return;
+      }
       if (event.key === "Escape" && state.workingTreeMultiView !== null) {
         event.preventDefault();
         state.closeWorkingTreeMultiView();

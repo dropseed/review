@@ -81,7 +81,9 @@ Adding a command means adding one entry to `APP_COMMANDS`. Adding a _menu_ entry
 
 ### The palette's four modes
 
-⌘K, ⌘P, ⌘R and ⌘⇧F are one dialog, not four. `activeOverlay === "palette"` plus a `PaletteMode` (`commands` / `files` / `symbols` / `content`) is the whole state; each shortcut calls `openPalette(mode)`. Prefixes switch modes in place — `>` commands, `@` symbols, `#` in files, nothing for files — and Backspace on an empty query steps back, falling to files when there is nothing to unwind. See `components/palette/modes.ts` for why a prefix is only read out of an *empty* box.
+⌘K, ⌘P and ⌘R are one dialog, not three. `activeOverlay === "palette"` plus a `PaletteMode` (`commands` / `files` / `symbols` / `content`) is the whole state; each shortcut calls `openPalette(mode)`. Prefixes switch modes in place — `>` commands, `@` symbols, `#` in files, nothing for files — and Backspace on an empty query steps back, falling to files when there is nothing to unwind. See `components/palette/modes.ts` for why a prefix is only read out of an *empty* box.
+
+`content` is the mode with no shortcut of its own: ⌘⇧F opens the full results view in the content area (`components/search/`) instead, because a match is a line and a dropdown row truncates it. The mode stays reachable at `#` as the way to jump to a hit without leaving the diff, and both front doors drive the same `searchSlice`.
 
 Three files divide the work:
 

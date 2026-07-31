@@ -37,13 +37,13 @@ import { visibleFilesPanelTabs } from "./tabs";
  * Deliberately absent at zero rather than showing "0" — an empty tab should
  * look quiet, not like it's reporting something. The badge inherits the
  * trigger's colour so it brightens with the active tab instead of competing
- * with it, which also keeps one treatment across all three counts.
+ * with it, which keeps one treatment across both counts.
  */
-function TabCount({ value, max }: { value: number; max?: number }) {
+function TabCount({ value }: { value: number }) {
   if (value <= 0) return null;
   return (
     <span className="shrink-0 rounded-full bg-fg/10 px-1 font-medium tabular-nums">
-      {max !== undefined && value >= max ? `${max}+` : value}
+      {value}
     </span>
   );
 }
@@ -142,13 +142,12 @@ export function FilesPanel() {
   // from FileListSection, but Browse maps FileNode itself.
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
   const focusedPane = useReviewStore((s) => s.focusedPane);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
+  const panesOnScreen = useReviewStore(arePanesOnScreen);
   const browsePanes = resolvePaneFiles(
     selectedFile,
     secondaryFile,
     focusedPane,
-    arePanesOnScreen(guideContentMode, workingTreeMultiView),
+    panesOnScreen,
   );
 
   // Sort menu items shared across tabs

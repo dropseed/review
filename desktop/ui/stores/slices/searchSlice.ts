@@ -100,7 +100,6 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
 
     navigateToSearchResult: (match) => {
       const state = get();
-      const { guideContentMode } = state;
       const hunks = getAllHunksFromState(state);
       const hunk = hunks.find(
         (h) =>
@@ -110,18 +109,12 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
           ),
       );
 
-      set({
-        ...(guideContentMode !== null && { guideContentMode: null }),
-        // Picking a result is how the results view is left — it did its job.
-        // The query and the matches stay, so ⇧⌘F comes back to them.
-        searchViewOpen: false,
-        selectedFile: match.filePath,
-        focusedHunkId: hunk?.id ?? null,
-        scrollTarget: {
-          type: "line",
-          filePath: match.filePath,
-          lineNumber: match.lineNumber,
-        },
-      });
+      // Picking a result is how the results view is left — it did its job. The
+      // query and the matches stay, so ⇧⌘F comes back to them.
+      state.navigateToFileLine(
+        match.filePath,
+        match.lineNumber,
+        hunk?.id ?? null,
+      );
     },
   });

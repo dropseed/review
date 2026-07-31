@@ -1,3 +1,4 @@
+import { activeContentOverlay } from "../../stores/slices/navigationSlice";
 /**
  * The pure half of file-list multi-select and of "which file is the sidebar
  * pointing at".
@@ -234,15 +235,19 @@ export function refreshedHunkIds(
 }
 
 /**
- * Whether the content area is showing the diff panes at all. Both rolling-diff
- * modes take the whole region ahead of the panes (see ContentArea), so either
- * one being open means there are no panes to point at.
+ * Whether the content area is showing the diff panes at all. Every overlay
+ * takes the whole region ahead of the panes (see ContentArea), so any one of
+ * them being open means there are no panes to point at.
+ *
+ * Asks `activeContentOverlay` rather than naming the overlays itself: taking
+ * them as positional arguments is what let a third one be added without this
+ * predicate hearing about it, leaving the sidebar marking "you are here" on a
+ * file whose pane was not on screen.
  */
 export function arePanesOnScreen(
-  guideContentMode: unknown | null,
-  workingTreeMultiView: unknown | null,
+  state: Parameters<typeof activeContentOverlay>[0],
 ): boolean {
-  return guideContentMode === null && workingTreeMultiView === null;
+  return activeContentOverlay(state) === null;
 }
 
 export interface PaneFiles {
