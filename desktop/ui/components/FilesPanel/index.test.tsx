@@ -24,7 +24,6 @@ vi.mock("./CommitRangePicker", () => ({ CommitRangePicker: () => null }));
 vi.mock("./CommitRangeHeader", () => ({ CommitRangeHeader: () => null }));
 vi.mock("./AnnotationDock", () => ({ AnnotationDock: () => null }));
 vi.mock("./ReviewActionBar", () => ({ ReviewActionBar: () => null }));
-vi.mock("./SearchResultsPanel", () => ({ SearchResultsPanel: () => null }));
 vi.mock("./GitStatusPanel", () => ({ GitStatusPanel: () => null }));
 
 import { FilesPanel } from "./index";

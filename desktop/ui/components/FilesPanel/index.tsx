@@ -19,7 +19,6 @@ import {
 import { CollapsibleSection } from "../../components/ui/collapsible-section";
 import type { FileSymbolDiff } from "../../types";
 import { ReviewDataProvider } from "../ReviewDataContext";
-import { SearchResultsPanel } from "./SearchResultsPanel";
 import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { StatusGroupList } from "./StatusGroupList";
@@ -126,8 +125,6 @@ export function FilesPanel() {
     [],
   );
 
-  // Search state
-  const searchResultCount = useReviewStore((s) => s.searchResults.length);
   const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
 
   // One table, rendered here and by the collapsed rail — so the rail can't
@@ -282,9 +279,6 @@ export function FilesPanel() {
                           <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
                         )
                       ))}
-                    {tab.id === "search" && (
-                      <TabCount value={searchResultCount} max={100} />
-                    )}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -292,9 +286,7 @@ export function FilesPanel() {
           </div>
 
           {/* Panel content based on view mode */}
-          {viewMode === "search" ? (
-            <SearchResultsPanel />
-          ) : viewMode === "git" ? (
+          {viewMode === "git" ? (
             <GitStatusPanel
               onSelectFile={handleSelectFile}
               onSelectWorkingTreeFile={selectWorkingTreeFile}

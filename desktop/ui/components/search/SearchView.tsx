@@ -7,9 +7,9 @@ import { Spinner } from "../ui/spinner";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { groupSearchResultsByFile } from "../../utils/search";
-import { SymbolSearchPanel } from "./SymbolSearchPanel";
+import { SymbolResults } from "./SymbolResults";
 import { FileGroupHeader } from "./FileGroupHeader";
-import { SearchPanelMessage } from "./SearchPanelMessage";
+import { SearchMessage } from "./SearchMessage";
 import type { SearchMode } from "../../stores/slices/searchSlice";
 
 function getEmptyStateMessage(query: string, isLoading: boolean): string {
@@ -18,7 +18,7 @@ function getEmptyStateMessage(query: string, isLoading: boolean): string {
   return "No matches found";
 }
 
-export function SearchResultsPanel(): ReactNode {
+export function SearchView(): ReactNode {
   const searchQuery = useReviewStore((s) => s.searchQuery);
   const searchResults = useReviewStore((s) => s.searchResults);
   const searchLoading = useReviewStore((s) => s.searchLoading);
@@ -38,9 +38,19 @@ export function SearchResultsPanel(): ReactNode {
   const searchVerifiedOnly = useReviewStore((s) => s.searchVerifiedOnly);
   const setSearchVerifiedOnly = useReviewStore((s) => s.setSearchVerifiedOnly);
 
+  const closeSearchView = useReviewStore((s) => s.closeSearchView);
+
   const [query, setQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);
   const debouncedQuery = useDebounce(query, 300);
+
+  // Opened by ⇧⌘F, so the box it opens is the one you are typing into. Selected
+  // rather than emptied: reopening on the last search and refining it is the
+  // common second move, and typing over a selection is how you start a new one.
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
 
   // Sync local query when store query changes externally (e.g. from modal)
   useEffect(() => {
@@ -90,9 +100,37 @@ export function SearchResultsPanel(): ReactNode {
   }, [visibleResults]);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Search input + mode toggle */}
-      <div className="px-3 py-2 flex flex-col gap-2">
+    <div
+      className="flex h-full flex-col"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+        closeSearchView();
+      }}
+    >
+      <div className="flex items-center gap-2 border-b border-edge/50 px-4 py-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-fg-faint">
+          Search
+        </span>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={closeSearchView}
+          aria-label="Close search"
+          title="Close search (Esc)"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded
+                     text-fg-muted transition-colors duration-100
+                     hover:bg-fg/[0.08] hover:text-fg-secondary"
+        >
+          <span className="text-sm leading-none">×</span>
+        </button>
+      </div>
+
+      {/* Search input + mode toggle. Held to a readable measure rather than
+          stretched across the content area — a query box the width of a diff
+          reads as a text editor. The results below take the full width, which
+          is what the move out of the panel was for. */}
+      <div className="flex max-w-3xl flex-col gap-2 px-4 py-3">
         <div className="flex items-center gap-2 rounded-md bg-surface-raised/50 px-2 py-1">
           <svg
             aria-hidden="true"
@@ -209,6 +247,9 @@ export function SearchResultsPanel(): ReactNode {
         <Tabs
           value={searchMode}
           onValueChange={(v) => setSearchMode(v as SearchMode)}
+          // Sized rather than fit: the trigger is `flex-1 min-w-0` so a list
+          // shrunk to its content truncates the labels it was shrunk around.
+          className="w-52"
         >
           <TabsList>
             <TabsTrigger value="text">Text</TabsTrigger>
@@ -225,13 +266,13 @@ export function SearchResultsPanel(): ReactNode {
       >
         <div className="flex-1 overflow-y-auto scrollbar-thin pb-8">
           {searchError ? (
-            <SearchPanelMessage tone="error">{searchError}</SearchPanelMessage>
+            <SearchMessage tone="error">{searchError}</SearchMessage>
           ) : visibleResults.length === 0 ? (
-            <SearchPanelMessage>
+            <SearchMessage>
               {searchVerifiedOnly && searchResults.length > 0
                 ? "No verified matches. Toggle off to include text-only hits."
                 : getEmptyStateMessage(query, searchLoading)}
-            </SearchPanelMessage>
+            </SearchMessage>
           ) : (
             groupedResults.map((group) => (
               <div key={group.filePath}>
@@ -246,7 +287,7 @@ export function SearchResultsPanel(): ReactNode {
                     <button
                       key={`${result.filePath}:${result.lineNumber}:${result.column}`}
                       onClick={() => navigateToSearchResult(result)}
-                      className={`w-full flex items-start gap-2 px-3 py-1 text-left hover:bg-surface-raised/50 transition-colors ${
+                      className={`flex w-full items-start gap-3 px-4 py-1 text-left transition-colors hover:bg-surface-raised/50 ${
                         isTextOnly ? "opacity-60" : ""
                       }`}
                       title={
@@ -255,7 +296,7 @@ export function SearchResultsPanel(): ReactNode {
                           : undefined
                       }
                     >
-                      <span className="text-xxs font-mono text-fg-faint w-8 text-right flex-shrink-0 pt-px tabular-nums">
+                      <span className="w-12 shrink-0 pt-px text-right font-mono text-xs text-fg-faint tabular-nums">
                         {result.lineNumber}
                       </span>
                       <span
@@ -300,7 +341,7 @@ export function SearchResultsPanel(): ReactNode {
           searchMode === "text" ? "hidden" : "flex flex-col flex-1 min-h-0"
         }
       >
-        <SymbolSearchPanel query={query} />
+        <SymbolResults query={query} />
       </div>
     </div>
   );

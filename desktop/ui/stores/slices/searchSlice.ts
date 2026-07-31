@@ -112,6 +112,9 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
 
       set({
         ...(guideContentMode !== null && { guideContentMode: null }),
+        // Picking a result is how the results view is left — it did its job.
+        // The query and the matches stay, so ⇧⌘F comes back to them.
+        searchViewOpen: false,
         selectedFile: match.filePath,
         focusedHunkId: hunk?.id ?? null,
         scrollTarget: {

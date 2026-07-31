@@ -75,10 +75,13 @@ export const APP_COMMANDS: readonly Command[] = [
     id: "go.search",
     title: "Search in Files…",
     category: "Go",
-    keywords: ["grep", "find in files", "content"],
+    keywords: ["grep", "find in files", "content", "results"],
     shortcut: { code: "KeyF", mod: true, shift: true },
     isEnabled: hasDiff,
-    run: (ctx) => ctx.ui.openPalette("content"),
+    // The full results view, not the palette: matches are lines, and reading
+    // one in a dropdown row means reading it truncated. The palette still has
+    // content search behind `#` for when you know what you are jumping to.
+    run: ({ store }) => store.openSearchView(),
   },
   {
     id: "go.nextHunk",

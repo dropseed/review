@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
  * headers: the sidebar is user-resizable, and a centred message drifts to the
  * horizontal middle of a wide pane while every other row stays pinned left.
  */
-export function SearchPanelMessage({
+export function SearchMessage({
   children,
   tone = "muted",
 }: {

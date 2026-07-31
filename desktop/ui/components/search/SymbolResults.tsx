@@ -6,7 +6,7 @@ import { SymbolKindBadge } from "../symbols";
 import { HighlightedText } from "../../lib/fuzzy";
 import { scoreSymbol } from "../symbols/score";
 import { FileGroupHeader } from "./FileGroupHeader";
-import { SearchPanelMessage } from "./SearchPanelMessage";
+import { SearchMessage } from "./SearchMessage";
 import type { FileSymbol, RepoFileSymbols } from "../../types";
 
 interface FlatRepoSymbol {
@@ -87,7 +87,7 @@ function groupByFile(results: SymbolSearchResult[]): GroupedResults[] {
   return Array.from(groups, ([filePath, matches]) => ({ filePath, matches }));
 }
 
-export function SymbolSearchPanel({ query }: { query: string }): ReactNode {
+export function SymbolResults({ query }: { query: string }): ReactNode {
   const repoSymbols = useReviewStore((s) => s.repoSymbols);
   const repoSymbolsLoading = useReviewStore((s) => s.repoSymbolsLoading);
   const repoSymbolsLoaded = useReviewStore((s) => s.repoSymbolsLoaded);
@@ -113,6 +113,7 @@ export function SymbolSearchPanel({ query }: { query: string }): ReactNode {
 
   const handleSelect = (sym: FlatRepoSymbol) => {
     useReviewStore.setState({
+      searchViewOpen: false,
       selectedFile: sym.filePath,
       guideContentMode: null,
       focusedHunkId: null,
@@ -125,15 +126,15 @@ export function SymbolSearchPanel({ query }: { query: string }): ReactNode {
   };
 
   if (repoSymbolsLoading) {
-    return <SearchPanelMessage>Loading symbols…</SearchPanelMessage>;
+    return <SearchMessage>Loading symbols…</SearchMessage>;
   }
 
   if (!debouncedQuery.trim()) {
-    return <SearchPanelMessage>Type to search symbols…</SearchPanelMessage>;
+    return <SearchMessage>Type to search symbols…</SearchMessage>;
   }
 
   if (results.length === 0) {
-    return <SearchPanelMessage>No matching symbols</SearchPanelMessage>;
+    return <SearchMessage>No matching symbols</SearchMessage>;
   }
 
   return (

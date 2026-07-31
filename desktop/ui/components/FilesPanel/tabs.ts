@@ -34,11 +34,6 @@ export const FILES_PANEL_TABS: readonly FilesPanelTabSpec[] = [
     label: "Browse",
     description: "Browse — every file in the repo",
   },
-  {
-    id: "search",
-    label: "Search",
-    description: "Search file contents",
-  },
 ];
 
 /**

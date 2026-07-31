@@ -16,6 +16,9 @@ const WorkingTreeMultiFileDiffViewer = lazy(() =>
     default: m.WorkingTreeMultiFileDiffViewer,
   })),
 );
+const SearchView = lazy(() =>
+  import("../search/SearchView").then((m) => ({ default: m.SearchView })),
+);
 
 export function ContentArea(): ReactNode {
   const selectedFile = useReviewStore((s) => s.selectedFile);
@@ -25,6 +28,7 @@ export function ContentArea(): ReactNode {
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
+  const searchViewOpen = useReviewStore((s) => s.searchViewOpen);
   const setFocusedPane = useReviewStore((s) => s.setFocusedPane);
 
   // When viewing an external file (from LSP go-to-definition), use that path
@@ -62,6 +66,16 @@ export function ContentArea(): ReactNode {
 
   const isSplitActive = secondaryFile !== null;
   const isHorizontal = splitOrientation === "horizontal";
+
+  // Search results take the content area while they are open — picking one
+  // navigates to the file, which is what closes them.
+  if (searchViewOpen) {
+    return (
+      <Suspense fallback={null}>
+        <SearchView />
+      </Suspense>
+    );
+  }
 
   // Multi-file group view takes priority when active
   if (guideContentMode !== null) {

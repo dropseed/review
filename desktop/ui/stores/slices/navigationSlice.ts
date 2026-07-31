@@ -145,6 +145,20 @@ export interface NavigationSlice {
   closeWorkingTreeMultiView: () => void;
 
   /**
+   * Whether the content area is showing search results.
+   *
+   * A content-area view like the two above, not a files-panel tab, because its
+   * rows are lines rather than files: a path, a line number and the matched
+   * line with its context need the width the diff has and the panel doesn't.
+   * Opening a result replaces it with that file, the same way every other view
+   * here gives way to what you picked out of it — the query and its results are
+   * kept, so coming back is instant.
+   */
+  searchViewOpen: boolean;
+  openSearchView: () => void;
+  closeSearchView: () => void;
+
+  /**
    * Which tab the files panel is showing.
    *
    * Store state rather than the panel's own, because the panel is not the only
@@ -251,6 +265,7 @@ const OVERLAYS_CLEARED = {
   guideContentMode: null,
   adhocGroup: null,
   workingTreeMultiView: null,
+  searchViewOpen: false,
 } as const;
 
 /** Jump to the first or last hunk in the current file. */
@@ -341,6 +356,7 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
     const shared = {
       guideContentMode: null as GuideContentMode,
+      searchViewOpen: false,
       workingTreeDiffFile: null as string | null,
       workingTreeDiffMode: null as "staged" | "unstaged" | null,
       externalFilePath: null as string | null,
@@ -698,6 +714,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Working-tree multi-file rolling diff
   workingTreeMultiView: null,
+  searchViewOpen: false,
+  openSearchView: () => set({ ...OVERLAYS_CLEARED, searchViewOpen: true }),
+  closeSearchView: () => set({ searchViewOpen: false }),
   openWorkingTreeMultiView: (view) =>
     set({
       ...OVERLAYS_CLEARED,
