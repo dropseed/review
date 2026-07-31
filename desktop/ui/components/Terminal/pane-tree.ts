@@ -11,6 +11,9 @@
 
 export type SplitDirection = "row" | "column";
 
+/** Which side of a target pane a dragged pane is being dropped against. */
+export type DropEdge = "left" | "right" | "top" | "bottom";
+
 export type PaneNode =
   | { type: "leaf"; terminalId: string }
   | {
@@ -71,24 +74,25 @@ export function firstLeafId(node: PaneNode): string {
 }
 
 /**
- * Split the leaf identified by `targetId`, adding a new leaf for `newId`. If
- * the target's parent split already runs in `direction`, the new leaf is
- * appended as a sibling right after the target and the sizes are evened out.
- * Otherwise the target leaf is replaced by a fresh split `[target, new]` at
- * even sizes. Returns a new tree; unrelated nodes are shared.
+ * Place `inserted` beside the leaf identified by `targetId`, on the side
+ * `before` names. If the target's parent split already runs in `direction`, the
+ * node joins it as a sibling and the sizes are evened out. Otherwise the target
+ * leaf is replaced by a fresh split holding the two at even sizes. Returns a new
+ * tree; unrelated nodes are shared.
  */
-export function splitLeaf(
+function insertBeside(
   node: PaneNode,
   targetId: string,
-  newId: string,
+  inserted: PaneNode,
   direction: SplitDirection,
+  before: boolean,
 ): PaneNode {
   if (node.type === "leaf") {
     if (node.terminalId !== targetId) return node;
     return {
       type: "split",
       direction,
-      children: [node, leaf(newId)],
+      children: before ? [inserted, node] : [node, inserted],
       sizes: [0.5, 0.5],
     };
   }
@@ -98,11 +102,12 @@ export function splitLeaf(
   );
 
   if (idx !== -1 && node.direction === direction) {
-    // Append into the same-direction parent rather than nesting.
+    // Join the same-direction parent rather than nesting.
+    const at = before ? idx : idx + 1;
     const children = [
-      ...node.children.slice(0, idx + 1),
-      leaf(newId),
-      ...node.children.slice(idx + 1),
+      ...node.children.slice(0, at),
+      inserted,
+      ...node.children.slice(at),
     ];
     return { ...node, children, sizes: evenSizes(children.length) };
   }
@@ -115,7 +120,7 @@ export function splitLeaf(
         ? {
             type: "split" as const,
             direction,
-            children: [c, leaf(newId)],
+            children: before ? [inserted, c] : [c, inserted],
             sizes: [0.5, 0.5],
           }
         : c,
@@ -127,9 +132,65 @@ export function splitLeaf(
   return {
     ...node,
     children: node.children.map((c) =>
-      splitLeaf(c, targetId, newId, direction),
+      insertBeside(c, targetId, inserted, direction, before),
     ),
   };
+}
+
+/**
+ * Split the leaf identified by `targetId`, adding a new leaf for `newId` after
+ * it — a new pane always opens to the right of / below the one it came from.
+ */
+export function splitLeaf(
+  node: PaneNode,
+  targetId: string,
+  newId: string,
+  direction: SplitDirection,
+): PaneNode {
+  return insertBeside(node, targetId, leaf(newId), direction, false);
+}
+
+/** The tree's arrangement, ignoring sizes — two trees that lay panes out in the
+ *  same order and nesting share a shape key. */
+function shapeKey(node: PaneNode): string {
+  if (node.type === "leaf") return node.terminalId;
+  return `${node.direction}(${node.children.map(shapeKey).join(",")})`;
+}
+
+/**
+ * Move the pane `sourceId` so it sits against `edge` of `targetId`: lift it out
+ * of the tree (collapsing whatever it leaves behind) and re-insert it beside the
+ * target. This is the drag-to-rearrange gesture.
+ *
+ * Returns the original tree when the move can't be made, and — the reason
+ * `shapeKey` exists — when the pane would land exactly where it already is. A
+ * drop that changes nothing shouldn't quietly even out the sizes the user had
+ * dragged the dividers to.
+ */
+export function movePane(
+  node: PaneNode,
+  sourceId: string,
+  targetId: string,
+  edge: DropEdge,
+): PaneNode {
+  if (sourceId === targetId) return node;
+  const ids = collectLeafIds(node);
+  if (!ids.includes(sourceId) || !ids.includes(targetId)) return node;
+
+  const without = removeLeaf(node, sourceId);
+  if (!without) return node;
+
+  const direction: SplitDirection =
+    edge === "left" || edge === "right" ? "row" : "column";
+  const before = edge === "left" || edge === "top";
+  const next = insertBeside(
+    without,
+    targetId,
+    leaf(sourceId),
+    direction,
+    before,
+  );
+  return shapeKey(next) === shapeKey(node) ? node : next;
 }
 
 /**

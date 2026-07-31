@@ -12,6 +12,7 @@ import {
   nodeAtPath,
   setSizesAtPath,
   reorderTabs,
+  movePane,
 } from "./pane-tree";
 
 describe("makeTab / leaf", () => {
@@ -232,5 +233,88 @@ describe("nodeAtPath / setSizesAtPath", () => {
     const nested = next.children[1];
     if (nested.type !== "split") throw new Error("expected nested split");
     expect(nested.sizes).toEqual([0.2, 0.8]);
+  });
+});
+
+describe("movePane", () => {
+  const row = (...ids: string[]): PaneNode => ({
+    type: "split",
+    direction: "row",
+    children: ids.map(leaf),
+    sizes: evenSizes(ids.length),
+  });
+
+  it("swaps two panes when one is dropped past the other", () => {
+    expect(movePane(row("a", "b"), "a", "b", "right")).toEqual(row("b", "a"));
+  });
+
+  it("returns the original tree for a drop that changes nothing", () => {
+    // Sizes the user dragged to survive a drop that lands where the pane
+    // already is — same object back, so no state write either.
+    const root: PaneNode = {
+      type: "split",
+      direction: "row",
+      children: [leaf("a"), leaf("b")],
+      sizes: [0.7, 0.3],
+    };
+    expect(movePane(root, "a", "b", "left")).toBe(root);
+    expect(movePane(root, "b", "a", "right")).toBe(root);
+  });
+
+  it("re-nests a pane into a new direction against its sibling", () => {
+    expect(movePane(row("a", "b"), "a", "b", "bottom")).toEqual({
+      type: "split",
+      direction: "column",
+      children: [leaf("b"), leaf("a")],
+      sizes: [0.5, 0.5],
+    });
+  });
+
+  it("collapses the split the pane left behind", () => {
+    const root: PaneNode = {
+      type: "split",
+      direction: "row",
+      children: [
+        leaf("a"),
+        {
+          type: "split",
+          direction: "column",
+          children: [leaf("b"), leaf("c")],
+          sizes: [0.5, 0.5],
+        },
+      ],
+      sizes: [0.5, 0.5],
+    };
+    // b leaves the column, which then holds only c and collapses into it.
+    expect(movePane(root, "b", "a", "left")).toEqual(row("b", "a", "c"));
+  });
+
+  it("moves a pane out of a nested split into the root row", () => {
+    const root: PaneNode = {
+      type: "split",
+      direction: "row",
+      children: [
+        leaf("a"),
+        {
+          type: "split",
+          direction: "column",
+          children: [leaf("b"), leaf("c"), leaf("d")],
+          sizes: evenSizes(3),
+        },
+      ],
+      sizes: [0.5, 0.5],
+    };
+    const next = movePane(root, "c", "a", "right");
+    if (next.type !== "split") throw new Error("expected split");
+    expect(collectLeafIds(next)).toEqual(["a", "c", "b", "d"]);
+    expect(next.children).toHaveLength(3);
+    expect(next.sizes).toEqual(evenSizes(3));
+  });
+
+  it("declines a move naming a pane the tree doesn't hold", () => {
+    const root = row("a", "b");
+    expect(movePane(root, "a", "zz", "left")).toBe(root);
+    expect(movePane(root, "zz", "a", "left")).toBe(root);
+    expect(movePane(root, "a", "a", "left")).toBe(root);
   });
 });

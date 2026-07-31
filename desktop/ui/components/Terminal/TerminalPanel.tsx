@@ -17,6 +17,7 @@ import {
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
 import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
+import { TERMINAL_PANE_MIME, usePaneDragActive } from "./pane-drag";
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { PaneTree, PaneButton } from "./PaneTree";
 import { PinIcon, WarningIcon } from "../ui/icons";
@@ -47,6 +48,9 @@ export function TerminalPanel(): ReactNode {
   const setFocusedTerminalPane = useReviewStore(
     (s) => s.setFocusedTerminalPane,
   );
+  const movePane = useReviewStore((s) => s.movePane);
+  const movePaneToTab = useReviewStore((s) => s.movePaneToTab);
+  const movePaneToNewTab = useReviewStore((s) => s.movePaneToNewTab);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const toggleTerminalDockSide = useReviewStore(
     (s) => s.toggleTerminalDockSide,
@@ -65,6 +69,15 @@ export function TerminalPanel(): ReactNode {
   // reorder.
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+
+  // A pane dragged by its grip can also be dropped up here: onto a tab, to move
+  // it into that tab, or onto the slot that appears at the end of the strip, to
+  // pull it out into a tab of its own. `draggedPaneId` is what the panel reacts
+  // to — the strip has to grow that slot while the drag is in flight, not once
+  // something is hovered.
+  const draggedPaneId = usePaneDragActive();
+  const [paneDropTabId, setPaneDropTabId] = useState<string | null>(null);
+  const [overNewTabSlot, setOverNewTabSlot] = useState(false);
 
   const reviewKey = repoPath
     ? panelReviewKey(terminalCheckouts, repoPath, reviewRef)
@@ -87,6 +100,17 @@ export function TerminalPanel(): ReactNode {
 
   const activeTab =
     visibleTabs.find((v) => v.tab.id === activeTabId)?.tab ?? null;
+
+  // Offered only for a pane that has somewhere to leave: the sole pane of a tab
+  // already is its own tab, and a slot that did nothing would still read as an
+  // invitation.
+  const canExtractDraggedPane =
+    draggedPaneId != null &&
+    visibleTabs.some(
+      ({ tab }) =>
+        collectLeafIds(tab.root).length > 1 &&
+        collectLeafIds(tab.root).includes(draggedPaneId),
+    );
 
   if (!repoPath) return null;
 
@@ -177,6 +201,11 @@ export function TerminalPanel(): ReactNode {
             const isActive = tab.id === activeTabId;
             const isDropTarget =
               dragIndex !== null && dragIndex !== index && dropIndex === index;
+            // A pane already in this tab has nothing to gain from being dropped
+            // on it — declining the dragover is also what stops the browser
+            // from firing a drop we'd have to ignore.
+            const takesPane =
+              draggedPaneId != null && !leafIds.includes(draggedPaneId);
             // Its directory is gone but the shell is still alive — say so, so
             // it isn't mistaken for a terminal in a worktree that still exists.
             const orphaned =
@@ -202,6 +231,13 @@ export function TerminalPanel(): ReactNode {
                   e.dataTransfer.setData(TERMINAL_TAB_MIME, tab.id);
                 }}
                 onDragOver={(e) => {
+                  if (takesPane) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "move";
+                    setPaneDropTabId(tab.id);
+                    return;
+                  }
                   // Only claim the drop for our own tab drags; anything else
                   // (a file from Finder) falls through to its own handler.
                   if (dragIndex === null) return;
@@ -209,7 +245,29 @@ export function TerminalPanel(): ReactNode {
                   e.dataTransfer.dropEffect = "move";
                   setDropIndex(index);
                 }}
+                onDragLeave={(e) => {
+                  // Drag events bubble, so crossing into the tab's own children
+                  // fires a leave on the tab. Only a pointer that left counts.
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                    return;
+                  setPaneDropTabId((current) =>
+                    current === tab.id ? null : current,
+                  );
+                }}
                 onDrop={(e) => {
+                  const pane = e.dataTransfer.getData(TERMINAL_PANE_MIME);
+                  if (pane) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPaneDropTabId(null);
+                    if (leafIds.includes(pane)) return;
+                    movePaneToTab(pane, tab.id);
+                    // The tab it landed in is the one to be looking at, and the
+                    // strip may be showing it as a pinned visitor — so this is
+                    // said for the key being viewed, not the key that owns it.
+                    setActiveTab(reviewKey, tab.id);
+                    return;
+                  }
                   if (dragIndex === null) return;
                   e.preventDefault();
                   // Strip positions, not stored ones — the store maps them back
@@ -230,6 +288,9 @@ export function TerminalPanel(): ReactNode {
                     ? "bg-surface-raised text-fg-secondary"
                     : "text-fg-muted hover:bg-fg/[0.06]",
                   dragIndex === index && "opacity-50",
+                  takesPane &&
+                    paneDropTabId === tab.id &&
+                    "ring-1 ring-inset ring-focus-ring bg-fg/[0.06]",
                 )}
               >
                 {isDropTarget && (
@@ -331,6 +392,43 @@ export function TerminalPanel(): ReactNode {
               </div>
             );
           })}
+
+          {/* Only while a pane with siblings is in flight — a drop target for
+              something that isn't being dragged is just clutter in a strip that
+              already wraps. */}
+          {canExtractDraggedPane && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                setOverNewTabSlot(true);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                  return;
+                setOverNewTabSlot(false);
+              }}
+              onDrop={(e) => {
+                setOverNewTabSlot(false);
+                const pane = e.dataTransfer.getData(TERMINAL_PANE_MIME);
+                if (!pane) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const newTabId = movePaneToNewTab(pane);
+                if (newTabId) setActiveTab(reviewKey, newTabId);
+              }}
+              className={clsx(
+                "flex shrink-0 items-center gap-1 rounded-md border border-dashed px-2 py-1 text-xs",
+                overNewTabSlot
+                  ? "border-focus-ring bg-fg/[0.06] text-fg-secondary"
+                  : "border-edge text-fg-faint",
+              )}
+            >
+              <span className="text-sm leading-none">+</span>
+              <span>New tab</span>
+            </div>
+          )}
         </div>
 
         {/* New terminal: the button splits, the caret offers the rest. */}
@@ -429,6 +527,9 @@ export function TerminalPanel(): ReactNode {
                   handleSplit(homeKey, tab.id, id, direction)
                 }
                 onClose={handleClosePane}
+                onMovePane={(sourceId, targetId, edge) =>
+                  movePane(tab.id, sourceId, targetId, edge)
+                }
               />
             </div>
           ))

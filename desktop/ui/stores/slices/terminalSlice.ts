@@ -12,8 +12,10 @@ import type { SliceCreatorWithClientAndStorage } from "../types";
 import {
   type TerminalTab,
   type SplitDirection,
+  type DropEdge,
   makeTab,
   splitLeaf,
+  movePane,
   removeLeaf,
   pruneLeaves,
   collectLeafIds,
@@ -163,6 +165,28 @@ export interface TerminalSlice {
     tabId: string,
     terminalId: string,
   ) => void;
+  /**
+   * Drag-to-rearrange: move the pane `sourceTerminalId` against `edge` of
+   * `targetTerminalId` within `tabId`. Both panes are already in the tab — this
+   * only rearranges, it never starts or kills a session.
+   */
+  movePane: (
+    tabId: string,
+    sourceTerminalId: string,
+    targetTerminalId: string,
+    edge: DropEdge,
+  ) => void;
+  /**
+   * Move a pane out of its own tab and into `targetTabId` — the pane grip
+   * dragged onto a tab in the strip. The pane takes on the tab it joined: its
+   * home key and its pinned state now follow that tab's.
+   */
+  movePaneToTab: (sourceTerminalId: string, targetTabId: string) => void;
+  /**
+   * Pull a pane out into a tab of its own, beside the one it left. Resolves to
+   * the new tab's id, or null when the pane was its tab's only one.
+   */
+  movePaneToNewTab: (sourceTerminalId: string) => string | null;
   /** Set the child fractions of the split node at `path` within `tabId`. */
   resizeSplit: (
     reviewKey: string,
@@ -874,6 +898,153 @@ export function splitTabForTerminal(
 }
 
 /**
+ * Rearrange `tabId`'s panes: put `sourceId` against `edge` of `targetId` and
+ * focus it there, because the pane you just placed is the one you meant to work
+ * in.
+ *
+ * Found by tab id across every bucket for the same reason `splitTabForTerminal`
+ * is: a pinned tab is dragged from wherever it is being shown, which is not
+ * where it lives. A move the tree declines (either pane gone, or a drop that
+ * would change nothing) writes nothing.
+ */
+export function movePaneInTab(
+  state: TabState,
+  tabId: string,
+  sourceId: string,
+  targetId: string,
+  edge: DropEdge,
+): Partial<TabState> {
+  const found = findTab(state.terminalTabsByReviewKey, tabId);
+  if (!found) return {};
+  const root = movePane(found.tab.root, sourceId, targetId, edge);
+  if (root === found.tab.root) return {};
+  const tabs = (state.terminalTabsByReviewKey[found.reviewKey] ?? []).map(
+    (tab) => (tab.id === tabId ? { ...tab, root, focused: sourceId } : tab),
+  );
+  return {
+    terminalTabsByReviewKey: {
+      ...state.terminalTabsByReviewKey,
+      [found.reviewKey]: tabs,
+    },
+  };
+}
+
+/**
+ * The source tab as it looks once `sourceId` has left it, or null when the pane
+ * it lost was its last one — a tab with no panes is not a tab.
+ */
+function tabWithoutPane(
+  tab: TerminalTab,
+  sourceId: string,
+): TerminalTab | null {
+  const root = removeLeaf(tab.root, sourceId);
+  if (!root) return null;
+  const leaves = collectLeafIds(root);
+  return {
+    ...tab,
+    root,
+    focused: leaves.includes(tab.focused) ? tab.focused : firstLeafId(root),
+  };
+}
+
+/**
+ * Move the pane `sourceId` out of its own tab and into `targetTabId`, beside
+ * that tab's focused pane — the drag from a pane's grip onto a tab in the strip.
+ *
+ * The tab the pane came from is left collapsed around the hole, or dropped
+ * entirely if that pane was all it had: dragging a single-pane tab onto another
+ * tab merges the two, which is the only sensible reading of the gesture.
+ *
+ * The pane lands focused, and its new tab becomes its key's active one — you
+ * just put it there, so that is what should be on screen.
+ */
+export function movePaneToTabTree(
+  state: TabState,
+  sourceId: string,
+  targetTabId: string,
+): Partial<TabState> {
+  const source = findTabForTerminal(state.terminalTabsByReviewKey, sourceId);
+  const target = findTab(state.terminalTabsByReviewKey, targetTabId);
+  if (!source || !target || source.tab.id === targetTabId) return {};
+
+  const sourceTab = tabWithoutPane(source.tab, sourceId);
+  const targetRoot = splitLeaf(
+    target.tab.root,
+    target.tab.focused,
+    sourceId,
+    "row",
+  );
+
+  const terminalTabsByReviewKey: Record<string, TerminalTab[]> = {};
+  for (const [key, tabs] of Object.entries(state.terminalTabsByReviewKey)) {
+    const out: TerminalTab[] = [];
+    for (const tab of tabs) {
+      if (tab.id === source.tab.id) {
+        if (sourceTab) out.push(sourceTab);
+      } else if (tab.id === targetTabId) {
+        out.push({ ...tab, root: targetRoot, focused: sourceId });
+      } else {
+        out.push(tab);
+      }
+    }
+    terminalTabsByReviewKey[key] = out;
+  }
+
+  return {
+    terminalTabsByReviewKey,
+    activeTabIdByReviewKey: {
+      ...resolveActiveTabIds(
+        terminalTabsByReviewKey,
+        state.activeTabIdByReviewKey,
+      ),
+      [target.reviewKey]: targetTabId,
+    },
+  };
+}
+
+/**
+ * Pull the pane `sourceId` out of its tab into a new tab of its own, placed
+ * right after the tab it left — the drop onto the strip's "New tab" slot.
+ *
+ * Declines when the pane is its tab's only one: it already is its own tab, and
+ * honoring the drop would swap one tab for an identical one at a new id,
+ * throwing away its position in the strip for nothing.
+ *
+ * The new tab stays in the bucket the old one lives in and inherits its pinned
+ * state, so pulling a pane out never quietly re-homes it.
+ */
+export function extractPaneToTab(
+  state: TabState,
+  sourceId: string,
+  newTabId: string,
+): Partial<TabState> {
+  const source = findTabForTerminal(state.terminalTabsByReviewKey, sourceId);
+  if (!source) return {};
+  const sourceTab = tabWithoutPane(source.tab, sourceId);
+  if (!sourceTab) return {};
+
+  const tabs = [...(state.terminalTabsByReviewKey[source.reviewKey] ?? [])];
+  const at = tabs.findIndex((tab) => tab.id === source.tab.id);
+  tabs.splice(
+    at,
+    1,
+    sourceTab,
+    makeTab(newTabId, sourceId, source.tab.pinned ?? false),
+  );
+
+  return {
+    terminalTabsByReviewKey: {
+      ...state.terminalTabsByReviewKey,
+      [source.reviewKey]: tabs,
+    },
+    activeTabIdByReviewKey: {
+      ...state.activeTabIdByReviewKey,
+      [source.reviewKey]: newTabId,
+    },
+  };
+}
+
+/**
  * Remove terminal `id` from every tab's tree: collapse single-child splits,
  * re-pick a tab's focus if it lost the focused leaf, drop a tab that empties,
  * and re-pick the active tab per review key if it went away.
@@ -1379,6 +1550,20 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     return terminalHomes;
   }
 
+  /**
+   * Record whether one session's tab is pinned, persisting only a real change.
+   *
+   * Moving a pane between tabs has to say this out loud: pinning is stored per
+   * session, and a pane carrying a stale pin into an unpinned tab would pin
+   * that tab on the next reload, when the tab list is rebuilt from this list.
+   */
+  function setPinned(current: string[], id: string, pinned: boolean): string[] {
+    if (current.includes(id) === pinned) return current;
+    const next = pinned ? [...current, id] : current.filter((x) => x !== id);
+    storage.set("terminalPinnedIds", next);
+    return next;
+  }
+
   return {
     terminalSessions: {},
     terminalStatuses: {},
@@ -1614,6 +1799,56 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     setFocusedTerminalPane: (reviewKey, tabId, terminalId) =>
       set(setFocusedInTab(get(), reviewKey, tabId, terminalId)),
+
+    movePane: (tabId, sourceTerminalId, targetTerminalId, edge) =>
+      set(
+        movePaneInTab(get(), tabId, sourceTerminalId, targetTerminalId, edge),
+      ),
+
+    movePaneToTab: (sourceTerminalId, targetTabId) => {
+      const g = get();
+      const target = findTab(g.terminalTabsByReviewKey, targetTabId);
+      if (!target) return;
+      const next = movePaneToTabTree(g, sourceTerminalId, targetTabId);
+      if (!next.terminalTabsByReviewKey) return;
+      // The pane belongs to the tab it joined now — the same fact `setTabHome`
+      // records when a whole tab is dragged onto a sidebar row, and the reason
+      // its flat bucket has to move with it.
+      set({
+        ...next,
+        ...moveTerminalsToKey(g, [sourceTerminalId], target.reviewKey),
+        terminalHomes: rememberHome([sourceTerminalId], target.reviewKey),
+        terminalPinnedIds: setPinned(
+          g.terminalPinnedIds,
+          sourceTerminalId,
+          !!target.tab.pinned,
+        ),
+      });
+    },
+
+    movePaneToNewTab: (sourceTerminalId) => {
+      const g = get();
+      const source = findTabForTerminal(
+        g.terminalTabsByReviewKey,
+        sourceTerminalId,
+      );
+      if (!source) return null;
+      const tabId = crypto.randomUUID();
+      const next = extractPaneToTab(g, sourceTerminalId, tabId);
+      if (!next.terminalTabsByReviewKey) return null;
+      set({
+        ...next,
+        // The new tab inherits the old one's pinning, so the pane has to be
+        // recorded as pinned itself — a pane split off a pinned tab was never
+        // added to this list, and the list is what survives a reload.
+        terminalPinnedIds: setPinned(
+          g.terminalPinnedIds,
+          sourceTerminalId,
+          !!source.tab.pinned,
+        ),
+      });
+      return tabId;
+    },
 
     resizeSplit: (reviewKey, tabId, path, sizes) =>
       set(resizeSplitInTab(get(), reviewKey, tabId, path, sizes)),

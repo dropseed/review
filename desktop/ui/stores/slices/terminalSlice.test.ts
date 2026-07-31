@@ -13,6 +13,9 @@ import {
   activeFallback,
   addTabForTerminal,
   splitTabForTerminal,
+  movePaneInTab,
+  movePaneToTabTree,
+  extractPaneToTab,
   removeTerminalFromTabs,
   setFocusedInTab,
   resizeSplitInTab,
@@ -624,6 +627,155 @@ describe("tab reducers", () => {
     };
     state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "a") };
     expect(state.terminalTabsByReviewKey["k1"][0].focused).toBe("a");
+  });
+
+  it("movePaneInTab rearranges the tab's panes and focuses the moved one", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "b") };
+    // Drop "b" against the top of "a": the row becomes a column, b first.
+    state = { ...state, ...movePaneInTab(state, "tabA", "b", "a", "top") };
+    const tab = state.terminalTabsByReviewKey["k1"][0];
+    expect(tab.root).toEqual({
+      type: "split",
+      direction: "column",
+      children: [
+        { type: "leaf", terminalId: "b" },
+        { type: "leaf", terminalId: "a" },
+      ],
+      sizes: [0.5, 0.5],
+    });
+    expect(tab.focused).toBe("b");
+  });
+
+  it("movePaneInTab finds a pinned tab in the bucket that owns it", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA", true) };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    // Dragged from a strip showing it as a visitor — the store is told only the
+    // tab id, and has to write back into k1.
+    state = { ...state, ...movePaneInTab(state, "tabA", "b", "a", "left") };
+    expect(state.terminalTabsByReviewKey["k1"][0].root).toEqual({
+      type: "split",
+      direction: "row",
+      children: [
+        { type: "leaf", terminalId: "b" },
+        { type: "leaf", terminalId: "a" },
+      ],
+      sizes: [0.5, 0.5],
+    });
+  });
+
+  it("movePaneInTab writes nothing for an unknown tab or a drop that changes nothing", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    expect(movePaneInTab(state, "nope", "b", "a", "left")).toEqual({});
+    // "b" is already to the right of "a".
+    expect(movePaneInTab(state, "tabA", "b", "a", "right")).toEqual({});
+  });
+
+  it("movePaneToTabTree moves a pane into another tab and shows it there", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    state = { ...state, ...addTabForTerminal(state, "c", "k1", "tabB") };
+    state = { ...state, ...movePaneToTabTree(state, "b", "tabB") };
+
+    const [tabA, tabB] = state.terminalTabsByReviewKey["k1"];
+    expect(tabA.root).toEqual({ type: "leaf", terminalId: "a" });
+    expect(tabA.focused).toBe("a");
+    expect(collectLeafIds(tabB.root)).toEqual(["c", "b"]);
+    expect(tabB.focused).toBe("b");
+    expect(state.activeTabIdByReviewKey["k1"]).toBe("tabB");
+  });
+
+  it("movePaneToTabTree drops the tab a single pane left behind", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "b", "k1", "tabB") };
+    state = { ...state, ...movePaneToTabTree(state, "a", "tabB") };
+    const tabs = state.terminalTabsByReviewKey["k1"];
+    expect(tabs.map((t) => t.id)).toEqual(["tabB"]);
+    expect(collectLeafIds(tabs[0].root)).toEqual(["b", "a"]);
+  });
+
+  it("movePaneToTabTree moves a pane into a tab in another bucket", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    state = { ...state, ...addTabForTerminal(state, "c", "k2", "tabB") };
+    state = { ...state, ...movePaneToTabTree(state, "b", "tabB") };
+    expect(collectLeafIds(state.terminalTabsByReviewKey["k1"][0].root)).toEqual(
+      ["a"],
+    );
+    expect(collectLeafIds(state.terminalTabsByReviewKey["k2"][0].root)).toEqual(
+      ["c", "b"],
+    );
+    expect(state.activeTabIdByReviewKey["k2"]).toBe("tabB");
+  });
+
+  it("movePaneToTabTree writes nothing for an unknown tab or the pane's own", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    expect(movePaneToTabTree(state, "b", "tabA")).toEqual({});
+    expect(movePaneToTabTree(state, "b", "nope")).toEqual({});
+    expect(movePaneToTabTree(state, "zz", "tabA")).toEqual({});
+  });
+
+  it("extractPaneToTab pulls a pane into its own tab beside the old one", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    state = { ...state, ...addTabForTerminal(state, "c", "k1", "tabB") };
+    state = { ...state, ...extractPaneToTab(state, "b", "tabNew") };
+
+    const tabs = state.terminalTabsByReviewKey["k1"];
+    expect(tabs.map((t) => t.id)).toEqual(["tabA", "tabNew", "tabB"]);
+    expect(tabs[0].root).toEqual({ type: "leaf", terminalId: "a" });
+    expect(tabs[1].root).toEqual({ type: "leaf", terminalId: "b" });
+    expect(state.activeTabIdByReviewKey["k1"]).toBe("tabNew");
+  });
+
+  it("extractPaneToTab carries the old tab's pinning onto the new one", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA", true) };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    state = { ...state, ...extractPaneToTab(state, "b", "tabNew") };
+    expect(state.terminalTabsByReviewKey["k1"][1].pinned).toBe(true);
+  });
+
+  it("extractPaneToTab declines a pane that is already its tab's only one", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    expect(extractPaneToTab(state, "a", "tabNew")).toEqual({});
+    expect(extractPaneToTab(state, "zz", "tabNew")).toEqual({});
   });
 
   it("resizeSplitInTab sets the root split's sizes", () => {

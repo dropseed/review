@@ -1,7 +1,13 @@
-import { type ReactNode, Fragment, useRef } from "react";
+import { type ReactNode, Fragment, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import type { PaneNode, SplitDirection } from "./pane-tree";
+import type { PaneNode, SplitDirection, DropEdge } from "./pane-tree";
+import {
+  TERMINAL_PANE_MIME,
+  edgeForPoint,
+  draggedPane,
+  setDraggedPane,
+} from "./pane-drag";
 import { TerminalPane } from "./TerminalPane";
 import { SplitDivider } from "./SplitDivider";
 
@@ -21,7 +27,17 @@ interface PaneTreeProps {
   onFocus: (terminalId: string) => void;
   onSplit: (terminalId: string, direction: SplitDirection) => void;
   onClose: (terminalId: string) => void;
+  /** Drag-to-rearrange: place `sourceId` against `edge` of `targetId`. */
+  onMovePane: (sourceId: string, targetId: string, edge: DropEdge) => void;
 }
+
+/** The half of a pane a drop would fill, drawn where the pane will land. */
+const EDGE_HIGHLIGHT: Record<DropEdge, string> = {
+  left: "inset-y-0 left-0 w-1/2",
+  right: "inset-y-0 right-0 w-1/2",
+  top: "inset-x-0 top-0 h-1/2",
+  bottom: "inset-x-0 bottom-0 h-1/2",
+};
 
 /** Stable React key so xterm panes aren't remounted when siblings change. */
 function nodeKey(node: PaneNode, index: number): string {
@@ -44,9 +60,14 @@ export function PaneTree({
   onFocus,
   onSplit,
   onClose,
+  onMovePane,
 }: PaneTreeProps): ReactNode {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const resizeSplit = useReviewStore((s) => s.resizeSplit);
+  // Both are this leaf's own view of the drag: the edge a hovering pane would
+  // land on, and whether this pane is the one in flight.
+  const [dropEdge, setDropEdge] = useState<DropEdge | null>(null);
+  const [lifted, setLifted] = useState(false);
 
   if (node.type === "leaf") {
     const id = node.terminalId;
@@ -64,8 +85,52 @@ export function PaneTree({
           // The panel card supplies the surface and the rounding; this is the
           // one gutter between the card edge and the terminal text.
           "overflow-hidden p-1.5",
+          // The pane in flight reads as picked up rather than gone — its
+          // contents still say which terminal you are carrying.
+          lifted && "opacity-50",
         )}
         onMouseDown={() => onFocus(id)}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(TERMINAL_PANE_MIME)) return;
+          // A pane hovering itself is not a drop: leaving dragover uncancelled
+          // makes the browser refuse the drop outright, so the terminal
+          // underneath never sees a stray text insertion either.
+          if (draggedPane() === id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+          setDropEdge(
+            edgeForPoint(
+              e.currentTarget.getBoundingClientRect(),
+              e.clientX,
+              e.clientY,
+            ),
+          );
+        }}
+        onDragLeave={(e) => {
+          // Drag events bubble, so crossing into the pane's own children fires
+          // a leave on the pane. Only a pointer that left counts.
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+          setDropEdge(null);
+        }}
+        onDrop={(e) => {
+          setDropEdge(null);
+          const source = e.dataTransfer.getData(TERMINAL_PANE_MIME);
+          if (!source || source === id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          // Re-read the edge from the drop itself rather than trusting the
+          // hover state, which is a render behind a fast gesture.
+          onMovePane(
+            source,
+            id,
+            edgeForPoint(
+              e.currentTarget.getBoundingClientRect(),
+              e.clientX,
+              e.clientY,
+            ),
+          );
+        }}
       >
         <div className="relative min-h-0 flex-1">
           <TerminalPane id={id} active={isFocused} />
@@ -85,12 +150,55 @@ export function PaneTree({
           )}
         </div>
 
-        {/* Hover affordances — split / close. */}
+        {/* Where the dragged pane would land. Inert, so the pointer keeps
+            reaching the pane underneath and the edge keeps updating. */}
+        {dropEdge && (
+          <div
+            aria-hidden
+            className={clsx(
+              "pointer-events-none absolute z-20 m-1.5 rounded",
+              "bg-focus-ring/20 ring-1 ring-inset ring-focus-ring",
+              EDGE_HIGHLIGHT[dropEdge],
+            )}
+          />
+        )}
+
+        {/* Hover affordances — move / split / close. */}
         <div
           className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5
                      rounded-md bg-surface-raised/90 p-0.5 opacity-0
                      transition-opacity group-hover/pane:opacity-100"
         >
+          {/* The only pane in the tab has nowhere to be moved to. A div rather
+              than a button: this is a drag handle, and `draggable` on a button
+              is the one place webviews disagree about whether a drag starts. */}
+          {!isOnlyPane && (
+            <div
+              role="button"
+              aria-label="Move pane"
+              title="Drag to move pane"
+              draggable
+              onDragStart={(e) => {
+                setLifted(true);
+                setDraggedPane(id);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(TERMINAL_PANE_MIME, id);
+                // Some webviews won't start a drag without a text payload, and
+                // an empty one is a payload that can't be pasted into whatever
+                // the drag is released over.
+                e.dataTransfer.setData("text/plain", "");
+              }}
+              onDragEnd={() => {
+                setLifted(false);
+                setDraggedPane(null);
+              }}
+              className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center
+                         rounded text-fg-faint transition-colors active:cursor-grabbing
+                         hover:bg-fg/[0.08] hover:text-fg-secondary"
+            >
+              <GripIcon />
+            </div>
+          )}
           <PaneButton label="Split right" onClick={() => onSplit(id, "row")}>
             <SplitRightIcon />
           </PaneButton>
@@ -153,6 +261,7 @@ export function PaneTree({
               onFocus={onFocus}
               onSplit={onSplit}
               onClose={onClose}
+              onMovePane={onMovePane}
             />
           </div>
         </Fragment>
@@ -191,6 +300,25 @@ export function PaneButton({
     >
       {children}
     </button>
+  );
+}
+
+/** Grip dots — the handle a pane is dragged by. */
+function GripIcon(): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3.5 w-3.5"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {[4, 8, 12].map((y) => (
+        <Fragment key={y}>
+          <circle cx="6" cy={y} r="1.1" />
+          <circle cx="10" cy={y} r="1.1" />
+        </Fragment>
+      ))}
+    </svg>
   );
 }
 
