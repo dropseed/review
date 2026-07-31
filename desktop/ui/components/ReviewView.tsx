@@ -17,7 +17,6 @@ import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
 import type { ReviewTarget } from "../types";
 import {
-  useSidebarResize,
   useMenuEvents,
   useFileWatcher,
   useKeyboardNavigation,
@@ -30,8 +29,7 @@ import {
   useReviewTier,
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import { FilesPanel } from "./FilesPanel";
-import { FilesRail } from "./FilesPanel/FilesRail";
+import { FilesPanelDock } from "./FilesPanel/FilesPanelDock";
 import { ContentArea } from "./ContentArea";
 import { ResizeHandle } from "./ContentArea/ResizeHandle";
 import { DiffRail } from "./ContentArea/DiffRail";
@@ -40,7 +38,6 @@ import { TerminalRail } from "./Terminal/TerminalRail";
 import { closeFocusedTerminal } from "./Terminal/close";
 import { WarningIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
-import { SidebarResizeHandle } from "./ui/sidebar-resize-handle";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
 import {
   TERMINAL_MAX_CONTENT_FRACTION,
@@ -224,11 +221,6 @@ export function ReviewView({
     },
     [],
   );
-
-  const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
-    sidebarPosition: "right",
-  });
-  const filesPanelCollapsed = useReviewStore((s) => s.filesPanelCollapsed);
 
   useKeyboardNavigation();
   useRegisterCommands(TERMINAL_COMMANDS);
@@ -520,37 +512,7 @@ export function ReviewView({
 
       {/* FilesPanel (right side) — hidden when the compared branch is gone,
           since its file list would otherwise show every file as deleted. */}
-      {!compareRefMissing && (
-        <>
-          {/* Collapsed, the panel keeps a strip on the window edge rather than
-              vanishing — the same rule the sidebar and the terminal follow. */}
-          {filesPanelCollapsed && <FilesRail />}
-
-          <aside
-            // Kept mounted at zero width, not unmounted: the panel holds which
-            // directories you have expanded, and collapsing to tidy up should
-            // not be the thing that forgets them.
-            className={`relative flex flex-shrink-0 flex-col overflow-hidden
-                        ${isResizing ? "" : "transition-[width] duration-200 ease-out"}`}
-            style={{ width: filesPanelCollapsed ? 0 : `${sidebarWidth}rem` }}
-            aria-hidden={filesPanelCollapsed}
-          >
-            <div
-              className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-edge"
-              style={{ width: `${sidebarWidth}rem` }}
-            >
-              <div className="flex-1 overflow-hidden">
-                <FilesPanel />
-              </div>
-
-              <SidebarResizeHandle
-                position="left"
-                onMouseDown={handleResizeStart}
-              />
-            </div>
-          </aside>
-        </>
-      )}
+      {!compareRefMissing && <FilesPanelDock />}
 
       {/* Debug Modal */}
       {activeOverlay === "debug" && (

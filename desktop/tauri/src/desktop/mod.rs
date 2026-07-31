@@ -454,6 +454,12 @@ pub fn run() {
                 .enabled(false)
                 .build(app)?;
 
+            let toggle_files_panel = MenuItemBuilder::new("Toggle Files Panel")
+                .id("toggle_files_panel")
+                .accelerator("CmdOrCtrl+Alt+B")
+                .enabled(false)
+                .build(app)?;
+
             let reveal_in_browse = MenuItemBuilder::new("Reveal in Browse")
                 .id("reveal_in_browse")
                 .accelerator("CmdOrCtrl+Alt+\\")
@@ -508,6 +514,7 @@ pub fn run() {
                 .item(&search_in_files)
                 .separator()
                 .item(&toggle_sidebar)
+                .item(&toggle_files_panel)
                 .item(&reveal_in_browse)
                 .separator()
                 .item(&actual_size)
@@ -558,6 +565,7 @@ pub fn run() {
                 ("find_symbols".to_owned(), find_symbols),
                 ("search_in_files".to_owned(), search_in_files),
                 ("toggle_sidebar".to_owned(), toggle_sidebar),
+                ("toggle_files_panel".to_owned(), toggle_files_panel),
                 ("reveal_in_browse".to_owned(), reveal_in_browse),
             ])));
 
@@ -616,6 +624,7 @@ pub fn run() {
                 "find_symbols" => emit_menu_event(app, "menu:find-symbols", ()),
                 "search_in_files" => emit_menu_event(app, "menu:search-in-files", ()),
                 "toggle_sidebar" => emit_menu_event(app, "menu:toggle-sidebar", ()),
+                "toggle_files_panel" => emit_menu_event(app, "menu:toggle-files-panel", ()),
                 "reveal_in_browse" => emit_menu_event(app, "menu:reveal-in-browse", ()),
                 "new_review" => emit_menu_event(app, "menu:new-review", ()),
                 _ => {}

@@ -384,7 +384,6 @@ export function SummaryFileTree(): ReactNode {
       useReviewStore.setState({
         guideContentMode: null,
         selectedFile: filePath,
-        filesPanelCollapsed: false,
         focusedHunkId: hunkId,
         scrollTarget: { type: "hunk", hunkId },
       });

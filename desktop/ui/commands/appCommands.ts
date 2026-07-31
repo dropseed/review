@@ -223,6 +223,10 @@ export const APP_COMMANDS: readonly Command[] = [
     // ⌘B collapses the left sidebar; the right one takes the same chord with
     // Option, so the two panels that flank the diff are one modifier apart.
     shortcut: { code: "KeyB", mod: true, alt: true },
+    // Only the review screen has this panel, and collapsing is persisted — from
+    // anywhere else this would silently change what you see next time instead
+    // of doing nothing visible now.
+    isEnabled: hasRepo,
     run: ({ store }) => store.toggleFilesPanel(),
   },
   {

@@ -113,7 +113,6 @@ export const createSearchSlice: SliceCreatorWithClient<SearchSlice> =
       set({
         ...(guideContentMode !== null && { guideContentMode: null }),
         selectedFile: match.filePath,
-        filesPanelCollapsed: false,
         focusedHunkId: hunk?.id ?? null,
         scrollTarget: {
           type: "line",

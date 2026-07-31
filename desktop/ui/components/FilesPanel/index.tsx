@@ -10,6 +10,7 @@ import {
 import { useReviewStore } from "../../stores";
 import { CheckIcon, SidebarPanelIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
+import { SimpleTooltip } from "../ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
   DropdownMenuItem,
@@ -29,6 +30,7 @@ import { CommitRangeHeader } from "./CommitRangeHeader";
 import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
+import { visibleFilesPanelTabs } from "./tabs";
 
 /**
  * How much is waiting behind a tab, so you don't have to open it to find out.
@@ -117,7 +119,6 @@ export function FilesPanel() {
       useReviewStore.setState({
         guideContentMode: null,
         selectedFile: filePath,
-        filesPanelCollapsed: false,
         focusedHunkId: hunkId,
         scrollTarget: { type: "hunk", hunkId },
       });
@@ -128,6 +129,10 @@ export function FilesPanel() {
   // Search state
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
   const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
+
+  // One table, rendered here and by the collapsed rail — so the rail can't
+  // offer a tab this strip doesn't have.
+  const visibleTabs = visibleFilesPanelTabs(comparison !== null, showGitTab);
 
   // What the Review tab has waiting, for its badge. Taken from the panel's own
   // stats rather than a store-wide count: the badge labels these sections, so
@@ -239,54 +244,51 @@ export function FilesPanel() {
         <div className="flex h-full flex-col">
           {/* View mode toggle */}
           <div className="flex items-center gap-1.5 px-3 py-2">
+            {/* Collapsing lives on the panel's own header, the way the
+                sidebar's does — the rail it leaves behind is the way back. It
+                sits on the inner edge, against the content it makes room for,
+                rather than out at the window edge where nothing else is. */}
+            <SimpleTooltip content="Hide files (⌥⌘B)">
+              <button
+                type="button"
+                onClick={toggleFilesPanel}
+                aria-label="Hide files"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded
+                           text-fg-muted transition-colors duration-100
+                           hover:bg-fg/[0.08] hover:text-fg-secondary"
+              >
+                <SidebarPanelIcon className="h-3.5 w-3.5 -scale-x-100" />
+              </button>
+            </SimpleTooltip>
+
             <Tabs
               value={viewMode}
               onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
               className="flex-1 min-w-0"
             >
               <TabsList aria-label="File view mode">
-                {comparison && showGitTab && (
-                  <TabsTrigger value="git">
-                    Git
-                    <TabCount value={gitChangeCount} />
-                  </TabsTrigger>
-                )}
-                {comparison && (
-                  <TabsTrigger value="changes">
-                    Review
+                {visibleTabs.map((tab) => (
+                  <TabsTrigger key={tab.id} value={tab.id}>
+                    {tab.label}
+                    {tab.id === "git" && <TabCount value={gitChangeCount} />}
                     {/* Unresolved, not total: the count is there to answer
                         "is anything waiting", and a check answers it better
                         than a zero once the answer is no. */}
-                    {unresolved > 0 ? (
-                      <TabCount value={unresolved} />
-                    ) : (
-                      complete && (
-                        <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
-                      )
+                    {tab.id === "changes" &&
+                      (unresolved > 0 ? (
+                        <TabCount value={unresolved} />
+                      ) : (
+                        complete && (
+                          <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
+                        )
+                      ))}
+                    {tab.id === "search" && (
+                      <TabCount value={searchResultCount} max={100} />
                     )}
                   </TabsTrigger>
-                )}
-                <TabsTrigger value="browse">Browse</TabsTrigger>
-                <TabsTrigger value="search">
-                  Search
-                  <TabCount value={searchResultCount} max={100} />
-                </TabsTrigger>
+                ))}
               </TabsList>
             </Tabs>
-
-            {/* Collapsing lives on the panel's own header, the way the
-                sidebar's does — the rail it leaves behind is the way back. */}
-            <button
-              type="button"
-              onClick={toggleFilesPanel}
-              aria-label="Hide files"
-              title="Hide files (⌥⌘B)"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded
-                         text-fg-muted transition-colors duration-100
-                         hover:bg-fg/[0.08] hover:text-fg-secondary"
-            >
-              <SidebarPanelIcon className="h-3.5 w-3.5 -scale-x-100" />
-            </button>
           </div>
 
           {/* Panel content based on view mode */}

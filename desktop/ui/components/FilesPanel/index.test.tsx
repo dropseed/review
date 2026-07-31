@@ -28,6 +28,7 @@ vi.mock("./SearchResultsPanel", () => ({ SearchResultsPanel: () => null }));
 vi.mock("./GitStatusPanel", () => ({ GitStatusPanel: () => null }));
 
 import { FilesPanel } from "./index";
+import { TooltipProvider } from "../ui/tooltip";
 import { useReviewStore } from "../../stores";
 
 const FILE = "a.ts";
@@ -119,7 +120,11 @@ describe("FilesPanel review tab badge", () => {
     statuses[HUNKS[9].id] = "saved_for_later";
     seedStore(reviewState(statuses));
 
-    render(<FilesPanel />);
+    render(
+      <TooltipProvider>
+        <FilesPanel />
+      </TooltipProvider>,
+    );
 
     // A deferral is not a decision — the panel keeps a "Saved for later"
     // section for it, so the tab above cannot claim the review is done.
@@ -132,7 +137,11 @@ describe("FilesPanel review tab badge", () => {
     for (const h of HUNKS) statuses[h.id] = "approved";
     seedStore(reviewState(statuses));
 
-    render(<FilesPanel />);
+    render(
+      <TooltipProvider>
+        <FilesPanel />
+      </TooltipProvider>,
+    );
 
     expect(reviewTabText()).toBe("Review");
     expect(hasCheck()).toBe(true);
@@ -145,7 +154,11 @@ describe("FilesPanel review tab badge", () => {
       stagedFilePaths: new Set([FILE]),
     });
 
-    render(<FilesPanel />);
+    render(
+      <TooltipProvider>
+        <FilesPanel />
+      </TooltipProvider>,
+    );
 
     expect(reviewTabText()).toBe("Review");
     expect(hasCheck()).toBe(true);
@@ -161,7 +174,11 @@ describe("FilesPanel review tab badge", () => {
       },
     });
 
-    render(<FilesPanel />);
+    render(
+      <TooltipProvider>
+        <FilesPanel />
+      </TooltipProvider>,
+    );
 
     expect(reviewTabText()).toBe("Review2");
   });

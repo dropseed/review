@@ -114,7 +114,6 @@ export function SymbolSearchPanel({ query }: { query: string }): ReactNode {
   const handleSelect = (sym: FlatRepoSymbol) => {
     useReviewStore.setState({
       selectedFile: sym.filePath,
-      filesPanelCollapsed: false,
       guideContentMode: null,
       focusedHunkId: null,
       scrollTarget: {

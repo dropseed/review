@@ -1,4 +1,5 @@
 import { isHunkReviewed } from "../../types";
+import type { FilesPanelTab } from "../../components/FilesPanel/types";
 import type { DiffHunk, HunkGroup } from "../../types";
 import {
   shouldSkipHunkForNavigation,
@@ -143,10 +144,25 @@ export interface NavigationSlice {
   }) => void;
   closeWorkingTreeMultiView: () => void;
 
-  // Request a files panel tab switch from outside the panel
-  requestedFilesPanelTab: string | null;
-  requestFilesPanelTab: (tab: string) => void;
-  clearRequestedFilesPanelTab: () => void;
+  /**
+   * Which tab the files panel is showing.
+   *
+   * Store state rather than the panel's own, because the panel is not the only
+   * thing that shows or sets it: its collapsed rail offers the same tabs and
+   * has to mark the current one. It used to be local state with a request
+   * channel alongside for everyone else to ask through — this is that channel's
+   * job, done in one place.
+   */
+  filesPanelTab: FilesPanelTab;
+  /**
+   * Whether the tab on screen is one the user picked. Until they do, the panel
+   * follows what there is to look at.
+   */
+  filesPanelTabChosen: boolean;
+  /** The user picked this tab; the panel stops choosing for them. */
+  setFilesPanelTab: (tab: FilesPanelTab) => void;
+  /** The panel picked it, following the hunks it has. */
+  autoSelectFilesPanelTab: (tab: FilesPanelTab) => void;
 
   // Flag for symbol navigation to trigger history push instead of replace
   isProgrammaticNavigation: boolean;
@@ -495,7 +511,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       set({
         ...OVERLAYS_CLEARED,
         selectedFile: filePath,
-        filesPanelCollapsed: false,
         focusedHunkId: scrollTo.hunkId,
       });
       return;
@@ -507,7 +522,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     set({
       ...OVERLAYS_CLEARED,
       selectedFile: filePath,
-      filesPanelCollapsed: false,
       ...(hunkId && {
         focusedHunkId: hunkId,
         scrollTarget: { type: "hunk", hunkId },
@@ -518,11 +532,17 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   revealInBrowse: (filePath) => {
     set({
       ...OVERLAYS_CLEARED,
-      requestedFilesPanelTab: "browse",
+      filesPanelTab: "browse",
+      filesPanelTabChosen: true,
       fileToReveal: filePath,
       selectedFile: filePath,
-      filesPanelCollapsed: false,
     });
+    // "Reveal in Browse" is a request to see the file *in the panel*, so this
+    // is the one navigation that may reopen a collapsed one. Through the setter,
+    // not as a field in the write above: collapse is a persisted preference, and
+    // setting the field alone leaves what's on screen disagreeing with what's
+    // on disk until the next launch re-reads it.
+    get().setFilesPanelCollapsed(false);
   },
 
   // Split view actions
@@ -691,11 +711,12 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
   // Content search modal
 
   // Requested files panel tab
-  requestedFilesPanelTab: null,
-  // The panel owns which tab is showing (it is local state there), so everything
-  // outside asks for one through here and the panel consumes the request.
-  requestFilesPanelTab: (tab) => set({ requestedFilesPanelTab: tab }),
-  clearRequestedFilesPanelTab: () => set({ requestedFilesPanelTab: null }),
+  filesPanelTab: "browse",
+  filesPanelTabChosen: false,
+  setFilesPanelTab: (tab) =>
+    set({ filesPanelTab: tab, filesPanelTabChosen: true }),
+  autoSelectFilesPanelTab: (tab) =>
+    set({ filesPanelTab: tab, filesPanelTabChosen: false }),
 
   // Programmatic navigation flag
   isProgrammaticNavigation: false,

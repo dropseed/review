@@ -35,6 +35,10 @@ export const MENU_COMMANDS: Record<string, { event: string; command: string }> =
       event: "menu:toggle-sidebar",
       command: "view.toggleSidebar",
     },
+    toggle_files_panel: {
+      event: "menu:toggle-files-panel",
+      command: "view.toggleFilesPanel",
+    },
     new_review: { event: "menu:new-review", command: "review.new" },
     reveal_in_browse: {
       event: "menu:reveal-in-browse",

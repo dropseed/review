@@ -79,54 +79,46 @@ export function useFilePanelNavigation({
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
   const hasHunks = useHasAnyHunks();
-  const [viewMode, setFilesPanelTab] = useState<FilesPanelTab>(
-    hasHunks ? "changes" : "browse",
+  const viewMode = useReviewStore((s) => s.filesPanelTab);
+  const tabChosen = useReviewStore((s) => s.filesPanelTabChosen);
+  const setFilesPanelTab = useReviewStore((s) => s.setFilesPanelTab);
+  const autoSelectFilesPanelTab = useReviewStore(
+    (s) => s.autoSelectFilesPanelTab,
   );
-  const userHasChosenFilesPanelTab = useRef(false);
   const pendingScrollTarget = useRef<string | null>(null);
 
-  const handleSetFilesPanelTab = useCallback((mode: FilesPanelTab) => {
-    userHasChosenFilesPanelTab.current = true;
-    pendingScrollTarget.current = null;
-    setFilesPanelTab(mode);
-  }, []);
+  const handleSetFilesPanelTab = useCallback(
+    (mode: FilesPanelTab) => {
+      pendingScrollTarget.current = null;
+      setFilesPanelTab(mode);
+    },
+    [setFilesPanelTab],
+  );
 
-  // When hunks are cleared (e.g. new comparison), allow auto-switching again
-  // and default to Browse. When hunks arrive and user hasn't explicitly chosen
-  // a tab, switch to "changes".
-  const prevHasHunks = useRef(hasHunks);
+  // Until the user picks a tab, the panel follows what there is to look at:
+  // Review once a comparison has hunks, Browse when it has none. Hunks being
+  // cleared (a new comparison) puts it back to choosing for them.
+  //
+  // `prevHasHunks` starts false so the first run counts as an arrival — mounting
+  // into a comparison that already has hunks lands on Review, the same place a
+  // comparison that loads them a moment later does.
+  const prevHasHunks = useRef(false);
   useEffect(() => {
     const wasEmpty = !prevHasHunks.current;
     const isEmpty = !hasHunks;
     prevHasHunks.current = hasHunks;
 
     if (isEmpty && !wasEmpty) {
-      // Hunks just became empty — reset to browse
-      userHasChosenFilesPanelTab.current = false;
-      setFilesPanelTab("browse");
+      autoSelectFilesPanelTab("browse");
       return;
     }
-
-    if (!isEmpty && wasEmpty && !userHasChosenFilesPanelTab.current) {
-      // Hunks just arrived — auto-switch to changes
-      setFilesPanelTab("changes");
+    if (!isEmpty && wasEmpty && !tabChosen) {
+      autoSelectFilesPanelTab("changes");
     }
-  }, [hasHunks]);
-
-  // Handle external tab switch requests (e.g., from header Git status indicator)
-  const requestedFilesPanelTab = useReviewStore(
-    (s) => s.requestedFilesPanelTab,
-  );
-  const clearRequestedFilesPanelTab = useReviewStore(
-    (s) => s.clearRequestedFilesPanelTab,
-  );
-  useEffect(() => {
-    if (requestedFilesPanelTab) {
-      setFilesPanelTab(requestedFilesPanelTab as FilesPanelTab);
-      userHasChosenFilesPanelTab.current = true;
-      clearRequestedFilesPanelTab();
-    }
-  }, [requestedFilesPanelTab, clearRequestedFilesPanelTab]);
+    // `tabChosen` is read, not depended on: a user choosing a tab is not an
+    // event this rule fires on, only a fact it checks when the hunks change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasHunks, autoSelectFilesPanelTab]);
 
   const { showGitTab, gitChangeCount } = useGitTab();
 
