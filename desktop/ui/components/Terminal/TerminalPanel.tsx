@@ -23,6 +23,7 @@ import {
   usePaneDragActive,
 } from "./pane-drag";
 import { closeTerminalPane, closeTerminalTab } from "./close";
+import { openTerminalTab } from "./newTab";
 import { PaneTree, PaneButton } from "./PaneTree";
 import { PinIcon, WarningIcon } from "../ui/icons";
 import { DROP_RING, TERMINAL_TAB_MIME } from "../TabRail/useTerminalTabDrop";
@@ -41,10 +42,7 @@ export function TerminalPanel(): ReactNode {
   const activeTabIdByReviewKey = useReviewStore(
     (s) => s.activeTabIdByReviewKey,
   );
-  const reviewTier = useReviewStore((s) => s.reviewTier);
-  const ensureMaterialized = useReviewStore((s) => s.ensureMaterialized);
 
-  const startTerminal = useReviewStore((s) => s.startTerminal);
   const splitTerminal = useReviewStore((s) => s.splitTerminal);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
   const moveTab = useReviewStore((s) => s.moveTab);
@@ -117,32 +115,7 @@ export function TerminalPanel(): ReactNode {
 
   if (!repoPath) return null;
 
-  /**
-   * Open a terminal in a new tab, in the directory this review is about: its
-   * own checkout. There's no cwd picker — a shell that landed somewhere else
-   * than you wanted is one `cd` away.
-   */
-  const handleNewTab = () => {
-    const worktree =
-      reviewTier?.tier === "materialized" ? reviewTier.worktreePath : null;
-    if (worktree) {
-      void startTerminal(reviewKey, repoPath, worktree, 80, 24);
-      return;
-    }
-    // No review open (or a repo-level view) — the repo root is the only
-    // directory there is.
-    if (!reviewRef) {
-      void startTerminal(reviewKey, repoPath, repoPath, 80, 24);
-      return;
-    }
-    // This review has no checkout yet. Materializing asks first, so a declined
-    // prompt simply starts no terminal.
-    void ensureMaterialized("run a terminal in it").then((worktreePath) => {
-      if (worktreePath) {
-        void startTerminal(reviewKey, repoPath, worktreePath, 80, 24);
-      }
-    });
-  };
+  const handleNewTab = () => void openTerminalTab();
 
   const handleSplit = (
     homeKey: string,

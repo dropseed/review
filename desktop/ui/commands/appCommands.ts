@@ -7,6 +7,7 @@ import {
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
 import type { Command, CommandContext } from "./types";
+import { openTerminalTab } from "../components/Terminal/newTab";
 
 /** A repository is open. */
 function hasRepo(ctx: CommandContext): boolean {
@@ -303,7 +304,20 @@ export const APP_COMMANDS: readonly Command[] = [
     title: "New Tab",
     category: "Application",
     shortcut: { code: "KeyT", mod: true },
-    run: (ctx) => ctx.ui.newTab(),
+    // "A new tab of what I'm looking at" — a focused terminal gets a terminal
+    // tab, everything else an app tab. The same rule `view.splitSideBySide`
+    // follows, and the reason this opts into `allowInTerminal`: without it the
+    // dispatcher hands ⌘T to the terminal, and only the native menu's
+    // accelerator would reach this command — which is how ⌘T in a terminal came
+    // to open an app tab, since the menu path knows nothing about focus.
+    allowInTerminal: true,
+    run: (ctx) => {
+      if (ctx.keys.terminalFocused) {
+        void openTerminalTab();
+        return;
+      }
+      ctx.ui.newTab();
+    },
   },
   {
     id: "app.newWindow",
