@@ -67,7 +67,9 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     id: "view.maximizeTerminal",
     title: "Maximize Terminal",
     category: "View",
-    keywords: ["shell", "console", "full"],
+    // The same act named from the other side: this is also how the diff is
+    // collapsed, so it has to be findable by that name too.
+    keywords: ["shell", "console", "full", "diff", "code", "collapse", "hide"],
     // iTerm2's maximize-pane chord.
     shortcut: { code: "Enter", mod: true, shift: true },
     allowInTerminal: true,

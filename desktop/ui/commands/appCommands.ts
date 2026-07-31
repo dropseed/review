@@ -216,6 +216,16 @@ export const APP_COMMANDS: readonly Command[] = [
     run: ({ store }) => store.toggleTabRail(),
   },
   {
+    id: "view.toggleFilesPanel",
+    title: "Toggle Files Panel",
+    category: "View",
+    keywords: ["files", "sidebar", "browse", "hide", "right"],
+    // ⌘B collapses the left sidebar; the right one takes the same chord with
+    // Option, so the two panels that flank the diff are one modifier apart.
+    shortcut: { code: "KeyB", mod: true, alt: true },
+    run: ({ store }) => store.toggleFilesPanel(),
+  },
+  {
     id: "view.toggleOutline",
     title: "Toggle Outline",
     category: "View",

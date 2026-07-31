@@ -8,7 +8,7 @@ import {
   useFilePanelApproval,
 } from "./hooks";
 import { useReviewStore } from "../../stores";
-import { CheckIcon } from "../ui/icons";
+import { CheckIcon, SidebarPanelIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
@@ -127,6 +127,7 @@ export function FilesPanel() {
 
   // Search state
   const searchResultCount = useReviewStore((s) => s.searchResults.length);
+  const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
 
   // What the Review tab has waiting, for its badge. Taken from the panel's own
   // stats rather than a store-wide count: the badge labels these sections, so
@@ -272,6 +273,20 @@ export function FilesPanel() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {/* Collapsing lives on the panel's own header, the way the
+                sidebar's does — the rail it leaves behind is the way back. */}
+            <button
+              type="button"
+              onClick={toggleFilesPanel}
+              aria-label="Hide files"
+              title="Hide files (⌥⌘B)"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded
+                         text-fg-muted transition-colors duration-100
+                         hover:bg-fg/[0.08] hover:text-fg-secondary"
+            >
+              <SidebarPanelIcon className="h-3.5 w-3.5 -scale-x-100" />
+            </button>
           </div>
 
           {/* Panel content based on view mode */}

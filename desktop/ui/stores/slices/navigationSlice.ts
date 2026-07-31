@@ -145,6 +145,7 @@ export interface NavigationSlice {
 
   // Request a files panel tab switch from outside the panel
   requestedFilesPanelTab: string | null;
+  requestFilesPanelTab: (tab: string) => void;
   clearRequestedFilesPanelTab: () => void;
 
   // Flag for symbol navigation to trigger history push instead of replace
@@ -691,6 +692,9 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
 
   // Requested files panel tab
   requestedFilesPanelTab: null,
+  // The panel owns which tab is showing (it is local state there), so everything
+  // outside asks for one through here and the panel consumes the request.
+  requestFilesPanelTab: (tab) => set({ requestedFilesPanelTab: tab }),
   clearRequestedFilesPanelTab: () => set({ requestedFilesPanelTab: null }),
 
   // Programmatic navigation flag
