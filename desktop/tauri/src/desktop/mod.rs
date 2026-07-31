@@ -758,11 +758,34 @@ pub fn run() {
     app.run(|app_handle, event| {
         #[cfg(desktop)]
         match event {
-            tauri::RunEvent::Reopen { .. } => {
-                // Show all hidden windows and focus them
-                for (_, window) in app_handle.webview_windows() {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+            tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                // Clicking the dock icon of an app that is already on screen
+                // means "come to the front", and AppKit has already done that
+                // by the time this fires — so there is nothing left to do.
+                //
+                // Showing and focusing *every* window, which is what this did,
+                // walks an unordered map and leaves whichever window it happened
+                // to visit last in front. With macOS window tabbing that is a
+                // different tab than the one you left, so clicking the dock icon
+                // looked like the app had opened another one.
+                if !has_visible_windows {
+                    // Nothing on screen: minimized, or hidden with ⌘H. AppKit
+                    // skips its own restore when the delegate reports no visible
+                    // windows, so bringing them back is ours to do. Sorted, and
+                    // focusing exactly one, so "the app came back" doesn't mean
+                    // "on whichever window the map iterated last".
+                    let mut windows: Vec<_> = app_handle.webview_windows().into_iter().collect();
+                    windows.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    for (_, window) in &windows {
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                    }
+                    if let Some((_, window)) = windows.first() {
+                        let _ = window.set_focus();
+                    }
                 }
                 // Check for a pending open request from the CLI or a cold-start deep link
                 if let Some(req) = read_open_request() {
