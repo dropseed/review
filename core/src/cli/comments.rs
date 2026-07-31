@@ -18,8 +18,8 @@ use crate::review::state::{now_iso8601, AnnotationSide, LineAnnotation, ReviewSt
 use crate::review::storage;
 
 use super::common::{
-    line_range, load_for_mutation, mutate_review, print_json, resolve_review_arg, resolve_source,
-    ReviewTarget,
+    line_range, load_for_mutation, mutate_review, print_json, reject_blank, resolve_review_arg,
+    resolve_source, ReviewTarget,
 };
 use super::get_repo_path;
 
@@ -477,10 +477,7 @@ pub fn run_submit_comments(target: ReviewTarget, args: CommentsSubmitArgs) -> Re
 /// Reject empty/whitespace-only comment content, shared by the single-comment
 /// (`run_add`) and batch (`comments submit`) paths.
 fn validate_content(content: &str) -> Result<(), String> {
-    if content.trim().is_empty() {
-        return Err("empty content".to_owned());
-    }
-    Ok(())
+    reject_blank("content", content)
 }
 
 /// Validate a batch comment: line numbers are 1-based and ranges non-inverted,
