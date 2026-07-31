@@ -47,6 +47,7 @@ import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
+import { useShapeMode } from "./hooks/useShapeMode";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
@@ -285,6 +286,8 @@ export function FileViewer({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!fileContentRef.current) return;
+      // Both bars address real file lines — suppressed in shape mode.
+      if (shapeModeRef.current) return;
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       if (e.key === "f") {
         e.preventDefault();
@@ -613,6 +616,36 @@ export function FileViewer({
     return PLAIN_MODE;
   }, [fileContent, isGitignored, svgViewMode, viewMode]);
 
+  // --- Shape mode ---------------------------------------------------------
+  const {
+    shapeAvailable,
+    shapeMode,
+    shape,
+    allExpanded: shapeAllExpanded,
+    toggleShapeMode,
+    expandAllFolds,
+    collapseAllFolds,
+  } = useShapeMode({
+    filePath,
+    content: fileContent?.content,
+    symbols: fileSymbols,
+    isPlainView: contentMode.type === "plain",
+  });
+
+  // Shape mode swaps in a second line-coordinate space (see the note at the
+  // search/go-to-line bars below), so entering or leaving it drops anything
+  // addressed in the other one.
+  const handleToggleShapeMode = useCallback(() => {
+    toggleShapeMode();
+    setHighlightLine(null);
+    setOpenBar(null);
+  }, [toggleShapeMode]);
+
+  // Read by the ⌘F / ⌘L handler, which is registered once for the viewer's
+  // lifetime and so can't close over the current value.
+  const shapeModeRef = useRef(shapeMode);
+  shapeModeRef.current = shapeMode;
+
   if (loading || fileContentPath !== filePath) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -689,6 +722,12 @@ export function FileViewer({
           isWorkingTreeMode ? handleExitWorkingTreeMode : undefined
         }
         hasSymbols={hasSymbols}
+        shapeAvailable={shapeAvailable}
+        shapeMode={shapeMode}
+        shapeAllExpanded={shapeAllExpanded}
+        onToggleShapeMode={handleToggleShapeMode}
+        onExpandAllFolds={expandAllFolds}
+        onCollapseAllFolds={collapseAllFolds}
         isExternalFile={isExternalFile}
         onCloseExternalFile={
           isExternalFile
@@ -742,7 +781,15 @@ export function FileViewer({
       )}
 
       <div className="relative flex flex-1 overflow-hidden">
-        {openBar === "search" && fileContent && (
+        {/* Shape mode hands pierre a *synthesized* document, so the view is
+            addressed in document lines while search, go-to-line and the
+            outline all speak real file lines. Rather than translate between
+            the two, this spike suppresses the line-addressed affordances while
+            shape mode is on: the bars don't open (see the ⌘F / ⌘L handler) and
+            the outline stops tracking and jumping. Closing this properly means
+            carrying a real↔doc mapping on `buildShapeDocument`'s rows and
+            translating at these three call sites. */}
+        {openBar === "search" && !shapeMode && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <InFileSearchBar
               content={fileContent.content}
@@ -751,7 +798,7 @@ export function FileViewer({
             />
           </div>
         )}
-        {openBar === "goToLine" && fileContent && (
+        {openBar === "goToLine" && !shapeMode && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <GoToLineBar
               maxLine={totalLineCount}
@@ -765,6 +812,7 @@ export function FileViewer({
             filePath={filePath}
             scrollNode={scrollNode}
             symbols={fileSymbols}
+            lineAddressable={!shapeMode}
           />
         )}
         <FileContentRenderer
@@ -784,6 +832,7 @@ export function FileViewer({
           onTokenClick={onTokenClick}
           containerRef={setScrollNode}
           handleRef={codeViewHandleRef}
+          shape={shape}
         />
         {contentMode.type === "diff" && (
           <DiffMinimap
