@@ -77,6 +77,17 @@ function formatResetAt(window: UsageWindow): string | null {
   });
 }
 
+/**
+ * Join what's known into one clause-separated line, capitalized.
+ *
+ * Which clause comes first depends on what the window reports, so none of them
+ * can carry its own capital.
+ */
+function sentence(parts: (string | null)[]): string | null {
+  const text = parts.filter((part) => part !== null).join(" · ");
+  return text === "" ? null : text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 const AGENT_ICONS: Record<
   string,
   (props: { className?: string }) => ReactNode
@@ -276,6 +287,14 @@ function AgentUsageRow({
               windowPace === null
                 ? null
                 : formatPaceDelta(window.usedPercent, windowPace);
+            const summary = sentence([
+              windowPace === null ? null : (delta ?? "on pace"),
+              resetsIn
+                ? `resets in ${resetsIn}`
+                : resetsAt
+                  ? `resets ${resetsAt}`
+                  : null,
+            ]);
             const isShown = window.label === headline.label;
             return (
               <button
@@ -329,20 +348,17 @@ function AgentUsageRow({
                     dimmed={muted}
                   />
                 </div>
-                {windowPace !== null && (
-                  <div className="mt-1 text-xxs text-fg-faint">
-                    {delta ?? "On pace"} · {Math.round(windowPace)}% of the
-                    window elapsed
-                  </div>
-                )}
-                {/* A duration is what you want at a glance; the wall-clock
+                {/* One line for the two things the bar can't say: which side
+                    of the tick we're on, and when the window ends. How far
+                    into it we are is the tick itself, so it goes unsaid.
+                    A duration is what you want at a glance; the wall-clock
                     time stays one hover away for deciding when to come back. */}
-                {(resetsIn || resetsAt) && (
+                {summary && (
                   <div
-                    className="mt-0.5 text-xxs text-fg-faint"
+                    className="mt-1 text-xxs text-fg-faint"
                     title={resetsAt ?? undefined}
                   >
-                    {resetsIn ? `Resets in ${resetsIn}` : `Resets ${resetsAt}`}
+                    {summary}
                   </div>
                 )}
               </button>

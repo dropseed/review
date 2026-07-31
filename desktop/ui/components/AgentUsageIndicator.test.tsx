@@ -229,6 +229,46 @@ describe("AgentUsageIndicator", () => {
     expect(row.getAttribute("aria-label")).toContain("29% ahead of pace");
   });
 
+  it("states the pace and the reset on one line", async () => {
+    resolveWith(claude());
+    await renderIndicator();
+
+    await act(async () => {
+      (await screen.findByRole("button", { name: /^Claude usage:/ })).click();
+    });
+
+    // How far into the window we are is the mark's job, so the words carry
+    // only which side of it we're on and when the window ends.
+    expect(
+      await screen.findByText("29% ahead of pace · resets in 3d"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/window elapsed/)).toBeNull();
+  });
+
+  it("leads with the reset when there's no pace to state", async () => {
+    resolveWith(
+      claude({
+        windows: [
+          {
+            label: "Fortnight",
+            usedPercent: 40,
+            resetsAtUnix: null,
+            resetsAtText: claudeResetText(3 * DAY),
+            windowMinutes: null,
+            headline: false,
+          },
+        ],
+      }),
+    );
+    await renderIndicator();
+
+    await act(async () => {
+      (await screen.findByRole("button", { name: /^Claude usage:/ })).click();
+    });
+
+    expect(await screen.findByText("Resets in 3d")).toBeTruthy();
+  });
+
   it("drops the mark when the window's length is unknown", async () => {
     resolveWith(
       claude({
