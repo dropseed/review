@@ -11,6 +11,7 @@ import { makeReviewKey } from "../../utils/review-key";
 import type { SliceCreatorWithClientAndStorage } from "../types";
 import {
   type TerminalTab,
+  type PaneNode,
   type SplitDirection,
   type DropEdge,
   makeTab,
@@ -930,14 +931,27 @@ export function movePaneInTab(
 }
 
 /**
- * The source tab as it looks once `sourceId` has left it, or null when the pane
- * it lost was its last one — a tab with no panes is not a tab.
+ * The tab as it looks once `sourceId` has left it, or null when the pane it
+ * lost was its last one — a tab with no panes is not a tab.
+ *
+ * The one place the "collapse the tree and repair the focus" rule is written:
+ * closing a pane, moving one to another tab, and reconciling against the
+ * daemon's session list all end up here, so a tab can't pick its next focused
+ * pane three different ways.
  */
-function tabWithoutPane(
+export function tabWithoutPane(
   tab: TerminalTab,
   sourceId: string,
 ): TerminalTab | null {
-  const root = removeLeaf(tab.root, sourceId);
+  return withRepairedFocus(tab, removeLeaf(tab.root, sourceId));
+}
+
+/** `tab` re-rooted at `root`, keeping its focus if that pane survived. Null
+ *  when nothing survived. */
+function withRepairedFocus(
+  tab: TerminalTab,
+  root: PaneNode | null,
+): TerminalTab | null {
   if (!root) return null;
   const leaves = collectLeafIds(root);
   return {
@@ -951,9 +965,10 @@ function tabWithoutPane(
  * Move the pane `sourceId` out of its own tab and into `targetTabId`, beside
  * that tab's focused pane — the drag from a pane's grip onto a tab in the strip.
  *
- * The tab the pane came from is left collapsed around the hole, or dropped
- * entirely if that pane was all it had: dragging a single-pane tab onto another
- * tab merges the two, which is the only sensible reading of the gesture.
+ * Composed from the two reducers that already own each half: removing a pane
+ * from the tab tree, and splitting a tab's focused pane. So the tab the pane
+ * came from collapses (or is dropped when that pane was all it had, making this
+ * gesture a merge) by exactly the rule that closing a pane follows.
  *
  * The pane lands focused, and its new tab becomes its key's active one — you
  * just put it there, so that is what should be on screen.
@@ -967,36 +982,24 @@ export function movePaneToTabTree(
   const target = findTab(state.terminalTabsByReviewKey, targetTabId);
   if (!source || !target || source.tab.id === targetTabId) return {};
 
-  const sourceTab = tabWithoutPane(source.tab, sourceId);
-  const targetRoot = splitLeaf(
-    target.tab.root,
-    target.tab.focused,
-    sourceId,
-    "row",
-  );
-
-  const terminalTabsByReviewKey: Record<string, TerminalTab[]> = {};
-  for (const [key, tabs] of Object.entries(state.terminalTabsByReviewKey)) {
-    const out: TerminalTab[] = [];
-    for (const tab of tabs) {
-      if (tab.id === source.tab.id) {
-        if (sourceTab) out.push(sourceTab);
-      } else if (tab.id === targetTabId) {
-        out.push({ ...tab, root: targetRoot, focused: sourceId });
-      } else {
-        out.push(tab);
-      }
-    }
-    terminalTabsByReviewKey[key] = out;
-  }
+  const lifted = { ...state, ...removeTerminalFromTabs(state, sourceId) };
+  const placed = {
+    ...lifted,
+    // Read from the tab as it was: the removal cannot have touched the target,
+    // which is guaranteed above not to hold the pane being moved.
+    ...splitTabForTerminal(
+      lifted,
+      targetTabId,
+      target.tab.focused,
+      sourceId,
+      "row",
+    ),
+  };
 
   return {
-    terminalTabsByReviewKey,
+    terminalTabsByReviewKey: placed.terminalTabsByReviewKey,
     activeTabIdByReviewKey: {
-      ...resolveActiveTabIds(
-        terminalTabsByReviewKey,
-        state.activeTabIdByReviewKey,
-      ),
+      ...placed.activeTabIdByReviewKey,
       [target.reviewKey]: targetTabId,
     },
   };
@@ -1055,17 +1058,10 @@ export function removeTerminalFromTabs(
 ): Partial<TabState> {
   const terminalTabsByReviewKey: Record<string, TerminalTab[]> = {};
   for (const [key, tabs] of Object.entries(state.terminalTabsByReviewKey)) {
-    const out: TerminalTab[] = [];
-    for (const tab of tabs) {
-      const root = removeLeaf(tab.root, id);
-      if (!root) continue; // tab emptied → dropped
-      const leaves = collectLeafIds(root);
-      const focused = leaves.includes(tab.focused)
-        ? tab.focused
-        : firstLeafId(root);
-      out.push({ ...tab, root, focused });
-    }
-    terminalTabsByReviewKey[key] = out;
+    // A tab that has nothing left is dropped, which is what the nulls are.
+    terminalTabsByReviewKey[key] = tabs
+      .map((tab) => tabWithoutPane(tab, id))
+      .filter((tab): tab is TerminalTab => tab !== null);
   }
   return {
     terminalTabsByReviewKey,
@@ -1285,18 +1281,10 @@ export function ingestTabs(
   for (const [key, tabs] of Object.entries(state.terminalTabsByReviewKey)) {
     const out: TerminalTab[] = [];
     for (const tab of tabs) {
-      const root = pruneLeaves(tab.root, keep);
-      if (!root) continue;
-      const leaves = collectLeafIds(root);
-      const focused = leaves.includes(tab.focused)
-        ? tab.focused
-        : firstLeafId(root);
-      out.push({
-        ...tab,
-        root,
-        focused,
-        pinned: tab.pinned || leaves.some(isPinned),
-      });
+      const pruned = withRepairedFocus(tab, pruneLeaves(tab.root, keep));
+      if (!pruned) continue;
+      const leaves = collectLeafIds(pruned.root);
+      out.push({ ...pruned, pinned: tab.pinned || leaves.some(isPinned) });
       for (const leafId of leaves) placed.add(leafId);
     }
     terminalTabsByReviewKey[key] = out;
@@ -1509,12 +1497,8 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     const next: Partial<TerminalSlice> = {
       ...removeTerminalFromState(g, id),
       ...removeTerminalFromTabs(g, id),
+      terminalPinnedIds: setPinned([id], false),
     };
-    if (g.terminalPinnedIds.includes(id)) {
-      const terminalPinnedIds = g.terminalPinnedIds.filter((x) => x !== id);
-      next.terminalPinnedIds = terminalPinnedIds;
-      storage.set("terminalPinnedIds", terminalPinnedIds);
-    }
     if (id in g.terminalHomes) {
       const terminalHomes = { ...g.terminalHomes };
       delete terminalHomes[id];
@@ -1551,15 +1535,22 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   }
 
   /**
-   * Record whether one session's tab is pinned, persisting only a real change.
+   * Record whether these sessions' tabs are pinned, and persist the change.
    *
-   * Moving a pane between tabs has to say this out loud: pinning is stored per
-   * session, and a pane carrying a stale pin into an unpinned tab would pin
-   * that tab on the next reload, when the tab list is rebuilt from this list.
+   * The one way this list is written. It is keyed by session id and outlives
+   * the window, so anything that changes which tab a session sits in has to say
+   * so here — a pane carrying a stale pin into an unpinned tab would pin that
+   * tab on the next reload, when the tab list is rebuilt from this list.
+   *
+   * Only the named sessions are touched, never the whole list: pins are global
+   * and this window only knows the tabs of the repos it has opened.
    */
-  function setPinned(current: string[], id: string, pinned: boolean): string[] {
-    if (current.includes(id) === pinned) return current;
-    const next = pinned ? [...current, id] : current.filter((x) => x !== id);
+  function setPinned(ids: string[], pinned: boolean): string[] {
+    const current = get().terminalPinnedIds;
+    const next = pinned
+      ? [...new Set([...current, ...ids])]
+      : current.filter((id) => !ids.includes(id));
+    if (next.length === current.length) return current;
     storage.set("terminalPinnedIds", next);
     return next;
   }
@@ -1725,10 +1716,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       const pinned = !found.tab.pinned;
       // Persisted against the session ids, not the tab id: tab ids are
       // window-local and a reload re-derives them from the session list.
-      const leafIds = collectLeafIds(found.tab.root);
-      const terminalPinnedIds = pinned
-        ? [...new Set([...g.terminalPinnedIds, ...leafIds])]
-        : g.terminalPinnedIds.filter((id) => !leafIds.includes(id));
+      const terminalPinnedIds = setPinned(
+        collectLeafIds(found.tab.root),
+        pinned,
+      );
       const next = setTabPinned(g, tabId, pinned);
       const tabsByKey =
         next.terminalTabsByReviewKey ?? g.terminalTabsByReviewKey;
@@ -1744,7 +1735,6 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         ),
         terminalPinnedIds,
       });
-      storage.set("terminalPinnedIds", terminalPinnedIds);
     },
 
     setTerminalCheckouts: (activity, reviews) => {
@@ -1818,11 +1808,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         ...next,
         ...moveTerminalsToKey(g, [sourceTerminalId], target.reviewKey),
         terminalHomes: rememberHome([sourceTerminalId], target.reviewKey),
-        terminalPinnedIds: setPinned(
-          g.terminalPinnedIds,
-          sourceTerminalId,
-          !!target.tab.pinned,
-        ),
+        terminalPinnedIds: setPinned([sourceTerminalId], !!target.tab.pinned),
       });
     },
 
@@ -1841,11 +1827,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         // The new tab inherits the old one's pinning, so the pane has to be
         // recorded as pinned itself — a pane split off a pinned tab was never
         // added to this list, and the list is what survives a reload.
-        terminalPinnedIds: setPinned(
-          g.terminalPinnedIds,
-          sourceTerminalId,
-          !!source.tab.pinned,
-        ),
+        terminalPinnedIds: setPinned([sourceTerminalId], !!source.tab.pinned),
       });
       return tabId;
     },

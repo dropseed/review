@@ -1,5 +1,6 @@
 import { useState, type DragEvent } from "react";
 import { useReviewStore } from "../../stores";
+import { pointerLeft } from "../Terminal/pane-drag";
 import { makeReviewKey } from "../../utils/review-key";
 
 /**
@@ -10,8 +11,9 @@ import { makeReviewKey } from "../../utils/review-key";
  */
 export const TERMINAL_TAB_MIME = "application/x-review-terminal-tab";
 
-/** Ring shown on a row while a terminal tab hovers it. */
-const DROP_RING = "ring-1 ring-inset ring-focus-ring bg-fg/[0.06]";
+/** The app's one "you can drop here" treatment, for any drop target that lights
+ *  up as a whole rather than showing where within itself the thing will land. */
+export const DROP_RING = "ring-1 ring-inset ring-focus-ring bg-fg/[0.06]";
 
 interface TerminalTabDrop {
   /** Ring class while a terminal tab is over this row; empty otherwise. */
@@ -61,10 +63,7 @@ export function useTerminalTabDrop(
         setIsOver(true);
       },
       onDragLeave: (e) => {
-        // Drag events bubble, so crossing into one of the row's own children
-        // fires a leave on the row. Only a pointer that left the row counts.
-        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setIsOver(false);
+        if (pointerLeft(e)) setIsOver(false);
       },
       onDrop: (e) => {
         setIsOver(false);

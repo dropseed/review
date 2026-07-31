@@ -17,11 +17,15 @@ import {
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
 import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
-import { TERMINAL_PANE_MIME, usePaneDragActive } from "./pane-drag";
+import {
+  TERMINAL_PANE_MIME,
+  pointerLeft,
+  usePaneDragActive,
+} from "./pane-drag";
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { PaneTree, PaneButton } from "./PaneTree";
 import { PinIcon, WarningIcon } from "../ui/icons";
-import { TERMINAL_TAB_MIME } from "../TabRail/useTerminalTabDrop";
+import { DROP_RING, TERMINAL_TAB_MIME } from "../TabRail/useTerminalTabDrop";
 import type { TerminalStatus } from "../../types";
 
 export function TerminalPanel(): ReactNode {
@@ -106,11 +110,10 @@ export function TerminalPanel(): ReactNode {
   // invitation.
   const canExtractDraggedPane =
     draggedPaneId != null &&
-    visibleTabs.some(
-      ({ tab }) =>
-        collectLeafIds(tab.root).length > 1 &&
-        collectLeafIds(tab.root).includes(draggedPaneId),
-    );
+    visibleTabs.some(({ tab }) => {
+      const leaves = collectLeafIds(tab.root);
+      return leaves.length > 1 && leaves.includes(draggedPaneId);
+    });
 
   if (!repoPath) return null;
 
@@ -246,10 +249,7 @@ export function TerminalPanel(): ReactNode {
                   setDropIndex(index);
                 }}
                 onDragLeave={(e) => {
-                  // Drag events bubble, so crossing into the tab's own children
-                  // fires a leave on the tab. Only a pointer that left counts.
-                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
-                    return;
+                  if (!pointerLeft(e)) return;
                   setPaneDropTabId((current) =>
                     current === tab.id ? null : current,
                   );
@@ -260,7 +260,6 @@ export function TerminalPanel(): ReactNode {
                     e.preventDefault();
                     e.stopPropagation();
                     setPaneDropTabId(null);
-                    if (leafIds.includes(pane)) return;
                     movePaneToTab(pane, tab.id);
                     // The tab it landed in is the one to be looking at, and the
                     // strip may be showing it as a pinned visitor — so this is
@@ -288,9 +287,7 @@ export function TerminalPanel(): ReactNode {
                     ? "bg-surface-raised text-fg-secondary"
                     : "text-fg-muted hover:bg-fg/[0.06]",
                   dragIndex === index && "opacity-50",
-                  takesPane &&
-                    paneDropTabId === tab.id &&
-                    "ring-1 ring-inset ring-focus-ring bg-fg/[0.06]",
+                  takesPane && paneDropTabId === tab.id && DROP_RING,
                 )}
               >
                 {isDropTarget && (
@@ -399,15 +396,19 @@ export function TerminalPanel(): ReactNode {
           {canExtractDraggedPane && (
             <div
               onDragOver={(e) => {
+                // Claimed by MIME like every other target here, rather than by
+                // trusting that the slot only exists during a pane drag — that
+                // is a render-time fact, and this is the handler that would
+                // silently swallow an unrelated drag if it ever stopped being
+                // true.
+                if (!e.dataTransfer.types.includes(TERMINAL_PANE_MIME)) return;
                 e.preventDefault();
                 e.stopPropagation();
                 e.dataTransfer.dropEffect = "move";
                 setOverNewTabSlot(true);
               }}
               onDragLeave={(e) => {
-                if (e.currentTarget.contains(e.relatedTarget as Node | null))
-                  return;
-                setOverNewTabSlot(false);
+                if (pointerLeft(e)) setOverNewTabSlot(false);
               }}
               onDrop={(e) => {
                 setOverNewTabSlot(false);

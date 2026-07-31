@@ -38,17 +38,24 @@ export interface PaneRect {
 export function edgeForPoint(rect: PaneRect, x: number, y: number): DropEdge {
   const nx = rect.width > 0 ? (x - rect.left) / rect.width : 0.5;
   const ny = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
-  const candidates: [DropEdge, number][] = [
-    ["left", nx],
-    ["right", 1 - nx],
-    ["top", ny],
-    ["bottom", 1 - ny],
-  ];
-  let best = candidates[0];
-  for (const candidate of candidates) {
-    if (candidate[1] < best[1]) best = candidate;
-  }
-  return best[0];
+  const horizontal = Math.min(nx, 1 - nx) <= Math.min(ny, 1 - ny);
+  if (horizontal) return nx <= 0.5 ? "left" : "right";
+  return ny <= 0.5 ? "top" : "bottom";
+}
+
+/**
+ * Whether a `dragleave` really left the element it fired on.
+ *
+ * Drag events bubble, so crossing into one of the element's own children fires
+ * a leave on the element itself. Every drop target in the app has to make this
+ * distinction, and getting it wrong makes a highlight flicker as the pointer
+ * crosses whatever is drawn inside.
+ */
+export function pointerLeft(event: {
+  currentTarget: EventTarget & Node;
+  relatedTarget: EventTarget | null;
+}): boolean {
+  return !event.currentTarget.contains(event.relatedTarget as Node | null);
 }
 
 /**
