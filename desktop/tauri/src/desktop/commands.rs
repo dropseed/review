@@ -79,8 +79,10 @@ pub(crate) struct LspServerKey {
     language: String,
 }
 
-/// Managed state for LSP server handles.
-pub struct LspServers(pub TokioMutex<HashMap<LspServerKey, LspServerHandle>>);
+/// Managed state for LSP server handles. The type is `pub` because Tauri's
+/// `manage`/`State` need to name it, but the map inside is crate-internal —
+/// its key and handle types are, and neither exposes anything to construct.
+pub struct LspServers(pub(crate) TokioMutex<HashMap<LspServerKey, LspServerHandle>>);
 
 pub(crate) struct LspServerHandle {
     client: std::sync::Arc<LspClient>,

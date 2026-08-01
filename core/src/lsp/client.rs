@@ -2,7 +2,7 @@
 //!
 //! Wraps the transport layer with typed LSP protocol operations.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -11,6 +11,7 @@ use lsp_types::{
     ClientCapabilities, DidOpenTextDocumentParams, GotoDefinitionParams, GotoDefinitionResponse,
     Hover, HoverParams, InitializeParams, InitializeResult, Location, Position, ReferenceContext,
     ReferenceParams, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Uri,
+    WorkspaceClientCapabilities, WorkspaceFolder,
 };
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -35,8 +36,26 @@ impl LspClient {
             root_path.display()
         );
 
-        let (transport, _notification_rx) = LspTransport::spawn(command, args, root_path)?;
         let root_uri = path_to_uri(root_path)?;
+        let folder_name = root_path.file_name().map_or_else(
+            || root_path.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        let workspace_folders = vec![WorkspaceFolder {
+            uri: root_uri.clone(),
+            name: folder_name,
+        }];
+
+        // Servers may ask for the workspace folders back at any time, not just
+        // read them off `initialize`. Answer with the same list, so advertising
+        // `workspace.workspace_folders` below stays true after the handshake.
+        let request_responses = HashMap::from([(
+            "workspace/workspaceFolders".to_owned(),
+            serde_json::to_value(&workspace_folders)?,
+        )]);
+
+        let (transport, _notification_rx) =
+            LspTransport::spawn(command, args, root_path, request_responses)?;
 
         // Drop the notification receiver — we don't consume notifications yet.
         // The unbounded channel sender in the read loop will detect the drop
@@ -45,14 +64,25 @@ impl LspClient {
 
         let client = Self {
             transport,
-            root_uri: root_uri.clone(),
+            root_uri,
             opened_files: Mutex::new(HashSet::new()),
         };
 
-        // Send initialize request
+        // Send initialize request. `root_uri` is deprecated in favour of
+        // `workspace_folders`, but plenty of servers still read only the former,
+        // so send both — they name the same directory, and each server takes
+        // whichever it knows.
+        #[expect(deprecated, reason = "root_uri is the only root many servers read")]
         let init_params = InitializeParams {
-            root_uri: Some(root_uri),
-            capabilities: ClientCapabilities::default(),
+            root_uri: Some(client.root_uri.clone()),
+            workspace_folders: Some(workspace_folders),
+            capabilities: ClientCapabilities {
+                workspace: Some(WorkspaceClientCapabilities {
+                    workspace_folders: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
             ..Default::default()
         };
 

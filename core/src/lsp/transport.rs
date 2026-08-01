@@ -52,10 +52,17 @@ impl LspTransport {
     /// Spawn a language server process and start the read loop.
     ///
     /// Returns the transport and a receiver for server notifications.
+    ///
+    /// `request_responses` answers server-initiated requests by method name —
+    /// the result to reply with when the server asks. Methods with no entry get
+    /// `null`, which for most requests reads as "unsupported"; anything the
+    /// client advertised in its capabilities needs a real answer here, since
+    /// `null` would contradict the advertisement.
     pub fn spawn(
         command: &str,
         args: &[&str],
         cwd: &Path,
+        request_responses: HashMap<String, Value>,
     ) -> anyhow::Result<(Self, mpsc::UnboundedReceiver<Message>)> {
         debug!(
             "[lsp transport] spawning: {} {} in {}",
@@ -123,9 +130,13 @@ impl LspTransport {
                         }
                         Message::Request { id, method, .. } => {
                             debug!("[lsp transport] server request: {method} (id={id})");
+                            let result = request_responses
+                                .get(&method)
+                                .cloned()
+                                .unwrap_or(Value::Null);
                             let response = Message::Response {
                                 id,
-                                result: Some(serde_json::Value::Null),
+                                result: Some(result),
                                 error: None,
                             };
                             let bytes = jsonrpc::serialize_message(&response);
