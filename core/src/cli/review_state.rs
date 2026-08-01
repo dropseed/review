@@ -17,7 +17,7 @@ use crate::trust::matches_pattern;
 use super::comments::SourceArg;
 use super::common::{
     effective_status, hunk_labels, hunk_line_stats, load_for_mutation, load_review_view,
-    mutate_review, print_json, render_hunk_diff, resolve_review_arg, resolve_source,
+    mutate_review, print_json, reject_blank, render_hunk_diff, resolve_review_arg, resolve_source,
     sync_classification, EffectiveStatus, ReviewTarget,
 };
 use super::get_repo_path;
@@ -626,6 +626,12 @@ pub fn run_change_base(args: ChangeBaseArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Reject an empty/whitespace-only trust pattern, matching the guard already
+/// applied to guide group titles and comment content.
+fn validate_trust_pattern(pattern: &str) -> Result<(), String> {
+    reject_blank("pattern", pattern)
+}
+
 /// `review trust` — inspect or edit the trust list.
 pub fn run_trust(args: TrustArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
@@ -647,6 +653,7 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
             }
         }
         TrustAction::Add { pattern } => {
+            validate_trust_pattern(&pattern)?;
             if !pattern.contains('*')
                 && !crate::trust::patterns::get_all_pattern_ids().contains(&pattern)
             {
@@ -775,5 +782,17 @@ fn status_verb(status: &HunkStatus) -> &'static str {
         HunkStatus::Approved => "Approved",
         HunkStatus::Rejected => "Rejected",
         HunkStatus::SavedForLater => "Saved",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_trust_pattern_rejects_blank() {
+        assert!(validate_trust_pattern("   ").is_err());
+        assert!(validate_trust_pattern("").is_err());
+        assert!(validate_trust_pattern("imports:added").is_ok());
     }
 }
